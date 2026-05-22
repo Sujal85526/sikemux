@@ -1,14 +1,11 @@
 import { useEffect } from "react";
 import { useWorkspace } from "./state/workspace";
 
-// Maps M-i/r/g/c to the named windows of a project session. M-/ is an
-// alias for M-c — some keyboards/terminals/WMs swallow Alt+C.
+// Maps M-i/r/g to the named windows of a project session.
 const WINDOW_KEYS: Record<string, string> = {
-  KeyI: "nvim",
+  KeyI: "files",
   KeyR: "run",
   KeyG: "git",
-  KeyC: "agent",
-  Slash: "agent",
 };
 
 // Alt-driven keybindings, mirroring the user's tmux setup. We key off
@@ -72,10 +69,12 @@ export function useKeymap(): void {
           break;
         case "KeyI":
         case "KeyR":
-        case "KeyG":
-        case "KeyC": // M-i/r/g/c  jump to a named window
-        case "Slash": // M-/  alias for M-c (agent)
+        case "KeyG": // M-i/r/g  jump to a named window
           w.selectWindowByName(WINDOW_KEYS[e.code]);
+          break;
+        case "KeyC": // M-c  focus the agents view
+        case "Slash": // M-/  alias for M-c (some WMs swallow Alt+C)
+          w.focusAgents();
           break;
         default:
           if (/^Digit[1-9]$/.test(e.code)) {

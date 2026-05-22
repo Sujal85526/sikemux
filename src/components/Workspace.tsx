@@ -1,15 +1,17 @@
 import { useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Divider, Rect, Session, WinTab } from "../state/types";
+import type { Agent, Divider, Rect, Session, WinTab } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import { useWorkspace } from "../state/workspace";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { EditorPane } from "./EditorPane";
+import { GitPane } from "./GitPane";
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
 
-// The center stage: the pane grid. Every window of every session stays
-// mounted (display:none when inactive) so detached sessions keep running.
+// The center stage. Every window and agent of every session stays mounted
+// (visibility-toggled) so detached sessions keep running.
 export function Workspace() {
   const sessions = useWorkspace((s) => s.sessions);
   const activeSessionId = useWorkspace((s) => s.activeSessionId);
@@ -17,20 +19,63 @@ export function Workspace() {
 
   return (
     <div className="window-area" ref={areaRef}>
-      {sessions.flatMap((session) =>
-        session.windows.map((win) => (
+      {sessions.flatMap((session) => {
+        const isActive = session.id === activeSessionId;
+        const windowLayers = session.windows.map((win) => (
           <WindowLayer
             key={win.id}
             session={session}
             win={win}
             areaRef={areaRef}
             visible={
-              session.id === activeSessionId &&
+              isActive &&
+              session.view === "windows" &&
               win.id === session.activeWindowId
             }
           />
-        )),
-      )}
+        ));
+        const agentLayers = session.agents.map((agent) => (
+          <AgentLayer
+            key={agent.id}
+            session={session}
+            agent={agent}
+            visible={
+              isActive &&
+              session.view === "agent" &&
+              agent.id === session.activeAgentId
+            }
+          />
+        ));
+        return [...windowLayers, ...agentLayers];
+      })}
+    </div>
+  );
+}
+
+// An agent's terminal — a single full-stage PTY running the agent CLI.
+function AgentLayer({
+  session,
+  agent,
+  visible,
+}: {
+  session: Session;
+  agent: Agent;
+  visible: boolean;
+}) {
+  return (
+    <div className={`window-layer${visible ? " visible" : ""}`}>
+      <div
+        className="pane-cell"
+        style={{ left: 0, top: 0, width: "100%", height: "100%" }}
+      >
+        <div className="pane pane-active">
+          <TerminalPane
+            cwd={session.cwd || undefined}
+            startup={agent.startup}
+            active={visible}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -68,8 +113,6 @@ function WindowLayer({
               top: pct(rect.y),
               width: pct(rect.w),
               height: pct(rect.h),
-              // Inherit visibility from the window-layer; only force-hide
-              // non-zoomed panes when a sibling is zoomed.
               visibility: shown ? undefined : "hidden",
               zIndex: isZoomed ? 2 : 1,
             }}
@@ -78,11 +121,23 @@ function WindowLayer({
               className={`pane${isActive ? " pane-active" : ""}`}
               onMouseDown={() => visible && focusPane(p.id)}
             >
-              <TerminalPane
-                cwd={p.cwd || session.cwd || undefined}
-                startup={p.startup}
-                active={visible && isActive && shown}
-              />
+              {p.kind === "editor" ? (
+                <EditorPane
+                  cwd={p.cwd || session.cwd}
+                  active={visible && isActive && shown}
+                />
+              ) : p.kind === "git" ? (
+                <GitPane
+                  cwd={p.cwd || session.cwd}
+                  active={visible && isActive && shown}
+                />
+              ) : (
+                <TerminalPane
+                  cwd={p.cwd || session.cwd || undefined}
+                  startup={p.startup}
+                  active={visible && isActive && shown}
+                />
+              )}
             </div>
           </div>
         );
@@ -101,7 +156,6 @@ function WindowLayer({
   );
 }
 
-// A draggable boundary between two split children.
 function DividerHandle({
   d,
   windowId,
@@ -111,7 +165,7 @@ function DividerHandle({
   windowId: string;
   areaRef: RefObject<HTMLDivElement | null>;
 }) {
-  const horizontal = d.dir === "row"; // boundary is a vertical line, dragged on X
+  const horizontal = d.dir === "row";
 
   const style = horizontal
     ? {

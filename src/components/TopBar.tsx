@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useClock } from "../hooks/useClock";
+import { ENVS } from "../state/types";
 import { useWorkspace } from "../state/workspace";
 import {
   IconChevron,
@@ -23,8 +25,12 @@ export function TopBar() {
   const rightOpen = useWorkspace((s) => s.rightRailOpen);
   const toggleLeft = useWorkspace((s) => s.toggleLeftRail);
   const toggleRight = useWorkspace((s) => s.toggleRightRail);
+  const setEnv = useWorkspace((s) => s.setEnv);
+  const [envOpen, setEnvOpen] = useState(false);
 
   const win = session.windows.find((w) => w.id === session.activeWindowId)!;
+  const agent = session.agents.find((a) => a.id === session.activeAgentId);
+  const isProject = session.kind === "project";
 
   return (
     <header className="top-bar" data-tauri-drag-region>
@@ -40,18 +46,24 @@ export function TopBar() {
       <div className="tb-center" data-tauri-drag-region>
         <div className="crumb">
           <span className="crumb-kind">
-            {session.kind === "project" ? (
-              <IconFolder size={12} />
-            ) : (
-              <IconCommand size={12} />
-            )}
+            {isProject ? <IconFolder size={12} /> : <IconCommand size={12} />}
           </span>
           <span className="crumb-session">{session.name}</span>
-          <IconChevron size={11} className="crumb-sep" />
-          <span className="crumb-win">
-            <WindowIcon name={win.name} size={12} />
-            {win.name}
-          </span>
+          {isProject && (
+            <>
+              <IconChevron size={11} className="crumb-sep" />
+              <span className="crumb-win">
+                {session.view === "agent" ? (
+                  agent?.title ?? "agent"
+                ) : (
+                  <>
+                    <WindowIcon name={win.name} size={12} />
+                    {win.name}
+                  </>
+                )}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -61,6 +73,35 @@ export function TopBar() {
             <IconZoom size={11} />
             zoom
           </span>
+        )}
+        {isProject && (
+          <div className="env-dd">
+            <button className="env-dd-btn" onClick={() => setEnvOpen((v) => !v)}>
+              <span className={`env-dot ${session.env}`} />
+              {session.env}
+              <IconChevron size={10} className="env-dd-chev" />
+            </button>
+            {envOpen && (
+              <>
+                <div className="env-dd-scrim" onClick={() => setEnvOpen(false)} />
+                <div className="env-dd-menu">
+                  {ENVS.map((e) => (
+                    <button
+                      key={e}
+                      className={`env-dd-item${session.env === e ? " active" : ""}`}
+                      onClick={() => {
+                        setEnv(e);
+                        setEnvOpen(false);
+                      }}
+                    >
+                      <span className={`env-dot ${e}`} />
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         )}
         <span className="tb-clock">
           {time2(now.getHours())}
@@ -78,7 +119,7 @@ export function TopBar() {
           <button
             className={`tb-btn${rightOpen ? " on" : ""}`}
             onClick={toggleRight}
-            title="Toggle context rail"
+            title="Toggle agents rail"
           >
             <IconPanelRight size={15} />
           </button>

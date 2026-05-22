@@ -2,6 +2,7 @@ import type {
   Divider,
   FocusDir,
   LayoutNode,
+  PaneKind,
   PaneNode,
   Rect,
   SplitDir,
@@ -15,13 +16,20 @@ export function newId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 }
 
-export function makePane(cwd = "", startup?: string): PaneNode {
+export function makePane(
+  cwd = "",
+  opts: { kind?: PaneKind; startup?: string } = {},
+): PaneNode {
+  const kind = opts.kind ?? "terminal";
+  const title =
+    kind === "editor" ? "editor" : kind === "git" ? "git" : opts.startup || "shell";
   return {
     type: "pane",
     id: newId("pane"),
     cwd,
-    startup,
-    title: startup || "shell",
+    kind,
+    startup: opts.startup,
+    title,
   };
 }
 

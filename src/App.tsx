@@ -2,10 +2,11 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
-import { ContextRail } from "./components/ContextRail";
+import { AgentRail } from "./components/AgentRail";
 import { SeshPicker } from "./components/SeshPicker";
 import { Workspace } from "./components/Workspace";
 import { useKeymap } from "./keymap";
+import { hydrateFromDisk, subscribePersist } from "./state/persist";
 import { useWorkspace } from "./state/workspace";
 
 export default function App() {
@@ -19,6 +20,12 @@ export default function App() {
     invoke<string>("home_dir")
       .then(setHome)
       .catch(() => {});
+    // Restore persisted state, then start saving on change.
+    let unsub = () => {};
+    void hydrateFromDisk().finally(() => {
+      unsub = subscribePersist();
+    });
+    return () => unsub();
   }, [setHome]);
 
   return (
@@ -29,7 +36,7 @@ export default function App() {
         <main className="stage">
           <Workspace />
         </main>
-        {rightOpen && <ContextRail />}
+        {rightOpen && <AgentRail />}
       </div>
       {pickerOpen && <SeshPicker />}
     </div>

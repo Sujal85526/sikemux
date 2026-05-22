@@ -2,6 +2,37 @@
    sikemux — precision instrument. Aura palette, all-monospace.
    ============================================================ */
 
+/* Bundled — WKWebView can't see fonts in ~/Library/Fonts, so the Nerd Font
+   ships with the app and is loaded here (icons would be tofu otherwise). */
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  src: url("/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  src: url("/fonts/JetBrainsMonoNerdFontMono-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  src: url("/fonts/JetBrainsMonoNerdFontMono-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  src: url("/fonts/JetBrainsMonoNerdFontMono-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}
+
 :root {
   --void: #0c0b10;
   --rail: #121119;
@@ -71,7 +102,7 @@ button {
 .rail-scroll::-webkit-scrollbar-thumb,
 .picker-list::-webkit-scrollbar-thumb {
   background: var(--line);
-  border-radius: 8px;
+  border-radius: 0;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
@@ -95,7 +126,7 @@ button {
   color: var(--ink-dim);
   background: var(--rail-2);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 1px 5px;
   white-space: nowrap;
 }
@@ -122,19 +153,6 @@ button {
   flex: 1;
   min-width: 0;
   background: var(--void);
-}
-
-.stage::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    900px 420px at 18% 0%,
-    rgba(162, 119, 255, 0.07),
-    transparent 70%
-  );
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* ============================================================
@@ -191,7 +209,7 @@ button {
   height: 24px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 0;
   background: var(--rail-2);
 }
 .crumb-kind {
@@ -232,7 +250,7 @@ button {
   letter-spacing: 0.08em;
   color: var(--warn);
   border: 1px solid rgba(255, 202, 133, 0.3);
-  border-radius: 5px;
+  border-radius: 0;
   padding: 2px 7px;
 }
 
@@ -256,7 +274,7 @@ button {
   justify-content: center;
   width: 26px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: 0;
   color: var(--ink-faint);
   transition: color 0.12s, background 0.12s;
 }
@@ -305,7 +323,7 @@ button {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: 0;
   color: var(--ink-faint);
   transition: color 0.12s, background 0.12s;
 }
@@ -337,7 +355,7 @@ button {
   width: 100%;
   height: 32px;
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--ink-dim);
   position: relative;
   transition: background 0.12s, color 0.12s;
@@ -358,7 +376,7 @@ button {
   top: 7px;
   bottom: 7px;
   width: 2.5px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--acc);
 }
 
@@ -396,7 +414,7 @@ button {
   width: 100%;
   height: 27px;
   padding: 0 10px 0 6px;
-  border-radius: 6px;
+  border-radius: 0;
   color: var(--ink-faint);
   transition: background 0.12s, color 0.12s;
   animation: rowIn 0.3s ease backwards;
@@ -417,7 +435,7 @@ button {
 .win-tick {
   width: 1.5px;
   height: 14px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--line);
 }
 .win-row.active .win-tick {
@@ -475,7 +493,7 @@ button {
   font-size: 11px;
   color: var(--ink-dim);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 3px 9px;
   transition: all 0.12s;
 }
@@ -509,7 +527,7 @@ button {
   color: var(--live);
   background: var(--void);
   border: 1px solid var(--line-soft);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 6px 9px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -579,22 +597,16 @@ button {
   position: absolute;
 }
 
+/* Right + bottom borders only — adjacent panes and the topbar/rail frame
+   share a single hairline instead of doubling up. */
 .pane {
   position: absolute;
-  inset: 5px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
+  inset: 0;
+  border-radius: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   background: var(--pane);
   overflow: hidden;
-  padding: 7px;
-  transition: border-color 0.13s ease, box-shadow 0.13s ease;
-  animation: paneIn 0.18s ease backwards;
-}
-.pane-active {
-  border-color: var(--acc-line);
-  box-shadow:
-    0 0 0 1px rgba(162, 119, 255, 0.16),
-    0 14px 46px -20px rgba(162, 119, 255, 0.6);
 }
 
 .terminal-host {
@@ -632,7 +644,7 @@ button {
   bottom: 8px;
   width: 2px;
   transform: translateX(-50%);
-  border-radius: 2px;
+  border-radius: 0;
 }
 .divider-column::after {
   top: 50%;
@@ -640,7 +652,7 @@ button {
   right: 8px;
   height: 2px;
   transform: translateY(-50%);
-  border-radius: 2px;
+  border-radius: 0;
 }
 .divider:hover::after {
   opacity: 0.55;
@@ -670,7 +682,7 @@ button {
   flex-direction: column;
   background: var(--rail-2);
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: 0;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 30px 80px -30px rgba(0, 0, 0, 0.85);
@@ -707,7 +719,7 @@ button {
   text-transform: uppercase;
   color: var(--ink-faint);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 2px 6px;
 }
 
@@ -725,7 +737,7 @@ button {
   width: 100%;
   height: 38px;
   padding: 0 12px;
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--ink-dim);
 }
 .picker-item.sel {
@@ -809,4 +821,858 @@ button {
   50% {
     opacity: 0.25;
   }
+}
+
+/* ============================================================
+   code editor
+   ============================================================ */
+.editor-pane {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.ed-tree {
+  width: 210px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+.ed-tree-head {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line-soft);
+}
+.ed-tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 23px;
+  padding-right: 8px;
+  color: var(--ink-dim);
+  font-size: 12px;
+  transition: background 0.1s, color 0.1s;
+}
+.tree-row:hover {
+  background: var(--rail-2);
+  color: var(--ink);
+}
+.tree-row.file.active {
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+.tree-chev {
+  display: flex;
+  color: var(--ink-faint);
+  transition: transform 0.12s ease;
+}
+.tree-chev.open {
+  transform: rotate(90deg);
+}
+.tree-folder {
+  display: flex;
+  color: var(--acc);
+}
+.tree-file {
+  display: flex;
+  color: var(--ink-faint);
+}
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.ed-tabs {
+  display: flex;
+  height: 32px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--line-soft);
+  overflow-x: auto;
+}
+.ed-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  border-right: 1px solid var(--line-soft);
+  transition: color 0.1s, background 0.1s;
+}
+.ed-tab:hover {
+  color: var(--ink-dim);
+}
+.ed-tab.active {
+  color: var(--ink);
+  background: var(--acc-soft);
+  box-shadow: inset 0 -2px 0 var(--acc);
+}
+.ed-tab-name {
+  font-size: 12px;
+}
+.ed-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.ed-tab-x {
+  display: flex;
+  color: var(--ink-faint);
+  border-radius: 0;
+  padding: 2px;
+}
+.ed-tab-x:hover {
+  color: var(--danger);
+  background: var(--rail-2);
+}
+.ed-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.ed-host .cm-editor {
+  height: 100%;
+}
+.ed-empty {
+  position: absolute;
+  inset: 32px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+.ed-empty p {
+  font-size: 12px;
+}
+.ed-empty-sub {
+  font-size: 11px;
+  color: var(--line);
+}
+
+/* ============================================================
+   git ui
+   ============================================================ */
+.git-pane {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.git-left {
+  width: 45%;
+  min-width: 340px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 7px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.git-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0 4px;
+}
+.git-branch {
+  color: var(--acc);
+  font-weight: 700;
+}
+.git-track {
+  display: flex;
+  gap: 7px;
+  color: var(--live);
+  font-size: 11px;
+}
+.git-busy {
+  margin-left: auto;
+  color: var(--warn);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.git-commit-bar {
+  flex: 0 0 auto;
+}
+.git-commit-input {
+  width: 100%;
+  background: var(--void);
+  border: 1px solid var(--acc-line);
+  border-radius: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+}
+
+.git-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  overflow: hidden;
+  background: transparent;
+}
+.git-panel.focused {
+  border-color: var(--acc-line);
+}
+.git-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0 9px;
+  border-bottom: 1px solid var(--line);
+}
+.git-panel-n {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--void);
+  background: var(--ink-faint);
+  border-radius: 0;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.git-panel.focused .git-panel-n {
+  background: var(--acc);
+}
+.git-panel-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.git-panel.focused .git-panel-label {
+  color: var(--ink-dim);
+}
+.git-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 3px 0;
+}
+
+.git-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 22px;
+  padding: 0 9px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.git-row:hover {
+  background: var(--rail-2);
+}
+.git-row.sel {
+  background: var(--rail-2);
+  color: var(--ink);
+}
+.git-panel.focused .git-row.sel {
+  background: var(--acc-soft);
+  box-shadow: inset 2px 0 0 var(--acc);
+}
+.gf-x,
+.gf-y {
+  width: 9px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+.gf-x.on {
+  color: var(--live);
+}
+.gf-y.on {
+  color: var(--warn);
+}
+.git-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line);
+  flex: 0 0 auto;
+}
+.gb-dot.cur {
+  background: var(--live);
+  box-shadow: 0 0 6px rgba(97, 255, 202, 0.7);
+}
+.gc-hash {
+  color: var(--warn);
+  font-size: 11px;
+}
+.gc-date {
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+.git-empty {
+  padding: 10px 12px;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.git-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-left: 8px;
+}
+.git-output {
+  flex: 1;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+  padding: 4px 2px;
+  line-height: 1.6;
+}
+
+/* git diff — rendered in a read-only CodeMirror */
+.diff-cm {
+  flex: 1;
+  min-height: 0;
+}
+.diff-cm .cm-editor {
+  height: 100%;
+}
+.cm-diff-add {
+  background: rgba(97, 255, 202, 0.09);
+}
+.cm-diff-del {
+  background: rgba(255, 103, 103, 0.09);
+}
+.cm-diff-hunk {
+  background: var(--acc-soft);
+}
+.cm-diff-meta {
+  opacity: 0.65;
+}
+
+/* ============================================================
+   git merge review — editable diff (CodeMirror unified merge)
+   ============================================================ */
+.merge-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.merge-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 29px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  color: var(--ink-dim);
+  border-bottom: 1px solid var(--line-soft);
+  transition: color 0.12s, background 0.12s;
+}
+.merge-header:hover {
+  color: var(--ink);
+  background: var(--rail-2);
+}
+.merge-path {
+  font-size: 12px;
+}
+.merge-open {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+.merge-header:hover .merge-open {
+  color: var(--acc);
+}
+.diff-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.diff-editor .cm-editor {
+  height: 100%;
+}
+.diff-editor.auto {
+  flex: none;
+  overflow: visible;
+}
+.diff-editor.auto .cm-editor {
+  height: auto;
+}
+
+/* unified-merge chunk tinting, Aura */
+.cm-deletedChunk {
+  background: rgba(255, 103, 103, 0.08);
+}
+.cm-deletedText {
+  background: rgba(255, 103, 103, 0.24);
+  color: #ffb3b3;
+}
+.cm-changedLine {
+  background: rgba(97, 255, 202, 0.07);
+}
+/* @codemirror/merge draws changes as a 2px gradient strip at the line bottom
+   (reads as an underline) — flatten it to a plain tint. !important is needed
+   to beat the package's compound theme selector. */
+.cm-changedText {
+  background: rgba(97, 255, 202, 0.16) !important;
+}
+.cm-deletedChunk .cm-deletedText {
+  background: rgba(255, 103, 103, 0.2) !important;
+}
+.cm-changedLineGutter {
+  background: rgba(97, 255, 202, 0.12);
+}
+.cm-deletedLineGutter {
+  background: rgba(255, 103, 103, 0.12);
+}
+
+/* ----- commit / branch review (file accordion) ----- */
+.commit-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.commit-head {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.commit-hash {
+  color: var(--warn);
+  font-size: 11px;
+}
+.commit-subject {
+  color: var(--ink);
+  font-size: 12.5px;
+}
+.commit-empty {
+  padding: 12px;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.commit-stack {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.acc-item {
+  border-bottom: 1px solid var(--line-soft);
+}
+.acc-header {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--pane);
+}
+.acc-toggle {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 5px 0 9px;
+  color: var(--ink-faint);
+}
+.acc-toggle:hover {
+  color: var(--ink-dim);
+}
+.acc-chev {
+  display: flex;
+  transition: transform 0.12s ease;
+}
+.acc-chev.open {
+  transform: rotate(90deg);
+}
+.acc-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  height: 100%;
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+.acc-name:hover {
+  color: var(--acc);
+}
+
+/* ----- session pinning + recent ----- */
+.sess-icon.agent {
+  color: var(--acc);
+}
+.picker-icon.agent {
+  color: var(--acc);
+}
+
+.sess-pin {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 0;
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.sess-row:hover .sess-pin {
+  opacity: 1;
+}
+.sess-pin:hover {
+  color: var(--ink);
+}
+.sess-pin.on {
+  opacity: 1;
+  color: var(--acc);
+}
+
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 0;
+  color: var(--ink-faint);
+  transition: background 0.12s, color 0.12s;
+}
+.recent-row:hover {
+  background: var(--rail-2);
+  color: var(--ink-dim);
+}
+.recent-meta {
+  font-size: 10px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 84px;
+}
+
+.sess-close {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 0;
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.sess-row:hover .sess-close {
+  opacity: 1;
+}
+.sess-close:hover {
+  color: var(--danger);
+}
+
+/* ============================================================
+   agent rail (right) + env dropdown
+   ============================================================ */
+.agent-rail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 252px;
+  background: var(--rail);
+  overflow: hidden;
+  animation: slideR 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+.agent-empty {
+  padding: 16px 14px;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.agent-empty-add {
+  color: var(--acc);
+}
+.agent-empty-add:hover {
+  text-decoration: underline;
+}
+
+.agent-new {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 8px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 6px;
+}
+.agent-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 0;
+  color: var(--ink-dim);
+  transition: background 0.12s, color 0.12s;
+}
+.agent-new-btn:hover {
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 0;
+  color: var(--ink-dim);
+  position: relative;
+  transition: background 0.12s, color 0.12s;
+}
+.agent-row:hover {
+  background: var(--rail-2);
+  color: var(--ink);
+}
+.agent-row.active {
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+.agent-glyph {
+  display: flex;
+}
+.agent-glyph.claude {
+  color: var(--acc);
+}
+.agent-glyph.codex {
+  color: var(--live);
+}
+.agent-glyph.hermes {
+  color: var(--warn);
+}
+.agent-title {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-close {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 0;
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.agent-row:hover .agent-close {
+  opacity: 1;
+}
+.agent-close:hover {
+  color: var(--danger);
+}
+
+/* env dropdown */
+.env-dd {
+  position: relative;
+}
+.env-dd-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--rail-2);
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.env-dd-btn:hover {
+  color: var(--ink);
+}
+.env-dd-chev {
+  color: var(--ink-faint);
+  transform: rotate(90deg);
+}
+.env-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.env-dot.dev {
+  background: var(--live);
+}
+.env-dot.staging {
+  background: var(--warn);
+}
+.env-dot.preprod {
+  background: #ff9d5c;
+}
+.env-dot.production {
+  background: var(--danger);
+}
+.env-dd-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.env-dd-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 41;
+  min-width: 138px;
+  padding: 4px;
+  background: var(--rail-2);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: 0 16px 44px -18px rgba(0, 0, 0, 0.85);
+}
+.env-dd-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 0;
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+.env-dd-item:hover {
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+.env-dd-item.active {
+  color: var(--ink);
+}
+
+/* agent rail — pill picker + search + session list */
+.agent-pills {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 6px;
+}
+.agent-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  border-radius: 0;
+  border: 1px solid var(--line);
+  background: var(--rail-2);
+  color: var(--ink-faint);
+  font-size: 11px;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.agent-pill:hover {
+  color: var(--ink-dim);
+}
+.agent-pill.active {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: var(--void);
+  font-weight: 600;
+}
+.agent-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 12px 8px;
+  padding: 0 9px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--void);
+}
+.agent-search-icon {
+  color: var(--ink-faint);
+}
+.agent-search-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+.agent-search-input::placeholder {
+  color: var(--ink-faint);
+}
+/* keyboard cursor — a short inset accent bar (no corner-following border) */
+.agent-row.sel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2.5px;
+  border-radius: 0;
+  background: var(--acc);
+}
+.agent-row.new {
+  color: var(--ink-faint);
+}
+.agent-row.new:hover {
+  color: var(--acc);
+}
+.agent-glyph.dim {
+  color: var(--ink-faint);
+}
+.agent-ago {
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
 }

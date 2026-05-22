@@ -1,4 +1,8 @@
+mod agents;
+mod fs;
+mod git;
 mod pty;
+mod state;
 mod system;
 
 use pty::PtyManager;
@@ -13,6 +17,28 @@ pub fn run() {
             pty::pty_kill,
             system::home_dir,
             system::recent_dirs,
+            state::state_load,
+            state::state_save,
+            agents::agent_sessions,
+            fs::read_dir,
+            fs::read_file,
+            fs::write_file,
+            git::git_status,
+            git::git_diff,
+            git::git_stage,
+            git::git_unstage,
+            git::git_stage_all,
+            git::git_branches,
+            git::git_checkout,
+            git::git_log,
+            git::git_show,
+            git::git_file_at,
+            git::git_commit_files,
+            git::git_commit,
+            git::git_push,
+            git::git_pull,
+            git::git_ai_commit,
+            git::pr_open,
         ])
         .run(tauri::generate_context!())
         .expect("error while running sikemux");

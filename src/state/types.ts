@@ -1,17 +1,18 @@
-// Session -> Window -> Pane tree, mirroring the tmux/sesh model.
+// Session -> Window -> Pane tree. A project also owns a list of Agents.
 
 export type SplitDir = "row" | "column"; // row = side-by-side, column = stacked
 
-// A leaf in a window's layout tree. One pane == one terminal.
+export type PaneKind = "terminal" | "editor" | "git";
+
 export interface PaneNode {
   type: "pane";
   id: string;
   cwd: string;
+  kind: PaneKind;
   title: string;
-  startup?: string; // command run in the pane once the shell is ready
+  startup?: string;
 }
 
-// An n-ary split. `sizes` are fractions of the split's axis, summing to 1.
 export interface SplitNode {
   type: "split";
   id: string;
@@ -27,12 +28,27 @@ export interface WinTab {
   name: string;
   root: LayoutNode;
   activePaneId: string;
+  fixed?: boolean;
 }
 
 export type SessionKind = "project" | "command";
 
+export type AgentType = "claude" | "codex" | "hermes";
+export const AGENT_TYPES: AgentType[] = ["claude", "codex", "hermes"];
+
+// A coding agent owned by a project — a CLI running in the project's cwd.
+export interface Agent {
+  id: string;
+  type: AgentType;
+  title: string; // display name — the type, or a resumed conversation's title
+  startup: string; // the CLI command run in the agent's terminal
+}
+
 export type Env = "dev" | "staging" | "preprod" | "production";
 export const ENVS: Env[] = ["dev", "staging", "preprod", "production"];
+
+// What the stage shows for a session: its window grid, or an agent terminal.
+export type SessionView = "windows" | "agent";
 
 export interface Session {
   id: string;
@@ -40,11 +56,29 @@ export interface Session {
   kind: SessionKind;
   cwd: string;
   env: Env;
+  pinned: boolean; // superpinned — lifted into the global strip
   windows: WinTab[];
   activeWindowId: string;
+  agents: Agent[]; // project sessions; empty for command
+  activeAgentId: string | null;
+  view: SessionView;
 }
 
-// Geometry, all in 0..1 fractions of the window area.
+export interface RecentEntry {
+  kind: SessionKind;
+  name: string;
+  cwd: string;
+}
+
+export interface WorkspaceSnapshot {
+  version: number;
+  sessions: Session[];
+  activeSessionId: string;
+  recent: RecentEntry[];
+  leftRailOpen: boolean;
+  rightRailOpen: boolean;
+}
+
 export interface Rect {
   x: number;
   y: number;
@@ -52,13 +86,12 @@ export interface Rect {
   h: number;
 }
 
-// A draggable boundary between two children of a split.
 export interface Divider {
   splitId: string;
-  index: number; // boundary sits after children[index]
+  index: number;
   dir: SplitDir;
-  rect: Rect; // the owning split's rect
-  at: number; // boundary position within the split, 0..1
+  rect: Rect;
+  at: number;
 }
 
 export type FocusDir = "left" | "right" | "up" | "down";

@@ -8,8 +8,7 @@ type Item =
   | { kind: "session"; id: string; name: string; sub: string; sk: SessionKind }
   | { kind: "dir"; path: string; name: string; sub: string };
 
-const basename = (p: string) =>
-  p.replace(/\/+$/, "").split("/").pop() || p;
+const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 // Subsequence fuzzy match. Returns a score (lower = better) or -1 for no match.
 function fuzzy(query: string, text: string): number {
@@ -22,7 +21,7 @@ function fuzzy(query: string, text: string): number {
   for (let qi = 0; qi < q.length; qi++) {
     const found = t.indexOf(q[qi], ti);
     if (found === -1) return -1;
-    score += found - prev === 1 ? 0 : found; // reward contiguous runs
+    score += found - prev === 1 ? 0 : found;
     prev = found;
     ti = found + 1;
   }
@@ -52,7 +51,6 @@ export function SeshPicker() {
     home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 
   const items = useMemo<Item[]>(() => {
-    const open = new Set(sessions.map((s) => s.cwd).filter(Boolean));
     const sessionItems: Item[] = sessions.map((s) => ({
       kind: "session",
       id: s.id,
@@ -60,14 +58,12 @@ export function SeshPicker() {
       sub: s.kind === "project" ? pretty(s.cwd) : "command session",
       sk: s.kind,
     }));
+    const open = new Set(sessions.map((s) => s.cwd).filter(Boolean));
     const dirItems: Item[] = dirs
       .filter((d) => !open.has(d))
       .map((d) => ({ kind: "dir", path: d, name: basename(d), sub: pretty(d) }));
 
-    const rank = (it: Item) => {
-      const s = fuzzy(query, `${it.name} ${it.sub}`);
-      return s;
-    };
+    const rank = (it: Item) => fuzzy(query, `${it.name} ${it.sub}`);
     const keep = (it: Item) => rank(it) >= 0;
     const order = (a: Item, b: Item) => rank(a) - rank(b);
 
@@ -106,7 +102,6 @@ export function SeshPicker() {
     }
   };
 
-  // Index where the "project" group starts, for the group label.
   const firstDir = items.findIndex((it) => it.kind === "dir");
 
   return (
@@ -117,7 +112,7 @@ export function SeshPicker() {
           <input
             ref={inputRef}
             className="picker-input"
-            placeholder="jump to a session or project…"
+            placeholder="jump to a session or open a project…"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -130,12 +125,9 @@ export function SeshPicker() {
         </div>
 
         <div className="picker-list">
-          {items.length === 0 && (
-            <div className="picker-empty">no matches</div>
-          )}
+          {items.length === 0 && <div className="picker-empty">no matches</div>}
           {items.map((it, i) => {
-            const label =
-              i === 0 && it.kind === "session" ? "Open" : null;
+            const label = i === 0 && it.kind === "session" ? "Open" : null;
             const dirLabel = i === firstDir && firstDir >= 0 ? "Projects" : null;
             return (
               <div key={it.kind === "session" ? it.id : it.path}>
@@ -148,9 +140,7 @@ export function SeshPicker() {
                 >
                   <span
                     className={`picker-icon ${
-                      it.kind === "dir"
-                        ? "project"
-                        : it.sk
+                      it.kind === "dir" ? "project" : it.sk
                     }`}
                   >
                     {it.kind === "dir" || it.sk === "project" ? (
