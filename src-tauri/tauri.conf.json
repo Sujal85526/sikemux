@@ -13,10 +13,13 @@
     "windows": [
       {
         "title": "sikemux",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 640,
-        "minHeight": 400
+        "width": 1340,
+        "height": 880,
+        "minWidth": 860,
+        "minHeight": 540,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#0c0b10"
       }
     ],
     "security": {

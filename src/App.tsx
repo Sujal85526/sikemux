@@ -1,12 +1,37 @@
-import { TerminalPane } from "./terminal/TerminalPane";
+import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { TopBar } from "./components/TopBar";
+import { SideRail } from "./components/SideRail";
+import { ContextRail } from "./components/ContextRail";
+import { SeshPicker } from "./components/SeshPicker";
+import { Workspace } from "./components/Workspace";
+import { useKeymap } from "./keymap";
+import { useWorkspace } from "./state/workspace";
 
-// Milestone 1, slice 1: a single full-window terminal pane wired end-to-end
-// (Rust PTY -> binary Channel -> Xterm.js WebGL). The window/pane layout,
-// status bar and sesh picker build on top of this.
 export default function App() {
+  useKeymap();
+  const leftOpen = useWorkspace((s) => s.leftRailOpen);
+  const rightOpen = useWorkspace((s) => s.rightRailOpen);
+  const pickerOpen = useWorkspace((s) => s.pickerOpen);
+  const setHome = useWorkspace((s) => s.setHome);
+
+  useEffect(() => {
+    invoke<string>("home_dir")
+      .then(setHome)
+      .catch(() => {});
+  }, [setHome]);
+
   return (
-    <div className="app">
-      <TerminalPane />
+    <div className="shell">
+      <TopBar />
+      <div className="body">
+        {leftOpen && <SideRail />}
+        <main className="stage">
+          <Workspace />
+        </main>
+        {rightOpen && <ContextRail />}
+      </div>
+      {pickerOpen && <SeshPicker />}
     </div>
   );
 }

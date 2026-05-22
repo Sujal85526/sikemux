@@ -6,12 +6,21 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import "@xterm/xterm/css/xterm.css";
 import { auraXterm } from "../theme";
 
-// PERF: the terminal is mounted imperatively and lives entirely outside
-// React's render tree. React never re-renders this subtree — only chrome.
-// PTY bytes arrive over a Channel (Rust never goes through the JSON event
-// bus) and the WebGL addon paints the grid on the GPU.
-export function TerminalPane({ cwd }: { cwd?: string }) {
+// PERF: the terminal is mounted imperatively and lives outside React's render
+// tree. React never re-renders this subtree. PTY bytes arrive over a Channel
+// (never the JSON event bus) and the WebGL addon paints the grid on the GPU.
+// The component mounts once per pane id and is repositioned, never remounted.
+export function TerminalPane({
+  cwd,
+  startup,
+  active,
+}: {
+  cwd?: string;
+  startup?: string;
+  active: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -34,6 +43,7 @@ export function TerminalPane({ cwd }: { cwd?: string }) {
       // WebGL unavailable — Xterm falls back to its canvas renderer.
     }
     fit.fit();
+    termRef.current = term;
 
     let ptyId: number | null = null;
     let disposed = false;
@@ -59,13 +69,23 @@ export function TerminalPane({ cwd }: { cwd?: string }) {
         return;
       }
       ptyId = id;
+      // Run the pane's startup command once the shell has settled.
+      if (startup) {
+        window.setTimeout(() => {
+          if (!disposed && ptyId !== null) {
+            void invoke("pty_write", { id: ptyId, data: `${startup}\r` });
+          }
+        }, 350);
+      }
     });
 
     const dataSub = term.onData((data) => {
       if (ptyId !== null) void invoke("pty_write", { id: ptyId, data });
     });
 
+    // The pane is repositioned on every split/resize; refit + tell the PTY.
     const resize = () => {
+      if (host.clientWidth === 0 || host.clientHeight === 0) return;
       fit.fit();
       if (ptyId !== null) {
         void invoke("pty_resize", { id: ptyId, cols: term.cols, rows: term.rows });
@@ -74,16 +94,21 @@ export function TerminalPane({ cwd }: { cwd?: string }) {
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    term.focus();
-
     return () => {
       disposed = true;
       ro.disconnect();
       dataSub.dispose();
       if (ptyId !== null) void invoke("pty_kill", { id: ptyId });
       term.dispose();
+      termRef.current = null;
     };
-  }, [cwd]);
+    // Mount once: cwd/startup are captured at spawn and never change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  return <div ref={hostRef} className="terminal-pane" />;
+  useEffect(() => {
+    if (active) termRef.current?.focus();
+  }, [active]);
+
+  return <div ref={hostRef} className="terminal-host" />;
 }

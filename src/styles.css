@@ -1,3 +1,31 @@
+/* ============================================================
+   sikemux — precision instrument. Aura palette, all-monospace.
+   ============================================================ */
+
+:root {
+  --void: #0c0b10;
+  --rail: #121119;
+  --rail-2: #17161f;
+  --pane: #15141b;
+  --line: #242130;
+  --line-soft: #1c1a26;
+
+  --ink: #e7e5ef;
+  --ink-dim: #8b8898;
+  --ink-faint: #565461;
+
+  --acc: #a277ff;
+  --acc-soft: rgba(162, 119, 255, 0.13);
+  --acc-line: rgba(162, 119, 255, 0.32);
+  --live: #61ffca;
+  --warn: #ffca85;
+  --cmd: #ff6ac1;
+  --danger: #ff6767;
+
+  --mono: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace,
+    "SF Mono", Menlo, monospace;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -12,26 +40,773 @@ body,
 }
 
 body {
-  background: #15141b;
-  color: #edecee;
-  font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.45;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
 }
 
-.app {
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--acc-soft);
+}
+
+/* thin scrollbars */
+.rail-scroll::-webkit-scrollbar,
+.picker-list::-webkit-scrollbar {
+  width: 8px;
+}
+.rail-scroll::-webkit-scrollbar-thumb,
+.picker-list::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* micro label — uppercase, tracked */
+.rail-label,
+.rail-group-label,
+.ctx-label,
+.picker-group {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* key cap */
+.kbd {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  background: var(--rail-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   shell
+   ============================================================ */
+.shell {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
+  background: var(--void);
 }
 
-.terminal-pane {
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.stage {
+  position: relative;
   flex: 1;
   min-width: 0;
-  min-height: 0;
-  padding: 8px;
+  background: var(--void);
 }
 
-.terminal-pane .xterm {
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    900px 420px at 18% 0%,
+    rgba(162, 119, 255, 0.07),
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ============================================================
+   top bar
+   ============================================================ */
+.top-bar {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  flex: 0 0 auto;
+  background: var(--rail);
+  border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 5;
+  animation: fadeDown 0.4s ease backwards;
+}
+
+.tb-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-left: 80px; /* clear the macOS traffic lights */
+  width: 238px;
+  flex: 0 0 auto;
+}
+
+.brand-mark {
+  color: var(--acc);
+  display: flex;
+  filter: drop-shadow(0 0 6px rgba(162, 119, 255, 0.4));
+}
+
+.brand-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+.brand-dim {
+  color: var(--ink-faint);
+}
+
+.tb-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--rail-2);
+}
+.crumb-kind {
+  color: var(--ink-faint);
+  display: flex;
+}
+.crumb-session {
+  color: var(--ink);
+  font-weight: 600;
+}
+.crumb-sep {
+  color: var(--ink-faint);
+}
+.crumb-win {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--acc);
+}
+
+.tb-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 238px;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-right: 14px;
+}
+
+.zoom-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+  border: 1px solid rgba(255, 202, 133, 0.3);
+  border-radius: 5px;
+  padding: 2px 7px;
+}
+
+.tb-clock {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.tb-colon {
+  animation: blink 2s steps(1) infinite;
+}
+
+.tb-toggles {
+  display: flex;
+  gap: 2px;
+}
+.tb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--ink-faint);
+  transition: color 0.12s, background 0.12s;
+}
+.tb-btn:hover {
+  color: var(--ink-dim);
+  background: var(--rail-2);
+}
+.tb-btn.on {
+  color: var(--acc);
+}
+
+/* ============================================================
+   rails (shared)
+   ============================================================ */
+.side-rail,
+.context-rail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  background: var(--rail);
+  overflow: hidden;
+}
+.side-rail {
+  width: 238px;
+  border-right: 1px solid var(--line);
+  animation: slideL 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+.context-rail {
+  width: 252px;
+  border-left: 1px solid var(--line);
+  animation: slideR 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  padding: 0 14px;
+  flex: 0 0 auto;
+}
+
+.rail-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--ink-faint);
+  transition: color 0.12s, background 0.12s;
+}
+.rail-add:hover {
+  color: var(--acc);
+  background: var(--acc-soft);
+}
+
+.rail-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+}
+
+/* ============================================================
+   side rail — sessions + windows
+   ============================================================ */
+.rail-group {
+  margin-top: 10px;
+}
+.rail-group-label {
+  padding: 4px 8px 6px;
+}
+
+.sess-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--ink-dim);
+  position: relative;
+  transition: background 0.12s, color 0.12s;
+  animation: rowIn 0.3s ease backwards;
+}
+.sess-row:hover {
+  background: var(--rail-2);
+  color: var(--ink);
+}
+.sess-row.active {
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+.sess-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--acc);
+}
+
+.sess-icon {
+  display: flex;
+}
+.sess-icon.command {
+  color: var(--cmd);
+}
+.sess-icon.project {
+  color: var(--live);
+}
+
+.sess-name {
+  flex: 1;
+  text-align: left;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-count {
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.win-list {
+  margin: 2px 0 4px;
+}
+.win-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 27px;
+  padding: 0 10px 0 6px;
+  border-radius: 6px;
+  color: var(--ink-faint);
+  transition: background 0.12s, color 0.12s;
+  animation: rowIn 0.3s ease backwards;
+}
+.win-row:hover {
+  color: var(--ink-dim);
+  background: var(--rail-2);
+}
+.win-row.active {
+  color: var(--ink);
+}
+
+.win-rail {
+  width: 14px;
+  display: flex;
+  justify-content: center;
+}
+.win-tick {
+  width: 1.5px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.win-row.active .win-tick {
+  background: var(--acc);
+  box-shadow: 0 0 6px rgba(162, 119, 255, 0.7);
+}
+
+.win-icon {
+  display: flex;
+  color: inherit;
+}
+.win-row.active .win-icon {
+  color: var(--acc);
+}
+.win-name {
+  flex: 1;
+  text-align: left;
+}
+.win-index {
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.rail-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-faint);
+  font-size: 11px;
+  transition: color 0.12s;
+}
+.rail-foot:hover {
+  color: var(--ink-dim);
+}
+
+/* ============================================================
+   context rail
+   ============================================================ */
+.ctx-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.ctx-label {
+  margin-bottom: 11px;
+}
+
+.env-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.env-pill {
+  font-size: 11px;
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 9px;
+  transition: all 0.12s;
+}
+.env-pill:hover {
+  color: var(--ink);
+  border-color: var(--acc-line);
+}
+.env-pill.active {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: var(--void);
+  font-weight: 600;
+}
+
+.ctx-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 3px 0;
+}
+.ctx-k {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.ctx-v {
+  color: var(--ink);
+}
+.ctx-cwd {
+  margin-top: 9px;
+  font-size: 11px;
+  color: var(--live);
+  background: var(--void);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 6px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-clock {
+  font-size: 31px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  display: flex;
+  align-items: baseline;
+}
+.ctx-colon {
+  color: var(--ink-faint);
+  animation: blink 2s steps(1) infinite;
+}
+.ctx-secs {
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin-left: 6px;
+}
+.ctx-date {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.keys-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.keys-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.keys-desc {
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+
+/* ============================================================
+   pane grid
+   ============================================================ */
+.window-area {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+/* Inactive windows stay laid out and composited (visibility, not display) —
+   flipping `display` on a WebGL subtree mis-paints the whole WKWebView. */
+.window-layer {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+.window-layer.visible {
+  visibility: visible;
+}
+
+.pane-cell {
+  position: absolute;
+}
+
+.pane {
+  position: absolute;
+  inset: 5px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--pane);
+  overflow: hidden;
+  padding: 7px;
+  transition: border-color 0.13s ease, box-shadow 0.13s ease;
+  animation: paneIn 0.18s ease backwards;
+}
+.pane-active {
+  border-color: var(--acc-line);
+  box-shadow:
+    0 0 0 1px rgba(162, 119, 255, 0.16),
+    0 14px 46px -20px rgba(162, 119, 255, 0.6);
+}
+
+.terminal-host {
+  width: 100%;
   height: 100%;
+}
+.terminal-host .xterm {
+  height: 100%;
+}
+
+.divider {
+  position: absolute;
+  z-index: 10;
+}
+.divider-row {
+  width: 11px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+.divider-column {
+  height: 11px;
+  transform: translateY(-50%);
+  cursor: row-resize;
+}
+.divider::after {
+  content: "";
+  position: absolute;
+  background: var(--acc);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.divider-row::after {
+  left: 50%;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+}
+.divider-column::after {
+  top: 50%;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+}
+.divider:hover::after {
+  opacity: 0.55;
+}
+
+/* ============================================================
+   sesh picker
+   ============================================================ */
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 13vh;
+  background: rgba(8, 7, 12, 0.62);
+  backdrop-filter: blur(7px);
+  animation: fade 0.15s ease;
+}
+
+.picker {
+  width: 560px;
+  max-width: 86vw;
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--rail-2);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 30px 80px -30px rgba(0, 0, 0, 0.85);
+  overflow: hidden;
+  animation: pop 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.picker-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.picker-search-icon {
+  color: var(--ink-faint);
+}
+.picker-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+.picker-input::placeholder {
+  color: var(--ink-faint);
+}
+.picker-hint {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.picker-list {
+  overflow-y: auto;
+  padding: 8px;
+}
+.picker-group {
+  padding: 10px 10px 6px;
+}
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--ink-dim);
+}
+.picker-item.sel {
+  background: var(--acc-soft);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--acc-line);
+}
+.picker-icon {
+  display: flex;
+}
+.picker-icon.project {
+  color: var(--live);
+}
+.picker-icon.command {
+  color: var(--cmd);
+}
+.picker-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.picker-sub {
+  flex: 1;
+  text-align: right;
+  font-size: 11px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picker-empty {
+  padding: 28px;
+  text-align: center;
+  color: var(--ink-faint);
+}
+
+/* ============================================================
+   motion
+   ============================================================ */
+@keyframes fadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes slideL {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+}
+@keyframes slideR {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+}
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+@keyframes paneIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
 }
