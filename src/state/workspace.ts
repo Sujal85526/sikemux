@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   Agent,
+  AgentBookmark,
   AgentType,
   Env,
   FocusDir,
@@ -55,6 +56,7 @@ function makeAgent(type: AgentType, resumeId?: string, title?: string): Agent {
     type,
     title: title ?? type,
     startup: agentStartup(type, resumeId),
+    resumeId,
   };
 }
 
@@ -85,8 +87,10 @@ interface WorkspaceStore {
   sessions: Session[];
   activeSessionId: string;
   recent: RecentEntry[];
+  agentBookmarks: AgentBookmark[];
   zoomedPaneId: string | null;
   pickerOpen: boolean;
+  agentPaletteOpen: boolean;
   leftRailOpen: boolean;
   rightRailOpen: boolean;
   home: string;
@@ -98,6 +102,8 @@ interface WorkspaceStore {
   requestOpenFile: (path: string) => void;
   openPicker: () => void;
   closePicker: () => void;
+  openAgentPalette: () => void;
+  closeAgentPalette: () => void;
   toggleLeftRail: () => void;
   toggleRightRail: () => void;
 
@@ -128,6 +134,7 @@ interface WorkspaceStore {
   cycleSession: (delta: number) => void;
   togglePin: (id: string) => void;
   reopenRecent: (entry: RecentEntry) => void;
+  toggleAgentBookmark: (b: AgentBookmark) => void;
   setEnv: (env: Env) => void;
 }
 
@@ -162,8 +169,10 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
   return {
     ...initialSessions(),
     recent: [],
+    agentBookmarks: [],
     zoomedPaneId: null,
     pickerOpen: false,
+    agentPaletteOpen: false,
     leftRailOpen: true,
     rightRailOpen: true,
     home: "",
@@ -184,6 +193,7 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
           sessions: snap.sessions,
           activeSessionId,
           recent: snap.recent ?? [],
+          agentBookmarks: snap.agentBookmarks ?? [],
           leftRailOpen: snap.leftRailOpen ?? st.leftRailOpen,
           rightRailOpen: snap.rightRailOpen ?? st.rightRailOpen,
         };
@@ -208,6 +218,8 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
 
     openPicker: () => set({ pickerOpen: true }),
     closePicker: () => set({ pickerOpen: false }),
+    openAgentPalette: () => set({ agentPaletteOpen: true }),
+    closeAgentPalette: () => set({ agentPaletteOpen: false }),
     toggleLeftRail: () => set((st) => ({ leftRailOpen: !st.leftRailOpen })),
     toggleRightRail: () => set((st) => ({ rightRailOpen: !st.rightRailOpen })),
 
@@ -405,6 +417,20 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
       set((st) => {
         const s = activeSession(st);
         if (s.kind !== "project") return {};
+        // Already open? Focus it instead of spawning a duplicate terminal.
+        const existing = resumeId
+          ? s.agents.find((a) => a.type === type && a.resumeId === resumeId)
+          : undefined;
+        if (existing) {
+          return {
+            zoomedPaneId: null,
+            sessions: patchSession(st, s.id, (x) => ({
+              ...x,
+              activeAgentId: existing.id,
+              view: "agent",
+            })),
+          };
+        }
         const agent = makeAgent(type, resumeId, title);
         return {
           zoomedPaneId: null,
@@ -542,6 +568,20 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
       get().createProjectSession(entry.cwd);
       set((st) => ({ recent: st.recent.filter((r) => r.cwd !== entry.cwd) }));
     },
+
+    toggleAgentBookmark: (b) =>
+      set((st) => {
+        const has = st.agentBookmarks.some(
+          (x) => x.type === b.type && x.id === b.id,
+        );
+        return {
+          agentBookmarks: has
+            ? st.agentBookmarks.filter(
+                (x) => !(x.type === b.type && x.id === b.id),
+              )
+            : [b, ...st.agentBookmarks],
+        };
+      }),
 
     setEnv: (env) =>
       set((st) => ({

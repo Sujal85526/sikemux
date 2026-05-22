@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
+import { AgentPalette } from "./components/AgentPalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { Workspace } from "./components/Workspace";
 import { useKeymap } from "./keymap";
@@ -14,6 +15,7 @@ export default function App() {
   const leftOpen = useWorkspace((s) => s.leftRailOpen);
   const rightOpen = useWorkspace((s) => s.rightRailOpen);
   const pickerOpen = useWorkspace((s) => s.pickerOpen);
+  const agentPaletteOpen = useWorkspace((s) => s.agentPaletteOpen);
   const setHome = useWorkspace((s) => s.setHome);
 
   useEffect(() => {
@@ -39,6 +41,7 @@ export default function App() {
         {rightOpen && <AgentRail />}
       </div>
       {pickerOpen && <SeshPicker />}
+      {agentPaletteOpen && <AgentPalette />}
     </div>
   );
 }

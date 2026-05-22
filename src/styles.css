@@ -608,6 +608,10 @@ button {
   background: var(--pane);
   overflow: hidden;
 }
+/* terminals get slight breathing room; editor/git stay flush */
+.pane-terminal {
+  padding: 6px;
+}
 
 .terminal-host {
   width: 100%;
@@ -739,6 +743,7 @@ button {
   padding: 0 12px;
   border-radius: 0;
   color: var(--ink-dim);
+  text-align: left;
 }
 .picker-item.sel {
   background: var(--acc-soft);
@@ -755,16 +760,19 @@ button {
   color: var(--cmd);
 }
 .picker-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 600;
   color: var(--ink);
 }
 .picker-sub {
-  flex: 1;
+  flex: 0 0 auto;
   text-align: right;
   font-size: 11px;
   color: var(--ink-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .picker-empty {
@@ -992,9 +1000,7 @@ button {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-right: 7px;
-  border-right: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line);
 }
 
 .git-status-bar {
@@ -1041,7 +1047,7 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   border-radius: 0;
   overflow: hidden;
   background: transparent;
@@ -1599,7 +1605,8 @@ button {
 .agent-pills {
   display: flex;
   gap: 4px;
-  padding: 8px 12px 6px;
+  margin-top: 14px;
+  padding: 0 2px 10px;
 }
 .agent-pill {
   flex: 1;
@@ -1675,4 +1682,37 @@ button {
   font-size: 10px;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
+}
+
+/* bookmark toggle on agent session rows */
+.agent-bm {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.agent-row:hover .agent-bm {
+  opacity: 1;
+}
+.agent-bm:hover {
+  color: var(--acc);
+}
+.agent-bm.on {
+  opacity: 1;
+  color: var(--acc);
+}
+
+/* sessions group header — label + inline new-agent button */
+.agent-sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 4px;
+}
+
+.agent-head-actions {
+  display: flex;
+  gap: 2px;
 }

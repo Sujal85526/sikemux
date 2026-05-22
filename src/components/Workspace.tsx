@@ -68,7 +68,7 @@ function AgentLayer({
         className="pane-cell"
         style={{ left: 0, top: 0, width: "100%", height: "100%" }}
       >
-        <div className="pane pane-active">
+        <div className="pane pane-terminal">
           <TerminalPane
             cwd={session.cwd || undefined}
             startup={agent.startup}
@@ -118,7 +118,7 @@ function WindowLayer({
             }}
           >
             <div
-              className={`pane${isActive ? " pane-active" : ""}`}
+              className={`pane pane-${p.kind}`}
               onMouseDown={() => visible && focusPane(p.id)}
             >
               {p.kind === "editor" ? (

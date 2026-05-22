@@ -14,6 +14,7 @@ function snapshot(): string {
     sessions: s.sessions,
     activeSessionId: s.activeSessionId,
     recent: s.recent,
+    agentBookmarks: s.agentBookmarks,
     leftRailOpen: s.leftRailOpen,
     rightRailOpen: s.rightRailOpen,
   };

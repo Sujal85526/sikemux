@@ -42,6 +42,7 @@ export interface Agent {
   type: AgentType;
   title: string; // display name — the type, or a resumed conversation's title
   startup: string; // the CLI command run in the agent's terminal
+  resumeId?: string; // the on-disk session id this agent resumes, if any
 }
 
 export type Env = "dev" | "staging" | "preprod" | "production";
@@ -70,11 +71,19 @@ export interface RecentEntry {
   cwd: string;
 }
 
+// A bookmarked on-disk agent conversation — favourited for fast resume.
+export interface AgentBookmark {
+  type: AgentType;
+  id: string;
+  title: string;
+}
+
 export interface WorkspaceSnapshot {
   version: number;
   sessions: Session[];
   activeSessionId: string;
   recent: RecentEntry[];
+  agentBookmarks: AgentBookmark[];
   leftRailOpen: boolean;
   rightRailOpen: boolean;
 }
