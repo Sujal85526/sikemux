@@ -1,0 +1,37 @@
+// Aura — the user's terminal theme, mirrored from ~/.config (ghostty/tmux/nvim).
+export const aura = {
+  bg: "#15141b",
+  fg: "#edecee",
+  purple: "#a277ff",
+  green: "#61ffca",
+  mint: "#c4a8ff",
+  pink: "#ff6ac1",
+  red: "#ff6767",
+  orange: "#ffca85",
+  comment: "#6d6d6d",
+  selection: "#3d375e",
+} as const;
+
+export const auraXterm = {
+  background: aura.bg,
+  foreground: aura.fg,
+  cursor: aura.purple,
+  cursorAccent: aura.bg,
+  selectionBackground: aura.selection,
+  black: "#110f18",
+  red: aura.red,
+  green: aura.green,
+  yellow: aura.orange,
+  blue: aura.purple,
+  magenta: aura.pink,
+  cyan: aura.green,
+  white: aura.fg,
+  brightBlack: aura.comment,
+  brightRed: aura.red,
+  brightGreen: aura.green,
+  brightYellow: aura.orange,
+  brightBlue: aura.purple,
+  brightMagenta: aura.pink,
+  brightCyan: aura.green,
+  brightWhite: "#ffffff",
+};
