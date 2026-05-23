@@ -342,41 +342,42 @@ button {
    side rail — sessions + windows
    ============================================================ */
 .rail-group {
-  margin-top: 10px;
+  margin-top: 14px;
+}
+.rail-group:first-child {
+  margin-top: 0;
 }
 .rail-group-label {
-  padding: 4px 8px 6px;
+  padding: 4px 10px 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
 }
 
 .sess-row {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   width: 100%;
-  height: 32px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 8px 0 4px;
   border-radius: 0;
   color: var(--ink-dim);
   position: relative;
   transition: background 0.12s, color 0.12s;
-  animation: rowIn 0.3s ease backwards;
 }
 .sess-row:hover {
-  background: var(--rail-2);
   color: var(--ink);
 }
 .sess-row.active {
-  background: var(--acc-soft);
   color: var(--ink);
 }
 .sess-row.active::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 7px;
-  bottom: 7px;
-  width: 2.5px;
-  border-radius: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
   background: var(--acc);
 }
 
@@ -393,54 +394,52 @@ button {
 .sess-name {
   flex: 1;
   text-align: left;
-  font-weight: 600;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sess-count {
-  font-size: 10px;
-  color: var(--ink-faint);
-  font-variant-numeric: tabular-nums;
+.sess-row.active .sess-name {
+  font-weight: 600;
 }
 
+/* expanded windows under a project — single quiet guide line, no per-row ticks */
 .win-list {
-  margin: 2px 0 4px;
+  margin: 1px 0 6px;
+  position: relative;
+}
+.win-list::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: 0;
+  bottom: 4px;
+  width: 1px;
+  background: var(--line-soft);
+  pointer-events: none;
 }
 .win-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   width: 100%;
-  height: 27px;
-  padding: 0 10px 0 6px;
+  height: 24px;
+  padding: 0 10px 0 32px;
   border-radius: 0;
   color: var(--ink-faint);
   transition: background 0.12s, color 0.12s;
-  animation: rowIn 0.3s ease backwards;
 }
 .win-row:hover {
   color: var(--ink-dim);
-  background: var(--rail-2);
 }
 .win-row.active {
   color: var(--ink);
 }
 
-.win-rail {
-  width: 14px;
-  display: flex;
-  justify-content: center;
-}
+/* the per-row tick + rail slot are gone — handled by the single guide */
+.win-rail,
 .win-tick {
-  width: 1.5px;
-  height: 14px;
-  border-radius: 0;
-  background: var(--line);
-}
-.win-row.active .win-tick {
-  background: var(--acc);
-  box-shadow: 0 0 6px rgba(162, 119, 255, 0.7);
+  display: none;
 }
 
 .win-icon {
@@ -457,6 +456,13 @@ button {
 .win-index {
   font-size: 10px;
   color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.win-row:hover .win-index,
+.win-row.active .win-index {
+  opacity: 0.6;
 }
 
 .rail-foot {
