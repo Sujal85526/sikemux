@@ -10,7 +10,10 @@ import {
 } from "../api/git";
 import { useWorkspace } from "../state/workspace";
 import { CommitReview } from "./CommitReview";
+import { FileIcon } from "./FileIcon";
 import { MergeReview } from "./MergeReview";
+
+const basenameOf = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 type Panel = "files" | "branches" | "commits";
 type RightView =
@@ -59,6 +62,18 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
   }, [refresh]);
   useEffect(() => {
     if (active) void refresh();
+  }, [active, refresh]);
+  // Live: refresh when any file is saved in the editor (store nonce bumps).
+  const gitRefreshN = useWorkspace((s) => s.gitRefreshN);
+  useEffect(() => {
+    void refresh();
+  }, [gitRefreshN, refresh]);
+  // Polling fallback for external changes (other editors, agents, etc.) —
+  // only while the git pane is the visible window.
+  useEffect(() => {
+    if (!active) return;
+    const id = window.setInterval(() => void refresh(), 3000);
+    return () => window.clearInterval(id);
   }, [active, refresh]);
   useEffect(() => {
     if (commitMode) commitInputRef.current?.focus();
@@ -265,11 +280,12 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
               }}
             >
               <span className={`gf-x${isStaged(f) ? " on" : ""}`}>
-                {f.index === " " ? "·" : f.index}
+                {f.index.trim()}
               </span>
               <span className={`gf-y${hasUnstaged(f) ? " on" : ""}`}>
-                {f.worktree === " " ? "·" : f.worktree}
+                {f.worktree.trim()}
               </span>
+              <FileIcon name={basenameOf(f.path)} size={14} />
               <span className="git-path">{f.path}</span>
             </div>
           ))}

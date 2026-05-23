@@ -91,19 +91,40 @@ interface WorkspaceStore {
   zoomedPaneId: string | null;
   pickerOpen: boolean;
   agentPaletteOpen: boolean;
+  lspResults: {
+    title: string;
+    project: string;
+    results: { uri: string; line: number; character: number }[];
+  } | null;
   leftRailOpen: boolean;
   rightRailOpen: boolean;
   home: string;
-  openRequest: { path: string; n: number } | null;
+  openRequest: {
+    path: string;
+    line?: number;
+    character?: number;
+    n: number;
+  } | null;
   agentFocusN: number;
+  gitRefreshN: number;
 
   setHome: (home: string) => void;
   hydrate: (snap: WorkspaceSnapshot) => void;
-  requestOpenFile: (path: string) => void;
+  requestOpenFile: (
+    path: string,
+    line?: number,
+    character?: number,
+  ) => void;
   openPicker: () => void;
   closePicker: () => void;
   openAgentPalette: () => void;
   closeAgentPalette: () => void;
+  openLspResults: (
+    title: string,
+    project: string,
+    results: { uri: string; line: number; character: number }[],
+  ) => void;
+  closeLspResults: () => void;
   toggleLeftRail: () => void;
   toggleRightRail: () => void;
 
@@ -136,6 +157,7 @@ interface WorkspaceStore {
   reopenRecent: (entry: RecentEntry) => void;
   toggleAgentBookmark: (b: AgentBookmark) => void;
   openAgentBookmark: (b: AgentBookmark) => void;
+  bumpGitRefresh: () => void;
   setEnv: (env: Env) => void;
 }
 
@@ -174,11 +196,13 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
     zoomedPaneId: null,
     pickerOpen: false,
     agentPaletteOpen: false,
+    lspResults: null,
     leftRailOpen: true,
     rightRailOpen: true,
     home: "",
     openRequest: null,
     agentFocusN: 0,
+    gitRefreshN: 0,
 
     setHome: (home) => set({ home }),
 
@@ -207,12 +231,17 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
         };
       }),
 
-    requestOpenFile: (path) =>
+    requestOpenFile: (path, line, character) =>
       set((st) => {
         const s = activeSession(st);
         const filesWin = s.windows.find((w) => w.name === "files");
         return {
-          openRequest: { path, n: (st.openRequest?.n ?? 0) + 1 },
+          openRequest: {
+            path,
+            line,
+            character,
+            n: (st.openRequest?.n ?? 0) + 1,
+          },
           zoomedPaneId: null,
           sessions: filesWin
             ? patchSession(st, s.id, (x) => ({
@@ -228,6 +257,9 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
     closePicker: () => set({ pickerOpen: false }),
     openAgentPalette: () => set({ agentPaletteOpen: true }),
     closeAgentPalette: () => set({ agentPaletteOpen: false }),
+    openLspResults: (title, project, results) =>
+      set({ lspResults: { title, project, results } }),
+    closeLspResults: () => set({ lspResults: null }),
     toggleLeftRail: () => set((st) => ({ leftRailOpen: !st.leftRailOpen })),
     toggleRightRail: () => set((st) => ({ rightRailOpen: !st.rightRailOpen })),
 
@@ -669,6 +701,8 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
       if (isFreshBookmark) get().addAgent(b.type);
       else get().addAgent(b.type, b.id, b.title);
     },
+
+    bumpGitRefresh: () => set((st) => ({ gitRefreshN: st.gitRefreshN + 1 })),
 
     setEnv: (env) =>
       set((st) => ({

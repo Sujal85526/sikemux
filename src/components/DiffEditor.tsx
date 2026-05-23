@@ -50,10 +50,17 @@ export function DiffEditor({
       ]);
       if (cancelled || !hostRef.current) return;
 
+      // Syntax highlighting parses the whole document — skip it for huge
+      // files where it's unreadable anyway and costs noticeable time.
+      const HIGHLIGHT_LIMIT = 2000;
+      const lines = Math.max(
+        countLines(base),
+        countLines(head),
+      );
       const exts: Extension[] = [
         basicSetup,
         auraExtensions,
-        ...languageFor(path),
+        ...(lines > HIGHLIGHT_LIMIT ? [] : languageFor(path)),
         unifiedMergeView({
           original: base,
           mergeControls: editable,
@@ -87,4 +94,10 @@ export function DiffEditor({
   }, [repo, path, baseRev, headRev, editable, autoHeight, onSaved]);
 
   return <div className={`diff-editor${autoHeight ? " auto" : ""}`} ref={hostRef} />;
+}
+
+function countLines(s: string): number {
+  let n = 1;
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
+  return n;
 }

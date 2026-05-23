@@ -1,6 +1,7 @@
 mod agents;
 mod fs;
 mod git;
+mod lsp;
 mod pty;
 mod state;
 mod system;
@@ -39,6 +40,12 @@ pub fn run() {
             git::git_pull,
             git::git_ai_commit,
             git::pr_open,
+            lsp::lsp_start,
+            lsp::lsp_open,
+            lsp::lsp_change,
+            lsp::lsp_definition,
+            lsp::lsp_implementation,
+            lsp::lsp_references,
         ])
         .run(tauri::generate_context!())
         .expect("error while running sikemux");

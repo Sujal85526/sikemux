@@ -206,10 +206,50 @@ pub fn git_show(repo: String, rev: String) -> Result<String, String> {
 
 // File content at a revision (e.g. HEAD). Empty string if the file did not
 // exist there — so a new file shows as all-additions in the merge view.
+//
+// Commit hashes are content-addressed and immutable, so we cache content keyed
+// by (repo, rev, path). Moving refs like HEAD / branch names skip the cache.
 #[tauri::command]
 pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
+    let cacheable = is_immutable_rev(&rev);
+    let key = (repo.clone(), rev.clone(), path.clone());
+    if cacheable {
+        if let Some(hit) = file_at_cache().lock().ok().and_then(|c| c.get(&key).cloned())
+        {
+            return Ok(hit);
+        }
+    }
     let (ok, so, _) = run_git(&repo, &["show", &format!("{rev}:{path}")])?;
-    Ok(if ok { so } else { String::new() })
+    let content = if ok { so } else { String::new() };
+    if cacheable {
+        if let Ok(mut cache) = file_at_cache().lock() {
+            if cache.len() > 500 {
+                cache.clear();
+            }
+            cache.insert(key, content.clone());
+        }
+    }
+    Ok(content)
+}
+
+fn file_at_cache(
+) -> &'static std::sync::Mutex<std::collections::HashMap<(String, String, String), String>>
+{
+    static C: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<(String, String, String), String>>,
+    > = std::sync::OnceLock::new();
+    C.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+// A rev is safe to cache when it resolves to a fixed commit — i.e. a sha
+// (optionally followed by ~N / ^N parent navigation). Names like HEAD or
+// branch refs are skipped because they move.
+fn is_immutable_rev(rev: &str) -> bool {
+    let head = rev
+        .split(|c| c == '~' || c == '^')
+        .next()
+        .unwrap_or(rev);
+    head.len() >= 7 && head.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 // Paths changed by a commit (or branch tip).

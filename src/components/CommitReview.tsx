@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { git } from "../api/git";
 import { DiffEditor } from "./DiffEditor";
-import { IconChevron, IconFile } from "./Icons";
+import { IconChevron } from "./Icons";
+import { FileIcon } from "./FileIcon";
+
+const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 // A commit (or branch tip) shown as a scrollable accordion of its changed
 // files. Each file collapses; clicking the filename opens it in the editor.
@@ -22,11 +25,18 @@ export function CommitReview({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setCollapsed(new Set());
     git
       .commitFiles(repo, rev)
-      .then(setFiles)
-      .catch(() => setFiles([]));
+      .then((fs) => {
+        setFiles(fs);
+        // Start with every file collapsed — diff editors are heavy to mount,
+        // so we let the user open the ones they actually care about.
+        setCollapsed(new Set(fs));
+      })
+      .catch(() => {
+        setFiles([]);
+        setCollapsed(new Set());
+      });
   }, [repo, rev]);
 
   const toggle = (f: string) =>
@@ -63,7 +73,7 @@ export function CommitReview({
                   onClick={() => onOpenFile(`${repo}/${f}`)}
                   title="Open in editor"
                 >
-                  <IconFile size={12} />
+                  <FileIcon name={basename(f)} size={15} />
                   <span>{f}</span>
                 </button>
               </div>

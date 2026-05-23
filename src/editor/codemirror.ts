@@ -35,6 +35,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
+import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 
 // Picks CodeMirror language support from a file name. Filename-based languages
 // (Makefile, Dockerfile) are matched first, then by extension.
@@ -176,6 +177,7 @@ const auraHighlight = HighlightStyle.define([
 export const auraExtensions: Extension = [
   auraTheme,
   syntaxHighlighting(auraHighlight),
+  indentationMarkers({ thickness: 1, colors: { light: "#242130", dark: "#242130", activeLight: "#3a3550", activeDark: "#3a3550" } }),
 ];
 
 // ---- diff viewer ----------------------------------------------------------

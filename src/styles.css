@@ -1123,9 +1123,11 @@ button {
 }
 .gf-x,
 .gf-y {
-  width: 9px;
+  width: 11px;
   text-align: center;
   color: var(--ink-faint);
+  font-weight: 700;
+  font-size: 11px;
   font-weight: 700;
 }
 .gf-x.on {
@@ -1912,4 +1914,227 @@ button {
 }
 .sess-chev-empty {
   pointer-events: none;
+}
+
+/* per-filetype Nerd Font glyphs in the editor file tree */
+.file-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 1em;
+  line-height: 1;
+  font-family: var(--mono);
+  flex: 0 0 auto;
+}
+
+/* VSCode-style git decorations on file tree rows */
+.tree-row.git-m { color: #e2c08d; }
+.tree-row.git-u { color: #73c991; }
+.tree-row.git-a { color: #81b88b; }
+.tree-row.git-d { color: #c74e39; }
+.tree-row.git-r { color: #6c8cd5; }
+.tree-git {
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: auto;
+  padding-left: 8px;
+  opacity: 0.8;
+}
+
+/* I-beam cursor over the editor text — body sets default cursor */
+.cm-content {
+  cursor: text;
+}
+
+/* git diff bars in the editor gutter — VSCode-style */
+.cm-git-gutter {
+  width: 3px;
+  padding: 0;
+}
+.cm-git-marker {
+  width: 3px;
+  height: 100%;
+  margin-left: 0;
+}
+.cm-git-add {
+  background: #4ade80;
+}
+.cm-git-mod {
+  background: #60a5fa;
+}
+.cm-git-del {
+  background: transparent;
+  position: relative;
+  overflow: visible;
+}
+.cm-git-del::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-top: 4px solid #ef4444;
+  border-right: 4px solid transparent;
+}
+
+/* git diff overview ruler — right-edge strip mapping changes to scroll position */
+.cm-editor {
+  position: relative;
+}
+.cm-git-ruler {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+}
+.cm-git-ruler-bar {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  min-height: 2px;
+}
+.cm-git-ruler-bar.add {
+  background: #4ade80;
+}
+.cm-git-ruler-bar.mod {
+  background: #60a5fa;
+}
+.cm-git-ruler-bar.del {
+  background: #ef4444;
+  height: 3px !important;
+}
+
+/* Cmd-hover symbol underline — VSCode / Zed style "go to definition" cue */
+.cm-lsp-link {
+  text-decoration: underline;
+  text-decoration-color: var(--acc);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* LSP results popup — header */
+.lsp-results-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.lsp-results-count {
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ============================================================
+   LSP inline peek — VSCode-style references / implementations panel
+   ============================================================ */
+.cm-peek {
+  background: var(--rail-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--acc);
+  margin: 6px 0;
+  font-size: 12px;
+  user-select: none;
+}
+.cm-peek-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-dim);
+}
+.cm-peek-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.cm-peek-count {
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.cm-peek-close {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-size: 13px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.cm-peek-close:hover {
+  color: var(--danger);
+}
+.cm-peek-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.cm-peek-group {
+  margin-bottom: 2px;
+}
+.cm-peek-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--rail);
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+.cm-peek-group-name {
+  color: var(--ink);
+}
+.cm-peek-group-path {
+  color: var(--ink-faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cm-peek-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 24px;
+  padding: 0 14px 0 24px;
+  color: var(--ink-dim);
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.cm-peek-row:hover {
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+.cm-peek-row-line {
+  width: 32px;
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.cm-peek-row-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
