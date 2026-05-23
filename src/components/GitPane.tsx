@@ -237,18 +237,6 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
   return (
     <div className="git-pane">
       <div className="git-left">
-        {(busy || (status && (status.ahead > 0 || status.behind > 0))) && (
-          <div className="git-status-bar">
-            {status && (status.ahead > 0 || status.behind > 0) && (
-              <span className="git-track">
-                {status.ahead > 0 && <span>↑{status.ahead}</span>}
-                {status.behind > 0 && <span>↓{status.behind}</span>}
-              </span>
-            )}
-            <span className="git-busy">{busy}</span>
-          </div>
-        )}
-
         {commitMode && (
           <div className="git-commit-bar">
             <input
@@ -276,6 +264,14 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
           focused={panel === "files"}
           onFocus={() => setPanel("files")}
           flex={2}
+          extra={
+            busy && (
+              <span className="git-panel-busy">
+                <span className="git-panel-spinner" />
+                <span>{busy}</span>
+              </span>
+            )
+          }
         >
           {files.length === 0 && <div className="git-empty">clean tree</div>}
           {files.map((f, i) => (
@@ -321,6 +317,18 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
             >
               <span className={`gb-dot${b.current ? " cur" : ""}`} />
               <span className="git-path">{b.name}</span>
+              {b.current &&
+                status &&
+                (status.ahead > 0 || status.behind > 0) && (
+                  <span className="branch-track">
+                    {status.ahead > 0 && (
+                      <span className="branch-track-up">↑{status.ahead}</span>
+                    )}
+                    {status.behind > 0 && (
+                      <span className="branch-track-down">↓{status.behind}</span>
+                    )}
+                  </span>
+                )}
             </div>
           ))}
         </GitPanel>
@@ -391,6 +399,7 @@ function GitPanel({
   focused,
   onFocus,
   flex,
+  extra,
   children,
 }: {
   n: number;
@@ -398,6 +407,7 @@ function GitPanel({
   focused: boolean;
   onFocus: () => void;
   flex: number;
+  extra?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -405,6 +415,7 @@ function GitPanel({
       <div className="git-panel-head" onClick={onFocus}>
         <span className="git-panel-n">{n}</span>
         <span className="git-panel-label">{label}</span>
+        {extra}
       </div>
       <div className="git-panel-body">{children}</div>
     </div>

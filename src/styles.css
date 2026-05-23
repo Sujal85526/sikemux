@@ -2258,3 +2258,47 @@ button {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ahead/behind chips next to the current branch row */
+.branch-track {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  padding-left: 8px;
+}
+.branch-track-up {
+  color: var(--live);
+}
+.branch-track-down {
+  color: var(--warn);
+}
+
+/* inline busy badge in the FILES panel header — visible feedback during
+   commit / AI commit / push / pull etc. */
+.git-panel-busy {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--acc);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  animation: gitBusyPulse 1.6s ease-in-out infinite;
+}
+.git-panel-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--acc);
+  border-radius: 50%;
+  animation: gitBusySpin 0.75s linear infinite;
+  flex: 0 0 auto;
+}
