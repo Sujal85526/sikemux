@@ -220,7 +220,7 @@ fn spawn_server(
 // ---- Tauri commands -----------------------------------------------------
 
 #[tauri::command]
-pub fn lsp_start(
+pub async fn lsp_start(
     app: AppHandle,
     project: String,
     language: String,
@@ -293,7 +293,7 @@ fn parse_locations(result: &Value) -> Vec<LspLocation> {
 }
 
 #[tauri::command]
-pub fn lsp_locations(
+pub async fn lsp_locations(
     project: String,
     language: String,
     path: String,

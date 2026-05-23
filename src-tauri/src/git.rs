@@ -263,7 +263,7 @@ pub fn git_overview(repo: String) -> Result<GitOverview, String> {
 }
 
 #[tauri::command]
-pub fn git_checkout(repo: String, branch: String) -> Result<(), String> {
+pub async fn git_checkout(repo: String, branch: String) -> Result<(), String> {
     // git2 checkout is fiddly with working-tree handling — shell out.
     git_ok(&repo, &["checkout", &branch]).map(|_| ())
 }
@@ -290,7 +290,7 @@ fn write_diff_to_string(diff: &git2::Diff) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn git_diff(repo: String, path: String, staged: bool) -> Result<String, String> {
+pub async fn git_diff(repo: String, path: String, staged: bool) -> Result<String, String> {
     let r = open_repo(&repo)?;
     let mut opts = DiffOptions::new();
     opts.pathspec(&path).context_lines(3);
@@ -355,7 +355,7 @@ pub fn git_unstage(repo: String, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn git_stage_all(repo: String) -> Result<(), String> {
+pub async fn git_stage_all(repo: String) -> Result<(), String> {
     let r = open_repo(&repo)?;
     let mut idx = r.index().map_err(|e| e.message().to_string())?;
     idx.add_all(["*"], git2::IndexAddOption::DEFAULT, None)
@@ -378,7 +378,7 @@ fn revparse_commit<'a>(
 }
 
 #[tauri::command]
-pub fn git_show(repo: String, rev: String) -> Result<String, String> {
+pub async fn git_show(repo: String, rev: String) -> Result<String, String> {
     // git2's diff doesn't render the message + stat block the way `git show`
     // does — shelling out here costs us nothing and keeps the UI identical.
     git_ok(&repo, &["show", "--no-ext-diff", "--stat", "-p", &rev])
@@ -436,7 +436,7 @@ pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, St
 }
 
 #[tauri::command]
-pub fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, String> {
+pub async fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, String> {
     let r = open_repo(&repo)?;
     let commit = revparse_commit(&r, &rev)?;
     let new_tree = commit.tree().map_err(|e| e.message().to_string())?;
@@ -466,11 +466,10 @@ pub fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, String
 
 // ---- commit / push / pull -------------------------------------------------
 
-#[tauri::command]
-pub fn git_commit(repo: String, message: String) -> Result<String, String> {
+fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
     let mut child = Command::new("git")
         .arg("-C")
-        .arg(&repo)
+        .arg(repo)
         .args(["commit", "-F", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -492,7 +491,12 @@ pub fn git_commit(repo: String, message: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn git_push(repo: String) -> Result<String, String> {
+pub async fn git_commit(repo: String, message: String) -> Result<String, String> {
+    commit_with_message(&repo, &message)
+}
+
+#[tauri::command]
+pub async fn git_push(repo: String) -> Result<String, String> {
     let (ok, so, se) = run_git(&repo, &["push"])?;
     if ok {
         return Ok(format!("{so}{se}").trim().to_string());
@@ -511,7 +515,7 @@ pub fn git_push(repo: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn git_pull(repo: String) -> Result<String, String> {
+pub async fn git_pull(repo: String) -> Result<String, String> {
     let (ok, so, se) = run_git(&repo, &["pull", "--ff-only"])?;
     if ok {
         Ok(format!("{so}{se}").trim().to_string())
@@ -581,7 +585,7 @@ fn run_hermes(prompt: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn git_ai_commit(repo: String) -> Result<String, String> {
+pub async fn git_ai_commit(repo: String) -> Result<String, String> {
     // Auto-stage all working changes if nothing's been staged yet — pressing
     // Shift+C should "just commit," matching VSCode / Cursor's AI-commit UX.
     if git_ok(&repo, &["diff", "--cached", "--name-only"])?
@@ -630,14 +634,14 @@ pub fn git_ai_commit(repo: String) -> Result<String, String> {
     );
 
     let message = clean_commit_message(&run_hermes(&prompt)?)?;
-    git_commit(repo.clone(), message.clone())?;
+    commit_with_message(&repo, &message)?;
     Ok(message)
 }
 
 // ---- open PR --------------------------------------------------------------
 
 #[tauri::command]
-pub fn pr_open(repo: String) -> Result<String, String> {
+pub async fn pr_open(repo: String) -> Result<String, String> {
     let r = open_repo(&repo)?;
     let remote_url = r
         .find_remote("origin")
