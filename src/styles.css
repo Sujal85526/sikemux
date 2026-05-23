@@ -2302,3 +2302,17 @@ button {
   animation: gitBusySpin 0.75s linear infinite;
   flex: 0 0 auto;
 }
+
+/* error state for the busy indicators — persists 3.5s so the user sees it */
+.git-panel-busy.error {
+  color: var(--danger);
+  animation: none;
+}
+.git-busy-card.error {
+  border-color: var(--danger);
+  box-shadow: 0 12px 36px -16px rgba(255, 103, 103, 0.4);
+}
+.git-busy-card.error .git-busy-label {
+  color: var(--danger);
+  animation: none;
+}

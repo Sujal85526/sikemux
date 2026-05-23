@@ -123,19 +123,30 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
   }, [panel, sel.files, sel.commits, sel.branches, files, commits, branches]);
 
   // ---- actions ----
+  const errorTimerRef = useRef<number | undefined>(undefined);
   const run = async (label: string, fn: () => Promise<string | void>) => {
+    if (errorTimerRef.current) {
+      window.clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = undefined;
+    }
     setBusy(label);
     try {
       const out = await fn();
       if (typeof out === "string") setRight({ mode: "output", text: out });
-    } catch (err) {
-      const text = `✗ ${String(err)}`;
-      setRight({ mode: "output", text });
-      reportError(label || "git")(err);
-    } finally {
       setBusy(null);
-      void refresh();
+    } catch (err) {
+      const msg = String(err);
+      setRight({ mode: "output", text: `✗ ${msg}` });
+      reportError(label || "git")(err);
+      // Persist the failure inline so the user actually sees what went wrong
+      // instead of a phantom split-second flash.
+      setBusy(`✗ ${msg.length > 80 ? msg.slice(0, 80) + "…" : msg}`);
+      errorTimerRef.current = window.setTimeout(() => {
+        setBusy(null);
+        errorTimerRef.current = undefined;
+      }, 3500);
     }
+    void refresh();
   };
 
   const toggleStage = () => {
@@ -266,8 +277,14 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
           flex={2}
           extra={
             busy && (
-              <span className="git-panel-busy">
-                <span className="git-panel-spinner" />
+              <span
+                className={`git-panel-busy${
+                  busy.startsWith("✗") ? " error" : ""
+                }`}
+              >
+                {!busy.startsWith("✗") && (
+                  <span className="git-panel-spinner" />
+                )}
                 <span>{busy}</span>
               </span>
             )
@@ -382,8 +399,12 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
         )}
         {busy && (
           <div className="git-busy-overlay">
-            <div className="git-busy-card">
-              <span className="git-busy-spinner" />
+            <div
+              className={`git-busy-card${
+                busy.startsWith("✗") ? " error" : ""
+              }`}
+            >
+              {!busy.startsWith("✗") && <span className="git-busy-spinner" />}
               <span className="git-busy-label">{busy}</span>
             </div>
           </div>

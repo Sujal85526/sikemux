@@ -582,11 +582,19 @@ fn run_hermes(prompt: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub fn git_ai_commit(repo: String) -> Result<String, String> {
+    // Auto-stage all working changes if nothing's been staged yet — pressing
+    // Shift+C should "just commit," matching VSCode / Cursor's AI-commit UX.
     if git_ok(&repo, &["diff", "--cached", "--name-only"])?
         .trim()
         .is_empty()
     {
-        return Err("No staged changes — stage files first.".into());
+        git_ok(&repo, &["add", "-A"])?;
+        if git_ok(&repo, &["diff", "--cached", "--name-only"])?
+            .trim()
+            .is_empty()
+        {
+            return Err("Nothing to commit — working tree is clean.".into());
+        }
     }
     let branch = git_ok(&repo, &["branch", "--show-current"])
         .unwrap_or_default()
