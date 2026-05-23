@@ -4,7 +4,7 @@ import { useWorkspace } from "./state/workspace";
 // Maps M-i/r/g to the named windows of a project session.
 const WINDOW_KEYS: Record<string, string> = {
   KeyI: "files",
-  KeyR: "run",
+  KeyR: "term",
   KeyG: "git",
 };
 

@@ -72,10 +72,13 @@ export interface RecentEntry {
 }
 
 // A bookmarked on-disk agent conversation — favourited for fast resume.
+// `cwd` is the project the session belongs to; clicking the bookmark switches
+// to (or creates) that project before attaching the agent terminal.
 export interface AgentBookmark {
   type: AgentType;
   id: string;
   title: string;
+  cwd?: string;
 }
 
 export interface WorkspaceSnapshot {

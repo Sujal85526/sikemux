@@ -37,7 +37,7 @@ function makeWindow(
 function projectWindows(cwd: string): WinTab[] {
   return [
     { ...makeWindow(cwd, "files", { kind: "editor" }), fixed: true },
-    { ...makeWindow(cwd, "run"), fixed: true },
+    { ...makeWindow(cwd, "term"), fixed: true },
     { ...makeWindow(cwd, "git", { kind: "git" }), fixed: true },
   ];
 }
@@ -135,6 +135,7 @@ interface WorkspaceStore {
   togglePin: (id: string) => void;
   reopenRecent: (entry: RecentEntry) => void;
   toggleAgentBookmark: (b: AgentBookmark) => void;
+  openAgentBookmark: (b: AgentBookmark) => void;
   setEnv: (env: Env) => void;
 }
 
@@ -189,8 +190,15 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
         )
           ? snap.activeSessionId
           : snap.sessions[0].id;
+        // Migrate any pre-rename windows: "run" → "term".
+        const migratedSessions = snap.sessions.map((s) => ({
+          ...s,
+          windows: s.windows.map((w) =>
+            w.name === "run" ? { ...w, name: "term" } : w,
+          ),
+        }));
         return {
-          sessions: snap.sessions,
+          sessions: migratedSessions,
           activeSessionId,
           recent: snap.recent ?? [],
           agentBookmarks: snap.agentBookmarks ?? [],
@@ -453,13 +461,18 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
         })),
       })),
 
+    // Find the session that owns this agent and close it there — so the rail
+    // can close pinned agents that live in a different project session.
     closeAgent: (id) =>
       set((st) => {
-        const s = activeSession(st);
-        const agents = s.agents.filter((a) => a.id !== id);
-        const wasActive = s.activeAgentId === id;
+        const owner = st.sessions.find((s) =>
+          s.agents.some((a) => a.id === id),
+        );
+        if (!owner) return {};
+        const agents = owner.agents.filter((a) => a.id !== id);
+        const wasActive = owner.activeAgentId === id;
         return {
-          sessions: patchSession(st, s.id, (x) => ({
+          sessions: patchSession(st, owner.id, (x) => ({
             ...x,
             agents,
             activeAgentId: wasActive ? (agents[0]?.id ?? null) : x.activeAgentId,
@@ -471,18 +484,13 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
     focusAgents: () =>
       set((st) => {
         const s = activeSession(st);
-        // Always bump the focus nonce (the rail focuses its search on it);
-        // switch to the agent view only when there's an agent to show.
-        if (s.agents.length === 0) {
-          return { agentFocusN: st.agentFocusN + 1 };
-        }
         return {
           agentFocusN: st.agentFocusN + 1,
           zoomedPaneId: null,
           sessions: patchSession(st, s.id, (x) => ({
             ...x,
             view: "agent",
-            activeAgentId: x.activeAgentId ?? x.agents[0].id,
+            activeAgentId: x.activeAgentId ?? (x.agents[0]?.id ?? null),
           })),
         };
       }),
@@ -582,6 +590,85 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
             : [b, ...st.agentBookmarks],
         };
       }),
+
+    // Claude / Codex sessions are cwd-scoped, so a bookmark click jumps to
+    // wherever the agent is actually running before attaching the terminal.
+    openAgentBookmark: (b) => {
+      const st = get();
+
+      // 1. Already running anywhere? Jump to its owning session and focus.
+      for (const s of st.sessions) {
+        if (s.kind !== "project") continue;
+        const agent = s.agents.find(
+          (a) => a.type === b.type && a.resumeId === b.id,
+        );
+        if (agent) {
+          set((cur) => ({
+            activeSessionId: s.id,
+            zoomedPaneId: null,
+            sessions: cur.sessions.map((x) =>
+              x.id === s.id
+                ? { ...x, activeAgentId: agent.id, view: "agent" }
+                : x,
+            ),
+          }));
+          return;
+        }
+      }
+
+      // 2. Otherwise switch to the bookmark's project (existing or new).
+      if (b.cwd) {
+        const cur = get();
+        const existing = cur.sessions.find(
+          (s) => s.kind === "project" && s.cwd === b.cwd,
+        );
+        if (existing) {
+          if (existing.id !== cur.activeSessionId) {
+            set({ activeSessionId: existing.id, zoomedPaneId: null });
+          }
+        } else {
+          cur.createProjectSession(b.cwd);
+        }
+      }
+
+      // 3. Is there exactly one fresh agent of this type already running in
+      //    the destination? Link it to the bookmark (avoids spawning a
+      //    duplicate terminal of the same on-disk conversation).
+      const isFreshBookmark = b.id.startsWith("agent-");
+      if (!isFreshBookmark) {
+        const cur = get();
+        const dest = cur.sessions.find((s) => s.id === cur.activeSessionId);
+        if (dest && dest.kind === "project") {
+          const freshs = dest.agents.filter(
+            (a) => a.type === b.type && !a.resumeId,
+          );
+          if (freshs.length === 1) {
+            const fresh = freshs[0];
+            set((c2) => ({
+              sessions: c2.sessions.map((s) =>
+                s.id !== dest.id
+                  ? s
+                  : {
+                      ...s,
+                      activeAgentId: fresh.id,
+                      view: "agent",
+                      agents: s.agents.map((a) =>
+                        a.id === fresh.id
+                          ? { ...a, resumeId: b.id, title: b.title }
+                          : a,
+                      ),
+                    },
+              ),
+            }));
+            return;
+          }
+        }
+      }
+
+      // 4. Nothing to focus — spawn (addAgent's own dedup covers any miss).
+      if (isFreshBookmark) get().addAgent(b.type);
+      else get().addAgent(b.type, b.id, b.title);
+    },
 
     setEnv: (env) =>
       set((st) => ({

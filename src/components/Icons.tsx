@@ -268,7 +268,7 @@ export function AgentIcon({
 // Picks the glyph for a window by its name.
 export function WindowIcon({ name, size }: { name: string; size?: number }) {
   if (name === "files") return <IconEditor size={size} />;
-  if (name === "run") return <IconRun size={size} />;
+  if (name === "term") return <IconRun size={size} />;
   if (name === "git") return <IconGit size={size} />;
   if (name === "agent") return <IconAgent size={size} />;
   return <IconWindow size={size} />;

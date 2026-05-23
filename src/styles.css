@@ -1716,3 +1716,194 @@ button {
   display: flex;
   gap: 2px;
 }
+
+/* agent rail — footer strip (type picker + search + new) */
+.agent-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.agent-footer-types,
+.agent-footer-actions {
+  display: flex;
+  gap: 2px;
+}
+.agent-footer-types {
+  flex: 1;
+}
+.agent-footer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  color: var(--ink-faint);
+  transition: color 0.12s, background 0.12s;
+}
+.agent-footer-btn:hover {
+  color: var(--ink);
+  background: var(--rail-2);
+}
+.agent-footer-btn.active {
+  color: var(--acc);
+  background: var(--acc-soft);
+}
+
+/* groups spacing — subtle, no labels */
+.agent-group + .agent-group {
+  margin-top: 10px;
+}
+
+/* active open agent — left accent bar (Zen-style tab indicator) */
+.agent-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2.5px;
+  background: var(--acc);
+}
+
+/* small live dot — shown on pinned rows when the session is also running */
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live);
+  flex: 0 0 auto;
+}
+
+/* hover-swap close — the agent glyph becomes an X on hover for closable rows */
+.agent-glyph {
+  position: relative;
+}
+.agent-glyph-icon {
+  display: flex;
+  transition: opacity 0.12s;
+}
+.agent-glyph-x {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.agent-row.closable:hover .agent-glyph-icon {
+  opacity: 0;
+}
+.agent-row.closable:hover .agent-glyph-x {
+  opacity: 1;
+}
+
+/* ============================================================
+   agent tabs — shown above the stage when a project has 2+ agents
+   ============================================================ */
+.agent-tabs {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: var(--rail);
+  border-bottom: 1px solid var(--line);
+  z-index: 3;
+  overflow-x: auto;
+}
+.agent-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 10px;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  transition: color 0.1s, background 0.1s;
+}
+.agent-tab:hover {
+  color: var(--ink-dim);
+}
+.agent-tab.active {
+  background: var(--acc-soft);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--acc);
+}
+.agent-tab-title {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-tab-x {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.agent-tab:hover .agent-tab-x {
+  opacity: 1;
+}
+.agent-tab-x:hover {
+  color: var(--danger);
+}
+
+/* side rail — sub-label for the agents row under a project */
+.win-sub-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 10px 8px 4px 27px;
+}
+
+/* empty agent center pane — shown when project has 0 agents in agent view */
+.agent-empty-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  pointer-events: none;
+}
+.agent-empty-hint {
+  font-size: 11px;
+  color: var(--ink-faint);
+  opacity: 0.7;
+}
+
+/* session-row accordion chevron — generous hit area */
+.sess-chev {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -4px;
+  margin-right: 2px;
+  color: var(--ink-faint);
+  transition: transform 0.15s ease, color 0.12s;
+}
+.sess-chev:hover {
+  color: var(--ink);
+}
+.sess-chev.open {
+  transform: rotate(90deg);
+}
+.sess-chev-empty {
+  pointer-events: none;
+}

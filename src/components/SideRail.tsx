@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Session, SessionKind } from "../state/types";
 import { useWorkspace } from "../state/workspace";
 import {
+  IconAgent,
+  IconChevron,
   IconClose,
   IconCommand,
   IconFolder,
@@ -9,8 +11,6 @@ import {
   IconPlus,
   WindowIcon,
 } from "./Icons";
-
-const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 function kindIcon(kind: SessionKind): ReactNode {
   if (kind === "project") return <IconFolder size={13} />;
@@ -20,26 +20,61 @@ function kindIcon(kind: SessionKind): ReactNode {
 export function SideRail() {
   const sessions = useWorkspace((s) => s.sessions);
   const activeSessionId = useWorkspace((s) => s.activeSessionId);
-  const recent = useWorkspace((s) => s.recent);
   const selectSession = useWorkspace((s) => s.selectSession);
   const selectWindowId = useWorkspace((s) => s.selectWindowId);
+  const focusAgents = useWorkspace((s) => s.focusAgents);
   const openPicker = useWorkspace((s) => s.openPicker);
   const togglePin = useWorkspace((s) => s.togglePin);
   const closeSession = useWorkspace((s) => s.closeSession);
-  const reopenRecent = useWorkspace((s) => s.reopenRecent);
+
+  // Per-project collapse state — projects default to expanded.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleCollapse = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const pinned = sessions.filter((s) => s.pinned);
   const projects = sessions.filter((s) => !s.pinned && s.kind === "project");
   const commands = sessions.filter((s) => !s.pinned && s.kind === "command");
 
+  // Window/agent click in any project row — jumps to that project first.
+  const jumpToWindow = (sessionId: string, winId: string) => {
+    if (sessionId !== activeSessionId) selectSession(sessionId);
+    selectWindowId(winId);
+  };
+  const jumpToAgents = (sessionId: string) => {
+    if (sessionId !== activeSessionId) selectSession(sessionId);
+    focusAgents();
+  };
+
   const Row = ({ s }: { s: Session }) => {
     const active = s.id === activeSessionId;
+    const isProject = s.kind === "project";
+    const open = isProject && !collapsed.has(s.id);
     return (
       <div>
         <button
           className={`sess-row${active ? " active" : ""}`}
           onClick={() => selectSession(s.id)}
         >
+          {isProject ? (
+            <span
+              className={`sess-chev${open ? " open" : ""}`}
+              title={open ? "Collapse" : "Expand"}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCollapse(s.id);
+              }}
+            >
+              <IconChevron size={11} />
+            </span>
+          ) : (
+            <span className="sess-chev sess-chev-empty" />
+          )}
           <span className={`sess-icon ${s.kind}`}>{kindIcon(s.kind)}</span>
           <span className="sess-name">{s.name}</span>
           <span
@@ -63,24 +98,43 @@ export function SideRail() {
             <IconClose size={11} />
           </span>
         </button>
-        {active && s.kind === "project" && (
+        {open && (
           <div className="win-list">
-            {s.windows.map((w, i) => (
-              <button
-                key={w.id}
-                className={`win-row${w.id === s.activeWindowId ? " active" : ""}`}
-                onClick={() => selectWindowId(w.id)}
-              >
-                <span className="win-rail">
-                  <span className="win-tick" />
-                </span>
-                <span className="win-icon">
-                  <WindowIcon name={w.name} size={13} />
-                </span>
-                <span className="win-name">{w.name}</span>
-                <span className="win-index">{i + 1}</span>
-              </button>
-            ))}
+            {s.windows.map((w, i) => {
+              const winActive =
+                active && s.view === "windows" && w.id === s.activeWindowId;
+              return (
+                <button
+                  key={w.id}
+                  className={`win-row${winActive ? " active" : ""}`}
+                  onClick={() => jumpToWindow(s.id, w.id)}
+                >
+                  <span className="win-rail">
+                    <span className="win-tick" />
+                  </span>
+                  <span className="win-icon">
+                    <WindowIcon name={w.name} size={13} />
+                  </span>
+                  <span className="win-name">{w.name}</span>
+                  <span className="win-index">{i + 1}</span>
+                </button>
+              );
+            })}
+            <button
+              className={`win-row${
+                active && s.view === "agent" ? " active" : ""
+              }`}
+              onClick={() => jumpToAgents(s.id)}
+            >
+              <span className="win-rail">
+                <span className="win-tick" />
+              </span>
+              <span className="win-icon">
+                <IconAgent size={13} />
+              </span>
+              <span className="win-name">agents</span>
+              <span className="win-index">{s.agents.length}</span>
+            </button>
           </div>
         )}
       </div>
@@ -110,24 +164,6 @@ export function SideRail() {
         <Group label="Superpin" list={pinned} />
         <Group label="Projects" list={projects} />
         <Group label="Command" list={commands} />
-
-        {recent.length > 0 && (
-          <div className="rail-group">
-            <div className="rail-group-label">Recent</div>
-            {recent.map((r) => (
-              <button
-                key={`${r.kind}:${r.cwd}:${r.name}`}
-                className="recent-row"
-                onClick={() => reopenRecent(r)}
-                title={r.cwd}
-              >
-                <span className={`sess-icon ${r.kind}`}>{kindIcon(r.kind)}</span>
-                <span className="sess-name">{r.name}</span>
-                <span className="recent-meta">{basename(r.cwd)}</span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       <button className="rail-foot" onClick={openPicker}>

@@ -6,6 +6,9 @@ import { useWorkspace } from "../state/workspace";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { EditorPane } from "./EditorPane";
 import { GitPane } from "./GitPane";
+import { AgentIcon, IconClose } from "./Icons";
+
+const AGENT_TABS_H = 32;
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
@@ -17,10 +20,26 @@ export function Workspace() {
   const activeSessionId = useWorkspace((s) => s.activeSessionId);
   const areaRef = useRef<HTMLDivElement>(null);
 
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const inAgentView = !!activeSession && activeSession.view === "agent";
+  const showAgentTabs = inAgentView && activeSession!.agents.length >= 1;
+  const showAgentEmpty = inAgentView && activeSession!.agents.length === 0;
+
   return (
     <div className="window-area" ref={areaRef}>
+      {showAgentTabs && <AgentTabsBar session={activeSession!} />}
+      {showAgentEmpty && (
+        <div className="agent-empty-stage">
+          <span>no agents in this project</span>
+          <span className="agent-empty-hint">
+            start one from the agent rail →
+          </span>
+        </div>
+      )}
       {sessions.flatMap((session) => {
         const isActive = session.id === activeSessionId;
+        const sessTabs =
+          session.view === "agent" && session.agents.length >= 1;
         const windowLayers = session.windows.map((win) => (
           <WindowLayer
             key={win.id}
@@ -39,6 +58,7 @@ export function Workspace() {
             key={agent.id}
             session={session}
             agent={agent}
+            tabsShown={sessTabs}
             visible={
               isActive &&
               session.view === "agent" &&
@@ -52,21 +72,63 @@ export function Workspace() {
   );
 }
 
+function AgentTabsBar({ session }: { session: Session }) {
+  const selectAgent = useWorkspace((s) => s.selectAgent);
+  const closeAgent = useWorkspace((s) => s.closeAgent);
+  return (
+    <div className="agent-tabs" style={{ height: AGENT_TABS_H }}>
+      {session.agents.map((a) => {
+        const active = a.id === session.activeAgentId;
+        return (
+          <button
+            key={a.id}
+            className={`agent-tab${active ? " active" : ""}`}
+            onClick={() => selectAgent(a.id)}
+          >
+            <span className={`agent-glyph ${a.type}`}>
+              <AgentIcon type={a.type} size={14} />
+            </span>
+            <span className="agent-tab-title">{a.title}</span>
+            <span
+              className="agent-tab-x"
+              title="Close agent"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeAgent(a.id);
+              }}
+            >
+              <IconClose size={11} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // An agent's terminal — a single full-stage PTY running the agent CLI.
+// When the session has multiple agents, leaves room at the top for tabs.
 function AgentLayer({
   session,
   agent,
   visible,
+  tabsShown,
 }: {
   session: Session;
   agent: Agent;
   visible: boolean;
+  tabsShown: boolean;
 }) {
   return (
     <div className={`window-layer${visible ? " visible" : ""}`}>
       <div
         className="pane-cell"
-        style={{ left: 0, top: 0, width: "100%", height: "100%" }}
+        style={{
+          left: 0,
+          top: tabsShown ? `${AGENT_TABS_H}px` : 0,
+          width: "100%",
+          height: tabsShown ? `calc(100% - ${AGENT_TABS_H}px)` : "100%",
+        }}
       >
         <div className="pane pane-terminal">
           <TerminalPane
