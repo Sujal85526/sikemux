@@ -18,7 +18,8 @@ function kindIcon(kind: SessionKind): ReactNode {
 }
 
 export function SideRail() {
-  const sessions = useWorkspace((s) => s.sessions);
+  const sessionsById = useWorkspace((s) => s.sessions);
+  const sessionOrder = useWorkspace((s) => s.sessionOrder);
   const activeSessionId = useWorkspace((s) => s.activeSessionId);
   const selectSession = useWorkspace((s) => s.selectSession);
   const selectWindowId = useWorkspace((s) => s.selectWindowId);
@@ -26,6 +27,7 @@ export function SideRail() {
   const openPicker = useWorkspace((s) => s.openPicker);
   const togglePin = useWorkspace((s) => s.togglePin);
   const closeSession = useWorkspace((s) => s.closeSession);
+  const sessions = sessionOrder.map((id) => sessionsById[id]);
 
   // Per-project collapse state — projects default to expanded.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());

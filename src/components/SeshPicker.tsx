@@ -29,7 +29,9 @@ function fuzzy(query: string, text: string): number {
 }
 
 export function SeshPicker() {
-  const sessions = useWorkspace((s) => s.sessions);
+  const sessionsById = useWorkspace((s) => s.sessions);
+  const sessionOrder = useWorkspace((s) => s.sessionOrder);
+  const sessions = sessionOrder.map((id) => sessionsById[id]);
   const home = useWorkspace((s) => s.home);
   const selectSession = useWorkspace((s) => s.selectSession);
   const createProjectSession = useWorkspace((s) => s.createProjectSession);

@@ -1,5 +1,7 @@
 mod agents;
+mod diff;
 mod fs;
+mod fs_watch;
 mod git;
 mod lsp;
 mod pty;
@@ -18,12 +20,15 @@ pub fn run() {
             pty::pty_kill,
             system::home_dir,
             system::recent_dirs,
+            system::boot_init,
             state::state_load,
             state::state_save,
             agents::agent_sessions,
             fs::read_dir,
             fs::read_file,
             fs::write_file,
+            fs_watch::repo_watch_start,
+            fs_watch::repo_watch_stop,
             git::git_status,
             git::git_diff,
             git::git_stage,
@@ -32,6 +37,7 @@ pub fn run() {
             git::git_branches,
             git::git_checkout,
             git::git_log,
+            git::git_overview,
             git::git_show,
             git::git_file_at,
             git::git_commit_files,
@@ -43,9 +49,8 @@ pub fn run() {
             lsp::lsp_start,
             lsp::lsp_open,
             lsp::lsp_change,
-            lsp::lsp_definition,
-            lsp::lsp_implementation,
-            lsp::lsp_references,
+            lsp::lsp_locations,
+            diff::diff_hunks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running sikemux");

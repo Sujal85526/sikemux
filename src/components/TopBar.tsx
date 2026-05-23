@@ -17,9 +17,7 @@ const time2 = (n: number) => String(n).padStart(2, "0");
 
 export function TopBar() {
   const now = useClock();
-  const session = useWorkspace(
-    (s) => s.sessions.find((x) => x.id === s.activeSessionId)!,
-  );
+  const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
   const zoomed = useWorkspace((s) => s.zoomedPaneId != null);
   const leftOpen = useWorkspace((s) => s.leftRailOpen);
   const rightOpen = useWorkspace((s) => s.rightRailOpen);

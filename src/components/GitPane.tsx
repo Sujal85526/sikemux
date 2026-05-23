@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   git,
   hasUnstaged,
@@ -9,6 +10,7 @@ import {
   type GitStatus,
 } from "../api/git";
 import { useWorkspace } from "../state/workspace";
+import { reportError } from "../state/toast";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { MergeReview } from "./MergeReview";
@@ -44,14 +46,10 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
   const refresh = useCallback(async () => {
     if (!repo) return;
     try {
-      const [s, b, l] = await Promise.all([
-        git.status(repo),
-        git.branches(repo),
-        git.log(repo),
-      ]);
-      setStatus(s);
-      setBranches(b);
-      setCommits(l);
+      const ov = await git.overview(repo);
+      setStatus(ov.status);
+      setBranches(ov.branches);
+      setCommits(ov.log);
     } catch (err) {
       setRight({ mode: "output", text: `✗ ${String(err)}` });
     }
@@ -63,18 +61,28 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
   useEffect(() => {
     if (active) void refresh();
   }, [active, refresh]);
-  // Live: refresh when any file is saved in the editor (store nonce bumps).
+  // Editor saves bump the refresh nonce. We still listen for it so the
+  // editor pane can poke us without going through the filesystem watcher.
   const gitRefreshN = useWorkspace((s) => s.gitRefreshN);
   useEffect(() => {
     void refresh();
   }, [gitRefreshN, refresh]);
-  // Polling fallback for external changes (other editors, agents, etc.) —
-  // only while the git pane is the visible window.
+
+  // Filesystem watcher — replaces the 3 s polling loop. Starts when the
+  // repo cwd is known, releases the OS handle when it changes.
   useEffect(() => {
-    if (!active) return;
-    const id = window.setInterval(() => void refresh(), 3000);
-    return () => window.clearInterval(id);
-  }, [active, refresh]);
+    if (!repo) return;
+    git.watchStart(repo).catch(reportError("git watch"));
+    const unlisten = listen<{ repo: string }>("git_changed", (e) => {
+      if (e.payload.repo === repo || e.payload.repo === "") {
+        void refresh();
+      }
+    });
+    return () => {
+      void unlisten.then((u) => u());
+      git.watchStop(repo).catch(() => {});
+    };
+  }, [repo, refresh]);
   useEffect(() => {
     if (commitMode) commitInputRef.current?.focus();
   }, [commitMode]);
@@ -121,7 +129,9 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
       const out = await fn();
       if (typeof out === "string") setRight({ mode: "output", text: out });
     } catch (err) {
-      setRight({ mode: "output", text: `✗ ${String(err)}` });
+      const text = `✗ ${String(err)}`;
+      setRight({ mode: "output", text });
+      reportError(label || "git")(err);
     } finally {
       setBusy(null);
       void refresh();
@@ -361,6 +371,14 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
           />
         ) : (
           <pre className="git-output">{right.text || "—"}</pre>
+        )}
+        {busy && (
+          <div className="git-busy-overlay">
+            <div className="git-busy-card">
+              <span className="git-busy-spinner" />
+              <span className="git-busy-label">{busy}</span>
+            </div>
+          </div>
         )}
       </div>
     </div>

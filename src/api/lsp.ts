@@ -15,7 +15,8 @@ export interface LspLocation {
   range: LspRange;
 }
 
-// Pick a language id from a file path; null if no LSP server is configured.
+export type LspLocationKind = "definition" | "implementation" | "references";
+
 export function languageFromPath(path: string): string | null {
   const file = path.split("/").pop()?.toLowerCase() ?? "";
   const ext = file.includes(".") ? file.slice(file.lastIndexOf(".") + 1) : "";
@@ -42,46 +43,41 @@ export const lsp = {
     content: string,
     version: number,
   ) => invoke<void>("lsp_change", { project, language, path, content, version }),
+  locations: (
+    project: string,
+    language: string,
+    path: string,
+    line: number,
+    character: number,
+    kind: LspLocationKind,
+  ) =>
+    invoke<LspLocation[]>("lsp_locations", {
+      project,
+      language,
+      path,
+      line,
+      character,
+      kind,
+    }),
   definition: (
     project: string,
     language: string,
     path: string,
     line: number,
     character: number,
-  ) =>
-    invoke<LspLocation[]>("lsp_definition", {
-      project,
-      language,
-      path,
-      line,
-      character,
-    }),
+  ) => lsp.locations(project, language, path, line, character, "definition"),
   implementation: (
     project: string,
     language: string,
     path: string,
     line: number,
     character: number,
-  ) =>
-    invoke<LspLocation[]>("lsp_implementation", {
-      project,
-      language,
-      path,
-      line,
-      character,
-    }),
+  ) => lsp.locations(project, language, path, line, character, "implementation"),
   references: (
     project: string,
     language: string,
     path: string,
     line: number,
     character: number,
-  ) =>
-    invoke<LspLocation[]>("lsp_references", {
-      project,
-      language,
-      path,
-      line,
-      character,
-    }),
+  ) => lsp.locations(project, language, path, line, character, "references"),
 };

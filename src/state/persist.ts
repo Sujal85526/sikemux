@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import type { WorkspaceSnapshot } from "./types";
 import { useWorkspace } from "./workspace";
 
+// `applyHydrate` is the canonical entry point — called from App.tsx with the
+// raw JSON returned by `boot_init`. The on-disk read happens server-side now,
+// so there's no standalone `hydrateFromDisk` anymore.
+
+
 // Bumped on model changes — older state files are ignored, falling back to
 // defaults. 3: agents gained a `startup` command.
 const VERSION = 3;
@@ -11,7 +16,7 @@ function snapshot(): string {
   const s = useWorkspace.getState();
   const snap: WorkspaceSnapshot = {
     version: VERSION,
-    sessions: s.sessions,
+    sessions: s.sessionOrder.map((id) => s.sessions[id]),
     activeSessionId: s.activeSessionId,
     recent: s.recent,
     agentBookmarks: s.agentBookmarks,
@@ -21,12 +26,10 @@ function snapshot(): string {
   return JSON.stringify(snap);
 }
 
-// Load persisted workspace state and hydrate the store. Safe on a missing or
-// corrupt file — falls back to defaults.
-export async function hydrateFromDisk(): Promise<void> {
+/** Hydrate from a raw JSON string (e.g. the one returned by `boot_init`). */
+export function applyHydrate(raw: string): void {
+  if (!raw) return;
   try {
-    const raw = await invoke<string>("state_load");
-    if (!raw) return;
     const data = JSON.parse(raw) as WorkspaceSnapshot;
     if (
       data?.version === VERSION &&
@@ -48,7 +51,7 @@ export function subscribePersist(): () => void {
     if (timer) window.clearTimeout(timer);
     timer = window.setTimeout(() => {
       const snap = snapshot();
-      if (snap === lastSaved) return; // only persistable fields changed-check
+      if (snap === lastSaved) return;
       lastSaved = snap;
       void invoke("state_save", { data: snap });
     }, 600);

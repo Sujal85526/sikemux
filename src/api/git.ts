@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface GitFile {
   path: string;
-  index: string; // staged status char
-  worktree: string; // working-tree status char
+  index: string;
+  worktree: string;
 }
 
 export interface GitStatus {
@@ -27,8 +27,26 @@ export interface GitCommit {
   subject: string;
 }
 
+export interface GitOverview {
+  status: GitStatus;
+  branches: GitBranch[];
+  log: GitCommit[];
+}
+
+// Frontend cache for `git_file_at` keyed on immutable revs (sha-shaped). The
+// backend already caches; this saves the IPC round-trip altogether for repeat
+// reads of the same baseline (e.g. mounting many diff editors).
+const fileAtCache = new Map<string, string>();
+const FILE_AT_LIMIT = 200;
+const SHA_RE = /^[0-9a-f]{7,}([~^][0-9]*)*$/i;
+
+function cacheKey(repo: string, rev: string, path: string) {
+  return `${repo}\0${rev}\0${path}`;
+}
+
 export const git = {
   status: (repo: string) => invoke<GitStatus>("git_status", { repo }),
+  overview: (repo: string) => invoke<GitOverview>("git_overview", { repo }),
   diff: (repo: string, path: string, staged: boolean) =>
     invoke<string>("git_diff", { repo, path, staged }),
   stage: (repo: string, path: string) => invoke<void>("git_stage", { repo, path }),
@@ -40,8 +58,20 @@ export const git = {
     invoke<void>("git_checkout", { repo, branch }),
   log: (repo: string) => invoke<GitCommit[]>("git_log", { repo }),
   show: (repo: string, rev: string) => invoke<string>("git_show", { repo, rev }),
-  fileAt: (repo: string, rev: string, path: string) =>
-    invoke<string>("git_file_at", { repo, rev, path }),
+  fileAt: async (repo: string, rev: string, path: string): Promise<string> => {
+    const cacheable = SHA_RE.test(rev);
+    const key = cacheKey(repo, rev, path);
+    if (cacheable) {
+      const hit = fileAtCache.get(key);
+      if (hit !== undefined) return hit;
+    }
+    const content = await invoke<string>("git_file_at", { repo, rev, path });
+    if (cacheable) {
+      if (fileAtCache.size > FILE_AT_LIMIT) fileAtCache.clear();
+      fileAtCache.set(key, content);
+    }
+    return content;
+  },
   commitFiles: (repo: string, rev: string) =>
     invoke<string[]>("git_commit_files", { repo, rev }),
   commit: (repo: string, message: string) =>
@@ -50,9 +80,9 @@ export const git = {
   pull: (repo: string) => invoke<string>("git_pull", { repo }),
   aiCommit: (repo: string) => invoke<string>("git_ai_commit", { repo }),
   prOpen: (repo: string) => invoke<string>("pr_open", { repo }),
+  watchStart: (repo: string) => invoke<void>("repo_watch_start", { repo }),
+  watchStop: (repo: string) => invoke<void>("repo_watch_stop", { repo }),
 };
 
-// A file is staged when its index status is a real change (not clean/untracked).
 export const isStaged = (f: GitFile) => f.index !== " " && f.index !== "?";
-// A file has working-tree changes still to stage.
 export const hasUnstaged = (f: GitFile) => f.worktree !== " ";

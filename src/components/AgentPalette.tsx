@@ -35,9 +35,7 @@ function fuzzy(query: string, text: string): number {
 
 // Cross-agent session search — claude, codex and hermes in one palette.
 export function AgentPalette() {
-  const session = useWorkspace(
-    (s) => s.sessions.find((x) => x.id === s.activeSessionId)!,
-  );
+  const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
   const addAgent = useWorkspace((s) => s.addAgent);
   const close = useWorkspace((s) => s.closeAgentPalette);
 

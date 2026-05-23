@@ -25,10 +25,9 @@ const bmIdOf = (a: Agent) => a.resumeId ?? a.id;
 const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 
 export function AgentRail() {
-  const session = useWorkspace(
-    (s) => s.sessions.find((x) => x.id === s.activeSessionId)!,
-  );
-  const allSessions = useWorkspace((s) => s.sessions);
+  const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
+  const sessionsById = useWorkspace((s) => s.sessions);
+  const sessionOrder = useWorkspace((s) => s.sessionOrder);
   const addAgent = useWorkspace((s) => s.addAgent);
   const selectAgent = useWorkspace((s) => s.selectAgent);
   const closeAgent = useWorkspace((s) => s.closeAgent);
@@ -70,7 +69,8 @@ export function AgentRail() {
   // is running in ANY project (not just the active one). Value = agent id,
   // so the row can close it without needing to switch projects first.
   const liveByKey = new Map<string, string>();
-  allSessions.forEach((s) => {
+  sessionOrder.forEach((id) => {
+    const s = sessionsById[id];
     if (s.kind === "project") {
       s.agents.forEach((a) => {
         liveByKey.set(sessionKey(a.type, bmIdOf(a)), a.id);

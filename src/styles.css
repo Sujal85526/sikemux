@@ -1173,6 +1173,7 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
   padding-left: 8px;
 }
 .git-output {
@@ -2137,4 +2138,123 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* editor file-tree resize handle — sits over the tree's right border */
+.ed-tree-resizer {
+  width: 6px;
+  margin-left: -3px;
+  margin-right: -3px;
+  flex: 0 0 auto;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+.ed-tree-resizer:hover,
+.ed-tree-resizer:active {
+  background: var(--acc-line);
+}
+
+/* git busy overlay — visible feedback for AI commit / push / pull etc. */
+.git-busy-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 11, 16, 0.62);
+  backdrop-filter: blur(3px);
+  z-index: 6;
+  animation: gitBusyFade 0.18s ease-out;
+}
+@keyframes gitBusyFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.git-busy-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px;
+  background: var(--rail-2);
+  border: 1px solid var(--acc-line);
+  box-shadow: 0 12px 36px -16px rgba(162, 119, 255, 0.4);
+  color: var(--ink);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.git-busy-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line);
+  border-top-color: var(--acc);
+  border-radius: 50%;
+  animation: gitBusySpin 0.75s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes gitBusySpin {
+  to { transform: rotate(360deg); }
+}
+.git-busy-label {
+  animation: gitBusyPulse 1.6s ease-in-out infinite;
+}
+@keyframes gitBusyPulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
+/* status-bar busy text — subtle pulse so it's noticeable in the corner */
+.git-busy {
+  animation: gitBusyPulse 1.6s ease-in-out infinite;
+}
+
+/* ---- toasts -------------------------------------------------------------- */
+.toaster {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+  max-width: 380px;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  background: #1c1929;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  animation: toastIn 140ms ease-out;
+}
+.toast-error { border-color: #ff6767; }
+.toast-success { border-color: #61ffca; }
+.toast-info { border-color: var(--acc-line); }
+.toast-text {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+.toast-x {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--ink-dim, #8b8898);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.toast-x:hover { color: var(--ink); }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }

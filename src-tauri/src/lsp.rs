@@ -1,6 +1,6 @@
 // Minimal LSP client foundation: spawn a language server per (project, lang),
 // frame JSON-RPC over stdio (Content-Length headers), correlate request/
-// response pairs, dispatch server notifications back to the webview.
+// response pairs.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -31,13 +31,15 @@ pub struct LspLocation {
     pub range: LspRange,
 }
 
+// Stdin and the pending map are independent — splitting them lets the reader
+// thread deliver responses while a writer is mid-flight.
 struct Server {
-    stdin: ChildStdin,
-    next_id: i64,
-    pending: HashMap<i64, mpsc::Sender<Value>>,
+    stdin: Mutex<ChildStdin>,
+    next_id: Mutex<i64>,
+    pending: Mutex<HashMap<i64, mpsc::Sender<Value>>>,
 }
 
-type ServerHandle = Arc<Mutex<Server>>;
+type ServerHandle = Arc<Server>;
 
 fn registry() -> &'static Mutex<HashMap<String, ServerHandle>> {
     static R: OnceLock<Mutex<HashMap<String, ServerHandle>>> = OnceLock::new();
@@ -52,7 +54,6 @@ fn server_for(project: &str, language: &str) -> Option<ServerHandle> {
     registry().lock().ok()?.get(&key(project, language)).cloned()
 }
 
-// Map a sikemux language id → (binary, args).
 fn server_command(language: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match language {
         "typescript" | "javascript" => {
@@ -69,15 +70,18 @@ fn path_to_uri(path: &str) -> String {
     format!("file://{}", path)
 }
 
-fn write_message(stdin: &mut ChildStdin, msg: &Value) -> Result<(), String> {
+fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> Result<(), String> {
     let body = serde_json::to_string(msg).map_err(|e| e.to_string())?;
     let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    stdin
-        .write_all(header.as_bytes())
-        .map_err(|e| e.to_string())?;
+    stdin.write_all(header.as_bytes()).map_err(|e| e.to_string())?;
     stdin.write_all(body.as_bytes()).map_err(|e| e.to_string())?;
     stdin.flush().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn send(server: &ServerHandle, msg: &Value) -> Result<(), String> {
+    let mut stdin = server.stdin.lock().map_err(|e| e.to_string())?;
+    write_frame(&mut stdin, msg)
 }
 
 fn read_message(reader: &mut BufReader<ChildStdout>) -> Option<Value> {
@@ -85,30 +89,24 @@ fn read_message(reader: &mut BufReader<ChildStdout>) -> Option<Value> {
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line).ok()?;
-        if n == 0 {
-            return None;
-        }
+        if n == 0 { return None; }
         let line = line.trim_end_matches(|c| c == '\r' || c == '\n');
-        if line.is_empty() {
-            break;
-        }
+        if line.is_empty() { break; }
         if let Some(v) = line.strip_prefix("Content-Length:") {
             content_length = v.trim().parse().ok()?;
         }
     }
-    if content_length == 0 {
-        return None;
-    }
+    if content_length == 0 { return None; }
     let mut buf = vec![0u8; content_length];
     reader.read_exact(&mut buf).ok()?;
     serde_json::from_slice(&buf).ok()
 }
 
 fn next_id(server: &ServerHandle) -> i64 {
-    let mut s = server.lock().unwrap();
-    let id = s.next_id;
-    s.next_id += 1;
-    id
+    let mut id = server.next_id.lock().unwrap();
+    let v = *id;
+    *id += 1;
+    v
 }
 
 fn request_with_timeout(
@@ -120,13 +118,16 @@ fn request_with_timeout(
     let id = next_id(server);
     let (tx, rx) = mpsc::channel();
     {
-        let mut s = server.lock().map_err(|e| e.to_string())?;
-        s.pending.insert(id, tx);
-        let req = json!({
-            "jsonrpc": "2.0", "id": id,
-            "method": method, "params": params
-        });
-        write_message(&mut s.stdin, &req)?;
+        let mut pending = server.pending.lock().map_err(|e| e.to_string())?;
+        pending.insert(id, tx);
+    }
+    let req = json!({
+        "jsonrpc": "2.0", "id": id,
+        "method": method, "params": params
+    });
+    if let Err(e) = send(server, &req) {
+        server.pending.lock().ok().and_then(|mut p| p.remove(&id));
+        return Err(e);
     }
     rx.recv_timeout(timeout)
         .map_err(|e| format!("lsp {method} timeout: {e}"))
@@ -137,9 +138,8 @@ fn request(server: &ServerHandle, method: &str, params: Value) -> Result<Value, 
 }
 
 fn notify(server: &ServerHandle, method: &str, params: Value) -> Result<(), String> {
-    let mut s = server.lock().map_err(|e| e.to_string())?;
     let n = json!({"jsonrpc": "2.0", "method": method, "params": params});
-    write_message(&mut s.stdin, &n)
+    send(server, &n)
 }
 
 fn spawn_server(
@@ -160,44 +160,33 @@ fn spawn_server(
     let stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
 
-    let server = Arc::new(Mutex::new(Server {
-        stdin,
-        next_id: 1,
-        pending: HashMap::new(),
-    }));
+    let server = Arc::new(Server {
+        stdin: Mutex::new(stdin),
+        next_id: Mutex::new(1),
+        pending: Mutex::new(HashMap::new()),
+    });
 
-    // Reader thread: parse Content-Length frames, route responses to pending
-    // channels. Server-initiated requests need a response or gopls / TS LSP
-    // can stall; we always reply with null result. Notifications (no id) are
-    // dropped — until a frontend feature actually consumes them, emitting
-    // them across IPC just floods the webview.
     let reader_server = server.clone();
-    let _ = app; // reserved for future event emission
+    let _ = app;
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         while let Some(msg) = read_message(&mut reader) {
             if let Some(id) = msg.get("id").and_then(|i| i.as_i64()) {
-                // Response to one of OUR requests has both `id` and `result`/
-                // `error`; server-initiated requests have `id` and `method`.
                 if msg.get("method").is_some() {
-                    if let Ok(mut s) = reader_server.lock() {
-                        let reply = json!({
-                            "jsonrpc": "2.0", "id": id, "result": Value::Null
-                        });
-                        let _ = write_message(&mut s.stdin, &reply);
-                    }
-                } else if let Ok(mut s) = reader_server.lock() {
-                    if let Some(tx) = s.pending.remove(&id) {
+                    // Server-initiated request — reply with null result so
+                    // gopls / tsserver don't stall waiting.
+                    let reply = json!({"jsonrpc": "2.0", "id": id, "result": Value::Null});
+                    let _ = send(&reader_server, &reply);
+                } else if let Ok(mut pending) = reader_server.pending.lock() {
+                    if let Some(tx) = pending.remove(&id) {
                         let val = msg.get("result").cloned().unwrap_or(Value::Null);
                         let _ = tx.send(val);
                     }
                 }
             }
-            // Notifications (no id) are intentionally dropped for now.
         }
     });
 
-    // Initialize handshake.
     let init = json!({
         "processId": std::process::id(),
         "rootUri": path_to_uri(project),
@@ -213,9 +202,7 @@ fn spawn_server(
                 "implementation": { "linkSupport": false },
                 "references": {},
                 "hover": { "contentFormat": ["markdown", "plaintext"] },
-                "completion": {
-                    "completionItem": { "snippetSupport": false }
-                },
+                "completion": { "completionItem": { "snippetSupport": false } },
                 "publishDiagnostics": { "relatedInformation": false }
             },
             "workspace": {
@@ -223,10 +210,7 @@ fn spawn_server(
                 "configuration": true
             }
         },
-        "workspaceFolders": [{
-            "uri": path_to_uri(project),
-            "name": project
-        }]
+        "workspaceFolders": [{ "uri": path_to_uri(project), "name": project }]
     });
     request_with_timeout(&server, "initialize", init, Duration::from_secs(20))?;
     notify(&server, "initialized", json!({}))?;
@@ -244,15 +228,10 @@ pub fn lsp_start(
     let k = key(&project, &language);
     {
         let reg = registry().lock().map_err(|e| e.to_string())?;
-        if reg.contains_key(&k) {
-            return Ok(());
-        }
+        if reg.contains_key(&k) { return Ok(()); }
     }
     let server = spawn_server(&project, &language, app)?;
-    registry()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(k, server);
+    registry().lock().map_err(|e| e.to_string())?.insert(k, server);
     Ok(())
 }
 
@@ -293,19 +272,14 @@ pub fn lsp_change(
         &server,
         "textDocument/didChange",
         json!({
-            "textDocument": {
-                "uri": path_to_uri(&path),
-                "version": version
-            },
+            "textDocument": { "uri": path_to_uri(&path), "version": version },
             "contentChanges": [{ "text": content }]
         }),
     )
 }
 
 fn parse_locations(result: &Value) -> Vec<LspLocation> {
-    if result.is_null() {
-        return vec![];
-    }
+    if result.is_null() { return vec![]; }
     if let Some(arr) = result.as_array() {
         return arr
             .iter()
@@ -318,70 +292,29 @@ fn parse_locations(result: &Value) -> Vec<LspLocation> {
     vec![]
 }
 
-fn position_request(
+#[tauri::command]
+pub fn lsp_locations(
     project: String,
     language: String,
     path: String,
     line: u32,
     character: u32,
-    method: &str,
+    kind: String,
 ) -> Result<Vec<LspLocation>, String> {
     let server = server_for(&project, &language)
         .ok_or_else(|| "lsp server not started".to_string())?;
-    let params = json!({
+    let (method, with_context) = match kind.as_str() {
+        "definition" => ("textDocument/definition", false),
+        "implementation" => ("textDocument/implementation", false),
+        "references" => ("textDocument/references", true),
+        other => return Err(format!("unknown lsp kind: {other}")),
+    };
+    let mut params = json!({
         "textDocument": { "uri": path_to_uri(&path) },
         "position": { "line": line, "character": character }
     });
+    if with_context {
+        params["context"] = json!({ "includeDeclaration": false });
+    }
     Ok(parse_locations(&request(&server, method, params)?))
-}
-
-#[tauri::command]
-pub fn lsp_definition(
-    project: String,
-    language: String,
-    path: String,
-    line: u32,
-    character: u32,
-) -> Result<Vec<LspLocation>, String> {
-    position_request(project, language, path, line, character, "textDocument/definition")
-}
-
-#[tauri::command]
-pub fn lsp_implementation(
-    project: String,
-    language: String,
-    path: String,
-    line: u32,
-    character: u32,
-) -> Result<Vec<LspLocation>, String> {
-    position_request(
-        project,
-        language,
-        path,
-        line,
-        character,
-        "textDocument/implementation",
-    )
-}
-
-#[tauri::command]
-pub fn lsp_references(
-    project: String,
-    language: String,
-    path: String,
-    line: u32,
-    character: u32,
-) -> Result<Vec<LspLocation>, String> {
-    let server = server_for(&project, &language)
-        .ok_or_else(|| "lsp server not started".to_string())?;
-    let params = json!({
-        "textDocument": { "uri": path_to_uri(&path) },
-        "position": { "line": line, "character": character },
-        "context": { "includeDeclaration": false }
-    });
-    Ok(parse_locations(&request(
-        &server,
-        "textDocument/references",
-        params,
-    )?))
 }

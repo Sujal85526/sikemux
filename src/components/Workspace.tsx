@@ -16,11 +16,13 @@ const pct = (n: number) => `${n * 100}%`;
 // The center stage. Every window and agent of every session stays mounted
 // (visibility-toggled) so detached sessions keep running.
 export function Workspace() {
-  const sessions = useWorkspace((s) => s.sessions);
+  const sessionsById = useWorkspace((s) => s.sessions);
+  const sessionOrder = useWorkspace((s) => s.sessionOrder);
   const activeSessionId = useWorkspace((s) => s.activeSessionId);
   const areaRef = useRef<HTMLDivElement>(null);
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const sessions = sessionOrder.map((id) => sessionsById[id]);
+  const activeSession = sessionsById[activeSessionId];
   const inAgentView = !!activeSession && activeSession.view === "agent";
   const showAgentTabs = inAgentView && activeSession!.agents.length >= 1;
   const showAgentEmpty = inAgentView && activeSession!.agents.length === 0;
@@ -247,8 +249,8 @@ function DividerHandle({
     if (!area) return;
     const bounds = area.getBoundingClientRect();
     const st = useWorkspace.getState();
-    const sess = st.sessions.find((s) => s.id === st.activeSessionId)!;
-    const winNode = sess.windows.find((w) => w.id === windowId);
+    const sess = st.sessions[st.activeSessionId];
+    const winNode = sess?.windows.find((w) => w.id === windowId);
     const split = winNode ? findSplit(winNode.root, d.splitId) : null;
     if (!split) return;
 

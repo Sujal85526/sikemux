@@ -1,9 +1,19 @@
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
+use std::collections::HashMap;
 
+use git2::{
+    BranchType, DiffFormat, DiffLineType, DiffOptions, ErrorCode, Repository, Status, StatusOptions,
+};
 use serde::Serialize;
 
 // ---- helpers --------------------------------------------------------------
+
+fn open_repo(path: &str) -> Result<Repository, String> {
+    Repository::discover(path).map_err(|e| e.message().to_string())
+}
 
 fn run_git(repo: &str, args: &[&str]) -> Result<(bool, String, String), String> {
     let out = Command::new("git")
@@ -19,7 +29,6 @@ fn run_git(repo: &str, args: &[&str]) -> Result<(bool, String, String), String> 
     ))
 }
 
-// Runs git, returning stdout on success or stderr (falling back to stdout) on failure.
 fn git_ok(repo: &str, args: &[&str]) -> Result<String, String> {
     let (ok, so, se) = run_git(repo, args)?;
     if ok {
@@ -29,16 +38,16 @@ fn git_ok(repo: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-// ---- status ---------------------------------------------------------------
+// ---- types ----------------------------------------------------------------
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct GitFile {
     path: String,
-    index: String,    // staged status char (porcelain X)
-    worktree: String, // working-tree status char (porcelain Y)
+    index: String,
+    worktree: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct GitStatus {
     branch: String,
     upstream: Option<String>,
@@ -47,21 +56,56 @@ pub struct GitStatus {
     files: Vec<GitFile>,
 }
 
-fn parse_count(track: &str, key: &str) -> i32 {
-    track
-        .find(key)
-        .and_then(|i| {
-            track[i + key.len()..]
-                .split(|c: char| !c.is_ascii_digit())
-                .next()
-        })
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0)
+#[derive(Serialize, Clone)]
+pub struct GitBranch {
+    name: String,
+    current: bool,
+    upstream: Option<String>,
 }
 
-#[tauri::command]
-pub fn git_status(repo: String) -> Result<GitStatus, String> {
-    let out = git_ok(&repo, &["status", "--porcelain", "--branch"])?;
+#[derive(Serialize, Clone)]
+pub struct GitCommit {
+    hash: String,
+    author: String,
+    date: String,
+    subject: String,
+}
+
+#[derive(Serialize)]
+pub struct GitOverview {
+    status: GitStatus,
+    branches: Vec<GitBranch>,
+    log: Vec<GitCommit>,
+}
+
+// ---- status ---------------------------------------------------------------
+
+fn status_chars(s: Status) -> (char, char) {
+    // map (index, worktree) to porcelain X / Y chars
+    let mut x = ' ';
+    let mut y = ' ';
+    if s.contains(Status::INDEX_NEW) { x = 'A'; }
+    else if s.contains(Status::INDEX_MODIFIED) { x = 'M'; }
+    else if s.contains(Status::INDEX_DELETED) { x = 'D'; }
+    else if s.contains(Status::INDEX_RENAMED) { x = 'R'; }
+    else if s.contains(Status::INDEX_TYPECHANGE) { x = 'T'; }
+
+    if s.contains(Status::WT_NEW) { y = '?'; if x == ' ' { x = '?'; } }
+    else if s.contains(Status::WT_MODIFIED) { y = 'M'; }
+    else if s.contains(Status::WT_DELETED) { y = 'D'; }
+    else if s.contains(Status::WT_RENAMED) { y = 'R'; }
+    else if s.contains(Status::WT_TYPECHANGE) { y = 'T'; }
+    else if s.contains(Status::CONFLICTED) { x = 'U'; y = 'U'; }
+
+    (x, y)
+}
+
+fn read_status(repo: &Repository) -> Result<GitStatus, String> {
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .renames_head_to_index(true);
+
     let mut status = GitStatus {
         branch: String::new(),
         upstream: None,
@@ -69,44 +113,206 @@ pub fn git_status(repo: String) -> Result<GitStatus, String> {
         behind: 0,
         files: Vec::new(),
     };
-    for line in out.lines() {
-        if let Some(rest) = line.strip_prefix("## ") {
-            if let Some(b) = rest.strip_prefix("No commits yet on ") {
-                status.branch = b.trim().to_string();
-                continue;
-            }
-            let (names, track) = rest.split_once(' ').unwrap_or((rest, ""));
-            if let Some((b, up)) = names.split_once("...") {
-                status.branch = b.to_string();
-                status.upstream = Some(up.to_string());
-            } else {
-                status.branch = names.to_string();
-            }
-            status.ahead = parse_count(track, "ahead ");
-            status.behind = parse_count(track, "behind ");
-        } else if line.len() >= 4 {
-            status.files.push(GitFile {
-                index: line[0..1].to_string(),
-                worktree: line[1..2].to_string(),
-                path: line[3..].to_string(),
-            });
+
+    // branch + upstream tracking
+    if let Ok(head) = repo.head() {
+        if let Some(name) = head.shorthand() {
+            status.branch = name.to_string();
         }
+        if let Ok(branch) = repo.find_branch(&status.branch, BranchType::Local) {
+            if let Ok(up) = branch.upstream() {
+                if let Some(n) = up.name().ok().flatten() {
+                    status.upstream = Some(n.to_string());
+                }
+                if let (Some(local_oid), Some(up_oid)) =
+                    (head.target(), up.get().target())
+                {
+                    if let Ok((ahead, behind)) = repo.graph_ahead_behind(local_oid, up_oid) {
+                        status.ahead = ahead as i32;
+                        status.behind = behind as i32;
+                    }
+                }
+            }
+        }
+    } else if let Ok(rname) = repo.head_detached() {
+        if rname { status.branch = "HEAD".to_string(); }
+    }
+    if status.branch.is_empty() {
+        // unborn branch — pull from HEAD reference name
+        if let Ok(reference) = repo.find_reference("HEAD") {
+            if let Some(target) = reference.symbolic_target() {
+                status.branch = target
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(target)
+                    .to_string();
+            }
+        }
+    }
+
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|e| e.message().to_string())?;
+    for entry in statuses.iter() {
+        let path = match entry.path() {
+            Some(p) => p.to_string(),
+            None => continue,
+        };
+        let (x, y) = status_chars(entry.status());
+        if x == ' ' && y == ' ' { continue; }
+        status.files.push(GitFile {
+            path,
+            index: x.to_string(),
+            worktree: y.to_string(),
+        });
     }
     Ok(status)
 }
 
+#[tauri::command]
+pub fn git_status(repo: String) -> Result<GitStatus, String> {
+    read_status(&open_repo(&repo)?)
+}
+
+// ---- branches & log -------------------------------------------------------
+
+fn read_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
+    let mut out = Vec::new();
+    let iter = repo
+        .branches(Some(BranchType::Local))
+        .map_err(|e| e.message().to_string())?;
+    for b in iter {
+        let (branch, _) = match b {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let name = match branch.name() {
+            Ok(Some(n)) => n.to_string(),
+            _ => continue,
+        };
+        let upstream = branch
+            .upstream()
+            .ok()
+            .and_then(|up| up.name().ok().flatten().map(String::from));
+        let current = branch.is_head();
+        out.push(GitBranch { name, current, upstream });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn git_branches(repo: String) -> Result<Vec<GitBranch>, String> {
+    read_branches(&open_repo(&repo)?)
+}
+
+fn relative_time(secs: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let d = (now - secs).max(0);
+    if d < 60 { return format!("{}s ago", d); }
+    if d < 3600 { return format!("{}m ago", d / 60); }
+    if d < 86400 { return format!("{}h ago", d / 3600); }
+    if d < 86400 * 30 { return format!("{}d ago", d / 86400); }
+    if d < 86400 * 365 { return format!("{}mo ago", d / (86400 * 30)); }
+    format!("{}y ago", d / (86400 * 365))
+}
+
+fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
+    let mut revwalk = repo.revwalk().map_err(|e| e.message().to_string())?;
+    if revwalk.push_head().is_err() {
+        return Ok(Vec::new());
+    }
+    revwalk
+        .set_sorting(git2::Sort::NONE)
+        .map_err(|e| e.message().to_string())?;
+    let mut out = Vec::with_capacity(limit);
+    for (i, oid) in revwalk.enumerate() {
+        if i >= limit { break; }
+        let oid = match oid { Ok(o) => o, Err(_) => continue };
+        let commit = match repo.find_commit(oid) { Ok(c) => c, Err(_) => continue };
+        let short = commit
+            .as_object()
+            .short_id()
+            .ok()
+            .and_then(|b| b.as_str().map(String::from))
+            .unwrap_or_else(|| oid.to_string()[..7].to_string());
+        out.push(GitCommit {
+            hash: short,
+            author: commit.author().name().unwrap_or("").to_string(),
+            date: relative_time(commit.time().seconds()),
+            subject: commit.summary().unwrap_or("").to_string(),
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
+    read_log(&open_repo(&repo)?, 60)
+}
+
+#[tauri::command]
+pub fn git_overview(repo: String) -> Result<GitOverview, String> {
+    let r = open_repo(&repo)?;
+    Ok(GitOverview {
+        status: read_status(&r)?,
+        branches: read_branches(&r)?,
+        log: read_log(&r, 60)?,
+    })
+}
+
+#[tauri::command]
+pub fn git_checkout(repo: String, branch: String) -> Result<(), String> {
+    // git2 checkout is fiddly with working-tree handling — shell out.
+    git_ok(&repo, &["checkout", &branch]).map(|_| ())
+}
+
 // ---- diff -----------------------------------------------------------------
+
+fn write_diff_to_string(diff: &git2::Diff) -> Result<String, String> {
+    let mut out = String::new();
+    diff.print(DiffFormat::Patch, |_d, _h, line| {
+        match line.origin_value() {
+            DiffLineType::Context => out.push(' '),
+            DiffLineType::Addition => out.push('+'),
+            DiffLineType::Deletion => out.push('-'),
+            DiffLineType::FileHeader
+            | DiffLineType::HunkHeader
+            | DiffLineType::Binary => {}
+            _ => {}
+        }
+        out.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
+        true
+    })
+    .map_err(|e| e.message().to_string())?;
+    Ok(out)
+}
 
 #[tauri::command]
 pub fn git_diff(repo: String, path: String, staged: bool) -> Result<String, String> {
+    let r = open_repo(&repo)?;
+    let mut opts = DiffOptions::new();
+    opts.pathspec(&path).context_lines(3);
+
     if staged {
-        return git_ok(&repo, &["diff", "--cached", "--no-ext-diff", "--", &path]);
+        let head_tree = r
+            .head()
+            .ok()
+            .and_then(|h| h.peel_to_tree().ok());
+        let diff = r
+            .diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))
+            .map_err(|e| e.message().to_string())?;
+        return write_diff_to_string(&diff);
     }
-    let tracked = git_ok(&repo, &["diff", "--no-ext-diff", "--", &path])?;
-    if !tracked.trim().is_empty() {
-        return Ok(tracked);
-    }
-    // Untracked file — diff against an empty tree (exits non-zero by design).
+
+    let diff = r
+        .diff_index_to_workdir(None, Some(&mut opts))
+        .map_err(|e| e.message().to_string())?;
+    let s = write_diff_to_string(&diff)?;
+    if !s.trim().is_empty() { return Ok(s); }
+
+    // Untracked — fall back to git no-index for parity with the old impl.
     let (_, so, _) = run_git(
         &repo,
         &["diff", "--no-ext-diff", "--no-index", "--", "/dev/null", &path],
@@ -118,132 +324,74 @@ pub fn git_diff(repo: String, path: String, staged: bool) -> Result<String, Stri
 
 #[tauri::command]
 pub fn git_stage(repo: String, path: String) -> Result<(), String> {
-    git_ok(&repo, &["add", "--", &path]).map(|_| ())
+    let r = open_repo(&repo)?;
+    let mut index = r.index().map_err(|e| e.message().to_string())?;
+    let p = Path::new(&path);
+    // If the file is gone, stage the deletion; else add the worktree content.
+    let abs = Path::new(&repo).join(p);
+    if !abs.exists() {
+        index.remove_path(p).map_err(|e| e.message().to_string())?;
+    } else {
+        index.add_path(p).map_err(|e| e.message().to_string())?;
+    }
+    index.write().map_err(|e| e.message().to_string())
 }
 
 #[tauri::command]
 pub fn git_unstage(repo: String, path: String) -> Result<(), String> {
-    git_ok(&repo, &["restore", "--staged", "--", &path]).map(|_| ())
+    let r = open_repo(&repo)?;
+    let head_commit = r.head().and_then(|h| h.peel_to_commit()).ok();
+    let result = if let Some(head) = head_commit {
+        r.reset_default(Some(head.as_object()), [&path])
+            .map_err(|e| e.message().to_string())
+    } else {
+        // Pre-first-commit — remove from index.
+        let mut idx = r.index().map_err(|e| e.message().to_string())?;
+        idx.remove_path(Path::new(&path))
+            .map_err(|e| e.message().to_string())?;
+        idx.write().map_err(|e| e.message().to_string())
+    };
+    result
 }
 
 #[tauri::command]
 pub fn git_stage_all(repo: String) -> Result<(), String> {
-    git_ok(&repo, &["add", "-A"]).map(|_| ())
+    let r = open_repo(&repo)?;
+    let mut idx = r.index().map_err(|e| e.message().to_string())?;
+    idx.add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+        .map_err(|e| e.message().to_string())?;
+    // Also stage deletions.
+    idx.update_all(["*"], None)
+        .map_err(|e| e.message().to_string())?;
+    idx.write().map_err(|e| e.message().to_string())
 }
 
-// ---- branches & log -------------------------------------------------------
+// ---- show / file_at -------------------------------------------------------
 
-#[derive(Serialize)]
-pub struct GitBranch {
-    name: String,
-    current: bool,
-    upstream: Option<String>,
+fn revparse_commit<'a>(
+    repo: &'a Repository,
+    rev: &str,
+) -> Result<git2::Commit<'a>, String> {
+    repo.revparse_single(rev)
+        .and_then(|o| o.peel_to_commit())
+        .map_err(|e| e.message().to_string())
 }
 
-#[tauri::command]
-pub fn git_branches(repo: String) -> Result<Vec<GitBranch>, String> {
-    let out = git_ok(
-        &repo,
-        &["branch", "--format=%(HEAD)%09%(refname:short)%09%(upstream:short)"],
-    )?;
-    Ok(out
-        .lines()
-        .filter_map(|line| {
-            let p: Vec<&str> = line.split('\t').collect();
-            if p.len() < 2 {
-                return None;
-            }
-            Some(GitBranch {
-                current: p[0] == "*",
-                name: p[1].to_string(),
-                upstream: p.get(2).filter(|s| !s.is_empty()).map(|s| s.to_string()),
-            })
-        })
-        .collect())
-}
-
-#[tauri::command]
-pub fn git_checkout(repo: String, branch: String) -> Result<(), String> {
-    git_ok(&repo, &["checkout", &branch]).map(|_| ())
-}
-
-#[derive(Serialize)]
-pub struct GitCommit {
-    hash: String,
-    author: String,
-    date: String,
-    subject: String,
-}
-
-#[tauri::command]
-pub fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
-    let out = git_ok(
-        &repo,
-        &["log", "-60", "--pretty=format:%h%x09%an%x09%ar%x09%s"],
-    )?;
-    Ok(out
-        .lines()
-        .filter_map(|l| {
-            let p: Vec<&str> = l.splitn(4, '\t').collect();
-            if p.len() < 4 {
-                return None;
-            }
-            Some(GitCommit {
-                hash: p[0].to_string(),
-                author: p[1].to_string(),
-                date: p[2].to_string(),
-                subject: p[3].to_string(),
-            })
-        })
-        .collect())
-}
-
-// Commit (or branch/ref) detail: message, file stat, and full patch.
 #[tauri::command]
 pub fn git_show(repo: String, rev: String) -> Result<String, String> {
+    // git2's diff doesn't render the message + stat block the way `git show`
+    // does — shelling out here costs us nothing and keeps the UI identical.
     git_ok(&repo, &["show", "--no-ext-diff", "--stat", "-p", &rev])
 }
 
-// File content at a revision (e.g. HEAD). Empty string if the file did not
-// exist there — so a new file shows as all-additions in the merge view.
-//
-// Commit hashes are content-addressed and immutable, so we cache content keyed
-// by (repo, rev, path). Moving refs like HEAD / branch names skip the cache.
-#[tauri::command]
-pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
-    let cacheable = is_immutable_rev(&rev);
-    let key = (repo.clone(), rev.clone(), path.clone());
-    if cacheable {
-        if let Some(hit) = file_at_cache().lock().ok().and_then(|c| c.get(&key).cloned())
-        {
-            return Ok(hit);
-        }
-    }
-    let (ok, so, _) = run_git(&repo, &["show", &format!("{rev}:{path}")])?;
-    let content = if ok { so } else { String::new() };
-    if cacheable {
-        if let Ok(mut cache) = file_at_cache().lock() {
-            if cache.len() > 500 {
-                cache.clear();
-            }
-            cache.insert(key, content.clone());
-        }
-    }
-    Ok(content)
-}
-
+// Content-addressed cache for immutable revs.
 fn file_at_cache(
-) -> &'static std::sync::Mutex<std::collections::HashMap<(String, String, String), String>>
-{
-    static C: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<(String, String, String), String>>,
-    > = std::sync::OnceLock::new();
-    C.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+) -> &'static Mutex<HashMap<(String, String, String), String>> {
+    static C: std::sync::OnceLock<Mutex<HashMap<(String, String, String), String>>> =
+        std::sync::OnceLock::new();
+    C.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-// A rev is safe to cache when it resolves to a fixed commit — i.e. a sha
-// (optionally followed by ~N / ^N parent navigation). Names like HEAD or
-// branch refs are skipped because they move.
 fn is_immutable_rev(rev: &str) -> bool {
     let head = rev
         .split(|c| c == '~' || c == '^')
@@ -252,16 +400,68 @@ fn is_immutable_rev(rev: &str) -> bool {
     head.len() >= 7 && head.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-// Paths changed by a commit (or branch tip).
+#[tauri::command]
+pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
+    let cacheable = is_immutable_rev(&rev);
+    let key = (repo.clone(), rev.clone(), path.clone());
+    if cacheable {
+        if let Some(hit) = file_at_cache().lock().ok().and_then(|c| c.get(&key).cloned()) {
+            return Ok(hit);
+        }
+    }
+    let r = open_repo(&repo)?;
+    let content = match revparse_commit(&r, &rev) {
+        Ok(commit) => {
+            let tree = commit.tree().map_err(|e| e.message().to_string())?;
+            match tree.get_path(Path::new(&path)) {
+                Ok(entry) => {
+                    let blob = r
+                        .find_blob(entry.id())
+                        .map_err(|e| e.message().to_string())?;
+                    String::from_utf8_lossy(blob.content()).into_owned()
+                }
+                Err(e) if e.code() == ErrorCode::NotFound => String::new(),
+                Err(e) => return Err(e.message().to_string()),
+            }
+        }
+        Err(_) => String::new(),
+    };
+    if cacheable {
+        if let Ok(mut cache) = file_at_cache().lock() {
+            if cache.len() > 500 { cache.clear(); }
+            cache.insert(key, content.clone());
+        }
+    }
+    Ok(content)
+}
+
 #[tauri::command]
 pub fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, String> {
-    let out = git_ok(&repo, &["show", "--name-only", "--pretty=format:", &rev])?;
-    Ok(out
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(String::from)
-        .collect())
+    let r = open_repo(&repo)?;
+    let commit = revparse_commit(&r, &rev)?;
+    let new_tree = commit.tree().map_err(|e| e.message().to_string())?;
+    let parent_tree = commit
+        .parent(0)
+        .ok()
+        .and_then(|p| p.tree().ok());
+    let diff = r
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&new_tree), None)
+        .map_err(|e| e.message().to_string())?;
+    let mut paths = Vec::new();
+    diff.foreach(
+        &mut |d, _| {
+            if let Some(p) = d.new_file().path().or_else(|| d.old_file().path()) {
+                let s = p.to_string_lossy().into_owned();
+                if !paths.contains(&s) { paths.push(s); }
+            }
+            true
+        },
+        None,
+        None,
+        None,
+    )
+    .map_err(|e| e.message().to_string())?;
+    Ok(paths)
 }
 
 // ---- commit / push / pull -------------------------------------------------
@@ -297,7 +497,6 @@ pub fn git_push(repo: String) -> Result<String, String> {
     if ok {
         return Ok(format!("{so}{se}").trim().to_string());
     }
-    // No upstream yet — set it and retry.
     if se.contains("has no upstream branch") || se.contains("--set-upstream") {
         let branch = git_ok(&repo, &["branch", "--show-current"])?.trim().to_string();
         let (ok2, so2, se2) =
@@ -321,7 +520,9 @@ pub fn git_pull(repo: String) -> Result<String, String> {
     }
 }
 
-// ---- AI commit (native port of ~/.config/shell/bin/hermes-commit) ---------
+// ---- AI commit ------------------------------------------------------------
+
+const DIFF_LIMIT: usize = 50_000;
 
 fn clean_commit_message(raw: &str) -> Result<String, String> {
     let mut t = raw.trim().to_string();
@@ -373,14 +574,12 @@ fn run_hermes(prompt: &str) -> Result<String, String> {
                     String::from_utf8_lossy(&out.stderr)
                 ));
             }
-            Err(_) => continue, // binary not at this path — try the next
+            Err(_) => continue,
         }
     }
     Err("hermes not found on PATH".into())
 }
 
-/// Generate a conventional-commit message with Hermes from the staged diff
-/// and commit it. Native port of the user's `hermes-commit` script.
 #[tauri::command]
 pub fn git_ai_commit(repo: String) -> Result<String, String> {
     if git_ok(&repo, &["diff", "--cached", "--name-only"])?
@@ -396,7 +595,11 @@ pub fn git_ai_commit(repo: String) -> Result<String, String> {
     let stat = git_ok(&repo, &["diff", "--cached", "--stat"]).unwrap_or_default();
     let mut diff =
         git_ok(&repo, &["diff", "--cached", "--no-ext-diff", "--unified=3"]).unwrap_or_default();
-    diff.truncate(50_000);
+    let truncated = diff.len() > DIFF_LIMIT;
+    if truncated {
+        diff.truncate(DIFF_LIMIT);
+        diff.push_str("\n\n[diff truncated — exceeds size limit]\n");
+    }
     let repo_name = std::path::Path::new(&repo)
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -423,28 +626,31 @@ pub fn git_ai_commit(repo: String) -> Result<String, String> {
     Ok(message)
 }
 
-// ---- open PR (native port of ~/.config/shell/bin/pr-open) -----------------
+// ---- open PR --------------------------------------------------------------
 
 #[tauri::command]
 pub fn pr_open(repo: String) -> Result<String, String> {
-    let remote = git_ok(&repo, &["remote", "get-url", "origin"])?
-        .trim()
+    let r = open_repo(&repo)?;
+    let remote_url = r
+        .find_remote("origin")
+        .map_err(|e| e.message().to_string())?
+        .url()
+        .ok_or("origin has no URL")?
         .to_string();
-    let branch = git_ok(&repo, &["branch", "--show-current"])?
-        .trim()
-        .to_string();
-    if branch.is_empty() {
-        return Err("no current branch (detached HEAD?)".into());
-    }
 
-    // SSH -> HTTPS.
-    let mut url = if let Some(rest) = remote.strip_prefix("git@") {
+    let branch = r
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(String::from))
+        .ok_or("no current branch (detached HEAD?)")?;
+
+    let mut url = if let Some(rest) = remote_url.strip_prefix("git@") {
         match rest.split_once(':') {
             Some((host, path)) => format!("https://{host}/{}", path.trim_end_matches(".git")),
-            None => remote.clone(),
+            None => remote_url.clone(),
         }
     } else {
-        remote.trim_end_matches(".git").to_string()
+        remote_url.trim_end_matches(".git").to_string()
     };
 
     if url.contains("github.com") {
