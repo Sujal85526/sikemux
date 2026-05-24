@@ -64,10 +64,15 @@ export default function App() {
 
   // Global fs-event subscription. The backend invalidates its own file
   // index cache; we drop the matching frontend cache entry so the next
-  // Cmd-P open reflects on-disk reality.
+  // Cmd-P open reflects on-disk reality, *and* bump the git-refresh nonce so
+  // every mounted EditorPane re-fetches its HEAD baseline. Without that
+  // bump, the diff gutter / overview ruler keep showing stale chunks from
+  // before the commit (the file's HEAD content changed under us but the
+  // editor still holds the previous baseline).
   useEffect(() => {
     const handle = listen<{ repo: string }>("git_changed", (e) => {
       filesApi.invalidate(e.payload.repo || undefined);
+      useWorkspace.getState().bumpGitRefresh();
     });
     return () => {
       void handle.then((u) => u());

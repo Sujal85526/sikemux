@@ -169,10 +169,27 @@ const overviewRuler = ViewPlugin.fromClass(
         const top = ((startLine - 1) / totalLines) * 100;
         const span = Math.max(endLine - startLine + 1, 1);
         const height = h.kind === "del" ? 0 : Math.max((span / totalLines) * 100, 0.4);
-        const bar = document.createElement("div");
+        const bar = document.createElement("button");
+        bar.type = "button";
         bar.className = `cm-git-ruler-bar ${h.kind}`;
         bar.style.top = `${top}%`;
         bar.style.height = `${height}%`;
+        bar.title =
+          h.kind === "del"
+            ? `Deleted before line ${startLine}`
+            : h.kind === "add"
+              ? `Added lines ${startLine}–${endLine}`
+              : `Modified lines ${startLine}–${endLine}`;
+        bar.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const line = view.state.doc.line(startLine);
+          view.dispatch({
+            selection: { anchor: line.from },
+            effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+          });
+          view.focus();
+        };
         this.dom.appendChild(bar);
       }
     }

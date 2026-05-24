@@ -2203,16 +2203,27 @@ button {
   position: absolute;
   top: 0;
   right: 0;
-  width: 4px;
+  width: 6px;
   height: 100%;
-  pointer-events: none;
   z-index: 4;
 }
+/* Clickable: jumps the viewport to the corresponding diff hunk. Buttons
+   reset their default chrome (cursor, padding, border) so they read as the
+   plain coloured strip the user expects. */
 .cm-git-ruler-bar {
   position: absolute;
   left: 0;
   width: 100%;
   min-height: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: width 0.1s, filter 0.1s;
+}
+.cm-git-ruler-bar:hover {
+  width: 8px;
+  filter: brightness(1.25);
 }
 .cm-git-ruler-bar.add {
   background: #4ade80;
@@ -2222,7 +2233,7 @@ button {
 }
 .cm-git-ruler-bar.del {
   background: #ef4444;
-  height: 3px !important;
+  height: 4px !important;
 }
 
 /* Cmd-hover symbol underline — VSCode / Zed style "go to definition" cue */
