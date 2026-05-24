@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
-import type { Session, SessionKind } from "../state/types";
-import { useWorkspace } from "../state/workspace";
+import type { Session, SessionKind, Window } from "../state/types";
+import * as cmd from "../state/commands";
+import { useStore } from "../state/store";
 import {
   AgentIcon,
   IconAgent,
@@ -17,8 +18,6 @@ import {
 function kindIcon(kind: SessionKind): ReactNode {
   if (kind === "project") return <IconFolder size={13} />;
   if (kind === "aws") return <IconAws size={20} />;
-  // SSH and Command both use the terminal-arrow icon — fine, the group
-  // label in the rail keeps them visually distinct without a custom icon.
   return <IconCommand size={13} />;
 }
 
@@ -29,15 +28,9 @@ function isTermTab(name: string): boolean {
   return name === "term" || /^\d+$/.test(name);
 }
 
-// Total number of terminal tabs in a session (each tab is a Window).
-function termTabCount(s: Session): number {
-  return s.windows.filter((w) => isTermTab(w.name)).length;
-}
-
 const STACK_MAX = 4;
 
-// Tiny stacked badge — overlapping circles, capped at STACK_MAX. Used to
-// surface "this session has 3 terminals + 2 agents" without numbers.
+// Tiny stacked badge — overlapping circles, capped at STACK_MAX.
 function CountStack({
   count,
   kind,
@@ -46,7 +39,7 @@ function CountStack({
 }: {
   count: number;
   kind: "term" | "agent";
-  agentKinds?: string[]; // for agents: which type per circle
+  agentKinds?: string[];
   title: string;
 }) {
   if (count === 0) return null;
@@ -60,8 +53,6 @@ function CountStack({
       {Array.from({ length: visible }).map((_, i) => {
         const overflowing = count > STACK_MAX;
         const isMore = overflowing && i === visible - 1;
-        // When overflowing we show STACK_MAX-1 real icons and one count
-        // chip, so the overflow text is the remaining hidden count.
         const overflowText = isMore ? `+${count - (STACK_MAX - 1)}` : null;
         const agentType = agentKinds?.[i] as
           | "claude"
@@ -92,20 +83,15 @@ function CountStack({
 }
 
 export function SideRail() {
-  const sessionsById = useWorkspace((s) => s.sessions);
-  const sessionOrder = useWorkspace((s) => s.sessionOrder);
-  const activeSessionId = useWorkspace((s) => s.activeSessionId);
-  const selectSession = useWorkspace((s) => s.selectSession);
-  const selectWindowId = useWorkspace((s) => s.selectWindowId);
-  const focusAgents = useWorkspace((s) => s.focusAgents);
-  const openPicker = useWorkspace((s) => s.openPicker);
-  const openAwsSession = useWorkspace((s) => s.openAwsSession);
-  const createCommandSession = useWorkspace((s) => s.createCommandSession);
-  const togglePin = useWorkspace((s) => s.togglePin);
-  const closeSession = useWorkspace((s) => s.closeSession);
+  const sessionsById = useStore((s) => s.sessions);
+  const sessionOrder = useStore((s) => s.sessionOrder);
+  const windowsById = useStore((s) => s.windows);
+  const windowsBySession = useStore((s) => s.windowsBySession);
+  const agentsBySession = useStore((s) => s.agentsBySession);
+  const agentsById = useStore((s) => s.agents);
+  const activeSessionId = useStore((s) => s.activeSessionId);
   const sessions = sessionOrder.map((id) => sessionsById[id]);
 
-  // Per-project collapse state — projects default to expanded.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleCollapse = (id: string) =>
     setCollapsed((prev) => {
@@ -121,25 +107,31 @@ export function SideRail() {
   const cloud = sessions.filter((s) => !s.pinned && s.kind === "aws");
   const commands = sessions.filter((s) => !s.pinned && s.kind === "command");
 
-  // Window/agent click in any project row — jumps to that project first.
   const jumpToWindow = (sessionId: string, winId: string) => {
-    if (sessionId !== activeSessionId) selectSession(sessionId);
-    selectWindowId(winId);
+    if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
+    cmd.selectWindowId(winId);
   };
   const jumpToAgents = (sessionId: string) => {
-    if (sessionId !== activeSessionId) selectSession(sessionId);
-    focusAgents();
+    if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
+    cmd.focusAgents();
   };
 
   const Row = ({ s }: { s: Session }) => {
     const active = s.id === activeSessionId;
     const isProject = s.kind === "project";
     const open = isProject && !collapsed.has(s.id);
+    const winIds = windowsBySession[s.id] ?? [];
+    const sessionWindows = winIds
+      .map((id) => windowsById[id])
+      .filter(Boolean) as Window[];
+    const agentIds = agentsBySession[s.id] ?? [];
+    const tabCount = sessionWindows.filter((w) => isTermTab(w.name)).length;
+    const agents = agentIds.map((id) => agentsById[id]).filter(Boolean);
     return (
       <div>
         <button
           className={`sess-row${active ? " active" : ""}`}
-          onClick={() => selectSession(s.id)}
+          onClick={() => cmd.selectSession(s.id)}
         >
           <span
             className={`sess-icon ${s.kind}${isProject ? " toggle" : ""}${
@@ -168,7 +160,7 @@ export function SideRail() {
             title={s.pinned ? "Unpin" : "Pin"}
             onClick={(e) => {
               e.stopPropagation();
-              togglePin(s.id);
+              cmd.togglePin(s.id);
             }}
           >
             <IconPin size={11} filled={s.pinned} />
@@ -178,7 +170,7 @@ export function SideRail() {
             title="Close session"
             onClick={(e) => {
               e.stopPropagation();
-              closeSession(s.id);
+              cmd.closeSession(s.id);
             }}
           >
             <IconClose size={11} />
@@ -187,21 +179,17 @@ export function SideRail() {
         {open && (
           <div className="win-list">
             {(() => {
-              // Hide the auto-numbered term tabs from the rail; the "term"
-              // row's stack badge shows the total count instead.
-              const railWindows = s.windows.filter(
+              // Auto-numbered term tabs collapse into the "term" badge.
+              const railWindows = sessionWindows.filter(
                 (w) => !(/^\d+$/.test(w.name)),
               );
-              const tabCount = termTabCount(s);
               return railWindows.map((w, i) => {
+                const activeName =
+                  sessionWindows.find((x) => x.id === s.activeWindowId)?.name ?? "";
                 const winActive =
                   active && s.view === "windows" &&
                   (w.id === s.activeWindowId ||
-                    // Treat "term" as active when any term-tab is active.
-                    (w.name === "term" &&
-                      isTermTab(
-                        s.windows.find((x) => x.id === s.activeWindowId)?.name ?? "",
-                      )));
+                    (w.name === "term" && isTermTab(activeName)));
                 const isTerm = w.name === "term";
                 return (
                   <button
@@ -242,12 +230,12 @@ export function SideRail() {
                 <IconAgent size={13} />
               </span>
               <span className="win-name">agents</span>
-              {s.agents.length > 0 ? (
+              {agents.length > 0 ? (
                 <CountStack
-                  count={s.agents.length}
+                  count={agents.length}
                   kind="agent"
-                  agentKinds={s.agents.map((a) => a.type)}
-                  title={`${s.agents.length} agent${s.agents.length === 1 ? "" : "s"}`}
+                  agentKinds={agents.map((a) => a.type)}
+                  title={`${agents.length} agent${agents.length === 1 ? "" : "s"}`}
                 />
               ) : (
                 <span className="win-index">0</span>
@@ -259,9 +247,6 @@ export function SideRail() {
     );
   };
 
-  // Each group renders a label + inline `+` (when add is provided), then
-  // either its rows or a single-line empty state. Always-on so the rail
-  // structure is visible even before the user creates any sessions.
   const Group = ({
     label,
     list,
@@ -313,34 +298,34 @@ export function SideRail() {
         <Group
           label="Projects"
           list={projects}
-          add={() => openPicker("projects")}
+          add={() => cmd.openPicker("projects")}
           addTitle="Open project — M-s"
           emptyText="no projects"
         />
         <Group
           label="SSH"
           list={sshs}
-          add={() => openPicker("ssh")}
+          add={() => cmd.openPicker("ssh")}
           addTitle="Connect to SSH host — M-S"
           emptyText="no ssh hosts"
         />
         <Group
           label="Cloud"
           list={cloud}
-          add={openAwsSession}
+          add={cmd.openAwsSession}
           addTitle="Open AWS"
           emptyText="no cloud sessions"
         />
         <Group
           label="Command"
           list={commands}
-          add={createCommandSession}
+          add={cmd.createCommandSession}
           addTitle="New command session"
           emptyText="no commands"
         />
       </div>
 
-      <button className="rail-foot" onClick={() => openPicker("all")}>
+      <button className="rail-foot" onClick={() => cmd.openPicker("all")}>
         <span className="kbd">M-s</span>
         <span>open or create a session</span>
       </button>

@@ -1,12 +1,10 @@
-import { useEffect, useState } from "react";
-import { awsApi, type AwsProfile } from "../../api/aws";
-import { useWorkspace } from "../../state/workspace";
+import * as cmd from "../../state/commands";
+import { useResource } from "../../state/resources";
+import { awsIdentityR, awsProfilesR } from "../../state/resources.defs";
 
 // Shown when:
-//   - no profile picked (mode = "no-profile") → pick a profile from
-//     ~/.aws/config or jump to settings to add one
-//   - selected profile is unauthed (mode = "unauthed") → big sign-in card
-//     that opens the SSO URL + lets the user run `aws sso login`
+//   - no profile picked  → pick from ~/.aws/config or jump to settings
+//   - selected profile is unauthed → big sign-in card with SSO start URL
 export function AwsAuthEmpty({
   mode,
   profile,
@@ -14,20 +12,10 @@ export function AwsAuthEmpty({
   mode: "no-profile" | "unauthed";
   profile?: string;
 }) {
-  const setAwsProfile = useWorkspace((s) => s.setAwsProfile);
-  const refreshAwsStatus = useWorkspace((s) => s.refreshAwsStatus);
-  const openAwsAuthModal = useWorkspace((s) => s.openAwsAuthModal);
-  const status = useWorkspace((s) =>
-    profile ? s.awsStatuses[profile] : null,
-  );
-  const [profiles, setProfiles] = useState<AwsProfile[] | null>(null);
-
-  useEffect(() => {
-    awsApi
-      .profiles()
-      .then(setProfiles)
-      .catch(() => setProfiles([]));
-  }, []);
+  const profilesR = useResource(awsProfilesR);
+  const identity = useResource(awsIdentityR, profile ?? "", false);
+  const status = profile ? identity.data : undefined;
+  const profiles = profilesR.data ?? null;
 
   if (mode === "no-profile") {
     return (
@@ -54,8 +42,7 @@ export function AwsAuthEmpty({
                   key={p.name}
                   className="aws-profile-row"
                   onClick={() => {
-                    setAwsProfile(p.name);
-                    void refreshAwsStatus(p.name, true);
+                    cmd.setAwsProfile(p.name);
                   }}
                 >
                   <span className="aws-profile-name">{p.name}</span>
@@ -97,21 +84,19 @@ export function AwsAuthEmpty({
         <div className="aws-empty-actions">
           <button
             className="aws-empty-btn primary"
-            onClick={() => openAwsAuthModal(profile ?? "", ssoUrl)}
+            onClick={() => cmd.openAwsAuthModal(profile ?? "", ssoUrl)}
           >
             Sign in with SSO
           </button>
           <button
             className="aws-empty-btn"
-            onClick={() => {
-              if (profile) void refreshAwsStatus(profile, true);
-            }}
+            onClick={() => void identity.refresh()}
           >
             Retry
           </button>
           <button
             className="aws-empty-btn ghost"
-            onClick={() => setAwsProfile(null)}
+            onClick={() => cmd.setAwsProfile(null)}
           >
             Switch profile
           </button>

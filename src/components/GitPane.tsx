@@ -1,96 +1,71 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
-import {
-  git,
-  hasUnstaged,
-  isStaged,
-  type GitBranch,
-  type GitCommit,
-  type GitStatus,
-} from "../api/git";
-import { useWorkspace } from "../state/workspace";
+import { git, hasUnstaged, isStaged } from "../api/git";
+import * as cmd from "../state/commands";
+import { useResource } from "../state/resources";
+import { gitOverviewR } from "../state/resources.defs";
+import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
+import type { GitPanel } from "../state/types";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { MergeReview } from "./MergeReview";
 
 const basenameOf = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
-type Panel = "files" | "branches" | "commits";
 type RightView =
   | { mode: "merge"; path: string }
   | { mode: "commit"; rev: string; title: string; subtitle: string }
   | { mode: "output"; text: string };
 
-// Native lazygit-style git UI. Keyboard flow: 2 (files) → a (stage all) →
-// C (AI commit) → 3 (branches) → P (push) → Ctrl-P (open PR).
-export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
+const DEFAULT_VIEW = {
+  panel: "files" as GitPanel,
+  selected: { files: 0, branches: 0, commits: 0 },
+};
+
+// Native lazygit-style git UI. View state (focused panel + per-panel
+// selection) is stored per-pane so switching sessions and coming back
+// puts you back where you were.
+export function GitPane({
+  paneId,
+  cwd,
+  active,
+}: {
+  paneId: string;
+  cwd: string;
+  active: boolean;
+}) {
   const repo = cwd;
-  const [status, setStatus] = useState<GitStatus | null>(null);
-  const [branches, setBranches] = useState<GitBranch[]>([]);
-  const [commits, setCommits] = useState<GitCommit[]>([]);
-  const [panel, setPanel] = useState<Panel>("files");
-  const [sel, setSel] = useState<Record<Panel, number>>({
-    files: 0,
-    branches: 0,
-    commits: 0,
-  });
+  const view = useStore((s) => s.gitViews[paneId] ?? DEFAULT_VIEW);
+  const { panel, selected: sel } = view;
+
+  const overview = useResource(gitOverviewR, repo || "");
+  const status = repo ? overview.data?.status ?? null : null;
+  const branches = repo ? overview.data?.branches ?? [] : [];
+  const commits = repo ? overview.data?.log ?? [] : [];
+  const files = status?.files ?? [];
+
   const [right, setRight] = useState<RightView>({ mode: "output", text: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const [commitMode, setCommitMode] = useState(false);
   const [commitText, setCommitText] = useState("");
   const commitInputRef = useRef<HTMLInputElement>(null);
-  const requestOpenFile = useWorkspace((s) => s.requestOpenFile);
 
-  const refresh = useCallback(async () => {
-    if (!repo) return;
-    try {
-      const ov = await git.overview(repo);
-      setStatus(ov.status);
-      setBranches(ov.branches);
-      setCommits(ov.log);
-    } catch (err) {
-      setRight({ mode: "output", text: `✗ ${String(err)}` });
-    }
-  }, [repo]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useEffect(() => {
-    if (active) void refresh();
-  }, [active, refresh]);
-  // Editor saves bump the refresh nonce. We still listen for it so the
-  // editor pane can poke us without going through the filesystem watcher.
-  const gitRefreshN = useWorkspace((s) => s.gitRefreshN);
-  useEffect(() => {
-    void refresh();
-  }, [gitRefreshN, refresh]);
-
-  // Filesystem watcher — replaces the 3 s polling loop. Starts when the
-  // repo cwd is known, releases the OS handle when it changes.
+  // Filesystem watcher — backend pushes `git_changed` which App.tsx turns
+  // into a resource invalidation. We just keep the watcher handle open.
   useEffect(() => {
     if (!repo) return;
     git.watchStart(repo).catch(reportError("git watch"));
-    const unlisten = listen<{ repo: string }>("git_changed", (e) => {
-      if (e.payload.repo === repo || e.payload.repo === "") {
-        void refresh();
-      }
-    });
     return () => {
-      void unlisten.then((u) => u());
       git.watchStop(repo).catch(() => {});
     };
-  }, [repo, refresh]);
+  }, [repo]);
+
   useEffect(() => {
     if (commitMode) commitInputRef.current?.focus();
   }, [commitMode]);
 
-  const files = status?.files ?? [];
-
-  // Load the right pane for the selected row: file diff, commit detail, or
-  // branch-tip detail depending on the focused panel.
+  // Load the right pane for the selected row.
   useEffect(() => {
     if (panel === "files") {
       if (files.length === 0) {
@@ -138,16 +113,18 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
       const msg = String(err);
       setRight({ mode: "output", text: `✗ ${msg}` });
       reportError(label || "git")(err);
-      // Persist the failure inline so the user actually sees what went wrong
-      // instead of a phantom split-second flash.
       setBusy(`✗ ${msg.length > 80 ? msg.slice(0, 80) + "…" : msg}`);
       errorTimerRef.current = window.setTimeout(() => {
         setBusy(null);
         errorTimerRef.current = undefined;
       }, 3500);
     }
-    void refresh();
+    void overview.refresh();
   };
+
+  const setPanel = (p: GitPanel) => cmd.setGitView(paneId, { panel: p });
+  const setSel = (next: typeof sel) =>
+    cmd.setGitView(paneId, { selected: next });
 
   const toggleStage = () => {
     const f = files[sel.files];
@@ -182,10 +159,10 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
           ? branches.length
           : commits.length;
     if (len === 0) return;
-    setSel((s) => ({
-      ...s,
-      [panel]: Math.max(0, Math.min(len - 1, s[panel] + d)),
-    }));
+    setSel({
+      ...sel,
+      [panel]: Math.max(0, Math.min(len - 1, sel[panel] + d)),
+    });
   };
 
   // ---- keyboard ----
@@ -193,7 +170,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
     if (!active || commitMode) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey || e.metaKey) return;
-      if (useWorkspace.getState().pickerOpen) return;
+      if (useStore.getState().pickerOpen) return;
       // Don't hijack keys while the user is typing in the diff/merge editor.
       const ae = document.activeElement;
       if (ae && ae.closest(".cm-editor")) return;
@@ -214,12 +191,16 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
       else if (k === "3") setPanel("branches");
       else if (k === "4") setPanel("commits");
       else if (k === "Tab")
-        setPanel((p) =>
-          p === "files" ? "branches" : p === "branches" ? "commits" : "files",
+        setPanel(
+          panel === "files"
+            ? "branches"
+            : panel === "branches"
+              ? "commits"
+              : "files",
         );
       else if (k === "j" || k === "ArrowDown") moveSel(1);
       else if (k === "k" || k === "ArrowUp") moveSel(-1);
-      else if (k === "r") void refresh();
+      else if (k === "r") void overview.refresh();
       else if (panel === "files" && k === " ") toggleStage();
       else if (panel === "files" && k === "a")
         void run("", () => git.stageAll(repo));
@@ -269,7 +250,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
           </div>
         )}
 
-        <GitPanel
+        <GitPanelBlock
           n={2}
           label="Files"
           focused={panel === "files"}
@@ -299,7 +280,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
               }`}
               onClick={() => {
                 setPanel("files");
-                setSel((s) => ({ ...s, files: i }));
+                setSel({ ...sel, files: i });
               }}
             >
               <span className={`gf-x${isStaged(f) ? " on" : ""}`}>
@@ -312,9 +293,9 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
               <span className="git-path">{f.path}</span>
             </div>
           ))}
-        </GitPanel>
+        </GitPanelBlock>
 
-        <GitPanel
+        <GitPanelBlock
           n={3}
           label="Branches"
           focused={panel === "branches"}
@@ -329,7 +310,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
               }`}
               onClick={() => {
                 setPanel("branches");
-                setSel((s) => ({ ...s, branches: i }));
+                setSel({ ...sel, branches: i });
               }}
             >
               <span className={`gb-dot${b.current ? " cur" : ""}`} />
@@ -348,9 +329,9 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
                 )}
             </div>
           ))}
-        </GitPanel>
+        </GitPanelBlock>
 
-        <GitPanel
+        <GitPanelBlock
           n={4}
           label="Commits"
           focused={panel === "commits"}
@@ -365,7 +346,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
               }`}
               onClick={() => {
                 setPanel("commits");
-                setSel((s) => ({ ...s, commits: i }));
+                setSel({ ...sel, commits: i });
               }}
             >
               <span className="gc-hash">{c.hash}</span>
@@ -373,7 +354,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
               <span className="gc-date">{c.date}</span>
             </div>
           ))}
-        </GitPanel>
+        </GitPanelBlock>
       </div>
 
       <div className="git-right">
@@ -382,8 +363,8 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
             key={right.path}
             repo={repo}
             path={right.path}
-            onOpenFile={requestOpenFile}
-            onSaved={refresh}
+            onOpenFile={(abs) => cmd.requestOpenFile(abs)}
+            onSaved={() => void overview.refresh()}
           />
         ) : right.mode === "commit" ? (
           <CommitReview
@@ -392,7 +373,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
             rev={right.rev}
             title={right.title}
             subtitle={right.subtitle}
-            onOpenFile={requestOpenFile}
+            onOpenFile={(abs) => cmd.requestOpenFile(abs)}
           />
         ) : (
           <pre className="git-output">{right.text || "—"}</pre>
@@ -414,7 +395,7 @@ export function GitPane({ cwd, active }: { cwd: string; active: boolean }) {
   );
 }
 
-function GitPanel({
+function GitPanelBlock({
   n,
   label,
   focused,
@@ -442,4 +423,3 @@ function GitPanel({
     </div>
   );
 }
-

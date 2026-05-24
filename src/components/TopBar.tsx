@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useClock } from "../hooks/useClock";
 import { ENVS } from "../state/types";
-import { useWorkspace } from "../state/workspace";
+import * as cmd from "../state/commands";
+import { useResource } from "../state/resources";
+import { awsIdentityR } from "../state/resources.defs";
+import { useStore } from "../state/store";
 import {
   IconChevron,
   IconCommand,
@@ -17,34 +20,19 @@ const time2 = (n: number) => String(n).padStart(2, "0");
 
 // Always-visible AWS status chip. Click → opens (or focuses) the AWS
 // session; if the profile is expired, opens the sign-in modal instead.
-// Re-checks `sts get-caller-identity` every 60s in the background, so the
-// dot stays current without explicit refresh.
+// The shared awsIdentityR resource refetches every 60s — both this chip
+// and the AwsPane subscribe to the same cache entry.
 function AwsChip() {
-  const profile = useWorkspace((s) => s.awsProfile);
-  const status = useWorkspace((s) =>
-    profile ? s.awsStatuses[profile] : null,
-  );
-  const refreshAwsStatus = useWorkspace((s) => s.refreshAwsStatus);
-  const openAwsSession = useWorkspace((s) => s.openAwsSession);
-  const openAwsAuthModal = useWorkspace((s) => s.openAwsAuthModal);
-
-  // Poll while the chip is visible. 60s matches tmux-aws and the pane.
-  useEffect(() => {
-    if (!profile) return;
-    void refreshAwsStatus(profile);
-    const id = window.setInterval(
-      () => void refreshAwsStatus(profile),
-      60_000,
-    );
-    return () => window.clearInterval(id);
-  }, [profile, refreshAwsStatus]);
+  const profile = useStore((s) => s.awsProfile);
+  const identity = useResource(awsIdentityR, profile ?? "", false);
+  const status = profile ? identity.data?.status : undefined;
 
   const dotClass =
-    status?.status === "authed"
+    status === "authed"
       ? "ok"
-      : status?.status === "checking"
+      : identity.status === "loading"
         ? "checking"
-        : status?.status === "expired" || status?.status === "no-credentials"
+        : status === "expired" || status === "no-credentials"
           ? "fail"
           : !profile
             ? "off"
@@ -52,14 +40,14 @@ function AwsChip() {
 
   const onClick = () => {
     if (!profile) {
-      openAwsSession();
+      cmd.openAwsSession();
       return;
     }
-    if (status?.status === "expired" || status?.status === "no-credentials") {
-      openAwsAuthModal(profile, null);
+    if (status === "expired" || status === "no-credentials") {
+      cmd.openAwsAuthModal(profile, null);
       return;
     }
-    openAwsSession();
+    cmd.openAwsSession();
   };
 
   return (
@@ -88,7 +76,6 @@ function CloudIcon({ size = 14 }: { size?: number }) {
 }
 
 function CogIcon({ size = 15 }: { size?: number }) {
-  // Small inline gear — avoids touching the Icons.tsx catalog for a one-off.
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -109,18 +96,19 @@ function CogIcon({ size = 15 }: { size?: number }) {
 
 export function TopBar() {
   const now = useClock();
-  const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
-  const zoomed = useWorkspace((s) => s.zoomedPaneId != null);
-  const leftOpen = useWorkspace((s) => s.leftRailOpen);
-  const rightOpen = useWorkspace((s) => s.rightRailOpen);
-  const toggleLeft = useWorkspace((s) => s.toggleLeftRail);
-  const toggleRight = useWorkspace((s) => s.toggleRightRail);
-  const setEnv = useWorkspace((s) => s.setEnv);
-  const toggleSettings = useWorkspace((s) => s.toggleSettings);
+  const session = useStore((s) => s.sessions[s.activeSessionId]);
+  const win = useStore((s) =>
+    session ? s.windows[session.activeWindowId] : undefined,
+  );
+  const agent = useStore((s) =>
+    session?.activeAgentId ? s.agents[session.activeAgentId] : undefined,
+  );
+  const zoomed = useStore((s) => s.zoomedPaneId != null);
+  const leftOpen = useStore((s) => s.leftRailOpen);
+  const rightOpen = useStore((s) => s.rightRailOpen);
   const [envOpen, setEnvOpen] = useState(false);
 
-  const win = session.windows.find((w) => w.id === session.activeWindowId)!;
-  const agent = session.agents.find((a) => a.id === session.activeAgentId);
+  if (!session || !win) return null;
   const isProject = session.kind === "project";
 
   return (
@@ -181,7 +169,7 @@ export function TopBar() {
                       key={e}
                       className={`env-dd-item${session.env === e ? " active" : ""}`}
                       onClick={() => {
-                        setEnv(e);
+                        cmd.setEnv(e);
                         setEnvOpen(false);
                       }}
                     >
@@ -203,21 +191,21 @@ export function TopBar() {
         <div className="tb-toggles">
           <button
             className={`tb-btn${leftOpen ? " on" : ""}`}
-            onClick={toggleLeft}
+            onClick={cmd.toggleLeftRail}
             title="Toggle sessions rail"
           >
             <IconPanelLeft size={15} />
           </button>
           <button
             className={`tb-btn${rightOpen ? " on" : ""}`}
-            onClick={toggleRight}
+            onClick={cmd.toggleRightRail}
             title="Toggle agents rail"
           >
             <IconPanelRight size={15} />
           </button>
           <button
             className="tb-btn"
-            onClick={toggleSettings}
+            onClick={cmd.toggleSettings}
             title="Settings (⌘,)"
           >
             <CogIcon size={15} />

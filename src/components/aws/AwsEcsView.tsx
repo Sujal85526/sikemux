@@ -1,37 +1,21 @@
-import { useEffect, useState } from "react";
+import { useResource } from "../../state/resources";
 import {
-  awsApi,
-  type EcsCluster,
-  type EcsService,
-  type EcsServiceLog,
-  type EcsTask,
-} from "../../api/aws";
+  ecsClustersR,
+  ecsServiceLogConfigR,
+  ecsServicesR,
+  ecsTasksR,
+} from "../../state/resources.defs";
+import { awsApi, type EcsService, type EcsTask } from "../../api/aws";
 import { reportError } from "../../state/toast";
+import * as cmd from "../../state/commands";
+import { useStore } from "../../state/store";
+import type { EcsLevel } from "../../state/types";
 import { IconChevron } from "../Icons";
 import { AwsLogTailView } from "./AwsLogTailView";
 
 interface ViewProps {
   profile: string;
 }
-
-// Drill-down state for the ECS view.
-//
-//   clusters → services {cluster} → service {cluster, service}
-//
-// `service` is a two-tab page (Logs / Tasks). Clicking a task in the Tasks
-// tab filters the log tail to that task's stream — same level, just an
-// extra task filter applied to the view.
-type Level =
-  | { kind: "clusters" }
-  | { kind: "services"; cluster: string }
-  | {
-      kind: "service";
-      cluster: string;
-      service: string;
-      tab: "logs" | "tasks";
-      /** When set, the Logs tab filters to this task's specific stream. */
-      taskFilter?: { taskId: string; stream: string };
-    };
 
 function relative(iso: string | null): string {
   if (!iso) return "—";
@@ -55,8 +39,13 @@ function statusOf(s: EcsService): "ok" | "warn" | "fail" | "off" {
   return "fail";
 }
 
+// Drill-down state lives in the store, keyed by profile. Switching profile
+// → fresh "clusters" view. Re-mounting the pane preserves where you were.
+const DEFAULT_LEVEL: EcsLevel = { kind: "clusters" };
+
 export function AwsEcsView({ profile }: ViewProps) {
-  const [level, setLevel] = useState<Level>({ kind: "clusters" });
+  const level = useStore((s) => s.ecsViews[profile] ?? DEFAULT_LEVEL);
+  const setLevel = (l: EcsLevel) => cmd.setEcsLevel(profile, l);
 
   return (
     <div className="aws-view">
@@ -118,10 +107,10 @@ function Breadcrumb({
   level,
   onJump,
 }: {
-  level: Level;
-  onJump: (l: Level) => void;
+  level: EcsLevel;
+  onJump: (l: EcsLevel) => void;
 }) {
-  const parts: { label: string; jump: Level }[] = [
+  const parts: { label: string; jump: EcsLevel }[] = [
     { label: "Clusters", jump: { kind: "clusters" } },
   ];
   if (level.kind !== "clusters") {
@@ -178,28 +167,10 @@ function ClustersList({
   profile: string;
   onPick: (cluster: string) => void;
 }) {
-  const [rows, setRows] = useState<EcsCluster[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setRows(null);
-    setErr(null);
-    awsApi
-      .ecsClusters(profile)
-      .then((r) => !cancelled && setRows(r))
-      .catch((e) => {
-        if (!cancelled) {
-          setErr(String(e));
-          reportError("ecs clusters")(e);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [profile]);
-  if (err) return <div className="aws-err">{err}</div>;
-  if (rows === null) return <div className="aws-loading">loading clusters…</div>;
-  if (rows.length === 0) return <div className="aws-empty">no clusters</div>;
+  const { data, error, status } = useResource(ecsClustersR, profile);
+  if (status === "error" && error) return <div className="aws-err">{error}</div>;
+  if (!data) return <div className="aws-loading">loading clusters…</div>;
+  if (data.length === 0) return <div className="aws-empty">no clusters</div>;
   return (
     <table className="aws-table">
       <thead>
@@ -212,7 +183,7 @@ function ClustersList({
         </tr>
       </thead>
       <tbody>
-        {rows.map((c) => (
+        {data.map((c) => (
           <tr key={c.arn} onClick={() => onPick(c.name)} className="aws-row">
             <td className="aws-col-name">{c.name}</td>
             <td>{c.services_count ?? "—"}</td>
@@ -244,28 +215,10 @@ function ServicesList({
   cluster: string;
   onPick: (service: string) => void;
 }) {
-  const [rows, setRows] = useState<EcsService[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setRows(null);
-    setErr(null);
-    awsApi
-      .ecsServices(profile, cluster)
-      .then((r) => !cancelled && setRows(r))
-      .catch((e) => {
-        if (!cancelled) {
-          setErr(String(e));
-          reportError("ecs services")(e);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [profile, cluster]);
-  if (err) return <div className="aws-err">{err}</div>;
-  if (rows === null) return <div className="aws-loading">loading services…</div>;
-  if (rows.length === 0) return <div className="aws-empty">no services</div>;
+  const { data, error, status } = useResource(ecsServicesR, profile, cluster);
+  if (status === "error" && error) return <div className="aws-err">{error}</div>;
+  if (!data) return <div className="aws-loading">loading services…</div>;
+  if (data.length === 0) return <div className="aws-empty">no services</div>;
   return (
     <table className="aws-table">
       <thead>
@@ -279,7 +232,7 @@ function ServicesList({
         </tr>
       </thead>
       <tbody>
-        {rows.map((s) => {
+        {data.map((s) => {
           const st = statusOf(s);
           return (
             <tr
@@ -326,28 +279,7 @@ function ServiceView({
   onPickTask: (taskId: string, stream: string) => void;
   onClearFilter: () => void;
 }) {
-  const [cfg, setCfg] = useState<EcsServiceLog | null>(null);
-  const [cfgErr, setCfgErr] = useState<string | null>(null);
-
-  // Resolve the service's log group once. Cached for the lifetime of this
-  // ServiceView instance — switching tabs or filtering tasks reuses it.
-  useEffect(() => {
-    let cancelled = false;
-    setCfg(null);
-    setCfgErr(null);
-    awsApi
-      .ecsServiceLogConfig(profile, cluster, service)
-      .then((c) => !cancelled && setCfg(c))
-      .catch((e) => {
-        if (!cancelled) {
-          setCfgErr(String(e));
-          reportError("service log config")(e);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [profile, cluster, service]);
+  const cfg = useResource(ecsServiceLogConfigR, profile, cluster, service);
 
   return (
     <div className="aws-view">
@@ -376,15 +308,15 @@ function ServiceView({
 
       {tab === "logs" && (
         <>
-          {cfgErr ? (
-            <div className="aws-err">{cfgErr}</div>
-          ) : !cfg ? (
+          {cfg.error ? (
+            <div className="aws-err">{cfg.error}</div>
+          ) : !cfg.data ? (
             <div className="aws-loading">resolving service log group…</div>
           ) : (
             <AwsLogTailView
-              key={`${cfg.log_group}|${taskFilter?.stream ?? ""}`}
+              key={`${cfg.data.log_group}|${taskFilter?.stream ?? ""}`}
               profile={profile}
-              logGroup={cfg.log_group}
+              logGroup={cfg.data.log_group}
               logStream={taskFilter?.stream ?? null}
             />
           )}
@@ -397,10 +329,6 @@ function ServiceView({
           cluster={cluster}
           service={service}
           onPick={(t) => {
-            // Build the task's specific stream from the service's container
-            // name + task id. ECS format: <prefix>/<container>/<task-id>.
-            // We don't know the prefix here without another describe call,
-            // so we fall back to the existing per-task resolver.
             void awsApi
               .ecsTaskLogConfig(profile, cluster, t.arn)
               .then((cfg) => onPickTask(t.task_id, cfg.log_stream))
@@ -426,28 +354,15 @@ function TasksList({
   service: string;
   onPick: (t: EcsTask) => void;
 }) {
-  const [rows, setRows] = useState<EcsTask[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setRows(null);
-    setErr(null);
-    awsApi
-      .ecsTasks(profile, cluster, service)
-      .then((r) => !cancelled && setRows(r))
-      .catch((e) => {
-        if (!cancelled) {
-          setErr(String(e));
-          reportError("ecs tasks")(e);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [profile, cluster, service]);
-  if (err) return <div className="aws-err">{err}</div>;
-  if (rows === null) return <div className="aws-loading">loading tasks…</div>;
-  if (rows.length === 0) return <div className="aws-empty">no tasks</div>;
+  const { data, error, status } = useResource(
+    ecsTasksR,
+    profile,
+    cluster,
+    service,
+  );
+  if (status === "error" && error) return <div className="aws-err">{error}</div>;
+  if (!data) return <div className="aws-loading">loading tasks…</div>;
+  if (data.length === 0) return <div className="aws-empty">no tasks</div>;
   return (
     <table className="aws-table">
       <thead>
@@ -461,7 +376,7 @@ function TasksList({
         </tr>
       </thead>
       <tbody>
-        {rows.map((t) => (
+        {data.map((t) => (
           <tr
             key={t.arn}
             className="aws-row"

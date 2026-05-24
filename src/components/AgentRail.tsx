@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
-import { agentApi, type AgentSession } from "../api/agents";
+import { useState } from "react";
+import * as cmd from "../state/commands";
+import { useResource } from "../state/resources";
+import { agentSessionsR } from "../state/resources.defs";
+import { useStore } from "../state/store";
 import {
   AGENT_TYPES,
   type Agent,
   type AgentType,
 } from "../state/types";
-import { useWorkspace } from "../state/workspace";
 import { AgentIcon, IconClose, IconPin, IconPlus, IconSearch } from "./Icons";
 
 const RECENTS_CAP = 10;
@@ -19,46 +21,33 @@ function ago(unixSecs: number): string {
   return `${Math.round(d / 86400)}d`;
 }
 
-// A resumed agent's bookmark id is its on-disk session id; a fresh agent
-// falls back to its sikemux id (no on-disk session to point at yet).
 const bmIdOf = (a: Agent) => a.resumeId ?? a.id;
 const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 
 export function AgentRail() {
-  const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
-  const sessionsById = useWorkspace((s) => s.sessions);
-  const sessionOrder = useWorkspace((s) => s.sessionOrder);
-  const addAgent = useWorkspace((s) => s.addAgent);
-  const selectAgent = useWorkspace((s) => s.selectAgent);
-  const closeAgent = useWorkspace((s) => s.closeAgent);
-  const agentBookmarks = useWorkspace((s) => s.agentBookmarks);
-  const toggleAgentBookmark = useWorkspace((s) => s.toggleAgentBookmark);
-  const openAgentBookmark = useWorkspace((s) => s.openAgentBookmark);
-  const openAgentPalette = useWorkspace((s) => s.openAgentPalette);
+  const session = useStore((s) => s.sessions[s.activeSessionId]);
+  const sessionsById = useStore((s) => s.sessions);
+  const sessionOrder = useStore((s) => s.sessionOrder);
+  const agentsBySession = useStore((s) => s.agentsBySession);
+  const agentsById = useStore((s) => s.agents);
+  const agentBookmarks = useStore((s) => s.agentBookmarks);
 
   const [type, setType] = useState<AgentType>("claude");
-  const [disk, setDisk] = useState<AgentSession[]>([]);
 
-  const isProject = session.kind === "project";
-  const cwd = session.cwd;
+  const isProject = session?.kind === "project";
+  const cwd = session?.cwd ?? "";
 
-  useEffect(() => {
-    if (!isProject || !cwd) {
-      setDisk([]);
-      return;
-    }
-    let cancelled = false;
-    agentApi
-      .sessions(type, cwd)
-      .then((d) => !cancelled && setDisk(d))
-      .catch(() => !cancelled && setDisk([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [type, cwd, isProject]);
+  // Disk-scanned recent agent sessions for this project + type. Hooks
+  // mounted unconditionally; we just ignore the fetch when not project.
+  const recents = useResource(agentSessionsR, type, isProject ? cwd : "");
+  const disk = isProject ? recents.data ?? [] : [];
 
-  // Dedup priority: pinned > open > recent. Each session shown in one place.
-  const opens = session.agents;
+  if (!session) return null;
+
+  const opens = (agentsBySession[session.id] ?? [])
+    .map((id) => agentsById[id])
+    .filter(Boolean) as Agent[];
+
   const pinnedKeys = new Set(
     agentBookmarks.map((b) => sessionKey(b.type, b.id)),
   );
@@ -66,15 +55,16 @@ export function AgentRail() {
     opens.map((a) => sessionKey(a.type, bmIdOf(a))),
   );
   // Cross-session lookup — a pinned bookmark gets a live dot if its session
-  // is running in ANY project (not just the active one). Value = agent id,
-  // so the row can close it without needing to switch projects first.
+  // is running in ANY project.
   const liveByKey = new Map<string, string>();
   sessionOrder.forEach((id) => {
     const s = sessionsById[id];
-    if (s.kind === "project") {
-      s.agents.forEach((a) => {
-        liveByKey.set(sessionKey(a.type, bmIdOf(a)), a.id);
-      });
+    if (s?.kind === "project") {
+      const aids = agentsBySession[id] ?? [];
+      for (const aid of aids) {
+        const a = agentsById[aid];
+        if (a) liveByKey.set(sessionKey(a.type, bmIdOf(a)), a.id);
+      }
     }
   });
 
@@ -93,12 +83,7 @@ export function AgentRail() {
     return (
       <aside className="agent-rail">
         <div className="agent-empty">agents are project-scoped</div>
-        <AgentFooter
-          type={type}
-          setType={setType}
-          addAgent={addAgent}
-          openPalette={openAgentPalette}
-        />
+        <AgentFooter type={type} setType={setType} />
       </aside>
     );
   }
@@ -124,7 +109,7 @@ export function AgentRail() {
                 <button
                   key={`bm-${b.type}-${b.id}`}
                   className={`agent-row${liveAgentId ? " closable" : ""}`}
-                  onClick={() => openAgentBookmark(b)}
+                  onClick={() => cmd.openAgentBookmark(b)}
                 >
                   <span className={`agent-glyph ${b.type}`}>
                     <span className="agent-glyph-icon">
@@ -136,7 +121,7 @@ export function AgentRail() {
                         title="Close agent"
                         onClick={(e) => {
                           e.stopPropagation();
-                          closeAgent(liveAgentId);
+                          cmd.closeAgent(liveAgentId);
                         }}
                       >
                         <IconClose size={11} />
@@ -152,7 +137,7 @@ export function AgentRail() {
                     title="Unpin"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleAgentBookmark(b);
+                      cmd.toggleAgentBookmark(b);
                     }}
                   >
                     <IconPin size={12} filled />
@@ -174,7 +159,7 @@ export function AgentRail() {
                 <button
                   key={a.id}
                   className={`agent-row closable${active ? " active" : ""}`}
-                  onClick={() => selectAgent(a.id)}
+                  onClick={() => cmd.selectAgent(a.id)}
                 >
                   <span className={`agent-glyph ${a.type}`}>
                     <span className="agent-glyph-icon">
@@ -185,7 +170,7 @@ export function AgentRail() {
                       title="Close agent"
                       onClick={(e) => {
                         e.stopPropagation();
-                        closeAgent(a.id);
+                        cmd.closeAgent(a.id);
                       }}
                     >
                       <IconClose size={11} />
@@ -197,7 +182,7 @@ export function AgentRail() {
                     title="Pin"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleAgentBookmark({
+                      cmd.toggleAgentBookmark({
                         type: a.type,
                         id: bmId,
                         title: a.title,
@@ -220,7 +205,7 @@ export function AgentRail() {
               <button
                 key={s.id}
                 className="agent-row recent"
-                onClick={() => addAgent(type, s.id, s.title)}
+                onClick={() => cmd.addAgent(type, s.id, s.title)}
               >
                 <span className={`agent-glyph ${type} dim`}>
                   <AgentIcon type={type} size={16} />
@@ -231,7 +216,7 @@ export function AgentRail() {
                   title="Pin"
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleAgentBookmark({
+                    cmd.toggleAgentBookmark({
                       type,
                       id: s.id,
                       title: s.title,
@@ -248,12 +233,7 @@ export function AgentRail() {
         )}
       </div>
 
-      <AgentFooter
-        type={type}
-        setType={setType}
-        addAgent={addAgent}
-        openPalette={openAgentPalette}
-      />
+      <AgentFooter type={type} setType={setType} />
     </aside>
   );
 }
@@ -261,13 +241,9 @@ export function AgentRail() {
 function AgentFooter({
   type,
   setType,
-  addAgent,
-  openPalette,
 }: {
   type: AgentType;
   setType: (t: AgentType) => void;
-  addAgent: (t: AgentType) => void;
-  openPalette: () => void;
 }) {
   return (
     <div className="agent-footer">
@@ -287,14 +263,14 @@ function AgentFooter({
         <button
           className="agent-footer-btn"
           title="Search agent sessions"
-          onClick={openPalette}
+          onClick={cmd.openAgentPalette}
         >
           <IconSearch size={15} />
         </button>
         <button
           className="agent-footer-btn"
           title={`new ${type} agent`}
-          onClick={() => addAgent(type)}
+          onClick={() => cmd.addAgent(type)}
         >
           <IconPlus size={15} />
         </button>

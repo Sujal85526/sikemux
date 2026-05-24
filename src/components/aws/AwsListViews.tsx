@@ -1,66 +1,53 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect } from "react";
+import { useResource, type ResourceHandle } from "../../state/resources";
 import {
-  awsApi,
-  type Ec2Instance,
-  type LambdaFn,
-  type S3Bucket,
-  type SqsQueue,
+  billingMonthsR,
+  ec2InstancesR,
+  lambdaFnsR,
+  s3BucketsR,
+  sqsQueuesR,
+} from "../../state/resources.defs";
+import * as cmd from "../../state/commands";
+import { useStore } from "../../state/store";
+import type {
+  Ec2Instance,
+  LambdaFn,
+  S3Bucket,
+  SqsQueue,
 } from "../../api/aws";
-import { reportError } from "../../state/toast";
+import { type ReactNode } from "react";
 import { IconChevron } from "../Icons";
 
-// One async loader pattern, parameterised by the fetch + render.
-function useFetch<T>(fn: () => Promise<T>, label: string) {
-  const [data, setData] = useState<T | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    setErr(null);
-    fn()
-      .then((d) => !cancelled && setData(d))
-      .catch((e) => {
-        if (!cancelled) {
-          setErr(String(e));
-          reportError(label)(e);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return { data, err };
-}
-
-function Frame({
-  err,
-  empty,
+// Generic frame: loading / error / empty / data.
+function Frame<T>({
+  handle,
+  loading,
+  emptyText,
   children,
 }: {
-  err: string | null;
-  empty: boolean;
-  children: ReactNode;
+  handle: ResourceHandle<T[]>;
+  loading: string;
+  emptyText: string;
+  children: (data: T[]) => ReactNode;
 }) {
-  if (err) return <div className="aws-err">{err}</div>;
-  if (empty) return <div className="aws-empty">no results</div>;
-  return <>{children}</>;
+  if (handle.data === undefined) {
+    if (handle.status === "error" && handle.error)
+      return <div className="aws-err">{handle.error}</div>;
+    return <div className="aws-loading">{loading}</div>;
+  }
+  if (handle.data.length === 0) return <div className="aws-empty">{emptyText}</div>;
+  return <>{children(handle.data)}</>;
 }
 
 // ============================================================
 // EC2
 // ============================================================
 export function AwsEc2View({ profile }: { profile: string }) {
-  const { data, err } = useFetch(
-    () => awsApi.ec2Instances(profile),
-    "ec2 instances",
-  );
+  const handle = useResource(ec2InstancesR, profile);
   return (
     <div className="aws-view">
-      {data === null && !err ? (
-        <div className="aws-loading">loading instances…</div>
-      ) : (
-        <Frame err={err} empty={!data || data.length === 0}>
+      <Frame handle={handle} loading="loading instances…" emptyText="no results">
+        {(data) => (
           <table className="aws-table">
             <thead>
               <tr>
@@ -72,7 +59,7 @@ export function AwsEc2View({ profile }: { profile: string }) {
               </tr>
             </thead>
             <tbody>
-              {data?.map((i: Ec2Instance) => (
+              {data.map((i: Ec2Instance) => (
                 <tr key={i.instance_id} className="aws-row">
                   <td className="aws-col-name">
                     {i.name ?? i.instance_id}
@@ -96,8 +83,8 @@ export function AwsEc2View({ profile }: { profile: string }) {
               ))}
             </tbody>
           </table>
-        </Frame>
-      )}
+        )}
+      </Frame>
     </div>
   );
 }
@@ -106,16 +93,11 @@ export function AwsEc2View({ profile }: { profile: string }) {
 // Lambda
 // ============================================================
 export function AwsLambdaView({ profile }: { profile: string }) {
-  const { data, err } = useFetch(
-    () => awsApi.lambdaFunctions(profile),
-    "lambda functions",
-  );
+  const handle = useResource(lambdaFnsR, profile);
   return (
     <div className="aws-view">
-      {data === null && !err ? (
-        <div className="aws-loading">loading functions…</div>
-      ) : (
-        <Frame err={err} empty={!data || data.length === 0}>
+      <Frame handle={handle} loading="loading functions…" emptyText="no results">
+        {(data) => (
           <table className="aws-table">
             <thead>
               <tr>
@@ -127,7 +109,7 @@ export function AwsLambdaView({ profile }: { profile: string }) {
               </tr>
             </thead>
             <tbody>
-              {data?.map((f: LambdaFn) => (
+              {data.map((f: LambdaFn) => (
                 <tr key={f.name} className="aws-row">
                   <td className="aws-col-name">{f.name}</td>
                   <td>{f.runtime ?? "—"}</td>
@@ -138,8 +120,8 @@ export function AwsLambdaView({ profile }: { profile: string }) {
               ))}
             </tbody>
           </table>
-        </Frame>
-      )}
+        )}
+      </Frame>
     </div>
   );
 }
@@ -148,16 +130,11 @@ export function AwsLambdaView({ profile }: { profile: string }) {
 // SQS
 // ============================================================
 export function AwsSqsView({ profile }: { profile: string }) {
-  const { data, err } = useFetch(
-    () => awsApi.sqsQueues(profile),
-    "sqs queues",
-  );
+  const handle = useResource(sqsQueuesR, profile);
   return (
     <div className="aws-view">
-      {data === null && !err ? (
-        <div className="aws-loading">loading queues…</div>
-      ) : (
-        <Frame err={err} empty={!data || data.length === 0}>
+      <Frame handle={handle} loading="loading queues…" emptyText="no results">
+        {(data) => (
           <table className="aws-table">
             <thead>
               <tr>
@@ -166,7 +143,7 @@ export function AwsSqsView({ profile }: { profile: string }) {
               </tr>
             </thead>
             <tbody>
-              {data?.map((q: SqsQueue) => (
+              {data.map((q: SqsQueue) => (
                 <tr key={q.url} className="aws-row">
                   <td className="aws-col-name">{q.name}</td>
                   <td className="aws-sub-id">{q.url}</td>
@@ -174,8 +151,8 @@ export function AwsSqsView({ profile }: { profile: string }) {
               ))}
             </tbody>
           </table>
-        </Frame>
-      )}
+        )}
+      </Frame>
     </div>
   );
 }
@@ -241,32 +218,31 @@ function splitCharges(by_service: { amount: string }[]): {
 }
 
 export function AwsBillingView({ profile }: { profile: string }) {
-  const { data, err } = useFetch(
-    () => awsApi.billingMonths(profile, 5),
-    "billing",
-  );
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const handle = useResource(billingMonthsR, profile, 5);
+  const expanded = useStore((s) => s.expandedBillingMonth[profile] ?? null);
+  const data = handle.data;
 
   // Auto-expand the current month on first load.
   useEffect(() => {
-    if (!data) return;
+    if (!data || expanded !== null) return;
     const cur = data.find((m) => m.is_current);
-    if (cur) setExpanded(cur.period_start);
-  }, [data]);
+    if (cur) cmd.setBillingExpandedMonth(profile, cur.period_start);
+  }, [data, expanded, profile]);
 
-  if (data === null && !err)
+  if (!data) {
+    if (handle.status === "error" && handle.error)
+      return (
+        <div className="aws-view">
+          <div className="aws-err">{handle.error}</div>
+        </div>
+      );
     return (
       <div className="aws-view">
         <div className="aws-loading">loading costs…</div>
       </div>
     );
-  if (err)
-    return (
-      <div className="aws-view">
-        <div className="aws-err">{err}</div>
-      </div>
-    );
-  if (!data || data.length === 0)
+  }
+  if (data.length === 0)
     return (
       <div className="aws-view">
         <div className="aws-empty">no billing data</div>
@@ -274,10 +250,7 @@ export function AwsBillingView({ profile }: { profile: string }) {
     );
 
   const months = data;
-  // Use GROSS (positive charges only) for the chart + headline. Credits are
-  // shown separately. This matches the AWS console's default rollup and is
-  // what users actually want to see — net was getting cancelled by credits
-  // and showing $-0.00 which read like a bug.
+  // Use GROSS for the chart + headline. Credits shown separately.
   const splits = months.map((m) => splitCharges(m.by_service));
   const grosses = splits.map((s) => s.gross);
   const maxGross = Math.max(...grosses, 1);
@@ -347,7 +320,12 @@ export function AwsBillingView({ profile }: { profile: string }) {
             >
               <button
                 className="aws-bill-month-head"
-                onClick={() => setExpanded(isOpen ? null : m.period_start)}
+                onClick={() =>
+                  cmd.setBillingExpandedMonth(
+                    profile,
+                    isOpen ? null : m.period_start,
+                  )
+                }
               >
                 <span className="aws-bill-chev">
                   <IconChevron size={11} />
@@ -466,16 +444,11 @@ export function AwsBillingView({ profile }: { profile: string }) {
 // S3
 // ============================================================
 export function AwsS3View({ profile }: { profile: string }) {
-  const { data, err } = useFetch(
-    () => awsApi.s3Buckets(profile),
-    "s3 buckets",
-  );
+  const handle = useResource(s3BucketsR, profile);
   return (
     <div className="aws-view">
-      {data === null && !err ? (
-        <div className="aws-loading">loading buckets…</div>
-      ) : (
-        <Frame err={err} empty={!data || data.length === 0}>
+      <Frame handle={handle} loading="loading buckets…" emptyText="no results">
+        {(data) => (
           <table className="aws-table">
             <thead>
               <tr>
@@ -484,7 +457,7 @@ export function AwsS3View({ profile }: { profile: string }) {
               </tr>
             </thead>
             <tbody>
-              {data?.map((b: S3Bucket) => (
+              {data.map((b: S3Bucket) => (
                 <tr key={b.name} className="aws-row">
                   <td className="aws-col-name">{b.name}</td>
                   <td>{b.created_at?.replace(/\..*$/, "") ?? "—"}</td>
@@ -492,8 +465,8 @@ export function AwsS3View({ profile }: { profile: string }) {
               ))}
             </tbody>
           </table>
-        </Frame>
-      )}
+        )}
+      </Frame>
     </div>
   );
 }

@@ -1,0 +1,152 @@
+import { agentApi, type AgentSession } from "../api/agents";
+import {
+  awsApi,
+  type AwsIdentity,
+  type AwsProfile,
+  type BillingMonth,
+  type Ec2Instance,
+  type EcsCluster,
+  type EcsService,
+  type EcsServiceLog,
+  type EcsTask,
+  type LambdaFn,
+  type S3Bucket,
+  type SqsQueue,
+} from "../api/aws";
+import { filesApi } from "../api/files";
+import { git, type GitOverview, type GitStatus } from "../api/git";
+import { settingsApi, type ProjectEntry } from "../api/settings";
+import { sshApi, type SshHost } from "../api/ssh";
+import type { AgentType, ProjectRoot } from "./types";
+import { resource } from "./resources";
+
+// ---- Git --------------------------------------------------------------
+
+export const gitOverviewR = resource({
+  kind: "git.overview",
+  fetch: (repo: string): Promise<GitOverview> => git.overview(repo),
+  staleAfterMs: 5_000,
+});
+
+export const gitStatusR = resource({
+  kind: "git.status",
+  fetch: (repo: string): Promise<GitStatus> => git.status(repo),
+  staleAfterMs: 5_000,
+});
+
+export const gitFileAtR = resource({
+  kind: "git.fileAt",
+  fetch: (repo: string, rev: string, path: string): Promise<string> =>
+    git.fileAt(repo, rev, path),
+  // SHA-keyed reads are immutable; HEAD reads we invalidate via bus.
+});
+
+// ---- AWS --------------------------------------------------------------
+
+export const awsProfilesR = resource({
+  kind: "aws.profiles",
+  fetch: (): Promise<AwsProfile[]> => awsApi.profiles(),
+});
+
+export const awsIdentityR = resource({
+  kind: "aws.identity",
+  fetch: (profile: string, force: boolean): Promise<AwsIdentity> =>
+    awsApi.identity(profile, force),
+  staleAfterMs: 60_000,
+});
+
+export const ecsClustersR = resource({
+  kind: "aws.ecs.clusters",
+  fetch: (profile: string): Promise<EcsCluster[]> => awsApi.ecsClusters(profile),
+  staleAfterMs: 30_000,
+});
+
+export const ecsServicesR = resource({
+  kind: "aws.ecs.services",
+  fetch: (profile: string, cluster: string): Promise<EcsService[]> =>
+    awsApi.ecsServices(profile, cluster),
+  staleAfterMs: 30_000,
+});
+
+export const ecsTasksR = resource({
+  kind: "aws.ecs.tasks",
+  fetch: (
+    profile: string,
+    cluster: string,
+    service: string,
+  ): Promise<EcsTask[]> => awsApi.ecsTasks(profile, cluster, service),
+  staleAfterMs: 15_000,
+});
+
+export const ecsServiceLogConfigR = resource({
+  kind: "aws.ecs.serviceLogConfig",
+  fetch: (
+    profile: string,
+    cluster: string,
+    service: string,
+  ): Promise<EcsServiceLog> =>
+    awsApi.ecsServiceLogConfig(profile, cluster, service),
+});
+
+export const ec2InstancesR = resource({
+  kind: "aws.ec2.instances",
+  fetch: (profile: string): Promise<Ec2Instance[]> =>
+    awsApi.ec2Instances(profile),
+  staleAfterMs: 60_000,
+});
+
+export const lambdaFnsR = resource({
+  kind: "aws.lambda.functions",
+  fetch: (profile: string): Promise<LambdaFn[]> =>
+    awsApi.lambdaFunctions(profile),
+  staleAfterMs: 60_000,
+});
+
+export const sqsQueuesR = resource({
+  kind: "aws.sqs.queues",
+  fetch: (profile: string): Promise<SqsQueue[]> => awsApi.sqsQueues(profile),
+  staleAfterMs: 60_000,
+});
+
+export const billingMonthsR = resource({
+  kind: "aws.billing.months",
+  fetch: (profile: string, monthsBack: number): Promise<BillingMonth[]> =>
+    awsApi.billingMonths(profile, monthsBack),
+  staleAfterMs: 5 * 60_000,
+});
+
+export const s3BucketsR = resource({
+  kind: "aws.s3.buckets",
+  fetch: (profile: string): Promise<S3Bucket[]> => awsApi.s3Buckets(profile),
+  staleAfterMs: 5 * 60_000,
+});
+
+// ---- Agents (disk-scanned sessions) ----------------------------------
+
+export const agentSessionsR = resource({
+  kind: "agents.sessions",
+  fetch: (type: AgentType, cwd: string): Promise<AgentSession[]> =>
+    agentApi.sessions(type, cwd),
+  staleAfterMs: 30_000,
+});
+
+// ---- Files / project lookup -----------------------------------------
+
+export const filesListR = resource({
+  kind: "files.list",
+  fetch: (repo: string): Promise<string[]> => filesApi.list(repo),
+  staleAfterMs: 60_000,
+});
+
+export const projectRootsScanR = resource({
+  kind: "settings.projectRootsScan",
+  fetch: (roots: ProjectRoot[]): Promise<ProjectEntry[]> =>
+    settingsApi.scanProjectRoots(roots),
+  staleAfterMs: 60_000,
+});
+
+export const sshHostsR = resource({
+  kind: "ssh.hosts",
+  fetch: (): Promise<SshHost[]> => sshApi.hosts(),
+  staleAfterMs: 5 * 60_000,
+});

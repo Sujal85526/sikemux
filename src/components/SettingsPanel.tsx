@@ -1,31 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../api/settings";
 import { reportError } from "../state/toast";
-import { useWorkspace } from "../state/workspace";
+import * as cmd from "../state/commands";
+import { useStore } from "../state/store";
 import { THEMES } from "../themes";
 import { IconClose, IconFolder, IconPlus } from "./Icons";
 
 // Cmd-, settings. Sectioned single-scroll modal, sharp corners, tight TUI
-// density. Each section pairs a label (left, tracked uppercase) with a short
-// hint on the right.
+// density.
 export function SettingsPanel() {
-  const close = useWorkspace((s) => s.closeSettings);
-  const projectRoots = useWorkspace((s) => s.projectRoots);
-  const addProjectRoot = useWorkspace((s) => s.addProjectRoot);
-  const removeProjectRoot = useWorkspace((s) => s.removeProjectRoot);
-  const themeId = useWorkspace((s) => s.themeId);
-  const setThemeId = useWorkspace((s) => s.setThemeId);
-  const windowOpacity = useWorkspace((s) => s.windowOpacity);
-  const setWindowOpacity = useWorkspace((s) => s.setWindowOpacity);
-  const windowBlur = useWorkspace((s) => s.windowBlur);
-  const setWindowBlur = useWorkspace((s) => s.setWindowBlur);
-  const cloudBrowser = useWorkspace((s) => s.cloudBrowser);
-  const setCloudBrowser = useWorkspace((s) => s.setCloudBrowser);
-  const cloudBrowserShortcut = useWorkspace((s) => s.cloudBrowserShortcut);
-  const setCloudBrowserShortcut = useWorkspace((s) => s.setCloudBrowserShortcut);
-  const home = useWorkspace((s) => s.home);
+  const projectRoots = useStore((s) => s.projectRoots);
+  const themeId = useStore((s) => s.themeId);
+  const windowOpacity = useStore((s) => s.windowOpacity);
+  const windowBlur = useStore((s) => s.windowBlur);
+  const cloudBrowser = useStore((s) => s.cloudBrowser);
+  const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
+  const home = useStore((s) => s.home);
 
   const [draftPath, setDraftPath] = useState("");
+  const [draftDepth, setDraftDepth] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -40,8 +33,9 @@ export function SettingsPanel() {
     if (!raw) return;
     try {
       const expanded = await settingsApi.expandPath(raw);
-      addProjectRoot(expanded);
+      cmd.addProjectRoot(expanded, draftDepth);
       setDraftPath("");
+      setDraftDepth(1);
     } catch (err) {
       reportError("settings")(err);
     }
@@ -50,14 +44,14 @@ export function SettingsPanel() {
   const onPickFolder = async () => {
     try {
       const picked = await settingsApi.pickFolder(home || undefined);
-      if (picked) addProjectRoot(picked);
+      if (picked) cmd.addProjectRoot(picked, draftDepth);
     } catch (err) {
       reportError("folder picker")(err);
     }
   };
 
   return (
-    <div className="settings-backdrop" onMouseDown={close}>
+    <div className="settings-backdrop" onMouseDown={cmd.closeSettings}>
       <div className="settings-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="settings-head">
           <span className="settings-title">
@@ -66,7 +60,7 @@ export function SettingsPanel() {
           <span className="settings-kbd">⌘,</span>
           <button
             className="settings-close"
-            onClick={close}
+            onClick={cmd.closeSettings}
             title="Close (Esc / ⌘,)"
           >
             <IconClose size={11} />
@@ -79,7 +73,7 @@ export function SettingsPanel() {
             <div className="settings-section-head">
               <span className="settings-section-title">Project roots</span>
               <span className="settings-section-sub">
-                each root + its immediate subdirs become projects
+                root is always indexed · within depth, only git repos are picked up
               </span>
             </div>
 
@@ -95,10 +89,15 @@ export function SettingsPanel() {
                     e.preventDefault();
                     void commitDraft();
                   } else if (e.key === "Escape") {
-                    close();
+                    cmd.closeSettings();
                   }
                 }}
                 spellCheck={false}
+              />
+              <DepthStepper
+                value={draftDepth}
+                onChange={setDraftDepth}
+                title="Walk depth for this root"
               />
               <button
                 className="settings-btn"
@@ -124,15 +123,20 @@ export function SettingsPanel() {
               </div>
             ) : (
               <div className="settings-list">
-                {projectRoots.map((path) => (
-                  <div className="settings-row" key={path}>
+                {projectRoots.map((root) => (
+                  <div className="settings-row" key={root.path}>
                     <span className="settings-row-icon">
                       <IconFolder size={12} />
                     </span>
-                    <span className="settings-row-path">{pretty(path)}</span>
+                    <span className="settings-row-path">{pretty(root.path)}</span>
+                    <DepthStepper
+                      value={root.depth}
+                      onChange={(d) => cmd.setProjectRootDepth(root.path, d)}
+                      title="Walk depth"
+                    />
                     <button
                       className="settings-row-x"
-                      onClick={() => removeProjectRoot(path)}
+                      onClick={() => cmd.removeProjectRoot(root.path)}
                       title="Remove"
                     >
                       <IconClose size={11} />
@@ -158,7 +162,7 @@ export function SettingsPanel() {
                   <button
                     key={th.id}
                     className={`theme-card${active ? " active" : ""}`}
-                    onClick={() => setThemeId(th.id)}
+                    onClick={() => cmd.setThemeId(th.id)}
                     title={th.name}
                   >
                     <div className="theme-card-swatches">
@@ -187,7 +191,7 @@ export function SettingsPanel() {
             </div>
             <NumberField
               value={windowOpacity}
-              onCommit={setWindowOpacity}
+              onCommit={cmd.setWindowOpacity}
               format={(v) => v.toFixed(2)}
               suffix="opacity"
             />
@@ -203,7 +207,7 @@ export function SettingsPanel() {
             </div>
             <NumberField
               value={windowBlur}
-              onCommit={(v) => setWindowBlur(Math.round(v))}
+              onCommit={(v) => cmd.setWindowBlur(Math.round(v))}
               format={(v) => String(Math.round(v))}
               suffix="px"
             />
@@ -222,7 +226,7 @@ export function SettingsPanel() {
                 className="settings-input"
                 placeholder="Browser app name (e.g. Zen, Arc, Safari · empty = system default)"
                 value={cloudBrowser}
-                onChange={(e) => setCloudBrowser(e.target.value)}
+                onChange={(e) => cmd.setCloudBrowser(e.target.value)}
                 spellCheck={false}
               />
             </div>
@@ -231,7 +235,7 @@ export function SettingsPanel() {
                 className="settings-input"
                 placeholder="Workspace shortcut (e.g. ctrl+3 · empty = no switch)"
                 value={cloudBrowserShortcut}
-                onChange={(e) => setCloudBrowserShortcut(e.target.value)}
+                onChange={(e) => cmd.setCloudBrowserShortcut(e.target.value)}
                 spellCheck={false}
               />
             </div>
@@ -243,8 +247,6 @@ export function SettingsPanel() {
 }
 
 // ---- NumberField -------------------------------------------------------
-// Text input that buffers user typing and only commits a numeric value on
-// blur or Enter. No min/max — whatever the user types goes through.
 
 interface NumberFieldProps {
   value: number;
@@ -294,6 +296,90 @@ function NumberField({ value, onCommit, format, suffix }: NumberFieldProps) {
         }}
       />
       {suffix && <span className="settings-number-suffix">{suffix}</span>}
+    </div>
+  );
+}
+
+// ---- DepthStepper ------------------------------------------------------
+// Compact ± stepper for a project-root walk depth. Click to step; the
+// number is also editable directly via keyboard. Floor at 0.
+
+function DepthStepper({
+  value,
+  onChange,
+  title,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  title?: string;
+}) {
+  const [draft, setDraft] = useState<string>(() => String(value));
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(String(value));
+  }, [value]);
+
+  const commit = (raw: string) => {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n)) {
+      const clamped = Math.max(0, n);
+      onChange(clamped);
+      setDraft(String(clamped));
+    } else {
+      setDraft(String(value));
+    }
+  };
+
+  const bump = (delta: number) => {
+    const next = Math.max(0, value + delta);
+    onChange(next);
+    setDraft(String(next));
+  };
+
+  return (
+    <div className="settings-depth" title={title}>
+      <span className="settings-depth-label">d</span>
+      <button
+        className="settings-depth-btn"
+        onClick={() => bump(-1)}
+        disabled={value <= 0}
+        type="button"
+      >
+        −
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        className="settings-depth-input"
+        value={draft}
+        spellCheck={false}
+        onFocus={() => { focusedRef.current = true; }}
+        onBlur={() => { focusedRef.current = false; commit(draft); }}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "Escape") {
+            setDraft(String(value));
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            bump(1);
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            bump(-1);
+          }
+        }}
+      />
+      <button
+        className="settings-depth-btn"
+        onClick={() => bump(1)}
+        type="button"
+      >
+        +
+      </button>
     </div>
   );
 }

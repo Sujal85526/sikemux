@@ -1,7 +1,7 @@
-import { useWorkspace } from "../../state/workspace";
-import { AWS_SERVICES, type AwsService } from "../../state/slices/aws";
+import * as cmd from "../../state/commands";
+import { useStore } from "../../state/store";
+import { AWS_SERVICES, type AwsService } from "../../state/types";
 
-// Pretty labels and short hint glyphs for the service nav.
 const META: Record<AwsService, { label: string; hint: string }> = {
   ecs: { label: "ECS", hint: "clusters · services · tasks · logs" },
   ec2: { label: "EC2", hint: "instances" },
@@ -12,8 +12,7 @@ const META: Record<AwsService, { label: string; hint: string }> = {
 };
 
 export function AwsServiceNav() {
-  const active = useWorkspace((s) => s.awsService);
-  const setAwsService = useWorkspace((s) => s.setAwsService);
+  const active = useStore((s) => s.awsService);
   return (
     <nav className="aws-nav">
       <div className="aws-nav-label">Services</div>
@@ -24,7 +23,7 @@ export function AwsServiceNav() {
           <button
             key={s}
             className={`aws-nav-item${sel ? " active" : ""}`}
-            onClick={() => setAwsService(s)}
+            onClick={() => cmd.setAwsService(s)}
             title={m.hint}
           >
             <span className="aws-nav-key">{i + 1}</span>

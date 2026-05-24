@@ -12,9 +12,12 @@ import { AwsAuthModal } from "./components/aws/AwsAuthModal";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { useKeymap } from "./keymap";
-import { applyHydrate, subscribePersist } from "./state/persist";
-import { useWorkspace } from "./state/workspace";
 import { filesApi } from "./api/files";
+import { emit } from "./state/bus";
+import * as cmd from "./state/commands";
+import { applyHydrate, subscribePersist } from "./state/persist";
+import { invalidate } from "./state/resources";
+import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity } from "./themes/bus";
 
 interface BootInfo {
@@ -25,35 +28,30 @@ interface BootInfo {
 
 export default function App() {
   useKeymap();
-  const leftOpen = useWorkspace((s) => s.leftRailOpen);
-  const rightOpen = useWorkspace((s) => s.rightRailOpen);
-  // Agents are project-scoped — SSH / cloud / command sessions have no
-  // notion of an agent, so the rail just shows an empty/unrelated list
-  // there. Hide it entirely on non-project sessions so the workspace gets
-  // its full width back.
-  const activeSessionIsProject = useWorkspace(
-    (s) => s.sessions[s.activeSessionId ?? ""]?.kind === "project",
+  const leftOpen = useStore((s) => s.leftRailOpen);
+  const rightOpen = useStore((s) => s.rightRailOpen);
+  // Agents are project-scoped — hide the rail elsewhere so the workspace
+  // recovers its full width.
+  const activeSessionIsProject = useStore(
+    (s) => s.sessions[s.activeSessionId]?.kind === "project",
   );
-  const pickerOpen = useWorkspace((s) => s.pickerOpen);
-  const agentPaletteOpen = useWorkspace((s) => s.agentPaletteOpen);
-  const filePaletteOpen = useWorkspace((s) => s.filePaletteOpen);
-  const settingsOpen = useWorkspace((s) => s.settingsOpen);
-  const awsAuthModal = useWorkspace((s) => s.awsAuthModal);
+  const pickerOpen = useStore((s) => s.pickerOpen);
+  const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
+  const filePaletteOpen = useStore((s) => s.filePaletteOpen);
+  const settingsOpen = useStore((s) => s.settingsOpen);
+  const awsAuthModal = useStore((s) => s.awsAuthModal);
 
   useEffect(() => {
     let unsub = () => {};
     invoke<BootInfo>("boot_init")
       .then((boot) => {
-        useWorkspace.getState().setHome(boot.home);
+        cmd.setHome(boot.home);
         applyHydrate(boot.state);
-        // Push the (possibly hydrated) theme + opacity into the DOM and the
-        // theme bus so visuals match persisted preferences from first paint.
-        const st = useWorkspace.getState();
+        const st = getState();
         applyTheme(st.themeId);
         applyWindowOpacity(st.windowOpacity);
-        // Re-apply persisted blur radius so reopens look identical to last
-        // session (the Rust side starts at 0).
-        st.setWindowBlur(st.windowBlur);
+        // Re-apply persisted blur so reopens look identical (Rust starts at 0).
+        cmd.setWindowBlur(st.windowBlur);
       })
       .catch(() => {})
       .finally(() => {
@@ -62,17 +60,19 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Global fs-event subscription. The backend invalidates its own file
-  // index cache; we drop the matching frontend cache entry so the next
-  // Cmd-P open reflects on-disk reality, *and* bump the git-refresh nonce so
-  // every mounted EditorPane re-fetches its HEAD baseline. Without that
-  // bump, the diff gutter / overview ruler keep showing stale chunks from
-  // before the commit (the file's HEAD content changed under us but the
-  // editor still holds the previous baseline).
+  // Single fs-event subscription: invalidate every git/file-list resource
+  // for the affected repo and emit a typed bus event. Consumers wake up
+  // via the resource cache or by subscribing to the bus — no nonces.
   useEffect(() => {
     const handle = listen<{ repo: string }>("git_changed", (e) => {
-      filesApi.invalidate(e.payload.repo || undefined);
-      useWorkspace.getState().bumpGitRefresh();
+      const repo = e.payload.repo || "";
+      filesApi.invalidate(repo || undefined);
+      invalidate((kind, args) => {
+        if (!kind.startsWith("git.") && kind !== "files.list") return false;
+        if (!repo) return true;
+        return args[0] === repo;
+      });
+      emit({ type: "fs-changed", repo });
     });
     return () => {
       void handle.then((u) => u());

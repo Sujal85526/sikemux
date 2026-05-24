@@ -1,7 +1,11 @@
-// Session -> Window -> Pane tree. A project also owns a list of Agents.
+// Domain model — normalised. Sessions, windows, and agents all live in their
+// own ID-keyed maps; the Session struct holds metadata only. Layout (pane
+// tree) lives inside each Window. View state and remote data live elsewhere
+// (state/store.ts → view, state/resources.ts → cache).
 
-export type SplitDir = "row" | "column"; // row = side-by-side, column = stacked
+// ---- Layout tree --------------------------------------------------------
 
+export type SplitDir = "row" | "column";
 export type PaneKind = "terminal" | "editor" | "git" | "aws";
 
 export interface PaneNode {
@@ -23,7 +27,11 @@ export interface SplitNode {
 
 export type LayoutNode = PaneNode | SplitNode;
 
-export interface WinTab {
+// ---- Domain entities ----------------------------------------------------
+
+export type SessionKind = "project" | "command" | "ssh" | "aws";
+
+export interface Window {
   id: string;
   name: string;
   root: LayoutNode;
@@ -31,24 +39,20 @@ export interface WinTab {
   fixed?: boolean;
 }
 
-export type SessionKind = "project" | "command" | "ssh" | "aws";
-
 export type AgentType = "claude" | "codex" | "hermes";
 export const AGENT_TYPES: AgentType[] = ["claude", "codex", "hermes"];
 
-// A coding agent owned by a project — a CLI running in the project's cwd.
 export interface Agent {
   id: string;
   type: AgentType;
-  title: string; // display name — the type, or a resumed conversation's title
-  startup: string; // the CLI command run in the agent's terminal
-  resumeId?: string; // the on-disk session id this agent resumes, if any
+  title: string;
+  startup: string;
+  resumeId?: string;
 }
 
 export type Env = "dev" | "staging" | "preprod" | "production";
 export const ENVS: Env[] = ["dev", "staging", "preprod", "production"];
 
-// What the stage shows for a session: its window grid, or an agent terminal.
 export type SessionView = "windows" | "agent";
 
 export interface Session {
@@ -57,10 +61,8 @@ export interface Session {
   kind: SessionKind;
   cwd: string;
   env: Env;
-  pinned: boolean; // superpinned — lifted into the global strip
-  windows: WinTab[];
+  pinned: boolean;
   activeWindowId: string;
-  agents: Agent[]; // project sessions; empty for command
   activeAgentId: string | null;
   view: SessionView;
 }
@@ -71,9 +73,6 @@ export interface RecentEntry {
   cwd: string;
 }
 
-// A bookmarked on-disk agent conversation — favourited for fast resume.
-// `cwd` is the project the session belongs to; clicking the bookmark switches
-// to (or creates) that project before attaching the agent terminal.
 export interface AgentBookmark {
   type: AgentType;
   id: string;
@@ -81,27 +80,53 @@ export interface AgentBookmark {
   cwd?: string;
 }
 
-export interface PersistedSettings {
-  projectRoots: string[];
-  themeId: string;
-  windowOpacity: number;
-  windowBlur?: number;
-  cloudBrowser?: string;
-  cloudBrowserShortcut?: string;
-  awsProfile?: string | null;
-  awsService?: string;
+// ---- AWS --------------------------------------------------------------
+
+export type AwsService = "ecs" | "ec2" | "lambda" | "sqs" | "billing" | "s3";
+export const AWS_SERVICES: AwsService[] = [
+  "ecs",
+  "ec2",
+  "lambda",
+  "sqs",
+  "billing",
+  "s3",
+];
+
+// ---- View namespaces (ephemeral; keyed by paneId / sessionId / profile) -
+
+export type PickerMode = "all" | "projects" | "ssh";
+
+export interface LspResults {
+  title: string;
+  project: string;
+  results: { uri: string; line: number; character: number }[];
 }
 
-export interface WorkspaceSnapshot {
-  version: number;
-  sessions: Session[];
-  activeSessionId: string;
-  recent: RecentEntry[];
-  agentBookmarks: AgentBookmark[];
-  leftRailOpen: boolean;
-  rightRailOpen: boolean;
-  settings?: PersistedSettings;
+export interface EditorPaneView {
+  openTabs: string[];
+  activePath: string | null;
+  treeWidth: number;
 }
+
+export type GitPanel = "files" | "branches" | "commits";
+
+export interface GitPaneView {
+  panel: GitPanel;
+  selected: Record<GitPanel, number>;
+}
+
+export type EcsLevel =
+  | { kind: "clusters" }
+  | { kind: "services"; cluster: string }
+  | {
+      kind: "service";
+      cluster: string;
+      service: string;
+      tab: "logs" | "tasks";
+      taskFilter?: { taskId: string; stream: string };
+    };
+
+// ---- Layout geometry ---------------------------------------------------
 
 export interface Rect {
   x: number;
@@ -119,3 +144,37 @@ export interface Divider {
 }
 
 export type FocusDir = "left" | "right" | "up" | "down";
+
+// ---- Persistence wire shape (version-gated) ----------------------------
+
+export interface PersistedSnapshot {
+  version: number;
+  sessions: Session[];
+  windowsBySession: Record<string, Window[]>;
+  agentsBySession: Record<string, Agent[]>;
+  sessionOrder: string[];
+  activeSessionId: string;
+  recent: RecentEntry[];
+  agentBookmarks: AgentBookmark[];
+  prefs: PersistedPrefs;
+  editorViews: Record<string, EditorPaneView>;
+}
+
+export interface ProjectRoot {
+  path: string;
+  /** How many levels of subdirs to enumerate (1 = root + immediate subdirs). */
+  depth: number;
+}
+
+export interface PersistedPrefs {
+  projectRoots: ProjectRoot[];
+  themeId: string;
+  windowOpacity: number;
+  windowBlur: number;
+  cloudBrowser: string;
+  cloudBrowserShortcut: string;
+  awsProfile: string | null;
+  awsService: AwsService;
+  leftRailOpen: boolean;
+  rightRailOpen: boolean;
+}

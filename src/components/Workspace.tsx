@@ -1,8 +1,15 @@
 import { useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, Divider, Rect, Session, WinTab } from "../state/types";
+import type {
+  Agent,
+  Divider,
+  Rect,
+  Session,
+  Window as WindowT,
+} from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
-import { useWorkspace } from "../state/workspace";
+import * as cmd from "../state/commands";
+import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { EditorPane } from "./EditorPane";
 import { GitPane } from "./GitPane";
@@ -15,9 +22,8 @@ const TERM_TABS_H = 32;
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
 
-// A window is a "term tab" if its name is `term` or a bare integer — the
-// integers are the auto-numbered tabs Alt+N spawns inside a project. files
-// and git stay as their own first-class windows.
+// A window is a "term tab" if its name is `term` or a bare integer —
+// integers are the auto-numbered tabs Alt+N spawns inside a project.
 export function isTermTab(name: string): boolean {
   return name === "term" || /^\d+$/.test(name);
 }
@@ -25,31 +31,45 @@ export function isTermTab(name: string): boolean {
 // The center stage. Every window and agent of every session stays mounted
 // (visibility-toggled) so detached sessions keep running.
 export function Workspace() {
-  const sessionsById = useWorkspace((s) => s.sessions);
-  const sessionOrder = useWorkspace((s) => s.sessionOrder);
-  const activeSessionId = useWorkspace((s) => s.activeSessionId);
+  const sessionsById = useStore((s) => s.sessions);
+  const sessionOrder = useStore((s) => s.sessionOrder);
+  const windowsById = useStore((s) => s.windows);
+  const agentsById = useStore((s) => s.agents);
+  const windowsBySession = useStore((s) => s.windowsBySession);
+  const agentsBySession = useStore((s) => s.agentsBySession);
+  const activeSessionId = useStore((s) => s.activeSessionId);
   const areaRef = useRef<HTMLDivElement>(null);
 
   const sessions = sessionOrder.map((id) => sessionsById[id]);
   const activeSession = sessionsById[activeSessionId];
+  const activeWindow = activeSession
+    ? windowsById[activeSession.activeWindowId]
+    : undefined;
+  const activeAgents = activeSession
+    ? (agentsBySession[activeSession.id] ?? []).map((id) => agentsById[id])
+    : [];
+
   const inAgentView = !!activeSession && activeSession.view === "agent";
-  const showAgentTabs = inAgentView && activeSession!.agents.length >= 1;
-  const showAgentEmpty = inAgentView && activeSession!.agents.length === 0;
+  const showAgentTabs = inAgentView && activeAgents.length >= 1;
+  const showAgentEmpty = inAgentView && activeAgents.length === 0;
 
   // Term tabs only render when (a) we're in windows view, (b) the active
-  // window IS a term tab, and (c) there's more than one — a single tab adds
+  // window IS a term tab, and (c) there's more than one — a single tab is
   // visual noise without value.
-  const activeWindow =
-    activeSession?.windows.find((w) => w.id === activeSession.activeWindowId);
+  const activeWindowList = activeSession
+    ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id])
+    : [];
   const termTabs =
     activeSession?.view === "windows" && activeWindow && isTermTab(activeWindow.name)
-      ? activeSession.windows.filter((w) => isTermTab(w.name))
+      ? activeWindowList.filter((w) => isTermTab(w.name))
       : [];
   const showTermTabs = termTabs.length >= 1;
 
   return (
     <div className="window-area" ref={areaRef}>
-      {showAgentTabs && <AgentTabsBar session={activeSession!} />}
+      {showAgentTabs && (
+        <AgentTabsBar session={activeSession!} agents={activeAgents} />
+      )}
       {showTermTabs && (
         <TerminalTabsBar session={activeSession!} tabs={termTabs} />
       )}
@@ -63,20 +83,26 @@ export function Workspace() {
       )}
       {sessions.flatMap((session) => {
         const isActive = session.id === activeSessionId;
+        const winIds = windowsBySession[session.id] ?? [];
+        const aIds = agentsBySession[session.id] ?? [];
         const sessTabs =
-          session.view === "agent" && session.agents.length >= 1;
-        const windowLayers = session.windows.map((win) => {
-          const layerTermTabs = isTermTab(win.name);
-          // Inset only when this very session is showing its term tab bar.
+          session.view === "agent" && aIds.length >= 1;
+        const sessHasTermTabs = winIds.some((id) =>
+          isTermTab(windowsById[id]?.name ?? ""),
+        );
+        const windowLayers = winIds.map((wid) => {
+          const win = windowsById[wid];
+          if (!win) return null;
+          const layerTermTab = isTermTab(win.name);
           const inset =
             isActive &&
             session.view === "windows" &&
-            win.id === session.activeWindowId &&
-            layerTermTabs &&
-            session.windows.filter((w) => isTermTab(w.name)).length >= 1;
+            wid === session.activeWindowId &&
+            layerTermTab &&
+            sessHasTermTabs;
           return (
             <WindowLayer
-              key={win.id}
+              key={wid}
               session={session}
               win={win}
               areaRef={areaRef}
@@ -84,24 +110,28 @@ export function Workspace() {
               visible={
                 isActive &&
                 session.view === "windows" &&
-                win.id === session.activeWindowId
+                wid === session.activeWindowId
               }
             />
           );
         });
-        const agentLayers = session.agents.map((agent) => (
-          <AgentLayer
-            key={agent.id}
-            session={session}
-            agent={agent}
-            tabsShown={sessTabs}
-            visible={
-              isActive &&
-              session.view === "agent" &&
-              agent.id === session.activeAgentId
-            }
-          />
-        ));
+        const agentLayers = aIds.map((aid) => {
+          const agent = agentsById[aid];
+          if (!agent) return null;
+          return (
+            <AgentLayer
+              key={aid}
+              session={session}
+              agent={agent}
+              tabsShown={sessTabs}
+              visible={
+                isActive &&
+                session.view === "agent" &&
+                aid === session.activeAgentId
+              }
+            />
+          );
+        });
         return [...windowLayers, ...agentLayers];
       })}
     </div>
@@ -113,10 +143,8 @@ function TerminalTabsBar({
   tabs,
 }: {
   session: Session;
-  tabs: WinTab[];
+  tabs: WindowT[];
 }) {
-  const selectWindowId = useWorkspace((s) => s.selectWindowId);
-  const closeActiveWindow = useWorkspace((s) => s.closeActiveWindow);
   return (
     <div className="agent-tabs" style={{ height: TERM_TABS_H }}>
       {tabs.map((w) => {
@@ -125,7 +153,7 @@ function TerminalTabsBar({
           <button
             key={w.id}
             className={`agent-tab${active ? " active" : ""}`}
-            onClick={() => selectWindowId(w.id)}
+            onClick={() => cmd.selectWindowId(w.id)}
           >
             <span className="agent-glyph">
               <IconCommand size={13} />
@@ -137,8 +165,8 @@ function TerminalTabsBar({
                 title="Close terminal"
                 onClick={(e) => {
                   e.stopPropagation();
-                  selectWindowId(w.id);
-                  closeActiveWindow();
+                  cmd.selectWindowId(w.id);
+                  cmd.closeActiveWindow();
                 }}
               >
                 <IconClose size={11} />
@@ -151,18 +179,22 @@ function TerminalTabsBar({
   );
 }
 
-function AgentTabsBar({ session }: { session: Session }) {
-  const selectAgent = useWorkspace((s) => s.selectAgent);
-  const closeAgent = useWorkspace((s) => s.closeAgent);
+function AgentTabsBar({
+  session,
+  agents,
+}: {
+  session: Session;
+  agents: Agent[];
+}) {
   return (
     <div className="agent-tabs" style={{ height: AGENT_TABS_H }}>
-      {session.agents.map((a) => {
+      {agents.map((a) => {
         const active = a.id === session.activeAgentId;
         return (
           <button
             key={a.id}
             className={`agent-tab${active ? " active" : ""}`}
-            onClick={() => selectAgent(a.id)}
+            onClick={() => cmd.selectAgent(a.id)}
           >
             <span className={`agent-glyph ${a.type}`}>
               <AgentIcon type={a.type} size={14} />
@@ -173,7 +205,7 @@ function AgentTabsBar({ session }: { session: Session }) {
               title="Close agent"
               onClick={(e) => {
                 e.stopPropagation();
-                closeAgent(a.id);
+                cmd.closeAgent(a.id);
               }}
             >
               <IconClose size={11} />
@@ -186,7 +218,6 @@ function AgentTabsBar({ session }: { session: Session }) {
 }
 
 // An agent's terminal — a single full-stage PTY running the agent CLI.
-// When the session has multiple agents, leaves room at the top for tabs.
 function AgentLayer({
   session,
   agent,
@@ -229,13 +260,12 @@ function WindowLayer({
   topInset = 0,
 }: {
   session: Session;
-  win: WinTab;
+  win: WindowT;
   visible: boolean;
   areaRef: RefObject<HTMLDivElement | null>;
   topInset?: number;
 }) {
-  const zoomedPaneId = useWorkspace((s) => s.zoomedPaneId);
-  const focusPane = useWorkspace((s) => s.focusPane);
+  const zoomedPaneId = useStore((s) => s.zoomedPaneId);
   const { panes, dividers } = useMemo(() => computeLayout(win.root), [win.root]);
   const leaves = useMemo(() => collectPanes(win.root), [win.root]);
   const zoomActive = visible && zoomedPaneId != null;
@@ -265,15 +295,17 @@ function WindowLayer({
           >
             <div
               className={`pane pane-${p.kind}`}
-              onMouseDown={() => visible && focusPane(p.id)}
+              onMouseDown={() => visible && cmd.focusPane(p.id)}
             >
               {p.kind === "editor" ? (
                 <EditorPane
+                  paneId={p.id}
                   cwd={p.cwd || session.cwd}
                   active={visible && isActive && shown}
                 />
               ) : p.kind === "git" ? (
                 <GitPane
+                  paneId={p.id}
                   cwd={p.cwd || session.cwd}
                   active={visible && isActive && shown}
                 />
@@ -332,9 +364,8 @@ function DividerHandle({
     const area = areaRef.current;
     if (!area) return;
     const bounds = area.getBoundingClientRect();
-    const st = useWorkspace.getState();
-    const sess = st.sessions[st.activeSessionId];
-    const winNode = sess?.windows.find((w) => w.id === windowId);
+    const st = getState();
+    const winNode = st.windows[windowId];
     const split = winNode ? findSplit(winNode.root, d.splitId) : null;
     if (!split) return;
 
@@ -344,7 +375,6 @@ function DividerHandle({
       ? bounds.width * d.rect.w
       : bounds.height * d.rect.h;
     const start = horizontal ? e.clientX : e.clientY;
-    const setSplitSizes = st.setSplitSizes;
 
     const move = (ev: PointerEvent) => {
       let df = ((horizontal ? ev.clientX : ev.clientY) - start) / axisPx;
@@ -355,7 +385,7 @@ function DividerHandle({
       const sizes = startSizes.slice();
       sizes[i] += df;
       sizes[i + 1] -= df;
-      setSplitSizes(windowId, d.splitId, sizes);
+      cmd.setSplitSizes(windowId, d.splitId, sizes);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);

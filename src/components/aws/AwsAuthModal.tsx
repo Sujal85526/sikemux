@@ -1,23 +1,17 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useWorkspace } from "../../state/workspace";
+import * as cmd from "../../state/commands";
+import { useStore } from "../../state/store";
 import { IconClose } from "../Icons";
 
 // Sign-in flow that mirrors ~/.config/shell/bin/aws-auth:
-//   1. If a `cloudBrowser` (+ optional `cloudBrowserShortcut`) is configured
-//      in settings, the SSO start URL is opened there first — activating
-//      the browser app + firing the workspace shortcut via osascript, so
-//      the user lands on the right space.
-//   2. Then `aws sso login --profile X` runs. The CLI handles its own
-//      device-authorization browser-open; since the browser is already in
-//      the right workspace from step (1), the device-auth click happens in
-//      context.
+//   1. If a `cloudBrowser` is configured, activate it (and run the optional
+//      workspace shortcut) so the device-auth tab lands in the right space.
+//   2. Then `aws sso login --profile X` runs.
 export function AwsAuthModal() {
-  const modal = useWorkspace((s) => s.awsAuthModal);
-  const close = useWorkspace((s) => s.closeAwsAuthModal);
-  const runAwsSsoLogin = useWorkspace((s) => s.runAwsSsoLogin);
-  const cloudBrowser = useWorkspace((s) => s.cloudBrowser);
-  const cloudBrowserShortcut = useWorkspace((s) => s.cloudBrowserShortcut);
+  const modal = useStore((s) => s.awsAuthModal);
+  const cloudBrowser = useStore((s) => s.cloudBrowser);
+  const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
 
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "fail">("idle");
   const [errOut, setErrOut] = useState("");
@@ -29,9 +23,6 @@ export function AwsAuthModal() {
 
   if (!modal) return null;
 
-  // Opens a URL in the configured browser, switching to the configured
-  // workspace first. Used only by the SSO portal link in the modal — the
-  // sign-in flow itself doesn't pre-open anything (see onSignIn).
   const openInBrowser = (url: string) =>
     invoke("open_url", {
       url,
@@ -44,19 +35,18 @@ export function AwsAuthModal() {
     setErrOut("");
     try {
       // Switch to the configured browser workspace WITHOUT opening a URL —
-      // `aws sso login` opens its own device-auth URL via the system
-      // default browser. Pre-opening the SSO portal here would land two
-      // tabs (Identity Center + device-auth), which is what the user hit.
+      // `aws sso login` opens its own device-auth URL via the system default
+      // browser. Pre-opening the SSO portal would land two tabs.
       if (cloudBrowser) {
         await invoke("macos_focus_app", {
           app: cloudBrowser,
           shortcut: cloudBrowserShortcut || null,
         }).catch(() => {});
       }
-      const ok = await runAwsSsoLogin(modal.profile);
+      const ok = await cmd.runAwsSsoLogin(modal.profile);
       setPhase(ok ? "ok" : "fail");
       if (ok) {
-        window.setTimeout(close, 700);
+        window.setTimeout(cmd.closeAwsAuthModal, 700);
       }
     } catch (e) {
       setPhase("fail");
@@ -65,7 +55,7 @@ export function AwsAuthModal() {
   };
 
   return (
-    <div className="settings-backdrop" onMouseDown={close}>
+    <div className="settings-backdrop" onMouseDown={cmd.closeAwsAuthModal}>
       <div
         className="aws-auth-modal"
         onMouseDown={(e) => e.stopPropagation()}
@@ -74,7 +64,11 @@ export function AwsAuthModal() {
           <span className="settings-title">
             <strong>·</strong>aws sign-in
           </span>
-          <button className="settings-close" onClick={close} title="Close">
+          <button
+            className="settings-close"
+            onClick={cmd.closeAwsAuthModal}
+            title="Close"
+          >
             <IconClose size={11} />
           </button>
         </div>
@@ -132,7 +126,7 @@ export function AwsAuthModal() {
         <div className="aws-auth-actions">
           <button
             className="settings-btn"
-            onClick={close}
+            onClick={cmd.closeAwsAuthModal}
             disabled={phase === "running"}
           >
             Cancel

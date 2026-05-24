@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { ProjectRoot } from "../state/types";
 
 export interface ProjectEntry {
   name: string;
@@ -7,7 +8,7 @@ export interface ProjectEntry {
 }
 
 export const settingsApi = {
-  scanProjectRoots: (roots: string[]) =>
+  scanProjectRoots: (roots: ProjectRoot[]) =>
     invoke<ProjectEntry[]>("scan_project_roots", { roots }),
   expandPath: (path: string) => invoke<string>("expand_path", { path }),
   /** Native folder picker. Returns absolute path or null on cancel. */

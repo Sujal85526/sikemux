@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { filesApi } from "../api/files";
-import { useWorkspace } from "../state/workspace";
+import * as cmd from "../state/commands";
+import { useResource } from "../state/resources";
+import { filesListR } from "../state/resources.defs";
+import { useStore } from "../state/store";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { IconSearch } from "./Icons";
 import { FileIcon } from "./FileIcon";
@@ -34,38 +36,26 @@ const dirname = (p: string) => {
 };
 
 // Cmd-P file picker, Telescope-style. Walks the project respecting
-// .gitignore on the Rust side, fuzzy-matches in JS, opens the file via the
-// existing requestOpenFile bus so it lands in the editor pane.
+// .gitignore on the Rust side, fuzzy-matches in JS, dispatches open-file
+// through the bus.
 export function FilePalette() {
-  const close = useWorkspace((s) => s.closeFilePalette);
-  const requestOpenFile = useWorkspace((s) => s.requestOpenFile);
-  const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
+  const session = useStore((s) => s.sessions[s.activeSessionId]);
   const cwd = session?.cwd ?? "";
 
   const [query, setQuery] = useState("");
-  const [all, setAll] = useState<string[]>([]);
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const mouseActive = useMouseActive();
 
+  const list = useResource(filesListR, cwd || "");
+  const all = cwd ? list.data ?? [] : [];
+
   useEffect(() => {
     inputRef.current?.focus();
-    if (!cwd) return;
-    let cancelled = false;
-    filesApi
-      .list(cwd)
-      .then((list) => {
-        if (!cancelled) setAll(list);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [cwd]);
+  }, []);
 
-  // Ranked + filtered results — capped at MAX_RESULTS so even huge repos
-  // don't blow out the DOM.
+  // Ranked + filtered results, capped at MAX_RESULTS.
   const items = useMemo(() => {
     const q = query.trim();
     if (!q) return all.slice(0, MAX_RESULTS);
@@ -92,12 +82,10 @@ export function FilePalette() {
     return ranked.slice(0, MAX_RESULTS).map((r) => r.path);
   }, [all, query]);
 
-  // Reset selection to top whenever the result set changes.
   useEffect(() => {
     setSel(0);
   }, [query, items.length]);
 
-  // Keep the selected row scrolled into view during keyboard nav.
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>(
       `.picker-item:nth-child(${sel + 1})`,
@@ -107,13 +95,13 @@ export function FilePalette() {
 
   const activate = (path: string | undefined) => {
     if (!path || !cwd) return;
-    requestOpenFile(`${cwd}/${path}`);
-    close();
+    cmd.requestOpenFile(`${cwd}/${path}`);
+    cmd.closeFilePalette();
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
-      close();
+      cmd.closeFilePalette();
     } else if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
       e.preventDefault();
       setSel((s) => (items.length ? (s + 1) % items.length : 0));
@@ -127,7 +115,7 @@ export function FilePalette() {
   };
 
   return (
-    <div className="picker-backdrop" onMouseDown={close}>
+    <div className="picker-backdrop" onMouseDown={cmd.closeFilePalette}>
       <div className="picker" onMouseDown={(e) => e.stopPropagation()}>
         <div className="picker-input-wrap">
           <IconSearch size={15} className="picker-search-icon" />

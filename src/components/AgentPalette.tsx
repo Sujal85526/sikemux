@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentSession } from "../api/agents";
 import { AGENT_TYPES, type AgentType } from "../state/types";
-import { useWorkspace } from "../state/workspace";
+import * as cmd from "../state/commands";
+import { useStore } from "../state/store";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { AgentIcon, IconSearch } from "./Icons";
 
@@ -35,10 +36,10 @@ function fuzzy(query: string, text: string): number {
 }
 
 // Cross-agent session search — claude, codex and hermes in one palette.
+// Stays imperative — three parallel scans per cwd is small enough that
+// promoting it to a resource definition would just add ceremony.
 export function AgentPalette() {
-  const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
-  const addAgent = useWorkspace((s) => s.addAgent);
-  const close = useWorkspace((s) => s.closeAgentPalette);
+  const session = useStore((s) => s.sessions[s.activeSessionId]);
 
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
@@ -48,7 +49,7 @@ export function AgentPalette() {
 
   useEffect(() => {
     inputRef.current?.focus();
-    const cwd = session.cwd;
+    const cwd = session?.cwd ?? "";
     let cancelled = false;
     Promise.all(
       AGENT_TYPES.map((t) =>
@@ -65,7 +66,7 @@ export function AgentPalette() {
     return () => {
       cancelled = true;
     };
-  }, [session.cwd]);
+  }, [session?.cwd]);
 
   const items = useMemo(() => {
     const q = query.trim();
@@ -82,13 +83,13 @@ export function AgentPalette() {
 
   const activate = (r: Row | undefined) => {
     if (!r) return;
-    addAgent(r.type, r.id, r.title);
-    close();
+    cmd.addAgent(r.type, r.id, r.title);
+    cmd.closeAgentPalette();
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
-      close();
+      cmd.closeAgentPalette();
     } else if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
       e.preventDefault();
       setSel((s) => (items.length ? (s + 1) % items.length : 0));
@@ -102,7 +103,7 @@ export function AgentPalette() {
   };
 
   return (
-    <div className="picker-backdrop" onMouseDown={close}>
+    <div className="picker-backdrop" onMouseDown={cmd.closeAgentPalette}>
       <div className="picker" onMouseDown={(e) => e.stopPropagation()}>
         <div className="picker-input-wrap">
           <IconSearch size={15} className="picker-search-icon" />

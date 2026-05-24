@@ -9,7 +9,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { fsapi } from "../api/fs";
-import { useWorkspace } from "../state/workspace";
+import { requestOpenFile } from "../state/commands";
 
 // VSCode/Zed-style inline peek panel: a CM block widget anchored under the
 // clicked line, listing references / implementations / definitions with a
@@ -110,9 +110,7 @@ class PeekWidget extends WidgetType {
         row.appendChild(ln);
         row.appendChild(txt);
         row.onclick = () => {
-          useWorkspace
-            .getState()
-            .requestOpenFile(path, it.line, it.character);
+          requestOpenFile(path, it.line, it.character);
           view.dispatch({ effects: setPeek.of(null) });
         };
         group.appendChild(row);

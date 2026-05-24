@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
-import { git, type GitFile } from "../api/git";
-import { useWorkspace } from "../state/workspace";
+import { type GitFile } from "../api/git";
+import { useResource } from "../state/resources";
+import { gitStatusR } from "../state/resources.defs";
 import { IconChevron, IconFolder } from "./Icons";
 import { FileIcon } from "./FileIcon";
 
@@ -38,8 +39,14 @@ export function FileTree({
 }: FileTreeProps) {
   const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [gitMap, setGitMap] = useState<Map<string, GitFile>>(new Map());
-  const gitRefreshN = useWorkspace((s) => s.gitRefreshN);
+  const status = useResource(gitStatusR, cwd || "");
+  const gitMap = (() => {
+    const m = new Map<string, GitFile>();
+    if (cwd && status.data) {
+      status.data.files.forEach((f) => m.set(`${cwd}/${f.path}`, f));
+    }
+    return m;
+  })();
 
   // Load root.
   useEffect(() => {
@@ -49,27 +56,6 @@ export function FileTree({
       .then((e) => setDirs((d) => ({ ...d, [cwd]: e })))
       .catch(() => {});
   }, [cwd]);
-
-  // Git status decorations.
-  useEffect(() => {
-    if (!cwd) {
-      setGitMap(new Map());
-      return;
-    }
-    let cancelled = false;
-    git
-      .status(cwd)
-      .then((s) => {
-        if (cancelled) return;
-        const m = new Map<string, GitFile>();
-        s.files.forEach((f) => m.set(`${cwd}/${f.path}`, f));
-        setGitMap(m);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [cwd, gitRefreshN]);
 
   // Reveal the active file by expanding every ancestor.
   useEffect(() => {
@@ -175,7 +161,6 @@ export function FileTree({
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      localStorage.setItem("sikemux:treeWidth", String(latest));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);

@@ -9,7 +9,10 @@ import { lspNav, setLspContext } from "../editor/lspNav";
 import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
 import { lspPeek } from "../editor/lspPeek";
 import { fsapi } from "../api/fs";
-import { useWorkspace } from "../state/workspace";
+import { emit, subscribe } from "../state/bus";
+import * as cmd from "../state/commands";
+import { invalidate } from "../state/resources";
+import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
@@ -19,11 +22,7 @@ import { FileTree } from "./FileTree";
 import { IconClose, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 
-interface Tab {
-  path: string;
-  name: string;
-  dirty: boolean;
-}
+const DEFAULT_VIEW = { openTabs: [], activePath: null, treeWidth: 210 };
 
 const basename = (p: string) =>
   p.replace(/\/+$/, "").split("/").pop() || p;
@@ -40,25 +39,38 @@ function scrollToLine(view: EditorView, line: number, character: number) {
   view.focus();
 }
 
-// Native code editor: file tree + tabs + CodeMirror 6. The CM view is mounted
-// imperatively and lives outside React's render tree; per-tab EditorStates are
-// stashed in a ref so switching tabs preserves content, undo and cursor.
-export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
+// Native code editor: file tree + tabs + CodeMirror 6. Tabs + activePath
+// + treeWidth live in store.editorViews[paneId] so layouts that re-mount
+// the pane preserve them, and they persist across reloads. The CM view is
+// imperative — its per-tab states live in a useRef so switching tabs
+// preserves content, undo and cursor.
+export function EditorPane({
+  paneId,
+  cwd,
+  active,
+}: {
+  paneId: string;
+  cwd: string;
+  active: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const states = useRef<Map<string, EditorState>>(new Map());
   const currentRef = useRef<string | null>(null);
   const saveRef = useRef<() => boolean>(() => false);
 
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [activePath, setActivePath] = useState<string | null>(null);
-  const [treeWidth, setTreeWidth] = useState<number>(() => {
-    const stored = Number(localStorage.getItem("sikemux:treeWidth"));
-    return Number.isFinite(stored) && stored >= 160 && stored <= 600 ? stored : 210;
-  });
+  // Dirty state is CM-derived and changes every keystroke — kept local
+  // rather than round-tripping through the store.
+  const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
 
-  const openRequest = useWorkspace((s) => s.openRequest);
-  const requestOpenFile = useWorkspace((s) => s.requestOpenFile);
+  const view = useStore((s) => s.editorViews[paneId] ?? DEFAULT_VIEW);
+  const tabs = view.openTabs;
+  const activePath = view.activePath;
+  const treeWidth = view.treeWidth;
+
+  const setTreeWidth = (w: number) => cmd.setEditorView(paneId, { treeWidth: w });
 
   const { openDoc, scheduleChange } = useLspBridge(cwd);
 
@@ -68,7 +80,7 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     getCurrentPath: () => currentRef.current,
     scrollLiveTo: (l, c) => viewRef.current && scrollToLine(viewRef.current, l, c),
     openOther: (entry: NavEntry) =>
-      requestOpenFile(entry.path, entry.line, entry.character),
+      cmd.requestOpenFile(entry.path, entry.line, entry.character),
   });
 
   // The CM keymap needs stable callbacks; bind to refs that always read the
@@ -85,14 +97,26 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     void fsapi
       .writeFile(path, view.state.doc.toString())
       .then(() => {
-        setTabs((ts) =>
-          ts.map((t) => (t.path === path ? { ...t, dirty: false } : t)),
-        );
-        useWorkspace.getState().bumpGitRefresh();
+        setDirty((d) => {
+          if (!d.has(path)) return d;
+          const next = new Set(d);
+          next.delete(path);
+          return next;
+        });
+        // Don't wait for the fs watcher — invalidate locally so the diff
+        // gutter / git pane / file tree status decorations update now.
+        if (cwd) {
+          invalidate(
+            (kind, args) =>
+              (kind.startsWith("git.") || kind === "files.list") &&
+              args[0] === cwd,
+          );
+          emit({ type: "fs-changed", repo: cwd });
+        }
       })
       .catch(reportError("save"));
     return true;
-  }, []);
+  }, [cwd]);
   saveRef.current = save;
 
   const makeState = useCallback((path: string, content: string) => {
@@ -114,9 +138,9 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
         EditorView.updateListener.of((u) => {
           if (u.docChanged && currentRef.current) {
             const p = currentRef.current;
-            setTabs((ts) =>
-              ts.map((t) => (t.path === p && !t.dirty ? { ...t, dirty: true } : t)),
-            );
+            if (!dirtyRef.current.has(p)) {
+              setDirty((d) => new Set(d).add(p));
+            }
             scheduleChange(p, u.state.doc.toString());
           }
         }),
@@ -124,8 +148,8 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     });
   }, [scheduleChange]);
 
-  // Mount CM once. Register the view with the theme bus so it reconfigures
-  // its compartment whenever the active theme changes.
+  // Mount CM once. Register with the theme bus so it reconfigures on
+  // theme change.
   useEffect(() => {
     const view = new EditorView({ parent: hostRef.current!, state: makeState("", "") });
     viewRef.current = view;
@@ -147,17 +171,16 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     const st = fresh ?? states.current.get(path);
     if (!st) return;
     view.setState(st);
-    // Saved per-tab states carry whatever theme was active when they were
-    // last saved. Push the current theme onto the freshly-loaded state so
-    // tab switching never restores stale colors.
+    // Per-tab states carry the theme that was active at save-time; push the
+    // current theme so tab switching never restores stale colors.
     refreshViewTheme(view);
     currentRef.current = path;
-    setActivePath(path);
+    cmd.setEditorView(paneId, { activePath: path });
     view.focus();
   };
 
   const openPath = async (path: string) => {
-    if (tabs.some((t) => t.path === path)) {
+    if (tabs.includes(path)) {
       switchTo(path);
       return;
     }
@@ -165,7 +188,12 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
       const content = await fsapi.readFile(path);
       const st = makeState(path, content);
       states.current.set(path, st);
-      setTabs((ts) => [...ts, { path, name: basename(path), dirty: false }]);
+      cmd.setEditorView(paneId, {
+        openTabs: [...tabs, path],
+        activePath: path,
+      });
+      // CM transition happens after the store update lands; switchTo also
+      // dispatches the active-path patch but it's idempotent.
       switchTo(path, st);
       void openDoc(path, content);
     } catch {
@@ -173,23 +201,59 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     }
   };
 
-  // Open requests from elsewhere (git review, Cmd-P, LSP cross-file jump).
-  // The store carries one global slot; every mounted EditorPane sees the
-  // bump, so we have to scope it — only the pane whose cwd actually contains
-  // the file should react. Otherwise opening foo.ts in project A would also
-  // pop the tab in project B's hidden editor.
+  // Hydrate CM with tabs persisted across reloads. Runs once on mount when
+  // the store already has a list of openTabs (from boot_init's snapshot).
   useEffect(() => {
-    if (!openRequest) return;
-    const { path, line, character } = openRequest;
-    if (cwd && !path.startsWith(`${cwd}/`) && path !== cwd) return;
-    void (async () => {
-      await openPath(path);
-      if (line != null && viewRef.current) {
-        scrollToLine(viewRef.current, line, character ?? 0);
+    if (!viewRef.current) return;
+    if (states.current.size > 0) return;
+    if (tabs.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const path of tabs) {
+        if (cancelled) return;
+        try {
+          const content = await fsapi.readFile(path);
+          if (cancelled) return;
+          const st = makeState(path, content);
+          states.current.set(path, st);
+        } catch {
+          /* file gone — drop it */
+          cmd.setEditorView(paneId, {
+            openTabs: useStore
+              .getState()
+              .editorViews[paneId]?.openTabs.filter((t) => t !== path) ?? [],
+          });
+        }
+      }
+      // Restore the previously-active tab.
+      const want = activePath && tabs.includes(activePath) ? activePath : tabs[0];
+      if (want && states.current.has(want)) {
+        switchTo(want);
+        const content = states.current.get(want)?.doc.toString() ?? "";
+        void openDoc(want, content);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+    // Only fire once at mount; tabs/activePath churn afterwards is normal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openRequest?.n]);
+  }, []);
+
+  // Open-file events from the bus (Cmd-P palette, git review jump, LSP nav).
+  useEffect(() => {
+    return subscribe("open-file", (e) => {
+      // Only the pane whose cwd contains the file should react.
+      if (cwd && !e.path.startsWith(`${cwd}/`) && e.path !== cwd) return;
+      void (async () => {
+        await openPath(e.path);
+        if (e.line != null && viewRef.current) {
+          scrollToLine(viewRef.current, e.line, e.character ?? 0);
+        }
+      })();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd]);
 
   // LSP nav + hover-link contexts.
   useEffect(() => {
@@ -219,19 +283,25 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
   const closeTab = (path: string, e: ReactMouseEvent) => {
     e.stopPropagation();
     states.current.delete(path);
-    setTabs((ts) => {
-      const next = ts.filter((t) => t.path !== path);
-      if (currentRef.current === path) {
-        const fallback = next[next.length - 1];
-        if (fallback) switchTo(fallback.path);
-        else {
-          currentRef.current = null;
-          setActivePath(null);
-          viewRef.current?.setState(makeState("", ""));
-        }
-      }
+    setDirty((d) => {
+      if (!d.has(path)) return d;
+      const next = new Set(d);
+      next.delete(path);
       return next;
     });
+    const next = tabs.filter((t) => t !== path);
+    let nextActive = activePath;
+    if (activePath === path) {
+      const fallback = next[next.length - 1] ?? null;
+      nextActive = fallback;
+      if (fallback) {
+        switchTo(fallback);
+      } else {
+        currentRef.current = null;
+        viewRef.current?.setState(makeState("", ""));
+      }
+    }
+    cmd.setEditorView(paneId, { openTabs: next, activePath: nextActive });
   };
 
   return (
@@ -245,20 +315,23 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
       />
       <div className="ed-main">
         <div className="ed-tabs">
-          {tabs.map((t) => (
-            <button
-              key={t.path}
-              className={`ed-tab${activePath === t.path ? " active" : ""}`}
-              onClick={() => switchTo(t.path)}
-            >
-              <FileIcon name={t.name} size={18} />
-              <span className="ed-tab-name">{t.name}</span>
-              {t.dirty && <span className="ed-tab-dot" />}
-              <span className="ed-tab-x" onClick={(e) => closeTab(t.path, e)}>
-                <IconClose size={10} />
-              </span>
-            </button>
-          ))}
+          {tabs.map((path) => {
+            const name = basename(path);
+            return (
+              <button
+                key={path}
+                className={`ed-tab${activePath === path ? " active" : ""}`}
+                onClick={() => switchTo(path)}
+              >
+                <FileIcon name={name} size={18} />
+                <span className="ed-tab-name">{name}</span>
+                {dirty.has(path) && <span className="ed-tab-dot" />}
+                <span className="ed-tab-x" onClick={(e) => closeTab(path, e)}>
+                  <IconClose size={10} />
+                </span>
+              </button>
+            );
+          })}
         </div>
         <div className="ed-host" ref={hostRef} />
         {tabs.length === 0 && (
