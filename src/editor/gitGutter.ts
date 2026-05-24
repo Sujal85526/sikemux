@@ -55,22 +55,36 @@ class GitMarker extends GutterMarker {
 
 function markersFromHunks(view: EditorView, hunks: DiffHunk[]): RangeSet<GitMarker> {
   if (hunks.length === 0) return RangeSet.empty;
-  const builder = new RangeSetBuilder<GitMarker>();
   const doc = view.state.doc;
+  const docLines = doc.lines;
+  // Collect (pos, marker) tuples first and sort them before feeding the
+  // builder. The hunks come in document order from Rust, but if the doc has
+  // shrunk since the diff was computed (user deleted lines, etc.) we used to
+  // clamp later hunks back into range — which produced positions that were
+  // smaller than the previous hunk's last marker and crashed
+  // RangeSetBuilder. A crash here takes down the whole gutter column
+  // (line numbers + fold chevrons + git markers) because CodeMirror tears
+  // the gutter view down on render errors. Skip out-of-range hunks instead
+  // and sort defensively as a belt-and-braces guard.
+  const tuples: Array<[number, GitMarker]> = [];
   for (const h of hunks) {
     if (h.kind === "del") {
-      const lineNo = Math.max(1, Math.min(h.start + 1, doc.lines));
-      const line = doc.line(lineNo);
-      builder.add(line.from, line.from, new GitMarker("del"));
+      const lineNo = h.start + 1;
+      if (lineNo < 1 || lineNo > docLines) continue;
+      tuples.push([doc.line(lineNo).from, new GitMarker("del")]);
       continue;
     }
-    const startLine = Math.max(1, Math.min(h.start + 1, doc.lines));
-    const endLine = Math.max(startLine, Math.min(h.end, doc.lines));
+    const startLine = h.start + 1;
+    if (startLine < 1 || startLine > docLines) continue;
+    const endLine = Math.min(h.end, docLines);
     for (let ln = startLine; ln <= endLine; ln++) {
-      const line = doc.line(ln);
-      builder.add(line.from, line.from, new GitMarker(h.kind));
+      tuples.push([doc.line(ln).from, new GitMarker(h.kind)]);
     }
   }
+  if (tuples.length === 0) return RangeSet.empty;
+  tuples.sort((a, b) => a[0] - b[0]);
+  const builder = new RangeSetBuilder<GitMarker>();
+  for (const [pos, marker] of tuples) builder.add(pos, pos, marker);
   return builder.finish();
 }
 
@@ -107,12 +121,15 @@ function scheduleHunks(view: EditorView): { cancel: () => void } {
   };
 }
 
+// Schedule-only plugin — its sole job is to debounce a Rust diff call
+// whenever the doc or baseline changes. Markers themselves live in the
+// hunksField (a StateField), which the gutter reads directly. Going through
+// the StateField avoids a race where the plugin's mutated `this.markers`
+// is read before its update() finishes for the current view update cycle.
 const gitPlugin = ViewPlugin.fromClass(
   class {
-    markers: RangeSet<GitMarker>;
     sched: { cancel: () => void };
     constructor(view: EditorView) {
-      this.markers = markersFromHunks(view, view.state.field(hunksField));
       this.sched = scheduleHunks(view);
       // First run after mount so we don't wait for the first keystroke.
       this.sched.cancel();
@@ -120,19 +137,16 @@ const gitPlugin = ViewPlugin.fromClass(
     update(u: ViewUpdate) {
       const baseChanged =
         u.startState.field(baselineField) !== u.state.field(baselineField);
-      const hunksChanged =
-        u.startState.field(hunksField) !== u.state.field(hunksField);
       if (u.docChanged || baseChanged) this.sched.cancel();
-      if (hunksChanged || baseChanged) {
-        this.markers = markersFromHunks(u.view, u.state.field(hunksField));
-      }
     }
   },
 );
 
 const gitGutterExt = gutter({
   class: "cm-git-gutter",
-  markers: (view) => view.plugin(gitPlugin)?.markers ?? RangeSet.empty,
+  // Read hunks straight from the StateField on every render — guaranteed
+  // to be the value that exists at this point in the update pipeline.
+  markers: (view) => markersFromHunks(view, view.state.field(hunksField)),
 });
 
 // Overview ruler — a vertical strip on the right edge summarising every diff
