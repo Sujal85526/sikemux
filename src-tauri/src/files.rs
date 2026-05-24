@@ -9,12 +9,24 @@
 
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use ignore::WalkBuilder;
 
-fn cache() -> &'static DashMap<String, Arc<Vec<String>>> {
-    static C: OnceLock<DashMap<String, Arc<Vec<String>>>> = OnceLock::new();
+// TTL backstop for repos that aren't being fs-watched. With a watcher the
+// cache is invalidated immediately on disk change; without one (e.g. closed
+// project) the entry would otherwise live forever. 60s matches the resource
+// cache's staleness on the frontend.
+const TTL: Duration = Duration::from_secs(60);
+
+struct Entry {
+    files: Arc<Vec<String>>,
+    fetched_at: Instant,
+}
+
+fn cache() -> &'static DashMap<String, Entry> {
+    static C: OnceLock<DashMap<String, Entry>> = OnceLock::new();
     C.get_or_init(DashMap::new)
 }
 
@@ -102,9 +114,15 @@ fn walk(repo: &str) -> Vec<String> {
 #[tauri::command]
 pub async fn list_project_files(repo: String) -> Result<Vec<String>, String> {
     if let Some(hit) = cache().get(&repo) {
-        return Ok((**hit).clone());
+        if hit.fetched_at.elapsed() < TTL {
+            return Ok((*hit.files).clone());
+        }
     }
     let files = walk(&repo);
-    cache().insert(repo, Arc::new(files.clone()));
+    let arc = Arc::new(files.clone());
+    cache().insert(
+        repo,
+        Entry { files: arc, fetched_at: Instant::now() },
+    );
     Ok(files)
 }

@@ -93,6 +93,7 @@ function initialSession(): {
   const win: Window = {
     id: newId("win"),
     name: "1",
+    role: "term",
     root: pane,
     activePaneId: pane.id,
   };

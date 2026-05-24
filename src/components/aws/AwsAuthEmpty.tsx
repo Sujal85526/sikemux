@@ -1,6 +1,7 @@
 import * as cmd from "../../state/commands";
 import { useResource } from "../../state/resources";
 import { awsIdentityR, awsProfilesR } from "../../state/resources.defs";
+import { deriveAuthState } from "../../state/awsAuth";
 
 // Shown when:
 //   - no profile picked  → pick from ~/.aws/config or jump to settings
@@ -14,7 +15,7 @@ export function AwsAuthEmpty({
 }) {
   const profilesR = useResource(awsProfilesR);
   const identity = useResource(awsIdentityR, profile ?? "", false);
-  const status = profile ? identity.data : undefined;
+  const auth = deriveAuthState(profile ?? null, identity);
   const profiles = profilesR.data ?? null;
 
   if (mode === "no-profile") {
@@ -61,18 +62,18 @@ export function AwsAuthEmpty({
 
   // unauthed
   const ssoUrl = profiles?.find((p) => p.name === profile)?.sso_start_url ?? null;
-  const message = status?.message ?? "";
+  const message =
+    auth.kind === "error" ? auth.message : auth.kind === "no-profile" ? "" :
+    (auth as { identity?: { message?: string | null } }).identity?.message ?? "";
+  const title =
+    auth.kind === "expired" ? "Session expired" :
+    auth.kind === "no-credentials" ? "No credentials" :
+    auth.kind === "cli-missing" ? "AWS CLI missing" : "Not signed in";
   return (
     <div className="aws-empty-stage">
       <div className="aws-empty-card">
         <div className="aws-empty-label">AWS</div>
-        <div className="aws-empty-title">
-          {status?.status === "expired"
-            ? "Session expired"
-            : status?.status === "no-credentials"
-              ? "No credentials"
-              : "Not signed in"}
-        </div>
+        <div className="aws-empty-title">{title}</div>
         <div className="aws-empty-sub">
           Profile <code>{profile}</code> needs a fresh SSO token.
         </div>

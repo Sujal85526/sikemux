@@ -5,11 +5,19 @@
 use serde::Serialize;
 use similar::{ChangeTag, TextDiff};
 
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum DiffKind {
+    Add,
+    Mod,
+    Del,
+}
+
 #[derive(Serialize)]
 pub struct DiffHunk {
-    pub kind: &'static str, // "add" | "mod" | "del"
-    pub start: u32,         // 0-based line in `current`
-    pub end: u32,           // exclusive; for "del" equals start
+    pub kind: DiffKind,
+    pub start: u32, // 0-based line in `current`
+    pub end: u32,   // exclusive; for Del equals start
 }
 
 #[tauri::command]
@@ -31,17 +39,17 @@ pub fn diff_hunks(baseline: String, current: String) -> Vec<DiffHunk> {
 
     fn flush_add(out: &mut Vec<DiffHunk>, start: &mut Option<u32>, end: u32) {
         if let Some(s) = start.take() {
-            out.push(DiffHunk { kind: "add", start: s, end });
+            out.push(DiffHunk { kind: DiffKind::Add, start: s, end });
         }
     }
     fn flush_mod(out: &mut Vec<DiffHunk>, start: &mut Option<u32>, end: u32) {
         if let Some(s) = start.take() {
-            out.push(DiffHunk { kind: "mod", start: s, end });
+            out.push(DiffHunk { kind: DiffKind::Mod, start: s, end });
         }
     }
     fn flush_del(out: &mut Vec<DiffHunk>, at: &mut Option<u32>) {
         if let Some(a) = at.take() {
-            out.push(DiffHunk { kind: "del", start: a, end: a });
+            out.push(DiffHunk { kind: DiffKind::Del, start: a, end: a });
         }
     }
 

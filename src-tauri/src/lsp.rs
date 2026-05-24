@@ -13,6 +13,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
+use crate::error::{AppError, AppResult};
+
+fn lsp<E: std::fmt::Display>(e: E) -> AppError {
+    AppError::Lsp(e.to_string())
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LspPos {
     pub line: u32,
@@ -54,33 +60,57 @@ fn server_for(project: &str, language: &str) -> Option<ServerHandle> {
     registry().lock().ok()?.get(&key(project, language)).cloned()
 }
 
-fn server_command(language: &str) -> Option<(&'static str, Vec<&'static str>)> {
-    match language {
-        "typescript" | "javascript" => {
-            Some(("typescript-language-server", vec!["--stdio"]))
-        }
-        "go" => Some(("gopls", vec![])),
-        "rust" => Some(("rust-analyzer", vec![])),
-        "python" => Some(("pyright-langserver", vec!["--stdio"])),
-        _ => None,
+// (bin, args) tuple for a language. Order matters only for display.
+//
+// Built-in table covers the common cases; users override or extend per-
+// language via an env var `SIKEMUX_LSP_<UPPER_LANG>="<bin> <arg>..."`.
+// Example: `SIKEMUX_LSP_RUST="rust-analyzer --log /tmp/ra.log"`. The
+// override applies to any matching language, including ones we didn't
+// ship with — e.g. `SIKEMUX_LSP_LUA="lua-language-server"`.
+const BUILTIN_LSP: &[(&str, &str, &[&str])] = &[
+    ("typescript", "typescript-language-server", &["--stdio"]),
+    ("javascript", "typescript-language-server", &["--stdio"]),
+    ("go", "gopls", &[]),
+    ("rust", "rust-analyzer", &[]),
+    ("python", "pyright-langserver", &["--stdio"]),
+];
+
+fn server_command(language: &str) -> Option<(String, Vec<String>)> {
+    let env_key = format!("SIKEMUX_LSP_{}", language.to_uppercase());
+    if let Ok(spec) = std::env::var(&env_key) {
+        // Naive split — sufficient for "bin arg1 arg2". Quoted args aren't
+        // supported; users that need them can wrap in a shell script.
+        let mut parts = spec.split_whitespace();
+        let bin = parts.next()?.to_string();
+        let args = parts.map(|s| s.to_string()).collect();
+        return Some((bin, args));
     }
+    for (lang, bin, args) in BUILTIN_LSP {
+        if *lang == language {
+            return Some((
+                (*bin).to_string(),
+                args.iter().map(|s| (*s).to_string()).collect(),
+            ));
+        }
+    }
+    None
 }
 
 fn path_to_uri(path: &str) -> String {
     format!("file://{}", path)
 }
 
-fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> Result<(), String> {
-    let body = serde_json::to_string(msg).map_err(|e| e.to_string())?;
+fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> AppResult<()> {
+    let body = serde_json::to_string(msg)?;
     let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    stdin.write_all(header.as_bytes()).map_err(|e| e.to_string())?;
-    stdin.write_all(body.as_bytes()).map_err(|e| e.to_string())?;
-    stdin.flush().map_err(|e| e.to_string())?;
+    stdin.write_all(header.as_bytes())?;
+    stdin.write_all(body.as_bytes())?;
+    stdin.flush()?;
     Ok(())
 }
 
-fn send(server: &ServerHandle, msg: &Value) -> Result<(), String> {
-    let mut stdin = server.stdin.lock().map_err(|e| e.to_string())?;
+fn send(server: &ServerHandle, msg: &Value) -> AppResult<()> {
+    let mut stdin = server.stdin.lock().map_err(lsp)?;
     write_frame(&mut stdin, msg)
 }
 
@@ -114,11 +144,11 @@ fn request_with_timeout(
     method: &str,
     params: Value,
     timeout: Duration,
-) -> Result<Value, String> {
+) -> AppResult<Value> {
     let id = next_id(server);
     let (tx, rx) = mpsc::channel();
     {
-        let mut pending = server.pending.lock().map_err(|e| e.to_string())?;
+        let mut pending = server.pending.lock().map_err(lsp)?;
         pending.insert(id, tx);
     }
     let req = json!({
@@ -130,14 +160,14 @@ fn request_with_timeout(
         return Err(e);
     }
     rx.recv_timeout(timeout)
-        .map_err(|e| format!("lsp {method} timeout: {e}"))
+        .map_err(|e| AppError::Lsp(format!("{method} timeout: {e}")))
 }
 
-fn request(server: &ServerHandle, method: &str, params: Value) -> Result<Value, String> {
+fn request(server: &ServerHandle, method: &str, params: Value) -> AppResult<Value> {
     request_with_timeout(server, method, params, Duration::from_secs(4))
 }
 
-fn notify(server: &ServerHandle, method: &str, params: Value) -> Result<(), String> {
+fn notify(server: &ServerHandle, method: &str, params: Value) -> AppResult<()> {
     let n = json!({"jsonrpc": "2.0", "method": method, "params": params});
     send(server, &n)
 }
@@ -146,19 +176,19 @@ fn spawn_server(
     project: &str,
     language: &str,
     app: AppHandle,
-) -> Result<ServerHandle, String> {
+) -> AppResult<ServerHandle> {
     let (bin, args) = server_command(language)
-        .ok_or_else(|| format!("no language server configured for `{language}`"))?;
-    let mut child = Command::new(bin)
+        .ok_or_else(|| AppError::Lsp(format!("no language server configured for `{language}`")))?;
+    let mut child = Command::new(&bin)
         .args(&args)
         .current_dir(project)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("spawn {bin}: {e}"))?;
-    let stdin = child.stdin.take().ok_or("no stdin")?;
-    let stdout = child.stdout.take().ok_or("no stdout")?;
+        .map_err(|e| AppError::Lsp(format!("spawn {bin}: {e}")))?;
+    let stdin = child.stdin.take().ok_or(AppError::Lsp("no stdin".into()))?;
+    let stdout = child.stdout.take().ok_or(AppError::Lsp("no stdout".into()))?;
 
     let server = Arc::new(Server {
         stdin: Mutex::new(stdin),
@@ -224,14 +254,14 @@ pub async fn lsp_start(
     app: AppHandle,
     project: String,
     language: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let k = key(&project, &language);
     {
-        let reg = registry().lock().map_err(|e| e.to_string())?;
+        let reg = registry().lock().map_err(lsp)?;
         if reg.contains_key(&k) { return Ok(()); }
     }
     let server = spawn_server(&project, &language, app)?;
-    registry().lock().map_err(|e| e.to_string())?.insert(k, server);
+    registry().lock().map_err(lsp)?.insert(k, server);
     Ok(())
 }
 
@@ -241,9 +271,9 @@ pub fn lsp_open(
     language: String,
     path: String,
     content: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let server = server_for(&project, &language)
-        .ok_or_else(|| "lsp server not started".to_string())?;
+        .ok_or(AppError::Lsp("server not started".into()))?;
     notify(
         &server,
         "textDocument/didOpen",
@@ -265,9 +295,9 @@ pub fn lsp_change(
     path: String,
     content: String,
     version: u32,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let server = server_for(&project, &language)
-        .ok_or_else(|| "lsp server not started".to_string())?;
+        .ok_or(AppError::Lsp("server not started".into()))?;
     notify(
         &server,
         "textDocument/didChange",
@@ -292,6 +322,14 @@ fn parse_locations(result: &Value) -> Vec<LspLocation> {
     vec![]
 }
 
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum LspKind {
+    Definition,
+    Implementation,
+    References,
+}
+
 #[tauri::command]
 pub async fn lsp_locations(
     project: String,
@@ -299,15 +337,14 @@ pub async fn lsp_locations(
     path: String,
     line: u32,
     character: u32,
-    kind: String,
-) -> Result<Vec<LspLocation>, String> {
+    kind: LspKind,
+) -> AppResult<Vec<LspLocation>> {
     let server = server_for(&project, &language)
-        .ok_or_else(|| "lsp server not started".to_string())?;
-    let (method, with_context) = match kind.as_str() {
-        "definition" => ("textDocument/definition", false),
-        "implementation" => ("textDocument/implementation", false),
-        "references" => ("textDocument/references", true),
-        other => return Err(format!("unknown lsp kind: {other}")),
+        .ok_or(AppError::Lsp("server not started".into()))?;
+    let (method, with_context) = match kind {
+        LspKind::Definition => ("textDocument/definition", false),
+        LspKind::Implementation => ("textDocument/implementation", false),
+        LspKind::References => ("textDocument/references", true),
     };
     let mut params = json!({
         "textDocument": { "uri": path_to_uri(&path) },

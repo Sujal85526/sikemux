@@ -291,11 +291,20 @@ export function AgentIcon({
   return <IconClaude size={size} className={className} />;
 }
 
-// Picks the glyph for a window by its name.
-export function WindowIcon({ name, size }: { name: string; size?: number }) {
-  if (name === "files") return <IconEditor size={size} />;
-  if (name === "term") return <IconRun size={size} />;
-  if (name === "git") return <IconGit size={size} />;
-  if (name === "agent") return <IconAgent size={size} />;
+// Picks the glyph for a window by its structural role. The "agent" case
+// has no real Window — the rail synthesises that row from the session's
+// agent list — so it's a special-case string sibling rather than a role.
+import type { WindowRole } from "../state/types";
+export function WindowIcon({
+  role,
+  size,
+}: {
+  role: WindowRole | "agent";
+  size?: number;
+}) {
+  if (role === "files") return <IconEditor size={size} />;
+  if (role === "term") return <IconRun size={size} />;
+  if (role === "git") return <IconGit size={size} />;
+  if (role === "agent") return <IconAgent size={size} />;
   return <IconWindow size={size} />;
 }

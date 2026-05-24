@@ -21,13 +21,6 @@ function kindIcon(kind: SessionKind): ReactNode {
   return <IconCommand size={13} />;
 }
 
-// Term tab = the "term" window itself plus any number-named windows that
-// Alt+N spawns. They're shown as tabs at the top of the stage; in the rail
-// they collapse into the single "term" row with a count badge.
-function isTermTab(name: string): boolean {
-  return name === "term" || /^\d+$/.test(name);
-}
-
 const STACK_MAX = 4;
 
 // Tiny stacked badge — overlapping circles, capped at STACK_MAX.
@@ -125,7 +118,7 @@ export function SideRail() {
       .map((id) => windowsById[id])
       .filter(Boolean) as Window[];
     const agentIds = agentsBySession[s.id] ?? [];
-    const tabCount = sessionWindows.filter((w) => isTermTab(w.name)).length;
+    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
     const agents = agentIds.map((id) => agentsById[id]).filter(Boolean);
     return (
       <div>
@@ -179,18 +172,20 @@ export function SideRail() {
         {open && (
           <div className="win-list">
             {(() => {
-              // Auto-numbered term tabs collapse into the "term" badge.
+              // Auto-numbered term tabs (Alt+N spawns) collapse into the
+              // canonical "term" row — they don't deserve their own rail
+              // entry. We pick them out by structural role + numeric name.
               const railWindows = sessionWindows.filter(
-                (w) => !(/^\d+$/.test(w.name)),
+                (w) => !(w.role === "term" && /^\d+$/.test(w.name)),
               );
               return railWindows.map((w, i) => {
-                const activeName =
-                  sessionWindows.find((x) => x.id === s.activeWindowId)?.name ?? "";
+                const activeRole =
+                  sessionWindows.find((x) => x.id === s.activeWindowId)?.role;
                 const winActive =
                   active && s.view === "windows" &&
                   (w.id === s.activeWindowId ||
-                    (w.name === "term" && isTermTab(activeName)));
-                const isTerm = w.name === "term";
+                    (w.role === "term" && activeRole === "term"));
+                const isTerm = w.role === "term" && w.name === "term";
                 return (
                   <button
                     key={w.id}
@@ -201,7 +196,7 @@ export function SideRail() {
                       <span className="win-tick" />
                     </span>
                     <span className="win-icon">
-                      <WindowIcon name={w.name} size={13} />
+                      <WindowIcon role={w.role} size={13} />
                     </span>
                     <span className="win-name">{w.name}</span>
                     {isTerm && tabCount > 0 ? (

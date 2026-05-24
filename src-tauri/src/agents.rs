@@ -14,15 +14,22 @@ pub struct AgentSession {
     mtime: u64,
 }
 
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentKind {
+    Claude,
+    Codex,
+    Hermes,
+}
+
 /// Existing on-disk conversations for an agent. claude/codex are scoped to the
 /// project cwd; hermes isn't project-scoped, so it lists all sessions.
 #[tauri::command]
-pub fn agent_sessions(agent: String, cwd: String) -> Vec<AgentSession> {
-    match agent.as_str() {
-        "claude" => claude_sessions(&cwd),
-        "codex" => codex_sessions(&cwd),
-        "hermes" => hermes_sessions(),
-        _ => Vec::new(),
+pub fn agent_sessions(agent: AgentKind, cwd: String) -> Vec<AgentSession> {
+    match agent {
+        AgentKind::Claude => claude_sessions(&cwd),
+        AgentKind::Codex => codex_sessions(&cwd),
+        AgentKind::Hermes => hermes_sessions(),
     }
 }
 

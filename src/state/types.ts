@@ -31,12 +31,31 @@ export type LayoutNode = PaneNode | SplitNode;
 
 export type SessionKind = "project" | "command" | "ssh" | "aws";
 
+// What a Window *is*, structurally. Replaces magic-string checks on
+// `name` (e.g. `name === "term" || /^\d+$/.test(name)`) so display logic
+// stops parsing user-visible strings.
+//
+//   term   — the canonical terminal window in a project, plus Alt+N spawned
+//            siblings, plus numbered windows in command sessions
+//   files  — project files browser + editor
+//   git    — project git pane
+//   aws    — AWS console pane
+//   named  — user-named (SSH alias, etc.) — neither a tabbable term nor a
+//            structural fixture
+export type WindowRole = "term" | "files" | "git" | "aws" | "named";
+
 export interface Window {
   id: string;
   name: string;
+  role: WindowRole;
   root: LayoutNode;
   activePaneId: string;
   fixed?: boolean;
+}
+
+/** Predicate kept for compatibility — but prefer `w.role === "term"`. */
+export function isTermRole(role: WindowRole): boolean {
+  return role === "term";
 }
 
 export type AgentType = "claude" | "codex" | "hermes";

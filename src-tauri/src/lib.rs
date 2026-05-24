@@ -1,6 +1,7 @@
 mod agents;
 mod aws;
 mod diff;
+mod error;
 mod external;
 mod files;
 mod fs;
@@ -81,21 +82,21 @@ pub fn run() {
             settings::scan_project_roots,
             settings::expand_path,
             ssh::ssh_hosts,
-            aws::aws_profiles,
-            aws::aws_caller_identity,
-            aws::aws_sso_login,
-            aws::aws_ecs_clusters,
-            aws::aws_ecs_services,
-            aws::aws_ecs_tasks,
-            aws::aws_ecs_service_log_config,
-            aws::aws_ecs_task_log_config,
-            aws::aws_ec2_instances,
-            aws::aws_lambda_functions,
-            aws::aws_sqs_queues,
-            aws::aws_billing_months,
-            aws::aws_s3_buckets,
-            aws::aws_logs_tail_start,
-            aws::aws_logs_tail_stop,
+            aws::auth::aws_profiles,
+            aws::auth::aws_caller_identity,
+            aws::auth::aws_sso_login,
+            aws::ecs::aws_ecs_clusters,
+            aws::ecs::aws_ecs_services,
+            aws::ecs::aws_ecs_tasks,
+            aws::ecs::aws_ecs_service_log_config,
+            aws::ecs::aws_ecs_task_log_config,
+            aws::ec2::aws_ec2_instances,
+            aws::lambda::aws_lambda_functions,
+            aws::sqs::aws_sqs_queues,
+            aws::billing::aws_billing_months,
+            aws::s3::aws_s3_buckets,
+            aws::logs::aws_logs_tail_start,
+            aws::logs::aws_logs_tail_stop,
             external::open_url,
             external::macos_focus_app,
             transparency::set_window_blur,

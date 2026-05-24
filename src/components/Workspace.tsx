@@ -22,12 +22,6 @@ const TERM_TABS_H = 32;
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
 
-// A window is a "term tab" if its name is `term` or a bare integer —
-// integers are the auto-numbered tabs Alt+N spawns inside a project.
-export function isTermTab(name: string): boolean {
-  return name === "term" || /^\d+$/.test(name);
-}
-
 // The center stage. Every window and agent of every session stays mounted
 // (visibility-toggled) so detached sessions keep running.
 export function Workspace() {
@@ -54,14 +48,14 @@ export function Workspace() {
   const showAgentEmpty = inAgentView && activeAgents.length === 0;
 
   // Term tabs only render when (a) we're in windows view, (b) the active
-  // window IS a term tab, and (c) there's more than one — a single tab is
-  // visual noise without value.
+  // window IS a term tab, and (c) there's at least one — a single tab is
+  // visual noise without value (but we still keep the bar for layout sync).
   const activeWindowList = activeSession
     ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id])
     : [];
   const termTabs =
-    activeSession?.view === "windows" && activeWindow && isTermTab(activeWindow.name)
-      ? activeWindowList.filter((w) => isTermTab(w.name))
+    activeSession?.view === "windows" && activeWindow?.role === "term"
+      ? activeWindowList.filter((w) => w.role === "term")
       : [];
   const showTermTabs = termTabs.length >= 1;
 
@@ -87,13 +81,13 @@ export function Workspace() {
         const aIds = agentsBySession[session.id] ?? [];
         const sessTabs =
           session.view === "agent" && aIds.length >= 1;
-        const sessHasTermTabs = winIds.some((id) =>
-          isTermTab(windowsById[id]?.name ?? ""),
+        const sessHasTermTabs = winIds.some(
+          (id) => windowsById[id]?.role === "term",
         );
         const windowLayers = winIds.map((wid) => {
           const win = windowsById[wid];
           if (!win) return null;
-          const layerTermTab = isTermTab(win.name);
+          const layerTermTab = win.role === "term";
           const inset =
             isActive &&
             session.view === "windows" &&

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -21,6 +21,13 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<WatchHandle>>> {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+// Monotonic anchor for debounce math — process-start Instant, so deltas in
+// millis are immune to wall-clock jumps (NTP, sleep/resume, DST).
+fn epoch() -> Instant {
+    static E: OnceLock<Instant> = OnceLock::new();
+    *E.get_or_init(Instant::now)
+}
+
 #[derive(Serialize, Clone)]
 struct ChangePayload {
     repo: String,
@@ -30,17 +37,12 @@ struct ChangePayload {
 const DEBOUNCE_MS: u64 = 200;
 
 fn debounce_emit(app: &AppHandle, repo: &str, last_emit: &Arc<AtomicU64>) {
-    let now_ms = Instant::now().elapsed().as_millis() as u64; // monotonic since process start
-    let now_real = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let _ = now_ms;
+    let now_mono = epoch().elapsed().as_millis() as u64;
     let prev = last_emit.load(Ordering::Relaxed);
-    if now_real.saturating_sub(prev) < DEBOUNCE_MS {
+    if now_mono.saturating_sub(prev) < DEBOUNCE_MS {
         return;
     }
-    last_emit.store(now_real, Ordering::Relaxed);
+    last_emit.store(now_mono, Ordering::Relaxed);
     // File list for the Cmd-P palette is stale now — drop the cache so the
     // next palette open rewalks. Cheap; the walk itself is debounced behind
     // user interaction.
@@ -112,5 +114,3 @@ pub fn repo_watch_stop(repo: String) -> Result<(), String> {
     Ok(())
 }
 
-#[allow(dead_code)]
-const _DURATION_REF: Duration = Duration::from_millis(DEBOUNCE_MS);

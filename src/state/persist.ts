@@ -8,7 +8,19 @@ import type {
   PersistedSnapshot,
   Session,
   Window,
+  WindowRole,
 } from "./types";
+
+// Backfill role for windows persisted before WindowRole existed. Inferred
+// from name + structural cues so legacy snapshots open without state loss.
+function deriveRole(w: Window): WindowRole {
+  if (w.role) return w.role;
+  if (w.name === "files") return "files";
+  if (w.name === "git") return "git";
+  if (w.name === "aws") return "aws";
+  if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
+  return "named";
+}
 
 // Boot/save round-trip. The wire format is described by PersistedSnapshot.
 // Versioned — bump VERSION when the shape changes; older blobs are ignored
@@ -16,6 +28,71 @@ import type {
 
 const VERSION = 4;
 let lastSaved = "";
+
+// Last persisted slice references. Zustand uses structural sharing — when
+// nothing in a slice changed, the array/object identity is preserved — so
+// reference equality is a sufficient "did this slice change?" check. We
+// short-circuit the (expensive) JSON.stringify when every persisted slice
+// is reference-equal to what we last sent to disk.
+//
+// `null` until the first save, which forces a stringify on boot.
+type SliceShot = {
+  sessions: StoreState["sessions"];
+  windows: StoreState["windows"];
+  agents: StoreState["agents"];
+  sessionOrder: StoreState["sessionOrder"];
+  windowsBySession: StoreState["windowsBySession"];
+  agentsBySession: StoreState["agentsBySession"];
+  activeSessionId: StoreState["activeSessionId"];
+  recent: StoreState["recent"];
+  agentBookmarks: StoreState["agentBookmarks"];
+  editorViews: StoreState["editorViews"];
+  projectRoots: StoreState["projectRoots"];
+  themeId: StoreState["themeId"];
+  windowOpacity: StoreState["windowOpacity"];
+  windowBlur: StoreState["windowBlur"];
+  cloudBrowser: StoreState["cloudBrowser"];
+  cloudBrowserShortcut: StoreState["cloudBrowserShortcut"];
+  awsProfile: StoreState["awsProfile"];
+  awsService: StoreState["awsService"];
+  leftRailOpen: StoreState["leftRailOpen"];
+  rightRailOpen: StoreState["rightRailOpen"];
+};
+let lastSlices: SliceShot | null = null;
+
+function takeSlices(s: StoreState): SliceShot {
+  return {
+    sessions: s.sessions,
+    windows: s.windows,
+    agents: s.agents,
+    sessionOrder: s.sessionOrder,
+    windowsBySession: s.windowsBySession,
+    agentsBySession: s.agentsBySession,
+    activeSessionId: s.activeSessionId,
+    recent: s.recent,
+    agentBookmarks: s.agentBookmarks,
+    editorViews: s.editorViews,
+    projectRoots: s.projectRoots,
+    themeId: s.themeId,
+    windowOpacity: s.windowOpacity,
+    windowBlur: s.windowBlur,
+    cloudBrowser: s.cloudBrowser,
+    cloudBrowserShortcut: s.cloudBrowserShortcut,
+    awsProfile: s.awsProfile,
+    awsService: s.awsService,
+    leftRailOpen: s.leftRailOpen,
+    rightRailOpen: s.rightRailOpen,
+  };
+}
+
+function slicesEqual(a: SliceShot, b: SliceShot): boolean {
+  for (const k in a) {
+    if ((a as Record<string, unknown>)[k] !== (b as Record<string, unknown>)[k]) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function packPrefs(s: StoreState): PersistedPrefs {
   return {
@@ -80,7 +157,7 @@ export function applyHydrate(raw: string): void {
   for (const s of data.sessions) sessions[s.id] = s;
   for (const [sid, ws] of Object.entries(data.windowsBySession ?? {})) {
     windowsBySession[sid] = ws.map((w) => {
-      windows[w.id] = w;
+      windows[w.id] = { ...w, role: deriveRole(w) };
       return w.id;
     });
   }
@@ -136,6 +213,7 @@ export function applyHydrate(raw: string): void {
     rightRailOpen: data.prefs?.rightRailOpen ?? cur.rightRailOpen,
   });
   lastSaved = snapshot();
+  lastSlices = takeSlices(getState());
 }
 
 /** Debounced save on every store change. Returns an unsubscribe function. */
@@ -144,6 +222,13 @@ export function subscribePersist(): () => void {
   return useStore.subscribe(() => {
     if (timer) window.clearTimeout(timer);
     timer = window.setTimeout(() => {
+      // Cheap ref-equality check across the persisted slices. View-only
+      // state changing (modals, hover, focus) hits this path and exits
+      // before we ever build the snapshot string.
+      const slices = takeSlices(getState());
+      if (lastSlices && slicesEqual(lastSlices, slices)) return;
+      lastSlices = slices;
+
       const snap = snapshot();
       if (snap === lastSaved) return;
       lastSaved = snap;

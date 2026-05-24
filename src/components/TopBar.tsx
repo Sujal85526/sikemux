@@ -136,7 +136,7 @@ export function TopBar() {
                   agent?.title ?? "agent"
                 ) : (
                   <>
-                    <WindowIcon name={win.name} size={12} />
+                    <WindowIcon role={win.role} size={12} />
                     {win.name}
                   </>
                 )}

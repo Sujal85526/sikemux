@@ -2,7 +2,6 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::collections::HashMap;
 
 use git2::{
     BranchType, DiffFormat, DiffLineType, DiffOptions, ErrorCode, Repository, Status, StatusOptions,
@@ -385,11 +384,18 @@ pub async fn git_show(repo: String, rev: String) -> Result<String, String> {
 }
 
 // Content-addressed cache for immutable revs.
-fn file_at_cache(
-) -> &'static Mutex<HashMap<(String, String, String), String>> {
-    static C: std::sync::OnceLock<Mutex<HashMap<(String, String, String), String>>> =
+//
+// LRU by insertion+touch order — entries fall off the front as new ones land
+// at the back, capped at `FILE_AT_CACHE_CAP`. `LinkedHashMap` gives us O(1)
+// move-to-back on each hit so the ordering stays meaningful.
+const FILE_AT_CACHE_CAP: usize = 500;
+
+type FileAtKey = (String, String, String);
+
+fn file_at_cache() -> &'static Mutex<linked_hash_map::LinkedHashMap<FileAtKey, String>> {
+    static C: std::sync::OnceLock<Mutex<linked_hash_map::LinkedHashMap<FileAtKey, String>>> =
         std::sync::OnceLock::new();
-    C.get_or_init(|| Mutex::new(HashMap::new()))
+    C.get_or_init(|| Mutex::new(linked_hash_map::LinkedHashMap::new()))
 }
 
 fn is_immutable_rev(rev: &str) -> bool {
@@ -405,8 +411,10 @@ pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, St
     let cacheable = is_immutable_rev(&rev);
     let key = (repo.clone(), rev.clone(), path.clone());
     if cacheable {
-        if let Some(hit) = file_at_cache().lock().ok().and_then(|c| c.get(&key).cloned()) {
-            return Ok(hit);
+        if let Ok(mut cache) = file_at_cache().lock() {
+            if let Some(hit) = cache.get_refresh(&key).cloned() {
+                return Ok(hit);
+            }
         }
     }
     let r = open_repo(&repo)?;
@@ -428,8 +436,10 @@ pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, St
     };
     if cacheable {
         if let Ok(mut cache) = file_at_cache().lock() {
-            if cache.len() > 500 { cache.clear(); }
             cache.insert(key, content.clone());
+            while cache.len() > FILE_AT_CACHE_CAP {
+                cache.pop_front();
+            }
         }
     }
     Ok(content)

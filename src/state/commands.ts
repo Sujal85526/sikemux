@@ -31,6 +31,7 @@ import type {
   Session,
   SplitDir,
   Window,
+  WindowRole,
 } from "./types";
 
 // All write operations on the store. Components do not call setState
@@ -52,6 +53,32 @@ const patchWindow = (id: string, fn: (w: Window) => Window): void =>
     st.windows[id] ? { windows: { ...st.windows, [id]: fn(st.windows[id]) } } : {},
   );
 
+// Most mutations want "with the active session, if there is one, do X" or
+// "with the active window, if there is one, do X". Without these helpers
+// every command repeats a 3-line guard. `fn` may return a partial state
+// patch, or nothing for the no-op case.
+type Patch = Partial<StoreState> | void;
+
+const withActiveSession = (
+  fn: (st: StoreState, session: Session) => Patch,
+): void =>
+  setState((st) => {
+    const session = st.sessions[st.activeSessionId];
+    if (!session) return {};
+    return fn(st, session) ?? {};
+  });
+
+const withActiveWindow = (
+  fn: (st: StoreState, win: Window, session: Session) => Patch,
+): void =>
+  setState((st) => {
+    const session = st.sessions[st.activeSessionId];
+    if (!session) return {};
+    const win = st.windows[session.activeWindowId];
+    if (!win) return {};
+    return fn(st, win, session) ?? {};
+  });
+
 const basename = (p: string): string =>
   p.replace(/\/+$/, "").split("/").pop() || p;
 
@@ -60,12 +87,18 @@ const basename = (p: string): string =>
 function makeWindow(
   cwd: string,
   name: string,
-  opts: { kind?: "terminal" | "editor" | "git"; startup?: string; fixed?: boolean } = {},
+  opts: {
+    kind?: "terminal" | "editor" | "git";
+    startup?: string;
+    fixed?: boolean;
+    role?: WindowRole;
+  } = {},
 ): Window {
   const pane = makePane(cwd, opts);
   const win: Window = {
     id: newId("win"),
     name,
+    role: opts.role ?? "term",
     root: pane,
     activePaneId: pane.id,
   };
@@ -75,9 +108,9 @@ function makeWindow(
 
 function projectWindows(cwd: string): Window[] {
   return [
-    makeWindow(cwd, "files", { kind: "editor", fixed: true }),
-    makeWindow(cwd, "term", { fixed: true }),
-    makeWindow(cwd, "git", { kind: "git", fixed: true }),
+    makeWindow(cwd, "files", { kind: "editor", fixed: true, role: "files" }),
+    makeWindow(cwd, "term", { fixed: true, role: "term" }),
+    makeWindow(cwd, "git", { kind: "git", fixed: true, role: "git" }),
   ];
 }
 
@@ -108,11 +141,6 @@ function attachSession(
     zoomedPaneId: null,
     pickerOpen: false,
   };
-}
-
-function activeWindow(st: StoreState): Window | undefined {
-  const s = st.sessions[st.activeSessionId];
-  return s ? st.windows[s.activeWindowId] : undefined;
 }
 
 // ---- Sessions ---------------------------------------------------------
@@ -185,7 +213,7 @@ export function createSshSession(alias: string): void {
         activeSessionId: existing.id,
       };
     }
-    const win = makeWindow("", alias, { startup: `ssh ${alias}` });
+    const win = makeWindow("", alias, { startup: `ssh ${alias}`, role: "named" });
     const session: Session = {
       id: newId("sess"),
       name: alias,
@@ -213,6 +241,7 @@ export function openAwsSession(): void {
     const win: Window = {
       id: newId("win"),
       name: "aws",
+      role: "aws",
       root: pane,
       activePaneId: pane.id,
       fixed: true,
@@ -338,11 +367,8 @@ export function setEnv(env: Env): void {
 // ---- Layout / panes ---------------------------------------------------
 
 export function splitActivePane(dir: SplitDir): void {
-  setState((st) => {
-    const w = activeWindow(st);
-    if (!w) return {};
-    const cwd = st.sessions[st.activeSessionId]?.cwd ?? "";
-    const np = makePane(cwd);
+  withActiveWindow((st, w, session) => {
+    const np = makePane(session.cwd);
     return {
       zoomedPaneId: null,
       windows: {
@@ -358,11 +384,7 @@ export function splitActivePane(dir: SplitDir): void {
 }
 
 export function closeActivePane(): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
-    const w = st.windows[session.activeWindowId];
-    if (!w) return {};
+  withActiveWindow((st, w, session) => {
     const root = removePane(w.root, w.activePaneId);
     if (root === null && w.fixed) return {};
     if (root === null) {
@@ -413,24 +435,16 @@ export function closeActivePane(): void {
 }
 
 export function focusPane(paneId: string): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
-    const w = st.windows[session.activeWindowId];
-    if (!w) return {};
-    return {
-      windows: { ...st.windows, [w.id]: { ...w, activePaneId: paneId } },
-    };
-  });
+  withActiveWindow((st, w) => ({
+    windows: { ...st.windows, [w.id]: { ...w, activePaneId: paneId } },
+  }));
 }
 
 export function moveFocus(dir: FocusDir): void {
-  setState((st) => {
-    const w = activeWindow(st);
-    if (!w) return {};
+  withActiveWindow((st, w) => {
     const { panes } = computeLayout(w.root);
     const next = neighborPane(panes, w.activePaneId, dir);
-    if (!next) return {};
+    if (!next) return;
     return {
       windows: { ...st.windows, [w.id]: { ...w, activePaneId: next } },
     };
@@ -438,25 +452,20 @@ export function moveFocus(dir: FocusDir): void {
 }
 
 export function resizeActivePane(dir: FocusDir): void {
-  setState((st) => {
-    const w = activeWindow(st);
-    if (!w) return {};
-    return {
-      windows: {
-        ...st.windows,
-        [w.id]: { ...w, root: resizeTowards(w.root, w.activePaneId, dir) },
-      },
-    };
-  });
+  withActiveWindow((st, w) => ({
+    windows: {
+      ...st.windows,
+      [w.id]: { ...w, root: resizeTowards(w.root, w.activePaneId, dir) },
+    },
+  }));
 }
 
 export function toggleZoom(): void {
-  setState((st) => {
+  withActiveSession((st, session) => {
     if (st.zoomedPaneId) return { zoomedPaneId: null };
-    const session = st.sessions[st.activeSessionId];
-    if (!session || session.view !== "windows") return {};
+    if (session.view !== "windows") return;
     const w = st.windows[session.activeWindowId];
-    return w ? { zoomedPaneId: w.activePaneId } : {};
+    return w ? { zoomedPaneId: w.activePaneId } : undefined;
   });
 }
 
@@ -474,9 +483,7 @@ export function setSplitSizes(
 // ---- Windows / tabs ---------------------------------------------------
 
 export function newWindow(): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
+  withActiveSession((st, session) => {
     const winIds = st.windowsBySession[session.id] ?? [];
     const w = makeWindow(session.cwd, String(winIds.length + 1));
     return {
@@ -495,28 +502,20 @@ export function newWindow(): void {
 }
 
 export function closeActiveWindow(): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
+  withActiveSession((st, session) => {
     const closing = st.windows[session.activeWindowId];
-    if (!closing || closing.fixed) return {};
+    if (!closing || closing.fixed) return;
     const winIds = st.windowsBySession[session.id] ?? [];
-    if (winIds.length <= 1) return {};
+    if (winIds.length <= 1) return;
     const idx = winIds.indexOf(closing.id);
     const remaining = winIds.filter((id) => id !== closing.id);
-    const isTermTab = (name: string) =>
-      name === "term" || /^\d+$/.test(name);
     // When closing a term tab, prefer to land on another term tab so the
     // user's attention stays inside the terminal stack.
     let nextId = remaining[Math.min(idx, remaining.length - 1)];
-    if (isTermTab(closing.name)) {
-      const before = remaining
-        .slice(0, idx)
-        .reverse()
-        .find((id) => isTermTab(st.windows[id]?.name ?? ""));
-      const after = remaining
-        .slice(idx)
-        .find((id) => isTermTab(st.windows[id]?.name ?? ""));
+    if (closing.role === "term") {
+      const isTerm = (id: string) => st.windows[id]?.role === "term";
+      const before = remaining.slice(0, idx).reverse().find(isTerm);
+      const after = remaining.slice(idx).find(isTerm);
       nextId = before ?? after ?? nextId;
     }
     const windows = { ...st.windows };
@@ -546,11 +545,9 @@ export function closeActiveWindow(): void {
 }
 
 export function selectWindowId(id: string): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
+  withActiveSession((st, session) => {
     const winIds = st.windowsBySession[session.id] ?? [];
-    if (!winIds.includes(id)) return {};
+    if (!winIds.includes(id)) return;
     return {
       zoomedPaneId: null,
       sessions: {
@@ -603,9 +600,8 @@ export function addAgent(
   resumeId?: string,
   title?: string,
 ): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session || session.kind !== "project") return {};
+  withActiveSession((st, session) => {
+    if (session.kind !== "project") return;
     const ownedIds = st.agentsBySession[session.id] ?? [];
     const existing = resumeId
       ? ownedIds
@@ -644,16 +640,12 @@ export function addAgent(
 }
 
 export function selectAgent(id: string): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
-    return {
-      sessions: {
-        ...st.sessions,
-        [session.id]: { ...session, activeAgentId: id, view: "agent" },
-      },
-    };
-  });
+  withActiveSession((st, session) => ({
+    sessions: {
+      ...st.sessions,
+      [session.id]: { ...session, activeAgentId: id, view: "agent" },
+    },
+  }));
 }
 
 export function closeAgent(id: string): void {
@@ -685,9 +677,7 @@ export function closeAgent(id: string): void {
 }
 
 export function focusAgents(): void {
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
+  withActiveSession((st, session) => {
     const ids = st.agentsBySession[session.id] ?? [];
     return {
       zoomedPaneId: null,
@@ -827,12 +817,10 @@ export function requestOpenFile(
 ): void {
   // Navigate the active session to its files window if needed, so the
   // editor pane is mounted before the event fires.
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
+  withActiveSession((st, session) => {
     const winIds = st.windowsBySession[session.id] ?? [];
-    const filesId = winIds.find((id) => st.windows[id]?.name === "files");
-    if (!filesId) return {};
+    const filesId = winIds.find((id) => st.windows[id]?.role === "files");
+    if (!filesId) return;
     if (session.activeWindowId === filesId && session.view === "windows") {
       return { zoomedPaneId: null };
     }
