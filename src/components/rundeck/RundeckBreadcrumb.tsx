@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { type RundeckStatus } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { getState, useStore } from "../../state/store";
@@ -76,50 +75,7 @@ export function RundeckBreadcrumb({ paneId, status }: Props) {
             {hostFromUrl(status.url)}
           </span>
         )}
-        <RundeckEnvPicker />
       </div>
-    </div>
-  );
-}
-
-/** Identical look to TopBar's env-dd, but writes to rundeck.activeEnv
- *  instead of session.env. */
-function RundeckEnvPicker() {
-  const activeEnv = useStore((s) => s.rundeck.activeEnv);
-  const envs = useStore((s) => s.rundeck.envs);
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="env-dd">
-      <button
-        className="env-dd-btn"
-        onClick={() => setOpen((v) => !v)}
-        title="Switch environment"
-      >
-        <span className={`env-dot ${activeEnv}`} />
-        {activeEnv}
-        <IconChevron size={10} className="env-dd-chev" />
-      </button>
-      {open && (
-        <>
-          <div className="env-dd-scrim" onClick={() => setOpen(false)} />
-          <div className="env-dd-menu">
-            {envs.map((e) => (
-              <button
-                key={e.label}
-                className={`env-dd-item${activeEnv === e.label ? " active" : ""}`}
-                onClick={() => {
-                  cmd.setRundeckEnv(e.label);
-                  setOpen(false);
-                }}
-              >
-                <span className={`env-dot ${e.label}`} />
-                <span>{e.label}</span>
-                <span className="env-dd-item-proj">{e.project}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }

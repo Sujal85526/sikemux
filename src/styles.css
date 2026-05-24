@@ -1829,7 +1829,8 @@ button {
 .env-dot.preprod {
   background: #ff9d5c;
 }
-.env-dot.production {
+.env-dot.production,
+.env-dot.prod {
   background: var(--danger);
 }
 .env-dd-scrim {

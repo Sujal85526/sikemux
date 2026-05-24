@@ -201,8 +201,34 @@ export function TopBar() {
   const [envOpen, setEnvOpen] = useState(false);
 
   const rundeckEnvs = useStore((s) => s.rundeck.envs);
+  const rundeckActiveEnv = useStore((s) => s.rundeck.activeEnv);
   if (!session || !win) return null;
   const isProject = session.kind === "project";
+  const isRundeck = session.kind === "rundeck";
+
+  // One env picker for two contexts. In project sessions it drives the
+  // session's own `env` (one of ENVS); in the Rundeck pane it drives the
+  // configured rundeck.activeEnv (one of the user's rundeck.envs labels).
+  // Same UI, two backing stores.
+  const envPicker = isProject
+    ? {
+        kind: "project" as const,
+        active: session.env,
+        options: ENVS.map((e) => ({ label: e, hint: null as string | null })),
+        setActive: (label: string) => cmd.setEnv(label as (typeof ENVS)[number]),
+      }
+    : isRundeck
+      ? {
+          kind: "rundeck" as const,
+          active: rundeckActiveEnv,
+          options: rundeckEnvs.map((e) => ({
+            label: e.label,
+            hint: e.project,
+          })),
+          setActive: (label: string) => cmd.setRundeckEnv(label),
+        }
+      : null;
+
   const deployTarget =
     isProject && session.cwd
       ? (() => {
@@ -256,28 +282,39 @@ export function TopBar() {
             zoom
           </span>
         )}
-        {isProject && (
+        {envPicker && (
           <div className="env-dd">
-            <button className="env-dd-btn" onClick={() => setEnvOpen((v) => !v)}>
-              <span className={`env-dot ${session.env}`} />
-              {session.env}
+            <button
+              className="env-dd-btn"
+              onClick={() => setEnvOpen((v) => !v)}
+              title={
+                envPicker.kind === "rundeck"
+                  ? "Rundeck environment"
+                  : "Session environment"
+              }
+            >
+              <span className={`env-dot ${envPicker.active}`} />
+              {envPicker.active}
               <IconChevron size={10} className="env-dd-chev" />
             </button>
             {envOpen && (
               <>
                 <div className="env-dd-scrim" onClick={() => setEnvOpen(false)} />
                 <div className="env-dd-menu">
-                  {ENVS.map((e) => (
+                  {envPicker.options.map((opt) => (
                     <button
-                      key={e}
-                      className={`env-dd-item${session.env === e ? " active" : ""}`}
+                      key={opt.label}
+                      className={`env-dd-item${envPicker.active === opt.label ? " active" : ""}`}
                       onClick={() => {
-                        cmd.setEnv(e);
+                        envPicker.setActive(opt.label);
                         setEnvOpen(false);
                       }}
                     >
-                      <span className={`env-dot ${e}`} />
-                      {e}
+                      <span className={`env-dot ${opt.label}`} />
+                      <span>{opt.label}</span>
+                      {opt.hint && (
+                        <span className="env-dd-item-proj">{opt.hint}</span>
+                      )}
                     </button>
                   ))}
                 </div>
