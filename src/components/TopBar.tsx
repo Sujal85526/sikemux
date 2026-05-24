@@ -1,22 +1,34 @@
 import { useState } from "react";
+import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
 import { ENVS } from "../state/types";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
-import { awsIdentityR } from "../state/resources.defs";
+import { awsIdentityR, rndMatrixR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import {
+  IconBattery,
   IconChevron,
   IconCommand,
   IconFolder,
   IconPanelLeft,
   IconPanelRight,
+  IconRundeck,
   IconZoom,
   Logo,
   WindowIcon,
 } from "./Icons";
+import { useMemo } from "react";
+import { branchKind, statusKind } from "./rundeck/branchStyle";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
+
+// 12-hour parts: (12h-hour, minute, ampm). 0 → 12am, 12 → 12pm, 13 → 1pm…
+function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
+  const h24 = d.getHours();
+  const h = h24 % 12 || 12;
+  return { h, m: d.getMinutes(), ap: h24 >= 12 ? "pm" : "am" };
+}
 
 // Always-visible AWS status chip. Click → opens (or focuses) the AWS
 // session; if the profile is expired, opens the sign-in modal instead.
@@ -61,6 +73,63 @@ function AwsChip() {
   );
 }
 
+// Project-session deploy chip. Subscribes to rndMatrixR for the active env
+// and surfaces the matching service row (basename(cwd)). Click → opens
+// (or focuses) the Rundeck pane and pre-navigates to the deploy view for
+// this service in this env. Same auto-detection model as `rnd deploy`
+// without args in the bash CLI.
+function DeployChip({
+  service,
+  envLabel,
+  project,
+}: {
+  service: string;
+  envLabel: string;
+  project: string;
+}) {
+  // Same cache entry the Rundeck pane uses → no extra fetch when both are open.
+  const spec = useMemo(
+    () => [{ label: envLabel, project, only_succeeded: true }],
+    [envLabel, project],
+  );
+  const res = useResource(rndMatrixR, spec);
+  const cell = res.data?.envs[0]?.cells.find((c) => c.service === service);
+
+  const branch = cell?.branch ?? null;
+  const k = branchKind(branch);
+  const sk = statusKind(cell?.status);
+  const loading = res.status === "loading" && !res.data;
+
+  const onClick = () => {
+    void cmd.openRundeckServiceFor(service, envLabel);
+  };
+
+  const hasDeploy = !!cell && !!branch;
+  return (
+    <button
+      className="tb-deploy-chip"
+      onClick={onClick}
+      title={
+        hasDeploy
+          ? `Last deploy: ${cell!.status ?? "?"} · ${branch}`
+          : `No deploy history for ${service} on ${envLabel}`
+      }
+    >
+      <IconRundeck size={12} />
+      <span className="tb-deploy-svc">{service}</span>
+      {loading ? (
+        <span className="tb-deploy-meta muted">…</span>
+      ) : hasDeploy ? (
+        <>
+          <span className="tb-deploy-sep">·</span>
+          <span className={`tb-deploy-branch rnd-branch-${k}`}>{branch}</span>
+          <span className={`tb-deploy-dot rnd-status-${sk}`} />
+        </>
+      ) : null}
+    </button>
+  );
+}
+
 function CloudIcon({ size = 14 }: { size?: number }) {
   return (
     <svg
@@ -94,8 +163,31 @@ function CogIcon({ size = 15 }: { size?: number }) {
   );
 }
 
+// macOS battery glyph + percentage — no chrome. Color uses --acc by default,
+// shifting to warn at ≤20% and danger at ≤10%. Hidden on desktops (no batt).
+function BatteryChip() {
+  const batt = useBattery();
+  if (!batt || batt.percent == null) return null;
+  const pct = batt.percent;
+  const tone = pct <= 10 ? "danger" : pct <= 20 ? "warn" : "ok";
+  return (
+    <span
+      className={`tb-batt tb-batt-${tone}${batt.charging ? " charging" : ""}`}
+      title={
+        batt.time_remaining
+          ? `${pct}% · ${batt.time_remaining} remaining`
+          : `${pct}%${batt.charging ? " · charging" : ""}`
+      }
+    >
+      <IconBattery size={11} percent={pct} charging={batt.charging} />
+      <span className="tb-batt-pct">{pct}%</span>
+    </span>
+  );
+}
+
 export function TopBar() {
   const now = useClock();
+  const t = twelveHour(now);
   const session = useStore((s) => s.sessions[s.activeSessionId]);
   const win = useStore((s) =>
     session ? s.windows[session.activeWindowId] : undefined,
@@ -108,8 +200,19 @@ export function TopBar() {
   const rightOpen = useStore((s) => s.rightRailOpen);
   const [envOpen, setEnvOpen] = useState(false);
 
+  const rundeckEnvs = useStore((s) => s.rundeck.envs);
   if (!session || !win) return null;
   const isProject = session.kind === "project";
+  const deployTarget =
+    isProject && session.cwd
+      ? (() => {
+          const svc = session.cwd.replace(/\/+$/, "").split("/").pop();
+          if (!svc) return null;
+          const env = rundeckEnvs.find((e) => e.label === session.env);
+          if (!env) return null;
+          return { service: svc, envLabel: env.label, project: env.project };
+        })()
+      : null;
 
   return (
     <header className="top-bar" data-tauri-drag-region>
@@ -182,11 +285,14 @@ export function TopBar() {
             )}
           </div>
         )}
+        {deployTarget && <DeployChip {...deployTarget} />}
         <AwsChip />
+        <BatteryChip />
         <span className="tb-clock">
-          {time2(now.getHours())}
+          {t.h}
           <span className="tb-colon">:</span>
-          {time2(now.getMinutes())}
+          {time2(t.m)}
+          <span className="tb-ampm">{t.ap}</span>
         </span>
         <div className="tb-toggles">
           <button

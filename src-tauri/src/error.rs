@@ -36,11 +36,29 @@ pub enum AppError {
     #[error("lsp: {0}")]
     Lsp(String),
 
+    #[error("rundeck: {0}")]
+    Rundeck(String),
+
+    #[error("rundeck: not configured")]
+    RundeckUnconfigured,
+
+    #[error("rundeck: auth failed: {0}")]
+    RundeckAuth(String),
+
+    #[error("rundeck: http {status}: {message}")]
+    RundeckHttp { status: u16, message: String },
+
     #[error("invalid argument: {0}")]
     BadArg(&'static str),
 
     #[error("{0}")]
     Other(String),
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(e: reqwest::Error) -> Self {
+        AppError::Rundeck(e.to_string())
+    }
 }
 
 impl From<git2::Error> for AppError {
@@ -91,6 +109,10 @@ impl AppError {
             AppError::AwsTokenExpired => "aws-token-expired",
             AppError::AwsNoCredentials => "aws-no-credentials",
             AppError::Lsp(_) => "lsp",
+            AppError::Rundeck(_) => "rundeck",
+            AppError::RundeckUnconfigured => "rundeck-unconfigured",
+            AppError::RundeckAuth(_) => "rundeck-auth",
+            AppError::RundeckHttp { .. } => "rundeck-http",
             AppError::BadArg(_) => "bad-arg",
             AppError::Other(_) => "other",
         }

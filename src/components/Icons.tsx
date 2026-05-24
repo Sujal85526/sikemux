@@ -305,6 +305,82 @@ export function WindowIcon({
   if (role === "files") return <IconEditor size={size} />;
   if (role === "term") return <IconRun size={size} />;
   if (role === "git") return <IconGit size={size} />;
+  if (role === "search") return <IconSearch size={size} />;
   if (role === "agent") return <IconAgent size={size} />;
+  if (role === "aws") return <IconAws size={size} />;
+  if (role === "rundeck") return <IconRundeck size={size} />;
   return <IconWindow size={size} />;
+}
+
+// Horizontal battery glyph. Outline in currentColor, inner fill scaled to
+// `percent` (0..100). Charging adds a small bolt inside.
+export function IconBattery({
+  size = 14,
+  percent,
+  charging,
+  className,
+}: IconProps & { percent: number; charging?: boolean }) {
+  // Geometry on a 24×16 viewBox.
+  const padding = 2.2;
+  const inner = 24 - 4 - 2 - padding * 2; // body width minus borders + cap + pads
+  const fillW = Math.max(0, Math.min(inner, (inner * percent) / 100));
+  const fillX = 2 + padding;
+  return (
+    <svg
+      width={size * (24 / 16)}
+      height={size}
+      viewBox="0 0 24 16"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+    >
+      {/* body */}
+      <rect
+        x="1"
+        y="2.5"
+        width="19"
+        height="11"
+        rx="1.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      {/* cap */}
+      <rect x="20.6" y="5.5" width="2" height="5" rx="0.6" fill="currentColor" />
+      {/* fill */}
+      <rect
+        x={fillX}
+        y={2.5 + padding}
+        width={fillW}
+        height={11 - padding * 2}
+        rx="0.4"
+        fill="currentColor"
+      />
+      {charging && (
+        <path
+          d="M11 5 L8 9 H10.5 L9.6 12 L13 7.6 H10.6 L11 5 Z"
+          fill="var(--void, #0c0b10)"
+        />
+      )}
+    </svg>
+  );
+}
+
+export function IconRundeck({ size = 14, className }: IconProps) {
+  // Official Rundeck mark — keep the brand red so the glyph reads as Rundeck
+  // at sidebar / chip size (like IconAws keeps its native form).
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="45.359 114.637 60.122 58.576"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M46.83 113.864l7.608 12.01H92.5l-7.543-12.01zm15.26 23.98l3.684 5.754-3.968 6.32h38.4l3.815-6.017-3.815-5.907h-38.04zm-7.826 24.13l-7.455 11.77v.24h38.148l7.564-12.012z"
+        fill="#f91629"
+      />
+    </svg>
+  );
 }

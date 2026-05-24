@@ -22,7 +22,15 @@ export function makePane(
 ): PaneNode {
   const kind = opts.kind ?? "terminal";
   const title =
-    kind === "editor" ? "editor" : kind === "git" ? "git" : opts.startup || "shell";
+    kind === "editor"
+      ? "editor"
+      : kind === "git"
+        ? "git"
+        : kind === "search"
+          ? "search"
+          : kind === "aws"
+            ? "aws"
+            : opts.startup || "shell";
   return {
     type: "pane",
     id: newId("pane"),

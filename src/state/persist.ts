@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { normaliseProjectRoots } from "./commands";
+import { ensureSearchWindow, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import type {
   Agent,
@@ -18,6 +18,7 @@ function deriveRole(w: Window): WindowRole {
   if (w.name === "files") return "files";
   if (w.name === "git") return "git";
   if (w.name === "aws") return "aws";
+  if (w.name === "rundeck") return "rundeck";
   if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
   return "named";
 }
@@ -57,6 +58,7 @@ type SliceShot = {
   awsService: StoreState["awsService"];
   leftRailOpen: StoreState["leftRailOpen"];
   rightRailOpen: StoreState["rightRailOpen"];
+  rundeck: StoreState["rundeck"];
 };
 let lastSlices: SliceShot | null = null;
 
@@ -82,6 +84,7 @@ function takeSlices(s: StoreState): SliceShot {
     awsService: s.awsService,
     leftRailOpen: s.leftRailOpen,
     rightRailOpen: s.rightRailOpen,
+    rundeck: s.rundeck,
   };
 }
 
@@ -211,7 +214,12 @@ export function applyHydrate(raw: string): void {
     awsService: data.prefs?.awsService ?? cur.awsService,
     leftRailOpen: data.prefs?.leftRailOpen ?? cur.leftRailOpen,
     rightRailOpen: data.prefs?.rightRailOpen ?? cur.rightRailOpen,
+    rundeck: data.prefs?.rundeck ?? cur.rundeck,
   });
+  // Snapshots from before the search pane existed lack a search window
+  // for project sessions — add one in place so the user doesn't have to
+  // close + reopen every project to get it.
+  ensureSearchWindow();
   lastSaved = snapshot();
   lastSlices = takeSlices(getState());
 }

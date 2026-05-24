@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
 import { auraExtensions, languageFor } from "../editor/codemirror";
 import { gitDiffGutter } from "../editor/gitGutter";
@@ -124,6 +125,10 @@ export function EditorPane({
       doc: content,
       extensions: [
         basicSetup,
+        // search panel pinned to the TOP of the editor so the in-pane CSS
+        // (top-right floating bar, compact pills) actually applies. Default
+        // is bottom, full-width, which clashes with the project's look.
+        search({ top: true }),
         auraExtensions,
         ...languageFor(path),
         gitDiffGutter(),

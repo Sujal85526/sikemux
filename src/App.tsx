@@ -13,7 +13,7 @@ import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
-import { emit } from "./state/bus";
+import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, subscribePersist } from "./state/persist";
 import { invalidate } from "./state/resources";
@@ -77,6 +77,16 @@ export default function App() {
     return () => {
       void handle.then((u) => u());
     };
+  }, []);
+
+  // Rundeck auth expired (token rejected, unconfigured, 401/403). Wipe all
+  // rnd.* cache so stale matrices don't flash, and force rnd.status to
+  // refetch — the Rundeck pane re-renders into the login screen when it
+  // sees ok:false.
+  useEffect(() => {
+    return subscribe("rnd-auth-expired", () => {
+      invalidate((kind) => kind.startsWith("rnd."));
+    });
   }, []);
 
   return (

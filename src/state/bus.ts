@@ -7,7 +7,8 @@ export type Event =
   | { type: "open-file"; path: string; line?: number; character?: number }
   | { type: "fs-changed"; repo: string }
   | { type: "git-refresh"; repo: string }
-  | { type: "agent-focus"; sessionId: string };
+  | { type: "agent-focus"; sessionId: string }
+  | { type: "rnd-auth-expired"; reason: string };
 
 type AnyHandler = (e: Event) => void;
 

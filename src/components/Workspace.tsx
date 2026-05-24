@@ -14,6 +14,8 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { EditorPane } from "./EditorPane";
 import { GitPane } from "./GitPane";
 import { AwsPane } from "./aws/AwsPane";
+import { RundeckPane } from "./rundeck/RundeckPane";
+import { SearchPane } from "./SearchPane";
 import { AgentIcon, IconClose, IconCommand } from "./Icons";
 
 const AGENT_TABS_H = 32;
@@ -305,6 +307,13 @@ function WindowLayer({
                 />
               ) : p.kind === "aws" ? (
                 <AwsPane />
+              ) : p.kind === "rundeck" ? (
+                <RundeckPane paneId={p.id} active={visible && isActive && shown} />
+              ) : p.kind === "search" ? (
+                <SearchPane
+                  cwd={p.cwd || session.cwd}
+                  active={visible && isActive && shown}
+                />
               ) : (
                 <TerminalPane
                   cwd={p.cwd || session.cwd || undefined}

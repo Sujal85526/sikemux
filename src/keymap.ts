@@ -2,11 +2,12 @@ import { useEffect } from "react";
 import * as cmd from "./state/commands";
 import { getState } from "./state/store";
 
-// Maps M-i/r/g to the named windows of a project session.
+// Maps M-i/r/g/f to the named windows of a project session.
 const WINDOW_KEYS: Record<string, string> = {
   KeyI: "files",
   KeyR: "term",
   KeyG: "git",
+  KeyF: "search",
 };
 
 // Alt-driven keybindings, mirroring the user's tmux setup. Keys off the
@@ -22,6 +23,12 @@ export function useKeymap(): void {
         e.stopImmediatePropagation();
         if (getState().filePaletteOpen) cmd.closeFilePalette();
         else cmd.openFilePalette();
+      } else if (e.code === "KeyF" && e.shiftKey) {
+        // Cmd/Ctrl+Shift+F → jump to the project's search window. Project
+        // sessions only (no-op elsewhere — see focusGlobalSearch).
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        cmd.focusGlobalSearch();
       } else if (e.code === "Comma") {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -110,6 +117,7 @@ export function useKeymap(): void {
         case "KeyI":
         case "KeyR":
         case "KeyG":
+        case "KeyF":
           cmd.selectWindowByName(WINDOW_KEYS[e.code]);
           break;
         case "KeyC":

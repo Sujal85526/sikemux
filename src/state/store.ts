@@ -8,10 +8,13 @@ import type {
   EcsLevel,
   EditorPaneView,
   GitPaneView,
+  GlobalSearchView,
   LspResults,
   PickerMode,
   ProjectRoot,
   RecentEntry,
+  RundeckSettings,
+  RundeckView,
   Session,
   Window,
 } from "./types";
@@ -57,6 +60,7 @@ export interface DomainState {
   awsService: AwsService;
   leftRailOpen: boolean;
   rightRailOpen: boolean;
+  rundeck: RundeckSettings;
 }
 
 export interface ViewState {
@@ -77,7 +81,13 @@ export interface ViewState {
   editorViews: Record<string, EditorPaneView>;
   gitViews: Record<string, GitPaneView>;
   ecsViews: Record<string, EcsLevel>;
+  rundeckViews: Record<string, RundeckView>;
   expandedBillingMonth: Record<string, string | null>;
+
+  // Per-project global search state — query + filters survive switching
+  // away from the search window and across projects. The search pane
+  // itself is just the project's 4th window (role: "search").
+  globalSearchBySession: Record<string, GlobalSearchView>;
 }
 
 export type StoreState = DomainState & ViewState;
@@ -134,6 +144,18 @@ export const useStore = create<StoreState>(() => {
     awsService: "ecs",
     leftRailOpen: true,
     rightRailOpen: true,
+    rundeck: {
+      // Sensible default mirroring the bash CLI's hardcoded mapping. Users
+      // can edit via Settings → Rundeck once that lands.
+      envs: [
+        { label: "dev", project: "dev" },
+        { label: "staging", project: "staging" },
+        { label: "preprod", project: "Preprod" },
+        { label: "prod", project: "production" },
+      ],
+      prodEnvs: ["prod", "production"],
+      activeEnv: "dev",
+    },
 
     // view
     home: "",
@@ -148,7 +170,9 @@ export const useStore = create<StoreState>(() => {
     editorViews: {},
     gitViews: {},
     ecsViews: {},
+    rundeckViews: {},
     expandedBillingMonth: {},
+    globalSearchBySession: {},
   };
 });
 

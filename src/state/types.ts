@@ -6,7 +6,13 @@
 // ---- Layout tree --------------------------------------------------------
 
 export type SplitDir = "row" | "column";
-export type PaneKind = "terminal" | "editor" | "git" | "aws";
+export type PaneKind =
+  | "terminal"
+  | "editor"
+  | "git"
+  | "aws"
+  | "search"
+  | "rundeck";
 
 export interface PaneNode {
   type: "pane";
@@ -29,7 +35,7 @@ export type LayoutNode = PaneNode | SplitNode;
 
 // ---- Domain entities ----------------------------------------------------
 
-export type SessionKind = "project" | "command" | "ssh" | "aws";
+export type SessionKind = "project" | "command" | "ssh" | "aws" | "rundeck";
 
 // What a Window *is*, structurally. Replaces magic-string checks on
 // `name` (e.g. `name === "term" || /^\d+$/.test(name)`) so display logic
@@ -39,10 +45,18 @@ export type SessionKind = "project" | "command" | "ssh" | "aws";
 //            siblings, plus numbered windows in command sessions
 //   files  — project files browser + editor
 //   git    — project git pane
+//   search — project-wide global search (full pane)
 //   aws    — AWS console pane
 //   named  — user-named (SSH alias, etc.) — neither a tabbable term nor a
 //            structural fixture
-export type WindowRole = "term" | "files" | "git" | "aws" | "named";
+export type WindowRole =
+  | "term"
+  | "files"
+  | "git"
+  | "search"
+  | "aws"
+  | "rundeck"
+  | "named";
 
 export interface Window {
   id: string;
@@ -134,6 +148,19 @@ export interface GitPaneView {
   selected: Record<GitPanel, number>;
 }
 
+export interface GlobalSearchView {
+  query: string;
+  options: {
+    caseSensitive: boolean;
+    wholeWord: boolean;
+    isRegex: boolean;
+    include: string;
+    exclude: string;
+  };
+  /** Files the user has manually collapsed in the results panel. */
+  collapsed: Record<string, boolean>;
+}
+
 export type EcsLevel =
   | { kind: "clusters" }
   | { kind: "services"; cluster: string }
@@ -144,6 +171,43 @@ export type EcsLevel =
       tab: "logs" | "tasks";
       taskFilter?: { taskId: string; stream: string };
     };
+
+// ---- Rundeck ----------------------------------------------------------
+
+/** One env entry in the matrix dashboard — UI label + the real Rundeck
+ *  project name behind it. User-configurable so dev/staging/preprod/prod
+ *  isn't hardcoded across orgs. */
+export interface RundeckEnv {
+  label: string;
+  project: string;
+}
+
+export interface RundeckSettings {
+  /** Ordered list of envs available in the env picker. */
+  envs: RundeckEnv[];
+  /** Envs that require type-to-confirm before triggering a deploy. */
+  prodEnvs: string[];
+  /** Selected env in the Rundeck pane (persisted across launches). */
+  activeEnv: string;
+}
+
+export type RundeckLevel =
+  | { kind: "matrix" }
+  | { kind: "service"; env: string; project: string; service: string; jobId: string }
+  | {
+      kind: "deploy";
+      env: string;
+      project: string;
+      service: string;
+      jobId: string;
+      branch: string;
+    }
+  | { kind: "execution"; executionId: number; service: string; project: string };
+
+export interface RundeckView {
+  /** Pane-scoped navigation stack so back/forward feels right. */
+  stack: RundeckLevel[];
+}
 
 // ---- Layout geometry ---------------------------------------------------
 
@@ -196,4 +260,5 @@ export interface PersistedPrefs {
   awsService: AwsService;
   leftRailOpen: boolean;
   rightRailOpen: boolean;
+  rundeck?: RundeckSettings;
 }

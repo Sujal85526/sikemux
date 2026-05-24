@@ -9,6 +9,8 @@ mod fs_watch;
 mod git;
 mod lsp;
 mod pty;
+mod rundeck;
+mod search;
 mod settings;
 mod ssh;
 mod state;
@@ -17,11 +19,14 @@ mod transparency;
 
 use aws::LogsTailManager;
 use pty::PtyManager;
+use rundeck::{RundeckLogsManager, RundeckWatchManager};
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(LogsTailManager::default())
+        .manage(RundeckWatchManager::default())
+        .manage(RundeckLogsManager::default())
         .setup(|app| {
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
             // CGS background blur via private API). No NSVisualEffectView
@@ -48,6 +53,7 @@ pub fn run() {
             system::home_dir,
             system::recent_dirs,
             system::boot_init,
+            system::battery_status,
             state::state_load,
             state::state_save,
             agents::agent_sessions,
@@ -81,6 +87,7 @@ pub fn run() {
             files::list_project_files,
             settings::scan_project_roots,
             settings::expand_path,
+            search::project_search,
             ssh::ssh_hosts,
             aws::auth::aws_profiles,
             aws::auth::aws_caller_identity,
@@ -97,6 +104,23 @@ pub fn run() {
             aws::s3::aws_s3_buckets,
             aws::logs::aws_logs_tail_start,
             aws::logs::aws_logs_tail_stop,
+            rundeck::auth::rnd_status,
+            rundeck::auth::rnd_login,
+            rundeck::auth::rnd_logout,
+            rundeck::projects::rnd_projects,
+            rundeck::projects::rnd_jobs,
+            rundeck::projects::rnd_branches_matrix,
+            rundeck::projects::rnd_resolve_job,
+            rundeck::executions::rnd_executions,
+            rundeck::executions::rnd_execution,
+            rundeck::executions::rnd_execution_state,
+            rundeck::executions::rnd_run,
+            rundeck::executions::rnd_abort,
+            rundeck::watch::rnd_watch_start,
+            rundeck::watch::rnd_watch_stop,
+            rundeck::logs::rnd_logs_start,
+            rundeck::logs::rnd_logs_stop,
+            rundeck::plan::rnd_plan,
             external::open_url,
             external::macos_focus_app,
             transparency::set_window_blur,

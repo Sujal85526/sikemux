@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { awsApi } from "../api/aws";
+import { rundeckApi } from "../api/rundeck";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
 import { fetchResource, invalidate } from "./resources";
@@ -28,6 +29,8 @@ import type {
   PickerMode,
   ProjectRoot,
   RecentEntry,
+  RundeckLevel,
+  RundeckView,
   Session,
   SplitDir,
   Window,
@@ -88,7 +91,7 @@ function makeWindow(
   cwd: string,
   name: string,
   opts: {
-    kind?: "terminal" | "editor" | "git";
+    kind?: "terminal" | "editor" | "git" | "search";
     startup?: string;
     fixed?: boolean;
     role?: WindowRole;
@@ -111,7 +114,41 @@ function projectWindows(cwd: string): Window[] {
     makeWindow(cwd, "files", { kind: "editor", fixed: true, role: "files" }),
     makeWindow(cwd, "term", { fixed: true, role: "term" }),
     makeWindow(cwd, "git", { kind: "git", fixed: true, role: "git" }),
+    makeWindow(cwd, "search", { kind: "search", fixed: true, role: "search" }),
   ];
+}
+
+/** Append a search window to a project session that doesn't have one yet.
+ *  Used by persist.applyHydrate to migrate snapshots created before the
+ *  search-pane was introduced. */
+export function ensureSearchWindow(): void {
+  setState((st) => {
+    const winPatch: Record<string, Window> = {};
+    const owners: Record<string, string[]> = {};
+    let changed = false;
+    for (const sid of st.sessionOrder) {
+      const sess = st.sessions[sid];
+      if (sess.kind !== "project") continue;
+      const winIds = st.windowsBySession[sid] ?? [];
+      const hasSearch = winIds.some(
+        (id) => st.windows[id]?.role === "search",
+      );
+      if (hasSearch) continue;
+      const w = makeWindow(sess.cwd, "search", {
+        kind: "search",
+        fixed: true,
+        role: "search",
+      });
+      winPatch[w.id] = w;
+      owners[sid] = [...winIds, w.id];
+      changed = true;
+    }
+    if (!changed) return {};
+    return {
+      windows: { ...st.windows, ...winPatch },
+      windowsBySession: { ...st.windowsBySession, ...owners },
+    };
+  });
 }
 
 function attachSession(
@@ -259,6 +296,137 @@ export function openAwsSession(): void {
     };
     return attachSession(st, session, [win]);
   });
+}
+
+export function openRundeckSession(): void {
+  setState((st) => {
+    const existing = st.sessionOrder
+      .map((id) => st.sessions[id])
+      .find((s) => s.kind === "rundeck");
+    if (existing) {
+      return { activeSessionId: existing.id, zoomedPaneId: null };
+    }
+    const pane = makePane("", { kind: "rundeck" });
+    const win: Window = {
+      id: newId("win"),
+      name: "rundeck",
+      role: "rundeck",
+      root: pane,
+      activePaneId: pane.id,
+      fixed: true,
+    };
+    const session: Session = {
+      id: newId("sess"),
+      name: "rundeck",
+      kind: "rundeck",
+      cwd: "",
+      env: "dev",
+      pinned: false,
+      activeWindowId: win.id,
+      activeAgentId: null,
+      view: "windows",
+    };
+    return attachSession(st, session, [win]);
+  });
+}
+
+// ---- Rundeck per-pane navigation -----------------------------------------
+
+const rundeckView = (
+  st: StoreState,
+  paneId: string,
+): RundeckView => st.rundeckViews[paneId] ?? { stack: [{ kind: "matrix" }] };
+
+export function rundeckPush(paneId: string, level: RundeckLevel): void {
+  setState((st) => {
+    const cur = rundeckView(st, paneId);
+    const next: RundeckView = { stack: [...cur.stack, level] };
+    return {
+      rundeckViews: { ...st.rundeckViews, [paneId]: next },
+    };
+  });
+}
+
+export function rundeckReplace(paneId: string, level: RundeckLevel): void {
+  setState((st) => {
+    const cur = rundeckView(st, paneId);
+    const stack = cur.stack.slice(0, -1);
+    stack.push(level);
+    return {
+      rundeckViews: { ...st.rundeckViews, [paneId]: { stack } },
+    };
+  });
+}
+
+export function rundeckPop(paneId: string): void {
+  setState((st) => {
+    const cur = rundeckView(st, paneId);
+    if (cur.stack.length <= 1) return {};
+    const stack = cur.stack.slice(0, -1);
+    return { rundeckViews: { ...st.rundeckViews, [paneId]: { stack } } };
+  });
+}
+
+export function rundeckHome(paneId: string): void {
+  setState((st) => ({
+    rundeckViews: {
+      ...st.rundeckViews,
+      [paneId]: { stack: [{ kind: "matrix" }] },
+    },
+  }));
+}
+
+/** Pane-level env selector (Rundeck pane only; project sessions use the
+ *  session.env field instead). */
+export function setRundeckEnv(envLabel: string): void {
+  setState((st) => ({
+    rundeck: { ...st.rundeck, activeEnv: envLabel },
+  }));
+}
+
+/** From a project session: jump to the Rundeck service detail (execution
+ *  history) for (basename(cwd), session.env). User picks the action from
+ *  there — deploy / redeploy / open last — instead of being railroaded
+ *  straight into a deploy confirm view they didn't ask for. */
+export async function openRundeckServiceFor(
+  service: string,
+  envLabel: string,
+): Promise<void> {
+  const st = getState();
+  const envSpec = st.rundeck.envs.find((e) => e.label === envLabel);
+  if (!envSpec) return;
+  openRundeckSession();
+  const after = getState();
+  const sess = Object.values(after.sessions).find((s) => s.kind === "rundeck");
+  if (!sess) return;
+  const win = after.windows[sess.activeWindowId];
+  if (!win || win.root.type !== "pane") return;
+  const paneId = win.root.id;
+  // Sync the pane's env so the back-to-matrix breadcrumb shows the same env
+  // the user came from.
+  setRundeckEnv(envLabel);
+  try {
+    const job = await rundeckApi.resolveJob(envSpec.project, service);
+    rundeckReplaceStack(paneId, [
+      { kind: "matrix" },
+      {
+        kind: "service",
+        env: envLabel,
+        project: envSpec.project,
+        service,
+        jobId: job.id,
+      },
+    ]);
+  } catch {
+    // Service doesn't exist in this env's project — drop them at the matrix.
+    rundeckReplaceStack(paneId, [{ kind: "matrix" }]);
+  }
+}
+
+function rundeckReplaceStack(paneId: string, stack: RundeckLevel[]): void {
+  setState((st) => ({
+    rundeckViews: { ...st.rundeckViews, [paneId]: { stack } },
+  }));
 }
 
 export function selectSession(id: string): void {
@@ -970,5 +1138,107 @@ export function setBillingExpandedMonth(
 ): void {
   setState((st) => ({
     expandedBillingMonth: { ...st.expandedBillingMonth, [profile]: month },
+  }));
+}
+
+// ---- Global search (Cmd+Shift+F) -------------------------------------
+
+const DEFAULT_SEARCH_VIEW = {
+  query: "",
+  options: {
+    caseSensitive: false,
+    wholeWord: false,
+    isRegex: false,
+    include: "",
+    exclude: "",
+  },
+  collapsed: {} as Record<string, boolean>,
+};
+
+function searchViewFor(sessionId: string) {
+  const st = getState();
+  return st.globalSearchBySession[sessionId] ?? DEFAULT_SEARCH_VIEW;
+}
+
+// Navigate the active project session to its search window. The pane is
+// always present (created with the project, or migrated in on hydrate).
+// No-op for non-project sessions, since there's nothing to search.
+export function focusGlobalSearch(): void {
+  const st = getState();
+  const session = st.sessions[st.activeSessionId];
+  if (!session || session.kind !== "project") return;
+  const ids = st.windowsBySession[session.id] ?? [];
+  const target = ids.find((id) => st.windows[id]?.role === "search");
+  if (target) selectWindowId(target);
+}
+
+export function setGlobalSearchQuery(sessionId: string, query: string): void {
+  const cur = searchViewFor(sessionId);
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: { ...cur, query },
+    },
+  }));
+}
+
+export function setGlobalSearchOption<
+  K extends keyof typeof DEFAULT_SEARCH_VIEW.options,
+>(
+  sessionId: string,
+  key: K,
+  value: (typeof DEFAULT_SEARCH_VIEW.options)[K],
+): void {
+  const cur = searchViewFor(sessionId);
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: {
+        ...cur,
+        options: { ...cur.options, [key]: value },
+      },
+    },
+  }));
+}
+
+export function toggleGlobalSearchFileCollapsed(
+  sessionId: string,
+  path: string,
+): void {
+  const cur = searchViewFor(sessionId);
+  const wasCollapsed = !!cur.collapsed[path];
+  const next = { ...cur.collapsed };
+  if (wasCollapsed) delete next[path];
+  else next[path] = true;
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: { ...cur, collapsed: next },
+    },
+  }));
+}
+
+export function expandAllGlobalSearchFiles(sessionId: string): void {
+  const cur = searchViewFor(sessionId);
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: { ...cur, collapsed: {} },
+    },
+  }));
+}
+
+export function collapseAllGlobalSearchFiles(
+  sessionId: string,
+  paths: string[],
+): void {
+  const cur = searchViewFor(sessionId);
+  const next: Record<string, boolean> = {};
+  for (const p of paths) next[p] = true;
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: { ...cur, collapsed: next },
+    },
   }));
 }

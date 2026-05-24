@@ -36,7 +36,7 @@ pub fn invalidate(repo: &str) {
 
 // Directories we never descend into. Keep this list conservative — anything
 // here is permanently invisible to the file palette.
-fn should_skip_dir(name: &str) -> bool {
+pub fn should_skip_dir(name: &str) -> bool {
     matches!(
         name,
         // dependency / package managers

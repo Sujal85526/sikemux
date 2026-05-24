@@ -12,12 +12,14 @@ import {
   IconFolder,
   IconPin,
   IconPlus,
+  IconRundeck,
   WindowIcon,
 } from "./Icons";
 
 function kindIcon(kind: SessionKind): ReactNode {
   if (kind === "project") return <IconFolder size={13} />;
-  if (kind === "aws") return <IconAws size={20} />;
+  if (kind === "aws") return <IconAws size={26} />;
+  if (kind === "rundeck") return <IconRundeck size={14} />;
   return <IconCommand size={13} />;
 }
 
@@ -98,6 +100,7 @@ export function SideRail() {
   const projects = sessions.filter((s) => !s.pinned && s.kind === "project");
   const sshs = sessions.filter((s) => !s.pinned && s.kind === "ssh");
   const cloud = sessions.filter((s) => !s.pinned && s.kind === "aws");
+  const cicd = sessions.filter((s) => !s.pinned && s.kind === "rundeck");
   const commands = sessions.filter((s) => !s.pinned && s.kind === "command");
 
   const jumpToWindow = (sessionId: string, winId: string) => {
@@ -310,6 +313,13 @@ export function SideRail() {
           add={cmd.openAwsSession}
           addTitle="Open AWS"
           emptyText="no cloud sessions"
+        />
+        <Group
+          label="CI/CD"
+          list={cicd}
+          add={cmd.openRundeckSession}
+          addTitle="Open Rundeck deploy center"
+          emptyText="open rundeck deploy center"
         />
         <Group
           label="Command"

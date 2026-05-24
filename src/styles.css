@@ -320,10 +320,36 @@ button {
   font-weight: 600;
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
 }
 .tb-colon {
   animation: blink 2s steps(1) infinite;
 }
+.tb-ampm {
+  margin-left: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tb-batt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--acc);
+}
+.tb-batt-pct { line-height: 1; }
+.tb-batt-ok { color: var(--acc); }
+.tb-batt-warn { color: var(--warn); }
+.tb-batt-danger { color: var(--danger); }
+.tb-batt.charging.tb-batt-ok { color: var(--live); }
 
 .tb-toggles {
   display: flex;
@@ -3832,3 +3858,1355 @@ button {
   padding: 3px 8px;
 }
 .aws-subtab-clear:hover { color: var(--danger); border-color: var(--danger); }
+
+/* ============================================================
+ * Project search pane (Cmd+Shift+F · 4th project window)
+ * ============================================================
+ * Fills its pane (height: 100%) and uses the same column structure as
+ * the git pane: head bar at top, scrollable body, kbd hint footer. The
+ * embedded CodeMirror snippets render with real syntax highlighting via
+ * the theme bus — see SearchPane.tsx.
+ */
+
+.search-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: transparent;
+  color: var(--ink-dim);
+}
+
+/* ----- header ---------------------------------------------- */
+.search-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.search-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 18px;
+}
+.search-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.search-title-icon { color: var(--ink-faint); }
+.search-summary {
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+}
+.search-summary strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+.search-truncated { color: var(--danger); }
+.search-fold-all {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.search-fold-all:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+.search-input-row {
+  display: flex;
+  align-items: stretch;
+}
+.search-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  transition: border-color 0.12s, background 0.12s;
+}
+.search-input-wrap:focus-within {
+  border-color: var(--acc-line);
+  background: rgba(0, 0, 0, 0.42);
+}
+.search-input-icon {
+  color: var(--ink-faint);
+  flex: 0 0 auto;
+}
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 8px 0;
+}
+.search-input::placeholder { color: var(--ink-faint); }
+.search-input-wrap:focus-within .search-input { color: var(--acc); }
+
+.search-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--acc);
+  animation: search-spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes search-spin { to { transform: rotate(360deg); } }
+
+.search-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.search-toggle:hover { color: var(--ink); border-color: var(--ink-faint); }
+.search-toggle.on {
+  color: var(--acc);
+  background: var(--acc-soft);
+  border-color: var(--acc-line);
+}
+
+/* include / exclude filters */
+.search-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.search-filter {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.12s, background 0.12s;
+}
+.search-filter:focus-within {
+  border-color: var(--acc-line);
+  background: rgba(0, 0, 0, 0.32);
+}
+.search-filter-label {
+  padding: 0 10px;
+  border-right: 1px solid var(--line);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+.search-filter-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.search-filter-input::placeholder { color: var(--ink-faint); }
+
+/* ----- body ------------------------------------------------ */
+.search-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 12px;
+}
+.search-empty,
+.search-loading,
+.search-err {
+  padding: 36px 18px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  text-align: center;
+  font-family: var(--mono);
+}
+.search-err {
+  color: var(--danger);
+}
+
+/* file group */
+.search-file {
+  border-bottom: 1px solid var(--line-soft);
+}
+.search-file-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: transparent;
+  border: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+.search-file-head:hover { background: var(--acc-soft); color: var(--ink); }
+.search-chev {
+  display: flex;
+  color: var(--ink-faint);
+  transition: transform 0.12s;
+  transform: rotate(-90deg);
+}
+.search-chev.open { transform: rotate(0deg); }
+.search-file-name {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 12.5px;
+}
+.search-file-dir {
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-file-count {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  font-family: var(--mono);
+  margin-left: auto;
+}
+
+/* snippet (embedded readonly CodeMirror) */
+.search-snippet {
+  padding-left: 18px;
+  padding-bottom: 4px;
+  background: transparent;
+}
+.search-snippet .cm-editor {
+  background: transparent !important;
+}
+.search-snippet .cm-line.cm-search-line {
+  background: rgba(255, 255, 255, 0.018);
+}
+.search-snippet .cm-line.cm-search-line:hover {
+  background: var(--acc-soft);
+}
+.cm-search-match {
+  background: rgba(255, 220, 90, 0.22);
+  color: #ffe27a;
+  border-radius: 0;
+  box-shadow: inset 0 -1px 0 rgba(255, 220, 90, 0.6);
+}
+
+/* footer */
+.search-foot {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+}
+.search-foot kbd {
+  background: var(--void);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 1px 6px;
+  margin-right: 6px;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+/* ============================================================
+ * In-editor Cmd+F panel restyle — compact, top-right of pane.
+ * ============================================================
+ *
+ * CodeMirror's @codemirror/search panel is functional but ships with a
+ * generic look. We:
+ *   - float it absolutely top-right of the editor pane
+ *   - tighten spacing, swap fonts, restyle inputs + buttons + checkboxes
+ *   - hide labels' text ("match case", "regexp", "by word") and rely on
+ *     compact pill toggles like the global search
+ *   - hide replace UI by default; user can show it via Cmd+H
+ */
+
+.ed-host { position: relative; }
+
+/* Float the panel as a compact bar at the top-right of the editor pane,
+ * mirroring VSCode. Style both -top and -bottom variants so positioning
+ * holds regardless of which CodeMirror picks. */
+.ed-host .cm-panels.cm-panels-top,
+.ed-host .cm-panels.cm-panels-bottom {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  bottom: auto;
+  left: auto;
+  z-index: 4;
+  /* Semi-transparent surface + backdrop blur so the editor + window
+   * translucency carry through and text underneath stays legible. */
+  background: rgba(18, 16, 26, 0.72);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px -10px rgba(0, 0, 0, 0.7);
+  padding: 0;
+  /* Grid layout below handles row distribution — panel is fixed-width
+   * to keep the bar a sensible compact size. */
+  width: 420px;
+  max-width: calc(100% - 16px);
+}
+
+.ed-host .cm-panel.cm-search {
+  /* Explicit 2-row × 5-col grid. Independent of intrinsic input widths
+   * and pane size — the inputs always live in column 1 (flex column),
+   * pills + close ride the right side of row 1, replace buttons span
+   * columns 2-3 and 4-5 of row 2. */
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto auto auto;
+  grid-template-rows: auto auto;
+  grid-auto-rows: 0;     /* any auto-placed item collapses to 0 height */
+  align-content: start;  /* don't stretch rows to fill */
+  row-gap: 4px;
+  column-gap: 4px;
+  padding: 5px 6px;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+/* CodeMirror's base CSS sets `margin: 2px 6px 2px 0` on every input /
+ * button / label inside the search panel — in a grid that adds phantom
+ * vertical space below the last row. Reset to 0 so the panel hugs the
+ * rows tight. */
+.ed-host .cm-panel.cm-search input,
+.ed-host .cm-panel.cm-search button,
+.ed-host .cm-panel.cm-search label {
+  margin: 0;
+}
+
+/* Row 1 — find input + pills + close */
+.ed-host .cm-panel.cm-search [name="search"]              { grid-row: 1; grid-column: 1; }
+.ed-host .cm-panel.cm-search label:has(input[name="case"]) { grid-row: 1; grid-column: 2; }
+.ed-host .cm-panel.cm-search label:has(input[name="word"]) { grid-row: 1; grid-column: 3; }
+.ed-host .cm-panel.cm-search label:has(input[name="re"])   { grid-row: 1; grid-column: 4; }
+.ed-host .cm-panel.cm-search button[name="close"]         { grid-row: 1; grid-column: 5; }
+
+/* Row 2 — replace input + replace + replace-all */
+.ed-host .cm-panel.cm-search [name="replace"]             { grid-row: 2; grid-column: 1; }
+.ed-host .cm-panel.cm-search button[name="replace"]       { grid-row: 2; grid-column: 2 / 4; }
+.ed-host .cm-panel.cm-search button[name="replaceAll"]    { grid-row: 2; grid-column: 4 / 6; }
+
+.ed-host .cm-panel.cm-search [name="search"],
+.ed-host .cm-panel.cm-search [name="replace"] {
+  /* Inset overlay rather than --void so the input is visible against the
+   * translucent panel without going fully opaque. */
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+  padding: 4px 8px;
+  margin: 0;
+  /* Grid column 1 is fluid (minmax 120,1fr) — the input fills it. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  transition: border-color 0.12s, background 0.12s;
+}
+.ed-host .cm-panel.cm-search [name="search"]:focus,
+.ed-host .cm-panel.cm-search [name="replace"]:focus {
+  border-color: var(--acc-line);
+  background: rgba(0, 0, 0, 0.42);
+}
+.ed-host .cm-panel.cm-search [name="search"]::placeholder,
+.ed-host .cm-panel.cm-search [name="replace"]::placeholder {
+  color: var(--ink-faint);
+}
+
+/* Hide the verbose action buttons (next / previous / all) — match
+ * navigation lives on Enter / Shift+Enter via the search keymap. Replace
+ * + close stay visible so the user has obvious affordances for both. */
+.ed-host .cm-panel.cm-search button[name="next"],
+.ed-host .cm-panel.cm-search button[name="prev"],
+.ed-host .cm-panel.cm-search button[name="select"] {
+  display: none;
+}
+
+/* Grid handles the row break — the <br> CodeMirror emits is unused. */
+.ed-host .cm-panel.cm-search br {
+  display: none;
+}
+
+/* Close button — CodeMirror gives it `position: absolute; top: 0;
+ * right: 4px;` by default. Reset and let grid place it in row 1 col 5. */
+.ed-host .cm-panel.cm-search button[name="close"] {
+  position: static;
+  top: auto;
+  right: auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.ed-host .cm-panel.cm-search button[name="close"]:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(255, 103, 103, 0.08);
+}
+
+/* Replace text pills — same chrome as the toggles, just wider. Grid
+ * places them on row 2 spanning multi-column cells; they stretch to fit. */
+.ed-host .cm-panel.cm-search button[name="replace"],
+.ed-host .cm-panel.cm-search button[name="replaceAll"] {
+  height: 22px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.ed-host .cm-panel.cm-search button[name="replace"]:hover,
+.ed-host .cm-panel.cm-search button[name="replaceAll"]:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+
+/* Checkbox labels — rebuild as compact toggle pills. Hide the native
+ * checkbox + the text label, then add CSS-only "Aa", "ab", ".*" caps via
+ * ::before on the wrapping <label>. */
+.ed-host .cm-panel.cm-search label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 0; /* hide the literal " match case" text node */
+  user-select: none;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.ed-host .cm-panel.cm-search label:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+.ed-host .cm-panel.cm-search label input[type="checkbox"] {
+  /* Functional but invisible — the label's ::before shows status. */
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Synthesised glyph for each checkbox option. The default CodeMirror search
+ * panel order is: match case, regexp, by word. We key off the input name. */
+.ed-host .cm-panel.cm-search label:has(input[name="case"])::before {
+  content: "Aa";
+}
+.ed-host .cm-panel.cm-search label:has(input[name="re"])::before {
+  content: ".*";
+}
+.ed-host .cm-panel.cm-search label:has(input[name="word"])::before {
+  content: "ab";
+}
+.ed-host .cm-panel.cm-search label::before {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+/* Active state — when the checkbox is :checked, light the pill. */
+.ed-host .cm-panel.cm-search label:has(input:checked) {
+  color: var(--acc);
+  background: var(--acc-soft);
+  border-color: var(--acc-line);
+}
+
+/* The second row (Replace) sits below the first when shown. Keep it
+ * visually consistent with the find row. */
+.ed-host .cm-panel.cm-search br {
+  display: block;
+  content: "";
+  margin-top: 4px;
+  width: 100%;
+}
+
+/* Match-highlight decorations the editor sets on hits — give them the
+ * same warm bg as the global-search match for visual continuity. */
+.cm-searchMatch {
+  background: rgba(255, 220, 90, 0.18);
+  outline: none;
+}
+.cm-searchMatch.cm-searchMatch-selected {
+  background: rgba(255, 220, 90, 0.42);
+}
+
+/* ============================================================
+   Rundeck pane — deploy center.
+   Same chrome rules as .aws-pane / .git-pane: transparent body
+   so the window-opacity wash shows through; flat squares with
+   border separators, never rounded cards; accents only for
+   focused / interactive bits.
+   ============================================================ */
+
+.rnd-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-height: 0;
+}
+.rnd-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+/* ---- branch palette ---- */
+.rnd-branch-main { color: var(--live); }
+.rnd-branch-feature { color: #7aa0d6; }
+.rnd-branch-fix { color: var(--danger); }
+.rnd-branch-release { color: var(--acc); }
+.rnd-branch-other { color: var(--ink); }
+.rnd-branch-na { color: var(--ink-faint); }
+
+/* ---- status palette ---- */
+.rnd-status-succeeded { color: var(--live); }
+.rnd-status-failed { color: var(--danger); }
+.rnd-status-running { color: var(--warn); }
+.rnd-status-aborted { color: var(--ink-faint); }
+.rnd-status-unknown { color: var(--ink-dim); }
+
+/* ---- top bar: back / breadcrumb / env picker ---- */
+.rnd-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  min-height: 36px;
+  flex: 0 0 auto;
+}
+.rnd-bar-back {
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.rnd-bar-back:disabled { opacity: 0.25; cursor: default; }
+.rnd-bar-back:hover:not(:disabled) { color: var(--acc); }
+.rnd-bar-trail {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.rnd-crumb-row { display: inline-flex; align-items: center; gap: 8px; }
+.rnd-crumb-row + .rnd-crumb-row { margin-left: 0; }
+.rnd-crumb-sep {
+  color: var(--ink-faint);
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.6;
+  margin: 0 6px;
+}
+.rnd-crumb {
+  background: transparent;
+  border: none;
+  color: var(--ink-dim);
+  padding: 2px 0;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+.rnd-crumb:hover:not(:disabled) { color: var(--acc); }
+.rnd-crumb.current { color: var(--ink); cursor: default; font-weight: 600; }
+.rnd-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rnd-host {
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+.env-dd-item-proj {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+/* ---- loading / spinner ---- */
+.rnd-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.rnd-spinner {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--acc);
+  border-radius: 50%;
+  display: inline-block;
+  animation: rnd-spin 0.8s linear infinite;
+}
+.rnd-spinner.inline { width: 9px; height: 9px; }
+@keyframes rnd-spin { to { transform: rotate(360deg); } }
+
+/* ---- buttons (shared) — flat squares, no fills by default ---- */
+.rnd-btn,
+.rnd-btn-sm {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  padding: 5px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rnd-btn-sm { padding: 3px 8px; font-size: 10.5px; }
+.rnd-btn:hover:not(:disabled),
+.rnd-btn-sm:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+  background: var(--acc-soft);
+}
+.rnd-btn:disabled,
+.rnd-btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+.rnd-btn-primary {
+  border-color: var(--acc-line);
+  color: var(--acc);
+}
+.rnd-btn-primary:hover:not(:disabled) {
+  border-color: var(--acc);
+  background: var(--acc-soft);
+  color: var(--acc);
+}
+.rnd-btn-danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  color: var(--danger);
+}
+.rnd-btn-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* ---- banners ---- */
+.rnd-banner {
+  padding: 7px 14px;
+  font-size: 11px;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+}
+.rnd-banner.ok {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 25%, transparent);
+  background: color-mix(in srgb, var(--live) 6%, transparent);
+}
+.rnd-banner.warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 25%, transparent);
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
+}
+.rnd-banner.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.rnd-banner.muted { color: var(--ink-dim); background: transparent; }
+
+/* ---- empty ---- */
+.rnd-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 60px 30px;
+  color: var(--ink-dim);
+  text-align: center;
+  font-size: 11px;
+}
+.rnd-empty.muted { color: var(--ink-faint); }
+.rnd-empty.compact { padding: 18px; }
+.rnd-empty-title { font-size: 12px; color: var(--ink); }
+.rnd-empty-msg { font-size: 11px; }
+
+/* ============================================================
+   Login view — full-pane form, no card, no rounded chrome.
+   ============================================================ */
+
+.rnd-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 48px 24px;
+}
+.rnd-login-card {
+  width: 100%;
+  max-width: 360px;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.rnd-login-title {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.rnd-login-help {
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  line-height: 1.55;
+}
+.rnd-login-help code {
+  color: var(--ink);
+  background: transparent;
+  padding: 0;
+  font-size: 10.5px;
+}
+.rnd-login-error {
+  padding: 7px 10px;
+  border-left: 2px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+}
+.rnd-login-success {
+  padding: 7px 10px;
+  border-left: 2px solid var(--live);
+  background: color-mix(in srgb, var(--live) 8%, transparent);
+  color: var(--live);
+  font-size: 11px;
+}
+
+.rnd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+}
+.rnd-field > span:first-child {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.rnd-field input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.rnd-field input:focus { border-bottom-color: var(--acc); }
+.rnd-field-hint {
+  position: absolute;
+  right: 0;
+  bottom: 6px;
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.rnd-field-hint:hover { color: var(--acc); }
+
+/* ============================================================
+   Deployments list — single env, vertical rows.
+   ============================================================ */
+
+.rnd-list { display: flex; flex-direction: column; height: 100%; }
+.rnd-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  gap: 10px;
+}
+.rnd-list-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+.rnd-list-meta-n { color: var(--ink); font-weight: 700; }
+.rnd-list-meta-l { text-transform: uppercase; letter-spacing: 0.14em; font-size: 9.5px; }
+.rnd-list-meta-v { color: var(--ink-dim); }
+.rnd-list-meta-sep { color: var(--ink-faint); opacity: 0.5; }
+
+.rnd-list-rows { flex: 1; overflow: auto; }
+.rnd-list-row {
+  display: grid;
+  grid-template-columns: 22px minmax(200px, 1.4fr) minmax(160px, 2fr) 90px 110px 90px auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.08s;
+  font-family: var(--mono);
+}
+.rnd-list-row:hover { background: var(--acc-soft); }
+.rnd-list-row:hover .rnd-row-actions { opacity: 1; }
+
+.rnd-row-glyph { font-size: 13px; text-align: center; }
+.rnd-row-svc { color: var(--ink); font-size: 12.5px; }
+.rnd-row-branch {
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rnd-row-status {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.rnd-row-user { color: var(--ink-dim); font-size: 11px; }
+.rnd-row-when { color: var(--ink-faint); font-size: 11px; }
+.rnd-row-actions {
+  display: inline-flex;
+  gap: 4px;
+  justify-self: end;
+  opacity: 0.55;
+  transition: opacity 0.08s;
+}
+.rnd-row-action {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: var(--mono);
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.rnd-row-action:hover { color: var(--ink); border-color: var(--ink-faint); }
+.rnd-row-action.accent { color: var(--acc); border-color: var(--acc-line); }
+.rnd-row-action.accent:hover {
+  color: var(--acc);
+  border-color: var(--acc);
+  background: var(--acc-soft);
+}
+
+/* ============================================================
+   Service detail + execution history rows.
+   ============================================================ */
+
+.rnd-service,
+.rnd-deploy,
+.rnd-exec {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.rnd-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  gap: 12px;
+  background: transparent;
+}
+.rnd-section-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rnd-section-eyebrow {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+}
+.rnd-section-name {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.rnd-section-proj { font-size: 10px; color: var(--ink-faint); letter-spacing: 0.04em; }
+.rnd-section-actions { display: flex; gap: 6px; }
+
+.rnd-history { flex: 1; overflow: auto; }
+.rnd-history-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 16px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  border-bottom: 1px solid var(--line);
+}
+.rnd-history-help { font-weight: 400; letter-spacing: 0.04em; text-transform: none; font-size: 10px; }
+
+.rnd-exec-row {
+  display: grid;
+  grid-template-columns: 110px 60px 1fr 110px 130px 60px;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 16px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  transition: background 0.08s;
+}
+.rnd-exec-row:hover { background: var(--acc-soft); }
+.rnd-exec-status {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.rnd-exec-id { color: var(--ink-dim); }
+.rnd-exec-branch {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rnd-exec-user, .rnd-exec-when, .rnd-exec-dur {
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.rnd-exec-dur { text-align: right; color: var(--ink-faint); }
+
+/* ============================================================
+   Deploy view (inline plan + inline prod gate).
+   ============================================================ */
+
+.rnd-deploy-form { padding: 18px 16px 6px; }
+.rnd-plan {
+  margin: 0;
+  padding: 14px 16px;
+  background: transparent;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.rnd-plan-head {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  margin-bottom: 10px;
+}
+.rnd-plan-table { display: flex; flex-direction: column; }
+.rnd-plan-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  font-size: 11.5px;
+  padding: 4px 0;
+}
+.rnd-plan-row.muted { color: var(--ink-dim); }
+.rnd-plan-row.tone-ok .rnd-plan-v { color: var(--live); }
+.rnd-plan-row.tone-warn .rnd-plan-v { color: var(--warn); }
+.rnd-plan-row.tone-danger .rnd-plan-v { color: var(--danger); }
+.rnd-plan-k {
+  color: var(--ink-faint);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+.rnd-plan-v { color: var(--ink); font-family: var(--mono); }
+
+.rnd-prod-gate {
+  margin: 0;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  border-left: 2px solid var(--danger);
+}
+.rnd-prod-gate-title {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--danger);
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  margin-bottom: 5px;
+}
+.rnd-prod-gate-msg {
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin-bottom: 8px;
+}
+.rnd-prod-gate-msg code {
+  color: var(--danger);
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+}
+.rnd-prod-gate input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--ink);
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+}
+.rnd-prod-gate input:focus { border-bottom-color: var(--danger); }
+
+.rnd-deploy-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+  background: transparent;
+}
+
+/* ============================================================
+   Execution live view — steps aside + log stream main.
+   ============================================================ */
+
+.rnd-exec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.rnd-exec-head-l, .rnd-exec-head-r {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.rnd-exec-pill {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+.rnd-exec-id.big { font-size: 13px; color: var(--ink); font-weight: 600; }
+.rnd-exec-svc { color: var(--ink); font-weight: 500; font-size: 12px; }
+.rnd-exec-proj { color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.04em; }
+.rnd-exec-meta {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 10.5px;
+}
+.rnd-meta-k {
+  color: var(--ink-faint);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.rnd-meta-v { color: var(--ink); font-family: var(--mono); }
+
+.rnd-exec-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 0;
+}
+
+.rnd-steps {
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: transparent;
+}
+.rnd-steps-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.rnd-pill-x {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  padding: 2px 7px;
+  font-size: 9.5px;
+  cursor: pointer;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.rnd-pill-x:hover { color: var(--ink); border-color: var(--ink-faint); }
+.rnd-steps-list { overflow: auto; flex: 1; }
+.rnd-step {
+  display: grid;
+  grid-template-columns: 22px 18px 1fr 50px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  transition: background 0.08s, border-color 0.08s;
+}
+.rnd-step:hover { background: var(--acc-soft); }
+.rnd-step.selected {
+  background: var(--acc-soft);
+  border-left-color: var(--acc);
+}
+.rnd-step-num { color: var(--ink-faint); font-size: 10px; text-align: right; }
+.rnd-step-glyph { text-align: center; }
+.rnd-step-glyph.step-pending { color: var(--ink-faint); }
+.rnd-step-glyph.step-running { color: var(--warn); animation: rnd-pulse 1.4s ease-in-out infinite; }
+.rnd-step-glyph.step-ok { color: var(--live); }
+.rnd-step-glyph.step-fail { color: var(--danger); }
+.rnd-step-glyph.step-skip { color: var(--ink-faint); }
+.rnd-step-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd-step-dur { color: var(--ink-faint); font-size: 10.5px; text-align: right; }
+@keyframes rnd-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.rnd-logs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: transparent;
+}
+.rnd-logs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+.rnd-logs-title { letter-spacing: 0.16em; }
+.rnd-logs-count { margin-left: auto; color: var(--ink-faint); }
+.rnd-toggle {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  cursor: pointer;
+  text-transform: none;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  font-weight: 400;
+}
+.rnd-toggle input { accent-color: var(--acc); }
+.rnd-logs-stream {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 14px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.rnd-log-line { display: flex; gap: 10px; white-space: pre-wrap; word-break: break-all; }
+.rnd-log-step {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  min-width: 36px;
+  font-size: 10.5px;
+}
+.rnd-log-text { color: var(--ink); flex: 1; }
+.rnd-log-line.lvl-warn .rnd-log-text { color: var(--warn); }
+.rnd-log-line.lvl-error .rnd-log-text { color: var(--danger); }
+.rnd-log-line.lvl-debug .rnd-log-text { color: var(--ink-faint); }
+
+/* ============================================================
+   Top-bar deploy chip — sibling to .tb-aws-chip in TopBar.
+   ============================================================ */
+.tb-deploy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  max-width: 320px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+}
+.tb-deploy-chip > * { flex: 0 0 auto; }
+.tb-deploy-chip > .tb-deploy-svc,
+.tb-deploy-chip > .tb-deploy-branch { flex: 0 1 auto; }
+.tb-deploy-chip:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+.tb-deploy-svc {
+  color: var(--ink);
+  display: inline-block;
+  min-width: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.tb-deploy-sep { color: var(--ink-faint); opacity: 0.6; flex: 0 0 auto; }
+.tb-deploy-branch {
+  font-size: 10.5px;
+  display: inline-block;
+  min-width: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.tb-deploy-meta { font-size: 10.5px; }
+.tb-deploy-meta.muted { color: var(--ink-faint); }
+.tb-deploy-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
