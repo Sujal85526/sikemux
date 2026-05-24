@@ -1,11 +1,11 @@
 {
-  "version": "0.1.3",
-  "notes": "fix-path now unions user-local bin dirs (~/.local/bin, ~/.cargo/bin, ~/.opencode/bin) on top of the login-shell PATH so hermes resolves even when it lives in dirs only ~/.zshrc exports. Belt-and-braces: hermes lookup also checks common absolute paths directly.",
-  "pub_date": "2026-05-24T15:38:31Z",
+  "version": "0.1.4",
+  "notes": "Terminal: Cmd+Left/Right/Backspace + Opt+arrows now work (readline escapes written direct to PTY). Drag-and-drop image/files onto any terminal pane writes the quoted paths (Claude Code / Codex ingest @-files). Hidden terminals no longer paint or churn xterm \u2014 fixes multi-project lag (PTY chunks buffer with 512KB cap, flush on reactivation). Keystroke IPC batched per microtask.",
+  "pub_date": "2026-05-24T22:06:16Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWNjR1lTYUFoMjRFSXNQSFlyN3VLRVBWV2l3L3NlSmFucERXSFBRSjBBVkl2S014MXI4NktVTE90SldzWFRadGI2QkNIYU40OC9lSnh6Q1VBU1BjVkE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NjM3MTExCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CnJ5dTVqSDFFZlpkYm81TGFFdTIvY3JXOXh0N2xlMC9ULzJ6WXkydkJ1eGZoTE5TSXJ1MU9DV2JhaFVmZUFjZ3J6c1RaMHJPNTlMT2JKUDBvRzZrakFBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.3/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVJFVmtMNExjNWtUQksvaXJNTGVvTlB2S2g5OXVHM0pCTjNRQzlFTHhWL1RTWG0rVDhXQmd4VHJUK0hacUtEY045RnlmNkQzTE9hMGJwTVRUK2c3aEFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NjYwMzc1CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjgreVJDR0JxL0RhczliekxyWTlYK0ptRzEzUVk0QmN0dzAzRU1ZQlVEc0haZ2tVWG8wVGxKZ2xJUFVqc1hKU0U2QjFGanFjOEhpcXNPMXI0aXIrUkRRPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.4/Sikemux.app.tar.gz"
     }
   }
 }

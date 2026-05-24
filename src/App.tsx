@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { checkForUpdate } from "./api/updater";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
@@ -101,6 +102,39 @@ export default function App() {
     return () => {
       window.clearTimeout(firstCheck);
       window.clearInterval(poll);
+    };
+  }, []);
+
+  // File drag-drop into a terminal pane. Tauri 2 disables HTML5 native
+  // drop on the webview (would navigate to file://) and gives us this
+  // event instead, with absolute paths + drop position. We hit-test the
+  // position via elementFromPoint, walk up to the nearest .terminal-host,
+  // and call into its TerminalPane-installed drop handler (which writes
+  // the quoted paths to the PTY). Same UX as Ghostty / Terminal.app —
+  // Claude Code / Codex sessions ingest the dropped file path naturally.
+  useEffect(() => {
+    interface DropTarget {
+      __sikemuxDropPaths?: (paths: string[]) => void;
+    }
+    const unlistenP = getCurrentWebview().onDragDropEvent((e) => {
+      if (e.payload.type !== "drop") return;
+      const paths = e.payload.paths;
+      if (!paths || paths.length === 0) return;
+      const pos = e.payload.position;
+      // Tauri reports drop position in physical pixels; convert to CSS
+      // pixels using devicePixelRatio so elementFromPoint hits correctly
+      // on retina + scaled displays.
+      const dpr = window.devicePixelRatio || 1;
+      const x = pos.x / dpr;
+      const y = pos.y / dpr;
+      const target = document
+        .elementFromPoint(x, y)
+        ?.closest(".terminal-host") as HTMLElement | null;
+      if (!target) return;
+      (target as unknown as DropTarget).__sikemuxDropPaths?.(paths);
+    });
+    return () => {
+      void unlistenP.then((u) => u());
     };
   }, []);
 
