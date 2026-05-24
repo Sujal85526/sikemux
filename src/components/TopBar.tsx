@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useClock } from "../hooks/useClock";
 import { ENVS } from "../state/types";
 import { useWorkspace } from "../state/workspace";
@@ -15,6 +15,98 @@ import {
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
+// Always-visible AWS status chip. Click → opens (or focuses) the AWS
+// session; if the profile is expired, opens the sign-in modal instead.
+// Re-checks `sts get-caller-identity` every 60s in the background, so the
+// dot stays current without explicit refresh.
+function AwsChip() {
+  const profile = useWorkspace((s) => s.awsProfile);
+  const status = useWorkspace((s) =>
+    profile ? s.awsStatuses[profile] : null,
+  );
+  const refreshAwsStatus = useWorkspace((s) => s.refreshAwsStatus);
+  const openAwsSession = useWorkspace((s) => s.openAwsSession);
+  const openAwsAuthModal = useWorkspace((s) => s.openAwsAuthModal);
+
+  // Poll while the chip is visible. 60s matches tmux-aws and the pane.
+  useEffect(() => {
+    if (!profile) return;
+    void refreshAwsStatus(profile);
+    const id = window.setInterval(
+      () => void refreshAwsStatus(profile),
+      60_000,
+    );
+    return () => window.clearInterval(id);
+  }, [profile, refreshAwsStatus]);
+
+  const dotClass =
+    status?.status === "authed"
+      ? "ok"
+      : status?.status === "checking"
+        ? "checking"
+        : status?.status === "expired" || status?.status === "no-credentials"
+          ? "fail"
+          : !profile
+            ? "off"
+            : "warn";
+
+  const onClick = () => {
+    if (!profile) {
+      openAwsSession();
+      return;
+    }
+    if (status?.status === "expired" || status?.status === "no-credentials") {
+      openAwsAuthModal(profile, null);
+      return;
+    }
+    openAwsSession();
+  };
+
+  return (
+    <button className="tb-aws-chip" onClick={onClick} title="AWS">
+      <CloudIcon size={14} />
+      <span className="tb-aws-label">
+        {profile ? profile.slice(0, 18) : "aws"}
+      </span>
+      <span className={`tb-aws-dot ${dotClass}`} />
+    </button>
+  );
+}
+
+function CloudIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
+      <path d="M19 18H6a4 4 0 0 1-.7-7.94 6 6 0 0 1 11.43-1.39A4.5 4.5 0 0 1 19 18z" />
+    </svg>
+  );
+}
+
+function CogIcon({ size = 15 }: { size?: number }) {
+  // Small inline gear — avoids touching the Icons.tsx catalog for a one-off.
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
 export function TopBar() {
   const now = useClock();
   const session = useWorkspace((s) => s.sessions[s.activeSessionId]);
@@ -24,6 +116,7 @@ export function TopBar() {
   const toggleLeft = useWorkspace((s) => s.toggleLeftRail);
   const toggleRight = useWorkspace((s) => s.toggleRightRail);
   const setEnv = useWorkspace((s) => s.setEnv);
+  const toggleSettings = useWorkspace((s) => s.toggleSettings);
   const [envOpen, setEnvOpen] = useState(false);
 
   const win = session.windows.find((w) => w.id === session.activeWindowId)!;
@@ -101,6 +194,7 @@ export function TopBar() {
             )}
           </div>
         )}
+        <AwsChip />
         <span className="tb-clock">
           {time2(now.getHours())}
           <span className="tb-colon">:</span>
@@ -120,6 +214,13 @@ export function TopBar() {
             title="Toggle agents rail"
           >
             <IconPanelRight size={15} />
+          </button>
+          <button
+            className="tb-btn"
+            onClick={toggleSettings}
+            title="Settings (⌘,)"
+          >
+            <CogIcon size={15} />
           </button>
         </div>
       </div>

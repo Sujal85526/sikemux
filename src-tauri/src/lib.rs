@@ -1,17 +1,43 @@
 mod agents;
+mod aws;
 mod diff;
+mod external;
+mod files;
 mod fs;
 mod fs_watch;
 mod git;
 mod lsp;
 mod pty;
+mod settings;
+mod ssh;
 mod state;
 mod system;
+mod transparency;
 
+use aws::LogsTailManager;
 use pty::PtyManager;
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(LogsTailManager::default())
+        .setup(|app| {
+            // See-through window — same recipe as nackle (NSWindow opaque=NO,
+            // CGS background blur via private API). No NSVisualEffectView
+            // because its frosted look is heavier than the gaussian CGS blur
+            // Terminal.app / iTerm2 / Ghostty use. Default blur=0 == pure
+            // transparency; the settings slider goes 0..80.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Ok(handle) = window.ns_window() {
+                        unsafe { transparency::apply(handle, 0); }
+                    }
+                }
+            }
+            Ok(())
+        })
         .manage(PtyManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
@@ -51,6 +77,28 @@ pub fn run() {
             lsp::lsp_change,
             lsp::lsp_locations,
             diff::diff_hunks,
+            files::list_project_files,
+            settings::scan_project_roots,
+            settings::expand_path,
+            ssh::ssh_hosts,
+            aws::aws_profiles,
+            aws::aws_caller_identity,
+            aws::aws_sso_login,
+            aws::aws_ecs_clusters,
+            aws::aws_ecs_services,
+            aws::aws_ecs_tasks,
+            aws::aws_ecs_service_log_config,
+            aws::aws_ecs_task_log_config,
+            aws::aws_ec2_instances,
+            aws::aws_lambda_functions,
+            aws::aws_sqs_queues,
+            aws::aws_billing_months,
+            aws::aws_s3_buckets,
+            aws::aws_logs_tail_start,
+            aws::aws_logs_tail_stop,
+            external::open_url,
+            external::macos_focus_app,
+            transparency::set_window_blur,
         ])
         .run(tauri::generate_context!())
         .expect("error while running sikemux");

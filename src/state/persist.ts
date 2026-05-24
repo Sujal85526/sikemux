@@ -22,6 +22,16 @@ function snapshot(): string {
     agentBookmarks: s.agentBookmarks,
     leftRailOpen: s.leftRailOpen,
     rightRailOpen: s.rightRailOpen,
+    settings: {
+      projectRoots: s.projectRoots,
+      themeId: s.themeId,
+      windowOpacity: s.windowOpacity,
+      windowBlur: s.windowBlur,
+      cloudBrowser: s.cloudBrowser,
+      cloudBrowserShortcut: s.cloudBrowserShortcut,
+      awsProfile: s.awsProfile,
+      awsService: s.awsService,
+    },
   };
   return JSON.stringify(snap);
 }

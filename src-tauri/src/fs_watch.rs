@@ -41,6 +41,10 @@ fn debounce_emit(app: &AppHandle, repo: &str, last_emit: &Arc<AtomicU64>) {
         return;
     }
     last_emit.store(now_real, Ordering::Relaxed);
+    // File list for the Cmd-P palette is stale now — drop the cache so the
+    // next palette open rewalks. Cheap; the walk itself is debounced behind
+    // user interaction.
+    crate::files::invalidate(repo);
     let _ = app.emit(
         "git_changed",
         ChangePayload { repo: repo.to_string() },

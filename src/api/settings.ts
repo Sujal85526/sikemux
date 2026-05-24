@@ -1,0 +1,23 @@
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+
+export interface ProjectEntry {
+  name: string;
+  path: string;
+}
+
+export const settingsApi = {
+  scanProjectRoots: (roots: string[]) =>
+    invoke<ProjectEntry[]>("scan_project_roots", { roots }),
+  expandPath: (path: string) => invoke<string>("expand_path", { path }),
+  /** Native folder picker. Returns absolute path or null on cancel. */
+  pickFolder: async (defaultPath?: string): Promise<string | null> => {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      defaultPath,
+    });
+    if (picked == null) return null;
+    return Array.isArray(picked) ? (picked[0] ?? null) : picked;
+  },
+};

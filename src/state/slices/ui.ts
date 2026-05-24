@@ -1,10 +1,14 @@
 import type { Slice } from "./types";
 
+export type PickerMode = "all" | "projects" | "ssh";
+
 // UI-only state — modal flags, side rails, LSP results popup, the
 // cross-component "please open this file" request bus.
 export interface UiSlice {
   pickerOpen: boolean;
+  pickerMode: PickerMode;
   agentPaletteOpen: boolean;
+  filePaletteOpen: boolean;
   leftRailOpen: boolean;
   rightRailOpen: boolean;
   home: string;
@@ -24,10 +28,12 @@ export interface UiSlice {
   } | null;
 
   setHome: (home: string) => void;
-  openPicker: () => void;
+  openPicker: (mode?: PickerMode) => void;
   closePicker: () => void;
   openAgentPalette: () => void;
   closeAgentPalette: () => void;
+  openFilePalette: () => void;
+  closeFilePalette: () => void;
   toggleLeftRail: () => void;
   toggleRightRail: () => void;
   openLspResults: (
@@ -42,7 +48,9 @@ export interface UiSlice {
 
 export const createUiSlice: Slice<UiSlice> = (set) => ({
   pickerOpen: false,
+  pickerMode: "all",
   agentPaletteOpen: false,
+  filePaletteOpen: false,
   leftRailOpen: true,
   rightRailOpen: true,
   home: "",
@@ -53,10 +61,15 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   openRequest: null,
 
   setHome: (home) => set({ home }),
-  openPicker: () => set({ pickerOpen: true }),
+  // Open the sesh picker in a specific mode (defaults to "all"). Mode
+  // controls which sources the picker pulls from — projects/command
+  // sessions, project roots, ssh hosts. See SeshPicker.
+  openPicker: (mode = "all") => set({ pickerOpen: true, pickerMode: mode }),
   closePicker: () => set({ pickerOpen: false }),
   openAgentPalette: () => set({ agentPaletteOpen: true }),
   closeAgentPalette: () => set({ agentPaletteOpen: false }),
+  openFilePalette: () => set({ filePaletteOpen: true }),
+  closeFilePalette: () => set({ filePaletteOpen: false }),
   toggleLeftRail: () => set((s) => ({ leftRailOpen: !s.leftRailOpen })),
   toggleRightRail: () => set((s) => ({ rightRailOpen: !s.rightRailOpen })),
   openLspResults: (title, project, results) =>

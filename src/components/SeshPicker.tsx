@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { SessionKind } from "../state/types";
 import { useWorkspace } from "../state/workspace";
+import { useMouseActive } from "../hooks/useMouseActive";
+import { settingsApi, type ProjectEntry } from "../api/settings";
+import { sshApi, type SshHost } from "../api/ssh";
 import { IconCommand, IconFolder, IconSearch } from "./Icons";
 
 type Item =
   | { kind: "session"; id: string; name: string; sub: string; sk: SessionKind }
-  | { kind: "dir"; path: string; name: string; sub: string };
-
-const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+  | { kind: "dir"; path: string; name: string; sub: string }
+  | { kind: "ssh"; alias: string; name: string; sub: string };
 
 // Subsequence fuzzy match. Returns a score (lower = better) or -1 for no match.
 function fuzzy(query: string, text: string): number {
@@ -28,6 +29,17 @@ function fuzzy(query: string, text: string): number {
   return score;
 }
 
+function sshSubtitle(h: SshHost): string {
+  const target = h.hostname ?? h.alias;
+  const user = h.user ? `${h.user}@` : "";
+  const port = h.port && h.port !== 22 ? `:${h.port}` : "";
+  return `${user}${target}${port}`;
+}
+
+// One picker, three modes. Driven by ui.pickerMode:
+//   all      sessions + project roots + ssh hosts  (M-s)
+//   projects existing project sessions + project roots  (M-p)
+//   ssh      existing ssh sessions + ssh hosts  (M-S)
 export function SeshPicker() {
   const sessionsById = useWorkspace((s) => s.sessions);
   const sessionOrder = useWorkspace((s) => s.sessionOrder);
@@ -35,35 +47,109 @@ export function SeshPicker() {
   const home = useWorkspace((s) => s.home);
   const selectSession = useWorkspace((s) => s.selectSession);
   const createProjectSession = useWorkspace((s) => s.createProjectSession);
+  const createSshSession = useWorkspace((s) => s.createSshSession);
   const closePicker = useWorkspace((s) => s.closePicker);
+  const openSettings = useWorkspace((s) => s.openSettings);
+  const projectRoots = useWorkspace((s) => s.projectRoots);
+  const mode = useWorkspace((s) => s.pickerMode);
 
   const [query, setQuery] = useState("");
-  const [dirs, setDirs] = useState<string[]>([]);
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [hosts, setHosts] = useState<SshHost[]>([]);
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mouseActive = useMouseActive();
+
+  const showProjects = mode === "all" || mode === "projects";
+  const showSsh = mode === "all" || mode === "ssh";
 
   useEffect(() => {
     inputRef.current?.focus();
-    invoke<string[]>("recent_dirs")
-      .then((d) => setDirs(d.slice(0, 60)))
-      .catch(() => setDirs([]));
   }, []);
+
+  // Pull project roots only when needed by the active mode.
+  useEffect(() => {
+    if (!showProjects || projectRoots.length === 0) {
+      setProjects([]);
+      return;
+    }
+    let cancelled = false;
+    settingsApi
+      .scanProjectRoots(projectRoots)
+      .then((list) => !cancelled && setProjects(list))
+      .catch(() => !cancelled && setProjects([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectRoots, showProjects]);
+
+  // Pull ssh hosts only when needed.
+  useEffect(() => {
+    if (!showSsh) {
+      setHosts([]);
+      return;
+    }
+    let cancelled = false;
+    sshApi
+      .hosts()
+      .then((list) => !cancelled && setHosts(list))
+      .catch(() => !cancelled && setHosts([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [showSsh]);
 
   const pretty = (p: string) =>
     home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 
   const items = useMemo<Item[]>(() => {
-    const sessionItems: Item[] = sessions.map((s) => ({
-      kind: "session",
-      id: s.id,
-      name: s.name,
-      sub: s.kind === "project" ? pretty(s.cwd) : "command session",
-      sk: s.kind,
-    }));
-    const open = new Set(sessions.map((s) => s.cwd).filter(Boolean));
-    const dirItems: Item[] = dirs
-      .filter((d) => !open.has(d))
-      .map((d) => ({ kind: "dir", path: d, name: basename(d), sub: pretty(d) }));
+    // Sessions, filtered by the mode's interest.
+    const wantKind = (k: SessionKind) =>
+      mode === "all" ||
+      (mode === "projects" && k === "project") ||
+      (mode === "ssh" && k === "ssh");
+    const sessionItems: Item[] = sessions
+      .filter((s) => wantKind(s.kind))
+      .map((s) => ({
+        kind: "session",
+        id: s.id,
+        name: s.name,
+        sub:
+          s.kind === "project"
+            ? pretty(s.cwd)
+            : s.kind === "ssh"
+              ? "ssh"
+              : "command",
+        sk: s.kind,
+      }));
+
+    // Project roots — skip ones already open as sessions.
+    const openCwds = new Set(sessions.map((s) => s.cwd).filter(Boolean));
+    const dirItems: Item[] = showProjects
+      ? projects
+          .filter((p) => !openCwds.has(p.path))
+          .map<Item>((p) => ({
+            kind: "dir",
+            path: p.path,
+            name: p.name,
+            sub: pretty(p.path),
+          }))
+      : [];
+
+    // SSH hosts — skip ones already open as sessions.
+    const openSshAliases = new Set(
+      sessions.filter((s) => s.kind === "ssh").map((s) => s.name),
+    );
+    const sshItems: Item[] = showSsh
+      ? hosts
+          .filter((h) => !openSshAliases.has(h.alias))
+          .map<Item>((h) => ({
+            kind: "ssh",
+            alias: h.alias,
+            name: h.alias,
+            sub: sshSubtitle(h),
+          }))
+      : [];
 
     const rank = (it: Item) => fuzzy(query, `${it.name} ${it.sub}`);
     const keep = (it: Item) => rank(it) >= 0;
@@ -71,13 +157,15 @@ export function SeshPicker() {
 
     const s = sessionItems.filter(keep);
     const d = dirItems.filter(keep);
+    const h = sshItems.filter(keep);
     if (query) {
       s.sort(order);
       d.sort(order);
+      h.sort(order);
     }
-    return [...s, ...d];
+    return [...s, ...d, ...h];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, dirs, query, home]);
+  }, [sessions, projects, hosts, query, home, mode]);
 
   useEffect(() => {
     setSel((s) => Math.min(s, Math.max(0, items.length - 1)));
@@ -86,7 +174,8 @@ export function SeshPicker() {
   const activate = (it: Item | undefined) => {
     if (!it) return;
     if (it.kind === "session") selectSession(it.id);
-    else createProjectSession(it.path);
+    else if (it.kind === "dir") createProjectSession(it.path);
+    else createSshSession(it.alias);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -104,7 +193,16 @@ export function SeshPicker() {
     }
   };
 
-  const firstDir = items.findIndex((it) => it.kind === "dir");
+  const firstDirIdx = items.findIndex((it) => it.kind === "dir");
+  const firstSshIdx = items.findIndex((it) => it.kind === "ssh");
+  const firstSessIdx = items.findIndex((it) => it.kind === "session");
+
+  const placeholder =
+    mode === "projects"
+      ? "find a project…"
+      : mode === "ssh"
+        ? "ssh — search hosts from ~/.ssh/config…"
+        : "jump to a session, project, or ssh host…";
 
   return (
     <div className="picker-backdrop" onMouseDown={closePicker}>
@@ -114,7 +212,7 @@ export function SeshPicker() {
           <input
             ref={inputRef}
             className="picker-input"
-            placeholder="jump to a session or open a project…"
+            placeholder={placeholder}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -127,25 +225,62 @@ export function SeshPicker() {
         </div>
 
         <div className="picker-list">
-          {items.length === 0 && <div className="picker-empty">no matches</div>}
+          {items.length === 0 && (
+            <div className="picker-empty">
+              {showProjects && projectRoots.length === 0 ? (
+                <>
+                  no project roots configured —{" "}
+                  <button
+                    className="picker-link"
+                    onClick={() => {
+                      closePicker();
+                      openSettings();
+                    }}
+                  >
+                    open settings
+                  </button>{" "}
+                  to add some (⌘,)
+                </>
+              ) : showSsh && hosts.length === 0 && mode === "ssh" ? (
+                "no hosts in ~/.ssh/config"
+              ) : (
+                "no matches"
+              )}
+            </div>
+          )}
           {items.map((it, i) => {
-            const label = i === 0 && it.kind === "session" ? "Open" : null;
-            const dirLabel = i === firstDir && firstDir >= 0 ? "Projects" : null;
+            const sessLabel = i === firstSessIdx && firstSessIdx >= 0 ? "Open" : null;
+            const dirLabel = i === firstDirIdx && firstDirIdx >= 0 ? "Projects" : null;
+            const sshLabel = i === firstSshIdx && firstSshIdx >= 0 ? "SSH" : null;
+            const key =
+              it.kind === "session"
+                ? `s-${it.id}`
+                : it.kind === "dir"
+                  ? `d-${it.path}`
+                  : `h-${it.alias}`;
             return (
-              <div key={it.kind === "session" ? it.id : it.path}>
-                {label && <div className="picker-group">{label}</div>}
+              <div key={key}>
+                {sessLabel && <div className="picker-group">{sessLabel}</div>}
                 {dirLabel && <div className="picker-group">{dirLabel}</div>}
+                {sshLabel && <div className="picker-group">{sshLabel}</div>}
                 <button
                   className={`picker-item${i === sel ? " sel" : ""}`}
-                  onMouseEnter={() => setSel(i)}
+                  onMouseEnter={() => {
+                    if (mouseActive.current) setSel(i);
+                  }}
                   onClick={() => activate(it)}
                 >
                   <span
                     className={`picker-icon ${
-                      it.kind === "dir" ? "project" : it.sk
+                      it.kind === "dir"
+                        ? "project"
+                        : it.kind === "ssh"
+                          ? "command"
+                          : it.sk
                     }`}
                   >
-                    {it.kind === "dir" || it.sk === "project" ? (
+                    {it.kind === "dir" ||
+                    (it.kind === "session" && it.sk === "project") ? (
                       <IconFolder size={14} />
                     ) : (
                       <IconCommand size={14} />

@@ -171,11 +171,25 @@ export const createLayoutSlice: Slice<LayoutSlice> = (set, get) => ({
     set((st) => {
       const s = st.sessions[st.activeSessionId];
       if (!s) return {};
-      if (s.windows.find((x) => x.id === s.activeWindowId)?.fixed) return {};
+      const closing = s.windows.find((x) => x.id === s.activeWindowId);
+      if (closing?.fixed) return {};
       if (s.windows.length <= 1) return {};
       const idx = s.windows.findIndex((x) => x.id === s.activeWindowId);
       const windows = s.windows.filter((x) => x.id !== s.activeWindowId);
-      const next = windows[Math.min(idx, windows.length - 1)];
+      // When the user closes a term tab (`term` or numeric-named) we want
+      // focus to land on ANOTHER term tab, not the adjacent files/git
+      // window. Otherwise their attention pops out of the terminal stack
+      // entirely on a single keystroke. Fall back to the index-neighbour
+      // rule only when no sibling term tab exists.
+      const isTermTab = (name: string) =>
+        name === "term" || /^\d+$/.test(name);
+      let next = windows[Math.min(idx, windows.length - 1)];
+      if (closing && isTermTab(closing.name)) {
+        const sibling =
+          windows.slice(0, idx).reverse().find((w) => isTermTab(w.name)) ??
+          windows.slice(idx).find((w) => isTermTab(w.name));
+        if (sibling) next = sibling;
+      }
       return {
         zoomedPaneId: null,
         sessions: {

@@ -1,8 +1,5 @@
-import {
-  HighlightStyle,
-  StreamLanguage,
-  syntaxHighlighting,
-} from "@codemirror/language";
+import { StreamLanguage } from "@codemirror/language";
+import { themeCompartmentExtension } from "../themes/bus";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
@@ -34,8 +31,6 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { tags as t } from "@lezer/highlight";
-import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 
 // Picks CodeMirror language support from a file name. Filename-based languages
 // (Makefile, Dockerfile) are matched first, then by extension.
@@ -116,69 +111,10 @@ export function languageFor(path: string): Extension[] {
   }
 }
 
-const auraTheme = EditorView.theme(
-  {
-    "&": { color: "#e7e5ef", backgroundColor: "transparent" },
-    ".cm-content": {
-      caretColor: "#a277ff",
-      fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", monospace',
-      fontSize: "13px",
-    },
-    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#a277ff" },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-      { backgroundColor: "#352f4f" },
-    ".cm-activeLine": { backgroundColor: "rgba(162,119,255,0.055)" },
-    ".cm-gutters": {
-      backgroundColor: "transparent",
-      color: "#48464f",
-      border: "none",
-    },
-    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "#a277ff" },
-    ".cm-scroller": {
-      fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", monospace',
-      lineHeight: "1.6",
-    },
-    ".cm-selectionMatch": { backgroundColor: "rgba(162,119,255,0.18)" },
-    ".cm-foldPlaceholder": {
-      backgroundColor: "#242130",
-      color: "#8b8898",
-      border: "none",
-    },
-    "&.cm-editor.cm-focused": { outline: "none" },
-  },
-  { dark: true },
-);
-
-const auraHighlight = HighlightStyle.define([
-  { tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword], color: "#a277ff" },
-  { tag: [t.string, t.special(t.string), t.regexp], color: "#61ffca" },
-  {
-    tag: [t.comment, t.lineComment, t.blockComment],
-    color: "#565461",
-    fontStyle: "italic",
-  },
-  { tag: [t.number, t.bool, t.atom, t.null], color: "#ffca85" },
-  {
-    tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName],
-    color: "#ff6ac1",
-  },
-  { tag: [t.typeName, t.className, t.namespace], color: "#ffca85" },
-  { tag: [t.variableName, t.definition(t.variableName)], color: "#e7e5ef" },
-  { tag: [t.propertyName], color: "#82d9ff" },
-  { tag: [t.tagName], color: "#ff6ac1" },
-  { tag: [t.attributeName], color: "#ffca85" },
-  { tag: [t.operator, t.punctuation, t.bracket, t.separator], color: "#8b8898" },
-  { tag: [t.heading], color: "#a277ff", fontWeight: "bold" },
-  { tag: [t.link, t.url], color: "#61ffca" },
-  { tag: [t.invalid], color: "#ff6767" },
-  { tag: [t.meta, t.processingInstruction], color: "#8b8898" },
-]);
-
-export const auraExtensions: Extension = [
-  auraTheme,
-  syntaxHighlighting(auraHighlight),
-  indentationMarkers({ thickness: 1, colors: { light: "#242130", dark: "#242130", activeLight: "#3a3550", activeDark: "#3a3550" } }),
-];
+// Theme-driven extensions are pulled from the theme bus so the active theme
+// can be reconfigured at runtime. The bus owns the compartment and the live
+// set of EditorViews.
+export const auraExtensions: Extension = themeCompartmentExtension();
 
 // ---- diff viewer ----------------------------------------------------------
 
@@ -228,10 +164,11 @@ const diffLineDecorations = ViewPlugin.fromClass(
 );
 
 // Read-only extensions for the git diff viewer: diff syntax + line tinting.
+// Theme also comes from the bus so diff views restyle when the user changes
+// theme just like normal editors.
 export const diffExtensions: Extension = [
   StreamLanguage.define(diffMode),
-  auraTheme,
-  syntaxHighlighting(auraHighlight),
+  themeCompartmentExtension(),
   diffLineDecorations,
   EditorView.editable.of(false),
   EditorState.readOnly.of(true),

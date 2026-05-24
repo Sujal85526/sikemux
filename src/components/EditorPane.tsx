@@ -11,6 +11,7 @@ import { lspPeek } from "../editor/lspPeek";
 import { fsapi } from "../api/fs";
 import { useWorkspace } from "../state/workspace";
 import { reportError } from "../state/toast";
+import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
@@ -123,11 +124,16 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     });
   }, [scheduleChange]);
 
-  // Mount CM once.
+  // Mount CM once. Register the view with the theme bus so it reconfigures
+  // its compartment whenever the active theme changes.
   useEffect(() => {
     const view = new EditorView({ parent: hostRef.current!, state: makeState("", "") });
     viewRef.current = view;
-    return () => view.destroy();
+    const unregister = registerView(view);
+    return () => {
+      unregister();
+      view.destroy();
+    };
   }, [makeState]);
 
   useEffect(() => {
@@ -141,6 +147,10 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     const st = fresh ?? states.current.get(path);
     if (!st) return;
     view.setState(st);
+    // Saved per-tab states carry whatever theme was active when they were
+    // last saved. Push the current theme onto the freshly-loaded state so
+    // tab switching never restores stale colors.
+    refreshViewTheme(view);
     currentRef.current = path;
     setActivePath(path);
     view.focus();
@@ -163,10 +173,15 @@ export function EditorPane({ cwd, active }: { cwd: string; active: boolean }) {
     }
   };
 
-  // Open requests from elsewhere (git review, LSP cross-file jump).
+  // Open requests from elsewhere (git review, Cmd-P, LSP cross-file jump).
+  // The store carries one global slot; every mounted EditorPane sees the
+  // bump, so we have to scope it — only the pane whose cwd actually contains
+  // the file should react. Otherwise opening foo.ts in project A would also
+  // pop the tab in project B's hidden editor.
   useEffect(() => {
     if (!openRequest) return;
     const { path, line, character } = openRequest;
+    if (cwd && !path.startsWith(`${cwd}/`) && path !== cwd) return;
     void (async () => {
       await openPath(path);
       if (line != null && viewRef.current) {

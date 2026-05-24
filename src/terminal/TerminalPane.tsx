@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import "@xterm/xterm/css/xterm.css";
-import { auraXterm } from "../theme";
+import { currentTheme, registerTerminal } from "../themes/bus";
 
 const FONT = '"JetBrainsMono Nerd Font", monospace';
 
@@ -35,12 +35,16 @@ export function TerminalPane({
         fontFamily: FONT,
         fontSize: 13,
         lineHeight: 1.2,
-        theme: auraXterm,
+        theme: currentTheme().terminal,
         cursorBlink: true,
         allowProposedApi: true,
+        // Lets the bus swap the terminal bg to transparent when the window
+        // is < 100% opacity, so cells don't paint over the see-through pane.
+        allowTransparency: true,
         macOptionIsMeta: true,
         scrollback: 10000,
       });
+      const unregisterTheme = registerTerminal(term);
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(host);
@@ -101,6 +105,7 @@ export function TerminalPane({
       if (active) term.focus();
 
       cleanup = () => {
+        unregisterTheme();
         ro.disconnect();
         dataSub.dispose();
         if (ptyId !== null) void invoke("pty_kill", { id: ptyId });

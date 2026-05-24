@@ -2,7 +2,7 @@
 
 export type SplitDir = "row" | "column"; // row = side-by-side, column = stacked
 
-export type PaneKind = "terminal" | "editor" | "git";
+export type PaneKind = "terminal" | "editor" | "git" | "aws";
 
 export interface PaneNode {
   type: "pane";
@@ -31,7 +31,7 @@ export interface WinTab {
   fixed?: boolean;
 }
 
-export type SessionKind = "project" | "command";
+export type SessionKind = "project" | "command" | "ssh" | "aws";
 
 export type AgentType = "claude" | "codex" | "hermes";
 export const AGENT_TYPES: AgentType[] = ["claude", "codex", "hermes"];
@@ -81,6 +81,17 @@ export interface AgentBookmark {
   cwd?: string;
 }
 
+export interface PersistedSettings {
+  projectRoots: string[];
+  themeId: string;
+  windowOpacity: number;
+  windowBlur?: number;
+  cloudBrowser?: string;
+  cloudBrowserShortcut?: string;
+  awsProfile?: string | null;
+  awsService?: string;
+}
+
 export interface WorkspaceSnapshot {
   version: number;
   sessions: Session[];
@@ -89,6 +100,7 @@ export interface WorkspaceSnapshot {
   agentBookmarks: AgentBookmark[];
   leftRailOpen: boolean;
   rightRailOpen: boolean;
+  settings?: PersistedSettings;
 }
 
 export interface Rect {

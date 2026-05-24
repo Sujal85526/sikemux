@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentSession } from "../api/agents";
 import { AGENT_TYPES, type AgentType } from "../state/types";
 import { useWorkspace } from "../state/workspace";
+import { useMouseActive } from "../hooks/useMouseActive";
 import { AgentIcon, IconSearch } from "./Icons";
 
 type Row = AgentSession & { type: AgentType };
@@ -43,6 +44,7 @@ export function AgentPalette() {
   const [rows, setRows] = useState<Row[]>([]);
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mouseActive = useMouseActive();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -127,7 +129,9 @@ export function AgentPalette() {
             <button
               key={`${r.type}-${r.id}`}
               className={`picker-item${i === sel ? " sel" : ""}`}
-              onMouseEnter={() => setSel(i)}
+              onMouseEnter={() => {
+                if (mouseActive.current) setSel(i);
+              }}
               onClick={() => activate(r)}
             >
               <span className={`picker-icon agent-glyph ${r.type}`}>

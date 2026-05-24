@@ -6,6 +6,7 @@ import { basicSetup } from "codemirror";
 import { git } from "../api/git";
 import { fsapi } from "../api/fs";
 import { auraExtensions, languageFor } from "../editor/codemirror";
+import { registerView } from "../themes/bus";
 
 // A headerless CodeMirror unified-merge view of one file. `autoHeight` makes
 // it grow to its content (for stacking in an accordion) rather than fill.
@@ -31,6 +32,7 @@ export function DiffEditor({
   useEffect(() => {
     let cancelled = false;
     let view: EditorView | null = null;
+    let unregister: (() => void) | null = null;
     const absPath = `${repo}/${path}`;
 
     const save = (v: EditorView): boolean => {
@@ -85,10 +87,12 @@ export function DiffEditor({
         parent: hostRef.current,
         state: EditorState.create({ doc: head, extensions: exts }),
       });
+      unregister = registerView(view);
     })();
 
     return () => {
       cancelled = true;
+      unregister?.();
       view?.destroy();
     };
   }, [repo, path, baseRev, headRev, editable, autoHeight, onSaved]);

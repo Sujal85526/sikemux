@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { Session, SessionKind } from "../state/types";
 import { useWorkspace } from "../state/workspace";
 import {
+  AgentIcon,
   IconAgent,
   IconChevron,
   IconClose,
@@ -14,7 +15,78 @@ import {
 
 function kindIcon(kind: SessionKind): ReactNode {
   if (kind === "project") return <IconFolder size={13} />;
+  // SSH and Command both use the terminal-arrow icon — fine, the group
+  // label in the rail keeps them visually distinct without a custom icon.
   return <IconCommand size={13} />;
+}
+
+// Term tab = the "term" window itself plus any number-named windows that
+// Alt+N spawns. They're shown as tabs at the top of the stage; in the rail
+// they collapse into the single "term" row with a count badge.
+function isTermTab(name: string): boolean {
+  return name === "term" || /^\d+$/.test(name);
+}
+
+// Total number of terminal tabs in a session (each tab is a Window).
+function termTabCount(s: Session): number {
+  return s.windows.filter((w) => isTermTab(w.name)).length;
+}
+
+const STACK_MAX = 4;
+
+// Tiny stacked badge — overlapping circles, capped at STACK_MAX. Used to
+// surface "this session has 3 terminals + 2 agents" without numbers.
+function CountStack({
+  count,
+  kind,
+  agentKinds,
+  title,
+}: {
+  count: number;
+  kind: "term" | "agent";
+  agentKinds?: string[]; // for agents: which type per circle
+  title: string;
+}) {
+  if (count === 0) return null;
+  const visible = Math.min(count, STACK_MAX);
+  return (
+    <span
+      className={`sess-stack stack-${kind}`}
+      title={title}
+      data-count={count}
+    >
+      {Array.from({ length: visible }).map((_, i) => {
+        const overflowing = count > STACK_MAX;
+        const isMore = overflowing && i === visible - 1;
+        // When overflowing we show STACK_MAX-1 real icons and one count
+        // chip, so the overflow text is the remaining hidden count.
+        const overflowText = isMore ? `+${count - (STACK_MAX - 1)}` : null;
+        const agentType = agentKinds?.[i] as
+          | "claude"
+          | "codex"
+          | "hermes"
+          | undefined;
+        return (
+          <span
+            key={i}
+            className={`stack-dot${isMore ? " more" : ""}${
+              kind === "agent" && agentType && !isMore
+                ? ` agent-glyph ${agentType}`
+                : ""
+            }`}
+          >
+            {overflowText ? (
+              <span className="stack-more-num">{overflowText}</span>
+            ) : kind === "term" ? (
+              <IconCommand size={13} />
+            ) : (
+              <AgentIcon type={agentType ?? "claude"} size={20} />
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 export function SideRail() {
@@ -41,6 +113,8 @@ export function SideRail() {
 
   const pinned = sessions.filter((s) => s.pinned);
   const projects = sessions.filter((s) => !s.pinned && s.kind === "project");
+  const sshs = sessions.filter((s) => !s.pinned && s.kind === "ssh");
+  const cloud = sessions.filter((s) => !s.pinned && s.kind === "aws");
   const commands = sessions.filter((s) => !s.pinned && s.kind === "command");
 
   // Window/agent click in any project row — jumps to that project first.
@@ -102,26 +176,49 @@ export function SideRail() {
         </button>
         {open && (
           <div className="win-list">
-            {s.windows.map((w, i) => {
-              const winActive =
-                active && s.view === "windows" && w.id === s.activeWindowId;
-              return (
-                <button
-                  key={w.id}
-                  className={`win-row${winActive ? " active" : ""}`}
-                  onClick={() => jumpToWindow(s.id, w.id)}
-                >
-                  <span className="win-rail">
-                    <span className="win-tick" />
-                  </span>
-                  <span className="win-icon">
-                    <WindowIcon name={w.name} size={13} />
-                  </span>
-                  <span className="win-name">{w.name}</span>
-                  <span className="win-index">{i + 1}</span>
-                </button>
+            {(() => {
+              // Hide the auto-numbered term tabs from the rail; the "term"
+              // row's stack badge shows the total count instead.
+              const railWindows = s.windows.filter(
+                (w) => !(/^\d+$/.test(w.name)),
               );
-            })}
+              const tabCount = termTabCount(s);
+              return railWindows.map((w, i) => {
+                const winActive =
+                  active && s.view === "windows" &&
+                  (w.id === s.activeWindowId ||
+                    // Treat "term" as active when any term-tab is active.
+                    (w.name === "term" &&
+                      isTermTab(
+                        s.windows.find((x) => x.id === s.activeWindowId)?.name ?? "",
+                      )));
+                const isTerm = w.name === "term";
+                return (
+                  <button
+                    key={w.id}
+                    className={`win-row${winActive ? " active" : ""}`}
+                    onClick={() => jumpToWindow(s.id, w.id)}
+                  >
+                    <span className="win-rail">
+                      <span className="win-tick" />
+                    </span>
+                    <span className="win-icon">
+                      <WindowIcon name={w.name} size={13} />
+                    </span>
+                    <span className="win-name">{w.name}</span>
+                    {isTerm && tabCount > 0 ? (
+                      <CountStack
+                        count={tabCount}
+                        kind="term"
+                        title={`${tabCount} terminal tab${tabCount === 1 ? "" : "s"}`}
+                      />
+                    ) : (
+                      <span className="win-index">{i + 1}</span>
+                    )}
+                  </button>
+                );
+              });
+            })()}
             <button
               className={`win-row${
                 active && s.view === "agent" ? " active" : ""
@@ -135,7 +232,16 @@ export function SideRail() {
                 <IconAgent size={13} />
               </span>
               <span className="win-name">agents</span>
-              <span className="win-index">{s.agents.length}</span>
+              {s.agents.length > 0 ? (
+                <CountStack
+                  count={s.agents.length}
+                  kind="agent"
+                  agentKinds={s.agents.map((a) => a.type)}
+                  title={`${s.agents.length} agent${s.agents.length === 1 ? "" : "s"}`}
+                />
+              ) : (
+                <span className="win-index">0</span>
+              )}
             </button>
           </div>
         )}
@@ -157,7 +263,18 @@ export function SideRail() {
     <aside className="side-rail">
       <div className="rail-head">
         <span className="rail-label">Sessions</span>
-        <button className="rail-add" onClick={openPicker} title="Open — M-s">
+        <button
+          className="rail-add"
+          onClick={() => openPicker("ssh")}
+          title="SSH host — M-S"
+        >
+          <IconCommand size={13} />
+        </button>
+        <button
+          className="rail-add"
+          onClick={() => openPicker("all")}
+          title="Open — M-s"
+        >
           <IconPlus size={13} />
         </button>
       </div>
@@ -165,10 +282,12 @@ export function SideRail() {
       <div className="rail-scroll">
         <Group label="Superpin" list={pinned} />
         <Group label="Projects" list={projects} />
+        <Group label="SSH" list={sshs} />
+        <Group label="Cloud" list={cloud} />
         <Group label="Command" list={commands} />
       </div>
 
-      <button className="rail-foot" onClick={openPicker}>
+      <button className="rail-foot" onClick={() => openPicker("all")}>
         <span className="kbd">M-s</span>
         <span>open or create a session</span>
       </button>
