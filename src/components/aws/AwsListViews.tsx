@@ -300,31 +300,28 @@ export function AwsBillingView({ profile }: { profile: string }) {
               {formatAmount(currentSplit.gross, current.unit)}
             </span>
           </div>
-          {Math.abs(currentSplit.credits) > 0.005 && (
-            <div className="aws-billing-credits-line">
-              <span className="aws-billing-credits-label">credits</span>
-              <span className="aws-billing-credits-value">
-                {formatAmount(currentSplit.credits, current.unit)}
-              </span>
-              <span className="aws-billing-net-label">net</span>
-              <span className="aws-billing-net-value">
-                {formatAmount(currentSplit.net, current.unit)}
-              </span>
-            </div>
-          )}
         </div>
         <div className="aws-billing-hero-stats">
+          {Math.abs(currentSplit.credits) > 0.005 && (
+            <>
+              <div className="aws-billing-stat credit">
+                <div className="aws-billing-stat-label">credits</div>
+                <div className="aws-billing-stat-value">
+                  {formatAmount(currentSplit.credits, current.unit)}
+                </div>
+              </div>
+              <div className="aws-billing-stat">
+                <div className="aws-billing-stat-label">net</div>
+                <div className="aws-billing-stat-value">
+                  {formatAmount(currentSplit.net, current.unit)}
+                </div>
+              </div>
+            </>
+          )}
           <div className="aws-billing-stat">
             <div className="aws-billing-stat-label">{months.length}mo avg</div>
             <div className="aws-billing-stat-value">
               {formatAmount(avg, current.unit)}
-            </div>
-          </div>
-          <div className="aws-billing-stat">
-            <div className="aws-billing-stat-label">range</div>
-            <div className="aws-billing-stat-value">
-              {formatAmount(Math.min(...grosses), current.unit)} →{" "}
-              {formatAmount(maxGross, current.unit)}
             </div>
           </div>
         </div>
@@ -378,38 +375,48 @@ export function AwsBillingView({ profile }: { profile: string }) {
                 </span>
               </button>
               {isOpen && (
-                <div className="aws-bill-services">
-                  {/* Positive charges */}
-                  {m.by_service
-                    .filter((s) => Number(s.amount) > 0.005)
-                    .map((s) => (
-                      <div className="aws-bill-svc" key={`c-${s.service}`}>
-                        <span className="aws-bill-svc-name">{s.service}</span>
-                        <span className="aws-bill-svc-bar">
-                          <span
-                            className="aws-bill-svc-bar-fill"
-                            style={{
-                              width: `${
-                                (Number(s.amount) / Math.max(split.gross, 1)) *
-                                100
-                              }%`,
-                            }}
-                          />
-                        </span>
-                        <span className="aws-bill-svc-amount">
-                          {formatAmount(s.amount, s.unit)}
-                        </span>
+                <div
+                  className={`aws-bill-services${hasCredits ? " split" : ""}`}
+                >
+                  {/* Left column — positive charges */}
+                  <div className="aws-bill-col">
+                    <div className="aws-bill-col-head">Charges</div>
+                    {m.by_service
+                      .filter((s) => Number(s.amount) > 0.005)
+                      .map((s) => (
+                        <div className="aws-bill-svc" key={`c-${s.service}`}>
+                          <span className="aws-bill-svc-name">{s.service}</span>
+                          <span className="aws-bill-svc-bar">
+                            <span
+                              className="aws-bill-svc-bar-fill"
+                              style={{
+                                width: `${
+                                  (Number(s.amount) /
+                                    Math.max(split.gross, 1)) *
+                                  100
+                                }%`,
+                              }}
+                            />
+                          </span>
+                          <span className="aws-bill-svc-amount">
+                            {formatAmount(s.amount, s.unit)}
+                          </span>
+                        </div>
+                      ))}
+                    {m.by_service.length === 0 && (
+                      <div className="aws-bill-empty">
+                        no charges this month
                       </div>
-                    ))}
-                  {/* Credits / refunds — shown separately with their own
-                      header so the user knows these aren't normal charges. */}
+                    )}
+                  </div>
+
+                  {/* Right column — credits & refunds (only when present) */}
                   {hasCredits && (
-                    <>
-                      <div className="aws-bill-svc-section">
-                        Credits &amp; refunds
-                      </div>
+                    <div className="aws-bill-col">
+                      <div className="aws-bill-col-head">Credits &amp; refunds</div>
                       {m.by_service
                         .filter((s) => Number(s.amount) < -0.005)
+                        .sort((a, b) => Number(a.amount) - Number(b.amount))
                         .map((s) => (
                           <div
                             className="aws-bill-svc credit"
@@ -443,10 +450,7 @@ export function AwsBillingView({ profile }: { profile: string }) {
                           {formatAmount(split.net, m.unit)}
                         </span>
                       </div>
-                    </>
-                  )}
-                  {m.by_service.length === 0 && (
-                    <div className="aws-bill-empty">no charges this month</div>
+                    </div>
                   )}
                 </div>
               )}

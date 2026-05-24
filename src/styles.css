@@ -400,7 +400,7 @@ button {
   gap: 8px;
   width: 100%;
   height: 30px;
-  padding: 0 8px 0 4px;
+  padding: 0 8px;
   border-radius: 0;
   color: var(--ink-dim);
   position: relative;
@@ -412,14 +412,19 @@ button {
 .sess-row.active {
   color: var(--ink);
 }
-.sess-row.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  background: var(--acc);
+/* Project rows: the folder icon doubles as the expand/collapse toggle.
+   .toggle adds a hit area + hover cue without affecting non-project rows. */
+.sess-icon.toggle {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  margin: 0 -2px;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s;
+}
+.sess-icon.toggle:hover {
+  color: var(--acc);
 }
 
 .sess-icon {
@@ -452,7 +457,9 @@ button {
 .win-list::before {
   content: "";
   position: absolute;
-  left: 19px;
+  /* aligned with the folder-icon centre on the sess-row above
+     (8px padding-left + ~6.5px = ~14.5) */
+  left: 14px;
   top: 0;
   bottom: 4px;
   width: 1px;
@@ -465,7 +472,8 @@ button {
   gap: 8px;
   width: 100%;
   height: 24px;
-  padding: 0 10px 0 32px;
+  /* indent so the win-icon sits to the right of the parent guide line */
+  padding: 0 10px 0 28px;
   border-radius: 0;
   color: var(--ink-faint);
   transition: background 0.12s, color 0.12s;
@@ -644,14 +652,16 @@ button {
   position: absolute;
 }
 
-/* Right + bottom borders only — adjacent panes and the topbar/rail frame
-   share a single hairline instead of doubling up. */
+/* Pane owns no edge borders. Outer frame is drawn by the adjacent chrome
+   (top-bar's border-bottom, side-rail's border-right, context-/agent-rail
+   border-left). Between-pane separators are drawn by the always-on hairline
+   on .divider-row / .divider-column below — that way the edge between two
+   panes is a single 1px line instead of (pane border-right) + (rail
+   border-left) stacking to 2px and creating a "+" artifact at corners. */
 .pane {
   position: absolute;
   inset: 0;
   border-radius: 0;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
   /* color-mix so the active --window-opacity actually shows the desktop
      through the pane background (terminal cells stay opaque per xterm bg). */
   background: color-mix(
@@ -688,31 +698,36 @@ button {
   transform: translateY(-50%);
   cursor: row-resize;
 }
+/* Always-on 1px hairline (--line); on hover the line thickens and tints
+   --acc for resize affordance. Replaces the pane's old border-right /
+   border-bottom for between-pane separation. */
 .divider::after {
   content: "";
   position: absolute;
-  background: var(--acc);
-  opacity: 0;
-  transition: opacity 0.12s;
+  background: var(--line);
+  transition: background 0.12s, width 0.12s, height 0.12s;
 }
 .divider-row::after {
   left: 50%;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
   transform: translateX(-50%);
-  border-radius: 0;
 }
 .divider-column::after {
   top: 50%;
-  left: 8px;
-  right: 8px;
-  height: 2px;
+  left: 0;
+  right: 0;
+  height: 1px;
   transform: translateY(-50%);
-  border-radius: 0;
 }
-.divider:hover::after {
-  opacity: 0.55;
+.divider-row:hover::after {
+  width: 2px;
+  background: var(--acc);
+}
+.divider-column:hover::after {
+  height: 2px;
+  background: var(--acc);
 }
 
 /* ============================================================
@@ -786,7 +801,7 @@ button {
 
 .picker-list {
   overflow-y: auto;
-  padding: 8px;
+  padding: 0px;
 }
 .picker-group {
   padding: 10px 10px 6px;
@@ -796,7 +811,7 @@ button {
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 38px;
+  height: 30px;
   padding: 0 12px;
   border-radius: 0;
   color: var(--ink-dim);
@@ -1540,6 +1555,7 @@ button {
     var(--rail) calc(var(--window-opacity, 1) * 100%),
     transparent
   );
+  border-left: 1px solid var(--line);
   overflow: hidden;
   animation: slideR 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
 }
@@ -2002,27 +2018,6 @@ button {
   opacity: 0.7;
 }
 
-/* session-row accordion chevron — generous hit area */
-.sess-chev {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-left: -4px;
-  margin-right: 2px;
-  color: var(--ink-faint);
-  transition: transform 0.15s ease, color 0.12s;
-}
-.sess-chev:hover {
-  color: var(--ink);
-}
-.sess-chev.open {
-  transform: rotate(90deg);
-}
-.sess-chev-empty {
-  pointer-events: none;
-}
 
 /* per-filetype Nerd Font glyphs in the editor file tree */
 .file-glyph {
@@ -3205,10 +3200,25 @@ button {
 }
 
 .aws-bill-services {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
   padding: 4px 24px 18px 60px;
   background: transparent;
+}
+.aws-bill-services.split {
+  grid-template-columns: 1fr 1fr;
+}
+.aws-bill-col { display: flex; flex-direction: column; min-width: 0; }
+.aws-bill-col-head {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 0 0 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
 .aws-bill-empty {
   padding: 14px 0;
@@ -3218,9 +3228,9 @@ button {
 }
 .aws-bill-svc {
   display: grid;
-  grid-template-columns: 1fr 140px 100px;
+  grid-template-columns: 1fr 90px 86px;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   padding: 6px 0;
   font-size: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
@@ -3574,45 +3584,9 @@ button {
 }
 .aws-logs-line:first-letter { color: var(--ink-dim); }
 
-/* ---- AWS billing: credits / net row + sub-sections ------------------- */
-.aws-billing-credits-line {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-top: 10px;
-  font-size: 11px;
-}
-.aws-billing-credits-label,
-.aws-billing-net-label {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-.aws-billing-credits-value {
-  font-variant-numeric: tabular-nums;
-  color: #61ffca;
-  font-size: 13px;
-  letter-spacing: -0.01em;
-}
-.aws-billing-net-label { margin-left: 10px; }
-.aws-billing-net-value {
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  font-size: 13px;
-}
+/* ---- AWS billing: credits / net columns + sub-sections --------------- */
+.aws-billing-stat.credit .aws-billing-stat-value { color: #61ffca; }
 
-.aws-bill-svc-section {
-  margin: 10px 0 4px;
-  padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
 .aws-bill-svc.credit .aws-bill-svc-amount { color: #61ffca; }
 .aws-bill-svc-bar-fill.credit { background: #61ffca; opacity: 0.55; }
 .aws-bill-svc.total {

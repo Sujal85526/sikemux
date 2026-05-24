@@ -843,9 +843,13 @@ pub async fn aws_billing_months(
             "MONTHLY",
             "--metrics",
             "UnblendedCost",
+            // --group-by takes a *list* of dimensions space-separated
+            // under one flag; repeating "--group-by" makes the CLI keep
+            // only the last value (which is why service names rendered
+            // as "?" — the SERVICE key landed at position 0 with nothing
+            // at position 1).
             "--group-by",
             "Type=DIMENSION,Key=RECORD_TYPE",
-            "--group-by",
             "Type=DIMENSION,Key=SERVICE",
             "--output",
             "json",

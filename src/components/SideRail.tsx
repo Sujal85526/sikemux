@@ -4,17 +4,18 @@ import { useWorkspace } from "../state/workspace";
 import {
   AgentIcon,
   IconAgent,
-  IconChevron,
   IconClose,
   IconCommand,
   IconFolder,
+  IconFolderOpen,
   IconPin,
   IconPlus,
   WindowIcon,
 } from "./Icons";
 
-function kindIcon(kind: SessionKind): ReactNode {
-  if (kind === "project") return <IconFolder size={13} />;
+function kindIcon(kind: SessionKind, open: boolean): ReactNode {
+  if (kind === "project")
+    return open ? <IconFolderOpen size={13} /> : <IconFolder size={13} />;
   // SSH and Command both use the terminal-arrow icon — fine, the group
   // label in the rail keeps them visually distinct without a custom icon.
   return <IconCommand size={13} />;
@@ -137,21 +138,20 @@ export function SideRail() {
           className={`sess-row${active ? " active" : ""}`}
           onClick={() => selectSession(s.id)}
         >
-          {isProject ? (
-            <span
-              className={`sess-chev${open ? " open" : ""}`}
-              title={open ? "Collapse" : "Expand"}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleCollapse(s.id);
-              }}
-            >
-              <IconChevron size={11} />
-            </span>
-          ) : (
-            <span className="sess-chev sess-chev-empty" />
-          )}
-          <span className={`sess-icon ${s.kind}`}>{kindIcon(s.kind)}</span>
+          <span
+            className={`sess-icon ${s.kind}${isProject ? " toggle" : ""}`}
+            title={isProject ? (open ? "Collapse" : "Expand") : undefined}
+            onClick={
+              isProject
+                ? (e) => {
+                    e.stopPropagation();
+                    toggleCollapse(s.id);
+                  }
+                : undefined
+            }
+          >
+            {kindIcon(s.kind, open)}
+          </span>
           <span className="sess-name">{s.name}</span>
           <span
             className={`sess-pin${s.pinned ? " on" : ""}`}
