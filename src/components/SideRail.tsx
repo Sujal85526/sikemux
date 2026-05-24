@@ -181,9 +181,16 @@ export function SideRail() {
               const railWindows = sessionWindows.filter(
                 (w) => !(w.role === "term" && /^\d+$/.test(w.name)),
               );
-              return railWindows.map((w, i) => {
-                const activeRole =
-                  sessionWindows.find((x) => x.id === s.activeWindowId)?.role;
+
+              // Render order: everything-except-search, then agents row,
+              // then search last. Matches Alt+1/2/3 = files/term/git,
+              // Alt+4 = agents, Alt+5 = search.
+              const nonSearch = railWindows.filter((w) => w.role !== "search");
+              const searchWin = railWindows.find((w) => w.role === "search");
+              const activeRole =
+                sessionWindows.find((x) => x.id === s.activeWindowId)?.role;
+
+              const winRow = (w: Window, index: number) => {
                 const winActive =
                   active && s.view === "windows" &&
                   (w.id === s.activeWindowId ||
@@ -209,36 +216,43 @@ export function SideRail() {
                         title={`${tabCount} terminal tab${tabCount === 1 ? "" : "s"}`}
                       />
                     ) : (
-                      <span className="win-index">{i + 1}</span>
+                      <span className="win-index">{index}</span>
                     )}
                   </button>
                 );
-              });
+              };
+
+              return (
+                <>
+                  {nonSearch.map((w, i) => winRow(w, i + 1))}
+                  <button
+                    className={`win-row${
+                      active && s.view === "agent" ? " active" : ""
+                    }`}
+                    onClick={() => jumpToAgents(s.id)}
+                  >
+                    <span className="win-rail">
+                      <span className="win-tick" />
+                    </span>
+                    <span className="win-icon">
+                      <IconAgent size={13} />
+                    </span>
+                    <span className="win-name">agents</span>
+                    {agents.length > 0 ? (
+                      <CountStack
+                        count={agents.length}
+                        kind="agent"
+                        agentKinds={agents.map((a) => a.type)}
+                        title={`${agents.length} agent${agents.length === 1 ? "" : "s"}`}
+                      />
+                    ) : (
+                      <span className="win-index">{nonSearch.length + 1}</span>
+                    )}
+                  </button>
+                  {searchWin && winRow(searchWin, nonSearch.length + 2)}
+                </>
+              );
             })()}
-            <button
-              className={`win-row${
-                active && s.view === "agent" ? " active" : ""
-              }`}
-              onClick={() => jumpToAgents(s.id)}
-            >
-              <span className="win-rail">
-                <span className="win-tick" />
-              </span>
-              <span className="win-icon">
-                <IconAgent size={13} />
-              </span>
-              <span className="win-name">agents</span>
-              {agents.length > 0 ? (
-                <CountStack
-                  count={agents.length}
-                  kind="agent"
-                  agentKinds={agents.map((a) => a.type)}
-                  title={`${agents.length} agent${agents.length === 1 ? "" : "s"}`}
-                />
-              ) : (
-                <span className="win-index">0</span>
-              )}
-            </button>
           </div>
         )}
       </div>

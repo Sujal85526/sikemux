@@ -126,7 +126,14 @@ export function useKeymap(): void {
           break;
         default:
           if (/^Digit[1-9]$/.test(e.code)) {
-            cmd.selectWindowByIndex(Number(e.code.slice(5)) - 1);
+            // Side-rail order: files=1, term=2, git=3, agents=4, search=5.
+            // The windows array in state is still [files, term, git, search]
+            // (don't reorder persisted state), so we map the digit through
+            // the rail-visible order instead of straight to the array.
+            const n = Number(e.code.slice(5));
+            if (n === 4) cmd.focusAgents();
+            else if (n === 5) cmd.selectWindowByName("search");
+            else cmd.selectWindowByIndex(n - 1);
           } else {
             handled = false;
           }

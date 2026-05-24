@@ -5,6 +5,67 @@ use serde::Serialize;
 
 use crate::state::state_path;
 
+/// macOS GUI apps launched from Finder/Dock inherit launchd's minimal PATH
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), missing `~/.local/bin`,
+/// `/opt/homebrew/bin`, `~/.cargo/bin`, `~/.opencode/bin`, etc. that the
+/// user actually has tools in. `make dev` works because the dev binary is
+/// launched from a terminal that already has the right PATH.
+///
+/// Fix: at startup, exec the user's login shell with `-l -c 'printf %s
+/// "$PATH"'` to extract the real PATH, then set it on our own process so
+/// every `Command::new(...)` (hermes, rnd, aws, claude, …) inherits it.
+/// Standard "fix-path" pattern Electron + Tauri apps have used for years.
+pub fn fix_path_from_login_shell() {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+
+    // Login shell only (`-l`): sources .zprofile / .bash_profile, captures
+    // the user's exported PATH without zsh interactive's terminal-CWD OSC
+    // escapes (which would contaminate the first PATH entry).
+    let mut shell_path = String::new();
+    if let Ok(o) = Command::new(&shell)
+        .args(["-l", "-c", "printf %s \"$PATH\""])
+        .output()
+    {
+        if o.status.success() {
+            shell_path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        }
+    }
+
+    // Always-union: even if the shell extraction succeeded, append the
+    // common user-local bin dirs in case they live in ~/.zshrc (which
+    // login shells don't source) or in non-zsh setups. Idempotent —
+    // duplicates are harmless to PATH lookup.
+    let home = std::env::var("HOME").unwrap_or_default();
+    let extra = [
+        format!("{home}/.local/bin"),
+        format!("{home}/.cargo/bin"),
+        format!("{home}/.opencode/bin"),
+        format!("{home}/.config/shell/bin"),
+        format!("{home}/go/bin"),
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+    ];
+    let mut parts: Vec<&str> = shell_path
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .collect();
+    for d in &extra {
+        if !parts.iter().any(|p| *p == d.as_str()) {
+            parts.push(d.as_str());
+        }
+    }
+    // Fall back to the launchd minimal set if shell extraction failed AND
+    // none of the extras hit — guarantees `/usr/bin` etc. stay reachable.
+    if parts.is_empty() {
+        parts = vec!["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+    }
+    let new_path = parts.join(":");
+    // SAFETY: called once at startup before any threads spawn — env::set_var
+    // is unsound under multi-threaded mutation but we're single-threaded.
+    unsafe { std::env::set_var("PATH", new_path) };
+}
+
 #[tauri::command]
 pub fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_default()

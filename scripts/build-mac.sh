@@ -18,7 +18,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd -P)"
-APP_NAME="sikemux"
+# APP_NAME = bundle filename — read from tauri.conf.json so it tracks
+# productName automatically (currently "Sikemux"). ICON_ASSET = name of
+# the asset inside Assets.car, set by icons.sh's `--app-icon` flag.
+# These are separate identifiers: CFBundleIconName must equal ICON_ASSET
+# regardless of how the app bundle is named.
+APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+ICON_ASSET="sikemux"
 
 # ---- 1. ensure icons are current ----
 "$ROOT/scripts/icons.sh"
@@ -48,11 +54,11 @@ fi
 
 PLIST="$APP_PATH/Contents/Info.plist"
 if /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$PLIST" >/dev/null 2>&1; then
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $APP_NAME" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_ASSET" "$PLIST"
 else
-  /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string $APP_NAME" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string $ICON_ASSET" "$PLIST"
 fi
-echo "  ✓ CFBundleIconName=$APP_NAME injected"
+echo "  ✓ CFBundleIconName=$ICON_ASSET injected"
 
 echo ""
 echo "Liquid Glass icon installed."

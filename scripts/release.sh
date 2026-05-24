@@ -73,9 +73,10 @@ echo "→ Building v$VERSION"
 "$ROOT/scripts/build-mac.sh"
 
 BUNDLE="src-tauri/target/release/bundle"
+APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
 DMG="$(/usr/bin/find "$BUNDLE/dmg" -name "*.dmg" -newer "$ROOT/package.json" 2>/dev/null | head -1)"
-TAR="$BUNDLE/macos/sikemux.app.tar.gz"
-SIG="$BUNDLE/macos/sikemux.app.tar.gz.sig"
+TAR="$BUNDLE/macos/${APP_NAME}.app.tar.gz"
+SIG="$BUNDLE/macos/${APP_NAME}.app.tar.gz.sig"
 
 for f in "$DMG" "$TAR" "$SIG"; do
   if [[ -z "$f" || ! -f "$f" ]]; then
@@ -91,7 +92,7 @@ done
 MANIFEST="$ROOT/latest.json"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SIG_CONTENT="$(cat "$SIG")"
-TAR_URL="https://github.com/nodelike/sikemux/releases/download/v$VERSION/sikemux.app.tar.gz"
+TAR_URL="https://github.com/nodelike/sikemux/releases/download/v$VERSION/${APP_NAME}.app.tar.gz"
 
 # We only ship darwin-aarch64 for now (Apple Silicon). When colleagues
 # need Intel, switch build-mac.sh to --target universal-apple-darwin and

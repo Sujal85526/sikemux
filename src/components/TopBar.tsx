@@ -175,7 +175,7 @@ function VersionChip() {
   }, []);
   if (!version) return null;
   return (
-    <span className="tb-version" title={`sikemux ${version}`}>
+    <span className="tb-version" title={`Sikemux ${version}`}>
       v{version}
     </span>
   );
@@ -322,7 +322,7 @@ export function TopBar() {
           <Logo size={17} />
         </span>
         <span className="brand-name">
-          sike<span className="brand-dim">mux</span>
+          Sike<span className="brand-dim">mux</span>
         </span>
         <VersionChip />
         <UpdateChip />

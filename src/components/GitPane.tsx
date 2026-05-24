@@ -202,8 +202,14 @@ export function GitPane({
       else if (k === "k" || k === "ArrowUp") moveSel(-1);
       else if (k === "r") void overview.refresh();
       else if (panel === "files" && k === " ") toggleStage();
-      else if (panel === "files" && k === "a")
-        void run("", () => git.stageAll(repo));
+      else if (panel === "files" && k === "a") {
+        // Lazygit-style toggle: if anything is unstaged, stage everything;
+        // otherwise everything is already staged → unstage everything.
+        const anyUnstaged = files.some(hasUnstaged);
+        void run("", () =>
+          anyUnstaged ? git.stageAll(repo) : git.unstageAll(repo),
+        );
+      }
       else if (panel === "files" && k === "c") setCommitMode(true);
       else if (panel === "files" && k === "C") void aiCommit();
       else if (k === "P")

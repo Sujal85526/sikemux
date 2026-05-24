@@ -365,6 +365,15 @@ pub async fn git_stage_all(repo: String) -> Result<(), String> {
     idx.write().map_err(|e| e.message().to_string())
 }
 
+/// Reset every staged change back to HEAD — lazygit-style "unstage all".
+/// Used by the `a` toggle in the files panel when everything is already
+/// staged. Shells out to `git reset` because libgit2's mixed-reset path
+/// is fiddlier than spawning the canonical command.
+#[tauri::command]
+pub async fn git_unstage_all(repo: String) -> Result<(), String> {
+    git_ok(&repo, &["reset", "HEAD", "--"]).map(|_| ())
+}
+
 // ---- show / file_at -------------------------------------------------------
 
 fn revparse_commit<'a>(
@@ -577,7 +586,16 @@ fn clean_commit_message(raw: &str) -> Result<String, String> {
 
 fn run_hermes(prompt: &str) -> Result<String, String> {
     let args = ["chat", "-Q", "-m", "openai/gpt-5.5", "-t", "safe", "-q", prompt];
-    for bin in ["hermes", "/opt/homebrew/bin/hermes"] {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates = [
+        "hermes".to_string(),
+        format!("{home}/.local/bin/hermes"),
+        format!("{home}/.cargo/bin/hermes"),
+        format!("{home}/.opencode/bin/hermes"),
+        "/opt/homebrew/bin/hermes".to_string(),
+        "/usr/local/bin/hermes".to_string(),
+    ];
+    for bin in &candidates {
         match Command::new(bin).args(args).output() {
             Ok(out) if out.status.success() => {
                 return Ok(String::from_utf8_lossy(&out.stdout).into_owned());

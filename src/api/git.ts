@@ -53,6 +53,7 @@ export const git = {
   unstage: (repo: string, path: string) =>
     invoke<void>("git_unstage", { repo, path }),
   stageAll: (repo: string) => invoke<void>("git_stage_all", { repo }),
+  unstageAll: (repo: string) => invoke<void>("git_unstage_all", { repo }),
   branches: (repo: string) => invoke<GitBranch[]>("git_branches", { repo }),
   checkout: (repo: string, branch: string) =>
     invoke<void>("git_checkout", { repo, branch }),

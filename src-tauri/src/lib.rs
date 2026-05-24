@@ -22,6 +22,12 @@ use pty::PtyManager;
 use rundeck::{RundeckLogsManager, RundeckWatchManager};
 
 pub fn run() {
+    // Inherit the user's shell PATH so spawned subprocesses (hermes for
+    // AI commits, rnd CLI, aws CLI, claude, etc.) resolve the same way
+    // they do in `make dev`. macOS GUI launches otherwise get a minimal
+    // PATH that's missing ~/.local/bin, /opt/homebrew/bin, etc.
+    system::fix_path_from_login_shell();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -69,6 +75,7 @@ pub fn run() {
             git::git_stage,
             git::git_unstage,
             git::git_stage_all,
+            git::git_unstage_all,
             git::git_branches,
             git::git_checkout,
             git::git_log,
