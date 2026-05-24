@@ -35,13 +35,40 @@ function Svg({
   );
 }
 
-// The wordmark: a square carved into four panes — a multiplexer.
+// Wordmark — two play triangles flanking a symmetric ribbon. Source design
+// is 420×360; we centre it inside a 420×420 square viewBox so it scales
+// cleanly without distortion at any size. Fill is currentColor so it
+// inherits the TopBar text color.
 export function Logo({ size = 16, className }: IconProps) {
   return (
-    <Svg size={size} className={className}>
-      <rect x="1.6" y="1.6" width="12.8" height="12.8" rx="0" />
-      <path d="M8 1.6v12.8M1.6 8h12.8" />
-    </Svg>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 -30 420 420"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
+    >
+      <polygon points="257,72 331,29 331,114" />
+      <polygon points="98,199 172,241 98,284" />
+      <path
+        d="M108 54
+           C100 72, 96 90, 98 104
+           C100 119, 106 133, 121 144
+           C129 151, 139 158, 151 164
+           L286 223
+           C297 228, 306 236, 313 245
+           C317 250, 320 255, 321 259
+           C327 246, 331 229, 331 209
+           C330 201, 328 194, 324 189
+           C319 181, 314 175, 308 169
+           C300 162, 290 155, 278 149
+           L143 90
+           C137 87, 132 84, 128 80
+           C122 76, 117 71, 108 54
+           Z"
+      />
+    </svg>
   );
 }
 

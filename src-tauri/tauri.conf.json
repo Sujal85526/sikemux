@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeDevCommand": "bash -c './scripts/icons.sh && pnpm dev'",
+    "beforeBuildCommand": "bash -c './scripts/icons.sh && pnpm build'"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -30,12 +30,29 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "icons/build/Assets.car"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg5NDQ0RDU4NDA4ODY0NEYKUldSUFpJaEFXRTFFaVhCRmkrNmFmZDNNb1djWmNvbkdYMXkxT1Z4cUJlb1VWNzJCMnE5blJkMkMK",
+      "endpoints": [
+        "https://github.com/nodelike/sikemux/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

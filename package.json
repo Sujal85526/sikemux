@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:mac": "./scripts/build-mac.sh",
+    "build:mac:universal": "./scripts/build-mac.sh --target universal-apple-darwin"
   },
   "dependencies": {
     "@codemirror/commands": "^6.7.0",
@@ -30,6 +32,8 @@
     "@replit/codemirror-indentation-markers": "^6.5.3",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-process": "^2",
+    "@tauri-apps/plugin-updater": "^2",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",

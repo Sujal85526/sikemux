@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import { installPendingUpdate } from "../api/updater";
 import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
 import { ENVS } from "../state/types";
@@ -163,6 +165,79 @@ function CogIcon({ size = 15 }: { size?: number }) {
   );
 }
 
+// App version pill — read from the bundled Info.plist via Tauri's app API,
+// so it always reflects the actually-running binary (after an OTA update
+// completes + relaunches, this flips automatically to the new version).
+function VersionChip() {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
+  if (!version) return null;
+  return (
+    <span className="tb-version" title={`sikemux ${version}`}>
+      v{version}
+    </span>
+  );
+}
+
+// Update chip — surfaces store.pendingUpdate. Hidden when no update;
+// renders when one is available so the user can re-trigger install at
+// any time after the boot prompt. States: available | installing | error.
+function UpdateChip() {
+  const pending = useStore((s) => s.pendingUpdate);
+  if (!pending) return null;
+
+  const state = pending.state;
+  const onClick = () => {
+    if (state === "installing") return;
+    void installPendingUpdate();
+  };
+
+  return (
+    <button
+      className={`tb-update tb-update-${state}`}
+      onClick={onClick}
+      disabled={state === "installing"}
+      title={
+        state === "error"
+          ? `Update v${pending.version} failed — ${pending.error ?? "unknown"}. Click to retry.`
+          : state === "installing"
+            ? `Installing v${pending.version}…`
+            : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`
+      }
+    >
+      <UpdateArrow size={11} />
+      <span className="tb-update-label">
+        {state === "installing"
+          ? "installing"
+          : state === "error"
+            ? "retry"
+            : `v${pending.version}`}
+      </span>
+    </button>
+  );
+}
+
+function UpdateArrow({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 2v9M4 7l4 4 4-4M3 14h10" />
+    </svg>
+  );
+}
+
 // macOS battery glyph + percentage — no chrome. Color uses --acc by default,
 // shifting to warn at ≤20% and danger at ≤10%. Hidden on desktops (no batt).
 function BatteryChip() {
@@ -249,6 +324,8 @@ export function TopBar() {
         <span className="brand-name">
           sike<span className="brand-dim">mux</span>
         </span>
+        <VersionChip />
+        <UpdateChip />
       </div>
 
       <div className="tb-center" data-tauri-drag-region>

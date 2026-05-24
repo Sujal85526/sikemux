@@ -88,6 +88,18 @@ export interface ViewState {
   // away from the search window and across projects. The search pane
   // itself is just the project's 4th window (role: "search").
   globalSearchBySession: Record<string, GlobalSearchView>;
+
+  // OTA: populated by api/updater.ts when a newer version is found.
+  // Cleared on successful install (the new binary starts with `null`).
+  // The TopBar UpdateChip renders whenever this is non-null.
+  pendingUpdate: {
+    version: string;
+    currentVersion: string;
+    notes: string | null;
+    date: string | null;
+    state: "available" | "installing" | "error";
+    error: string | null;
+  } | null;
 }
 
 export type StoreState = DomainState & ViewState;
@@ -173,6 +185,7 @@ export const useStore = create<StoreState>(() => {
     rundeckViews: {},
     expandedBillingMonth: {},
     globalSearchBySession: {},
+    pendingUpdate: null,
   };
 });
 

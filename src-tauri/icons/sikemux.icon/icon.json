@@ -1,0 +1,56 @@
+{
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.10196,0.10196,0.14902,1.00000",
+          "display-p3:0.01569,0.01569,0.03137,1.00000"
+        ],
+        "orientation" : {
+          "start" : { "x" : 0.5, "y" : 0.0 },
+          "stop"  : { "x" : 0.5, "y" : 1.0 }
+        }
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.08235,0.08235,0.12549,1.00000",
+          "display-p3:0.00000,0.00000,0.01569,1.00000"
+        ],
+        "orientation" : {
+          "start" : { "x" : 0.5, "y" : 0.0 },
+          "stop"  : { "x" : 0.5, "y" : 1.0 }
+        }
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill" : "automatic",
+          "image-name" : "wordmark.svg",
+          "name" : "Wordmark",
+          "position" : {
+            "scale" : 1.6,
+            "translation-in-points" : [ 0, 0 ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.45
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

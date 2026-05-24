@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { checkForUpdate } from "./api/updater";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
@@ -87,6 +88,20 @@ export default function App() {
     return subscribe("rnd-auth-expired", () => {
       invalidate((kind) => kind.startsWith("rnd."));
     });
+  }, []);
+
+  // OTA: silent boot check. If an update is available, we stash it in
+  // store.pendingUpdate so the TopBar chip can offer it on demand — no
+  // forced dialog. Re-checks every 30min so a long-running session
+  // eventually notices a freshly-cut release. The chip never auto-clears:
+  // dismissing it is just not clicking. Click triggers download + install.
+  useEffect(() => {
+    const firstCheck = window.setTimeout(() => void checkForUpdate(), 4000);
+    const poll = window.setInterval(() => void checkForUpdate(), 30 * 60_000);
+    return () => {
+      window.clearTimeout(firstCheck);
+      window.clearInterval(poll);
+    };
   }, []);
 
   return (
