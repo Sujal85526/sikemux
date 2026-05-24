@@ -39,8 +39,10 @@ objc2 = "0.6"
 objc2-foundation = "0.3"
 
 [profile.release]
-opt-level = 3
+# opt-level "z" trades a few % runtime for a meaningfully smaller binary
+# (libgit2 + rustls dominate; size-opt knocks ~3-4 MB off the 20 MB total).
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"
-strip = true
+strip = "symbols"

@@ -1,9 +1,24 @@
 use std::fs;
 use std::path::PathBuf;
 
-fn state_path() -> Option<PathBuf> {
+/// Where the workspace state JSON lives. Split debug vs release so a dev
+/// build can never trample the installed app's state — `cargo run` /
+/// `tauri dev` write to `state.dev.json`, the bundled release binary
+/// writes to `state.json`. They live in the same dir so the user can
+/// `cp` between them when seeding dev from a real session.
+///
+/// `cfg!(debug_assertions)` is the discriminator: true for any cargo debug
+/// build (which is what `tauri dev` produces), false for `--release`
+/// builds (which is what `tauri build` produces). Reliable enough that we
+/// don't need an env-var override.
+pub fn state_path() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".config/sikemux/state.json"))
+    let filename = if cfg!(debug_assertions) {
+        "state.dev.json"
+    } else {
+        "state.json"
+    };
+    Some(PathBuf::from(home).join(".config/sikemux").join(filename))
 }
 
 /// Persisted workspace state as a JSON string. Empty string if none yet.

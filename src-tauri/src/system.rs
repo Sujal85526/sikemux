@@ -1,8 +1,9 @@
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 
 use serde::Serialize;
+
+use crate::state::state_path;
 
 #[tauri::command]
 pub fn home_dir() -> String {
@@ -116,16 +117,14 @@ fn parse_pmset(text: &str) -> BatteryStatus {
 }
 
 /// Single round-trip the renderer uses on boot — home dir + persisted state
-/// + zoxide recents in one IPC instead of three.
+/// + zoxide recents in one IPC instead of three. Resolves the state path
+/// through `state::state_path()` so dev and release builds stay separated.
 #[tauri::command]
 pub fn boot_init() -> BootInfo {
     let home = home_dir();
-    let state = if home.is_empty() {
-        String::new()
-    } else {
-        fs::read_to_string(PathBuf::from(&home).join(".config/sikemux/state.json"))
-            .unwrap_or_default()
-    };
+    let state = state_path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_default();
     BootInfo {
         home,
         state,

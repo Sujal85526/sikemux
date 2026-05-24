@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0",
+  "notes": "Initial release: rundeck deploy center, AWS surface, multi-pane editor + git + search, live OTA, env-aware state paths.",
+  "pub_date": "2026-05-24T14:56:53Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWZWK2Q4US9iYm4wc3Q2RzlVNlA4YmsxOERTcXEvNkJOZFlJS01XVHAwc0FPMU9GS2JTbXU4TkU0b0hlaWYzUEdrTHhkczg4RUlYeTUxME5YWEtxNXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NjM0NjEzCWZpbGU6c2lrZW11eC5hcHAudGFyLmd6Cjd5c3JWVGk3Q1I3QjA2cjJDeGl0T0hKamVmY0FYckNITWhuWUdyTEQ3b21vbU1aL0NJVllvWlVobVFOODlKOWh6U1ZqQllZd0YxMjhIRStIU01rYUR3PT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.0/sikemux.app.tar.gz"
+    }
+  }
+}

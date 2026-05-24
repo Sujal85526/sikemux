@@ -38,9 +38,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "icons/build/Assets.car"
-    ],
+    "resources": {
+      "icons/build/Assets.car": "Assets.car"
+    },
     "macOS": {
       "minimumSystemVersion": "11.0"
     }
