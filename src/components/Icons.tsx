@@ -121,17 +121,31 @@ export function IconFolder({ size, className }: IconProps) {
   );
 }
 
-// Open-folder glyph. Back wall (tab + top edge) visible above a forward-
-// tilted parallelogram lid — the standard "manila folder with lid lifted"
-// silhouette so it's unmistakably a folder in its open state.
-export function IconFolderOpen({ size, className }: IconProps) {
+// AWS brand mark — renders the bundled Nerd Font glyph (Devicons "amazon
+// web services", U+E7AD) so the actual wordmark shows up instead of a
+// generic stroke icon. Different render path from the other SVG icons but
+// the only way to ship the real brand logo at icon scale.
+export function IconAws({ size = 16, className }: IconProps) {
   return (
-    <Svg size={size} className={className}>
-      <path d="M2 4.5h4l1.5 1.5H14v1.5" />
-      <path d="M2 13.5 3.5 7.5h11l-1.5 6z" />
-    </Svg>
+    <span
+      className={className}
+      style={{
+        fontFamily: "var(--mono)",
+        fontSize: size,
+        lineHeight: 1,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: size,
+        height: size,
+      }}
+      aria-hidden="true"
+    >
+      {""}
+    </span>
   );
 }
+
 
 export function IconChevron({ size, className }: IconProps) {
   return (

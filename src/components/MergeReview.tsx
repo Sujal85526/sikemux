@@ -1,5 +1,7 @@
 import { DiffEditor } from "./DiffEditor";
-import { IconFile } from "./Icons";
+import { FileIcon } from "./FileIcon";
+
+const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 // VSCode-style review of a single working-tree file: an editable merge view
 // (diff vs HEAD inline, Cmd-S saves). The header opens the full file in the
@@ -22,7 +24,7 @@ export function MergeReview({
         onClick={() => onOpenFile(`${repo}/${path}`)}
         title="Open the full file in the editor"
       >
-        <IconFile size={12} />
+        <FileIcon name={basename(path)} size={14} />
         <span className="merge-path">{path}</span>
         <span className="merge-open">open in editor →</span>
       </button>

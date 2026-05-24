@@ -4,18 +4,19 @@ import { useWorkspace } from "../state/workspace";
 import {
   AgentIcon,
   IconAgent,
+  IconAws,
+  IconChevron,
   IconClose,
   IconCommand,
   IconFolder,
-  IconFolderOpen,
   IconPin,
   IconPlus,
   WindowIcon,
 } from "./Icons";
 
-function kindIcon(kind: SessionKind, open: boolean): ReactNode {
-  if (kind === "project")
-    return open ? <IconFolderOpen size={13} /> : <IconFolder size={13} />;
+function kindIcon(kind: SessionKind): ReactNode {
+  if (kind === "project") return <IconFolder size={13} />;
+  if (kind === "aws") return <IconAws size={20} />;
   // SSH and Command both use the terminal-arrow icon — fine, the group
   // label in the rail keeps them visually distinct without a custom icon.
   return <IconCommand size={13} />;
@@ -98,6 +99,8 @@ export function SideRail() {
   const selectWindowId = useWorkspace((s) => s.selectWindowId);
   const focusAgents = useWorkspace((s) => s.focusAgents);
   const openPicker = useWorkspace((s) => s.openPicker);
+  const openAwsSession = useWorkspace((s) => s.openAwsSession);
+  const createCommandSession = useWorkspace((s) => s.createCommandSession);
   const togglePin = useWorkspace((s) => s.togglePin);
   const closeSession = useWorkspace((s) => s.closeSession);
   const sessions = sessionOrder.map((id) => sessionsById[id]);
@@ -139,7 +142,9 @@ export function SideRail() {
           onClick={() => selectSession(s.id)}
         >
           <span
-            className={`sess-icon ${s.kind}${isProject ? " toggle" : ""}`}
+            className={`sess-icon ${s.kind}${isProject ? " toggle" : ""}${
+              isProject && open ? " open" : ""
+            }`}
             title={isProject ? (open ? "Collapse" : "Expand") : undefined}
             onClick={
               isProject
@@ -150,7 +155,12 @@ export function SideRail() {
                 : undefined
             }
           >
-            {kindIcon(s.kind, open)}
+            <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
+            {isProject && (
+              <span className="sess-icon-chev">
+                <IconChevron size={11} />
+              </span>
+            )}
           </span>
           <span className="sess-name">{s.name}</span>
           <span
@@ -249,42 +259,85 @@ export function SideRail() {
     );
   };
 
-  const Group = ({ label, list }: { label: string; list: Session[] }) =>
-    list.length === 0 ? null : (
-      <div className="rail-group">
-        <div className="rail-group-label">{label}</div>
-        {list.map((s) => (
-          <Row key={s.id} s={s} />
-        ))}
+  // Each group renders a label + inline `+` (when add is provided), then
+  // either its rows or a single-line empty state. Always-on so the rail
+  // structure is visible even before the user creates any sessions.
+  const Group = ({
+    label,
+    list,
+    add,
+    addTitle,
+    emptyText,
+  }: {
+    label: string;
+    list: Session[];
+    add?: () => void;
+    addTitle?: string;
+    emptyText: string;
+  }) => (
+    <div className="rail-group">
+      <div className="rail-group-head">
+        <span className="rail-group-label">{label}</span>
+        {add && (
+          <button
+            className="rail-group-add"
+            onClick={add}
+            title={addTitle}
+          >
+            <IconPlus size={11} />
+          </button>
+        )}
       </div>
-    );
+      {list.length === 0 ? (
+        add ? (
+          <button className="rail-group-empty interactive" onClick={add}>
+            {emptyText}
+          </button>
+        ) : (
+          <div className="rail-group-empty">{emptyText}</div>
+        )
+      ) : (
+        list.map((s) => <Row key={s.id} s={s} />)
+      )}
+    </div>
+  );
 
   return (
     <aside className="side-rail">
-      <div className="rail-head">
-        <span className="rail-label">Sessions</span>
-        <button
-          className="rail-add"
-          onClick={() => openPicker("ssh")}
-          title="SSH host — M-S"
-        >
-          <IconCommand size={13} />
-        </button>
-        <button
-          className="rail-add"
-          onClick={() => openPicker("all")}
-          title="Open — M-s"
-        >
-          <IconPlus size={13} />
-        </button>
-      </div>
-
       <div className="rail-scroll">
-        <Group label="Superpin" list={pinned} />
-        <Group label="Projects" list={projects} />
-        <Group label="SSH" list={sshs} />
-        <Group label="Cloud" list={cloud} />
-        <Group label="Command" list={commands} />
+        <Group
+          label="Superpin"
+          list={pinned}
+          emptyText="pin a session to bookmark it"
+        />
+        <Group
+          label="Projects"
+          list={projects}
+          add={() => openPicker("projects")}
+          addTitle="Open project — M-s"
+          emptyText="no projects"
+        />
+        <Group
+          label="SSH"
+          list={sshs}
+          add={() => openPicker("ssh")}
+          addTitle="Connect to SSH host — M-S"
+          emptyText="no ssh hosts"
+        />
+        <Group
+          label="Cloud"
+          list={cloud}
+          add={openAwsSession}
+          addTitle="Open AWS"
+          emptyText="no cloud sessions"
+        />
+        <Group
+          label="Command"
+          list={commands}
+          add={createCommandSession}
+          addTitle="New command session"
+          emptyText="no commands"
+        />
       </div>
 
       <button className="rail-foot" onClick={() => openPicker("all")}>

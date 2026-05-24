@@ -271,7 +271,7 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => {
           .find((s) => s.kind === "ssh" && s.name === alias);
         if (existing) {
           return {
-            sshPickerOpen: false,
+            pickerOpen: false,
             activeSessionId: existing.id,
             zoomedPaneId: null,
           };
@@ -294,7 +294,7 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => {
           view: "windows",
         };
         return {
-          sshPickerOpen: false,
+          pickerOpen: false,
           zoomedPaneId: null,
           sessions: { ...st.sessions, [session.id]: session },
           sessionOrder: [...st.sessionOrder, session.id],

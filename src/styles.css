@@ -136,8 +136,32 @@ button {
   background-clip: padding-box;
 }
 
+/* CodeMirror scroller — visible thumb (--ink-faint) so users can actually
+   see the position indicator. Brightens on hover for a clearer drag cue.
+   `appearance: none` forces classic (always-visible) scrollbars on macOS
+   WKWebView — otherwise the OS hides overlay scrollbars whenever the user
+   isn't actively scrolling, and any styling here goes unseen. */
+.cm-scroller::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+}
+.cm-scroller::-webkit-scrollbar-track,
+.cm-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--ink-faint);
+  border-radius: 0;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-dim);
+  background-clip: padding-box;
+}
+
 /* micro label — uppercase, tracked */
-.rail-label,
 .rail-group-label,
 .ctx-label,
 .picker-group {
@@ -349,34 +373,10 @@ button {
   animation: slideR 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
 }
 
-.rail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 38px;
-  padding: 0 14px;
-  flex: 0 0 auto;
-}
-
-.rail-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 0;
-  color: var(--ink-faint);
-  transition: color 0.12s, background 0.12s;
-}
-.rail-add:hover {
-  color: var(--acc);
-  background: var(--acc-soft);
-}
-
 .rail-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 8px 12px;
+  padding: 14px 8px 12px;
 }
 
 /* ============================================================
@@ -388,10 +388,57 @@ button {
 .rail-group:first-child {
   margin-top: 0;
 }
+/* Header row pairs the group label with an inline + button. The label
+   handles the visual hierarchy; the + opens the right add-flow for that
+   kind of session (picker, AWS, command, …). */
+.rail-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 6px 10px;
+}
 .rail-group-label {
-  padding: 4px 10px 6px;
   font-size: 9.5px;
   letter-spacing: 0.2em;
+}
+.rail-group-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--ink-faint);
+  transition: color 0.12s, background 0.12s;
+}
+.rail-group-add:hover {
+  color: var(--acc);
+  background: var(--acc-soft);
+}
+/* Empty-state line. Plain div by default; gains hover affordance when the
+   group has an add action (interactive variant doubles as a CTA). */
+.rail-group-empty {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 12px 6px 12px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-faint);
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  cursor: default;
+  font-family: var(--mono);
+  transition: color 0.12s, background 0.12s;
+}
+.rail-group-empty.interactive {
+  cursor: pointer;
+}
+.rail-group-empty.interactive:hover {
+  color: var(--acc);
+  background: var(--acc-soft);
 }
 
 .sess-row {
@@ -413,18 +460,40 @@ button {
   color: var(--ink);
 }
 /* Project rows: the folder icon doubles as the expand/collapse toggle.
-   .toggle adds a hit area + hover cue without affecting non-project rows. */
+   Hover-swap: folder fades out, chevron fades in. Rotates 90° when the
+   group is open so the same icon flips between ▸ (collapsed) and ▾ (open). */
 .sess-icon.toggle {
+  position: relative;
   cursor: pointer;
   width: 18px;
   height: 18px;
   margin: 0 -2px;
   align-items: center;
   justify-content: center;
-  transition: color 0.12s;
+  color: var(--ink-dim);
 }
-.sess-icon.toggle:hover {
+.sess-icon-glyph,
+.sess-icon-chev {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.12s;
+}
+.sess-icon-chev {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
   color: var(--acc);
+  transition: opacity 0.12s, transform 0.15s ease;
+}
+.sess-icon.toggle.open .sess-icon-chev {
+  transform: rotate(90deg);
+}
+.sess-row:hover .sess-icon.toggle .sess-icon-glyph {
+  opacity: 0;
+}
+.sess-row:hover .sess-icon.toggle .sess-icon-chev {
+  opacity: 1;
 }
 
 .sess-icon {
@@ -435,6 +504,9 @@ button {
 }
 .sess-icon.project {
   color: var(--live);
+}
+.sess-icon.aws {
+  color: var(--warn);
 }
 
 .sess-name {
@@ -1350,6 +1422,47 @@ button {
 }
 .cm-deletedLineGutter {
   background: rgba(255, 103, 103, 0.12);
+}
+
+/* @codemirror/merge ships an Accept/Reject button per chunk (rounded
+   green/red blocks by default). Reskin to match the TUI: sharp corners,
+   mono uppercase tracked labels, hairline border tinted with --live for
+   accept / --danger for reject, soft fill on hover. */
+.cm-deletedChunk .cm-chunkButtons {
+  position: absolute;
+  inset-inline-end: 8px;
+  display: flex;
+  gap: 4px;
+}
+.cm-deletedChunk button[name="accept"],
+.cm-deletedChunk button[name="reject"] {
+  margin: 0;
+  padding: 2px 9px;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.cm-deletedChunk button[name="accept"] {
+  border: 1px solid color-mix(in srgb, var(--live) 40%, transparent);
+  color: var(--live);
+}
+.cm-deletedChunk button[name="accept"]:hover {
+  background: color-mix(in srgb, var(--live) 18%, transparent);
+  border-color: var(--live);
+}
+.cm-deletedChunk button[name="reject"] {
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+}
+.cm-deletedChunk button[name="reject"]:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: var(--danger);
 }
 
 /* ----- commit / branch review (file accordion) ----- */

@@ -27,6 +27,13 @@ export default function App() {
   useKeymap();
   const leftOpen = useWorkspace((s) => s.leftRailOpen);
   const rightOpen = useWorkspace((s) => s.rightRailOpen);
+  // Agents are project-scoped — SSH / cloud / command sessions have no
+  // notion of an agent, so the rail just shows an empty/unrelated list
+  // there. Hide it entirely on non-project sessions so the workspace gets
+  // its full width back.
+  const activeSessionIsProject = useWorkspace(
+    (s) => s.sessions[s.activeSessionId ?? ""]?.kind === "project",
+  );
   const pickerOpen = useWorkspace((s) => s.pickerOpen);
   const agentPaletteOpen = useWorkspace((s) => s.agentPaletteOpen);
   const filePaletteOpen = useWorkspace((s) => s.filePaletteOpen);
@@ -75,7 +82,7 @@ export default function App() {
         <main className="stage">
           <Workspace />
         </main>
-        {rightOpen && <AgentRail />}
+        {rightOpen && activeSessionIsProject && <AgentRail />}
       </div>
       {pickerOpen && <SeshPicker />}
       {agentPaletteOpen && <AgentPalette />}

@@ -76,9 +76,38 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
     set({ lspResults: { title, project, results } }),
   closeLspResults: () => set({ lspResults: null }),
   bumpGitRefresh: () => set((s) => ({ gitRefreshN: s.gitRefreshN + 1 })),
+  // "Open file X" from outside the editor (git review, LSP jump, Cmd-P).
+  // The EditorPane lives inside the project's "files" window — if the user
+  // is currently in the git / term window (or in agent view), the pane
+  // isn't mounted and the bump goes nowhere. So we also flip the active
+  // session over to the files window + windows view before bumping.
   requestOpenFile: (path, line, character) =>
-    set((s) => ({
-      zoomedPaneId: null,
-      openRequest: { path, line, character, n: (s.openRequest?.n ?? 0) + 1 },
-    })),
+    set((s) => {
+      const session = s.activeSessionId
+        ? s.sessions[s.activeSessionId]
+        : null;
+      let nextSessions = s.sessions;
+      if (session) {
+        const editorWin = session.windows.find((w) => w.name === "files");
+        if (
+          editorWin &&
+          (session.activeWindowId !== editorWin.id ||
+            session.view !== "windows")
+        ) {
+          nextSessions = {
+            ...s.sessions,
+            [session.id]: {
+              ...session,
+              activeWindowId: editorWin.id,
+              view: "windows",
+            },
+          };
+        }
+      }
+      return {
+        zoomedPaneId: null,
+        sessions: nextSessions,
+        openRequest: { path, line, character, n: (s.openRequest?.n ?? 0) + 1 },
+      };
+    }),
 });

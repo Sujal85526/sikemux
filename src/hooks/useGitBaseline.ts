@@ -6,6 +6,14 @@ import { useWorkspace } from "../state/workspace";
 
 // Pushes the HEAD content of the active file into the editor's diff baseline.
 // Re-runs on file changes and on git refresh nonces.
+//
+// `viewGetter` is *intentionally not in the effect deps*: it's `() =>
+// viewRef.current` from the caller and gets a fresh closure every render.
+// Including it would re-fire the effect on every parent re-render (typing,
+// tab list changes, …), cancel the in-flight HEAD fetch via the cleanup
+// flag, and — if renders out-pace the IPC round trip — the baseline would
+// never actually land, leaving the gutter blank. The ref itself is stable,
+// so reading through it on demand is safe.
 export function useGitBaseline(
   viewGetter: () => EditorView | null,
   cwd: string,
@@ -29,5 +37,6 @@ export function useGitBaseline(
     return () => {
       cancelled = true;
     };
-  }, [viewGetter, activePath, cwd, gitRefreshN]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePath, cwd, gitRefreshN]);
 }
