@@ -1,11 +1,11 @@
 {
-  "version": "0.1.4",
-  "notes": "Terminal: Cmd+Left/Right/Backspace + Opt+arrows now work (readline escapes written direct to PTY). Drag-and-drop image/files onto any terminal pane writes the quoted paths (Claude Code / Codex ingest @-files). Hidden terminals no longer paint or churn xterm \u2014 fixes multi-project lag (PTY chunks buffer with 512KB cap, flush on reactivation). Keystroke IPC batched per microtask.",
-  "pub_date": "2026-05-24T22:06:16Z",
+  "version": "0.1.5",
+  "notes": "Git: create-branch + merge (lazygit n/N/M), branches sorted current-first then by recency, a toggles stage/unstage-all. FileTree: new file/folder + drag-drop from Finder + double-click rename + live watcher (Zed-style). Editor: external-edit reload (skips dirty tabs), diff editor remount flicker fixed. Rundeck: live step updates, full log backlog for old runs, env picker reuses TopBar pill. AWS: per-view refresh chip, auth-expired auto-flips TopBar chip, fixed [object Object] errors, CloudWatch logs selectable during tailing. TopBar: version + update chips on the left, 12-hour clock, battery glyph. Terminal: Cmd+arrows / Cmd+Backspace / Opt+word-motion, drag-drop file paths into terminal, hidden terminals paused, white scrollbar hidden. Sessions: Alt+Shift+Tab cycles groups, env-aware state (~/.config/sikemux/state.dev.json for dev). Bundled app inherits user PATH (hermes/aws/rnd resolve). New: per-agent shield toggle for --dangerously-skip-permissions / --yolo / --dangerously-bypass-approvals-and-sandbox.",
+  "pub_date": "2026-05-25T16:37:56Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVJFVmtMNExjNWtUQksvaXJNTGVvTlB2S2g5OXVHM0pCTjNRQzlFTHhWL1RTWG0rVDhXQmd4VHJUK0hacUtEY045RnlmNkQzTE9hMGJwTVRUK2c3aEFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NjYwMzc1CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjgreVJDR0JxL0RhczliekxyWTlYK0ptRzEzUVk0QmN0dzAzRU1ZQlVEc0haZ2tVWG8wVGxKZ2xJUFVqc1hKU0U2QjFGanFjOEhpcXNPMXI0aXIrUkRRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.4/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVNRaHI0cGN6OWVVQ3lKQU82Mm5HTTk3aCtSMnY0eE9mSlA1c0o3TW5lV29WdHF0NGJZQnpxbWY4VllCRnVuVmhEWFV3RlhPQnI1OHU3dkhkYWdOM2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzI3MDc1CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6Ckt3Mnh0a20zVk0xWG5VZmN3NDJVZFczd1B0L2M5a2NJczVKRW81eW5FQlBaMklveDFtSXl6OGNIQ3FlYW00c2FlRnZidW1mRUYwRnJCaTN6TzlxRUJnPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.5/Sikemux.app.tar.gz"
     }
   }
 }
