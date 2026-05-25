@@ -91,6 +91,16 @@ export default function App() {
     });
   }, []);
 
+  // AWS auth expired (CLI returned token-expired / no-credentials /
+  // cli-missing). Same recipe: drop all aws.* cache so stale tables
+  // don't flash, force re-identification, and the TopBar chip flips
+  // from green to red as the new identity status comes back.
+  useEffect(() => {
+    return subscribe("aws-auth-expired", () => {
+      invalidate((kind) => kind.startsWith("aws."));
+    });
+  }, []);
+
   // OTA: silent boot check. If an update is available, we stash it in
   // store.pendingUpdate so the TopBar chip can offer it on demand — no
   // forced dialog. Re-checks every 30min so a long-running session

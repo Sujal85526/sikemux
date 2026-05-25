@@ -109,7 +109,11 @@ export function useKeymap(): void {
           cmd.closeActiveSession();
           break;
         case "Tab":
-          cmd.cycleSession(shift ? -1 : 1);
+          // Shift+Tab → next session-kind group (Projects → SSH → Cloud →
+          // CI/CD → Command). Plain Tab → next session within the current
+          // group. Alt+Backquote stays as the reverse-within-group.
+          if (shift) cmd.cycleSessionGroup(1);
+          else cmd.cycleSession(1);
           break;
         case "Backquote":
           cmd.cycleSession(-1);

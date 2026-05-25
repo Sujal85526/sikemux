@@ -8,7 +8,8 @@ export type Event =
   | { type: "fs-changed"; repo: string }
   | { type: "git-refresh"; repo: string }
   | { type: "agent-focus"; sessionId: string }
-  | { type: "rnd-auth-expired"; reason: string };
+  | { type: "rnd-auth-expired"; reason: string }
+  | { type: "aws-auth-expired"; profile: string; reason: string };
 
 type AnyHandler = (e: Event) => void;
 

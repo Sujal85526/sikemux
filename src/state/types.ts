@@ -81,6 +81,14 @@ export interface Agent {
   title: string;
   startup: string;
   resumeId?: string;
+  /** When true, the agent CLI launches with its "skip approval" flag:
+   *    claude → --dangerously-skip-permissions
+   *    hermes → --yolo
+   *    codex  → --dangerously-bypass-approvals-and-sandbox
+   *  Toggled at runtime via the shield chip in the agent tab; flipping
+   *  the value remounts the PTY (the React key includes it) so the new
+   *  startup line takes effect immediately. */
+  skipPermissions?: boolean;
 }
 
 export type Env = "dev" | "staging" | "preprod" | "production";

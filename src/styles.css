@@ -866,6 +866,18 @@ button {
 .terminal-host .xterm {
     height: 100%;
 }
+/* Hide xterm's viewport scrollbar. WKWebView paints it as an opaque
+   white strip on the right of every terminal pane; the canvas/WebGL
+   layer doesn't need a real scrollbar to scroll (mouse wheel + j/k still
+   work via xterm's own handler). */
+.terminal-host .xterm-viewport {
+    scrollbar-width: none;
+}
+.terminal-host .xterm-viewport::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
 
 .divider {
     position: absolute;
@@ -2310,6 +2322,42 @@ button {
     color: var(--danger);
 }
 
+/* Skip-permissions / "bypass" chip in each agent tab. Hidden by default;
+   fades in on tab hover OR stays solid + colored when bypass is ON, so
+   the user always knows when an agent is running with --dangerously-skip
+   permissions (no surprise yolo mode). */
+.agent-tab-skip {
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    margin-left: auto;
+    color: var(--ink-faint);
+    opacity: 0;
+    transition:
+        opacity 0.12s,
+        color 0.12s;
+    cursor: pointer;
+}
+.agent-tab:hover .agent-tab-skip {
+    opacity: 1;
+}
+.agent-tab-skip:hover {
+    color: var(--acc);
+}
+.agent-tab-skip.on {
+    opacity: 1;
+    color: var(--danger);
+}
+.agent-tab-skip.on:hover {
+    color: var(--ink);
+}
+/* When the skip chip is visible we also want the close X visible, but
+   the auto-margin only applies to the first .agent-tab-x. Reset so they
+   both sit on the right edge cleanly. */
+.agent-tab-skip + .agent-tab-x {
+    margin-left: 0;
+}
+
 /* side rail — sub-label for the agents row under a project */
 .win-sub-label {
     font-size: 9.5px;
@@ -3443,6 +3491,41 @@ button {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative; /* anchors .aws-refresh */
+}
+
+/* Refresh chip — floats top-right of an AWS view, above the table head.
+   Same flat-square look as our other chips; spins when busy. */
+.aws-refresh {
+    position: absolute;
+    top: 10px;
+    right: 16px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.aws-refresh:hover:not(:disabled) {
+    color: var(--acc);
+    border-color: var(--acc-line);
+    background: var(--acc-soft);
+}
+.aws-refresh:disabled {
+    cursor: progress;
+    color: var(--ink-faint);
+}
+.aws-refresh.busy svg {
+    animation: aws-refresh-spin 0.9s linear infinite;
+}
+@keyframes aws-refresh-spin {
+    to { transform: rotate(360deg); }
 }
 
 /* ---- breadcrumb ---------------------------------------------------------
@@ -4150,6 +4233,14 @@ button {
     );
     font-size: 11.5px;
     line-height: 1.55;
+    /* Opt back into text selection — body sets user-select:none globally. */
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+}
+.aws-logs-line {
+    user-select: text;
+    -webkit-user-select: text;
 }
 .aws-logs-waiting {
     color: var(--ink-faint);

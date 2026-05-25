@@ -42,6 +42,13 @@ pub fn fix_path_from_login_shell() {
         format!("{home}/.opencode/bin"),
         format!("{home}/.config/shell/bin"),
         format!("{home}/go/bin"),
+        // Node tooling: typescript-language-server, pyright, vue-lsp, etc.
+        // installed via `pnpm add -g` land here on macOS.
+        format!("{home}/Library/pnpm"),
+        format!("{home}/.npm/bin"),
+        format!("{home}/.bun/bin"),
+        // Python virtualenv tooling (pipx, pyenv shims).
+        format!("{home}/.pyenv/shims"),
         "/opt/homebrew/bin".to_string(),
         "/opt/homebrew/sbin".to_string(),
         "/usr/local/bin".to_string(),

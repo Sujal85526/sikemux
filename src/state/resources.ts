@@ -35,6 +35,27 @@ function keyOf(kind: string, args: unknown[]): string {
   return `${kind}|${args.map((a) => JSON.stringify(a)).join("|")}`;
 }
 
+// Tauri commands return Err values as { category, message } structured
+// objects (see src-tauri/src/error.rs::AppError::Serialize). Naïve
+// `String(err)` on those gives `[object Object]` and surfaces to the UI
+// as gibberish red text. Pluck `.message` first, then fall back.
+function stringifyError(err: unknown): string {
+  if (err == null) return "";
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object") {
+    const e = err as { message?: unknown; category?: unknown };
+    if (typeof e.message === "string" && e.message) return e.message;
+    if (typeof e.category === "string" && e.category) return e.category;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return "unknown error";
+    }
+  }
+  return String(err);
+}
+
 function notify(key: string): void {
   subs.get(key)?.forEach((fn) => fn());
 }
@@ -79,7 +100,7 @@ function trigger<Args extends unknown[], T>(
         args,
         status: "error",
         data: current?.data,
-        error: String(err),
+        error: stringifyError(err),
         fetchedAt: Date.now(),
       });
       throw err;

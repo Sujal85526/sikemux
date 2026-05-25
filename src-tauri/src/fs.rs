@@ -67,6 +67,25 @@ pub fn create_dir(path: String) -> Result<(), String> {
     fs::create_dir_all(&path).map_err(|e| e.to_string())
 }
 
+/// Rename / move an entry. Refuses to overwrite an existing path so the
+/// rename UI can never silently clobber a file. Caller passes absolute
+/// `src` + absolute `dest`.
+#[tauri::command]
+pub fn rename_path(src: String, dest: String) -> Result<(), String> {
+    let src_p = std::path::PathBuf::from(&src);
+    let dest_p = std::path::PathBuf::from(&dest);
+    if !src_p.exists() {
+        return Err(format!("source missing: {}", src));
+    }
+    if dest_p.exists() {
+        return Err(format!("destination already exists: {}", dest));
+    }
+    if let Some(parent) = dest_p.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::rename(&src_p, &dest_p).map_err(|e| e.to_string())
+}
+
 /// Copy an external file into a target directory, preserving its basename.
 /// If a same-named file already exists we append " (N)" until unique, so
 /// Finder-drop never overwrites silently. Returns the final landing path.

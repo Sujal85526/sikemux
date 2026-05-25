@@ -32,6 +32,7 @@ import type {
   RundeckLevel,
   RundeckView,
   Session,
+  SessionKind,
   SplitDir,
   Window,
   WindowRole,
@@ -519,6 +520,36 @@ export function cycleSession(delta: number): void {
   });
 }
 
+// Order matching the SideRail group blocks. Pinned isn't a group of its
+// own — pinned sessions still belong to their original kind, they just
+// also surface in the Superpin block. Cycling jumps from one kind to the
+// next, landing on the first session of that kind.
+const GROUP_ORDER: SessionKind[] = ["project", "ssh", "aws", "rundeck", "command"];
+
+/** Jump to the first session of the next/previous SessionKind group
+ *  (Projects → SSH → Cloud → CI/CD → Command → wrap). Skips empty groups. */
+export function cycleSessionGroup(delta: number): void {
+  setState((st) => {
+    const cur = st.sessions[st.activeSessionId];
+    if (!cur) return {};
+    // Find non-empty groups in the canonical order, preserving the
+    // SessionKind sequence the user sees on the rail.
+    const populated = GROUP_ORDER.filter((kind) =>
+      st.sessionOrder.some((id) => st.sessions[id]?.kind === kind),
+    );
+    if (populated.length < 2) return {};
+    const curIdx = populated.indexOf(cur.kind);
+    if (curIdx === -1) return {};
+    const nextKind =
+      populated[(curIdx + delta + populated.length) % populated.length];
+    const nextId = st.sessionOrder.find(
+      (id) => st.sessions[id]?.kind === nextKind,
+    );
+    if (!nextId) return {};
+    return { activeSessionId: nextId, zoomedPaneId: null };
+  });
+}
+
 export function togglePin(id: string): void {
   patchSession(id, (s) => ({ ...s, pinned: !s.pinned }));
 }
@@ -755,12 +786,49 @@ export function selectWindowRelative(delta: number): void {
 
 // ---- Agents -----------------------------------------------------------
 
-function agentStartup(type: AgentType, resumeId?: string): string {
-  if (!resumeId) return type;
-  if (type === "claude") return `claude --resume ${resumeId}`;
-  if (type === "codex") return `codex resume ${resumeId}`;
-  if (type === "hermes") return `hermes --resume ${resumeId}`;
-  return type;
+// Skip-approval / yolo flags per agent. Mirrors `<cli> --help` (claude:
+// --dangerously-skip-permissions, hermes: --yolo, codex:
+// --dangerously-bypass-approvals-and-sandbox).
+const SKIP_PERMISSION_FLAG: Record<AgentType, string> = {
+  claude: "--dangerously-skip-permissions",
+  hermes: "--yolo",
+  codex: "--dangerously-bypass-approvals-and-sandbox",
+};
+
+function agentStartup(
+  type: AgentType,
+  resumeId?: string,
+  skipPermissions = false,
+): string {
+  let cmd: string;
+  if (!resumeId) cmd = type;
+  else if (type === "claude") cmd = `claude --resume ${resumeId}`;
+  else if (type === "codex") cmd = `codex resume ${resumeId}`;
+  else if (type === "hermes") cmd = `hermes --resume ${resumeId}`;
+  else cmd = type;
+  return skipPermissions ? `${cmd} ${SKIP_PERMISSION_FLAG[type]}` : cmd;
+}
+
+/** Toggle the agent's runtime skip-permissions flag and remount its PTY
+ *  so the new startup line takes effect. The React key in Workspace's
+ *  AgentLayer includes `skipPermissions`, so a state flip naturally
+ *  triggers unmount → fresh spawn. Persists across reloads. */
+export function toggleAgentSkipPermissions(id: string): void {
+  setState((st) => {
+    const a = st.agents[id];
+    if (!a) return {};
+    const next = !a.skipPermissions;
+    return {
+      agents: {
+        ...st.agents,
+        [id]: {
+          ...a,
+          skipPermissions: next,
+          startup: agentStartup(a.type, a.resumeId, next),
+        },
+      },
+    };
+  });
 }
 
 export function addAgent(

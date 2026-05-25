@@ -80,6 +80,37 @@ export function IconPlus({ size, className }: IconProps) {
   );
 }
 
+export function IconRefresh({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M3 8a5 5 0 0 1 8.7-3.4M13 8a5 5 0 0 1-8.7 3.4" />
+      <path d="M11.7 2.6v2H9.7M4.3 13.4v-2h2" />
+    </Svg>
+  );
+}
+
+// Shield — closed/intact form. Used as the "permissions on" indicator
+// in the agent tab toggle.
+export function IconShield({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M8 1.5 2.6 3.4v4.2c0 3 2.2 5.5 5.4 6.9 3.2-1.4 5.4-3.9 5.4-6.9V3.4L8 1.5Z" />
+    </Svg>
+  );
+}
+
+// Shield with a bolt — "bypass / yolo" indicator. Same outline so the
+// toggle reads as the same affordance changing state, just with the
+// lightning slashed through it for danger.
+export function IconShieldBolt({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M8 1.5 2.6 3.4v4.2c0 3 2.2 5.5 5.4 6.9 3.2-1.4 5.4-3.9 5.4-6.9V3.4L8 1.5Z" />
+      <path d="M8.6 5.4 6.1 8.4h2L7.4 11l2.6-3.2H8L8.6 5.4Z" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
 export function IconSearch({ size, className }: IconProps) {
   return (
     <Svg size={size} className={className}>

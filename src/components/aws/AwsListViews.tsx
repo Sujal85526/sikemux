@@ -17,6 +17,7 @@ import type {
 } from "../../api/aws";
 import { type ReactNode } from "react";
 import { IconChevron } from "../Icons";
+import { AwsRefresh } from "./AwsRefresh";
 
 // Generic frame: loading / error / empty / data.
 function Frame<T>({
@@ -46,6 +47,7 @@ export function AwsEc2View({ profile }: { profile: string }) {
   const handle = useResource(ec2InstancesR, profile);
   return (
     <div className="aws-view">
+      <AwsRefresh handle={handle} />
       <Frame handle={handle} loading="loading instances…" emptyText="no results">
         {(data) => (
           <table className="aws-table">
@@ -96,6 +98,7 @@ export function AwsLambdaView({ profile }: { profile: string }) {
   const handle = useResource(lambdaFnsR, profile);
   return (
     <div className="aws-view">
+      <AwsRefresh handle={handle} />
       <Frame handle={handle} loading="loading functions…" emptyText="no results">
         {(data) => (
           <table className="aws-table">
@@ -133,6 +136,7 @@ export function AwsSqsView({ profile }: { profile: string }) {
   const handle = useResource(sqsQueuesR, profile);
   return (
     <div className="aws-view">
+      <AwsRefresh handle={handle} />
       <Frame handle={handle} loading="loading queues…" emptyText="no results">
         {(data) => (
           <table className="aws-table">
@@ -233,11 +237,13 @@ export function AwsBillingView({ profile }: { profile: string }) {
     if (handle.status === "error" && handle.error)
       return (
         <div className="aws-view">
+          <AwsRefresh handle={handle} />
           <div className="aws-err">{handle.error}</div>
         </div>
       );
     return (
       <div className="aws-view">
+        <AwsRefresh handle={handle} />
         <div className="aws-loading">loading costs…</div>
       </div>
     );
@@ -245,6 +251,7 @@ export function AwsBillingView({ profile }: { profile: string }) {
   if (data.length === 0)
     return (
       <div className="aws-view">
+        <AwsRefresh handle={handle} />
         <div className="aws-empty">no billing data</div>
       </div>
     );
@@ -263,6 +270,7 @@ export function AwsBillingView({ profile }: { profile: string }) {
 
   return (
     <div className="aws-view aws-billing">
+      <AwsRefresh handle={handle} />
       <div className="aws-billing-hero">
         <div className="aws-billing-hero-main">
           <div className="aws-billing-period">
@@ -447,6 +455,7 @@ export function AwsS3View({ profile }: { profile: string }) {
   const handle = useResource(s3BucketsR, profile);
   return (
     <div className="aws-view">
+      <AwsRefresh handle={handle} />
       <Frame handle={handle} loading="loading buckets…" emptyText="no results">
         {(data) => (
           <table className="aws-table">

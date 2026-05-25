@@ -12,6 +12,7 @@ import { useStore } from "../../state/store";
 import type { EcsLevel } from "../../state/types";
 import { IconChevron } from "../Icons";
 import { AwsLogTailView } from "./AwsLogTailView";
+import { AwsRefresh } from "./AwsRefresh";
 
 interface ViewProps {
   profile: string;
@@ -167,11 +168,32 @@ function ClustersList({
   profile: string;
   onPick: (cluster: string) => void;
 }) {
-  const { data, error, status } = useResource(ecsClustersR, profile);
-  if (status === "error" && error) return <div className="aws-err">{error}</div>;
-  if (!data) return <div className="aws-loading">loading clusters…</div>;
-  if (data.length === 0) return <div className="aws-empty">no clusters</div>;
+  const handle = useResource(ecsClustersR, profile);
+  const { data, error, status } = handle;
+  if (status === "error" && error)
+    return (
+      <>
+        <AwsRefresh handle={handle} />
+        <div className="aws-err">{error}</div>
+      </>
+    );
+  if (!data)
+    return (
+      <>
+        <AwsRefresh handle={handle} />
+        <div className="aws-loading">loading clusters…</div>
+      </>
+    );
+  if (data.length === 0)
+    return (
+      <>
+        <AwsRefresh handle={handle} />
+        <div className="aws-empty">no clusters</div>
+      </>
+    );
   return (
+    <>
+    <AwsRefresh handle={handle} />
     <table className="aws-table">
       <thead>
         <tr>
@@ -200,6 +222,7 @@ function ClustersList({
         ))}
       </tbody>
     </table>
+    </>
   );
 }
 
@@ -215,11 +238,15 @@ function ServicesList({
   cluster: string;
   onPick: (service: string) => void;
 }) {
-  const { data, error, status } = useResource(ecsServicesR, profile, cluster);
-  if (status === "error" && error) return <div className="aws-err">{error}</div>;
-  if (!data) return <div className="aws-loading">loading services…</div>;
-  if (data.length === 0) return <div className="aws-empty">no services</div>;
+  const handle = useResource(ecsServicesR, profile, cluster);
+  const { data, error, status } = handle;
+  const refresh = <AwsRefresh handle={handle} />;
+  if (status === "error" && error) return <>{refresh}<div className="aws-err">{error}</div></>;
+  if (!data) return <>{refresh}<div className="aws-loading">loading services…</div></>;
+  if (data.length === 0) return <>{refresh}<div className="aws-empty">no services</div></>;
   return (
+    <>
+    {refresh}
     <table className="aws-table">
       <thead>
         <tr>
@@ -254,6 +281,7 @@ function ServicesList({
         })}
       </tbody>
     </table>
+    </>
   );
 }
 

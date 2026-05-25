@@ -54,6 +54,10 @@ export function FileTree({
   const [newRequest, setNewRequest] = useState<NewEntryRequest | null>(null);
   const [newName, setNewName] = useState("");
   const newInputRef = useRef<HTMLInputElement>(null);
+  // Rename-in-place state — { path: original abs path, name: current input }.
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
   // Highlight folder row currently being drag-hovered.
   const [dragOver, setDragOver] = useState<string | null>(null);
 
@@ -126,6 +130,52 @@ export function FileTree({
   useEffect(() => {
     if (newRequest) newInputRef.current?.focus();
   }, [newRequest]);
+
+  useEffect(() => {
+    if (renaming) {
+      const el = renameInputRef.current;
+      if (el) {
+        el.focus();
+        // Pre-select the basename (without extension) so a quick rename
+        // doesn't blow away the file's extension — VSCode/Finder behavior.
+        const dot = el.value.lastIndexOf(".");
+        if (dot > 0) el.setSelectionRange(0, dot);
+        else el.select();
+      }
+    }
+  }, [renaming]);
+
+  const startRename = (entry: DirEntry) => {
+    setRenaming(entry.path);
+    setRenameName(entry.name);
+  };
+  const cancelRename = () => {
+    setRenaming(null);
+    setRenameName("");
+  };
+  const submitRename = async () => {
+    if (!renaming) return;
+    const trimmed = renameName.trim();
+    if (!trimmed || trimmed === basename(renaming)) {
+      cancelRename();
+      return;
+    }
+    const lastSlash = renaming.lastIndexOf("/");
+    const dest = `${renaming.slice(0, lastSlash)}/${trimmed}`;
+    try {
+      await fsapi.rename(renaming, dest);
+      // Refresh the parent dir so the renamed entry shows up. fs-watcher
+      // will also re-fire shortly, but that lags 200ms (debounce).
+      const parent = renaming.slice(0, lastSlash);
+      await loadDir(parent);
+      cancelRename();
+      // If a file was the active tab, the editor still holds the old path.
+      // The fs-changed event will trigger its live-reload effect; the user
+      // can re-open via the file tree.
+    } catch (err) {
+      reportError("rename")(err);
+    }
+  };
 
   const toggleDir = async (entry: DirEntry) => {
     setSelectedDir(entry.path);
@@ -213,25 +263,39 @@ export function FileTree({
       const pad = 10 + depth * 13;
       if (e.is_dir) {
         const open = expanded.has(e.path);
+        const isRenaming = renaming === e.path;
         items.push(
           <div key={e.path}>
-            <button
-              ref={(el) => attachFolderDrop(el, e.path)}
-              className={`tree-row is-folder${
-                selectedDir === e.path ? " selected" : ""
-              }${dragOver === e.path ? " drag-over" : ""}`}
-              style={{ paddingLeft: pad }}
-              onClick={() => toggleDir(e)}
-              data-folder-path={e.path}
-            >
-              <span className={`tree-chev${open ? " open" : ""}`}>
-                <IconChevron size={11} />
-              </span>
-              <span className="tree-folder">
-                <IconFolder size={17} />
-              </span>
-              <span className="tree-name">{e.name}</span>
-            </button>
+            {isRenaming ? (
+              <RenameRow
+                depth={depth}
+                kind="folder"
+                value={renameName}
+                inputRef={renameInputRef}
+                onChange={setRenameName}
+                onSubmit={submitRename}
+                onCancel={cancelRename}
+              />
+            ) : (
+              <button
+                ref={(el) => attachFolderDrop(el, e.path)}
+                className={`tree-row is-folder${
+                  selectedDir === e.path ? " selected" : ""
+                }${dragOver === e.path ? " drag-over" : ""}`}
+                style={{ paddingLeft: pad }}
+                onClick={() => toggleDir(e)}
+                onDoubleClick={() => startRename(e)}
+                data-folder-path={e.path}
+              >
+                <span className={`tree-chev${open ? " open" : ""}`}>
+                  <IconChevron size={11} />
+                </span>
+                <span className="tree-folder">
+                  <IconFolder size={17} />
+                </span>
+                <span className="tree-name">{e.name}</span>
+              </button>
+            )}
             {open && renderTree(e.path, depth + 1)}
             {newRequest?.parent === e.path && (
               <NewEntryRow
@@ -249,25 +313,42 @@ export function FileTree({
       } else {
         const gf = gitMap.get(e.path);
         const gd = gf ? gitDecoration(gf) : null;
-        items.push(
-          <button
-            key={e.path}
-            className={`tree-row file${activePath === e.path ? " active" : ""}${
-              gd ? ` git-${gd.cls}` : ""
-            }`}
-            style={{ paddingLeft: pad + 13 }}
-            onClick={() => {
-              setSelectedDir(null);
-              onOpenFile(e);
-            }}
-          >
-            <span className="tree-file">
-              <FileIcon name={e.name} size={20} />
-            </span>
-            <span className="tree-name">{e.name}</span>
-            {gd && <span className="tree-git">{gd.letter}</span>}
-          </button>,
-        );
+        const isRenaming = renaming === e.path;
+        if (isRenaming) {
+          items.push(
+            <RenameRow
+              key={e.path}
+              depth={depth + 1}
+              kind="file"
+              value={renameName}
+              inputRef={renameInputRef}
+              onChange={setRenameName}
+              onSubmit={submitRename}
+              onCancel={cancelRename}
+            />,
+          );
+        } else {
+          items.push(
+            <button
+              key={e.path}
+              className={`tree-row file${activePath === e.path ? " active" : ""}${
+                gd ? ` git-${gd.cls}` : ""
+              }`}
+              style={{ paddingLeft: pad + 13 }}
+              onClick={() => {
+                setSelectedDir(null);
+                onOpenFile(e);
+              }}
+              onDoubleClick={() => startRename(e)}
+            >
+              <span className="tree-file">
+                <FileIcon name={e.name} size={20} />
+              </span>
+              <span className="tree-name">{e.name}</span>
+              {gd && <span className="tree-git">{gd.letter}</span>}
+            </button>,
+          );
+        }
       }
     }
     return items;
@@ -399,6 +480,64 @@ function NewEntryRow({
         ref={inputRef}
         className="tree-new-input"
         placeholder={kind === "folder" ? "folder name…" : "filename…"}
+        value={value}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onCancel}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSubmit();
+          else if (e.key === "Escape") onCancel();
+          e.stopPropagation();
+        }}
+      />
+    </div>
+  );
+}
+
+function RenameRow({
+  depth,
+  kind,
+  value,
+  onChange,
+  onSubmit,
+  onCancel,
+  inputRef,
+}: {
+  depth: number;
+  kind: "file" | "folder";
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  // Folders sit at `pad`; files at `pad + 13` (chevron space). Match either
+  // so the rename row lines up perfectly with the row it's replacing.
+  const pad = 10 + depth * 13;
+  return (
+    <div
+      className="tree-row tree-new"
+      style={{ paddingLeft: kind === "folder" ? pad : pad }}
+    >
+      {kind === "folder" ? (
+        <>
+          <span className="tree-chev" style={{ visibility: "hidden" }}>
+            <IconChevron size={11} />
+          </span>
+          <span className="tree-folder">
+            <IconFolder size={17} />
+          </span>
+        </>
+      ) : (
+        <span className="tree-file">
+          <FileIcon name={value} size={20} />
+        </span>
+      )}
+      <input
+        ref={inputRef}
+        className="tree-new-input"
         value={value}
         spellCheck={false}
         autoCapitalize="off"

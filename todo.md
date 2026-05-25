@@ -6,9 +6,9 @@
 - [x] in rundeck deployment detail page for old already deployed jobs, i dont see any output in the step details bruv for step 2 and step 1 bruv, whats the issue. Fix that as well. You can verify with api manually then fix it. (done, not shipped)
 - [x] sort the branches in the git branch window correctly bruv, current branch to be always at top bruv. and is p for pulling working? I want everything similar to lazygit bruv. (done, not shipped)
 - [x] while keeping everything effecient and performant. (no regressions; see fix notes)
-- [ ] Add refresh/reload icon in the aws modules, so that if I do any changes in the console, i can just come here and just click on to refresh, instead of having to wait for it to refresh.
-- [ ] alt/option+shift+tab should cycle through group itself, like going from projects to ssh or cloud or cicd, instead of doing reverse cycle in group only, we already have alt+backtick for that bruv.
-- [ ] Remove the white bar in the terminal window that is showing up in the right of the term window bruv. Is it scrollbar? i dont think so cause its white.
-- [ ] Add jsx support and LSP if needed. 
-- [ ] renaming files in files explorer on double clicking bruv. This is basic required of any IDEs bruv.
-- [ ] Why am I not able to select and copy the aws cloudwatch logs while in tailing bruv. Fix that as well. 
+- [x] Add refresh/reload icon in the aws modules, so that if I do any changes in the console, i can just come here and just click on to refresh, instead of having to wait for it to refresh. (done, not shipped)
+- [x] alt/option+shift+tab should cycle through group itself, like going from projects to ssh or cloud or cicd, instead of doing reverse cycle in group only, we already have alt+backtick for that bruv. (done, not shipped)
+- [x] Remove the white bar in the terminal window that is showing up in the right of the term window bruv. Is it scrollbar? i dont think so cause its white. (done, not shipped — was xterm's viewport scrollbar)
+- [x] Add jsx support and LSP if needed. (done, not shipped — syntax was already wired; LSP needed ~/Library/pnpm in PATH)
+- [x] renaming files in files explorer on double clicking bruv. This is basic required of any IDEs bruv. (done, not shipped)
+- [x] Why am I not able to select and copy the aws cloudwatch logs while in tailing bruv. Fix that as well. (done, not shipped — global user-select:none + auto-scroll were both killing selection)

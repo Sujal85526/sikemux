@@ -74,6 +74,14 @@ export function AwsLogTailView({ profile, logGroup, logStream }: Props) {
 
   useEffect(() => {
     if (!pinned) return;
+    // Don't auto-scroll while the user has an active selection inside our
+    // log body — the scroll-to-bottom would collapse their selection on
+    // every new line. They lose their copy intent the moment any line
+    // arrives. Pause until the selection is gone.
+    const sel = window.getSelection();
+    if (sel && sel.toString() && containerRef.current?.contains(sel.anchorNode)) {
+      return;
+    }
     const el = containerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [lines, pinned]);

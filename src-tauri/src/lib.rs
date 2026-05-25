@@ -71,6 +71,7 @@ pub fn run() {
             fs::create_file,
             fs::create_dir,
             fs::copy_into_dir,
+            fs::rename_path,
             fs_watch::repo_watch_start,
             fs_watch::repo_watch_stop,
             git::git_status,

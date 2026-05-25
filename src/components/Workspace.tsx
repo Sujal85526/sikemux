@@ -16,7 +16,13 @@ import { GitPane } from "./GitPane";
 import { AwsPane } from "./aws/AwsPane";
 import { RundeckPane } from "./rundeck/RundeckPane";
 import { SearchPane } from "./SearchPane";
-import { AgentIcon, IconClose, IconCommand } from "./Icons";
+import {
+  AgentIcon,
+  IconClose,
+  IconCommand,
+  IconShield,
+  IconShieldBolt,
+} from "./Icons";
 
 const AGENT_TABS_H = 32;
 const TERM_TABS_H = 32;
@@ -114,9 +120,16 @@ export function Workspace() {
         const agentLayers = aIds.map((aid) => {
           const agent = agentsById[aid];
           if (!agent) return null;
+          // Include skipPermissions in the React key so toggling it
+          // forces React to unmount + remount the AgentLayer (and the
+          // TerminalPane inside it). The new PTY then spawns with the
+          // updated startup string (with or without the bypass flag).
+          // Without this, TerminalPane would keep the old PTY since it
+          // captures `startup` at mount time and never re-reads it.
+          const key = `${aid}:${agent.skipPermissions ? "skip" : "safe"}`;
           return (
             <AgentLayer
-              key={aid}
+              key={key}
               session={session}
               agent={agent}
               tabsShown={sessTabs}
@@ -186,6 +199,7 @@ function AgentTabsBar({
     <div className="agent-tabs" style={{ height: AGENT_TABS_H }}>
       {agents.map((a) => {
         const active = a.id === session.activeAgentId;
+        const skip = a.skipPermissions ?? false;
         return (
           <button
             key={a.id}
@@ -196,6 +210,20 @@ function AgentTabsBar({
               <AgentIcon type={a.type} size={14} />
             </span>
             <span className="agent-tab-title">{a.title}</span>
+            <span
+              className={`agent-tab-skip${skip ? " on" : ""}`}
+              title={
+                skip
+                  ? `Bypass mode ON (${a.type} runs without approvals). Click to restart safely.`
+                  : `Bypass approvals — restarts ${a.type} with its skip-permissions flag.`
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                cmd.toggleAgentSkipPermissions(a.id);
+              }}
+            >
+              {skip ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
+            </span>
             <span
               className="agent-tab-x"
               title="Close agent"
