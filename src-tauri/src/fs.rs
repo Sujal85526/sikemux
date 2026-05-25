@@ -44,3 +44,63 @@ pub fn read_file(path: String) -> Result<String, String> {
 pub fn write_file(path: String, content: String) -> Result<(), String> {
     fs::write(&path, content).map_err(|e| e.to_string())
 }
+
+/// Create an empty file. Fails if it already exists so we never blow away
+/// an existing file with a "new file" action. Parent dirs are auto-created
+/// so the caller can pass nested paths in one go.
+#[tauri::command]
+pub fn create_file(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    if p.exists() {
+        return Err(format!("already exists: {}", path));
+    }
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::File::create(&p).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Create a directory (and any missing parents). Idempotent — succeeds if
+/// the dir already exists, since "new folder" is forgiving.
+#[tauri::command]
+pub fn create_dir(path: String) -> Result<(), String> {
+    fs::create_dir_all(&path).map_err(|e| e.to_string())
+}
+
+/// Copy an external file into a target directory, preserving its basename.
+/// If a same-named file already exists we append " (N)" until unique, so
+/// Finder-drop never overwrites silently. Returns the final landing path.
+#[tauri::command]
+pub fn copy_into_dir(src: String, dir: String) -> Result<String, String> {
+    let src_path = std::path::PathBuf::from(&src);
+    if !src_path.exists() {
+        return Err(format!("source missing: {}", src));
+    }
+    let name = src_path
+        .file_name()
+        .ok_or_else(|| format!("source has no filename: {}", src))?
+        .to_os_string();
+    let dest_dir = std::path::PathBuf::from(&dir);
+    fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+
+    let mut candidate = dest_dir.join(&name);
+    if candidate.exists() {
+        let stem = std::path::Path::new(&name)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let ext = std::path::Path::new(&name)
+            .extension()
+            .map(|s| format!(".{}", s.to_string_lossy()))
+            .unwrap_or_default();
+        for n in 1..1000 {
+            let attempt = dest_dir.join(format!("{stem} ({n}){ext}"));
+            if !attempt.exists() {
+                candidate = attempt;
+                break;
+            }
+        }
+    }
+    fs::copy(&src_path, &candidate).map_err(|e| e.to_string())?;
+    Ok(candidate.to_string_lossy().into_owned())
+}

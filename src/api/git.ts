@@ -57,6 +57,14 @@ export const git = {
   branches: (repo: string) => invoke<GitBranch[]>("git_branches", { repo }),
   checkout: (repo: string, branch: string) =>
     invoke<void>("git_checkout", { repo, branch }),
+  branchCreate: (repo: string, name: string, startPoint?: string) =>
+    invoke<void>("git_branch_create", {
+      repo,
+      name,
+      startPoint: startPoint ?? null,
+    }),
+  merge: (repo: string, branch: string) =>
+    invoke<string>("git_merge", { repo, branch }),
   log: (repo: string) => invoke<GitCommit[]>("git_log", { repo }),
   show: (repo: string, rev: string) => invoke<string>("git_show", { repo, rev }),
   fileAt: async (repo: string, rev: string, path: string): Promise<string> => {

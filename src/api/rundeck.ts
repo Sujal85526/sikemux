@@ -136,15 +136,15 @@ export interface AbortResult {
 
 // ---- Watch / Steps -----------------------------------------------------
 
-export interface RundeckStepState {
+// Rundeck /state flattens step lifecycle onto the step itself (no
+// stepState wrapper). `stepString` isn't returned; stepctx is the
+// stable identifier we use as label + log filter key.
+export interface RundeckStep {
+  id: string | null;
+  stepctx: string | null;
   executionState: string | null;
   startTime: string | null;
   endTime: string | null;
-}
-
-export interface RundeckStep {
-  stepString: string | null;
-  stepState: RundeckStepState | null;
   nodeStep: boolean | null;
 }
 

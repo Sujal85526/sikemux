@@ -66,8 +66,13 @@ export function RundeckExecution({ paneId: _paneId, level }: Props) {
       })
       .catch((e) => setWatchErr(String(e)));
 
+    // Pass null backlog → fetch from offset 0. For RUNNING executions
+    // that means we get everything since start (typically KB); for OLD
+    // completed runs that's what makes step 1 / step 2 log entries
+    // visible (they happened long before the last 200 lines a tail-only
+    // fetch would have given us).
     rundeckApi
-      .logsStart(level.executionId, 200, (tick) => {
+      .logsStart(level.executionId, null, (tick) => {
         if (!alive) return;
         if (tick.entries.length) {
           setEntries((prev) => prev.concat(tick.entries));
@@ -254,11 +259,11 @@ function StepRow({
   selected: boolean;
   onClick: () => void;
 }) {
-  const stateName = step.stepState?.executionState ?? "NOT_STARTED";
+  // Rundeck's /state returns these flat (no stepState wrapper) — see
+  // executions.rs for the API shape note.
+  const stateName = step.executionState ?? "NOT_STARTED";
   const ui = STEP_STATE[stateName] ?? { label: "?", cls: "pending" as const };
-  const start = step.stepState?.startTime ?? null;
-  const end = step.stepState?.endTime ?? null;
-  const dur = duration(start, end);
+  const dur = duration(step.startTime, step.endTime);
   return (
     <button
       className={`rnd-step${selected ? " selected" : ""} step-${ui.cls}`}
@@ -268,7 +273,7 @@ function StepRow({
       <span className="rnd-step-num">{idx + 1}</span>
       <span className={`rnd-step-glyph step-${ui.cls}`}>{ui.label}</span>
       <span className="rnd-step-label">
-        {step.stepString ?? `step ${idx + 1}`}
+        step {step.stepctx ?? step.id ?? idx + 1}
       </span>
       <span className="rnd-step-dur">{dur}</span>
     </button>

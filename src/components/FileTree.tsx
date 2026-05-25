@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
+import { subscribe } from "../state/bus";
 import { useResource } from "../state/resources";
 import { gitStatusR } from "../state/resources.defs";
-import { IconChevron, IconFolder } from "./Icons";
+import { reportError } from "../state/toast";
+import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
 
 const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
@@ -29,6 +31,12 @@ interface FileTreeProps {
   revealPath?: string | null;
 }
 
+interface NewEntryRequest {
+  /** Parent directory the new entry will be created in. */
+  parent: string;
+  kind: "file" | "folder";
+}
+
 export function FileTree({
   cwd,
   activePath,
@@ -39,6 +47,16 @@ export function FileTree({
 }: FileTreeProps) {
   const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Row the user clicked last — folder selections decide where "new file"
+  // / "new folder" lands. null = root cwd.
+  const [selectedDir, setSelectedDir] = useState<string | null>(null);
+  // Inline-input render state for "+ new file" / "+ new folder".
+  const [newRequest, setNewRequest] = useState<NewEntryRequest | null>(null);
+  const [newName, setNewName] = useState("");
+  const newInputRef = useRef<HTMLInputElement>(null);
+  // Highlight folder row currently being drag-hovered.
+  const [dragOver, setDragOver] = useState<string | null>(null);
+
   const status = useResource(gitStatusR, cwd || "");
   const gitMap = (() => {
     const m = new Map<string, GitFile>();
@@ -48,14 +66,38 @@ export function FileTree({
     return m;
   })();
 
+  const loadDir = useCallback((path: string) => {
+    return fsapi
+      .readDir(path)
+      .then((e) => {
+        setDirs((d) => ({ ...d, [path]: e }));
+      })
+      .catch(() => {});
+  }, []);
+
   // Load root.
   useEffect(() => {
     if (!cwd) return;
-    fsapi
-      .readDir(cwd)
-      .then((e) => setDirs((d) => ({ ...d, [cwd]: e })))
-      .catch(() => {});
-  }, [cwd]);
+    void loadDir(cwd);
+  }, [cwd, loadDir]);
+
+  // Live watcher: when the backend reports a filesystem change in this
+  // repo, re-fetch every open dir (root + every expanded). Cheap — a few
+  // readDir calls, indexed off the existing fs-watch we already started
+  // for git overview. Same recipe Zed uses: never trust a cached listing
+  // once the watcher fires.
+  useEffect(() => {
+    if (!cwd) return;
+    const unsubscribe = subscribe("fs-changed", (e) => {
+      if (e.repo && e.repo !== cwd) return;
+      void loadDir(cwd);
+      for (const p of expanded) void loadDir(p);
+    });
+    return unsubscribe;
+    // expanded is intentionally tracked via the live ref below — we want
+    // to re-read every currently-open dir at event time, not snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd, loadDir]);
 
   // Reveal the active file by expanding every ancestor.
   useEffect(() => {
@@ -76,45 +118,111 @@ export function FileTree({
       return n;
     });
     for (const par of parents) {
-      if (!dirs[par]) {
-        void fsapi
-          .readDir(par)
-          .then((e) => setDirs((d) => ({ ...d, [par]: e })))
-          .catch(() => {});
-      }
+      if (!dirs[par]) void loadDir(par);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealPath, activePath, cwd]);
 
+  useEffect(() => {
+    if (newRequest) newInputRef.current?.focus();
+  }, [newRequest]);
+
   const toggleDir = async (entry: DirEntry) => {
+    setSelectedDir(entry.path);
     const open = expanded.has(entry.path);
     setExpanded((s) => {
       const n = new Set(s);
       open ? n.delete(entry.path) : n.add(entry.path);
       return n;
     });
-    if (!open && !dirs[entry.path]) {
-      try {
-        const e = await fsapi.readDir(entry.path);
-        setDirs((d) => ({ ...d, [entry.path]: e }));
-      } catch {
-        /* ignore */
-      }
+    if (!open && !dirs[entry.path]) await loadDir(entry.path);
+  };
+
+  // ---- new file / folder ----
+
+  const startNew = (kind: "file" | "folder") => {
+    // Determine parent: selected dir, or parent dir of active file, or root.
+    let parent = selectedDir;
+    if (!parent && activePath && activePath.startsWith(`${cwd}/`)) {
+      const last = activePath.lastIndexOf("/");
+      if (last > cwd.length) parent = activePath.slice(0, last);
     }
+    if (!parent) parent = cwd;
+    setExpanded((s) => new Set(s).add(parent!));
+    if (!dirs[parent]) void loadDir(parent);
+    setNewRequest({ parent, kind });
+    setNewName("");
+  };
+
+  const cancelNew = () => {
+    setNewRequest(null);
+    setNewName("");
+  };
+
+  const submitNew = async () => {
+    if (!newRequest) return;
+    const name = newName.trim();
+    if (!name) {
+      cancelNew();
+      return;
+    }
+    const target = `${newRequest.parent}/${name}`;
+    try {
+      if (newRequest.kind === "file") await fsapi.createFile(target);
+      else await fsapi.createDir(target);
+      await loadDir(newRequest.parent);
+      cancelNew();
+      // If a file was created, open it in the editor.
+      if (newRequest.kind === "file") {
+        onOpenFile({
+          name,
+          path: target,
+          is_dir: false,
+        });
+      }
+    } catch (err) {
+      reportError("create")(err);
+    }
+  };
+
+  // ---- drag-drop into a folder ----
+
+  // Attach the App.tsx-routed drop handler to each folder row. The global
+  // listener in App.tsx hit-tests elementFromPoint and walks up to a
+  // .tree-row.is-folder ancestor, then calls __sikemuxDropFolder(paths).
+  const attachFolderDrop = (el: HTMLButtonElement | null, dir: string) => {
+    if (!el) return;
+    interface DropTarget {
+      __sikemuxDropFolder?: (paths: string[]) => void;
+    }
+    (el as unknown as DropTarget).__sikemuxDropFolder = async (paths) => {
+      try {
+        for (const p of paths) await fsapi.copyIntoDir(p, dir);
+        await loadDir(dir);
+        setExpanded((s) => new Set(s).add(dir));
+      } catch (err) {
+        reportError("drop")(err);
+      }
+    };
   };
 
   const renderTree = (path: string, depth: number): ReactNode => {
     const entries = dirs[path] ?? [];
-    return entries.map((e) => {
+    const items: ReactNode[] = [];
+    for (const e of entries) {
       const pad = 10 + depth * 13;
       if (e.is_dir) {
         const open = expanded.has(e.path);
-        return (
+        items.push(
           <div key={e.path}>
             <button
-              className="tree-row"
+              ref={(el) => attachFolderDrop(el, e.path)}
+              className={`tree-row is-folder${
+                selectedDir === e.path ? " selected" : ""
+              }${dragOver === e.path ? " drag-over" : ""}`}
               style={{ paddingLeft: pad }}
               onClick={() => toggleDir(e)}
+              data-folder-path={e.path}
             >
               <span className={`tree-chev${open ? " open" : ""}`}>
                 <IconChevron size={11} />
@@ -125,28 +233,44 @@ export function FileTree({
               <span className="tree-name">{e.name}</span>
             </button>
             {open && renderTree(e.path, depth + 1)}
-          </div>
+            {newRequest?.parent === e.path && (
+              <NewEntryRow
+                depth={depth + 1}
+                kind={newRequest.kind}
+                value={newName}
+                inputRef={newInputRef}
+                onChange={setNewName}
+                onSubmit={submitNew}
+                onCancel={cancelNew}
+              />
+            )}
+          </div>,
+        );
+      } else {
+        const gf = gitMap.get(e.path);
+        const gd = gf ? gitDecoration(gf) : null;
+        items.push(
+          <button
+            key={e.path}
+            className={`tree-row file${activePath === e.path ? " active" : ""}${
+              gd ? ` git-${gd.cls}` : ""
+            }`}
+            style={{ paddingLeft: pad + 13 }}
+            onClick={() => {
+              setSelectedDir(null);
+              onOpenFile(e);
+            }}
+          >
+            <span className="tree-file">
+              <FileIcon name={e.name} size={20} />
+            </span>
+            <span className="tree-name">{e.name}</span>
+            {gd && <span className="tree-git">{gd.letter}</span>}
+          </button>,
         );
       }
-      const gf = gitMap.get(e.path);
-      const gd = gf ? gitDecoration(gf) : null;
-      return (
-        <button
-          key={e.path}
-          className={`tree-row file${activePath === e.path ? " active" : ""}${
-            gd ? ` git-${gd.cls}` : ""
-          }`}
-          style={{ paddingLeft: pad + 13 }}
-          onClick={() => onOpenFile(e)}
-        >
-          <span className="tree-file">
-            <FileIcon name={e.name} size={20} />
-          </span>
-          <span className="tree-name">{e.name}</span>
-          {gd && <span className="tree-git">{gd.letter}</span>}
-        </button>
-      );
-    });
+    }
+    return items;
   };
 
   const onResizeDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -166,13 +290,127 @@ export function FileTree({
     window.addEventListener("pointerup", up);
   };
 
+  // Root-level drop target: drops outside any folder land in cwd.
+  const rootScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootScrollRef.current;
+    if (!el || !cwd) return;
+    interface DropTarget {
+      __sikemuxDropFolder?: (paths: string[]) => void;
+    }
+    (el as unknown as DropTarget).__sikemuxDropFolder = async (paths) => {
+      try {
+        for (const p of paths) await fsapi.copyIntoDir(p, cwd);
+        await loadDir(cwd);
+      } catch (err) {
+        reportError("drop")(err);
+      }
+    };
+  }, [cwd, loadDir]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    // Prevent the webview's default navigate-to-file://. Tauri's drop
+    // event hands us absolute paths via the listener in App.tsx.
+    e.preventDefault();
+    const t = (e.target as HTMLElement | null)?.closest(
+      ".tree-row.is-folder",
+    ) as HTMLElement | null;
+    setDragOver(t?.dataset.folderPath ?? null);
+  };
+  const handleDragLeave = () => setDragOver(null);
+  const handleDrop = () => setDragOver(null);
+
   return (
     <>
       <div className="ed-tree" style={{ width }}>
-        <div className="ed-tree-head">{basename(cwd) || "files"}</div>
-        <div className="ed-tree-scroll">{renderTree(cwd, 0)}</div>
+        <div className="ed-tree-head">
+          <span className="ed-tree-name">{basename(cwd) || "files"}</span>
+          <span className="ed-tree-actions">
+            <button
+              type="button"
+              className="ed-tree-act"
+              title="New file (a)"
+              onClick={() => startNew("file")}
+            >
+              <FileIcon name="" size={13} />
+              <IconPlus size={9} />
+            </button>
+            <button
+              type="button"
+              className="ed-tree-act"
+              title="New folder (A)"
+              onClick={() => startNew("folder")}
+            >
+              <IconFolder size={13} />
+              <IconPlus size={9} />
+            </button>
+          </span>
+        </div>
+        <div
+          ref={rootScrollRef}
+          className="ed-tree-scroll"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {renderTree(cwd, 0)}
+          {newRequest?.parent === cwd && (
+            <NewEntryRow
+              depth={0}
+              kind={newRequest.kind}
+              value={newName}
+              inputRef={newInputRef}
+              onChange={setNewName}
+              onSubmit={submitNew}
+              onCancel={cancelNew}
+            />
+          )}
+        </div>
       </div>
       <div className="ed-tree-resizer" onPointerDown={onResizeDrag} title="Drag to resize" />
     </>
+  );
+}
+
+function NewEntryRow({
+  depth,
+  kind,
+  value,
+  onChange,
+  onSubmit,
+  onCancel,
+  inputRef,
+}: {
+  depth: number;
+  kind: "file" | "folder";
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  const pad = 10 + depth * 13;
+  return (
+    <div className="tree-row tree-new" style={{ paddingLeft: pad + 13 }}>
+      <span className="tree-file">
+        {kind === "folder" ? <IconFolder size={17} /> : <FileIcon name="" size={20} />}
+      </span>
+      <input
+        ref={inputRef}
+        className="tree-new-input"
+        placeholder={kind === "folder" ? "folder name…" : "filename…"}
+        value={value}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onCancel}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSubmit();
+          else if (e.key === "Escape") onCancel();
+          e.stopPropagation();
+        }}
+      />
+    </div>
   );
 }

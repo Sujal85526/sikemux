@@ -105,33 +105,44 @@ export default function App() {
     };
   }, []);
 
-  // File drag-drop into a terminal pane. Tauri 2 disables HTML5 native
-  // drop on the webview (would navigate to file://) and gives us this
-  // event instead, with absolute paths + drop position. We hit-test the
-  // position via elementFromPoint, walk up to the nearest .terminal-host,
-  // and call into its TerminalPane-installed drop handler (which writes
-  // the quoted paths to the PTY). Same UX as Ghostty / Terminal.app —
-  // Claude Code / Codex sessions ingest the dropped file path naturally.
+  // File drag-drop. Tauri 2 disables HTML5 native drop on the webview
+  // (would navigate to file://) and gives us this event instead, with
+  // absolute paths + drop position. We hit-test via elementFromPoint and
+  // dispatch to the first ancestor that has installed a drop handler:
+  //   * `.terminal-host`        → TerminalPane writes quoted paths to PTY
+  //                               (Claude Code / Codex @-file ingest).
+  //   * `.tree-row.is-folder`   → FileTree copies into that folder.
+  //   * `.ed-tree-scroll`       → FileTree copies into the repo root.
   useEffect(() => {
-    interface DropTarget {
+    interface PtyTarget {
       __sikemuxDropPaths?: (paths: string[]) => void;
+    }
+    interface FolderTarget {
+      __sikemuxDropFolder?: (paths: string[]) => void;
     }
     const unlistenP = getCurrentWebview().onDragDropEvent((e) => {
       if (e.payload.type !== "drop") return;
       const paths = e.payload.paths;
       if (!paths || paths.length === 0) return;
       const pos = e.payload.position;
-      // Tauri reports drop position in physical pixels; convert to CSS
-      // pixels using devicePixelRatio so elementFromPoint hits correctly
-      // on retina + scaled displays.
       const dpr = window.devicePixelRatio || 1;
       const x = pos.x / dpr;
       const y = pos.y / dpr;
-      const target = document
-        .elementFromPoint(x, y)
-        ?.closest(".terminal-host") as HTMLElement | null;
-      if (!target) return;
-      (target as unknown as DropTarget).__sikemuxDropPaths?.(paths);
+      const at = document.elementFromPoint(x, y);
+      const term = at?.closest(".terminal-host") as HTMLElement | null;
+      if (term) {
+        (term as unknown as PtyTarget).__sikemuxDropPaths?.(paths);
+        return;
+      }
+      const folder = at?.closest(".tree-row.is-folder") as HTMLElement | null;
+      if (folder) {
+        (folder as unknown as FolderTarget).__sikemuxDropFolder?.(paths);
+        return;
+      }
+      const treeRoot = at?.closest(".ed-tree-scroll") as HTMLElement | null;
+      if (treeRoot) {
+        (treeRoot as unknown as FolderTarget).__sikemuxDropFolder?.(paths);
+      }
     });
     return () => {
       void unlistenP.then((u) => u());

@@ -28,6 +28,14 @@ export function DiffEditor({
   onSaved?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  // Live ref to the latest onSaved so the mount-effect dep list stays
+  // stable. Without this, parents that pass a fresh inline arrow ({
+  // onSaved={() => …} }) cause the entire CodeMirror EditorView to
+  // destroy + rebuild on every parent render, which manifests as visible
+  // flicker the moment the user clicks into the diff (GitPane re-renders
+  // when overview polling or the fs-watch fire, ~5 Hz at idle).
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +46,7 @@ export function DiffEditor({
     const save = (v: EditorView): boolean => {
       void fsapi
         .writeFile(absPath, v.state.doc.toString())
-        .then(() => onSaved?.())
+        .then(() => onSavedRef.current?.())
         .catch(() => {});
       return true;
     };
@@ -95,7 +103,11 @@ export function DiffEditor({
       unregister?.();
       view?.destroy();
     };
-  }, [repo, path, baseRev, headRev, editable, autoHeight, onSaved]);
+    // Intentionally excludes onSaved — it's read via onSavedRef. Mounting
+    // only depends on what actually defines the editor (file + base/head
+    // + editability), so cursor / scroll never trigger a remount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repo, path, baseRev, headRev, editable, autoHeight]);
 
   return <div className={`diff-editor${autoHeight ? " auto" : ""}`} ref={hostRef} />;
 }

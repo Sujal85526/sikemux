@@ -129,24 +129,25 @@ pub async fn rnd_abort(execution_id: u64) -> AppResult<AbortResult> {
     post_empty_json(&format!("/execution/{execution_id}/abort")).await
 }
 
-// ---- Step / workflow state (used by watch.rs and also by single fetch UI) ----
+// ---- Step / workflow state (used by watch.rs and also by single fetch UI) --
+//
+// Rundeck's actual /state JSON puts the step lifecycle fields FLAT on each
+// step object — NOT in a nested `stepState` wrapper as the docs imply.
+// Real shape: { id, stepctx, executionState, startTime, endTime, duration,
+//               nodeStates, nodeStep, parameterStates }
+// `stepString` (label) isn't in /state at all; it lives in the job
+// definition. For now we surface stepctx as the visible label.
 
-#[derive(Serialize, Clone, Deserialize)]
-pub struct StepState {
+#[derive(Serialize, Clone, Deserialize, Default)]
+pub struct Step {
+    pub id: Option<String>,
+    pub stepctx: Option<String>,
     #[serde(rename = "executionState")]
     pub execution_state: Option<String>,
     #[serde(rename = "startTime")]
     pub start_time: Option<String>,
     #[serde(rename = "endTime")]
     pub end_time: Option<String>,
-}
-
-#[derive(Serialize, Clone, Deserialize)]
-pub struct Step {
-    #[serde(rename = "stepString")]
-    pub label: Option<String>,
-    #[serde(rename = "stepState")]
-    pub state: Option<StepState>,
     #[serde(rename = "nodeStep")]
     pub node_step: Option<bool>,
 }

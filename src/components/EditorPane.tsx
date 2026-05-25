@@ -245,6 +245,51 @@ export function EditorPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Live external-edit reload. When fs_watch fires for our repo (agent
+  // wrote a file, git checkout swapped contents, etc.), re-read every
+  // open tab and push fresh content into its EditorState. Dirty tabs are
+  // skipped — never clobber the user's in-flight edits. Zed-style: the
+  // editor always matches disk unless the user has unsaved changes.
+  useEffect(() => {
+    if (!cwd) return;
+    return subscribe("fs-changed", async (e) => {
+      if (e.repo && e.repo !== cwd) return;
+      const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
+      for (const path of tabsNow) {
+        if (dirtyRef.current.has(path)) continue;
+        let fresh: string;
+        try {
+          fresh = await fsapi.readFile(path);
+        } catch {
+          continue; // file was deleted / renamed — silently skip
+        }
+        const isActive = currentRef.current === path;
+        const view = viewRef.current;
+        if (isActive && view) {
+          const current = view.state.doc.toString();
+          if (current === fresh) continue;
+          // Preserve cursor offset where possible (clamp to new length).
+          const head = Math.min(
+            view.state.selection.main.head,
+            fresh.length,
+          );
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: fresh },
+            selection: { anchor: head },
+          });
+        } else {
+          const cached = states.current.get(path);
+          if (cached && cached.doc.toString() === fresh) continue;
+          // Cold tab: rebuild its EditorState so the next switchTo lands
+          // on the new content. Cursor falls back to start since the
+          // stored selection may no longer be meaningful.
+          states.current.set(path, makeState(path, fresh));
+        }
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd, paneId]);
+
   // Open-file events from the bus (Cmd-P palette, git review jump, LSP nav).
   useEffect(() => {
     return subscribe("open-file", (e) => {

@@ -1110,6 +1110,7 @@ button {
     height: 30px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 0 12px;
     font-size: 9.5px;
     font-weight: 700;
@@ -1118,6 +1119,56 @@ button {
     color: var(--ink-faint);
     border-bottom: 1px solid var(--line-soft);
 }
+.ed-tree-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ed-tree-actions {
+    display: inline-flex;
+    gap: 4px;
+    opacity: 0.5;
+    transition: opacity 0.12s;
+}
+.ed-tree:hover .ed-tree-actions { opacity: 1; }
+.ed-tree-act {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    background: transparent;
+    border: none;
+    color: var(--ink-faint);
+    cursor: pointer;
+    padding: 2px 3px;
+    line-height: 1;
+}
+.ed-tree-act:hover { color: var(--acc); }
+
+.tree-row.selected {
+    background: color-mix(in srgb, var(--acc) 14%, transparent);
+    color: var(--ink);
+}
+.tree-row.is-folder.drag-over {
+    background: var(--acc-soft);
+    color: var(--ink);
+    outline: 1px dashed var(--acc-line);
+    outline-offset: -1px;
+}
+.tree-row.tree-new {
+    cursor: default;
+}
+.tree-new-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--acc-line);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 1px 0;
+    outline: none;
+}
+.tree-new-input:focus { border-bottom-color: var(--acc); }
 .ed-tree-scroll {
     flex: 1;
     overflow-y: auto;

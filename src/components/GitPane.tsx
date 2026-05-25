@@ -50,6 +50,14 @@ export function GitPane({
   const [commitMode, setCommitMode] = useState(false);
   const [commitText, setCommitText] = useState("");
   const commitInputRef = useRef<HTMLInputElement>(null);
+  // Inline branch-name input — opened by `n` on the branches panel.
+  // `startPoint` carries the branch the new one should fork from; empty =
+  // current HEAD.
+  const [branchInput, setBranchInput] = useState<
+    { startPoint: string } | null
+  >(null);
+  const [branchText, setBranchText] = useState("");
+  const branchInputRef = useRef<HTMLInputElement>(null);
 
   // Filesystem watcher — backend pushes `git_changed` which App.tsx turns
   // into a resource invalidation. We just keep the watcher handle open.
@@ -64,6 +72,10 @@ export function GitPane({
   useEffect(() => {
     if (commitMode) commitInputRef.current?.focus();
   }, [commitMode]);
+
+  useEffect(() => {
+    if (branchInput) branchInputRef.current?.focus();
+  }, [branchInput]);
 
   // Load the right pane for the selected row.
   useEffect(() => {
@@ -165,9 +177,26 @@ export function GitPane({
     });
   };
 
+  const doCreateBranch = (name: string, startPoint: string) => {
+    if (!name.trim()) return;
+    setBranchInput(null);
+    setBranchText("");
+    void run("creating branch…", async () => {
+      await git.branchCreate(repo, name.trim(), startPoint || undefined);
+      return `✓ created + checked out ${name.trim()}${startPoint ? `\n  from ${startPoint}` : ""}`;
+    });
+  };
+
+  const doMerge = (branch: string) => {
+    void run(`merging ${branch}…`, async () => {
+      const out = await git.merge(repo, branch);
+      return `✓ merged ${branch}${out ? `\n\n${out}` : ""}`;
+    });
+  };
+
   // ---- keyboard ----
   useEffect(() => {
-    if (!active || commitMode) return;
+    if (!active || commitMode || branchInput) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey || e.metaKey) return;
       if (useStore.getState().pickerOpen) return;
@@ -220,7 +249,22 @@ export function GitPane({
         const b = branches[sel.branches];
         if (b && !b.current)
           void run("", () => git.checkout(repo, b.name));
-      } else handled = false;
+      }
+      else if (panel === "branches" && k === "n") {
+        // lazygit-style: new branch from selected (Shift+N from HEAD)
+        const b = branches[sel.branches];
+        setBranchInput({ startPoint: b?.name ?? "" });
+        setBranchText("");
+      }
+      else if (panel === "branches" && k === "N") {
+        setBranchInput({ startPoint: "" });
+        setBranchText("");
+      }
+      else if (panel === "branches" && k === "M") {
+        const b = branches[sel.branches];
+        if (b && !b.current) doMerge(b.name);
+      }
+      else handled = false;
       if (handled) {
         e.preventDefault();
         e.stopPropagation();
@@ -249,6 +293,33 @@ export function GitPane({
                 else if (e.key === "Escape") {
                   setCommitMode(false);
                   setCommitText("");
+                }
+                e.stopPropagation();
+              }}
+            />
+          </div>
+        )}
+        {branchInput && (
+          <div className="git-commit-bar">
+            <input
+              ref={branchInputRef}
+              className="git-commit-input"
+              placeholder={
+                branchInput.startPoint
+                  ? `new branch (from ${branchInput.startPoint})…`
+                  : "new branch (from HEAD)…"
+              }
+              value={branchText}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              onChange={(e) => setBranchText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter")
+                  doCreateBranch(branchText, branchInput.startPoint);
+                else if (e.key === "Escape") {
+                  setBranchInput(null);
+                  setBranchText("");
                 }
                 e.stopPropagation();
               }}

@@ -175,7 +175,15 @@ pub fn git_status(repo: String) -> Result<GitStatus, String> {
 // ---- branches & log -------------------------------------------------------
 
 fn read_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
-    let mut out = Vec::new();
+    // Lazygit-style ordering: current branch always at top, then everything
+    // else sorted by most-recently-committed-on (so branches you've actually
+    // touched recently float up over stale `main` / `master` copies).
+    struct Row {
+        branch: GitBranch,
+        committed_at: i64,
+        is_current: bool,
+    }
+    let mut rows: Vec<Row> = Vec::new();
     let iter = repo
         .branches(Some(BranchType::Local))
         .map_err(|e| e.message().to_string())?;
@@ -192,10 +200,27 @@ fn read_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
             .upstream()
             .ok()
             .and_then(|up| up.name().ok().flatten().map(String::from));
-        let current = branch.is_head();
-        out.push(GitBranch { name, current, upstream });
+        let is_current = branch.is_head();
+        // Tip-of-branch commit time; 0 if we can't resolve (won't push it
+        // above a real branch — the sort prefers larger timestamps).
+        let committed_at = branch
+            .get()
+            .peel_to_commit()
+            .map(|c| c.time().seconds())
+            .unwrap_or(0);
+        rows.push(Row {
+            branch: GitBranch { name, current: is_current, upstream },
+            committed_at,
+            is_current,
+        });
     }
-    Ok(out)
+    rows.sort_by(|a, b| {
+        b.is_current
+            .cmp(&a.is_current) // current = true sorts first
+            .then(b.committed_at.cmp(&a.committed_at)) // newer first
+            .then(a.branch.name.cmp(&b.branch.name)) // tie-break alphabetical
+    });
+    Ok(rows.into_iter().map(|r| r.branch).collect())
 }
 
 #[tauri::command]
@@ -265,6 +290,41 @@ pub fn git_overview(repo: String) -> Result<GitOverview, String> {
 pub async fn git_checkout(repo: String, branch: String) -> Result<(), String> {
     // git2 checkout is fiddly with working-tree handling — shell out.
     git_ok(&repo, &["checkout", &branch]).map(|_| ())
+}
+
+/// Create a new branch starting at `start_point` (default HEAD) and check it
+/// out. Mirrors `git checkout -b name [start_point]` — the usual "branch
+/// from where I am right now" flow.
+#[tauri::command]
+pub async fn git_branch_create(
+    repo: String,
+    name: String,
+    start_point: Option<String>,
+) -> Result<(), String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("branch name is empty".into());
+    }
+    let mut args: Vec<&str> = vec!["checkout", "-b", trimmed];
+    if let Some(sp) = start_point.as_deref() {
+        if !sp.is_empty() {
+            args.push(sp);
+        }
+    }
+    git_ok(&repo, &args).map(|_| ())
+}
+
+/// Merge `branch` into the current HEAD with a merge commit (--no-ff so the
+/// branch topology stays visible — common lazygit / Tower convention).
+/// Returns the merge command output; conflict text comes back as the Err
+/// for the caller to surface.
+#[tauri::command]
+pub async fn git_merge(repo: String, branch: String) -> Result<String, String> {
+    let trimmed = branch.trim();
+    if trimmed.is_empty() {
+        return Err("branch name is empty".into());
+    }
+    git_ok(&repo, &["merge", "--no-ff", trimmed])
 }
 
 // ---- diff -----------------------------------------------------------------
