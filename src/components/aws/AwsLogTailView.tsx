@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { awsApi } from "../../api/aws";
 import { reportError } from "../../state/toast";
+import { highlightLog } from "./logHighlight";
 
 // Live CloudWatch log tail for either:
 //   - a whole log group (service-level — all tasks mixed), or
@@ -137,7 +138,7 @@ export function AwsLogTailView({ profile, logGroup, logStream }: Props) {
         )}
         {lines.map((l, i) => (
           <div className="aws-logs-line" key={i}>
-            {l}
+            {highlightLog(l)}
           </div>
         ))}
       </div>

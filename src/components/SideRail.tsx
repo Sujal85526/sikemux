@@ -1,16 +1,14 @@
-import { useState, type ReactNode } from "react";
-import type { Session, SessionKind, Window } from "../state/types";
+import { type ReactNode } from "react";
+import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import {
   AgentIcon,
   IconAgent,
   IconAws,
-  IconChevron,
   IconClose,
   IconCommand,
   IconFolder,
-  IconPin,
   IconPlus,
   IconRundeck,
   WindowIcon,
@@ -23,10 +21,15 @@ function kindIcon(kind: SessionKind): ReactNode {
   return <IconCommand size={13} />;
 }
 
+// Max glyphs shown before collapsing the rest into a "+N" overflow chip.
+// 3 visible + 1 "+N" = 4 stack slots, matching today's horizontal cap.
 const STACK_MAX = 4;
 
-// Tiny stacked badge — overlapping circles, capped at STACK_MAX.
-function CountStack({
+/** Vertical brand-glyph stack — same circles + colors as the old horizontal
+ *  CountStack, just rotated so it sits below the parent icon. Used under
+ *  the `term` icon (green dots with `>_`) and the `agents` icon (colored
+ *  by agent type: claude / codex / hermes). Returns null at count = 0. */
+function VerticalStack({
   count,
   kind,
   agentKinds,
@@ -40,11 +43,7 @@ function CountStack({
   if (count === 0) return null;
   const visible = Math.min(count, STACK_MAX);
   return (
-    <span
-      className={`sess-stack stack-${kind}`}
-      title={title}
-      data-count={count}
-    >
+    <span className={`proj-vstack vstack-${kind}`} title={title} data-count={count}>
       {Array.from({ length: visible }).map((_, i) => {
         const overflowing = count > STACK_MAX;
         const isMore = overflowing && i === visible - 1;
@@ -57,18 +56,18 @@ function CountStack({
         return (
           <span
             key={i}
-            className={`stack-dot${isMore ? " more" : ""}${
+            className={`proj-glyph${isMore ? " more" : ""}${
               kind === "agent" && agentType && !isMore
                 ? ` agent-glyph ${agentType}`
                 : ""
             }`}
           >
             {overflowText ? (
-              <span className="stack-more-num">{overflowText}</span>
+              <span className="proj-glyph-num">{overflowText}</span>
             ) : kind === "term" ? (
-              <IconCommand size={13} />
+              <IconCommand size={11} />
             ) : (
-              <AgentIcon type={agentType ?? "claude"} size={20} />
+              <AgentIcon type={agentType ?? "claude"} size={14} />
             )}
           </span>
         );
@@ -87,21 +86,14 @@ export function SideRail() {
   const activeSessionId = useStore((s) => s.activeSessionId);
   const sessions = sessionOrder.map((id) => sessionsById[id]);
 
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const toggleCollapse = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const pinned = sessions.filter((s) => s.pinned);
-  const projects = sessions.filter((s) => !s.pinned && s.kind === "project");
-  const sshs = sessions.filter((s) => !s.pinned && s.kind === "ssh");
-  const cloud = sessions.filter((s) => !s.pinned && s.kind === "aws");
-  const cicd = sessions.filter((s) => !s.pinned && s.kind === "rundeck");
-  const commands = sessions.filter((s) => !s.pinned && s.kind === "command");
+  // No Superpin group + no per-session pin button in the rail — pinning
+  // is a bookmark-only concept that lives in the agent rail. Sessions
+  // remain grouped purely by kind, in the order they were opened.
+  const projects = sessions.filter((s) => s.kind === "project");
+  const sshs = sessions.filter((s) => s.kind === "ssh");
+  const cloud = sessions.filter((s) => s.kind === "aws");
+  const cicd = sessions.filter((s) => s.kind === "rundeck");
+  const commands = sessions.filter((s) => s.kind === "command");
 
   const jumpToWindow = (sessionId: string, winId: string) => {
     if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
@@ -112,55 +104,82 @@ export function SideRail() {
     cmd.focusAgents();
   };
 
-  const Row = ({ s }: { s: Session }) => {
+  /** Project rows: always-visible 2-row block (name + 5-icon hop bar).
+   *  Active sub-icon spotlit by the parent project's `view` + activeRole.
+   *  Vertical glyph stacks sit directly below the term / agents icons via
+   *  a strict per-icon column so they line up center-aligned. */
+  const ProjectBlock = ({ s }: { s: Session }) => {
     const active = s.id === activeSessionId;
-    const isProject = s.kind === "project";
-    const open = isProject && !collapsed.has(s.id);
     const winIds = windowsBySession[s.id] ?? [];
     const sessionWindows = winIds
       .map((id) => windowsById[id])
       .filter(Boolean) as Window[];
     const agentIds = agentsBySession[s.id] ?? [];
-    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
     const agents = agentIds.map((id) => agentsById[id]).filter(Boolean);
-    return (
-      <div>
-        <button
-          className={`sess-row${active ? " active" : ""}`}
-          onClick={() => cmd.selectSession(s.id)}
-        >
-          <span
-            className={`sess-icon ${s.kind}${isProject ? " toggle" : ""}${
-              isProject && open ? " open" : ""
-            }`}
-            title={isProject ? (open ? "Collapse" : "Expand") : undefined}
-            onClick={
-              isProject
-                ? (e) => {
-                    e.stopPropagation();
-                    toggleCollapse(s.id);
-                  }
-                : undefined
-            }
-          >
-            <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
-            {isProject && (
-              <span className="sess-icon-chev">
-                <IconChevron size={11} />
-              </span>
-            )}
-          </span>
-          <span className="sess-name">{s.name}</span>
-          <span
-            className={`sess-pin${s.pinned ? " on" : ""}`}
-            title={s.pinned ? "Unpin" : "Pin"}
+    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
+
+    // First window of each role (project sessions always have one of each
+    // canonical role — files/term/git/search). `term` may also have
+    // numeric-named siblings from Alt+N; those collapse into the stack.
+    const winByRole = (role: WindowRole): Window | undefined =>
+      sessionWindows.find((w) => w.role === role);
+    const activeRole = sessionWindows.find(
+      (w) => w.id === s.activeWindowId,
+    )?.role;
+    const inAgentView = active && s.view === "agent";
+    const inWindowsView = active && s.view === "windows";
+    const isSubActive = (role: WindowRole | "agents"): boolean => {
+      if (role === "agents") return inAgentView;
+      return inWindowsView && activeRole === role;
+    };
+
+    const onIconClick = (role: WindowRole | "agents") => {
+      if (role === "agents") {
+        jumpToAgents(s.id);
+        return;
+      }
+      const w = winByRole(role);
+      if (w) jumpToWindow(s.id, w.id);
+    };
+
+    // Per-icon column: icon button + optional vertical stack below.
+    const iconCol = (
+      role: WindowRole | "agents",
+      titleText: string,
+      stack?: ReactNode,
+    ) => {
+      const subActive = isSubActive(role);
+      const node =
+        role === "agents" ? <IconAgent size={14} /> : <WindowIcon role={role} size={14} />;
+      return (
+        <div className="proj-icol" key={role}>
+          <button
+            type="button"
+            className={`proj-ic${subActive ? " active" : ""}`}
+            title={titleText}
             onClick={(e) => {
               e.stopPropagation();
-              cmd.togglePin(s.id);
+              onIconClick(role);
             }}
           >
-            <IconPin size={11} filled={s.pinned} />
+            {node}
+          </button>
+          {stack}
+        </div>
+      );
+    };
+
+    return (
+      <div className={`proj-block${active ? " active" : ""}`}>
+        <button
+          className="proj-name-row"
+          onClick={() => cmd.selectSession(s.id)}
+          title={s.cwd || s.name}
+        >
+          <span className="proj-folder">
+            <IconFolder size={13} />
           </span>
+          <span className="proj-name">{s.name}</span>
           <span
             className="sess-close"
             title="Close session"
@@ -172,92 +191,72 @@ export function SideRail() {
             <IconClose size={11} />
           </span>
         </button>
-        {open && (
-          <div className="win-list">
-            {(() => {
-              // Auto-numbered term tabs (Alt+N spawns) collapse into the
-              // canonical "term" row — they don't deserve their own rail
-              // entry. We pick them out by structural role + numeric name.
-              const railWindows = sessionWindows.filter(
-                (w) => !(w.role === "term" && /^\d+$/.test(w.name)),
-              );
-
-              // Render order: everything-except-search, then agents row,
-              // then search last. Matches Alt+1/2/3 = files/term/git,
-              // Alt+4 = agents, Alt+5 = search.
-              const nonSearch = railWindows.filter((w) => w.role !== "search");
-              const searchWin = railWindows.find((w) => w.role === "search");
-              const activeRole =
-                sessionWindows.find((x) => x.id === s.activeWindowId)?.role;
-
-              const winRow = (w: Window, index: number) => {
-                const winActive =
-                  active && s.view === "windows" &&
-                  (w.id === s.activeWindowId ||
-                    (w.role === "term" && activeRole === "term"));
-                const isTerm = w.role === "term" && w.name === "term";
-                return (
-                  <button
-                    key={w.id}
-                    className={`win-row${winActive ? " active" : ""}`}
-                    onClick={() => jumpToWindow(s.id, w.id)}
-                  >
-                    <span className="win-rail">
-                      <span className="win-tick" />
-                    </span>
-                    <span className="win-icon">
-                      <WindowIcon role={w.role} size={13} />
-                    </span>
-                    <span className="win-name">{w.name}</span>
-                    {isTerm && tabCount > 0 ? (
-                      <CountStack
-                        count={tabCount}
-                        kind="term"
-                        title={`${tabCount} terminal tab${tabCount === 1 ? "" : "s"}`}
-                      />
-                    ) : (
-                      <span className="win-index">{index}</span>
-                    )}
-                  </button>
-                );
-              };
-
-              return (
-                <>
-                  {nonSearch.map((w, i) => winRow(w, i + 1))}
-                  <button
-                    className={`win-row${
-                      active && s.view === "agent" ? " active" : ""
-                    }`}
-                    onClick={() => jumpToAgents(s.id)}
-                  >
-                    <span className="win-rail">
-                      <span className="win-tick" />
-                    </span>
-                    <span className="win-icon">
-                      <IconAgent size={13} />
-                    </span>
-                    <span className="win-name">agents</span>
-                    {agents.length > 0 ? (
-                      <CountStack
-                        count={agents.length}
-                        kind="agent"
-                        agentKinds={agents.map((a) => a.type)}
-                        title={`${agents.length} agent${agents.length === 1 ? "" : "s"}`}
-                      />
-                    ) : (
-                      <span className="win-index">{nonSearch.length + 1}</span>
-                    )}
-                  </button>
-                  {searchWin && winRow(searchWin, nonSearch.length + 2)}
-                </>
-              );
-            })()}
-          </div>
-        )}
+        <div className="proj-icons">
+          {iconCol("files", "files (M-i)")}
+          {iconCol(
+            "term",
+            `term${tabCount > 1 ? ` (${tabCount} tabs)` : ""} (M-r)`,
+            // Only show the term stack when there are multiple tabs — a
+            // single default term doesn't deserve a decoration glyph.
+            tabCount > 1 ? (
+              <VerticalStack
+                count={tabCount}
+                kind="term"
+                title={`${tabCount} terminal tab${tabCount === 1 ? "" : "s"}`}
+              />
+            ) : undefined,
+          )}
+          {iconCol("git", "git (M-g)")}
+          {iconCol(
+            "agents",
+            `agents${agents.length ? ` (${agents.length})` : ""} (M-c)`,
+            <VerticalStack
+              count={agents.length}
+              kind="agent"
+              agentKinds={agents.map((a) => a.type)}
+              title={`${agents.length} agent${agents.length === 1 ? "" : "s"}`}
+            />,
+          )}
+          {iconCol("search", "search (M-f)")}
+        </div>
       </div>
     );
   };
+
+  /** Non-project sessions (ssh / command / aws / rundeck): keep the
+   *  existing single-row layout. They don't have the files/term/git
+   *  sub-area split — one session ≡ one main pane. */
+  const SimpleRow = ({ s }: { s: Session }) => {
+    const active = s.id === activeSessionId;
+    return (
+      <button
+        className={`sess-row${active ? " active" : ""}`}
+        onClick={() => cmd.selectSession(s.id)}
+      >
+        <span className={`sess-icon ${s.kind}`}>
+          <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
+        </span>
+        <span className="sess-name">{s.name}</span>
+        <span
+          className="sess-close"
+          title="Close session"
+          onClick={(e) => {
+            e.stopPropagation();
+            cmd.closeSession(s.id);
+          }}
+        >
+          <IconClose size={11} />
+        </span>
+      </button>
+    );
+  };
+
+  const renderSession = (s: Session) =>
+    s.kind === "project" ? (
+      <ProjectBlock key={s.id} s={s} />
+    ) : (
+      <SimpleRow key={s.id} s={s} />
+    );
 
   const Group = ({
     label,
@@ -294,7 +293,7 @@ export function SideRail() {
           <div className="rail-group-empty">{emptyText}</div>
         )
       ) : (
-        list.map((s) => <Row key={s.id} s={s} />)
+        list.map(renderSession)
       )}
     </div>
   );
@@ -302,11 +301,6 @@ export function SideRail() {
   return (
     <aside className="side-rail">
       <div className="rail-scroll">
-        <Group
-          label="Superpin"
-          list={pinned}
-          emptyText="pin a session to bookmark it"
-        />
         <Group
           label="Projects"
           list={projects}

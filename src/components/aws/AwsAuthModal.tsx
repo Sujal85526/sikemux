@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as cmd from "../../state/commands";
 import { useStore } from "../../state/store";
@@ -15,11 +15,25 @@ export function AwsAuthModal() {
 
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "fail">("idle");
   const [errOut, setErrOut] = useState("");
+  // When the user clicks Cancel mid-sign-in we want to instantly dismiss
+  // the modal even though the `aws sso login` subprocess is still running
+  // (Tauri's aws_sso_login command has no abort handle today — the bash
+  // CLI is happy to finish in the background). This flag stops the
+  // resolved-after-cancel callback from trying to setState on an unmounted
+  // / re-opened modal.
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
-    setPhase("idle");
-    setErrOut("");
-  }, [modal?.profile]);
+    // Reset phase every time the modal opens (any profile). Without this,
+    // closing during "running" then re-opening the SAME profile would
+    // re-display the stale "running" phase since the dep array only fires
+    // on profile change.
+    if (modal) {
+      cancelledRef.current = false;
+      setPhase("idle");
+      setErrOut("");
+    }
+  }, [modal]);
 
   if (!modal) return null;
 
@@ -30,7 +44,15 @@ export function AwsAuthModal() {
       shortcut: cloudBrowserShortcut || null,
     }).catch(() => {});
 
+  const onCancel = () => {
+    // Mark the in-flight call as aborted so its eventual resolution
+    // doesn't fire setPhase on an unmounted component. Then dismiss.
+    cancelledRef.current = true;
+    cmd.closeAwsAuthModal();
+  };
+
   const onSignIn = async () => {
+    cancelledRef.current = false;
     setPhase("running");
     setErrOut("");
     try {
@@ -44,11 +66,13 @@ export function AwsAuthModal() {
         }).catch(() => {});
       }
       const ok = await cmd.runAwsSsoLogin(modal.profile);
+      if (cancelledRef.current) return;
       setPhase(ok ? "ok" : "fail");
       if (ok) {
         window.setTimeout(cmd.closeAwsAuthModal, 700);
       }
     } catch (e) {
+      if (cancelledRef.current) return;
       setPhase("fail");
       setErrOut(String(e));
     }
@@ -126,8 +150,7 @@ export function AwsAuthModal() {
         <div className="aws-auth-actions">
           <button
             className="settings-btn"
-            onClick={cmd.closeAwsAuthModal}
-            disabled={phase === "running"}
+            onClick={onCancel}
           >
             Cancel
           </button>

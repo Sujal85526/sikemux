@@ -697,6 +697,142 @@ button {
     opacity: 0.6;
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   Project block — 2-row layout (name + 5-icon hop bar)
+   --------------------------------------------------------------------
+   Replaces the chevron-expanded window-list for project sessions only.
+   Active project gets a left accent bar + subtle bg gradient + bright
+   name; inactive names dim. Each sub-icon is a click target that hops
+   straight to that pane of THIS project, no matter which project is
+   currently active — point of the design is one-click cross-project
+   navigation.
+   ──────────────────────────────────────────────────────────────────── */
+.proj-block {
+    padding: 4px 0 10px;
+    border-left: 2px solid transparent;
+    transition: background 0.12s;
+}
+.proj-block.active {
+    border-left-color: var(--acc);
+    background: linear-gradient(90deg, var(--acc-soft), transparent 75%);
+}
+
+.proj-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 22px;
+    padding: 0 10px 0 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--ink-dim);
+}
+.proj-name-row:hover .proj-name {
+    color: var(--ink);
+}
+.proj-block.active .proj-name {
+    color: var(--ink);
+    font-weight: 600;
+}
+.proj-folder {
+    display: inline-flex;
+    color: var(--live);
+    flex-shrink: 0;
+}
+.proj-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    text-align: left;
+    letter-spacing: 0.01em;
+}
+
+/* 5-icon hop bar — strict CSS grid columns so the vertical stack under
+   `term` and `agents` lands directly below its parent icon, not drifting
+   left/right when the project name above changes width. */
+.proj-icons {
+    display: grid;
+    grid-template-columns: repeat(5, 28px);
+    gap: 4px;
+    padding: 4px 12px 0 27px; /* indent matches the folder-icon centre */
+    align-items: start;
+    justify-content: start;
+}
+.proj-icol {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+.proj-ic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--ink-faint);
+    transition: color 0.12s, transform 0.12s;
+}
+.proj-ic:hover { color: var(--ink); }
+.proj-block.active .proj-ic { color: var(--ink-dim); }
+.proj-block.active .proj-ic.active {
+    color: var(--acc);
+    transform: scale(1.18);
+}
+
+/* ── vertical CountStack ──
+   Same circles + agent-glyph colors as the legacy .sess-stack, just
+   stacked top-to-bottom under the parent icon. Uses the same shared
+   `.agent-glyph.{claude,codex,hermes}` background colors so the brand
+   palette is defined in one place. */
+.proj-vstack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 1px;
+}
+.proj-glyph {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--rail);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    background: var(--ink-dim);
+    flex-shrink: 0;
+}
+.proj-glyph + .proj-glyph { margin-top: -6px; }
+.proj-block.active .proj-glyph {
+    border-color: color-mix(in srgb, var(--acc) 18%, var(--rail));
+}
+.vstack-term .proj-glyph {
+    background: color-mix(in srgb, var(--live) 35%, var(--void));
+    color: var(--live);
+}
+.proj-glyph.more {
+    background: var(--rail-2);
+    color: var(--ink);
+    border-color: var(--line);
+}
+.proj-glyph.more .proj-glyph-num {
+    font-family: var(--mono);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+}
+.proj-glyph svg { display: block; }
+
 .rail-foot {
     display: flex;
     align-items: center;
@@ -4258,6 +4394,30 @@ button {
 .aws-logs-line:first-letter {
     color: var(--ink-dim);
 }
+
+/* ── log-line syntax tokens (CloudWatch tail, Rundeck output, anything
+   else that renders raw log text). Token classes are emitted by
+   src/components/aws/logHighlight.tsx; matched groups light up against
+   the existing palette so nothing new bleeds into the design tokens. */
+.lt { font-variant-numeric: tabular-nums; }
+.lt-ts        { color: var(--ink-faint); }
+.lt-lvl-err   { color: var(--danger); font-weight: 700; }
+.lt-lvl-warn  { color: var(--warn);   font-weight: 700; }
+.lt-lvl-info  { color: var(--live);   font-weight: 600; }
+.lt-lvl-debug { color: var(--ink-faint); }
+.lt-method    { color: var(--cmd);    font-weight: 600; }
+.lt-status-2  { color: var(--live); }
+.lt-status-3  { color: var(--acc); }
+.lt-status-4  { color: var(--warn); }
+.lt-status-5  { color: var(--danger); font-weight: 600; }
+.lt-url       { color: var(--acc); text-decoration: underline dotted; text-underline-offset: 2px; }
+.lt-uuid      { color: var(--ink-faint); }
+.lt-ip        { color: var(--ink-dim); }
+.lt-jkey      { color: var(--acc); }
+.lt-jstr      { color: #b9c2d8; }
+.lt-bool      { color: var(--cmd); }
+.lt-num       { color: var(--warn); }
+.lt-tag       { color: var(--ink-dim); }
 
 /* ---- AWS billing: credits / net columns + sub-sections --------------- */
 .aws-billing-stat.credit .aws-billing-stat-value {
