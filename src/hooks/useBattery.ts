@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { swallow } from "../state/toast";
 
 export interface BatteryStatus {
   percent: number | null;
@@ -20,7 +21,7 @@ export function useBattery(): BatteryStatus | null {
         .then((s) => {
           if (!cancelled) setStatus(s);
         })
-        .catch(() => {});
+        .catch(swallow("battery_status poll"));
     };
     tick();
     const id = window.setInterval(tick, POLL_MS);

@@ -42,6 +42,12 @@ use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, P
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::error::{AppError, AppResult};
+
+fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
+    AppError::Pty(e.to_string())
+}
+
 /// One running pseudo-terminal: the master + child + headless parser +
 /// the set of frontend Channels currently subscribed to live output.
 struct Pty {
@@ -61,12 +67,33 @@ pub struct PtyManager {
     ptys: DashMap<u32, Arc<Pty>>,
 }
 
+impl PtyManager {
+    /// Kill every live PTY. Called from the window-close hook so a
+    /// force-quit or last-window-close doesn't leave orphan shell
+    /// processes around until the OS reaps them.
+    pub fn drain(&self) {
+        // collect ids first so we don't hold a DashMap shard while
+        // touching child.kill() (which can do FS work on macOS).
+        let ids: Vec<u32> = self.ptys.iter().map(|e| *e.key()).collect();
+        for id in ids {
+            if let Some((_, pty)) = self.ptys.remove(&id) {
+                if let Ok(mut child) = pty.child.lock() {
+                    let _ = child.kill();
+                }
+            }
+        }
+    }
+}
+
 static NEXT_PTY_ID: AtomicU32 = AtomicU32::new(1);
 static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(1);
 
-// 1000 rows of scrollback per PTY — matches xterm's default. At 80 cols
-// of mostly-cleared cells that's ~160 KB. 100 PTYs → ~16 MB. Tolerable.
-const PARSER_SCROLLBACK: usize = 1000;
+// Scrollback held in the headless vt100 parser. Must match (or exceed)
+// the frontend's xterm scrollback (`TerminalPane.tsx`'s SCROLLBACK) so a
+// reattach can repaint the full visible history. At 80 cols of mostly-
+// cleared cells, 10k rows ≈ 1.6 MB per PTY. 100 PTYs → ~160 MB worst-case.
+// If memory becomes an issue, drop this and the xterm constant together.
+pub const PARSER_SCROLLBACK: usize = 10_000;
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }
@@ -78,21 +105,21 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
-) -> Result<u32, String> {
+) -> AppResult<u32> {
     let pair = NativePtySystem::default()
         .openpty(pty_size(cols, rows))
-        .map_err(|e| e.to_string())?;
+        .map_err(pty_err)?;
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let mut cmd = CommandBuilder::new(shell);
     cmd.env("TERM", "xterm-256color");
     cmd.cwd(cwd.unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".into())));
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let mut reader = pair.master.try_clone_reader().map_err(pty_err)?;
+    let writer = pair.master.take_writer().map_err(pty_err)?;
     let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
 
     let pty = Arc::new(Pty {
@@ -104,12 +131,15 @@ pub fn pty_spawn(
     });
 
     // Reader thread — feeds parser then fans bytes out to subscribers.
-    // Parser is held LOCKED across the broadcast so `pty_attach` (which
-    // grabs parser → snapshot → insert subscriber while holding parser)
-    // sees atomic "either before-this-chunk or after-this-chunk" state.
-    // Without this, a chunk could be both included in a snapshot AND
-    // delivered to the freshly-attached subscriber — visible as duplicate
-    // bytes/escape sequences on the first frame after a pane re-show.
+    //
+    // Atomicity invariant (vs `pty_attach`): a freshly-attached subscriber
+    // must see EXACTLY the bytes NOT present in the snapshot it got back.
+    // We achieve that by, under the parser lock:
+    //   1. processing the chunk into the parser
+    //   2. cloning the subscriber list (Tauri Channels are Arc-internal
+    //      and cheap to clone)
+    // Both locks are then dropped BEFORE the channel sends — so one slow
+    // subscriber can't stall the parser or block another PTY's reattach.
     //
     // Dead subscribers (channel closed because the JS xterm unmounted
     // without explicit unsub) are GC'd on send error so the map stays
@@ -122,19 +152,28 @@ pub fn pty_spawn(
                 Ok(0) => break,
                 Ok(n) => {
                     let bytes = &buf[..n];
-                    if let Ok(mut parser) = pty_reader.parser.lock() {
+                    // Snapshot the subscriber list under both locks so
+                    // pty_attach can't slip a new subscriber between
+                    // "bytes processed" and "fan-out determined".
+                    let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
+                        let Ok(mut parser) = pty_reader.parser.lock() else { break };
                         parser.process(bytes);
+                        match pty_reader.subscribers.lock() {
+                            Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
+                            Err(_) => Vec::new(),
+                        }
+                    };
+                    if snapshot.is_empty() { continue; }
+                    let chunk = bytes.to_vec();
+                    let mut dead: Vec<u32> = Vec::new();
+                    for (sub_id, ch) in &snapshot {
+                        if ch.send(chunk.clone()).is_err() {
+                            dead.push(*sub_id);
+                        }
+                    }
+                    if !dead.is_empty() {
                         if let Ok(mut subs) = pty_reader.subscribers.lock() {
-                            if !subs.is_empty() {
-                                let chunk = bytes.to_vec();
-                                let mut dead: Vec<u32> = Vec::new();
-                                for (sub_id, ch) in subs.iter() {
-                                    if ch.send(chunk.clone()).is_err() {
-                                        dead.push(*sub_id);
-                                    }
-                                }
-                                for d in dead { subs.remove(&d); }
-                            }
+                            for d in dead { subs.remove(&d); }
                         }
                     }
                 }
@@ -159,13 +198,10 @@ pub fn pty_subscribe(
     manager: State<'_, PtyManager>,
     id: u32,
     on_event: Channel<Vec<u8>>,
-) -> Result<u32, String> {
-    let pty = manager.ptys.get(&id).ok_or("pty not found")?;
+) -> AppResult<u32> {
+    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
     let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
-    pty.subscribers
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(sub_id, on_event);
+    pty.subscribers.lock().map_err(pty_err)?.insert(sub_id, on_event);
     Ok(sub_id)
 }
 
@@ -174,7 +210,7 @@ pub fn pty_unsubscribe(
     manager: State<'_, PtyManager>,
     id: u32,
     sub_id: u32,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if let Some(pty) = manager.ptys.get(&id) {
         if let Ok(mut subs) = pty.subscribers.lock() {
             subs.remove(&sub_id);
@@ -192,9 +228,9 @@ pub fn pty_unsubscribe(
 pub fn pty_snapshot(
     manager: State<'_, PtyManager>,
     id: u32,
-) -> Result<Vec<u8>, String> {
-    let pty = manager.ptys.get(&id).ok_or("pty not found")?;
-    let parser = pty.parser.lock().map_err(|e| e.to_string())?;
+) -> AppResult<Vec<u8>> {
+    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
+    let parser = pty.parser.lock().map_err(pty_err)?;
     let screen = parser.screen();
     // contents_formatted includes the visible screen + scrollback as
     // ANSI escapes (cursor, attrs, colors all baked in). One write to
@@ -224,11 +260,11 @@ pub fn pty_attach(
     manager: State<'_, PtyManager>,
     id: u32,
     on_event: Channel<Vec<u8>>,
-) -> Result<AttachResult, String> {
-    let pty = manager.ptys.get(&id).ok_or("pty not found")?;
-    let parser = pty.parser.lock().map_err(|e| e.to_string())?;
+) -> AppResult<AttachResult> {
+    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
+    let parser = pty.parser.lock().map_err(pty_err)?;
     let snapshot = parser.screen().contents_formatted();
-    let mut subs = pty.subscribers.lock().map_err(|e| e.to_string())?;
+    let mut subs = pty.subscribers.lock().map_err(pty_err)?;
     let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
     subs.insert(sub_id, on_event);
     drop(subs);
@@ -237,11 +273,11 @@ pub fn pty_attach(
 }
 
 #[tauri::command]
-pub fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) -> Result<(), String> {
-    let pty = manager.ptys.get(&id).ok_or("pty not found")?;
-    let mut writer = pty.writer.lock().map_err(|e| e.to_string())?;
-    writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-    writer.flush().map_err(|e| e.to_string())
+pub fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) -> AppResult<()> {
+    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
+    let mut writer = pty.writer.lock().map_err(pty_err)?;
+    writer.write_all(data.as_bytes()).map_err(AppError::from)?;
+    writer.flush().map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -250,11 +286,11 @@ pub fn pty_resize(
     id: u32,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
-    let pty = manager.ptys.get(&id).ok_or("pty not found")?;
+) -> AppResult<()> {
+    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
     {
-        let master = pty.master.lock().map_err(|e| e.to_string())?;
-        master.resize(pty_size(cols, rows)).map_err(|e| e.to_string())?;
+        let master = pty.master.lock().map_err(pty_err)?;
+        master.resize(pty_size(cols, rows)).map_err(pty_err)?;
     }
     // Resize the parser too so the grid the snapshot returns matches the
     // xterm's geometry — otherwise re-attach lands on a mis-sized canvas.
@@ -265,8 +301,40 @@ pub fn pty_resize(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::PARSER_SCROLLBACK;
+
+    #[test]
+    fn snapshot_round_trips_visible_state() {
+        // Smoke-check the contract pty_attach relies on: a parser whose
+        // bytes were processed re-emits an ANSI stream that reproduces the
+        // visible state when written back into a fresh parser. The full
+        // attach/snapshot path can't be exercised without a real PTY, but
+        // the parser invariant is the load-bearing piece.
+        let mut a = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
+        a.process(b"hello world\r\nsecond line\r\n");
+        let dump = a.screen().contents_formatted();
+
+        let mut b = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
+        b.process(&dump);
+        assert_eq!(
+            a.screen().contents(),
+            b.screen().contents(),
+            "snapshot did not round-trip cleanly",
+        );
+    }
+
+    #[test]
+    fn scrollback_matches_frontend() {
+        // If this number changes, update SCROLLBACK in TerminalPane.tsx
+        // so reattach doesn't repaint a truncated history.
+        assert_eq!(PARSER_SCROLLBACK, 10_000);
+    }
+}
+
 #[tauri::command]
-pub fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> Result<(), String> {
+pub fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
     if let Some((_, pty)) = manager.ptys.remove(&id) {
         if let Ok(mut child) = pty.child.lock() {
             let _ = child.kill();

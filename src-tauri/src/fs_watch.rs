@@ -12,6 +12,12 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::error::{AppError, AppResult};
+
+fn watch_err<E: std::fmt::Display>(e: E) -> AppError {
+    AppError::Watch(e.to_string())
+}
+
 struct WatchHandle {
     _watcher: RecommendedWatcher,
 }
@@ -63,9 +69,9 @@ fn should_ignore(path: &Path) -> bool {
 }
 
 #[tauri::command]
-pub fn repo_watch_start(app: AppHandle, repo: String) -> Result<(), String> {
+pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
     {
-        let reg = registry().lock().map_err(|e| e.to_string())?;
+        let reg = registry().lock().map_err(watch_err)?;
         if reg.contains_key(&repo) {
             return Ok(());
         }
@@ -88,15 +94,15 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> Result<(), String> {
             debounce_emit(&app_clone, &repo_clone, &last_clone);
         },
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(watch_err)?;
 
     watcher
         .watch(Path::new(&repo), RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+        .map_err(watch_err)?;
 
     registry()
         .lock()
-        .map_err(|e| e.to_string())?
+        .map_err(watch_err)?
         .insert(repo, Arc::new(WatchHandle { _watcher: watcher }));
 
     // First "synthetic" emit so the frontend gets an immediate refresh after
@@ -106,11 +112,8 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn repo_watch_stop(repo: String) -> Result<(), String> {
-    registry()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&repo);
+pub fn repo_watch_stop(repo: String) -> AppResult<()> {
+    registry().lock().map_err(watch_err)?.remove(&repo);
     Ok(())
 }
 

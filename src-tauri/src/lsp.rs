@@ -133,7 +133,13 @@ fn read_message(reader: &mut BufReader<ChildStdout>) -> Option<Value> {
 }
 
 fn next_id(server: &ServerHandle) -> i64 {
-    let mut id = server.next_id.lock().unwrap();
+    // If the mutex is poisoned a request thread crashed mid-allocate.
+    // Recover the inner counter instead of crashing the whole LSP layer —
+    // a duplicate id is preferable to a panic taking the editor down.
+    let mut id = server
+        .next_id
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
     let v = *id;
     *id += 1;
     v

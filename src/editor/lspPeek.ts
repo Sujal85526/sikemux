@@ -10,6 +10,7 @@ import {
 } from "@codemirror/view";
 import { fsapi } from "../api/fs";
 import { requestOpenFile } from "../state/commands";
+import { swallow } from "../state/toast";
 
 // VSCode/Zed-style inline peek panel: a CM block widget anchored under the
 // clicked line, listing references / implementations / definitions with a
@@ -128,7 +129,7 @@ class PeekWidget extends WidgetType {
             txt.textContent = (lines[line] ?? "").trim();
           }
         })
-        .catch(() => {});
+        .catch(swallow("lsp peek read"));
     }
 
     return wrap;

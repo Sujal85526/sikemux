@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use crate::error::{AppError, AppResult};
+
 /// Where the workspace state JSON lives. Split debug vs release so a dev
 /// build can never trample the installed app's state — `cargo run` /
 /// `tauri dev` write to `state.dev.json`, the bundled release binary
@@ -30,10 +32,10 @@ pub fn state_load() -> String {
 }
 
 #[tauri::command]
-pub fn state_save(data: String) -> Result<(), String> {
-    let path = state_path().ok_or("no home directory")?;
+pub fn state_save(data: String) -> AppResult<()> {
+    let path = state_path().ok_or(AppError::State("no home directory".into()))?;
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(dir)?;
     }
-    fs::write(&path, data).map_err(|e| e.to_string())
+    fs::write(&path, data).map_err(AppError::from)
 }

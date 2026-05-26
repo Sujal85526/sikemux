@@ -7,6 +7,7 @@ import {
   type RundeckWorkflowState,
 } from "../../api/rundeck";
 import { statusKind } from "./branchStyle";
+import { swallow } from "../../state/toast";
 
 interface Props {
   paneId: string;
@@ -47,47 +48,74 @@ export function RundeckExecution({ paneId: _paneId, level }: Props) {
   const logRef = useRef<HTMLDivElement>(null);
 
   // ---- subscribe to watcher + log tail on mount; clean up on unmount ----
+  //
+  // The watcher polls every 1.5s; running multiple execution panes burns
+  // ~6 req/s per visible exec, even when the user has tabbed away. We
+  // pause both subscriptions whenever the document is hidden and restart
+  // them on visibility return — the next tick re-fetches the latest
+  // execution+state so the UI catches up to whatever happened while
+  // hidden.
   useEffect(() => {
     let watchId: number | undefined;
     let logsId: number | undefined;
     let alive = true;
 
-    rundeckApi
-      .watchStart(level.executionId, (u) => {
-        if (!alive) return;
-        if (u.execution) setExecution(u.execution);
-        if (u.state) setState(u.state);
-        setTerminal(u.terminal);
-        if (u.error) setWatchErr(u.error);
-        else setWatchErr(null);
-      })
-      .then((id) => {
-        watchId = id;
-      })
-      .catch((e) => setWatchErr(String(e)));
+    const start = () => {
+      rundeckApi
+        .watchStart(level.executionId, (u) => {
+          if (!alive) return;
+          if (u.execution) setExecution(u.execution);
+          if (u.state) setState(u.state);
+          setTerminal(u.terminal);
+          if (u.error) setWatchErr(u.error);
+          else setWatchErr(null);
+        })
+        .then((id) => {
+          watchId = id;
+        })
+        .catch((e) => setWatchErr(String(e)));
 
-    // Pass null backlog → fetch from offset 0. For RUNNING executions
-    // that means we get everything since start (typically KB); for OLD
-    // completed runs that's what makes step 1 / step 2 log entries
-    // visible (they happened long before the last 200 lines a tail-only
-    // fetch would have given us).
-    rundeckApi
-      .logsStart(level.executionId, null, (tick) => {
-        if (!alive) return;
-        if (tick.entries.length) {
-          setEntries((prev) => prev.concat(tick.entries));
-        }
-        if (tick.completed) setLogsCompleted(true);
-      })
-      .then((id) => {
-        logsId = id;
-      })
-      .catch(() => {});
+      // Pass null backlog → fetch from offset 0. For RUNNING executions
+      // that means we get everything since start (typically KB); for OLD
+      // completed runs that's what makes step 1 / step 2 log entries
+      // visible (they happened long before the last 200 lines a tail-only
+      // fetch would have given us).
+      rundeckApi
+        .logsStart(level.executionId, null, (tick) => {
+          if (!alive) return;
+          if (tick.entries.length) {
+            setEntries((prev) => prev.concat(tick.entries));
+          }
+          if (tick.completed) setLogsCompleted(true);
+        })
+        .then((id) => {
+          logsId = id;
+        })
+        .catch(swallow("rnd logs start"));
+    };
+
+    const stop = () => {
+      if (watchId != null) {
+        void rundeckApi.watchStop(watchId);
+        watchId = undefined;
+      }
+      if (logsId != null) {
+        void rundeckApi.logsStop(logsId);
+        logsId = undefined;
+      }
+    };
+
+    if (!document.hidden) start();
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else if (watchId == null && logsId == null) start();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
       alive = false;
-      if (watchId != null) void rundeckApi.watchStop(watchId);
-      if (logsId != null) void rundeckApi.logsStop(logsId);
+      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
     };
   }, [level.executionId]);
 

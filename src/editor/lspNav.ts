@@ -2,6 +2,7 @@ import { type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { languageFromPath, lsp, uriToPath } from "../api/lsp";
 import { openLspPeek } from "./lspPeek";
+import { swallow } from "../state/toast";
 
 // Per-file context (project, path, navigation callback) needed by the
 // Cmd-click handler. Held in a module ref so we don't have to reconfigure
@@ -79,7 +80,7 @@ export function lspNav(): Extension {
             })),
           });
         })
-        .catch(() => {});
+        .catch(swallow("lsp definition"));
       return true;
     },
   });

@@ -30,69 +30,58 @@ function deriveRole(w: Window): WindowRole {
 const VERSION = 4;
 let lastSaved = "";
 
-// Last persisted slice references. Zustand uses structural sharing — when
-// nothing in a slice changed, the array/object identity is preserved — so
-// reference equality is a sufficient "did this slice change?" check. We
-// short-circuit the (expensive) JSON.stringify when every persisted slice
-// is reference-equal to what we last sent to disk.
+// Single source of truth for "which store keys go to disk". Adding a new
+// persisted field is one edit here + the corresponding type in
+// `types/persisted.ts` + (if the format breaks) a VERSION bump above.
 //
+// Zustand uses structural sharing — when nothing in a slice changed, the
+// array/object identity is preserved — so reference equality is a
+// sufficient "did this slice change?" check. We short-circuit the
+// (expensive) JSON.stringify when every persisted slice is reference-
+// equal to what we last sent to disk.
+const PERSISTED_KEYS = [
+  "sessions",
+  "windows",
+  "agents",
+  "sessionOrder",
+  "windowsBySession",
+  "agentsBySession",
+  "activeSessionId",
+  "recent",
+  "agentBookmarks",
+  "editorViews",
+  "projectRoots",
+  "themeId",
+  "windowOpacity",
+  "windowBlur",
+  "cloudBrowser",
+  "cloudBrowserShortcut",
+  "awsProfile",
+  "awsService",
+  "leftRailOpen",
+  "rightRailOpen",
+  "rundeck",
+] as const satisfies readonly (keyof StoreState)[];
+type PersistedKey = (typeof PERSISTED_KEYS)[number];
+
+// Compile-time check that PERSISTED_KEYS covers exactly the fields we
+// pack into the snapshot. Each entry is `Pick<StoreState, K>`.
+type SliceShot = { [K in PersistedKey]: StoreState[K] };
+
 // `null` until the first save, which forces a stringify on boot.
-type SliceShot = {
-  sessions: StoreState["sessions"];
-  windows: StoreState["windows"];
-  agents: StoreState["agents"];
-  sessionOrder: StoreState["sessionOrder"];
-  windowsBySession: StoreState["windowsBySession"];
-  agentsBySession: StoreState["agentsBySession"];
-  activeSessionId: StoreState["activeSessionId"];
-  recent: StoreState["recent"];
-  agentBookmarks: StoreState["agentBookmarks"];
-  editorViews: StoreState["editorViews"];
-  projectRoots: StoreState["projectRoots"];
-  themeId: StoreState["themeId"];
-  windowOpacity: StoreState["windowOpacity"];
-  windowBlur: StoreState["windowBlur"];
-  cloudBrowser: StoreState["cloudBrowser"];
-  cloudBrowserShortcut: StoreState["cloudBrowserShortcut"];
-  awsProfile: StoreState["awsProfile"];
-  awsService: StoreState["awsService"];
-  leftRailOpen: StoreState["leftRailOpen"];
-  rightRailOpen: StoreState["rightRailOpen"];
-  rundeck: StoreState["rundeck"];
-};
 let lastSlices: SliceShot | null = null;
 
 function takeSlices(s: StoreState): SliceShot {
-  return {
-    sessions: s.sessions,
-    windows: s.windows,
-    agents: s.agents,
-    sessionOrder: s.sessionOrder,
-    windowsBySession: s.windowsBySession,
-    agentsBySession: s.agentsBySession,
-    activeSessionId: s.activeSessionId,
-    recent: s.recent,
-    agentBookmarks: s.agentBookmarks,
-    editorViews: s.editorViews,
-    projectRoots: s.projectRoots,
-    themeId: s.themeId,
-    windowOpacity: s.windowOpacity,
-    windowBlur: s.windowBlur,
-    cloudBrowser: s.cloudBrowser,
-    cloudBrowserShortcut: s.cloudBrowserShortcut,
-    awsProfile: s.awsProfile,
-    awsService: s.awsService,
-    leftRailOpen: s.leftRailOpen,
-    rightRailOpen: s.rightRailOpen,
-    rundeck: s.rundeck,
-  };
+  const out = {} as SliceShot;
+  for (const k of PERSISTED_KEYS) {
+    (out as Record<string, unknown>)[k] = s[k];
+  }
+  return out;
 }
 
 function slicesEqual(a: SliceShot, b: SliceShot): boolean {
-  for (const k in a) {
-    if ((a as Record<string, unknown>)[k] !== (b as Record<string, unknown>)[k]) {
-      return false;
-    }
+  for (const k of PERSISTED_KEYS) {
+    if (a[k] !== b[k]) return false;
   }
   return true;
 }

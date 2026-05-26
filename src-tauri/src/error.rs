@@ -51,6 +51,24 @@ pub enum AppError {
     #[error("invalid argument: {0}")]
     BadArg(&'static str),
 
+    #[error("pty: {0}")]
+    Pty(String),
+
+    #[error("search: {0}")]
+    Search(String),
+
+    #[error("fs: {0}")]
+    Fs(String),
+
+    #[error("watch: {0}")]
+    Watch(String),
+
+    #[error("state: {0}")]
+    State(String),
+
+    #[error("window: {0}")]
+    Window(String),
+
     #[error("{0}")]
     Other(String),
 }
@@ -114,9 +132,49 @@ impl AppError {
             AppError::RundeckAuth(_) => "rundeck-auth",
             AppError::RundeckHttp { .. } => "rundeck-http",
             AppError::BadArg(_) => "bad-arg",
+            AppError::Pty(_) => "pty",
+            AppError::Search(_) => "search",
+            AppError::Fs(_) => "fs",
+            AppError::Watch(_) => "watch",
+            AppError::State(_) => "state",
+            AppError::Window(_) => "window",
             AppError::Other(_) => "other",
         }
     }
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn category_is_stable() {
+        // Spot-check categories the frontend branches on. If any of these
+        // change, every `err.category === "..."` check in api/* must be
+        // updated to match.
+        assert_eq!(AppError::AwsTokenExpired.category(), "aws-token-expired");
+        assert_eq!(AppError::AwsNoCredentials.category(), "aws-no-credentials");
+        assert_eq!(AppError::AwsCliMissing("aws".into()).category(), "aws-cli-missing");
+        assert_eq!(AppError::RundeckUnconfigured.category(), "rundeck-unconfigured");
+        assert_eq!(AppError::RundeckAuth("x".into()).category(), "rundeck-auth");
+        assert_eq!(
+            AppError::RundeckHttp { status: 401, message: "".into() }.category(),
+            "rundeck-http"
+        );
+        assert_eq!(AppError::BadArg("x").category(), "bad-arg");
+        assert_eq!(AppError::Pty("x".into()).category(), "pty");
+        assert_eq!(AppError::Watch("x".into()).category(), "watch");
+        assert_eq!(AppError::State("x".into()).category(), "state");
+    }
+
+    #[test]
+    fn wire_payload_round_trip() {
+        let e = AppError::RundeckHttp { status: 401, message: "boom".into() };
+        let s = serde_json::to_string(&e).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["category"], "rundeck-http");
+        assert!(v["message"].as_str().unwrap().contains("401"));
+    }
+}

@@ -7,6 +7,7 @@ import { git } from "../api/git";
 import { fsapi } from "../api/fs";
 import { auraExtensions, languageFor } from "../editor/codemirror";
 import { registerView } from "../themes/bus";
+import { swallow } from "../state/toast";
 
 // A headerless CodeMirror unified-merge view of one file. `autoHeight` makes
 // it grow to its content (for stacking in an accordion) rather than fill.
@@ -47,7 +48,7 @@ export function DiffEditor({
       void fsapi
         .writeFile(absPath, v.state.doc.toString())
         .then(() => onSavedRef.current?.())
-        .catch(() => {});
+        .catch(swallow("DiffEditor save"));
       return true;
     };
 

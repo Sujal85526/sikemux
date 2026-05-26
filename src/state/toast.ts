@@ -82,3 +82,27 @@ export function withToast<T>(p: Promise<T>, label: string): Promise<T> {
 export function reportError(label: string): (err: unknown) => void {
   return (err) => notify("error", `${label}: ${errMessage(err)}`);
 }
+
+// Bounded ring buffer of swallowed errors. Used so the truly fire-and-
+// forget paths (best-effort writes, optional refreshes) keep their
+// "don't bother the user" semantics while still being debuggable when
+// something starts going wrong silently.
+const SWALLOW_RING_SIZE = 64;
+const swallowed: { ts: number; label: string; err: unknown }[] = [];
+
+/** Discard an error explicitly. Records to a ring buffer so silent
+ *  failures aren't truly silent — `__swallowed()` in the devtools console
+ *  reveals the last N. Use this instead of `.catch(() => {})` so a future
+ *  reader can grep for the actual swallow sites. */
+export function swallow(label: string): (err: unknown) => void {
+  return (err) => {
+    swallowed.push({ ts: Date.now(), label, err });
+    if (swallowed.length > SWALLOW_RING_SIZE) swallowed.shift();
+  };
+}
+
+// Devtools convenience.
+if (typeof window !== "undefined") {
+  (window as unknown as { __swallowed?: () => typeof swallowed }).__swallowed =
+    () => swallowed.slice();
+}

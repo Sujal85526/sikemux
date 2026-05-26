@@ -39,10 +39,36 @@ pub(super) fn run_aws_cli(
     ))
 }
 
-/// Map AWS CLI stderr text into a typed AppError. Substring matching is
-/// localized here so callers don't repeat it; if AWS changes the wording,
-/// only this function moves.
+/// Map AWS CLI stderr text into a typed AppError.
+///
+/// Prefers structured JSON when the CLI ran `--output json` and surfaced
+/// an error envelope (`{"Error": {"Code": "ExpiredToken", ...}}`). Falls
+/// back to substring matching the human stderr when no structured form is
+/// present — that's still the common case for client-side failures (e.g.
+/// "Unable to locate credentials" emitted before any API call).
+///
+/// Localized here so callers don't repeat the mapping; if AWS changes the
+/// wording, only this function moves.
 pub(super) fn classify_cli_err(stderr: &str) -> AppError {
+    // Structured form: AWS prints `An error occurred (Code) when calling
+    // ...` for most service errors, sometimes also as a JSON envelope.
+    // Try the latter first — it's stable across locales.
+    if let Some(v) = serde_json::from_str::<serde_json::Value>(stderr.trim()).ok() {
+        let code = v
+            .get("Error")
+            .and_then(|e| e.get("Code"))
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_ascii_lowercase());
+        if let Some(c) = code {
+            if c == "expiredtoken" || c == "expiredtokenexception" {
+                return AppError::AwsTokenExpired;
+            }
+            if c == "credentialsnotfound" || c.contains("nocredential") {
+                return AppError::AwsNoCredentials;
+            }
+        }
+    }
+
     let s = stderr.to_lowercase();
     if s.contains("token has expired")
         || s.contains("sso session associated with this profile has expired")
@@ -56,12 +82,47 @@ pub(super) fn classify_cli_err(stderr: &str) -> AppError {
     }
 }
 
+/// Async wrapper around `run_aws_cli` for callers that already typed-match
+/// on the (ok, stdout, stderr) tuple (auth path). Same off-thread pattern
+/// as `aws_json_async`.
+pub(super) async fn run_aws_cli_async(
+    args: &[&str],
+    profile: Option<&str>,
+) -> AppResult<(bool, String, String)> {
+    let profile = profile.map(String::from);
+    let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+    task::spawn_blocking(move || {
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_aws_cli(&refs, profile.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("join error: {e}")))?
+}
+
 pub(super) fn aws_json<T: DeserializeOwned>(profile: &str, args: &[&str]) -> AppResult<T> {
     let (ok, stdout, stderr) = run_aws_cli(args, Some(profile))?;
     if !ok {
         return Err(classify_cli_err(&stderr));
     }
     serde_json::from_str::<T>(&stdout).map_err(AppError::Json)
+}
+
+/// Async wrapper — keeps blocking process spawn off the Tauri worker pool.
+/// Every `#[tauri::command] pub async fn aws_*` should call this, not the
+/// sync `aws_json`. Sync variant is retained for the internal callers
+/// already running inside `task::spawn_blocking` (e.g. `describe_in_chunks`).
+pub(super) async fn aws_json_async<T: DeserializeOwned + Send + 'static>(
+    profile: &str,
+    args: &[&str],
+) -> AppResult<T> {
+    let profile = profile.to_string();
+    let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+    task::spawn_blocking(move || {
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        aws_json::<T>(&profile, &refs)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("join error: {e}")))?
 }
 
 /// Run several `aws ... describe-X --<flag> <arns>` calls in parallel,
@@ -107,4 +168,35 @@ pub(super) async fn describe_in_chunks<R: DeserializeOwned + Send + 'static>(
         .await
         .map_err(|e| AppError::Other(format!("join error: {e}")))?;
     results.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_substring_expired() {
+        let e = classify_cli_err("An error occurred: token has expired blah");
+        matches!(e, AppError::AwsTokenExpired);
+    }
+
+    #[test]
+    fn classify_substring_no_credentials() {
+        let e = classify_cli_err("Unable to locate credentials");
+        matches!(e, AppError::AwsNoCredentials);
+    }
+
+    #[test]
+    fn classify_structured_expired() {
+        let body = r#"{"Error":{"Code":"ExpiredToken","Message":"x"}}"#;
+        matches!(classify_cli_err(body), AppError::AwsTokenExpired);
+    }
+
+    #[test]
+    fn classify_fallthrough() {
+        match classify_cli_err("some weird error\n") {
+            AppError::Aws(msg) => assert_eq!(msg, "some weird error"),
+            _ => panic!("expected Aws variant"),
+        }
+    }
 }

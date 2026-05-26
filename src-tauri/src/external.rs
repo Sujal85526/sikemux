@@ -13,12 +13,14 @@
 
 use std::process::Command;
 
+use crate::error::AppResult;
+
 #[tauri::command]
 pub async fn open_url(
     url: String,
     app: Option<String>,
     shortcut: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let app = app.filter(|s| !s.trim().is_empty());
     let shortcut = shortcut.filter(|s| !s.trim().is_empty());
 
@@ -30,14 +32,10 @@ pub async fn open_url(
                 .arg("-a")
                 .arg(app_name)
                 .arg(&url)
-                .status()
-                .map_err(|e| e.to_string())?;
+                .status()?;
             return Ok(());
         }
-        Command::new("open")
-            .arg(&url)
-            .status()
-            .map_err(|e| e.to_string())?;
+        Command::new("open").arg(&url).status()?;
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -45,8 +43,7 @@ pub async fn open_url(
         Command::new("xdg-open")
             .arg(&url)
             .status()
-            .or_else(|_| Command::new("open").arg(&url).status())
-            .map_err(|e| e.to_string())?;
+            .or_else(|_| Command::new("open").arg(&url).status())?;
     }
     Ok(())
 }
@@ -55,7 +52,7 @@ pub async fn open_url(
 pub async fn macos_focus_app(
     app: String,
     shortcut: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if app.trim().is_empty() {
         return Ok(()); // no-op when no app configured
     }

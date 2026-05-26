@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
 
-use super::common::aws_json;
+use super::common::aws_json_async;
 
 #[derive(Serialize, Clone)]
 pub struct S3Bucket {
@@ -24,10 +24,11 @@ pub async fn aws_s3_buckets(profile: String) -> AppResult<Vec<S3Bucket>> {
         #[serde(rename = "CreationDate")]
         created: Option<String>,
     }
-    let resp: Resp = aws_json(
+    let resp: Resp = aws_json_async(
         &profile,
         &["s3api", "list-buckets", "--output", "json"],
-    )?;
+    )
+    .await?;
     let mut out: Vec<S3Bucket> = resp
         .buckets
         .into_iter()

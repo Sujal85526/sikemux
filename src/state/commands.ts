@@ -7,6 +7,7 @@ import { fetchResource, invalidate } from "./resources";
 import { awsIdentityR } from "./resources.defs";
 import { inferEnv, legacyProjectForEnv } from "./rundeckShape";
 import { getState, setState, type StoreState } from "./store";
+import { swallow } from "./toast";
 import {
   collectPanes,
   computeLayout,
@@ -45,6 +46,45 @@ import type {
 //
 // Convention: small functions, kept in feature groups for navigation.
 // Closures over getState/setState — no slice ceremony.
+//
+// TODO(C4 split): this file is ~1300 lines and 79 exports. Planned split,
+// keeping this file as the barrel for back-compat:
+//
+//   commands/_shared.ts   — patchSession, patchWindow, withActiveSession,
+//                           withActiveWindow, basename, makeWindow,
+//                           projectWindows, attachSession (private helpers)
+//   commands/session.ts   — createX session, selectSession, closeSession,
+//                           cycleSession{,Group}, togglePin, reopenRecent,
+//                           setEnv
+//   commands/pane.ts      — splitActivePane, closeActivePane, focusPane,
+//                           moveFocus, resizeActivePane, toggleZoom,
+//                           setSplitSizes
+//   commands/window.ts    — newWindow, closeActiveWindow, selectWindowId,
+//                           selectWindowByIndex, selectWindowByName,
+//                           selectWindowRelative, ensureSearchWindow
+//   commands/agent.ts     — addAgent, selectAgent, closeAgent,
+//                           toggleAgentSkipPermissions, focusAgents,
+//                           toggle/openAgentBookmark
+//   commands/rundeck.ts   — openRundeckSession, rundeckPush/Pop/Replace/
+//                           Home, setRundeckProject, openRundeckServiceFor
+//   commands/aws.ts       — setAwsProfile, setAwsService, runAwsSsoLogin,
+//                           openAwsAuthModal, closeAwsAuthModal
+//   commands/prefs.ts     — setThemeId, setWindowOpacity, setWindowBlur,
+//                           setCloudBrowser{,Shortcut}, addProjectRoot,
+//                           removeProjectRoot, setProjectRootDepth,
+//                           normaliseProjectRoots
+//   commands/view.ts      — setEditorView, setGitView, setEcsLevel,
+//                           setBillingExpandedMonth
+//   commands/search.ts    — focusGlobalSearch, setGlobalSearchQuery,
+//                           setGlobalSearchOption,
+//                           toggle/expand/collapseAllGlobalSearchFiles
+//   commands/ui.ts        — setHome, open/close{Picker,AgentPalette,
+//                           FilePalette,Settings}, toggleSettings,
+//                           toggleLeft/RightRail, openLspResults,
+//                           closeLspResults, requestOpenFile
+//
+// Do not start the split alongside other in-flight work — it touches
+// every component that does `import * as cmd from "../state/commands"`.
 
 const patchSession = (id: string, fn: (s: Session) => Session): void =>
   setState((st) =>
@@ -1100,7 +1140,7 @@ export function setWindowOpacity(v: number): void {
 
 export function setWindowBlur(v: number): void {
   const value = Number.isFinite(v) ? Math.round(v) : 0;
-  void invoke("set_window_blur", { radius: value }).catch(() => {});
+  void invoke("set_window_blur", { radius: value }).catch(swallow("set_window_blur"));
   setState({ windowBlur: value });
 }
 
@@ -1168,7 +1208,7 @@ export async function runAwsSsoLogin(profile: string): Promise<boolean> {
   const result = await awsApi.ssoLogin(profile);
   if (result.success) {
     invalidate((kind, args) => kind === awsIdentityR.kind && args[0] === profile);
-    await fetchResource(awsIdentityR, profile, true).catch(() => {});
+    await fetchResource(awsIdentityR, profile, true).catch(swallow("awsIdentityR refetch"));
   }
   return result.success;
 }

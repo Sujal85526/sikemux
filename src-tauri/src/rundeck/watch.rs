@@ -50,7 +50,6 @@ pub async fn rnd_watch_start(
     on_update: Channel<WatchUpdate>,
 ) -> AppResult<u32> {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let handles_ref = manager.inner();
     let handle = tokio::spawn(async move {
         let mut last_status: Option<String> = None;
         loop {
@@ -94,7 +93,6 @@ pub async fn rnd_watch_start(
     // also clears it if the loop ends naturally; we just keep the spurious
     // dead handle around until the user explicitly stops.
     manager.handles.insert(id, handle);
-    let _ = handles_ref; // silence unused — manager.inner() already gave us reference; the insert above uses it
     Ok(id)
 }
 

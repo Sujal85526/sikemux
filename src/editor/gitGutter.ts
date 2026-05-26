@@ -13,6 +13,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { diffApi, type DiffHunk } from "../api/diff";
+import { swallow } from "../state/toast";
 
 // VSCode-style git diff gutter: green bar for added lines, blue for modified,
 // red triangle at the boundary where lines were deleted. Baseline (HEAD
@@ -111,7 +112,7 @@ function scheduleHunks(view: EditorView): { cancel: () => void } {
         if (my !== token) return;
         view.dispatch({ effects: setHunks.of(hunks) });
       })
-      .catch(() => {});
+      .catch(swallow("diff hunks"));
   };
   return {
     cancel: () => {

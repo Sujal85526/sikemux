@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { git } from "../api/git";
 import { setGitBaseline } from "../editor/gitGutter";
 import { subscribe } from "../state/bus";
+import { swallow } from "../state/toast";
 
 // Pushes the HEAD content of the active file into the editor's diff baseline.
 // Refreshes when the file changes and when the bus reports an fs change in
@@ -38,7 +39,7 @@ export function useGitBaseline(
           if (viewGetter() !== view) return;
           setGitBaseline(view, content);
         })
-        .catch(() => {});
+        .catch(swallow("git baseline"));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd, activePath]);
@@ -56,7 +57,7 @@ export function useGitBaseline(
         if (cancelled || viewGetter() !== view) return;
         setGitBaseline(view, content);
       })
-      .catch(() => {});
+      .catch(swallow("git baseline initial"));
     return () => {
       cancelled = true;
     };

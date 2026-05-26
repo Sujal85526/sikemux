@@ -6,6 +6,7 @@ import { useClock } from "../hooks/useClock";
 import { ENVS } from "../state/types";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
+import { swallow } from "../state/toast";
 import { awsIdentityR, rndMatrixR } from "../state/resources.defs";
 import { legacyProjectForEnv } from "../state/rundeckShape";
 import { useStore } from "../state/store";
@@ -172,7 +173,7 @@ function CogIcon({ size = 15 }: { size?: number }) {
 function VersionChip() {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
-    getVersion().then(setVersion).catch(() => {});
+    getVersion().then(setVersion).catch(swallow("getVersion"));
   }, []);
   if (!version) return null;
   return (

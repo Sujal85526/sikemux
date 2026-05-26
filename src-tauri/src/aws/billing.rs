@@ -13,7 +13,7 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
-use super::common::aws_json;
+use super::common::aws_json_async;
 
 #[derive(Serialize, Clone)]
 pub struct BillingMonth {
@@ -55,13 +55,14 @@ pub async fn aws_billing_months(
         format!("{:04}-{:02}-01", ny, nm)
     });
 
-    let resp_v: serde_json::Value = aws_json(
+    let time_period = format!("Start={start},End={end}");
+    let resp_v: serde_json::Value = aws_json_async(
         &profile,
         &[
             "ce",
             "get-cost-and-usage",
             "--time-period",
-            &format!("Start={start},End={end}"),
+            &time_period,
             "--granularity",
             "MONTHLY",
             "--metrics",
@@ -72,7 +73,8 @@ pub async fn aws_billing_months(
             "--output",
             "json",
         ],
-    )?;
+    )
+    .await?;
 
     let results = resp_v
         .get("ResultsByTime")

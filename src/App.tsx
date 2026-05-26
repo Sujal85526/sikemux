@@ -18,6 +18,8 @@ import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, subscribePersist } from "./state/persist";
+import { dispatchFolder, dispatchPty } from "./state/dropRegistry";
+import { swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity } from "./themes/bus";
@@ -55,7 +57,7 @@ export default function App() {
         // Re-apply persisted blur so reopens look identical (Rust starts at 0).
         cmd.setWindowBlur(st.windowBlur);
       })
-      .catch(() => {})
+      .catch(swallow("boot_init"))
       .finally(() => {
         unsub = subscribePersist();
       });
@@ -124,35 +126,19 @@ export default function App() {
   //   * `.tree-row.is-folder`   → FileTree copies into that folder.
   //   * `.ed-tree-scroll`       → FileTree copies into the repo root.
   useEffect(() => {
-    interface PtyTarget {
-      __sikemuxDropPaths?: (paths: string[]) => void;
-    }
-    interface FolderTarget {
-      __sikemuxDropFolder?: (paths: string[]) => void;
-    }
     const unlistenP = getCurrentWebview().onDragDropEvent((e) => {
       if (e.payload.type !== "drop") return;
       const paths = e.payload.paths;
       if (!paths || paths.length === 0) return;
       const pos = e.payload.position;
       const dpr = window.devicePixelRatio || 1;
-      const x = pos.x / dpr;
-      const y = pos.y / dpr;
-      const at = document.elementFromPoint(x, y);
+      const at = document.elementFromPoint(pos.x / dpr, pos.y / dpr);
       const term = at?.closest(".terminal-host") as HTMLElement | null;
-      if (term) {
-        (term as unknown as PtyTarget).__sikemuxDropPaths?.(paths);
-        return;
-      }
+      if (term && dispatchPty(term, paths)) return;
       const folder = at?.closest(".tree-row.is-folder") as HTMLElement | null;
-      if (folder) {
-        (folder as unknown as FolderTarget).__sikemuxDropFolder?.(paths);
-        return;
-      }
+      if (folder && dispatchFolder(folder, paths)) return;
       const treeRoot = at?.closest(".ed-tree-scroll") as HTMLElement | null;
-      if (treeRoot) {
-        (treeRoot as unknown as FolderTarget).__sikemuxDropFolder?.(paths);
-      }
+      if (treeRoot) dispatchFolder(treeRoot, paths);
     });
     return () => {
       void unlistenP.then((u) => u());

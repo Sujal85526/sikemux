@@ -5,8 +5,12 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import "@xterm/xterm/css/xterm.css";
 import { currentTheme, registerTerminal } from "../themes/bus";
+import { registerPtyDrop } from "../state/dropRegistry";
 
 const FONT = '"JetBrainsMono Nerd Font", monospace';
+// Must match `PARSER_SCROLLBACK` in src-tauri/src/pty.rs so a fresh xterm
+// can repaint the full grid+scrollback returned by `pty_attach`.
+const SCROLLBACK = 10_000;
 
 // macOS chord → readline escape, written straight to the PTY. Cmd-arrows
 // and friends never reach xterm's normal `onData` pipeline (macOS swallows
@@ -25,10 +29,6 @@ const ALT_CHORDS: Record<string, string> = {
 interface AttachResult {
   subId: number;
   snapshot: number[];
-}
-
-interface DropTarget {
-  __sikemuxDropPaths?: (paths: string[]) => void;
 }
 
 // ARCH: PTY screen state lives in a Rust-side `vt100::Parser`. This pane
@@ -100,9 +100,9 @@ export function TerminalPane({
       },
     );
 
-    // Drag-drop hook — App.tsx's single drop subscription calls this back
-    // when a file is dropped over this terminal's host element. We wrap
-    // the dropped paths in bracketed paste markers (\x1b[200~ … \x1b[201~)
+    // Drag-drop hook — App.tsx's single drop subscription dispatches via
+    // dropRegistry to this terminal's registered handler. We wrap the
+    // dropped paths in bracketed paste markers (\x1b[200~ … \x1b[201~)
     // so the active app sees them as a single paste, not character-by-
     // character typing. That's what lets Claude Code / Codex / hermes run
     // their paste→image sniffers — drop a .png and it attaches as
@@ -110,7 +110,7 @@ export function TerminalPane({
     // Shells in bracketed-paste mode (default in zsh/bash with readline)
     // treat the chunk as one editable token, so backslash-escaping spaces
     // + quotes is enough for them to round-trip a path through.
-    (host as unknown as DropTarget).__sikemuxDropPaths = (paths) => {
+    const unregisterDrop = registerPtyDrop(host, (paths) => {
       const pid = ptyIdRef.current;
       if (pid === null || paths.length === 0) return;
       const body = paths
@@ -120,13 +120,13 @@ export function TerminalPane({
         id: pid,
         data: `\x1b[200~${body}\x1b[201~`,
       });
-    };
+    });
 
     return () => {
       disposed = true;
       const id = ptyIdRef.current;
       ptyIdRef.current = null;
-      delete (host as unknown as DropTarget).__sikemuxDropPaths;
+      unregisterDrop();
       if (id !== null) void invoke("pty_kill", { id });
     };
     // Mount once: cwd/startup are captured at spawn and never change.
@@ -154,7 +154,7 @@ export function TerminalPane({
         allowProposedApi: true,
         allowTransparency: true,
         macOptionIsMeta: true,
-        scrollback: 10000,
+        scrollback: SCROLLBACK,
       });
       const unregisterTheme = registerTerminal(term);
       const fit = new FitAddon();

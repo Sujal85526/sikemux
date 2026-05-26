@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
-use super::common::{classify_cli_err, run_aws_cli};
+use super::common::{classify_cli_err, run_aws_cli_async};
 
 // ============================================================
 // profile discovery
@@ -206,10 +206,12 @@ pub async fn aws_caller_identity(profile: String, force: bool) -> AwsIdentity {
         }
     }
 
-    let id = match run_aws_cli(
+    let id = match run_aws_cli_async(
         &["sts", "get-caller-identity", "--output", "json"],
         Some(&profile),
-    ) {
+    )
+    .await
+    {
         Err(crate::error::AppError::AwsCliMissing(msg)) => AwsIdentity {
             arn: None,
             account: None,
@@ -276,7 +278,7 @@ pub struct AwsLoginResult {
 
 #[tauri::command]
 pub async fn aws_sso_login(profile: String) -> AppResult<AwsLoginResult> {
-    let r = run_aws_cli(&["sso", "login"], Some(&profile));
+    let r = run_aws_cli_async(&["sso", "login"], Some(&profile)).await;
     // Drop the cached "expired" identity so the next aws_caller_identity
     // call doesn't lie about state.
     if let Ok(mut cache) = id_cache().lock() {

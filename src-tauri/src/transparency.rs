@@ -69,12 +69,14 @@ pub unsafe fn apply(_ns_window: *mut std::ffi::c_void, _blur_radius: i32) {}
 pub fn set_window_blur(
     window: tauri::WebviewWindow,
     radius: i32,
-) -> Result<(), String> {
+) -> crate::error::AppResult<()> {
     // No caps — pass through whatever the user typed. CGS clamps internally
     // anyway, and negative values just disable blur.
     #[cfg(target_os = "macos")]
     {
-        let handle = window.ns_window().map_err(|e| e.to_string())?;
+        let handle = window
+            .ns_window()
+            .map_err(|e| crate::error::AppError::Window(e.to_string()))?;
         unsafe { apply(handle, radius); }
     }
     #[cfg(not(target_os = "macos"))]

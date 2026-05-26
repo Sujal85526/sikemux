@@ -10,6 +10,11 @@ export interface ResourceDef<Args extends unknown[], T> {
   fetch: (...args: Args) => Promise<T>;
   /** Background refetch when an existing entry is older than this. */
   staleAfterMs?: number;
+  /** Optional cache-key builder for non-primitive args. Defaults to a
+   *  stable JSON-stringify of each arg, which is fine when args are
+   *  primitives (the common case). Provide one when args contain large
+   *  objects or order-sensitive fields. */
+  keyFn?: (args: Args) => string;
 }
 
 type Status = "loading" | "ok" | "error";
@@ -31,8 +36,30 @@ const subs = new Map<string, Set<() => void>>();
 // Kind → def, so invalidation can refetch active subscribers.
 const defsByKind = new Map<string, AnyDef>();
 
-function keyOf(kind: string, args: unknown[]): string {
-  return `${kind}|${args.map((a) => JSON.stringify(a)).join("|")}`;
+function defaultKey(args: unknown[]): string {
+  // Fast path: every arg is a primitive (string|number|boolean|null/undef).
+  // 95%+ of resources use just `(repo)` or `(profile)` so this avoids the
+  // JSON.stringify allocation on every read.
+  let key = "";
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    const t = typeof a;
+    if (a === null || a === undefined) {
+      key += i ? "|n" : "n";
+    } else if (t === "string" || t === "number" || t === "boolean") {
+      key += i ? "|" + String(a) : String(a);
+    } else {
+      // Non-primitive — fall back to JSON for correctness. Caller should
+      // supply a `keyFn` if this hot-pathed object is expensive.
+      key += i ? "|" + JSON.stringify(a) : JSON.stringify(a);
+    }
+  }
+  return key;
+}
+
+function keyOf(kind: string, args: unknown[], def?: AnyDef): string {
+  const k = def?.keyFn ? def.keyFn(args as never) : defaultKey(args);
+  return `${kind}|${k}`;
 }
 
 // Tauri commands return Err values as { category, message } structured
@@ -132,7 +159,7 @@ export function useResource<Args extends unknown[], T>(
   def: ResourceDef<Args, T>,
   ...args: Args
 ): ResourceHandle<T> {
-  const key = keyOf(def.kind, args as unknown[]);
+  const key = keyOf(def.kind, args as unknown[], def as unknown as AnyDef);
 
   useEffect(() => {
     const entry = cache.get(key);
@@ -176,7 +203,7 @@ export function fetchResource<Args extends unknown[], T>(
   def: ResourceDef<Args, T>,
   ...args: Args
 ): Promise<T> {
-  return trigger(def, keyOf(def.kind, args as unknown[]), args);
+  return trigger(def, keyOf(def.kind, args as unknown[], def as unknown as AnyDef), args);
 }
 
 /** Read currently-cached entry without triggering a fetch. */
@@ -184,7 +211,7 @@ export function peekResource<Args extends unknown[], T>(
   def: ResourceDef<Args, T>,
   ...args: Args
 ): T | undefined {
-  const e = cache.get(keyOf(def.kind, args as unknown[])) as
+  const e = cache.get(keyOf(def.kind, args as unknown[], def as unknown as AnyDef)) as
     | Entry<T>
     | undefined;
   return e?.data;

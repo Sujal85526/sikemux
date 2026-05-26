@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import { languageFromPath, lsp } from "../api/lsp";
+import { swallow } from "../state/toast";
 
 // Owns per-file LSP versions and the debounced didChange pipe. Returns:
 //   - `openDoc(path, content)`: send didOpen + start the server.
@@ -19,7 +20,7 @@ export function useLspBridge(cwd: string) {
       const id = window.setTimeout(() => {
         const v = (versions.current.get(path) ?? 1) + 1;
         versions.current.set(path, v);
-        lsp.change(cwd, lang, path, content, v).catch(() => {});
+        lsp.change(cwd, lang, path, content, v).catch(swallow("lsp didChange"));
       }, 300);
       timers.current.set(path, id);
     },

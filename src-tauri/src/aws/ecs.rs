@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
-use super::common::{aws_json, describe_in_chunks};
+use super::common::{aws_json_async, describe_in_chunks};
 
 // AWS describe-services / describe-tasks accept at most this many ARNs.
 const ECS_DESCRIBE_CHUNK: usize = 10;
@@ -29,7 +29,8 @@ pub async fn aws_ecs_clusters(profile: String) -> AppResult<Vec<EcsCluster>> {
         #[serde(rename = "clusterArns")]
         cluster_arns: Vec<String>,
     }
-    let list: ArnList = aws_json(&profile, &["ecs", "list-clusters", "--output", "json"])?;
+    let list: ArnList =
+        aws_json_async(&profile, &["ecs", "list-clusters", "--output", "json"]).await?;
     if list.cluster_arns.is_empty() {
         return Ok(Vec::new());
     }
@@ -101,7 +102,7 @@ pub async fn aws_ecs_services(
         #[serde(rename = "serviceArns")]
         arns: Vec<String>,
     }
-    let list: ArnList = aws_json(
+    let list: ArnList = aws_json_async(
         &profile,
         &[
             "ecs",
@@ -111,7 +112,8 @@ pub async fn aws_ecs_services(
             "--output",
             "json",
         ],
-    )?;
+    )
+    .await?;
     if list.arns.is_empty() {
         return Ok(Vec::new());
     }
@@ -208,7 +210,7 @@ pub async fn aws_ecs_tasks(
         #[serde(rename = "taskArns")]
         arns: Vec<String>,
     }
-    let list: ArnList = aws_json(
+    let list: ArnList = aws_json_async(
         &profile,
         &[
             "ecs",
@@ -220,7 +222,8 @@ pub async fn aws_ecs_tasks(
             "--output",
             "json",
         ],
-    )?;
+    )
+    .await?;
     if list.arns.is_empty() {
         return Ok(Vec::new());
     }
@@ -313,7 +316,7 @@ pub async fn aws_ecs_service_log_config(
     cluster: String,
     service: String,
 ) -> AppResult<EcsServiceLog> {
-    let svc_v: serde_json::Value = aws_json(
+    let svc_v: serde_json::Value = aws_json_async(
         &profile,
         &[
             "ecs",
@@ -325,7 +328,8 @@ pub async fn aws_ecs_service_log_config(
             "--output",
             "json",
         ],
-    )?;
+    )
+    .await?;
     let td_arn = svc_v
         .get("services")
         .and_then(|s| s.as_array())
@@ -335,7 +339,7 @@ pub async fn aws_ecs_service_log_config(
         .ok_or(AppError::BadArg("service has no taskDefinition"))?
         .to_string();
 
-    let td_v: serde_json::Value = aws_json(
+    let td_v: serde_json::Value = aws_json_async(
         &profile,
         &[
             "ecs",
@@ -345,7 +349,8 @@ pub async fn aws_ecs_service_log_config(
             "--output",
             "json",
         ],
-    )?;
+    )
+    .await?;
     let containers = td_v
         .get("taskDefinition")
         .and_then(|t| t.get("containerDefinitions"))
@@ -381,7 +386,7 @@ pub async fn aws_ecs_task_log_config(
     cluster: String,
     task_arn: String,
 ) -> AppResult<EcsTaskLog> {
-    let task_v: serde_json::Value = aws_json(
+    let task_v: serde_json::Value = aws_json_async(
         &profile,
         &[
             "ecs",
@@ -393,7 +398,8 @@ pub async fn aws_ecs_task_log_config(
             "--output",
             "json",
         ],
-    )?;
+    )
+    .await?;
 
     let task = task_v
         .get("tasks")
@@ -406,7 +412,7 @@ pub async fn aws_ecs_task_log_config(
         .ok_or(AppError::BadArg("no taskDefinitionArn"))?;
     let task_id = task_arn.rsplit('/').next().unwrap_or(&task_arn).to_string();
 
-    let td_v: serde_json::Value = aws_json(
+    let td_v: serde_json::Value = aws_json_async(
         &profile,
         &[
             "ecs",
@@ -416,7 +422,8 @@ pub async fn aws_ecs_task_log_config(
             "--output",
             "json",
         ],
-    )?;
+    )
+    .await?;
     let containers = td_v
         .get("taskDefinition")
         .and_then(|t| t.get("containerDefinitions"))

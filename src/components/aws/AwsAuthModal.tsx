@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import * as cmd from "../../state/commands";
 import { useStore } from "../../state/store";
 import { IconClose } from "../Icons";
+import { swallow } from "../../state/toast";
 
 // Sign-in flow that mirrors ~/.config/shell/bin/aws-auth:
 //   1. If a `cloudBrowser` is configured, activate it (and run the optional
@@ -42,7 +43,7 @@ export function AwsAuthModal() {
       url,
       app: cloudBrowser || null,
       shortcut: cloudBrowserShortcut || null,
-    }).catch(() => {});
+    }).catch(swallow("open_url"));
 
   const onCancel = () => {
     // Mark the in-flight call as aborted so its eventual resolution
@@ -63,7 +64,7 @@ export function AwsAuthModal() {
         await invoke("macos_focus_app", {
           app: cloudBrowser,
           shortcut: cloudBrowserShortcut || null,
-        }).catch(() => {});
+        }).catch(swallow("macos_focus_app"));
       }
       const ok = await cmd.runAwsSsoLogin(modal.profile);
       if (cancelledRef.current) return;

@@ -11,9 +11,14 @@ import type {
 
 const MIN_FRAC = 0.05; // a pane can't shrink below 5% of its split axis
 
+// Per-launch nonce so IDs generated in the first ms of a fresh process
+// can never collide with IDs persisted in a snapshot from the previous
+// run. Without this, a relaunch + new pane on the same millisecond +
+// counter==0 reuses an id from yesterday.
+const NONCE = Math.random().toString(36).slice(2, 8);
 let counter = 0;
 export function newId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
+  return `${prefix}-${NONCE}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 }
 
 export function makePane(

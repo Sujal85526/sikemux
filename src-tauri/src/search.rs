@@ -17,6 +17,7 @@ use grep_searcher::{BinaryDetection, Searcher, Sink, SinkMatch};
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 
+use crate::error::{AppError, AppResult};
 use crate::files;
 
 // ---- caps ---------------------------------------------------------------
@@ -144,7 +145,7 @@ fn regex_escape(s: &str) -> String {
     out
 }
 
-fn build_matcher(query: &str, opts: &SearchOptions) -> Result<grep_regex::RegexMatcher, String> {
+fn build_matcher(query: &str, opts: &SearchOptions) -> AppResult<grep_regex::RegexMatcher> {
     let raw = if opts.is_regex {
         query.to_string()
     } else {
@@ -158,17 +159,17 @@ fn build_matcher(query: &str, opts: &SearchOptions) -> Result<grep_regex::RegexM
     RegexMatcherBuilder::new()
         .case_insensitive(!opts.case_sensitive)
         .build(&pattern)
-        .map_err(|e| format!("{e}"))
+        .map_err(|e| AppError::Search(e.to_string()))
 }
 
-fn build_glob(pat: &str) -> Result<Option<GlobMatcher>, String> {
+fn build_glob(pat: &str) -> AppResult<Option<GlobMatcher>> {
     let trimmed = pat.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
     Glob::new(trimmed)
         .map(|g| Some(g.compile_matcher()))
-        .map_err(|e| format!("{e}"))
+        .map_err(|e| AppError::Search(e.to_string()))
 }
 
 // ---- command ----------------------------------------------------------
@@ -178,7 +179,7 @@ pub async fn project_search(
     repo: String,
     query: String,
     options: SearchOptions,
-) -> Result<SearchResults, String> {
+) -> AppResult<SearchResults> {
     let started = std::time::Instant::now();
 
     if query.is_empty() {

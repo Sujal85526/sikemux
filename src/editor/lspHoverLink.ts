@@ -9,6 +9,7 @@ import {
   ViewPlugin,
 } from "@codemirror/view";
 import { languageFromPath, lsp } from "../api/lsp";
+import { swallow } from "../state/toast";
 
 // VSCode/Zed-style Cmd-hover underline. Tracks the mouse while Meta/Ctrl is
 // held, debounces a `textDocument/definition` query, and underlines the
@@ -91,7 +92,7 @@ const hoverHandlers = EditorView.domEventHandlers({
             view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
           }
         })
-        .catch(() => {});
+        .catch(swallow("lsp hover"));
     }, 120);
     return false;
   },

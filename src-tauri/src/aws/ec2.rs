@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
 
-use super::common::aws_json;
+use super::common::aws_json_async;
 
 #[derive(Serialize, Clone)]
 pub struct Ec2Instance {
@@ -57,10 +57,11 @@ pub async fn aws_ec2_instances(profile: String) -> AppResult<Vec<Ec2Instance>> {
         value: String,
     }
 
-    let resp: Resp = aws_json(
+    let resp: Resp = aws_json_async(
         &profile,
         &["ec2", "describe-instances", "--output", "json"],
-    )?;
+    )
+    .await?;
     let mut out = Vec::new();
     for r in resp.reservations {
         for i in r.instances {

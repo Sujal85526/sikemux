@@ -5,7 +5,8 @@ import { type GitFile } from "../api/git";
 import { subscribe } from "../state/bus";
 import { useResource } from "../state/resources";
 import { gitStatusR } from "../state/resources.defs";
-import { reportError } from "../state/toast";
+import { reportError, swallow } from "../state/toast";
+import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
 
@@ -76,7 +77,7 @@ export function FileTree({
       .then((e) => {
         setDirs((d) => ({ ...d, [path]: e }));
       })
-      .catch(() => {});
+      .catch(swallow("readDir"));
   }, []);
 
   // Load root.
@@ -237,15 +238,18 @@ export function FileTree({
 
   // ---- drag-drop into a folder ----
 
-  // Attach the App.tsx-routed drop handler to each folder row. The global
-  // listener in App.tsx hit-tests elementFromPoint and walks up to a
-  // .tree-row.is-folder ancestor, then calls __sikemuxDropFolder(paths).
+  // Attach the App.tsx-routed drop handler to each folder row via the
+  // dropRegistry WeakMap. The global listener in App.tsx hit-tests
+  // elementFromPoint and walks up to a `.tree-row.is-folder` ancestor.
+  // Per-row refs come+go as the tree expands/collapses; registerFolderDrop
+  // returns an unregister fn, and WeakMap cleanup picks up the slack if a
+  // node is removed from the DOM without us being notified.
+  const folderUnregRef = useRef<Map<HTMLElement, () => void>>(new Map());
   const attachFolderDrop = (el: HTMLButtonElement | null, dir: string) => {
     if (!el) return;
-    interface DropTarget {
-      __sikemuxDropFolder?: (paths: string[]) => void;
-    }
-    (el as unknown as DropTarget).__sikemuxDropFolder = async (paths) => {
+    // Replace any prior registration on this exact node.
+    folderUnregRef.current.get(el)?.();
+    const unreg = registerFolderDrop(el, async (paths) => {
       try {
         for (const p of paths) await fsapi.copyIntoDir(p, dir);
         await loadDir(dir);
@@ -253,8 +257,16 @@ export function FileTree({
       } catch (err) {
         reportError("drop")(err);
       }
-    };
+    });
+    folderUnregRef.current.set(el, unreg);
   };
+  useEffect(() => {
+    const map = folderUnregRef.current;
+    return () => {
+      for (const u of map.values()) u();
+      map.clear();
+    };
+  }, []);
 
   const renderTree = (path: string, depth: number): ReactNode => {
     const entries = dirs[path] ?? [];
@@ -376,17 +388,14 @@ export function FileTree({
   useEffect(() => {
     const el = rootScrollRef.current;
     if (!el || !cwd) return;
-    interface DropTarget {
-      __sikemuxDropFolder?: (paths: string[]) => void;
-    }
-    (el as unknown as DropTarget).__sikemuxDropFolder = async (paths) => {
+    return registerFolderDrop(el, async (paths) => {
       try {
         for (const p of paths) await fsapi.copyIntoDir(p, cwd);
         await loadDir(cwd);
       } catch (err) {
         reportError("drop")(err);
       }
-    };
+    });
   }, [cwd, loadDir]);
 
   const handleDragOver = (e: React.DragEvent) => {
