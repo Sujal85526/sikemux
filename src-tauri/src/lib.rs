@@ -55,6 +55,10 @@ pub fn run() {
         .manage(PtyManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
+            pty::pty_subscribe,
+            pty::pty_unsubscribe,
+            pty::pty_snapshot,
+            pty::pty_attach,
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,

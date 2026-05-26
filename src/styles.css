@@ -698,44 +698,48 @@ button {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   Project block — 2-row layout (name + 5-icon hop bar)
+   Project tree — collapsed name-row + expanded indented children
    --------------------------------------------------------------------
-   Replaces the chevron-expanded window-list for project sessions only.
-   Active project gets a left accent bar + subtle bg gradient + bright
-   name; inactive names dim. Each sub-icon is a click target that hops
-   straight to that pane of THIS project, no matter which project is
-   currently active — point of the design is one-click cross-project
-   navigation.
+   Inactive projects show as one row: ▸ chevron + folder + name (+ optional
+   agent hint chip on the right). The active project expands into a ▾
+   header followed by 5 indented child rows (icon + label + count), with
+   the currently-focused pane spotlit by the accent color and a small dot.
+   Density scales to 10+ projects without the per-project icon row
+   repetition that the previous design forced on every entry.
    ──────────────────────────────────────────────────────────────────── */
-.proj-block {
-    padding: 4px 0 10px;
-    border-left: 2px solid transparent;
-    transition: background 0.12s;
-}
-.proj-block.active {
-    border-left-color: var(--acc);
-    background: linear-gradient(90deg, var(--acc-soft), transparent 75%);
-}
-
-.proj-name-row {
+.proj-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     width: 100%;
-    height: 22px;
-    padding: 0 10px 0 12px;
+    height: 24px;
+    padding: 0 10px 0 8px;
     background: transparent;
     border: none;
+    border-left: 2px solid transparent;
     cursor: pointer;
     color: var(--ink-dim);
+    text-align: left;
+    transition: background 0.12s, color 0.12s;
 }
-.proj-name-row:hover .proj-name {
+.proj-row:hover { color: var(--ink); }
+.proj-row.expanded {
+    border-left-color: var(--acc);
+    background: linear-gradient(90deg, var(--acc-soft), transparent 75%);
     color: var(--ink);
 }
-.proj-block.active .proj-name {
-    color: var(--ink);
-    font-weight: 600;
+.proj-row.expanded .proj-name { font-weight: 600; }
+
+.proj-chev {
+    display: inline-flex;
+    width: 10px;
+    color: var(--ink-faint);
+    font-size: 10px;
+    line-height: 1;
+    flex-shrink: 0;
 }
+.proj-row.expanded .proj-chev { color: var(--acc); }
+
 .proj-folder {
     display: inline-flex;
     color: var(--live);
@@ -748,90 +752,105 @@ button {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12.5px;
-    text-align: left;
     letter-spacing: 0.01em;
 }
 
-/* 5-icon hop bar — strict CSS grid columns so the vertical stack under
-   `term` and `agents` lands directly below its parent icon, not drifting
-   left/right when the project name above changes width. */
-.proj-icons {
-    display: grid;
-    grid-template-columns: repeat(5, 28px);
-    gap: 4px;
-    padding: 4px 12px 0 27px; /* indent matches the folder-icon centre */
-    align-items: start;
-    justify-content: start;
+/* Small floating "live" dot — used on the expanded header (right side)
+   and on whichever child row is the currently-focused pane. */
+.proj-active-dot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--acc);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--acc) 60%, transparent);
 }
-.proj-icol {
-    display: flex;
-    flex-direction: column;
+
+/* Hint chip on collapsed rows — flags background activity (e.g. agents
+   still running) without expanding the project. Uses the same brand-tone
+   palette as child counts so colour stays consistent across the rail. */
+.proj-hint {
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    min-width: 0;
+    gap: 3px;
+    flex-shrink: 0;
+    color: var(--ink-faint);
 }
-.proj-ic {
+.proj-hint-n {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 4px;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--void);
+}
+
+/* Indented child rows under the expanded project. */
+.proj-tree.active { padding-bottom: 4px; }
+.proj-children {
+    display: flex;
+    flex-direction: column;
+    padding: 2px 8px 2px 0;
+    margin-left: 22px; /* aligns child icons under the folder glyph */
+    border-left: 1px solid color-mix(in srgb, var(--acc) 20%, transparent);
+}
+.proj-child {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
     height: 22px;
+    padding: 0 8px;
     background: transparent;
     border: none;
     cursor: pointer;
     color: var(--ink-faint);
-    transition: color 0.12s, transform 0.12s;
+    text-align: left;
+    transition: color 0.12s, background 0.12s;
 }
-.proj-ic:hover { color: var(--ink); }
-.proj-block.active .proj-ic { color: var(--ink-dim); }
-.proj-block.active .proj-ic.active {
+.proj-child:hover { color: var(--ink); }
+.proj-child.active {
     color: var(--acc);
-    transform: scale(1.18);
 }
-
-/* ── vertical CountStack ──
-   Same circles + agent-glyph colors as the legacy .sess-stack, just
-   stacked top-to-bottom under the parent icon. Uses the same shared
-   `.agent-glyph.{claude,codex,hermes}` background colors so the brand
-   palette is defined in one place. */
-.proj-vstack {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-top: 1px;
-}
-.proj-glyph {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 2px solid var(--rail);
+.proj-child-ic {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: white;
-    background: var(--ink-dim);
+    width: 16px;
     flex-shrink: 0;
 }
-.proj-glyph + .proj-glyph { margin-top: -6px; }
-.proj-block.active .proj-glyph {
-    border-color: color-mix(in srgb, var(--acc) 18%, var(--rail));
+.proj-child-label {
+    flex: 1 1 auto;
+    font-size: 12px;
+    letter-spacing: 0.01em;
 }
-.vstack-term .proj-glyph {
-    background: color-mix(in srgb, var(--live) 35%, var(--void));
-    color: var(--live);
-}
-.proj-glyph.more {
-    background: var(--rail-2);
-    color: var(--ink);
-    border-color: var(--line);
-}
-.proj-glyph.more .proj-glyph-num {
+.proj-child-n {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 14px;
+    padding: 0 5px;
+    border-radius: 999px;
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 9px;
     font-weight: 700;
     line-height: 1;
+    color: var(--void);
+    flex-shrink: 0;
 }
-.proj-glyph svg { display: block; }
+
+/* Brand-tone palette shared by .proj-hint-n and .proj-child-n. */
+.badge-term   { background: var(--live); }
+.badge-claude { background: var(--brand-claude); color: white; }
+.badge-codex  { background: var(--brand-codex); color: var(--void); }
+.badge-hermes { background: var(--brand-hermes); color: white; }
 
 .rail-foot {
     display: flex;

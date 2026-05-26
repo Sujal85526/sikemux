@@ -1,9 +1,14 @@
-import { type ReactNode } from "react";
-import type { Session, SessionKind, Window, WindowRole } from "../state/types";
+import type { ReactNode } from "react";
+import type {
+  AgentType,
+  Session,
+  SessionKind,
+  Window,
+  WindowRole,
+} from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import {
-  AgentIcon,
   IconAgent,
   IconAws,
   IconClose,
@@ -21,59 +26,17 @@ function kindIcon(kind: SessionKind): ReactNode {
   return <IconCommand size={13} />;
 }
 
-// Max glyphs shown before collapsing the rest into a "+N" overflow chip.
-// 3 visible + 1 "+N" = 4 stack slots, matching today's horizontal cap.
-const STACK_MAX = 4;
-
-/** Vertical brand-glyph stack — same circles + colors as the old horizontal
- *  CountStack, just rotated so it sits below the parent icon. Used under
- *  the `term` icon (green dots with `>_`) and the `agents` icon (colored
- *  by agent type: claude / codex / hermes). Returns null at count = 0. */
-function VerticalStack({
-  count,
-  kind,
-  agentKinds,
-  title,
-}: {
-  count: number;
-  kind: "term" | "agent";
-  agentKinds?: string[];
-  title: string;
-}) {
-  if (count === 0) return null;
-  const visible = Math.min(count, STACK_MAX);
-  return (
-    <span className={`proj-vstack vstack-${kind}`} title={title} data-count={count}>
-      {Array.from({ length: visible }).map((_, i) => {
-        const overflowing = count > STACK_MAX;
-        const isMore = overflowing && i === visible - 1;
-        const overflowText = isMore ? `+${count - (STACK_MAX - 1)}` : null;
-        const agentType = agentKinds?.[i] as
-          | "claude"
-          | "codex"
-          | "hermes"
-          | undefined;
-        return (
-          <span
-            key={i}
-            className={`proj-glyph${isMore ? " more" : ""}${
-              kind === "agent" && agentType && !isMore
-                ? ` agent-glyph ${agentType}`
-                : ""
-            }`}
-          >
-            {overflowText ? (
-              <span className="proj-glyph-num">{overflowText}</span>
-            ) : kind === "term" ? (
-              <IconCommand size={11} />
-            ) : (
-              <AgentIcon type={agentType ?? "claude"} size={14} />
-            )}
-          </span>
-        );
-      })}
-    </span>
-  );
+/** Pick the most-frequent agent type for color-coding. Ties broken by
+ *  insertion order (whichever the user spawned first). Default = claude
+ *  so we never render a colorless badge. */
+function primaryAgentType(types: AgentType[]): AgentType {
+  if (types.length === 0) return "claude";
+  const counts = new Map<AgentType, number>();
+  for (const t of types) counts.set(t, (counts.get(t) ?? 0) + 1);
+  let best: AgentType = types[0];
+  let bestN = 0;
+  for (const [t, n] of counts) if (n > bestN) { best = t; bestN = n; }
+  return best;
 }
 
 export function SideRail() {
@@ -104,10 +67,16 @@ export function SideRail() {
     cmd.focusAgents();
   };
 
-  /** Project rows: always-visible 2-row block (name + 5-icon hop bar).
-   *  Active sub-icon spotlit by the parent project's `view` + activeRole.
-   *  Vertical glyph stacks sit directly below the term / agents icons via
-   *  a strict per-icon column so they line up center-aligned. */
+  /** Project rows: collapsible tree.
+   *
+   *  Inactive project = single name row prefixed by a ▸ chevron, with an
+   *  optional right-aligned hint chip (agent count badge) so the user can
+   *  spot background activity without expanding.
+   *
+   *  Active project = ▾ header row + an indented child block listing the
+   *  5 pane types as `icon  Label  [n]` rows. The currently-focused pane
+   *  gets the accent color + active dot. Children are click targets that
+   *  hop directly to that pane within this project. */
   const ProjectBlock = ({ s }: { s: Session }) => {
     const active = s.id === activeSessionId;
     const winIds = windowsBySession[s.id] ?? [];
@@ -118,68 +87,29 @@ export function SideRail() {
     const agents = agentIds.map((id) => agentsById[id]).filter(Boolean);
     const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
-    // First window of each role (project sessions always have one of each
-    // canonical role — files/term/git/search). `term` may also have
-    // numeric-named siblings from Alt+N; those collapse into the stack.
-    const winByRole = (role: WindowRole): Window | undefined =>
-      sessionWindows.find((w) => w.role === role);
-    const activeRole = sessionWindows.find(
-      (w) => w.id === s.activeWindowId,
-    )?.role;
-    const inAgentView = active && s.view === "agent";
-    const inWindowsView = active && s.view === "windows";
-    const isSubActive = (role: WindowRole | "agents"): boolean => {
-      if (role === "agents") return inAgentView;
-      return inWindowsView && activeRole === role;
-    };
-
-    const onIconClick = (role: WindowRole | "agents") => {
-      if (role === "agents") {
-        jumpToAgents(s.id);
-        return;
-      }
-      const w = winByRole(role);
-      if (w) jumpToWindow(s.id, w.id);
-    };
-
-    // Per-icon column: icon button + optional vertical stack below.
-    const iconCol = (
-      role: WindowRole | "agents",
-      titleText: string,
-      stack?: ReactNode,
-    ) => {
-      const subActive = isSubActive(role);
-      const node =
-        role === "agents" ? <IconAgent size={14} /> : <WindowIcon role={role} size={14} />;
+    if (!active) {
+      // Collapsed: name + optional agent-count hint badge.
       return (
-        <div className="proj-icol" key={role}>
-          <button
-            type="button"
-            className={`proj-ic${subActive ? " active" : ""}`}
-            title={titleText}
-            onClick={(e) => {
-              e.stopPropagation();
-              onIconClick(role);
-            }}
-          >
-            {node}
-          </button>
-          {stack}
-        </div>
-      );
-    };
-
-    return (
-      <div className={`proj-block${active ? " active" : ""}`}>
         <button
-          className="proj-name-row"
+          className="proj-row collapsed"
           onClick={() => cmd.selectSession(s.id)}
           title={s.cwd || s.name}
         >
+          <span className="proj-chev">▸</span>
           <span className="proj-folder">
-            <IconFolder size={13} />
+            <IconFolder size={12} />
           </span>
           <span className="proj-name">{s.name}</span>
+          {agents.length > 0 && (
+            <span className="proj-hint">
+              <IconAgent size={11} />
+              <span
+                className={`proj-hint-n badge-${primaryAgentType(agents.map((a) => a.type))}`}
+              >
+                {agents.length > 9 ? "9+" : agents.length}
+              </span>
+            </span>
+          )}
           <span
             className="sess-close"
             title="Close session"
@@ -191,33 +121,118 @@ export function SideRail() {
             <IconClose size={11} />
           </span>
         </button>
-        <div className="proj-icons">
-          {iconCol("files", "files (M-i)")}
-          {iconCol(
-            "term",
-            `term${tabCount > 1 ? ` (${tabCount} tabs)` : ""} (M-r)`,
-            // Only show the term stack when there are multiple tabs — a
-            // single default term doesn't deserve a decoration glyph.
-            tabCount > 1 ? (
-              <VerticalStack
-                count={tabCount}
-                kind="term"
-                title={`${tabCount} terminal tab${tabCount === 1 ? "" : "s"}`}
-              />
-            ) : undefined,
-          )}
-          {iconCol("git", "git (M-g)")}
-          {iconCol(
-            "agents",
-            `agents${agents.length ? ` (${agents.length})` : ""} (M-c)`,
-            <VerticalStack
-              count={agents.length}
-              kind="agent"
-              agentKinds={agents.map((a) => a.type)}
-              title={`${agents.length} agent${agents.length === 1 ? "" : "s"}`}
-            />,
-          )}
-          {iconCol("search", "search (M-f)")}
+      );
+    }
+
+    // Expanded.
+    const winByRole = (role: WindowRole): Window | undefined =>
+      sessionWindows.find((w) => w.role === role);
+    const activeRole = sessionWindows.find(
+      (w) => w.id === s.activeWindowId,
+    )?.role;
+    const inAgentView = s.view === "agent";
+    const inWindowsView = s.view === "windows";
+    const isSubActive = (role: WindowRole | "agents"): boolean => {
+      if (role === "agents") return inAgentView;
+      return inWindowsView && activeRole === role;
+    };
+
+    const onSubClick = (role: WindowRole | "agents") => {
+      if (role === "agents") {
+        jumpToAgents(s.id);
+        return;
+      }
+      const w = winByRole(role);
+      if (w) jumpToWindow(s.id, w.id);
+    };
+
+    type SubRow = {
+      role: WindowRole | "agents";
+      label: string;
+      title: string;
+      count?: number;
+      tone?: "term" | AgentType;
+    };
+    const children: SubRow[] = [
+      { role: "files", label: "Files", title: "files (M-i)" },
+      {
+        role: "term",
+        label: "Term",
+        title: `term${tabCount > 1 ? ` (${tabCount} tabs)` : ""} (M-r)`,
+        count: tabCount > 1 ? tabCount : undefined,
+        tone: "term",
+      },
+      { role: "git", label: "Git", title: "git (M-g)" },
+      {
+        role: "agents",
+        label: "Agents",
+        title: `agents${agents.length ? ` (${agents.length})` : ""} (M-c)`,
+        count: agents.length > 0 ? agents.length : undefined,
+        tone:
+          agents.length > 0
+            ? primaryAgentType(agents.map((a) => a.type))
+            : undefined,
+      },
+      { role: "search", label: "Search", title: "search (M-f)" },
+    ];
+
+    return (
+      <div className="proj-tree active">
+        <button
+          className="proj-row expanded"
+          onClick={() => cmd.selectSession(s.id)}
+          title={s.cwd || s.name}
+        >
+          <span className="proj-chev">▾</span>
+          <span className="proj-folder">
+            <IconFolder size={12} />
+          </span>
+          <span className="proj-name">{s.name}</span>
+          <span className="proj-active-dot" aria-hidden />
+          <span
+            className="sess-close"
+            title="Close session"
+            onClick={(e) => {
+              e.stopPropagation();
+              cmd.closeSession(s.id);
+            }}
+          >
+            <IconClose size={11} />
+          </span>
+        </button>
+        <div className="proj-children">
+          {children.map((c) => {
+            const subActive = isSubActive(c.role);
+            const node =
+              c.role === "agents" ? (
+                <IconAgent size={13} />
+              ) : (
+                <WindowIcon role={c.role} size={13} />
+              );
+            return (
+              <button
+                key={c.role}
+                type="button"
+                className={`proj-child${subActive ? " active" : ""}`}
+                title={c.title}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSubClick(c.role);
+                }}
+              >
+                <span className="proj-child-ic">{node}</span>
+                <span className="proj-child-label">{c.label}</span>
+                {c.count !== undefined && c.tone && (
+                  <span className={`proj-child-n badge-${c.tone}`}>
+                    {c.count > 9 ? "9+" : c.count}
+                  </span>
+                )}
+                {subActive && (
+                  <span className="proj-active-dot" aria-hidden />
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
     );
