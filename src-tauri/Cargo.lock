@@ -3608,7 +3608,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "dashmap",
  "futures",
