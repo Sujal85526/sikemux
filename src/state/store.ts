@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { DEFAULT_THEME_ID } from "../themes";
 import { makePane, newId } from "./layout";
+import type { GitCmdEntry, GitModal } from "./gitTypes";
 import type {
   Agent,
   AgentBookmark,
@@ -83,6 +84,16 @@ export interface ViewState {
   ecsViews: Record<string, EcsLevel>;
   rundeckViews: Record<string, RundeckView>;
   expandedBillingMonth: Record<string, string | null>;
+
+  // Git pane infrastructure: one modal at a time, app-wide. Imperative
+  // helpers in state/git.ts set this. The renderer mounted inside
+  // GitPane reads it and paints whichever variant is active.
+  gitModal: GitModal | null;
+  /** Append-only command log entries (ring-buffered to LOG_LIMIT in
+   *  state/git.ts). Surfaced as a collapsible bar at the bottom of the
+   *  git pane and toggled with `@`. */
+  gitCmdLog: GitCmdEntry[];
+  gitCmdLogOpen: boolean;
 
   // Per-project global search state — query + filters survive switching
   // away from the search window and across projects. The search pane
@@ -180,6 +191,9 @@ export const useStore = create<StoreState>(() => {
     ecsViews: {},
     rundeckViews: {},
     expandedBillingMonth: {},
+    gitModal: null,
+    gitCmdLog: [],
+    gitCmdLogOpen: false,
     globalSearchBySession: {},
     pendingUpdate: null,
   };

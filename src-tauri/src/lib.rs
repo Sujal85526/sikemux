@@ -35,6 +35,18 @@ pub fn run() {
         .manage(LogsTailManager::default())
         .manage(RundeckWatchManager::default())
         .manage(RundeckLogsManager::default())
+        .on_window_event(|window, event| {
+            // Drain every live PTY on close so we don't leave orphan
+            // shells, agents, or `tail`s alive after the user quits.
+            // The OS reaps eventually, but explicit kill avoids the
+            // "still using AI tokens" surprise from a backgrounded agent.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                use tauri::Manager;
+                if let Some(mgr) = window.try_state::<PtyManager>() {
+                    mgr.drain();
+                }
+            }
+        })
         .setup(|app| {
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
             // CGS background blur via private API). No NSVisualEffectView
@@ -98,6 +110,14 @@ pub fn run() {
             git::git_pull,
             git::git_ai_commit,
             git::pr_open,
+            git::git_discard_file,
+            git::git_stash_list,
+            git::git_stash_push,
+            git::git_stash_apply,
+            git::git_stash_pop,
+            git::git_stash_drop,
+            git::git_stash_branch,
+            git::git_stash_rename,
             lsp::lsp_start,
             lsp::lsp_open,
             lsp::lsp_change,

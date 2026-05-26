@@ -33,6 +33,16 @@ export interface GitOverview {
   log: GitCommit[];
 }
 
+export interface GitStash {
+  index: number;
+  refname: string;
+  branch: string;
+  message: string;
+}
+
+export type DiscardMode = "unstaged" | "staged" | "all";
+export type StashMode = "all" | "staged" | "unstaged";
+
 // Frontend cache for `git_file_at` keyed on immutable revs (sha-shaped). The
 // backend already caches; this saves the IPC round-trip altogether for repeat
 // reads of the same baseline (e.g. mounting many diff editors).
@@ -91,6 +101,33 @@ export const git = {
   prOpen: (repo: string) => invoke<string>("pr_open", { repo }),
   watchStart: (repo: string) => invoke<void>("repo_watch_start", { repo }),
   watchStop: (repo: string) => invoke<void>("repo_watch_stop", { repo }),
+
+  // ---- discard ----
+  discardFile: (repo: string, path: string, mode: DiscardMode) =>
+    invoke<void>("git_discard_file", { repo, path, mode }),
+
+  // ---- stash ----
+  stashList: (repo: string) => invoke<GitStash[]>("git_stash_list", { repo }),
+  stashPush: (
+    repo: string,
+    mode: StashMode,
+    message?: string | null,
+  ) =>
+    invoke<void>("git_stash_push", {
+      repo,
+      mode,
+      message: message ?? null,
+    }),
+  stashApply: (repo: string, index: number) =>
+    invoke<void>("git_stash_apply", { repo, index }),
+  stashPop: (repo: string, index: number) =>
+    invoke<void>("git_stash_pop", { repo, index }),
+  stashDrop: (repo: string, index: number) =>
+    invoke<void>("git_stash_drop", { repo, index }),
+  stashBranch: (repo: string, index: number, name: string) =>
+    invoke<void>("git_stash_branch", { repo, index, name }),
+  stashRename: (repo: string, index: number, newMessage: string) =>
+    invoke<void>("git_stash_rename", { repo, index, newMessage }),
 };
 
 export const isStaged = (f: GitFile) => f.index !== " " && f.index !== "?";
