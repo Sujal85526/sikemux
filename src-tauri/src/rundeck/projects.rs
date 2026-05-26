@@ -93,8 +93,18 @@ struct DateField {
 
 #[derive(Serialize, Clone)]
 pub struct MatrixCell {
+    /// Full qualified path including group — kept for back-compat callers
+    /// that still want `backend/user-service` or `dev/backend/user-service`
+    /// as a single string. New UI prefers `name` + `group`.
     pub service: String,
+    /// Leaf service name only (no group prefix). For both legacy
+    /// `backend/user-service` and product `dev/backend/user-service`
+    /// this is `user-service`.
+    pub name: String,
     pub job_id: String,
+    /// Slash-separated job group path (`backend`, `dev/backend`, etc.) —
+    /// the UI splits the first segment as the env folder for product
+    /// projects.
     pub group: Option<String>,
     pub branch: Option<String>,
     pub status: Option<String>,
@@ -137,6 +147,7 @@ async fn fetch_last_for_job(job: &RundeckJob, only_succeeded: bool) -> MatrixCel
 
     let mut cell = MatrixCell {
         service: job.qualified_name(),
+        name: job.name.clone(),
         job_id: job.id.clone(),
         group: job.group.clone(),
         branch: None,

@@ -7,6 +7,7 @@ import type { RundeckView } from "../../state/types";
 import { RundeckBreadcrumb } from "./RundeckBreadcrumb";
 import { RundeckLogin } from "./RundeckLogin";
 import { RundeckMatrix } from "./RundeckMatrix";
+import { RundeckProjectTree } from "./RundeckProjectTree";
 import { RundeckService } from "./RundeckService";
 import { RundeckDeploy } from "./RundeckDeploy";
 import { RundeckExecution } from "./RundeckExecution";
@@ -72,10 +73,18 @@ export function RundeckPane({ paneId, active }: Props) {
     return null;
   }, [paneId, status, top]);
 
+  // The project tree only makes sense once we're past auth — for login
+  // / loading states the body owns the whole pane width.
+  const showTree =
+    !!status.data && status.data.configured && status.data.ok;
+
   return (
     <div className="rnd-pane" data-active={active ? "1" : "0"}>
       <RundeckBreadcrumb paneId={paneId} status={status.data ?? null} />
-      <div className="rnd-body">{body}</div>
+      <div className="rnd-cols">
+        {showTree && <RundeckProjectTree />}
+        <div className="rnd-body">{body}</div>
+      </div>
     </div>
   );
 }

@@ -2205,6 +2205,12 @@ button {
 .env-dd-item.active {
     color: var(--ink);
 }
+.env-dd-empty {
+    padding: 8px 9px;
+    color: var(--ink-faint);
+    font-size: 11.5px;
+    font-style: italic;
+}
 
 /* agent rail — pill picker + search + session list */
 .agent-pills {
@@ -5160,12 +5166,170 @@ button {
     font-size: 12px;
     min-height: 0;
 }
+.rnd-cols {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
 .rnd-body {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     overflow: auto;
     position: relative;
 }
+
+/* ── tree sub-rail ──
+   Sits to the left of the rundeck body. Two sections: Legacy projects
+   are flat rows; product projects expand to show their env folders as
+   indented children (`dev/`, `production/`) with job counts. Selecting
+   an env folder scopes the matrix to that subtree. */
+.rnd-tree {
+    width: 196px;
+    flex-shrink: 0;
+    background: var(--rail);
+    border-right: 1px solid var(--line);
+    padding: 10px 0 16px;
+    overflow-y: auto;
+}
+.rnd-tree-section + .rnd-tree-section {
+    margin-top: 10px;
+}
+.rnd-tree-section-h {
+    color: var(--ink-faint);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 6px 14px 6px;
+}
+.rnd-tree-hint {
+    padding: 4px 14px;
+    color: var(--ink-faint);
+    font-size: 11px;
+}
+.rnd-tree-hint.indent { padding-left: 28px; }
+.rnd-tree-hint.muted { font-style: italic; }
+.rnd-tree-err {
+    margin: 8px 12px;
+    padding: 6px 10px;
+    color: var(--danger);
+    font-size: 11px;
+    border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.rnd-tree-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.rnd-tree-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 14px 5px 8px;
+    background: transparent;
+    border: none;
+    border-left: 2px solid transparent;
+    color: var(--ink-dim);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: left;
+    transition: color 0.1s, background 0.1s;
+}
+.rnd-tree-row:hover { color: var(--ink); }
+.rnd-tree-row.active {
+    color: var(--ink);
+    background: var(--acc-soft);
+    border-left-color: var(--acc);
+    font-weight: 600;
+}
+.rnd-tree-row.prod { color: var(--danger); }
+.rnd-tree-row.prod:hover { color: color-mix(in srgb, var(--danger) 80%, white); }
+.rnd-tree-row.prod.active {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border-left-color: var(--danger);
+}
+
+.rnd-tree-chev {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    color: var(--ink-faint);
+    flex-shrink: 0;
+}
+.rnd-tree-chev-ic {
+    transition: transform 0.12s;
+}
+.rnd-tree-chev-ic.open {
+    transform: rotate(90deg);
+}
+.rnd-tree-row.active .rnd-tree-chev { color: var(--acc); }
+.rnd-tree-row.prod.active .rnd-tree-chev { color: var(--danger); }
+
+.rnd-tree-ic {
+    display: inline-flex;
+    color: var(--live);
+    flex-shrink: 0;
+}
+.rnd-tree-row.prod .rnd-tree-ic { color: var(--danger); }
+
+.rnd-tree-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rnd-tree-children {
+    display: flex;
+    flex-direction: column;
+    margin-left: 22px;
+    border-left: 1px solid var(--line);
+}
+.rnd-tree-leaf {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: calc(100% - 22px);
+    padding: 4px 12px 4px 10px;
+    margin-left: 4px;
+    background: transparent;
+    border: none;
+    color: var(--ink-faint);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    text-align: left;
+}
+.rnd-tree-leaf:hover { color: var(--ink-dim); }
+.rnd-tree-leaf.active {
+    color: var(--acc);
+    background: var(--acc-soft);
+    font-weight: 600;
+}
+.rnd-tree-leaf.prod { color: color-mix(in srgb, var(--danger) 75%, var(--ink-faint)); }
+.rnd-tree-leaf.prod:hover { color: var(--danger); }
+.rnd-tree-leaf.prod.active {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.rnd-tree-leaf-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rnd-tree-leaf-n {
+    font-size: 10px;
+    color: var(--ink-faint);
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+.rnd-tree-leaf.active .rnd-tree-leaf-n { color: var(--acc); }
+.rnd-tree-leaf.prod.active .rnd-tree-leaf-n { color: var(--danger); }
 
 /* ---- branch palette ---- */
 .rnd-branch-main {
@@ -5570,6 +5734,35 @@ button {
     flex: 1;
     overflow: auto;
 }
+
+/* Group header — sits above each env folder block in product projects
+   (contractiq / marketingiq / channeliq). Legacy projects render with
+   no headers since `g.env` is null and the header element is skipped. */
+.rnd-group + .rnd-group {
+    margin-top: 12px;
+}
+.rnd-group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 16px 6px;
+    border-bottom: 1px solid var(--line);
+    background: var(--rail-2);
+}
+.rnd-group-folder {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink);
+    font-weight: 600;
+}
+.rnd-group-count {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+}
+
 .rnd-list-row {
     display: grid;
     grid-template-columns:

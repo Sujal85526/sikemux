@@ -5,6 +5,7 @@ import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
 import { fetchResource, invalidate } from "./resources";
 import { awsIdentityR } from "./resources.defs";
+import { inferEnv, legacyProjectForEnv } from "./rundeckShape";
 import { getState, setState, type StoreState } from "./store";
 import {
   collectPanes,
@@ -377,25 +378,35 @@ export function rundeckHome(paneId: string): void {
   }));
 }
 
-/** Pane-level env selector (Rundeck pane only; project sessions use the
- *  session.env field instead). */
-export function setRundeckEnv(envLabel: string): void {
+/** Pane-level project selector (Rundeck pane only). The picker offers
+ *  every project Rundeck returns — legacy + product — no aliasing.
+ *  `envFolder` narrows a product project to a specific env subtree
+ *  (`dev/backend/...`); pass `null` to show every env folder grouped.
+ *  Legacy projects ignore the env-folder filter regardless. */
+export function setRundeckProject(
+  project: string,
+  envFolder: string | null = null,
+): void {
   setState((st) => ({
-    rundeck: { ...st.rundeck, activeEnv: envLabel },
+    rundeck: {
+      ...st.rundeck,
+      activeProject: project,
+      activeEnvFolder: envFolder,
+    },
   }));
 }
 
 /** From a project session: jump to the Rundeck service detail (execution
- *  history) for (basename(cwd), session.env). User picks the action from
- *  there — deploy / redeploy / open last — instead of being railroaded
- *  straight into a deploy confirm view they didn't ask for. */
+ *  history) for (basename(cwd), session.env). Resolves env → Rundeck
+ *  project via the legacy alias table — sufficient for the chip's
+ *  primary use case (Swish legacy services). Product-style sessions
+ *  would need explicit per-session project config; not wired yet. */
 export async function openRundeckServiceFor(
   service: string,
   envLabel: string,
 ): Promise<void> {
-  const st = getState();
-  const envSpec = st.rundeck.envs.find((e) => e.label === envLabel);
-  if (!envSpec) return;
+  const project = legacyProjectForEnv(envLabel);
+  if (!project) return;
   openRundeckSession();
   const after = getState();
   const sess = Object.values(after.sessions).find((s) => s.kind === "rundeck");
@@ -403,23 +414,22 @@ export async function openRundeckServiceFor(
   const win = after.windows[sess.activeWindowId];
   if (!win || win.root.type !== "pane") return;
   const paneId = win.root.id;
-  // Sync the pane's env so the back-to-matrix breadcrumb shows the same env
-  // the user came from.
-  setRundeckEnv(envLabel);
+  // Sync the pane's project so the picker reflects where we landed.
+  setRundeckProject(project);
   try {
-    const job = await rundeckApi.resolveJob(envSpec.project, service);
+    const job = await rundeckApi.resolveJob(project, service);
     rundeckReplaceStack(paneId, [
       { kind: "matrix" },
       {
         kind: "service",
-        env: envLabel,
-        project: envSpec.project,
+        env: inferEnv(project, job.group),
+        project,
         service,
         jobId: job.id,
       },
     ]);
   } catch {
-    // Service doesn't exist in this env's project — drop them at the matrix.
+    // Service doesn't exist in this project — drop them at the matrix.
     rundeckReplaceStack(paneId, [{ kind: "matrix" }]);
   }
 }

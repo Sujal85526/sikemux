@@ -7,6 +7,7 @@ import { ENVS } from "../state/types";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
 import { awsIdentityR, rndMatrixR } from "../state/resources.defs";
+import { legacyProjectForEnv } from "../state/rundeckShape";
 import { useStore } from "../state/store";
 import {
   IconBattery,
@@ -275,16 +276,12 @@ export function TopBar() {
   const rightOpen = useStore((s) => s.rightRailOpen);
   const [envOpen, setEnvOpen] = useState(false);
 
-  const rundeckEnvs = useStore((s) => s.rundeck.envs);
-  const rundeckActiveEnv = useStore((s) => s.rundeck.activeEnv);
   if (!session || !win) return null;
   const isProject = session.kind === "project";
-  const isRundeck = session.kind === "rundeck";
 
-  // One env picker for two contexts. In project sessions it drives the
-  // session's own `env` (one of ENVS); in the Rundeck pane it drives the
-  // configured rundeck.activeEnv (one of the user's rundeck.envs labels).
-  // Same UI, two backing stores.
+  // Env picker is project-session only — the Rundeck pane has its own
+  // tree sub-rail for project + env-folder selection, so we don't
+  // duplicate it up here.
   const envPicker = isProject
     ? {
         kind: "project" as const,
@@ -292,26 +289,19 @@ export function TopBar() {
         options: ENVS.map((e) => ({ label: e, hint: null as string | null })),
         setActive: (label: string) => cmd.setEnv(label as (typeof ENVS)[number]),
       }
-    : isRundeck
-      ? {
-          kind: "rundeck" as const,
-          active: rundeckActiveEnv,
-          options: rundeckEnvs.map((e) => ({
-            label: e.label,
-            hint: e.project,
-          })),
-          setActive: (label: string) => cmd.setRundeckEnv(label),
-        }
-      : null;
+    : null;
 
+  // Project-session deploy chip: maps session.env via the legacy alias
+  // table to a Rundeck project name. Product-style sessions aren't wired
+  // in here yet — they'd need an explicit per-session product binding.
   const deployTarget =
     isProject && session.cwd
       ? (() => {
           const svc = session.cwd.replace(/\/+$/, "").split("/").pop();
           if (!svc) return null;
-          const env = rundeckEnvs.find((e) => e.label === session.env);
-          if (!env) return null;
-          return { service: svc, envLabel: env.label, project: env.project };
+          const project = legacyProjectForEnv(session.env);
+          if (!project) return null;
+          return { service: svc, envLabel: session.env, project };
         })()
       : null;
 
@@ -364,11 +354,7 @@ export function TopBar() {
             <button
               className="env-dd-btn"
               onClick={() => setEnvOpen((v) => !v)}
-              title={
-                envPicker.kind === "rundeck"
-                  ? "Rundeck environment"
-                  : "Session environment"
-              }
+              title="Session environment"
             >
               <span className={`env-dot ${envPicker.active}`} />
               {envPicker.active}

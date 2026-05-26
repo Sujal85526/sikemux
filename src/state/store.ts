@@ -157,16 +157,12 @@ export const useStore = create<StoreState>(() => {
     leftRailOpen: true,
     rightRailOpen: true,
     rundeck: {
-      // Sensible default mirroring the bash CLI's hardcoded mapping. Users
-      // can edit via Settings → Rundeck once that lands.
-      envs: [
-        { label: "dev", project: "dev" },
-        { label: "staging", project: "staging" },
-        { label: "preprod", project: "Preprod" },
-        { label: "prod", project: "production" },
-      ],
+      // Default to the dev legacy project on first launch. User picks
+      // any project (and optional env folder for product projects) from
+      // the tree sub-rail inside the Rundeck pane; selection persists.
+      activeProject: "dev",
+      activeEnvFolder: null,
       prodEnvs: ["prod", "production"],
-      activeEnv: "dev",
     },
 
     // view

@@ -214,7 +214,33 @@ export function applyHydrate(raw: string): void {
     awsService: data.prefs?.awsService ?? cur.awsService,
     leftRailOpen: data.prefs?.leftRailOpen ?? cur.leftRailOpen,
     rightRailOpen: data.prefs?.rightRailOpen ?? cur.rightRailOpen,
-    rundeck: data.prefs?.rundeck ?? cur.rundeck,
+    // Migrate older persisted shape — `{envs, activeEnv, prodEnvs}` is no
+    // longer the wire shape. If we see it, fall through to defaults and
+    // try to preserve activeProject via the legacy alias when present.
+    rundeck: (() => {
+      const raw = data.prefs?.rundeck as
+        | {
+            activeProject?: string;
+            activeEnvFolder?: string | null;
+            activeEnv?: string;
+            prodEnvs?: string[];
+          }
+        | undefined;
+      if (!raw) return cur.rundeck;
+      const activeProject =
+        raw.activeProject ??
+        // Old `activeEnv` mapped via the historical alias table.
+        (raw.activeEnv === "prod"
+          ? "production"
+          : raw.activeEnv === "preprod"
+            ? "Preprod"
+            : raw.activeEnv ?? cur.rundeck.activeProject);
+      return {
+        activeProject,
+        activeEnvFolder: raw.activeEnvFolder ?? null,
+        prodEnvs: raw.prodEnvs ?? cur.rundeck.prodEnvs,
+      };
+    })(),
   });
   // Snapshots from before the search pane existed lack a search window
   // for project sessions — add one in place so the user doesn't have to

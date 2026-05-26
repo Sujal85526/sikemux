@@ -182,21 +182,23 @@ export type EcsLevel =
 
 // ---- Rundeck ----------------------------------------------------------
 
-/** One env entry in the matrix dashboard — UI label + the real Rundeck
- *  project name behind it. User-configurable so dev/staging/preprod/prod
- *  isn't hardcoded across orgs. */
-export interface RundeckEnv {
-  label: string;
-  project: string;
-}
-
 export interface RundeckSettings {
-  /** Ordered list of envs available in the env picker. */
-  envs: RundeckEnv[];
-  /** Envs that require type-to-confirm before triggering a deploy. */
+  /** Selected Rundeck project in the pane (persisted across launches).
+   *  The picker is now a tree sub-rail inside the Rundeck pane offering
+   *  every project returned by `rnd_projects` — legacy (dev / staging /
+   *  Preprod / production) and product (contractiq / marketingiq /
+   *  channeliq) live in the same list with no synthetic env aliasing. */
+  activeProject: string;
+  /** For product projects only: the env-folder filter (`dev`,
+   *  `production`, etc.) the matrix is currently scoped to. `null` =
+   *  show every env folder grouped. Always `null` for legacy projects
+   *  since their jobs aren't env-nested. */
+  activeEnvFolder: string | null;
+  /** Envs that require type-to-confirm before triggering a deploy. The
+   *  env is derived per-job: legacy = project name; product = first
+   *  segment of the job's group (`dev/backend/...` → "dev"). See
+   *  `inferEnv` in src/state/rundeckShape.ts. */
   prodEnvs: string[];
-  /** Selected env in the Rundeck pane (persisted across launches). */
-  activeEnv: string;
 }
 
 export type RundeckLevel =

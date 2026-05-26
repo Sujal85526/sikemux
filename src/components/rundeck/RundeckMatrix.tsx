@@ -3,6 +3,11 @@ import { type MatrixCell, type RundeckEnvSpec } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { useResource } from "../../state/resources";
 import { rndMatrixR } from "../../state/resources.defs";
+import {
+  envFolderOf,
+  inferEnv,
+  isLegacyProject,
+} from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
@@ -10,43 +15,73 @@ interface Props {
   paneId: string;
 }
 
-/** Single-env deployments list. Env picker lives in the top bar — this view
- *  is just "what's deployed where, for the picked env." One row per service,
- *  click → service detail, ⌘-click → deploy directly. */
+/** Job list for the currently-selected Rundeck project.
+ *
+ *  Legacy projects (dev/staging/Preprod/production) render a flat list
+ *  of `backend/<svc>` rows. Product projects (contractiq/marketingiq/
+ *  channeliq) render the jobs grouped by env folder (the first segment
+ *  of each job's group path — `dev/backend/...` → `dev` group header).
+ *  No synthesis: this is exactly the tree the API hands us. */
 export function RundeckMatrix({ paneId }: Props) {
-  const envs = useStore((s) => s.rundeck.envs);
-  const activeEnv = useStore((s) => s.rundeck.activeEnv);
-
-  // Resolve the env label → real Rundeck project. Falls back to first env
-  // when the persisted value is stale (e.g. user renamed an env).
-  const envSpec = useMemo(
-    () => envs.find((e) => e.label === activeEnv) ?? envs[0],
-    [envs, activeEnv],
-  );
+  const project = useStore((s) => s.rundeck.activeProject);
+  const envFolder = useStore((s) => s.rundeck.activeEnvFolder);
 
   const specs = useMemo<RundeckEnvSpec[]>(
-    () =>
-      envSpec
-        ? [{ label: envSpec.label, project: envSpec.project, only_succeeded: true }]
-        : [],
-    [envSpec],
+    // We reuse the matrix endpoint with a single spec — the label is just
+    // a display tag, the real key is the project.
+    () => (project ? [{ label: project, project, only_succeeded: true }] : []),
+    [project],
   );
 
   const res = useResource(rndMatrixR, specs);
 
   const data = res.data;
   const env = data?.envs[0] ?? null;
+  // Apply the tree-driven env-folder filter (product projects only) BEFORE
+  // sorting/grouping so totals + group headers reflect the visible scope.
   const cells = useMemo(() => {
-    const list = env?.cells.slice() ?? [];
-    list.sort((a, b) => a.service.localeCompare(b.service));
+    const list = (env?.cells ?? []).filter((c) => {
+      if (!envFolder) return true;
+      if (isLegacyProject(project)) return true;
+      return envFolderOf(c.group) === envFolder;
+    });
+    list.sort((a, b) => a.name.localeCompare(b.name));
     return list;
-  }, [env]);
+  }, [env, envFolder, project]);
   const loading = res.status === "loading" && !data;
 
-  if (!envSpec) {
+  // Group cells by env folder when the project is product-style and no
+  // explicit folder filter is active. When a folder filter IS active we
+  // show a flat list (the folder header would be redundant). Legacy
+  // projects always render flat.
+  const groups = useMemo(() => {
+    if (isLegacyProject(project) || envFolder) {
+      return [{ env: null, cells }];
+    }
+    const map = new Map<string, MatrixCell[]>();
+    for (const c of cells) {
+      const folder = envFolderOf(c.group) ?? "_ungrouped";
+      const arr = map.get(folder) ?? [];
+      arr.push(c);
+      map.set(folder, arr);
+    }
+    // Stable order: alphabetical, with `_ungrouped` last.
+    return [...map.entries()]
+      .sort(([a], [b]) => {
+        if (a === "_ungrouped") return 1;
+        if (b === "_ungrouped") return -1;
+        return a.localeCompare(b);
+      })
+      .map(([folder, group]) => ({
+        env: folder === "_ungrouped" ? null : folder,
+        cells: group,
+      }));
+  }, [cells, project, envFolder]);
+
+  if (!project) {
     return (
       <div className="rnd-empty muted">
-        No environments configured.
+        Pick a Rundeck project from the top bar.
       </div>
     );
   }
@@ -59,7 +94,7 @@ export function RundeckMatrix({ paneId }: Props) {
           <span className="rnd-list-meta-l">services</span>
           <span className="rnd-list-meta-sep">·</span>
           <span className="rnd-list-meta-l">project</span>
-          <span className="rnd-list-meta-v">{envSpec.project}</span>
+          <span className="rnd-list-meta-v">{project}</span>
           {data && (
             <>
               <span className="rnd-list-meta-sep">·</span>
@@ -99,17 +134,21 @@ export function RundeckMatrix({ paneId }: Props) {
       <div className="rnd-list-rows">
         {cells.length === 0 && !loading && (
           <div className="rnd-empty muted compact">
-            No services have deployed to <strong>{envSpec.label}</strong> yet.
+            No jobs in <strong>{project}</strong>.
           </div>
         )}
-        {cells.map((c) => (
-          <DeployRow
-            key={c.service}
-            paneId={paneId}
-            envLabel={envSpec.label}
-            project={envSpec.project}
-            cell={c}
-          />
+        {groups.map((g) => (
+          <div className="rnd-group" key={g.env ?? "_flat"}>
+            {g.env && (
+              <div className="rnd-group-head">
+                <span className="rnd-group-folder">{g.env}/</span>
+                <span className="rnd-group-count">{g.cells.length}</span>
+              </div>
+            )}
+            {g.cells.map((c) => (
+              <DeployRow key={c.job_id} paneId={paneId} project={project} cell={c} />
+            ))}
+          </div>
         ))}
       </div>
     </div>
@@ -118,23 +157,22 @@ export function RundeckMatrix({ paneId }: Props) {
 
 function DeployRow({
   paneId,
-  envLabel,
   project,
   cell,
 }: {
   paneId: string;
-  envLabel: string;
   project: string;
   cell: MatrixCell;
 }) {
   const branch = cell.branch ?? null;
   const k = branchKind(branch);
   const sk = statusKind(cell.status);
+  const env = inferEnv(project, cell.group);
 
   const open = () =>
     cmd.rundeckPush(paneId, {
       kind: "service",
-      env: envLabel,
+      env,
       project,
       service: cell.service,
       jobId: cell.job_id,
@@ -144,7 +182,7 @@ function DeployRow({
     e.stopPropagation();
     cmd.rundeckPush(paneId, {
       kind: "deploy",
-      env: envLabel,
+      env,
       project,
       service: cell.service,
       jobId: cell.job_id,
@@ -174,7 +212,7 @@ function DeployRow({
       <span className={`rnd-row-glyph rnd-branch-${k}`}>
         {BRANCH_GLYPH[k]}
       </span>
-      <span className="rnd-row-svc">{cell.service}</span>
+      <span className="rnd-row-svc">{cell.name}</span>
       <span className={`rnd-row-branch rnd-branch-${k}`} title={branch ?? ""}>
         {branch ?? "—"}
       </span>

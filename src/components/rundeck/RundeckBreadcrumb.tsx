@@ -12,12 +12,22 @@ interface Props {
  *  No logout — invalid tokens auto-redirect via the rnd-auth-expired bus. */
 export function RundeckBreadcrumb({ paneId, status }: Props) {
   const view = useStore((s) => s.rundeckViews[paneId]);
+  const activeProject = useStore((s) => s.rundeck.activeProject);
+  const activeEnvFolder = useStore((s) => s.rundeck.activeEnvFolder);
   const stack = view?.stack ?? [{ kind: "matrix" as const }];
+
+  const matrixLabel = activeEnvFolder
+    ? `${activeProject} · ${activeEnvFolder}`
+    : activeProject || "deployments";
 
   const labels = stack.map((lvl, i) => {
     switch (lvl.kind) {
       case "matrix":
-        return { i, label: "deployments", onClick: () => cmd.rundeckHome(paneId) };
+        return {
+          i,
+          label: matrixLabel,
+          onClick: () => cmd.rundeckHome(paneId),
+        };
       case "service":
         return {
           i,

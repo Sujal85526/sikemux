@@ -101,18 +101,25 @@ export function TerminalPane({
     );
 
     // Drag-drop hook — App.tsx's single drop subscription calls this back
-    // when a file is dropped over this terminal's host element. Lives on
-    // the host (not the xterm) so background panes can still accept drops
-    // if we ever route them differently. We quote each path and write a
-    // space-separated list to the PTY — same behaviour as Ghostty /
-    // Terminal.app, which is what Claude Code / Codex sessions expect for
-    // @-file and image ingestion.
+    // when a file is dropped over this terminal's host element. We wrap
+    // the dropped paths in bracketed paste markers (\x1b[200~ … \x1b[201~)
+    // so the active app sees them as a single paste, not character-by-
+    // character typing. That's what lets Claude Code / Codex / hermes run
+    // their paste→image sniffers — drop a .png and it attaches as
+    // `[Image #N]` instead of leaving the literal path in the input line.
+    // Shells in bracketed-paste mode (default in zsh/bash with readline)
+    // treat the chunk as one editable token, so backslash-escaping spaces
+    // + quotes is enough for them to round-trip a path through.
     (host as unknown as DropTarget).__sikemuxDropPaths = (paths) => {
       const pid = ptyIdRef.current;
       if (pid === null || paths.length === 0) return;
-      const text =
-        paths.map((p) => `'${p.replace(/'/g, "'\\''")}'`).join(" ") + " ";
-      void invoke("pty_write", { id: pid, data: text });
+      const body = paths
+        .map((p) => p.replace(/([\s'"\\])/g, "\\$1"))
+        .join(" ");
+      void invoke("pty_write", {
+        id: pid,
+        data: `\x1b[200~${body}\x1b[201~`,
+      });
     };
 
     return () => {

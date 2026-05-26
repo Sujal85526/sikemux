@@ -79,8 +79,13 @@ export interface RundeckEnvSpec {
 }
 
 export interface MatrixCell {
+  /** Full qualified path (`group/name`). Kept for back-compat; new UI
+   *  reaches for `name` + `group` directly. */
   service: string;
+  /** Leaf service name only (no group prefix). */
+  name: string;
   job_id: string;
+  /** Slash-separated group path. Empty for ungrouped jobs. */
   group: string | null;
   branch: string | null;
   status: string | null;
