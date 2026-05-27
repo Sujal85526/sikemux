@@ -130,7 +130,14 @@ pub fn pty_spawn(
         subscribers: Mutex::new(HashMap::new()),
     });
 
-    // Reader thread — feeds parser then fans bytes out to subscribers.
+    // Reader — feeds parser then fans bytes out to subscribers.
+    //
+    // Lives on tokio's blocking pool (via `tauri::async_runtime::spawn_blocking`)
+    // rather than `std::thread::spawn`. portable_pty's reader is sync
+    // `std::io::Read`, so we can't yet drive it with `AsyncRead` cleanly
+    // without juggling raw fds — but routing through the blocking pool
+    // means the thread is at least managed (configurable cap,
+    // observable, drained on shutdown) instead of detached.
     //
     // Atomicity invariant (vs `pty_attach`): a freshly-attached subscriber
     // must see EXACTLY the bytes NOT present in the snapshot it got back.
@@ -145,7 +152,7 @@ pub fn pty_spawn(
     // without explicit unsub) are GC'd on send error so the map stays
     // bounded.
     let pty_reader = pty.clone();
-    std::thread::spawn(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         let mut buf = [0u8; 65536];
         loop {
             match reader.read(&mut buf) {
