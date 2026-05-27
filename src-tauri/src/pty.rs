@@ -111,12 +111,40 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }
 }
 
+/// Drive a non-blocking write to completion against a tokio `AsyncFd`.
+/// Loops on EAGAIN via the readiness machinery; returns once every byte
+/// has been written or the kernel reports an I/O error.
+async fn write_all_async(writer: &AsyncFd<File>, mut data: &[u8]) -> std::io::Result<()> {
+    while !data.is_empty() {
+        let mut guard = writer.writable().await?;
+        let res = guard.try_io(|inner| {
+            let mut f = inner.get_ref();
+            f.write(data)
+        });
+        match res {
+            Ok(Ok(0)) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::WriteZero,
+                    "pty write returned 0",
+                ));
+            }
+            Ok(Ok(n)) => {
+                data = &data[n..];
+            }
+            Ok(Err(e)) => return Err(e),
+            Err(_would_block) => continue, // readiness cleared; loop
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn pty_spawn(
     manager: State<'_, PtyManager>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    startup: Option<String>,
 ) -> AppResult<u32> {
     let pair = NativePtySystem::default()
         .openpty(pty_size(cols, rows))
@@ -188,6 +216,12 @@ pub fn pty_spawn(
     // non-blocking read. WouldBlock just loops back to `readable().await`
     // after clearing the readiness flag, so we never busy-spin.
     //
+    // First-output gate for `startup`: the shell's first byte of output
+    // is its prompt (rcs run silently then print the PS1). Writing the
+    // startup command at that moment means it lands when readline is
+    // actually accepting input — replaces the previous frontend
+    // setTimeout(350ms) which was a race dressed as a delay.
+    //
     // Atomicity invariant (vs `pty_attach`): a freshly-attached subscriber
     // must see EXACTLY the bytes NOT present in the snapshot it got back.
     // We achieve that by, under the parser lock:
@@ -201,6 +235,7 @@ pub fn pty_spawn(
     // without explicit unsub) are GC'd on send error so the map stays
     // bounded.
     let pty_reader = pty.clone();
+    let mut startup_pending = startup.filter(|s| !s.is_empty());
     tokio::spawn(async move {
         let mut buf = [0u8; 65536];
         loop {
@@ -227,18 +262,26 @@ pub fn pty_spawn(
                             Err(_) => Vec::new(),
                         }
                     };
-                    if snapshot.is_empty() { continue; }
-                    let chunk = bytes.to_vec();
-                    let mut dead: Vec<u32> = Vec::new();
-                    for (sub_id, ch) in &snapshot {
-                        if ch.send(chunk.clone()).is_err() {
-                            dead.push(*sub_id);
+                    if !snapshot.is_empty() {
+                        let chunk = bytes.to_vec();
+                        let mut dead: Vec<u32> = Vec::new();
+                        for (sub_id, ch) in &snapshot {
+                            if ch.send(chunk.clone()).is_err() {
+                                dead.push(*sub_id);
+                            }
+                        }
+                        if !dead.is_empty() {
+                            if let Ok(mut subs) = pty_reader.subscribers.lock() {
+                                for d in dead { subs.remove(&d); }
+                            }
                         }
                     }
-                    if !dead.is_empty() {
-                        if let Ok(mut subs) = pty_reader.subscribers.lock() {
-                            for d in dead { subs.remove(&d); }
-                        }
+                    // First-output gate: shell has printed its prompt
+                    // and reached the read loop; safe to inject startup.
+                    if let Some(line) = startup_pending.take() {
+                        let writer = pty_reader.write_async.lock().await;
+                        let payload = format!("{line}\r");
+                        let _ = write_all_async(&writer, payload.as_bytes()).await;
                     }
                 }
             }
@@ -326,23 +369,9 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
         .map(|r| r.clone())
         .ok_or(AppError::BadArg("pty not found"))?;
     let writer = pty.write_async.lock().await;
-    let mut remaining = data.as_bytes();
-    while !remaining.is_empty() {
-        let mut guard = writer.writable().await.map_err(pty_err)?;
-        let res = guard.try_io(|inner| {
-            let mut f = inner.get_ref();
-            f.write(remaining)
-        });
-        match res {
-            Ok(Ok(0)) => return Err(pty_err("pty write returned 0")),
-            Ok(Ok(n)) => {
-                remaining = &remaining[n..];
-            }
-            Ok(Err(e)) => return Err(AppError::from(e)),
-            Err(_would_block) => continue,
-        }
-    }
-    Ok(())
+    write_all_async(&writer, data.as_bytes())
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]

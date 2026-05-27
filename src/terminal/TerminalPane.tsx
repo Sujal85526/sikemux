@@ -72,10 +72,17 @@ export function TerminalPane({
       rejectReady = reject;
     });
 
+    // Startup line is handed to the backend; the reader task writes it
+    // the moment the shell prints its first byte of output (i.e. when
+    // the prompt appears and readline is actually accepting input).
+    // The previous setTimeout(350ms) was a race dressed as a delay —
+    // any slow rc (oh-my-zsh, p10k, work laptops) could land the write
+    // before the shell was ready and lose the command.
     invoke<number>("pty_spawn", {
       cols: 80,
       rows: 24,
       cwd: cwd ?? null,
+      startup: startup ?? null,
     }).then(
       (id) => {
         if (disposed) {
@@ -84,16 +91,6 @@ export function TerminalPane({
         }
         ptyIdRef.current = id;
         resolveReady(id);
-        if (startup) {
-          window.setTimeout(() => {
-            if (!disposed && ptyIdRef.current !== null) {
-              void invoke("pty_write", {
-                id: ptyIdRef.current,
-                data: `${startup}\r`,
-              });
-            }
-          }, 350);
-        }
       },
       (err) => {
         rejectReady(err);
