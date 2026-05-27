@@ -406,6 +406,19 @@ export function setRundeckProject(
   });
 }
 
+/** Tree-click selector: switch the active project AND pop the per-pane
+ *  nav stack back to the matrix. Without the reset, switching projects
+ *  while inside a deploy/execution detail would leave you on a detail
+ *  page that no longer matches the project label in the breadcrumb. */
+export function selectRundeckProject(
+  paneId: string,
+  project: string,
+  envFolder: string | null = null,
+): void {
+  setRundeckProject(project, envFolder);
+  rundeckHome(paneId);
+}
+
 /** From a project session: jump to the Rundeck service detail (execution
  *  history) for (basename(cwd), session.env). Resolves env → Rundeck
  *  project by matching name against the live upstream project list —

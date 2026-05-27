@@ -82,7 +82,7 @@ export function RundeckPane({ paneId, active }: Props) {
     <div className="rnd-pane" data-active={active ? "1" : "0"}>
       <RundeckBreadcrumb paneId={paneId} status={status.data ?? null} />
       <div className="rnd-cols">
-        {showTree && <RundeckProjectTree />}
+        {showTree && <RundeckProjectTree paneId={paneId} />}
         <div className="rnd-body">{body}</div>
       </div>
     </div>

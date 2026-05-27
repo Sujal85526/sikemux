@@ -14,7 +14,7 @@ import { IconChevron, IconFolder } from "../Icons";
  *
  *  Env-folder rows named `production` get a subtle tint so the user
  *  can't miss them when picking a deploy target. */
-export function RundeckProjectTree() {
+export function RundeckProjectTree({ paneId }: { paneId: string }) {
   const projects = useResource(rndProjectsR);
   const activeProject = useStore((s) => s.rundeck.activeProject);
   const activeEnvFolder = useStore((s) => s.rundeck.activeEnvFolder);
@@ -27,6 +27,7 @@ export function RundeckProjectTree() {
         {list.map((p) => (
           <ProjectRow
             key={p.name}
+            paneId={paneId}
             project={p.name}
             activeProject={activeProject}
             activeEnvFolder={activeEnvFolder}
@@ -51,10 +52,12 @@ function TreeHint({ children }: { children: React.ReactNode }) {
 }
 
 function ProjectRow({
+  paneId,
   project,
   activeProject,
   activeEnvFolder,
 }: {
+  paneId: string;
   project: string;
   activeProject: string;
   activeEnvFolder: string | null;
@@ -84,7 +87,7 @@ function ProjectRow({
         className={`rnd-tree-row${
           isActiveProject && activeEnvFolder === null ? " active" : ""
         }`}
-        onClick={() => cmd.setRundeckProject(project, null)}
+        onClick={() => cmd.selectRundeckProject(paneId, project, null)}
         title={project}
       >
         <span className="rnd-tree-chev">
@@ -111,7 +114,7 @@ function ProjectRow({
                 type="button"
                 key={folder}
                 className={`rnd-tree-leaf${isLeafActive ? " active" : ""}${isProd ? " prod" : ""}`}
-                onClick={() => cmd.setRundeckProject(project, folder)}
+                onClick={() => cmd.selectRundeckProject(paneId, project, folder)}
                 title={`${project} · ${folder}/`}
               >
                 <span className="rnd-tree-leaf-name">{folder}/</span>

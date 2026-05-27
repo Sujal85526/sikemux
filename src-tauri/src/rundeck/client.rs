@@ -51,7 +51,13 @@ async fn send_with_token(
     query: &[(&str, String)],
     token_override: Option<&str>,
 ) -> AppResult<Response> {
-    let cfg = config::get().await;
+    // Cache may be empty on cold boot (rnd_status hasn't run yet) or stale
+    // after a `rnd login` from the CLI. Refresh on every request so the
+    // first rnd_branches_matrix from the TopBar's DeployChip doesn't race
+    // ahead of the pane's status check and falsely report "not configured".
+    let cfg = config::refresh_from_disk()
+        .await
+        .unwrap_or_else(|_| config::RundeckConfig::default());
     if cfg.url.is_empty() {
         return Err(AppError::RundeckUnconfigured);
     }

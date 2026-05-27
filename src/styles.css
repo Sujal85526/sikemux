@@ -112,7 +112,8 @@ html.is-transparent .settings-pane,
 html.is-transparent .settings-rail,
 html.is-transparent .settings-main,
 html.is-transparent .settings-crumb,
-html.is-transparent .settings-statusline {
+html.is-transparent .settings-statusline,
+html.is-transparent .rnd-tree {
     background: transparent;
 }
 /* Floating menus (env dropdown, autocompletes, tooltips) must stay solid —
@@ -6265,7 +6266,11 @@ button {
 .rnd-tree {
     width: 196px;
     flex-shrink: 0;
-    background: var(--rail);
+    background: color-mix(
+        in srgb,
+        var(--rail) calc(var(--window-opacity, 1) * 100%),
+        transparent
+    );
     border-right: 1px solid var(--line);
     padding: 10px 0 16px;
     overflow-y: auto;
