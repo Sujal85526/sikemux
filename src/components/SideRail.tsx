@@ -38,7 +38,11 @@ export function SideRail() {
   const windowsBySession = useStore((s) => s.windowsBySession);
   const agentsBySession = useStore((s) => s.agentsBySession);
   const agentsById = useStore((s) => s.agents);
-  const activeSessionId = useStore((s) => s.activeSessionId);
+  const rawActiveSessionId = useStore((s) => s.activeSessionId);
+  const settingsOpen = useStore((s) => s.settingsOpen);
+  // When settings is open it owns the stage — no session should appear
+  // "active" in the rail, same way other modal-ish panes behave.
+  const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
   const sessions = sessionOrder.map((id) => sessionsById[id]);
 
   // No Superpin group + no per-session pin button in the rail — pinning

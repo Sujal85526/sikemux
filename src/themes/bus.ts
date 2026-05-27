@@ -127,9 +127,9 @@ export function applyTheme(id: string): void {
   applyTerminalThemes();
 }
 
-/** Apply a CSS opacity for the app body. Slider value 0.5 .. 1.0. */
+/** Apply a CSS opacity for the app body. Slider value 0.0 .. 1.0. */
 export function applyWindowOpacity(opacity: number): void {
-  const v = Math.max(0.4, Math.min(1, opacity));
+  const v = Math.max(0, Math.min(1, opacity));
   currentOpacity = v;
   document.documentElement.style.setProperty("--window-opacity", String(v));
   applyTransparentState();

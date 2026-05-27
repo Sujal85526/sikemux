@@ -474,6 +474,10 @@ export function selectSession(id: string): void {
     d.activeSessionId = id;
     d.zoomedPaneId = null;
     d.pickerOpen = false;
+    // Clicking a session always returns you to the workspace — settings
+    // is modal in spirit even though it lives in the stage. Closing here
+    // matches every other session-switch.
+    d.settingsOpen = false;
   });
 }
 

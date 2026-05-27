@@ -287,10 +287,6 @@ function AppearancePage({
   windowOpacity,
   windowBlur,
 }: AppearancePageProps) {
-  const opacityPct = Math.max(0, Math.min(1, windowOpacity)) * 100;
-  // Blur visually maxes around 40px CGS — but the field accepts anything.
-  const blurPct = Math.max(0, Math.min(80, windowBlur)) / 80 * 100;
-
   return (
     <div className="settings-page">
       <header className="settings-page-head">
@@ -358,12 +354,15 @@ function AppearancePage({
         </div>
 
         <div className="settings-knob-row">
-          <div className="settings-knob-bar">
-            <div
-              className="settings-knob-fill"
-              style={{ width: `${opacityPct}%` }}
-            />
-          </div>
+          <input
+            type="range"
+            className="settings-slider"
+            min={0}
+            max={1}
+            step={0.01}
+            value={windowOpacity}
+            onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
+          />
           <NumberField
             value={windowOpacity}
             onCommit={cmd.setWindowOpacity}
@@ -389,12 +388,17 @@ function AppearancePage({
         </div>
 
         <div className="settings-knob-row">
-          <div className="settings-knob-bar">
-            <div
-              className="settings-knob-fill alt"
-              style={{ width: `${blurPct}%` }}
-            />
-          </div>
+          <input
+            type="range"
+            className="settings-slider alt"
+            min={0}
+            max={60}
+            step={1}
+            value={Math.min(60, windowBlur)}
+            onChange={(e) =>
+              cmd.setWindowBlur(parseInt(e.target.value, 10))
+            }
+          />
           <NumberField
             value={windowBlur}
             onCommit={(v) => cmd.setWindowBlur(Math.round(v))}

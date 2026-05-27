@@ -113,6 +113,14 @@ html.is-transparent .settings-rail,
 html.is-transparent .settings-main,
 html.is-transparent .settings-crumb,
 html.is-transparent .settings-statusline,
+html.is-transparent .settings-input,
+html.is-transparent .settings-btn,
+html.is-transparent .settings-list,
+html.is-transparent .settings-list-row,
+html.is-transparent .settings-empty,
+html.is-transparent .settings-theme,
+html.is-transparent .settings-depth,
+html.is-transparent .settings-knob-num,
 html.is-transparent .rnd-tree {
     background: transparent;
 }
@@ -3911,8 +3919,8 @@ button {
     background: var(--s-bg-dim);
     border: 1px solid var(--line);
     color: var(--ink);
-    font: 500 13px/1.4 var(--mono);
-    padding: 11px 14px;
+    font: 500 12px/1.4 var(--mono);
+    padding: 7px 11px;
     outline: none;
     min-width: 0;
     transition: border-color 0.12s;
@@ -3931,15 +3939,15 @@ button {
     background: var(--s-bg-dim);
     border: 1px solid var(--line);
     color: var(--ink-dim);
-    font: 500 11px/1 var(--mono);
-    padding: 11px 14px;
+    font: 500 10px/1 var(--mono);
+    padding: 7px 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
+    gap: 6px;
     transition:
         color 0.12s,
         border-color 0.12s,
@@ -4019,11 +4027,11 @@ button {
 .settings-list-row {
     background: var(--s-bg);
     display: grid;
-    grid-template-columns: 32px 1fr auto auto;
+    grid-template-columns: 28px 1fr auto auto;
     align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
-    font-size: 12.5px;
+    gap: 10px;
+    padding: 6px 12px;
+    font-size: 12px;
     transition: background 0.12s;
 }
 .settings-list-row:hover {
@@ -4116,26 +4124,56 @@ button {
 /* ---- knob row (opacity, blur) ----------------------------------------- */
 .settings-knob-row {
     display: grid;
-    grid-template-columns: 1fr 220px;
-    gap: 28px;
+    grid-template-columns: 1fr 200px;
+    gap: 24px;
     align-items: center;
 }
-.settings-knob-bar {
-    height: 28px;
-    background: var(--s-bg-dim);
-    border: 1px solid var(--line);
-    position: relative;
-    overflow: hidden;
+.settings-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 2px;
+    background: var(--line);
+    border: 0;
+    outline: none;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
 }
-.settings-knob-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: var(--acc-line);
-    border-right: 1px solid var(--acc);
+.settings-slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--line);
 }
-.settings-knob-fill.alt {
-    background: var(--hl);
-    border-right-color: var(--acc);
+.settings-slider::-moz-range-track {
+    height: 2px;
+    background: var(--line);
+}
+.settings-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--acc);
+    border: 0;
+    margin-top: -6px;
+    cursor: grab;
+    box-shadow: 0 0 0 1px var(--line);
+}
+.settings-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--acc);
+    border: 0;
+    cursor: grab;
+    box-shadow: 0 0 0 1px var(--line);
+}
+.settings-slider:active::-webkit-slider-thumb {
+    cursor: grabbing;
+}
+.settings-slider:active::-moz-range-thumb {
+    cursor: grabbing;
 }
 .settings-knob-num {
     display: flex;
@@ -4152,10 +4190,10 @@ button {
     background: transparent;
     border: 0;
     color: var(--ink);
-    font: 500 22px/1 var(--mono);
+    font: 500 14px/1 var(--mono);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
-    padding: 10px 14px;
+    padding: 7px 12px;
     outline: none;
     min-width: 0;
     text-align: right;
@@ -4182,7 +4220,7 @@ button {
     background: var(--s-bg-dim);
     transition: border-color 0.12s;
     font-family: var(--mono);
-    height: 32px;
+    height: 28px;
 }
 .settings-depth:focus-within {
     border-color: var(--acc-line);
