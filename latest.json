@@ -1,11 +1,11 @@
 {
-  "version": "0.1.7",
-  "notes": "Side rail: replaced vertical CountStack with compact corner-badge counts on term + agents icons. Color = primary running type (green term / orange claude / amber codex / violet hermes). Five-icon hop bar now keeps fixed click targets at all times \u2014 no more horizontal/vertical row growth from activity.",
-  "pub_date": "2026-05-26T13:09:03Z",
+  "version": "0.1.8",
+  "notes": "Lazygit-style git pane (stash, discard, remotes, modals, command log). Project-wide search streams results and supports find/replace. Rundeck pane shows projects as upstream returns them; execution watcher pauses when you tab away. Settings is now a full pane, not a modal. Terminal startup waits for the shell's first byte instead of a 350ms timer. Internals: full async PTY (less memory per hidden agent), tokio for CloudWatch log tails, typed Rust errors end-to-end, immer for store mutations.",
+  "pub_date": "2026-05-27T13:06:13Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWZvczBqS0xjK04zcXh1K0tmeXZjamZQejgxQVJIUFFqSjN2elBHN0NjOHlpd1M5RmUxK2dxbm92aXVwR1VZc2hrMVdVOTlWWmhheURCbUNRdVA1bnd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5ODAwOTQyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6Cmc1Y1hzbnFzQUNkK3lXTTZlVzhXaGd1Rnd0ZS9hRlRHR3NDZGJ2ME8xbkkzdE56UnNaWURuOXEzNUExZVdrUUE0Q3FaMXFEdHA5d1A4U1hZaHdlSkJRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.7/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVFML2hXUDB2bzdxaGYyRmw5QTdTV0xYbDJ6NHV2VDg0WDBwcDJWdi9LTnNGQll5LzBsMzcwNmVyUm9zdzJQMnh4TWhhQjBITndscEU5cUo0NG80K1F3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5ODg3MTcyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjJVem9aK1QyOFpUOEs5V2doTGwrTjJucnZ6M3NIZU9pVVVLSEEyRFVLRlhpcEp6MG1LRGsrRHduZHFack5SQ1NpNitjUFhweDBoMzVUYzBjbm1qREF3PT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.8/Sikemux.app.tar.gz"
     }
   }
 }
