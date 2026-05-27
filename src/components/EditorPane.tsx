@@ -71,6 +71,12 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
     const dirtyRef = useRef(dirty);
     dirtyRef.current = dirty;
 
+    // Per-path snapshot of the on-disk content (set on open + on save).
+    // Used in the updateListener below to compare every keystroke's doc
+    // against the saved baseline — if the user undoes back to disk we
+    // clear the dirty mark, instead of leaving the dot lit forever.
+    const savedRef = useRef<Map<string, string>>(new Map());
+
     // Find/Replace bar — Mod-F opens find-only, Mod-H opens with replace
     // pre-expanded. We render our own React bar (see EditorFindBar) and
     // drive CodeMirror's search commands directly; CM's built-in panel
@@ -127,9 +133,13 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
         const path = currentRef.current;
         const view = viewRef.current;
         if (!path || !view) return false;
+        const text = view.state.doc.toString();
         void fsapi
-            .writeFile(path, view.state.doc.toString())
+            .writeFile(path, text)
             .then(() => {
+                // Saved content IS the new baseline — future undos
+                // back to here should keep the tab clean.
+                savedRef.current.set(path, text);
                 setDirty((d) => {
                     if (!d.has(path)) return d;
                     const next = new Set(d);
@@ -168,13 +178,7 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                     // CodeMirror 6 leaves Tab unbound by default for a11y
                     // (Tab = focus next element); for a code editor we want
                     // the "insert indent" behavior.
-                    // Cmd-Alt-Up/Down duplicates the current line (or each
-                    // line of a multi-line selection) — VSCode-style.
-                    keymap.of([
-                        indentWithTab,
-                        { key: "Mod-Alt-ArrowUp", run: copyLineUp, preventDefault: true },
-                        { key: "Mod-Alt-ArrowDown", run: copyLineDown, preventDefault: true },
-                    ]),
+                    keymap.of([indentWithTab]),
                     // Prec.highest so our Mod-F / Mod-H beat the searchKeymap
                     // that ships with the search() extension — otherwise CM's
                     // built-in openSearchPanel wins the keypress and the panel
@@ -182,6 +186,13 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                     // none }) while our React bar never opens.
                     Prec.highest(
                         keymap.of([
+                            // VSCode-style line duplication. basicSetup's
+                            // defaultKeymap binds these to "add cursor above /
+                            // below" at default precedence — Prec.highest here
+                            // overrides that so the lines are duplicated
+                            // instead of spawning a multi-cursor.
+                            { key: "Mod-Alt-ArrowUp", run: copyLineUp, preventDefault: true },
+                            { key: "Mod-Alt-ArrowDown", run: copyLineDown, preventDefault: true },
                             { key: "Mod-s", preventDefault: true, run: () => saveRef.current() },
                             {
                                 key: "Mod-[",
@@ -220,10 +231,26 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                     EditorView.updateListener.of((u) => {
                         if (u.docChanged && currentRef.current) {
                             const p = currentRef.current;
-                            if (!dirtyRef.current.has(p)) {
+                            const text = u.state.doc.toString();
+                            const baseline = savedRef.current.get(p);
+                            // Dirty iff the buffer no longer matches the
+                            // on-disk snapshot. Re-checked on every change
+                            // so undoing back to the saved content clears
+                            // the tab's dot.
+                            const isDirty = baseline === undefined
+                                ? true
+                                : text !== baseline;
+                            const has = dirtyRef.current.has(p);
+                            if (isDirty && !has) {
                                 setDirty((d) => new Set(d).add(p));
+                            } else if (!isDirty && has) {
+                                setDirty((d) => {
+                                    const next = new Set(d);
+                                    next.delete(p);
+                                    return next;
+                                });
                             }
-                            scheduleChange(p, u.state.doc.toString());
+                            scheduleChange(p, text);
                         }
                     }),
                 ],
@@ -279,6 +306,7 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
             const content = await fsapi.readFile(path);
             const st = makeState(path, content);
             states.current.set(path, st);
+            savedRef.current.set(path, content);
             cmd.setEditorView(paneId, {
                 openTabs: [...liveTabs, path],
                 activePath: path,
@@ -307,6 +335,7 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                     if (cancelled) return;
                     const st = makeState(path, content);
                     states.current.set(path, st);
+                    savedRef.current.set(path, content);
                 } catch {
                     /* file gone — drop it */
                     cmd.setEditorView(paneId, {
@@ -366,6 +395,9 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                     // stored selection may no longer be meaningful.
                     states.current.set(path, makeState(path, fresh));
                 }
+                // External write became the new on-disk baseline — future
+                // edits compare against this so dirty stays accurate.
+                savedRef.current.set(path, fresh);
             }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
