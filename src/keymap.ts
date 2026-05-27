@@ -90,10 +90,10 @@ export function useKeymap(): void {
           else cmd.newWindow();
           break;
         }
-        case "Period":
+        case "BracketRight":
           cmd.selectWindowRelative(1);
           break;
-        case "Comma":
+        case "BracketLeft":
           cmd.selectWindowRelative(-1);
           break;
         case "KeyP":

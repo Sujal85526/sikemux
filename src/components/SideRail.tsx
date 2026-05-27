@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import type {
-  AgentType,
   Session,
   SessionKind,
   Window,
@@ -9,6 +8,7 @@ import type {
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import {
+  AgentIcon,
   IconAgent,
   IconAws,
   IconClose,
@@ -26,18 +26,10 @@ function kindIcon(kind: SessionKind): ReactNode {
   return <IconCommand size={13} />;
 }
 
-/** Pick the most-frequent agent type for color-coding. Ties broken by
- *  insertion order (whichever the user spawned first). Default = claude
- *  so we never render a colorless badge. */
-function primaryAgentType(types: AgentType[]): AgentType {
-  if (types.length === 0) return "claude";
-  const counts = new Map<AgentType, number>();
-  for (const t of types) counts.set(t, (counts.get(t) ?? 0) + 1);
-  let best: AgentType = types[0];
-  let bestN = 0;
-  for (const [t, n] of counts) if (n > bestN) { best = t; bestN = n; }
-  return best;
-}
+/** Right-edge logo stack cap shared by the collapsed name-row and the
+ *  expanded Agents/Term sub-rows. Anything beyond this collapses to a
+ *  "+N more" chip so the row never overflows on busy projects. */
+const MAX_BADGE_ICONS = 3;
 
 export function SideRail() {
   const sessionsById = useStore((s) => s.sessions);
@@ -88,7 +80,11 @@ export function SideRail() {
     const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
     if (!active) {
-      // Collapsed: name + optional agent-count hint badge.
+      // Collapsed: name + stacked agent brand logos on the right. Mirrors
+      // the expanded view's right-edge stack so the rail reads consistently
+      // whether a project is open or not.
+      const visible = agents.slice(0, MAX_BADGE_ICONS);
+      const overflow = agents.length - visible.length;
       return (
         <button
           className="proj-row collapsed"
@@ -100,14 +96,19 @@ export function SideRail() {
             <IconFolder size={12} />
           </span>
           <span className="proj-name">{s.name}</span>
-          {agents.length > 0 && (
-            <span className="proj-hint">
-              <IconAgent size={11} />
-              <span
-                className={`proj-hint-n badge-${primaryAgentType(agents.map((a) => a.type))}`}
-              >
-                {agents.length > 9 ? "9+" : agents.length}
-              </span>
+          {visible.length > 0 && (
+            <span className="proj-child-icons">
+              {visible.map((a) => (
+                <span
+                  key={a.id}
+                  className={`proj-pip proj-pip-${a.type}`}
+                >
+                  <AgentIcon type={a.type} size={20} />
+                </span>
+              ))}
+              {overflow > 0 && (
+                <span className="proj-child-icons-more">+{overflow}</span>
+              )}
             </span>
           )}
           <span
@@ -146,34 +147,46 @@ export function SideRail() {
       if (w) jumpToWindow(s.id, w.id);
     };
 
+    // Right-edge indicators on Term / Agents rows. We show the actual
+    // brand-colored logos (one per item, capped at MAX_BADGE_ICONS) instead
+    // of a numeric pill so the rail reads as "what's running" rather than
+    // "how many". Term tabs use a small filled pip in the live-green tone
+    // since terminal sessions don't have a per-instance identity. Agents
+    // render their AgentIcon at the brand color.
+    const termIcons: React.ReactNode[] =
+      tabCount > 1
+        ? Array.from({ length: tabCount }, (_, i) => (
+            <span key={i} className="proj-pip proj-pip-term" />
+          ))
+        : [];
+    const agentIcons: React.ReactNode[] = agents.map((a) => (
+      <span key={a.id} className={`proj-pip proj-pip-${a.type}`}>
+        <AgentIcon type={a.type} size={20} />
+      </span>
+    ));
+
     type SubRow = {
       role: WindowRole | "agents";
       label: string;
       title: string;
-      count?: number;
-      tone?: "term" | AgentType;
+      icons: React.ReactNode[];
     };
     const children: SubRow[] = [
-      { role: "files", label: "Files", title: "files (M-i)" },
+      { role: "files", label: "Files", title: "files (M-i)", icons: [] },
       {
         role: "term",
         label: "Term",
         title: `term${tabCount > 1 ? ` (${tabCount} tabs)` : ""} (M-r)`,
-        count: tabCount > 1 ? tabCount : undefined,
-        tone: "term",
+        icons: termIcons,
       },
-      { role: "git", label: "Git", title: "git (M-g)" },
+      { role: "git", label: "Git", title: "git (M-g)", icons: [] },
       {
         role: "agents",
         label: "Agents",
         title: `agents${agents.length ? ` (${agents.length})` : ""} (M-c)`,
-        count: agents.length > 0 ? agents.length : undefined,
-        tone:
-          agents.length > 0
-            ? primaryAgentType(agents.map((a) => a.type))
-            : undefined,
+        icons: agentIcons,
       },
-      { role: "search", label: "Search", title: "search (M-f)" },
+      { role: "search", label: "Search", title: "search (M-f)", icons: [] },
     ];
 
     return (
@@ -188,7 +201,6 @@ export function SideRail() {
             <IconFolder size={12} />
           </span>
           <span className="proj-name">{s.name}</span>
-          <span className="proj-active-dot" aria-hidden />
           <span
             className="sess-close"
             title="Close session"
@@ -209,6 +221,8 @@ export function SideRail() {
               ) : (
                 <WindowIcon role={c.role} size={13} />
               );
+            const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
+            const overflow = c.icons.length - visibleIcons.length;
             return (
               <button
                 key={c.role}
@@ -222,13 +236,13 @@ export function SideRail() {
               >
                 <span className="proj-child-ic">{node}</span>
                 <span className="proj-child-label">{c.label}</span>
-                {c.count !== undefined && c.tone && (
-                  <span className={`proj-child-n badge-${c.tone}`}>
-                    {c.count > 9 ? "9+" : c.count}
+                {visibleIcons.length > 0 && (
+                  <span className="proj-child-icons">
+                    {visibleIcons}
+                    {overflow > 0 && (
+                      <span className="proj-child-icons-more">+{overflow}</span>
+                    )}
                   </span>
-                )}
-                {subActive && (
-                  <span className="proj-active-dot" aria-hidden />
                 )}
               </button>
             );

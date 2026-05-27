@@ -736,15 +736,79 @@ export function selectWindowByName(name: string): void {
   if (id) selectWindowId(id);
 }
 
+/** Display order of the project's pane "slots" for Alt+./Alt+, cycling.
+ *  Mirrors the SideRail's expanded child list so the rail and the cycle
+ *  agree on what "next pane" means. `agents` isn't a window role — it's
+ *  the synthetic agent-view slot, present when the project has any
+ *  running agents. */
+const PROJECT_SLOT_ORDER: (WindowRole | "agents")[] = [
+  "files",
+  "term",
+  "git",
+  "agents",
+  "search",
+];
+
+/** Cycle to the next/previous pane in the active project. Visits each
+ *  role exactly once (so multi-tab term sessions don't make `term` show
+ *  up N times) and includes the synthetic Agents slot when agents are
+ *  running. For non-project sessions falls back to a plain windowsBySession
+ *  walk. */
 export function selectWindowRelative(delta: number): void {
   const st = getState();
   const session = st.sessions[st.activeSessionId];
   if (!session) return;
-  const ids = st.windowsBySession[session.id] ?? [];
-  if (ids.length < 2) return;
-  const idx = ids.indexOf(session.activeWindowId);
-  const next = ids[(idx + delta + ids.length) % ids.length];
-  selectWindowId(next);
+  const winIds = st.windowsBySession[session.id] ?? [];
+  const agentIds = st.agentsBySession[session.id] ?? [];
+
+  // Non-project sessions don't carry the fixed role layout; cycle their
+  // raw window list as before.
+  if (session.kind !== "project") {
+    if (winIds.length < 2) return;
+    const idx = winIds.indexOf(session.activeWindowId);
+    const next = winIds[(idx + delta + winIds.length) % winIds.length];
+    selectWindowId(next);
+    return;
+  }
+
+  // Pick the representative window id for each role slot. For term we
+  // honor the currently-active term tab so cycling away and back returns
+  // to the same tab instead of snapping to tab #1.
+  const activeWin = st.windows[session.activeWindowId];
+  const winForRole = (role: WindowRole): string | undefined => {
+    if (activeWin?.role === role) return activeWin.id;
+    return winIds.find((id) => st.windows[id]?.role === role);
+  };
+
+  type Slot = { kind: "win"; role: WindowRole; id: string } | { kind: "agents" };
+  const slots: Slot[] = [];
+  for (const slot of PROJECT_SLOT_ORDER) {
+    if (slot === "agents") {
+      if (agentIds.length > 0) slots.push({ kind: "agents" });
+    } else {
+      const id = winForRole(slot);
+      if (id) slots.push({ kind: "win", role: slot, id });
+    }
+  }
+  if (slots.length < 2) return;
+
+  // Locate the current cursor: either an agents slot (view==agent) or
+  // the slot whose role matches the active window.
+  let idx: number;
+  if (session.view === "agent") {
+    idx = slots.findIndex((s) => s.kind === "agents");
+  } else {
+    const currentRole = activeWin?.role;
+    idx = slots.findIndex((s) => s.kind === "win" && s.role === currentRole);
+  }
+  if (idx < 0) idx = 0;
+
+  const next = slots[(idx + delta + slots.length) % slots.length];
+  if (next.kind === "agents") {
+    focusAgents();
+  } else {
+    selectWindowId(next.id);
+  }
 }
 
 // ---- Agents -----------------------------------------------------------

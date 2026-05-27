@@ -805,8 +805,8 @@ button {
     align-items: center;
     gap: 8px;
     width: 100%;
-    height: 22px;
-    padding: 0 8px;
+    min-height: 26px;
+    padding: 2px 8px;
     background: transparent;
     border: none;
     cursor: pointer;
@@ -845,6 +845,44 @@ button {
     color: var(--void);
     flex-shrink: 0;
 }
+
+/* Right-edge stack of mini brand-colored logos. Replaces the old
+   numeric badge — readable as "one per running thing", capped with a
+   "+N" overflow chip. */
+.proj-child-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.proj-child-icons-more {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--ink-faint);
+    line-height: 1;
+    margin-left: 2px;
+}
+.proj-pip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+/* Term: filled circle in live-green — terminal sessions don't have
+   per-instance identity so a brand mark would be misleading. */
+.proj-pip-term {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--live);
+}
+/* Agents: AgentIcon SVG inherits color via currentColor. */
+.proj-pip-claude { color: var(--brand-claude); }
+.proj-pip-codex  { color: var(--brand-codex); }
+.proj-pip-hermes { color: var(--brand-hermes); }
 
 /* Brand-tone palette shared by .proj-hint-n and .proj-child-n. */
 .badge-term   { background: var(--live); }
