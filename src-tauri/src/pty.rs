@@ -24,10 +24,11 @@
 // Commands surfaced to the frontend:
 //
 //   pty_spawn       — create a new PTY, returns ptyId
+//   pty_attach      — atomic snapshot + subscribe; returns { subId, snapshot }
 //   pty_subscribe   — attach a Channel to a PTY, returns subId
+//                     (kept for cases where the caller already has the
+//                      screen state from a prior attach — e.g. theme reload)
 //   pty_unsubscribe — detach a Channel by subId
-//   pty_snapshot    — get the current grid + scrollback as ANSI bytes
-//                     (write directly to xterm to repaint state)
 //   pty_write       — send bytes to the PTY's stdin
 //   pty_resize      — change rows/cols (also resizes the parser)
 //   pty_kill        — terminate the PTY process
@@ -281,26 +282,6 @@ pub fn pty_unsubscribe(
     Ok(())
 }
 
-/// Snapshot of the current screen + scrollback as a single ANSI byte
-/// stream. Writing this to a fresh xterm reproduces the visual state of
-/// the PTY at the moment of the call — colors, cursor position,
-/// scrollback rows. Replaces the "buffer-and-replay raw bytes" approach
-/// (which forced xterm to re-parse N seconds of history per switch).
-#[tauri::command]
-pub fn pty_snapshot(
-    manager: State<'_, PtyManager>,
-    id: u32,
-) -> AppResult<Vec<u8>> {
-    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
-    let parser = pty.parser.lock().map_err(pty_err)?;
-    let screen = parser.screen();
-    // contents_formatted includes the visible screen + scrollback as
-    // ANSI escapes (cursor, attrs, colors all baked in). One write to
-    // xterm reproduces the state; bounded in size by the parser
-    // scrollback config (~PARSER_SCROLLBACK rows worth).
-    Ok(screen.contents_formatted())
-}
-
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachResult {
@@ -310,13 +291,14 @@ pub struct AttachResult {
 
 /// Atomic snapshot + subscribe. The parser lock is held while we both
 /// capture the screen contents AND insert the subscriber into the
-/// fan-out map, so the reader thread (which holds parser → broadcast in
+/// fan-out map, so the reader task (which holds parser → broadcast in
 /// the same nested order) cannot interleave a byte that ends up both in
 /// the snapshot and in the channel — or one that's in neither.
 ///
-/// Preferred over calling `pty_snapshot` + `pty_subscribe` from JS
-/// because the gap between those two IPC calls is wide enough for
-/// real-world TUI agents to redraw a frame.
+/// `snapshot` is the visible screen + scrollback as an ANSI byte stream
+/// (`contents_formatted` — cursor, attrs, colors all baked in). Writing
+/// it to a fresh xterm reproduces the visual state at the moment of the
+/// call; bounded in size by `PARSER_SCROLLBACK` rows.
 #[tauri::command]
 pub fn pty_attach(
     manager: State<'_, PtyManager>,
