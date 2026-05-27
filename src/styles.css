@@ -739,7 +739,7 @@ button {
     gap: 7px;
     width: 100%;
     height: 24px;
-    padding: 0 10px 0 8px;
+    padding: 0 0px 0 8px;
     background: transparent;
     border: none;
     border-left: 2px solid transparent;
@@ -781,17 +781,6 @@ button {
     letter-spacing: 0.01em;
 }
 
-/* Small floating "live" dot — used on the expanded header (right side)
-   and on whichever child row is the currently-focused pane. */
-.proj-active-dot {
-    flex-shrink: 0;
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--acc);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--acc) 60%, transparent);
-}
-
 /* Hint chip on collapsed rows — flags background activity (e.g. agents
    still running) without expanding the project. Uses the same brand-tone
    palette as child counts so colour stays consistent across the rail. */
@@ -822,7 +811,7 @@ button {
 .proj-children {
     display: flex;
     flex-direction: column;
-    padding: 2px 8px 2px 0;
+    padding: 4px 6px 2px 0;
     margin-left: 22px; /* aligns child icons under the folder glyph */
     border-left: 1px solid color-mix(in srgb, var(--acc) 20%, transparent);
 }
@@ -831,7 +820,6 @@ button {
     align-items: center;
     gap: 8px;
     width: 100%;
-    min-height: 26px;
     padding: 2px 8px;
     background: transparent;
     border: none;
@@ -2497,7 +2485,8 @@ button {
         opacity 0.12s,
         color 0.12s;
 }
-.sess-row:hover .sess-close {
+.sess-row:hover .sess-close,
+.proj-row:hover .sess-close {
     opacity: 1;
 }
 .sess-close:hover {
@@ -5979,279 +5968,200 @@ button {
     font-weight: 700;
 }
 
+
 /* ============================================================
- * In-editor Cmd+F panel restyle — compact, top-right of pane.
+ * In-editor find / replace bar (.ed-findbar)
  * ============================================================
  *
- * CodeMirror's @codemirror/search panel is functional but ships with a
- * generic look. We:
- *   - float it absolutely top-right of the editor pane
- *   - tighten spacing, swap fonts, restyle inputs + buttons + checkboxes
- *   - hide labels' text ("match case", "regexp", "by word") and rely on
- *     compact pill toggles like the global search
- *   - hide replace UI by default; user can show it via Cmd+H
+ * Our own React component that drives CodeMirror's search commands
+ * (findNext / findPrevious / replaceNext / replaceAll) — CodeMirror's
+ * built-in panel is suppressed (we never call openSearchPanel).
+ * Pinned top-right of the editor pane, theme-aware via the same
+ * color-mix + html.is-transparent pattern as the rest of the chrome.
  */
 
 .ed-host {
     position: relative;
 }
 
-/* Float the panel as a compact bar at the top-right of the editor pane,
- * mirroring VSCode. Style both -top and -bottom variants so positioning
- * holds regardless of which CodeMirror picks. */
-.ed-host .cm-panels.cm-panels-top,
-.ed-host .cm-panels.cm-panels-bottom {
+.ed-findbar {
     position: absolute;
     top: 6px;
     right: 8px;
-    bottom: auto;
-    left: auto;
     z-index: 4;
-    /* Semi-transparent surface + backdrop blur so the editor + window
-   * translucency carry through and text underneath stays legible. */
-    background: rgba(18, 16, 26, 0.72);
-    backdrop-filter: blur(10px) saturate(140%);
-    -webkit-backdrop-filter: blur(10px) saturate(140%);
-    border: 1px solid var(--line);
-    border-radius: 0;
-    box-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.04) inset,
-        0 8px 24px -10px rgba(0, 0, 0, 0.7);
-    padding: 0;
-    /* Grid layout below handles row distribution — panel is fixed-width
-   * to keep the bar a sensible compact size. */
-    width: 420px;
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    width: 460px;
     max-width: calc(100% - 16px);
-}
-
-.ed-host .cm-panel.cm-search {
-    /* Explicit 2-row × 5-col grid. Independent of intrinsic input widths
-   * and pane size — the inputs always live in column 1 (flex column),
-   * pills + close ride the right side of row 1, replace buttons span
-   * columns 2-3 and 4-5 of row 2. */
-    display: grid;
-    grid-template-columns: minmax(120px, 1fr) auto auto auto auto;
-    grid-template-rows: auto auto;
-    grid-auto-rows: 0; /* any auto-placed item collapses to 0 height */
-    align-content: start; /* don't stretch rows to fill */
-    row-gap: 4px;
-    column-gap: 4px;
-    padding: 5px 6px;
-    background: transparent;
+    padding: 4px 6px 4px 4px;
+    background: color-mix(
+        in srgb,
+        var(--bg-raised) calc(var(--window-opacity, 1) * 100%),
+        transparent
+    );
+    border: 1px solid var(--line);
+    box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.55);
+    color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 12px;
-    color: var(--ink-dim);
+    animation: fade 0.12s ease;
+}
+html.is-transparent .ed-findbar {
+    background: transparent;
 }
 
-/* CodeMirror's base CSS sets `margin: 2px 6px 2px 0` on every input /
- * button / label inside the search panel — in a grid that adds phantom
- * vertical space below the last row. Reset to 0 so the panel hugs the
- * rows tight. */
-.ed-host .cm-panel.cm-search input,
-.ed-host .cm-panel.cm-search button,
-.ed-host .cm-panel.cm-search label {
-    margin: 0;
+.ed-findbar-chev {
+    flex: 0 0 auto;
+    width: 14px;
+    align-self: stretch;
+    margin-right: 4px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.12s;
+}
+.ed-findbar-chev:hover {
+    color: var(--ink);
 }
 
-/* Row 1 — find input + pills + close */
-.ed-host .cm-panel.cm-search [name="search"] {
-    grid-row: 1;
-    grid-column: 1;
+.ed-findbar-rows {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
-.ed-host .cm-panel.cm-search label:has(input[name="case"]) {
-    grid-row: 1;
-    grid-column: 2;
-}
-.ed-host .cm-panel.cm-search label:has(input[name="word"]) {
-    grid-row: 1;
-    grid-column: 3;
-}
-.ed-host .cm-panel.cm-search label:has(input[name="re"]) {
-    grid-row: 1;
-    grid-column: 4;
-}
-.ed-host .cm-panel.cm-search button[name="close"] {
-    grid-row: 1;
-    grid-column: 5;
+.ed-findbar-row {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 0;
 }
 
-/* Row 2 — replace input + replace + replace-all */
-.ed-host .cm-panel.cm-search [name="replace"] {
-    grid-row: 2;
-    grid-column: 1;
-}
-.ed-host .cm-panel.cm-search button[name="replace"] {
-    grid-row: 2;
-    grid-column: 2 / 4;
-}
-.ed-host .cm-panel.cm-search button[name="replaceAll"] {
-    grid-row: 2;
-    grid-column: 4 / 6;
-}
-
-.ed-host .cm-panel.cm-search [name="search"],
-.ed-host .cm-panel.cm-search [name="replace"] {
-    /* Inset overlay rather than --void so the input is visible against the
-   * translucent panel without going fully opaque. */
-    background: rgba(0, 0, 0, 0.28);
+/* "Field" wraps the input + inline toggles so they read as one box. */
+.ed-findbar-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    background: color-mix(
+        in srgb,
+        var(--bg-dim) calc(var(--window-opacity, 1) * 100%),
+        transparent
+    );
     border: 1px solid var(--line);
+    transition: border-color 0.12s;
+}
+html.is-transparent .ed-findbar-field {
+    background: transparent;
+}
+.ed-findbar-field:focus-within {
+    border-color: var(--acc-line);
+}
+
+.ed-findbar-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 24px;
+    background: transparent;
+    border: 0;
+    padding: 0 9px;
     color: var(--ink);
     font-family: var(--mono);
     font-size: 12px;
     outline: none;
-    padding: 4px 8px;
-    margin: 0;
-    /* Grid column 1 is fluid (minmax 120,1fr) — the input fills it. */
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    transition:
-        border-color 0.12s,
-        background 0.12s;
 }
-.ed-host .cm-panel.cm-search [name="search"]:focus,
-.ed-host .cm-panel.cm-search [name="replace"]:focus {
-    border-color: var(--acc-line);
-    background: rgba(0, 0, 0, 0.42);
-}
-.ed-host .cm-panel.cm-search [name="search"]::placeholder,
-.ed-host .cm-panel.cm-search [name="replace"]::placeholder {
+.ed-findbar-input::placeholder {
     color: var(--ink-faint);
 }
 
-/* Hide the verbose action buttons (next / previous / all) — match
- * navigation lives on Enter / Shift+Enter via the search keymap. Replace
- * + close stay visible so the user has obvious affordances for both. */
-.ed-host .cm-panel.cm-search button[name="next"],
-.ed-host .cm-panel.cm-search button[name="prev"],
-.ed-host .cm-panel.cm-search button[name="select"] {
-    display: none;
-}
-
-/* Grid handles the row break — the <br> CodeMirror emits is unused. */
-.ed-host .cm-panel.cm-search br {
-    display: none;
-}
-
-/* Close button — CodeMirror gives it `position: absolute; top: 0;
- * right: 4px;` by default. Reset and let grid place it in row 1 col 5. */
-.ed-host .cm-panel.cm-search button[name="close"] {
-    position: static;
-    top: auto;
-    right: auto;
-    width: 22px;
-    height: 22px;
+.ed-findbar-toggle {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    margin: 0;
     padding: 0;
+    background: transparent;
+    border: 0;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    line-height: 1;
+    user-select: none;
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.ed-findbar-toggle:hover {
+    color: var(--ink);
+}
+.ed-findbar-toggle.on {
+    color: var(--acc);
+    background: var(--acc-soft);
+}
+
+.ed-findbar-status {
+    flex: 0 0 auto;
+    min-width: 0;
+    align-self: center;
+    padding: 0 6px;
+    color: var(--ink-faint);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.ed-findbar-btn {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    padding: 0;
     background: transparent;
     border: 1px solid var(--line);
     color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transition:
         color 0.12s,
         border-color 0.12s,
         background 0.12s;
 }
-.ed-host .cm-panel.cm-search button[name="close"]:hover {
+.ed-findbar-btn:hover:not(:disabled) {
+    color: var(--ink);
+    border-color: var(--ink-faint);
+}
+.ed-findbar-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.ed-findbar-btn.close {
+    font-size: 16px;
+}
+.ed-findbar-btn.close:hover {
     color: var(--danger);
     border-color: var(--danger);
     background: rgba(255, 103, 103, 0.08);
 }
-
-/* Replace text pills — same chrome as the toggles, just wider. Grid
- * places them on row 2 spanning multi-column cells; they stretch to fit. */
-.ed-host .cm-panel.cm-search button[name="replace"],
-.ed-host .cm-panel.cm-search button[name="replaceAll"] {
-    height: 22px;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0 8px;
-    background: transparent;
-    border: 1px solid var(--line);
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: 10.5px;
-    letter-spacing: 0.04em;
-    text-transform: lowercase;
-    cursor: pointer;
-    transition:
-        color 0.12s,
-        border-color 0.12s,
-        background 0.12s;
-}
-.ed-host .cm-panel.cm-search button[name="replace"]:hover,
-.ed-host .cm-panel.cm-search button[name="replaceAll"]:hover {
-    color: var(--ink);
-    border-color: var(--ink-faint);
-}
-
-/* Checkbox labels — rebuild as compact toggle pills. Hide the native
- * checkbox + the text label, then add CSS-only "Aa", "ab", ".*" caps via
- * ::before on the wrapping <label>. */
-.ed-host .cm-panel.cm-search label {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 26px;
-    height: 24px;
-    padding: 0 6px;
-    border: 1px solid var(--line);
-    color: var(--ink-faint);
-    cursor: pointer;
-    font-size: 0; /* hide the literal " match case" text node */
-    user-select: none;
-    transition:
-        color 0.12s,
-        background 0.12s,
-        border-color 0.12s;
-}
-.ed-host .cm-panel.cm-search label:hover {
-    color: var(--ink);
-    border-color: var(--ink-faint);
-}
-.ed-host .cm-panel.cm-search label input[type="checkbox"] {
-    /* Functional but invisible — the label's ::before shows status. */
-    position: absolute;
-    width: 0;
-    height: 0;
-    opacity: 0;
-    pointer-events: none;
-}
-/* Synthesised glyph for each checkbox option. The default CodeMirror search
- * panel order is: match case, regexp, by word. We key off the input name. */
-.ed-host .cm-panel.cm-search label:has(input[name="case"])::before {
-    content: "Aa";
-}
-.ed-host .cm-panel.cm-search label:has(input[name="re"])::before {
-    content: ".*";
-}
-.ed-host .cm-panel.cm-search label:has(input[name="word"])::before {
-    content: "ab";
-}
-.ed-host .cm-panel.cm-search label::before {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-}
-/* Active state — when the checkbox is :checked, light the pill. */
-.ed-host .cm-panel.cm-search label:has(input:checked) {
-    color: var(--acc);
-    background: var(--acc-soft);
-    border-color: var(--acc-line);
-}
-
-/* The second row (Replace) sits below the first when shown. Keep it
- * visually consistent with the find row. */
-.ed-host .cm-panel.cm-search br {
-    display: block;
-    content: "";
-    margin-top: 4px;
-    width: 100%;
+.ed-findbar-btn-spacer {
+    flex: 0 0 auto;
+    width: 26px;
 }
 
 /* Match-highlight decorations the editor sets on hits — give them the
@@ -6262,6 +6172,13 @@ button {
 }
 .cm-searchMatch.cm-searchMatch-selected {
     background: rgba(255, 220, 90, 0.42);
+}
+
+/* Suppress CodeMirror's built-in search panel — we render our own React
+ * bar instead. Keeps any orphan panel DOM invisible if something tries
+ * to call openSearchPanel. */
+.ed-host .cm-panels {
+    display: none;
 }
 
 /* ============================================================

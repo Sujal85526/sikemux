@@ -26,9 +26,12 @@ export function useKeymap(): void {
             } else if (e.code === "KeyF" && e.shiftKey) {
                 // Cmd/Ctrl+Shift+F → jump to the project's search window. Project
                 // sessions only (no-op elsewhere — see focusGlobalSearch).
+                // If the user has text highlighted (CodeMirror selection or
+                // anywhere in the chrome), seed the search box with it.
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                cmd.focusGlobalSearch();
+                const sel = window.getSelection()?.toString() ?? "";
+                cmd.focusGlobalSearch(sel.trim() ? sel : undefined);
             } else if (e.code === "Comma") {
                 e.preventDefault();
                 e.stopImmediatePropagation();

@@ -355,6 +355,12 @@ function Header({
         if (!replaceOpen) cmd.toggleGlobalSearchReplaceOpen(sessionId);
         window.setTimeout(() => replaceRef.current?.focus(), 0);
     };
+    // Show files-to-include / files-to-exclude inputs only when the user
+    // expands the "···" toggle — VSCode-style. We pre-open if there's
+    // already a value (so reopening the pane doesn't hide what they typed).
+    const [scopeOpen, setScopeOpen] = useState(
+        !!options.include || !!options.exclude,
+    );
 
     return (
         <div className="sp-head">
@@ -410,22 +416,26 @@ function Header({
                 </div>
             )}
 
-            <div className="sp-row scope">
-                <FilterField
-                    label="in"
-                    placeholder="src/**/*.ts"
-                    value={options.include}
-                    onChange={(v) => cmd.setGlobalSearchOption(sessionId, "include", v)}
-                />
-            </div>
-            <div className="sp-row scope">
-                <FilterField
-                    label="not"
-                    placeholder="**/*.test.ts"
-                    value={options.exclude}
-                    onChange={(v) => cmd.setGlobalSearchOption(sessionId, "exclude", v)}
-                />
-            </div>
+            {scopeOpen && (
+                <>
+                    <div className="sp-row scope">
+                        <FilterField
+                            label="in"
+                            placeholder="src/**/*.ts"
+                            value={options.include}
+                            onChange={(v) => cmd.setGlobalSearchOption(sessionId, "include", v)}
+                        />
+                    </div>
+                    <div className="sp-row scope">
+                        <FilterField
+                            label="not"
+                            placeholder="**/*.test.ts"
+                            value={options.exclude}
+                            onChange={(v) => cmd.setGlobalSearchOption(sessionId, "exclude", v)}
+                        />
+                    </div>
+                </>
+            )}
 
             <div className="sp-row actions">
                 <div className="sp-toggles">
@@ -446,6 +456,12 @@ function Header({
                         title="Regex"
                         active={options.isRegex}
                         onClick={() => cmd.setGlobalSearchOption(sessionId, "isRegex", !options.isRegex)}
+                    />
+                    <Toggle
+                        label="…"
+                        title={scopeOpen ? "Hide file scope" : "Files to include / exclude"}
+                        active={scopeOpen}
+                        onClick={() => setScopeOpen((v) => !v)}
                     />
                 </div>
                 <span className="sp-stats">

@@ -1240,10 +1240,22 @@ function searchViewFor(sessionId: string) {
 // pane to focus its find input. The event fires on every invocation — so
 // pressing Cmd/Ctrl+Shift+F while already in the search window still
 // pulls focus back to the input. No-op for non-project sessions.
-export function focusGlobalSearch(): void {
+//
+// If `seed` is non-empty, write it into the per-session global-search
+// query before the focus event fires — that's how we forward the active
+// editor's selection (gathered in the keymap) into the search box.
+export function focusGlobalSearch(seed?: string): void {
   const st = getState();
   const session = st.sessions[st.activeSessionId];
   if (!session || session.kind !== "project") return;
+  if (seed && seed.trim().length > 0) {
+    // Single-line trim — multi-line selections in the editor would make
+    // the search input wrap weirdly, and the project search matches per
+    // line anyway. First non-empty line is the most useful.
+    const oneLine = seed.split(/\r?\n/).find((l) => l.trim().length > 0)
+      ?? seed.trim();
+    setGlobalSearchQuery(session.id, oneLine);
+  }
   const ids = st.windowsBySession[session.id] ?? [];
   const target = ids.find((id) => st.windows[id]?.role === "search");
   if (target) selectWindowId(target);

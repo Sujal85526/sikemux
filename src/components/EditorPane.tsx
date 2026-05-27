@@ -22,6 +22,7 @@ import { useGitBaseline } from "../hooks/useGitBaseline";
 import { FileTree } from "./FileTree";
 import { IconClose, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
+import { EditorFindBar } from "./EditorFindBar";
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null, treeWidth: 210 };
 
@@ -56,6 +57,21 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
     const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
     const dirtyRef = useRef(dirty);
     dirtyRef.current = dirty;
+
+    // Find/Replace bar — Mod-F opens find-only, Mod-H opens with replace
+    // pre-expanded. We render our own React bar (see EditorFindBar) and
+    // drive CodeMirror's search commands directly; CM's built-in panel
+    // is never opened.
+    const [findOpen, setFindOpen] = useState(false);
+    const [findStartsExpanded, setFindStartsExpanded] = useState(false);
+    // Stable callback the CodeMirror keymap can call; React state lives
+    // in the closure, refs let it dispatch through without depending on
+    // the keymap (which is baked into the EditorState).
+    const openFindRef = useRef<(withReplace: boolean) => void>(() => {});
+    openFindRef.current = (withReplace: boolean) => {
+        setFindStartsExpanded(withReplace);
+        setFindOpen(true);
+    };
 
     const view = useStore((s) => s.editorViews[paneId] ?? DEFAULT_VIEW);
     const tabs = view.openTabs;
@@ -140,6 +156,24 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                                 return true;
                             },
                         },
+                        // Override CM's built-in Mod-F / Mod-H so they open our
+                        // React FindBar instead of @codemirror/search's panel.
+                        {
+                            key: "Mod-f",
+                            preventDefault: true,
+                            run: () => {
+                                openFindRef.current(false);
+                                return true;
+                            },
+                        },
+                        {
+                            key: "Mod-h",
+                            preventDefault: true,
+                            run: () => {
+                                openFindRef.current(true);
+                                return true;
+                            },
+                        },
                     ]),
                     EditorView.updateListener.of((u) => {
                         if (u.docChanged && currentRef.current) {
@@ -188,7 +222,14 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
     };
 
     const openPath = async (path: string) => {
-        if (tabs.includes(path)) {
+        // Read tabs fresh from the store on every call. The `open-file`
+        // subscriber below captures this function once (its useEffect only
+        // depends on cwd), so closing over the rendered `tabs` would make
+        // every cmd-P open after the first see an empty list and clobber
+        // the previously-opened tabs.
+        const liveTabs =
+            useStore.getState().editorViews[paneId]?.openTabs ?? [];
+        if (liveTabs.includes(path)) {
             switchTo(path);
             return;
         }
@@ -197,7 +238,7 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
             const st = makeState(path, content);
             states.current.set(path, st);
             cmd.setEditorView(paneId, {
-                openTabs: [...tabs, path],
+                openTabs: [...liveTabs, path],
                 activePath: path,
             });
             // CM transition happens after the store update lands; switchTo also
@@ -371,7 +412,14 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                         );
                     })}
                 </div>
-                <div className="ed-host" ref={hostRef} />
+                <div className="ed-host" ref={hostRef}>
+                    <EditorFindBar
+                        getView={() => viewRef.current}
+                        open={findOpen}
+                        replaceOpenOnMount={findStartsExpanded}
+                        onClose={() => setFindOpen(false)}
+                    />
+                </div>
                 {tabs.length === 0 && (
                     <div className="ed-empty">
                         <IconFile size={22} />
