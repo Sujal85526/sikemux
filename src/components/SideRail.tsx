@@ -74,7 +74,6 @@ export function SideRail() {
             const overflow = agents.length - visible.length;
             return (
                 <button className="proj-row collapsed" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
-                    <span className="proj-chev">▸</span>
                     <span className="proj-folder">
                         <IconFolder size={12} />
                     </span>
@@ -162,7 +161,6 @@ export function SideRail() {
         return (
             <div className="proj-tree active">
                 <button className="proj-row expanded" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
-                    <span className="proj-chev">▾</span>
                     <span className="proj-folder">
                         <IconFolder size={12} />
                     </span>
@@ -193,6 +191,7 @@ export function SideRail() {
                                     e.stopPropagation();
                                     onSubClick(c.role);
                                 }}>
+                                <span className="proj-child-tick"/>
                                 <span className="proj-child-ic">{node}</span>
                                 <span className="proj-child-label">{c.label}</span>
                                 {visibleIcons.length > 0 && (

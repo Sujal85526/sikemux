@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
 import { auraExtensions, languageFor } from "../editor/codemirror";
@@ -27,6 +28,18 @@ import { EditorFindBar } from "./EditorFindBar";
 const DEFAULT_VIEW = { openTabs: [], activePath: null, treeWidth: 210 };
 
 const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+
+// Pull the active editor selection as a single-line string. Multi-line
+// selections collapse to their first non-empty line so the find input
+// doesn't get filled with a giant blob. Returns null if nothing's
+// selected (so the bar leaves whatever the user previously typed in).
+function readSelection(view: EditorView): string | null {
+    const sel = view.state.selection.main;
+    if (sel.empty) return null;
+    const raw = view.state.sliceDoc(sel.from, sel.to);
+    const trimmed = raw.split(/\r?\n/).find((l) => l.trim().length > 0)?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : null;
+}
 
 function scrollToLine(view: EditorView, line: number, character: number) {
     const lineCount = view.state.doc.lines;
@@ -62,15 +75,28 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
     // pre-expanded. We render our own React bar (see EditorFindBar) and
     // drive CodeMirror's search commands directly; CM's built-in panel
     // is never opened.
-    const [findOpen, setFindOpen] = useState(false);
-    const [findStartsExpanded, setFindStartsExpanded] = useState(false);
-    // Stable callback the CodeMirror keymap can call; React state lives
-    // in the closure, refs let it dispatch through without depending on
-    // the keymap (which is baked into the EditorState).
-    const openFindRef = useRef<(withReplace: boolean) => void>(() => {});
-    openFindRef.current = (withReplace: boolean) => {
-        setFindStartsExpanded(withReplace);
-        setFindOpen(true);
+    //
+    // `findSignal` bumps on every Mod-F/Mod-H so the bar re-focuses its
+    // input (and re-seeds from selection) even when it's already open —
+    // mirrors VSCode where Cmd-F on a focused editor always pulls focus
+    // back to the find input and replaces its content with the current
+    // selection if there is one.
+    const [findState, setFindState] = useState<{
+        open: boolean;
+        replaceOpen: boolean;
+        seed: string | null;
+        signal: number;
+    }>({ open: false, replaceOpen: false, seed: null, signal: 0 });
+    const openFindRef = useRef<
+        (withReplace: boolean, seed: string | null) => void
+    >(() => {});
+    openFindRef.current = (withReplace, seed) => {
+        setFindState((prev) => ({
+            open: true,
+            replaceOpen: withReplace || prev.replaceOpen,
+            seed,
+            signal: prev.signal + 1,
+        }));
     };
 
     const view = useStore((s) => s.editorViews[paneId] ?? DEFAULT_VIEW);
@@ -138,43 +164,59 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                     lspNav(),
                     lspHoverLink(),
                     lspPeek(),
+                    // Tab indents instead of moving focus out of the editor —
+                    // CodeMirror 6 leaves Tab unbound by default for a11y
+                    // (Tab = focus next element); for a code editor we want
+                    // the "insert indent" behavior.
+                    // Cmd-Alt-Up/Down duplicates the current line (or each
+                    // line of a multi-line selection) — VSCode-style.
                     keymap.of([
-                        { key: "Mod-s", preventDefault: true, run: () => saveRef.current() },
-                        {
-                            key: "Mod-[",
-                            preventDefault: true,
-                            run: () => {
-                                navBackRef.current();
-                                return true;
-                            },
-                        },
-                        {
-                            key: "Mod-]",
-                            preventDefault: true,
-                            run: () => {
-                                navFwdRef.current();
-                                return true;
-                            },
-                        },
-                        // Override CM's built-in Mod-F / Mod-H so they open our
-                        // React FindBar instead of @codemirror/search's panel.
-                        {
-                            key: "Mod-f",
-                            preventDefault: true,
-                            run: () => {
-                                openFindRef.current(false);
-                                return true;
-                            },
-                        },
-                        {
-                            key: "Mod-h",
-                            preventDefault: true,
-                            run: () => {
-                                openFindRef.current(true);
-                                return true;
-                            },
-                        },
+                        indentWithTab,
+                        { key: "Mod-Alt-ArrowUp", run: copyLineUp, preventDefault: true },
+                        { key: "Mod-Alt-ArrowDown", run: copyLineDown, preventDefault: true },
                     ]),
+                    // Prec.highest so our Mod-F / Mod-H beat the searchKeymap
+                    // that ships with the search() extension — otherwise CM's
+                    // built-in openSearchPanel wins the keypress and the panel
+                    // mounts (then sits invisible under .cm-panels { display:
+                    // none }) while our React bar never opens.
+                    Prec.highest(
+                        keymap.of([
+                            { key: "Mod-s", preventDefault: true, run: () => saveRef.current() },
+                            {
+                                key: "Mod-[",
+                                preventDefault: true,
+                                run: () => {
+                                    navBackRef.current();
+                                    return true;
+                                },
+                            },
+                            {
+                                key: "Mod-]",
+                                preventDefault: true,
+                                run: () => {
+                                    navFwdRef.current();
+                                    return true;
+                                },
+                            },
+                            {
+                                key: "Mod-f",
+                                preventDefault: true,
+                                run: (view) => {
+                                    openFindRef.current(false, readSelection(view));
+                                    return true;
+                                },
+                            },
+                            {
+                                key: "Mod-h",
+                                preventDefault: true,
+                                run: (view) => {
+                                    openFindRef.current(true, readSelection(view));
+                                    return true;
+                                },
+                            },
+                        ]),
+                    ),
                     EditorView.updateListener.of((u) => {
                         if (u.docChanged && currentRef.current) {
                             const p = currentRef.current;
@@ -415,9 +457,13 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                 <div className="ed-host" ref={hostRef}>
                     <EditorFindBar
                         getView={() => viewRef.current}
-                        open={findOpen}
-                        replaceOpenOnMount={findStartsExpanded}
-                        onClose={() => setFindOpen(false)}
+                        open={findState.open}
+                        replaceOpenOnMount={findState.replaceOpen}
+                        seed={findState.seed}
+                        signal={findState.signal}
+                        onClose={() =>
+                            setFindState((prev) => ({ ...prev, open: false }))
+                        }
                     />
                 </div>
                 {tabs.length === 0 && (

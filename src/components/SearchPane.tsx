@@ -72,10 +72,21 @@ type Status = "idle" | "searching" | "ok" | "error";
 // Top-level pane
 // =====================================================================
 
-export function SearchPane({ cwd, active }: { cwd: string; active: boolean }) {
-    const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const sessionId = session?.id ?? "";
-
+export function SearchPane({
+    sessionId,
+    cwd,
+    active,
+}: {
+    sessionId: string;
+    cwd: string;
+    active: boolean;
+}) {
+    // Use the per-pane session id (passed from Workspace) instead of the
+    // global activeSessionId. Workspace keeps inactive sessions mounted
+    // for state preservation, so each project's SearchPane stays alive —
+    // if they all read the GLOBAL active session, they'd share the same
+    // `view` and fire identical searches in parallel against their own
+    // cwds, cancelling each other on the Rust-side GENERATION counter.
     const entry = useStore((s) => s.globalSearchBySession[sessionId]);
     const view = entry ?? EMPTY_VIEW;
 
@@ -120,8 +131,14 @@ export function SearchPane({ cwd, active }: { cwd: string; active: boolean }) {
 
     // Debounced streaming search. Each invocation bumps requestIdRef; late
     // chunks/responses from prior runs are filtered out by id check.
+    //
+    // Gated on `active` so the search only runs for the visible pane —
+    // Workspace keeps inactive sessions mounted, so without this gate
+    // every project's SearchPane would fire its own project_search in
+    // parallel, bumping the Rust-side GENERATION and cancelling each
+    // other (visible as `0/0 partial` in the active pane).
     useEffect(() => {
-        if (!cwd) return;
+        if (!cwd || !active) return;
         if (!view.query.trim()) {
             setFiles([]);
             setSummary(null);
@@ -160,7 +177,7 @@ export function SearchPane({ cwd, active }: { cwd: string; active: boolean }) {
         return () => {
             window.clearTimeout(handle);
         };
-    }, [cwd, view.query, view.options]);
+    }, [cwd, active, view.query, view.options]);
 
     // Auto-select the first match whenever the file list refreshes and the
     // previous selection is no longer present.
@@ -391,6 +408,26 @@ function Header({
                     spellCheck={false}
                 />
                 {status === "searching" && <span className="sp-spinner" aria-hidden />}
+                <div className="sp-row-toggles">
+                    <Toggle
+                        label="Aa"
+                        title="Match case"
+                        active={options.caseSensitive}
+                        onClick={() => cmd.setGlobalSearchOption(sessionId, "caseSensitive", !options.caseSensitive)}
+                    />
+                    <Toggle
+                        label="ab"
+                        title="Whole word"
+                        active={options.wholeWord}
+                        onClick={() => cmd.setGlobalSearchOption(sessionId, "wholeWord", !options.wholeWord)}
+                    />
+                    <Toggle
+                        label=".*"
+                        title="Regex"
+                        active={options.isRegex}
+                        onClick={() => cmd.setGlobalSearchOption(sessionId, "isRegex", !options.isRegex)}
+                    />
+                </div>
             </div>
 
             {replaceOpen && (
@@ -439,24 +476,6 @@ function Header({
 
             <div className="sp-row actions">
                 <div className="sp-toggles">
-                    <Toggle
-                        label="Aa"
-                        title="Match case"
-                        active={options.caseSensitive}
-                        onClick={() => cmd.setGlobalSearchOption(sessionId, "caseSensitive", !options.caseSensitive)}
-                    />
-                    <Toggle
-                        label="ab"
-                        title="Whole word"
-                        active={options.wholeWord}
-                        onClick={() => cmd.setGlobalSearchOption(sessionId, "wholeWord", !options.wholeWord)}
-                    />
-                    <Toggle
-                        label=".*"
-                        title="Regex"
-                        active={options.isRegex}
-                        onClick={() => cmd.setGlobalSearchOption(sessionId, "isRegex", !options.isRegex)}
-                    />
                     <Toggle
                         label="…"
                         title={scopeOpen ? "Hide file scope" : "Files to include / exclude"}

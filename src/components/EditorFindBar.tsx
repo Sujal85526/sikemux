@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import {
   SearchQuery,
   findNext,
@@ -9,6 +9,7 @@ import {
   replaceNext,
   setSearchQuery,
 } from "@codemirror/search";
+import { IconSearch } from "./Icons";
 
 // In-editor find/replace overlay. Drives CodeMirror's search commands
 // directly (no @codemirror/search panel — see EditorPane). We own the DOM
@@ -24,16 +25,23 @@ interface Props {
   open: boolean;
   /** Open with the replace row pre-expanded. */
   replaceOpenOnMount: boolean;
+  /** Editor selection at the moment the bar was opened; replaces the
+   *  query if present. Null means "leave whatever's in the input". */
+  seed: string | null;
+  /** Bumped by the host on every Mod-F press so the bar can re-focus and
+   *  re-seed even when it's already open. */
+  signal: number;
   onClose: () => void;
 }
 
-export interface EditorFindBarHandle {
-  focus(): void;
-  /** Seed the query from the host (e.g. current editor selection). */
-  setSeed(text: string): void;
-}
-
-export function EditorFindBar({ getView, open, replaceOpenOnMount, onClose }: Props) {
+export function EditorFindBar({
+  getView,
+  open,
+  replaceOpenOnMount,
+  seed,
+  signal,
+  onClose,
+}: Props) {
   const [query, setQuery] = useState("");
   const [replace, setReplace] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -88,17 +96,35 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, onClose }: Pr
     return () => window.cancelAnimationFrame(raf);
   }, [getView, query, replaceOpen]);
 
-  // Focus the find input when the bar opens.
+  // Re-focus + re-seed on every Mod-F press. Depends on `signal` (which
+  // bumps each press) so this fires even when the bar is already open —
+  // matches VSCode: clicking back into the editor and hitting Cmd-F
+  // pulls focus back to the find input.
   useEffect(() => {
     if (!open) return;
-    const t = window.setTimeout(() => findInputRef.current?.focus(), 0);
+    if (seed && seed.length > 0) setQuery(seed);
+    const t = window.setTimeout(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    }, 0);
     return () => window.clearTimeout(t);
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, signal]);
 
-  const run = (fn: (view: EditorView) => boolean) => {
+  const run = (fn: (view: EditorView) => boolean, center = true) => {
     const view = getView();
     if (!view) return;
     fn(view);
+    if (center) {
+      // CodeMirror's findNext/findPrevious only ensure the match is
+      // somewhere in the viewport — often the bottom edge after a long
+      // jump. Re-scroll to center on the new selection so the user
+      // doesn't have to track where the highlight landed.
+      const sel = view.state.selection.main;
+      view.dispatch({
+        effects: EditorView.scrollIntoView(sel.from, { y: "center" }),
+      });
+    }
     // After navigating, refresh counter.
     const q = getSearchQuery(view.state);
     if (q.search) setCounts(computeCounts(view, q));
@@ -155,16 +181,19 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, onClose }: Pr
 
       <div className="ed-findbar-rows">
         <div className="ed-findbar-row">
-          <div className="ed-findbar-field">
-            <input
-              ref={findInputRef}
-              className="ed-findbar-input"
-              placeholder="Find"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={onFindKeyDown}
-              spellCheck={false}
-            />
+          <span className="ed-findbar-av find" aria-hidden>
+            <IconSearch size={11} />
+          </span>
+          <input
+            ref={findInputRef}
+            className="ed-findbar-input"
+            placeholder="Find"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onFindKeyDown}
+            spellCheck={false}
+          />
+          <div className="ed-findbar-toggles">
             <button
               type="button"
               className={`ed-findbar-toggle${caseSensitive ? " on" : ""}`}
@@ -222,17 +251,18 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, onClose }: Pr
 
         {replaceOpen && (
           <div className="ed-findbar-row">
-            <div className="ed-findbar-field">
-              <input
-                ref={replaceInputRef}
-                className="ed-findbar-input"
-                placeholder="Replace"
-                value={replace}
-                onChange={(e) => setReplace(e.target.value)}
-                onKeyDown={onReplaceKeyDown}
-                spellCheck={false}
-              />
-            </div>
+            <span className="ed-findbar-av repl" aria-hidden>
+              ↻
+            </span>
+            <input
+              ref={replaceInputRef}
+              className="ed-findbar-input"
+              placeholder="Replace"
+              value={replace}
+              onChange={(e) => setReplace(e.target.value)}
+              onKeyDown={onReplaceKeyDown}
+              spellCheck={false}
+            />
             <span className="ed-findbar-status" aria-hidden />
             <button
               type="button"

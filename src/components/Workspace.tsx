@@ -267,7 +267,7 @@ const WindowLayer = memo(function WindowLayer({
                             ) : p.kind === "rundeck" ? (
                                 <RundeckPane paneId={p.id} active={visible && isActive && shown} />
                             ) : p.kind === "search" ? (
-                                <SearchPane cwd={p.cwd || session.cwd} active={visible && isActive && shown} />
+                                <SearchPane sessionId={session.id} cwd={p.cwd || session.cwd} active={visible && isActive && shown} />
                             ) : (
                                 <TerminalPane
                                     cwd={p.cwd || session.cwd || undefined}

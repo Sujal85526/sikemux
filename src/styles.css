@@ -580,17 +580,17 @@ button {
     height: 30px;
     padding: 0 8px;
     border-radius: 0;
-    color: var(--ink-dim);
+    color: var(--ink);
     position: relative;
     transition:
         background 0.12s,
         color 0.12s;
 }
 .sess-row:hover {
-    color: var(--ink);
+    color: var(--live);
 }
 .sess-row.active {
-    color: var(--ink);
+    color: var(--live);
 }
 /* Project rows: the folder icon doubles as the expand/collapse toggle.
    Hover-swap: folder fades out, chevron fades in. Rotates 90° when the
@@ -705,7 +705,7 @@ button {
     color: inherit;
 }
 .win-row.active .win-icon {
-    color: var(--acc);
+    color: var(--live);
 }
 .win-name {
     flex: 1;
@@ -738,33 +738,23 @@ button {
     align-items: center;
     gap: 7px;
     width: 100%;
-    height: 24px;
-    padding: 0 0px 0 8px;
+    padding: 3px 0px 3px 12px;
     background: transparent;
     border: none;
     border-left: 2px solid transparent;
     cursor: pointer;
-    color: var(--ink-dim);
+    color: var(--ink);
     text-align: left;
     transition: background 0.12s, color 0.12s;
 }
 .proj-row:hover { color: var(--ink); }
 .proj-row.expanded {
+    padding: 6px 12px;
     border-left-color: var(--acc);
     background: linear-gradient(90deg, var(--acc-soft), transparent 75%);
-    color: var(--ink);
+    color: var(--acc);
 }
 .proj-row.expanded .proj-name { font-weight: 600; }
-
-.proj-chev {
-    display: inline-flex;
-    width: 10px;
-    color: var(--ink-faint);
-    font-size: 10px;
-    line-height: 1;
-    flex-shrink: 0;
-}
-.proj-row.expanded .proj-chev { color: var(--acc); }
 
 .proj-folder {
     display: inline-flex;
@@ -812,15 +802,22 @@ button {
     display: flex;
     flex-direction: column;
     padding: 4px 6px 2px 0;
-    margin-left: 22px; /* aligns child icons under the folder glyph */
+    margin-left: 20px; /* aligns child icons under the folder glyph */
     border-left: 1px solid color-mix(in srgb, var(--acc) 20%, transparent);
 }
+
+.proj-child-tick {
+  height: 1px;
+  width: 6px;
+  background-color: color-mix(in srgb, var(--acc) 20%, transparent);
+}
+
 .proj-child {
     display: flex;
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 2px 8px;
+    padding: 2px 8px 2px 0px;
     background: transparent;
     border: none;
     cursor: pointer;
@@ -832,6 +829,10 @@ button {
 .proj-child.active {
     color: var(--acc);
 }
+.proj-child.active .proj-child-ic {
+  color: var(--live);
+}
+
 .proj-child-ic {
     display: inline-flex;
     align-items: center;
@@ -866,7 +867,6 @@ button {
 .proj-child-icons {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
     flex-shrink: 0;
 }
 .proj-child-icons-more {
@@ -5542,6 +5542,15 @@ button {
     color: var(--ink);
 }
 
+/* Inline toggle group living at the right end of the find input row —
+   same chrome as the editor find bar so the two read consistently. */
+.sp-row-toggles {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    margin-left: 4px;
+}
+
 /* Toggles read as inline text — colored when on, faint when off. The
    underline on the active state is the only visual chrome. */
 .sp-toggles {
@@ -5995,6 +6004,11 @@ button {
     width: 460px;
     max-width: calc(100% - 16px);
     padding: 4px 6px 4px 4px;
+    /* Same color-mix formula as the editor pane, so the find bar's bg
+       and the pane's bg stack with --window-opacity for natural depth —
+       at lower opacity the panel reads as a third translucent layer on
+       top of (pane on top of body), each compounding instead of all
+       collapsing to one tinted wash. */
     background: color-mix(
         in srgb,
         var(--bg-raised) calc(var(--window-opacity, 1) * 100%),
@@ -6006,9 +6020,6 @@ button {
     font-family: var(--mono);
     font-size: 12px;
     animation: fade 0.12s ease;
-}
-html.is-transparent .ed-findbar {
-    background: transparent;
 }
 
 .ed-findbar-chev {
@@ -6042,39 +6053,47 @@ html.is-transparent .ed-findbar {
 }
 .ed-findbar-row {
     display: flex;
-    align-items: stretch;
-    gap: 4px;
+    align-items: center;
+    gap: 6px;
     min-width: 0;
+    padding: 2px 4px 2px 0;
+}
+.ed-findbar-row + .ed-findbar-row {
+    border-top: 1px solid var(--line-soft);
 }
 
-/* "Field" wraps the input + inline toggles so they read as one box. */
-.ed-findbar-field {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: stretch;
-    background: color-mix(
-        in srgb,
-        var(--bg-dim) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
-    border: 1px solid var(--line);
-    transition: border-color 0.12s;
-}
-html.is-transparent .ed-findbar-field {
+/* Colored glyph avatar inline with the input — yellow for find, green
+   for replace, matching the global SearchPane's .sp-av style. No box,
+   no padding chrome — just the colored icon. */
+.ed-findbar-av {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    display: grid;
+    place-items: center;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
     background: transparent;
+    border: 0;
 }
-.ed-findbar-field:focus-within {
-    border-color: var(--acc-line);
+.ed-findbar-av.find {
+    color: var(--acc);
+}
+.ed-findbar-av.repl {
+    color: var(--live);
 }
 
+/* Bare input — no border, no background. Reads as plain text on the
+   panel surface. */
 .ed-findbar-input {
     flex: 1 1 auto;
     min-width: 0;
-    height: 24px;
+    height: 22px;
     background: transparent;
     border: 0;
-    padding: 0 9px;
+    padding: 0;
     color: var(--ink);
     font-family: var(--mono);
     font-size: 12px;
@@ -6084,18 +6103,26 @@ html.is-transparent .ed-findbar-field {
     color: var(--ink-faint);
 }
 
+/* Inline toggle group at the right end of the input row — underline-on-
+   active chrome only, matching the global search toggles. */
+.ed-findbar-toggles {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    margin-left: 4px;
+}
 .ed-findbar-toggle {
     flex: 0 0 auto;
-    width: 24px;
-    height: 24px;
     margin: 0;
-    padding: 0;
+    padding: 2px 0;
     background: transparent;
     border: 0;
+    border-bottom: 1px solid transparent;
     color: var(--ink-faint);
     font-family: var(--mono);
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
+    letter-spacing: 0.04em;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -6103,14 +6130,14 @@ html.is-transparent .ed-findbar-field {
     user-select: none;
     transition:
         color 0.12s,
-        background 0.12s;
+        border-color 0.12s;
 }
 .ed-findbar-toggle:hover {
     color: var(--ink);
 }
 .ed-findbar-toggle.on {
     color: var(--acc);
-    background: var(--acc-soft);
+    border-bottom-color: var(--acc);
 }
 
 .ed-findbar-status {
@@ -6125,43 +6152,37 @@ html.is-transparent .ed-findbar-field {
 
 .ed-findbar-btn {
     flex: 0 0 auto;
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     padding: 0;
     background: transparent;
-    border: 1px solid var(--line);
-    color: var(--ink-faint);
+    border: 0;
+    color: var(--ink-dim);
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition:
-        color 0.12s,
-        border-color 0.12s,
-        background 0.12s;
+    transition: color 0.12s;
 }
 .ed-findbar-btn:hover:not(:disabled) {
     color: var(--ink);
-    border-color: var(--ink-faint);
 }
 .ed-findbar-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
 }
 .ed-findbar-btn.close {
-    font-size: 16px;
+    font-size: 17px;
 }
 .ed-findbar-btn.close:hover {
     color: var(--danger);
-    border-color: var(--danger);
-    background: rgba(255, 103, 103, 0.08);
 }
 .ed-findbar-btn-spacer {
     flex: 0 0 auto;
-    width: 26px;
+    width: 22px;
 }
 
 /* Match-highlight decorations the editor sets on hits — give them the
