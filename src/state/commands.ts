@@ -1263,6 +1263,8 @@ export function setBillingExpandedMonth(
 
 const DEFAULT_SEARCH_VIEW = {
   query: "",
+  replace: "",
+  replaceOpen: false,
   options: {
     caseSensitive: false,
     wholeWord: false,
@@ -1271,6 +1273,7 @@ const DEFAULT_SEARCH_VIEW = {
     exclude: "",
   },
   collapsed: {} as Record<string, boolean>,
+  selected: null as { path: string; matchIndex: number } | null,
 };
 
 function searchViewFor(sessionId: string) {
@@ -1278,9 +1281,10 @@ function searchViewFor(sessionId: string) {
   return st.globalSearchBySession[sessionId] ?? DEFAULT_SEARCH_VIEW;
 }
 
-// Navigate the active project session to its search window. The pane is
-// always present (created with the project, or migrated in on hydrate).
-// No-op for non-project sessions, since there's nothing to search.
+// Navigate the active project session to its search window AND signal the
+// pane to focus its find input. The event fires on every invocation — so
+// pressing Cmd/Ctrl+Shift+F while already in the search window still
+// pulls focus back to the input. No-op for non-project sessions.
 export function focusGlobalSearch(): void {
   const st = getState();
   const session = st.sessions[st.activeSessionId];
@@ -1288,6 +1292,7 @@ export function focusGlobalSearch(): void {
   const ids = st.windowsBySession[session.id] ?? [];
   const target = ids.find((id) => st.windows[id]?.role === "search");
   if (target) selectWindowId(target);
+  emit({ type: "search-focus", sessionId: session.id });
 }
 
 export function setGlobalSearchQuery(sessionId: string, query: string): void {
@@ -1357,6 +1362,42 @@ export function collapseAllGlobalSearchFiles(
     globalSearchBySession: {
       ...st.globalSearchBySession,
       [sessionId]: { ...cur, collapsed: next },
+    },
+  }));
+}
+
+export function setGlobalSearchReplace(
+  sessionId: string,
+  replace: string,
+): void {
+  const cur = searchViewFor(sessionId);
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: { ...cur, replace },
+    },
+  }));
+}
+
+export function setGlobalSearchSelected(
+  sessionId: string,
+  selected: { path: string; matchIndex: number } | null,
+): void {
+  const cur = searchViewFor(sessionId);
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: { ...cur, selected },
+    },
+  }));
+}
+
+export function toggleGlobalSearchReplaceOpen(sessionId: string): void {
+  const cur = searchViewFor(sessionId);
+  setState((st) => ({
+    globalSearchBySession: {
+      ...st.globalSearchBySession,
+      [sessionId]: { ...cur, replaceOpen: !cur.replaceOpen },
     },
   }));
 }

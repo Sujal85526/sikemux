@@ -137,6 +137,7 @@ pub fn run() {
             settings::scan_project_roots,
             settings::expand_path,
             search::project_search,
+            search::project_search_replace,
             ssh::ssh_hosts,
             aws::auth::aws_profiles,
             aws::auth::aws_caller_identity,

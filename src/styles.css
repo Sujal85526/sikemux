@@ -4973,301 +4973,527 @@ button {
  * the theme bus — see SearchPane.tsx.
  */
 
+/* Project-wide search pane (Cmd+Shift+F) — left column holds a compact
+ * glow palette + threaded match list; right column is a live syntax-
+ * highlighted preview tracking the selected match.
+ *
+ * Surface backgrounds use rgba washes (not solid theme tokens) so the
+ * window's --window-opacity carries through cleanly: the parent .pane
+ * is already color-mixed against --window-opacity, and everything
+ * inside it composes on top of that wash. Solid tokens here would
+ * paint over the transparency and look ugly at <100% opacity. */
+
 .search-pane {
     display: flex;
     flex-direction: column;
     height: 100%;
     background: transparent;
     color: var(--ink-dim);
+    min-height: 0;
 }
 
-/* ----- header ---------------------------------------------- */
-.search-head {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--line);
+.sp-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: grid;
+    /* narrower left col, wider preview */
+    grid-template-columns: minmax(300px, 40%) 1fr;
 }
 
-.search-title-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-height: 18px;
-}
-.search-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-}
-.search-title-icon {
-    color: var(--ink-faint);
-}
-.search-summary {
-    font-size: 11px;
-    color: var(--ink-faint);
-    font-family: var(--mono);
-}
-.search-summary strong {
-    color: var(--ink);
-    font-weight: 700;
-}
-.search-truncated {
-    color: var(--danger);
-}
-.search-fold-all {
-    margin-left: auto;
+/* ----- left column: bar + threads -------------------------- */
+.sp-left {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    min-height: 0;
+    border-right: 1px solid var(--line);
     background: transparent;
-    border: 1px solid var(--line);
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 3px 8px;
-    cursor: pointer;
-    transition:
-        color 0.12s,
-        border-color 0.12s;
-}
-.search-fold-all:hover {
-    color: var(--ink);
-    border-color: var(--ink-faint);
 }
 
-.search-input-row {
-    display: flex;
-    align-items: stretch;
+.sp-head {
+    padding: 0;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
 }
-.search-input-wrap {
-    flex: 1;
+
+/* All rows now flex so the chevron + avatar + input flow naturally and
+   the action row's pills/button can sit on the same baseline. */
+.sp-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 0 10px;
-    border: 1px solid var(--line);
-    background: rgba(0, 0, 0, 0.28);
-    transition:
-        border-color 0.12s,
-        background 0.12s;
-}
-.search-input-wrap:focus-within {
-    border-color: var(--acc-line);
-    background: rgba(0, 0, 0, 0.42);
-}
-.search-input-icon {
-    color: var(--ink-faint);
-    flex: 0 0 auto;
-}
-.search-input {
-    flex: 1;
+    padding: 5px 10px;
     min-width: 0;
-    background: none;
+}
+.sp-row.find {
+    border-bottom: 1px solid var(--line-soft);
+}
+.sp-row.repl {
+    border-bottom: 1px solid var(--line-soft);
+}
+.sp-row.scope {
+    padding: 4px 10px;
+}
+.sp-row.scope + .sp-row.scope {
+    padding-top: 0;
+}
+.sp-row.actions {
+    padding: 6px 10px;
+    border-top: 1px solid var(--line-soft);
+}
+
+/* VSCode-style chevron toggle for the replace accordion. Default state
+   points right; open state rotates to point down. */
+.sp-chev {
+    flex: 0 0 14px;
+    width: 14px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 0;
+    color: var(--ink-faint);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.12s, transform 0.15s;
+}
+.sp-chev:hover {
+    color: var(--ink);
+}
+.sp-chev.open {
+    transform: rotate(90deg);
+    color: var(--acc);
+}
+/* Empty 14px column under the chevron so the replace row's avatar
+   lines up with the find row's avatar instead of jumping leftward. */
+.sp-chev-spacer {
+    flex: 0 0 14px;
+}
+
+/* Glyph-only — no surrounding pill. The colored icon sits inline with the
+   input so the row reads as a single thought. */
+.sp-av {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-faint);
+    background: transparent;
+    border: 0;
+}
+.sp-av.find { color: var(--acc); }
+.sp-av.repl { color: var(--live); }
+
+.sp-input {
+    background: transparent;
     border: none;
     outline: none;
     color: var(--ink);
-    font: inherit;
     font-family: var(--mono);
-    font-size: 13px;
-    padding: 8px 0;
+    font-size: 12px;
+    padding: 3px 0;
+    min-width: 0;
+    width: 100%;
 }
-.search-input::placeholder {
+.sp-input::placeholder {
     color: var(--ink-faint);
 }
-.search-input-wrap:focus-within .search-input {
-    color: var(--acc);
+.sp-row.repl .sp-input {
+    color: var(--live);
 }
 
-.search-spinner {
-    width: 12px;
-    height: 12px;
+.sp-spinner {
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     border: 1.5px solid var(--line);
     border-top-color: var(--acc);
-    animation: search-spin 0.7s linear infinite;
-    flex: 0 0 auto;
+    animation: sp-spin 0.7s linear infinite;
+    justify-self: end;
 }
-@keyframes search-spin {
+@keyframes sp-spin {
     to {
         transform: rotate(360deg);
     }
 }
 
-.search-toggle {
+/* No bordered cell — just a faint micro-cap label and a naked input. */
+.sp-filter {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+}
+.sp-filter-label {
+    padding: 0 8px 0 0;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    flex: 0 0 28px;
+    text-align: left;
+}
+.sp-filter-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    color: var(--ink-2);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 2px 0;
+}
+.sp-filter-input::placeholder {
+    color: var(--ink-faint);
+}
+.sp-filter:focus-within .sp-filter-input {
+    color: var(--ink);
+}
+
+/* Toggles read as inline text — colored when on, faint when off. The
+   underline on the active state is the only visual chrome. */
+.sp-toggles {
+    display: flex;
+    gap: 8px;
+}
+.sp-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 26px;
-    height: 22px;
-    padding: 0 6px;
+    padding: 2px 0;
     background: transparent;
-    border: 1px solid var(--line);
+    border: 0;
     color: var(--ink-faint);
     font-family: var(--mono);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.04em;
     cursor: pointer;
-    transition:
-        color 0.12s,
-        background 0.12s,
-        border-color 0.12s;
+    transition: color 0.12s, border-color 0.12s;
+    border-bottom: 1px solid transparent;
 }
-.search-toggle:hover {
+.sp-toggle:hover {
     color: var(--ink);
-    border-color: var(--ink-faint);
 }
-.search-toggle.on {
+.sp-toggle.on {
     color: var(--acc);
-    background: var(--acc-soft);
-    border-color: var(--acc-line);
+    border-bottom-color: var(--acc);
 }
 
-/* include / exclude filters */
-.search-filters {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-}
-.search-filter {
-    display: flex;
-    align-items: center;
-    border: 1px solid var(--line);
-    background: rgba(0, 0, 0, 0.18);
-    transition:
-        border-color 0.12s,
-        background 0.12s;
-}
-.search-filter:focus-within {
-    border-color: var(--acc-line);
-    background: rgba(0, 0, 0, 0.32);
-}
-.search-filter-label {
-    padding: 0 10px;
-    border-right: 1px solid var(--line);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    align-self: stretch;
-    display: flex;
-    align-items: center;
-}
-.search-filter-input {
+.sp-stats {
     flex: 1;
-    min-width: 0;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--ink);
     font-family: var(--mono);
-    font-size: 12px;
-    padding: 6px 10px;
+    font-size: 10px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    text-align: right;
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 4px;
 }
-.search-filter-input::placeholder {
+.sp-stats strong {
+    color: var(--ink-dim);
+    font-weight: 700;
+}
+.sp-stats-sep {
     color: var(--ink-faint);
 }
-
-/* ----- body ------------------------------------------------ */
-.search-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 4px 0 12px;
+.sp-stats-time {
+    color: var(--ink-faint);
+    margin-left: 4px;
 }
-.search-empty,
-.search-loading,
-.search-err {
-    padding: 36px 18px;
+.sp-stats-dim {
+    color: var(--ink-faint);
+}
+.sp-truncated {
+    color: var(--warn);
+    margin-left: 4px;
+}
+
+/* Replace action reads as an underlined accent word, not a button slab. */
+.sp-replace-btn {
+    background: transparent;
+    color: var(--acc);
+    border: 0;
+    padding: 2px 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: lowercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    border-bottom: 1px solid var(--acc-line);
+    transition: color 0.12s, border-color 0.12s, opacity 0.12s;
+}
+.sp-replace-btn:hover {
+    color: var(--ink);
+    border-bottom-color: var(--ink);
+}
+.sp-replace-btn:disabled {
+    color: var(--ink-ghost);
+    border-bottom-color: transparent;
+    cursor: not-allowed;
+}
+
+/* threaded list area */
+.sp-threads-wrap {
+    overflow: auto;
+    display: grid;
+    place-items: center;
+    padding: 24px 14px;
+}
+.sp-threads {
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 8px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+.sp-empty,
+.sp-loading,
+.sp-err {
     color: var(--ink-faint);
     font-size: 12px;
     text-align: center;
     font-family: var(--mono);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
 }
-.search-err {
+.sp-empty-sub {
+    color: var(--ink-faint);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    opacity: 0.7;
+}
+.sp-err {
     color: var(--danger);
 }
 
-/* file group */
-.search-file {
-    border-bottom: 1px solid var(--line-soft);
+.sp-thread {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
 }
-.search-file-head {
-    width: 100%;
+.sp-thread-who {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 7px 14px;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    min-width: 0;
+    padding: 2px 4px;
+    width: 100%;
     background: transparent;
-    border: none;
+    border: 0;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.08s, color 0.08s;
+}
+.sp-thread-who:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+.sp-thread-chev {
+    flex: 0 0 10px;
+    width: 10px;
+    color: var(--ink-faint);
+    font-size: 9px;
+    line-height: 1;
+    transition: transform 0.15s, color 0.12s;
+    display: inline-block;
+}
+.sp-thread-chev.open {
+    transform: rotate(90deg);
     color: var(--ink-dim);
+}
+.sp-thread-who:hover .sp-thread-chev {
+    color: var(--ink);
+}
+.sp-thread-name {
+    color: var(--ink);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.sp-thread-dir {
+    color: var(--ink-faint);
+    font-size: 9.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+.sp-thread-count {
+    color: var(--ink-faint);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    flex: 0 0 auto;
+}
+/* No bordered container around the matches — they sit as plain indented
+   rows under their file header. Hover-only feedback. */
+.sp-thread-msgs {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+}
+.sp-msg {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    width: 100%;
+    padding: 2px 9px;
+    background: transparent;
+    border: 0;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.55;
     cursor: pointer;
     text-align: left;
-    transition:
-        background 0.12s,
-        color 0.12s;
+    border-radius: 0;
+    transition: background 0.08s, color 0.08s;
 }
-.search-file-head:hover {
+.sp-msg:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--ink);
+}
+.sp-msg.sel {
     background: var(--acc-soft);
     color: var(--ink);
 }
-.search-chev {
-    display: flex;
+.sp-msg-ln {
     color: var(--ink-faint);
-    transition: transform 0.12s;
-    transform: rotate(-90deg);
+    text-align: right;
+    padding-right: 10px;
+    font-variant-numeric: tabular-nums;
+    font-size: 10px;
 }
-.search-chev.open {
-    transform: rotate(0deg);
+.sp-msg.sel .sp-msg-ln {
+    color: var(--acc);
 }
-.search-file-name {
-    font-weight: 600;
-    color: var(--ink);
-    font-size: 12.5px;
-}
-.search-file-dir {
-    font-size: 11px;
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    flex: 1;
-    min-width: 0;
+.sp-msg-tx {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.search-file-count {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--ink-faint);
-    border: 1px solid var(--line);
-    padding: 1px 6px;
-    font-family: var(--mono);
-    margin-left: auto;
+.sp-msg-tx mark {
+    background: rgba(255, 220, 90, 0.20);
+    color: #ffe27a;
+    padding: 0 1px;
+    border-radius: 2px;
+}
+.sp-msg-repl {
+    color: var(--live);
+    opacity: 0.9;
+    padding-left: 4px;
 }
 
-/* snippet (embedded readonly CodeMirror) */
-.search-snippet {
-    padding-left: 18px;
-    padding-bottom: 4px;
+/* preview pane (right column) */
+.sp-preview {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
     background: transparent;
 }
-.search-snippet .cm-editor {
+.sp-preview-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    width: 100%;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.sp-preview-head:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+.sp-preview-head:hover .sp-preview-open {
+    color: var(--acc);
+    transform: translate(1px, -1px);
+}
+.sp-preview-name {
+    color: var(--ink);
+    font-weight: 600;
+}
+.sp-preview-dir {
+    color: var(--ink-faint);
+    font-size: 10px;
+}
+.sp-preview-meta {
+    margin-left: auto;
+    color: var(--ink-dim);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+.sp-preview-repl {
+    color: var(--live);
+    font-weight: 600;
+    padding-left: 6px;
+}
+.sp-preview-open {
+    color: var(--ink-ghost);
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 4px;
+    transition: color 0.12s, transform 0.12s;
+    display: inline-block;
+}
+.sp-preview-host {
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+.sp-preview-host .cm-editor {
     background: transparent !important;
+    height: 100%;
 }
-.search-snippet .cm-line.cm-search-line {
-    background: rgba(255, 255, 255, 0.018);
+.sp-preview-empty,
+.sp-preview-loading,
+.sp-preview-err {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 24px;
 }
-.search-snippet .cm-line.cm-search-line:hover {
+.sp-preview-err {
+    color: var(--danger);
+}
+
+/* CodeMirror decorations inside the preview */
+.cm-sp-hit-line {
     background: var(--acc-soft);
+    box-shadow: inset 2px 0 0 var(--acc);
 }
-.cm-search-match {
+.cm-sp-hit-match {
     background: rgba(255, 220, 90, 0.22);
     color: #ffe27a;
     border-radius: 0;
@@ -5275,25 +5501,27 @@ button {
 }
 
 /* footer */
-.search-foot {
+.sp-foot {
     display: flex;
     align-items: center;
-    gap: 18px;
-    padding: 7px 14px;
+    gap: 16px;
+    padding: 6px 14px;
     border-top: 1px solid var(--line);
-    font-size: 10.5px;
+    font-size: 10px;
     color: var(--ink-faint);
     font-family: var(--mono);
+    flex: 0 0 auto;
+    background: rgba(0, 0, 0, 0.22);
 }
-.search-foot kbd {
-    background: var(--void);
-    border: 1px solid var(--line);
-    border-radius: 0;
-    padding: 1px 6px;
-    margin-right: 6px;
+.sp-foot kbd {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin-right: 5px;
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 10px;
+    font-weight: 700;
 }
 
 /* ============================================================

@@ -40,6 +40,24 @@ export const DEFAULT_OPTIONS: SearchOptions = {
   exclude: "",
 };
 
+export interface ReplaceFile {
+  path: string;
+  match_count: number;
+}
+
+export interface ReplaceError {
+  path: string;
+  reason: string;
+}
+
+export interface ReplaceResults {
+  files: ReplaceFile[];
+  file_count: number;
+  match_count: number;
+  errors: ReplaceError[];
+  elapsed_ms: number;
+}
+
 export const searchApi = {
   project: (
     repo: string,
@@ -47,4 +65,16 @@ export const searchApi = {
     options: SearchOptions,
   ): Promise<SearchResults> =>
     invoke<SearchResults>("project_search", { repo, query, options }),
+  replace: (
+    repo: string,
+    query: string,
+    replace: string,
+    options: SearchOptions,
+  ): Promise<ReplaceResults> =>
+    invoke<ReplaceResults>("project_search_replace", {
+      repo,
+      query,
+      replace,
+      options,
+    }),
 };

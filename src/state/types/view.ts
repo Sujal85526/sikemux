@@ -30,6 +30,12 @@ export interface GitPaneView {
 
 export interface GlobalSearchView {
   query: string;
+  /** Replacement string for find-and-replace. Empty = find-only mode. */
+  replace: string;
+  /** Whether the replace row is expanded in the UI (VSCode-style accordion
+   *  toggled by the chevron to the left of the find input). The replace
+   *  value itself is kept across collapses so reopening restores typing. */
+  replaceOpen: boolean;
   options: {
     caseSensitive: boolean;
     wholeWord: boolean;
@@ -37,8 +43,15 @@ export interface GlobalSearchView {
     include: string;
     exclude: string;
   };
-  /** Files the user has manually collapsed in the results panel. */
+  /** Files the user has manually collapsed in the results panel.
+   *  Kept for migration / state hydration — the new threaded layout
+   *  doesn't render collapse chevrons but the field is preserved so
+   *  older persisted state still parses. */
   collapsed: Record<string, boolean>;
+  /** Match the right preview pane is currently displaying. `null` when
+   *  no match has been clicked yet (preview pane shows the first hit
+   *  by default). */
+  selected: { path: string; matchIndex: number } | null;
 }
 
 export type EcsLevel =

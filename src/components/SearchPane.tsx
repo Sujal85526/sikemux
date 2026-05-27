@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   EditorState,
+  Range as CMRange,
   StateEffect,
   StateField,
 } from "@codemirror/state";
@@ -21,24 +22,31 @@ import {
 import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 import { auraExtensions, languageFor } from "../editor/codemirror";
 import { registerView } from "../themes/bus";
+import { fsapi } from "../api/fs";
+import { subscribe } from "../state/bus";
 import {
   searchApi,
   type SearchFile,
+  type SearchHit,
   type SearchResults,
 } from "../api/search";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
+import { notify, errMessage } from "../state/toast";
 import { FileIcon } from "./FileIcon";
-import { IconChevron, IconSearch } from "./Icons";
+import { IconSearch } from "./Icons";
 
-// Project-wide search rendered as the project's 4th window (a dedicated
-// pane, not a modal). Built around `searchApi.project` (ripgrep on the
-// Rust side, capped + streamed in <50ms for typical repos) and per-file
-// mini CodeMirror views for real syntax highlighting in each snippet.
-//
-// View state (query, options, collapsed file groups) lives in
-// `globalSearchBySession[sessionId]` so switching between project
-// sessions preserves each one's search independently.
+// Project-wide search rendered as the project's 4th window. Layout:
+//   ┌──────────────┬──────────────┐
+//   │ glow palette │              │
+//   │ (search bar) │   preview    │
+//   ├──────────────┤    (wider)   │
+//   │ threaded     │              │
+//   │   list       │              │
+//   └──────────────┴──────────────┘
+// View state (query, replace, options, selected match) lives in
+// `globalSearchBySession[sessionId]` so switching projects preserves each
+// one's search independently.
 
 const basename = (p: string) => p.split("/").pop() || p;
 const dirname = (p: string) => {
@@ -55,6 +63,8 @@ const DEBOUNCE_MS = 250;
 // `??` fallback runs OUTSIDE the selector.
 const EMPTY_VIEW = {
   query: "",
+  replace: "",
+  replaceOpen: false,
   options: {
     caseSensitive: false,
     wholeWord: false,
@@ -63,12 +73,8 @@ const EMPTY_VIEW = {
     exclude: "",
   },
   collapsed: {} as Record<string, boolean>,
+  selected: null as { path: string; matchIndex: number } | null,
 };
-
-interface SnippetIndex {
-  /** Map from in-snippet line (1-based) → original file line (1-based). */
-  originalLine: Map<number, number>;
-}
 
 // =====================================================================
 // Top-level pane
@@ -81,22 +87,34 @@ export function SearchPane({ cwd, active }: { cwd: string; active: boolean }) {
   const entry = useStore((s) => s.globalSearchBySession[sessionId]);
   const view = entry ?? EMPTY_VIEW;
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  const findRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [status, setStatus] = useState<"idle" | "searching" | "ok" | "error">(
     "idle",
   );
   const [error, setError] = useState<string | null>(null);
+  const [replacing, setReplacing] = useState(false);
 
-  // Focus the search input whenever the pane becomes active. Re-running
-  // when `active` flips covers the M-i/r/g window switch case where the
-  // user lands here from elsewhere.
+  // Focus the find input whenever the pane becomes active.
   useEffect(() => {
     if (active) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
+      findRef.current?.focus();
+      findRef.current?.select();
     }
   }, [active]);
+
+  // Pull focus back on every Cmd/Ctrl+Shift+F press, even when the pane is
+  // already active (the `active` effect above only fires on transitions).
+  // Scoped to this session so background panes ignore the signal.
+  useEffect(() => {
+    if (!sessionId) return;
+    return subscribe("search-focus", (e) => {
+      if (e.sessionId !== sessionId) return;
+      findRef.current?.focus();
+      findRef.current?.select();
+    });
+  }, [sessionId]);
 
   // Debounced search. Inflight calls drop their result if a newer one starts.
   useEffect(() => {
@@ -130,104 +148,209 @@ export function SearchPane({ cwd, active }: { cwd: string; active: boolean }) {
     };
   }, [cwd, view.query, view.options]);
 
+  // Auto-select the first match whenever results refresh and either nothing
+  // is selected yet, or the previously-selected file no longer appears.
+  useEffect(() => {
+    if (!results || results.files.length === 0) return;
+    const first = results.files[0];
+    const sel = view.selected;
+    const stillValid =
+      !!sel &&
+      results.files.some(
+        (f) => f.path === sel.path && sel.matchIndex < f.matches.length,
+      );
+    if (!stillValid) {
+      cmd.setGlobalSearchSelected(sessionId, {
+        path: first.path,
+        matchIndex: 0,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results, sessionId]);
+
+  const runReplaceAll = useCallback(async () => {
+    if (!cwd || !view.query.trim() || replacing) return;
+    setReplacing(true);
+    try {
+      const r = await searchApi.replace(
+        cwd,
+        view.query,
+        view.replace,
+        view.options,
+      );
+      const verb = r.match_count === 1 ? "match" : "matches";
+      const fileWord = r.file_count === 1 ? "file" : "files";
+      notify(
+        r.errors.length ? "info" : "success",
+        `replaced ${r.match_count} ${verb} in ${r.file_count} ${fileWord}` +
+          (r.errors.length ? ` · ${r.errors.length} skipped` : ""),
+      );
+      const fresh = await searchApi.project(cwd, view.query, view.options);
+      setResults(fresh);
+      setStatus("ok");
+    } catch (e) {
+      notify("error", `replace failed: ${errMessage(e)}`);
+    } finally {
+      setReplacing(false);
+    }
+  }, [cwd, view.query, view.replace, view.options, replacing]);
+
   return (
     <div className="search-pane">
-      <Header
-        sessionId={sessionId}
-        view={view}
-        inputRef={inputRef}
-        status={status}
-        results={results}
-      />
-      <Body
-        sessionId={sessionId}
-        cwd={cwd}
-        query={view.query}
-        options={view.options}
-        collapsed={view.collapsed}
-        results={results}
-        status={status}
-        error={error}
-      />
+      <div className="sp-body">
+        <div className="sp-left">
+          <Header
+            sessionId={sessionId}
+            view={view}
+            findRef={findRef}
+            replaceRef={replaceRef}
+            status={status}
+            results={results}
+            replacing={replacing}
+            onReplaceAll={runReplaceAll}
+          />
+          <Threads
+            sessionId={sessionId}
+            cwd={cwd}
+            query={view.query}
+            replace={view.replace}
+            selected={view.selected}
+            collapsed={view.collapsed}
+            results={results}
+            status={status}
+            error={error}
+          />
+        </div>
+        <PreviewArea
+          repo={cwd}
+          query={view.query}
+          replace={view.replace}
+          results={results}
+          status={status}
+          selected={view.selected}
+        />
+      </div>
       <Footer />
     </div>
   );
 }
 
 // =====================================================================
-// Header — query + options + summary
+// Header — flush bar (no container), accordion replace row, VSCode-style
 // =====================================================================
 
 function Header({
   sessionId,
   view,
-  inputRef,
+  findRef,
+  replaceRef,
   status,
   results,
+  replacing,
+  onReplaceAll,
 }: {
   sessionId: string;
   view: typeof EMPTY_VIEW;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  findRef: React.RefObject<HTMLInputElement | null>;
+  replaceRef: React.RefObject<HTMLInputElement | null>;
   status: "idle" | "searching" | "ok" | "error";
   results: SearchResults | null;
+  replacing: boolean;
+  onReplaceAll: () => void;
 }) {
-  const { query, options } = view;
-  const allCollapsed =
-    !!results && results.files.length > 0 &&
-    results.files.every((f) => view.collapsed[f.path]);
+  const { query, replace, replaceOpen, options } = view;
+  const hasResults = !!results && results.match_count > 0;
+  const canReplace = hasResults && !replacing;
+  const openReplaceAndFocus = () => {
+    if (!replaceOpen) cmd.toggleGlobalSearchReplaceOpen(sessionId);
+    // Defer focus so the input mounts first when we just opened it.
+    window.setTimeout(() => replaceRef.current?.focus(), 0);
+  };
+
   return (
-    <div className="search-head">
-      <div className="search-title-row">
-        <span className="search-title">
-          <IconSearch size={12} className="search-title-icon" />
-          <span>search</span>
+    <div className="sp-head">
+      <div className="sp-row find">
+        <button
+          type="button"
+          className={`sp-chev${replaceOpen ? " open" : ""}`}
+          onClick={() => cmd.toggleGlobalSearchReplaceOpen(sessionId)}
+          title={replaceOpen ? "Hide replace" : "Show replace"}
+          aria-expanded={replaceOpen}
+        >
+          ▸
+        </button>
+        <span className="sp-av find" aria-hidden>
+          <IconSearch size={11} />
         </span>
-        {results && (
-          <span className="search-summary">
-            <strong>{results.match_count}</strong>{" "}
-            {results.match_count === 1 ? "match" : "matches"} ·{" "}
-            <strong>{results.file_count}</strong>{" "}
-            {results.file_count === 1 ? "file" : "files"} ·{" "}
-            {results.elapsed_ms}ms
-            {results.truncated && (
-              <span className="search-truncated"> · truncated</span>
-            )}
-          </span>
-        )}
-        {results && results.file_count > 0 && (
-          <button
-            className="search-fold-all"
-            onClick={() =>
-              allCollapsed
-                ? cmd.expandAllGlobalSearchFiles(sessionId)
-                : cmd.collapseAllGlobalSearchFiles(
-                    sessionId,
-                    results.files.map((f) => f.path),
-                  )
+        <input
+          ref={findRef}
+          className="sp-input"
+          placeholder="find in project"
+          value={query}
+          onChange={(e) =>
+            cmd.setGlobalSearchQuery(sessionId, e.target.value)
+          }
+          onKeyDown={(e) => {
+            if (e.key === "Tab" && !e.shiftKey) {
+              e.preventDefault();
+              openReplaceAndFocus();
             }
-            title={allCollapsed ? "Expand all" : "Collapse all"}
-          >
-            {allCollapsed ? "expand all" : "collapse all"}
-          </button>
+          }}
+          spellCheck={false}
+        />
+        {status === "searching" && (
+          <span className="sp-spinner" aria-hidden />
         )}
       </div>
 
-      <div className="search-input-row">
-        <span className="search-input-wrap">
-          <IconSearch size={13} className="search-input-icon" />
+      {replaceOpen && (
+        <div className="sp-row repl">
+          <span className="sp-chev-spacer" aria-hidden />
+          <span className="sp-av repl" aria-hidden>
+            ↻
+          </span>
           <input
-            ref={inputRef}
-            className="search-input"
-            placeholder="search project…"
-            value={query}
+            ref={replaceRef}
+            className="sp-input"
+            placeholder="replace with…"
+            value={replace}
             onChange={(e) =>
-              cmd.setGlobalSearchQuery(sessionId, e.target.value)
+              cmd.setGlobalSearchReplace(sessionId, e.target.value)
             }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                if (canReplace) onReplaceAll();
+              }
+            }}
             spellCheck={false}
           />
-          {status === "searching" && (
-            <span className="search-spinner" aria-hidden />
-          )}
+        </div>
+      )}
+
+      <div className="sp-row scope">
+        <FilterField
+          label="in"
+          placeholder="src/**/*.ts"
+          value={options.include}
+          onChange={(v) =>
+            cmd.setGlobalSearchOption(sessionId, "include", v)
+          }
+        />
+      </div>
+      <div className="sp-row scope">
+        <FilterField
+          label="not"
+          placeholder="**/*.test.ts"
+          value={options.exclude}
+          onChange={(v) =>
+            cmd.setGlobalSearchOption(sessionId, "exclude", v)
+          }
+        />
+      </div>
+
+      <div className="sp-row actions">
+        <div className="sp-toggles">
           <Toggle
             label="Aa"
             title="Match case"
@@ -264,26 +387,43 @@ function Header({
               )
             }
           />
+        </div>
+        <span className="sp-stats">
+          {results ? (
+            <>
+              <strong>{results.match_count}</strong>
+              <span className="sp-stats-sep">/</span>
+              <strong>{results.file_count}</strong>
+              <span className="sp-stats-time">{results.elapsed_ms}ms</span>
+              {results.truncated && (
+                <span className="sp-truncated">trunc</span>
+              )}
+            </>
+          ) : (
+            <span className="sp-stats-dim">·</span>
+          )}
         </span>
-      </div>
-
-      <div className="search-filters">
-        <FilterField
-          label="include"
-          placeholder="src/**/*.ts"
-          value={options.include}
-          onChange={(v) =>
-            cmd.setGlobalSearchOption(sessionId, "include", v)
-          }
-        />
-        <FilterField
-          label="exclude"
-          placeholder="**/*.test.ts"
-          value={options.exclude}
-          onChange={(v) =>
-            cmd.setGlobalSearchOption(sessionId, "exclude", v)
-          }
-        />
+        {replaceOpen && (
+          <button
+            type="button"
+            className="sp-replace-btn"
+            onClick={onReplaceAll}
+            disabled={!canReplace}
+            title={
+              canReplace
+                ? "Replace every match across all files"
+                : "Run a search first"
+            }
+          >
+            {replacing
+              ? "…"
+              : `replace${
+                  results && results.match_count > 0
+                    ? ` ${results.match_count}`
+                    : ""
+                }`}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -302,7 +442,7 @@ function Toggle({
 }) {
   return (
     <button
-      className={`search-toggle${active ? " on" : ""}`}
+      className={`sp-toggle${active ? " on" : ""}`}
       onClick={onClick}
       title={title}
       type="button"
@@ -324,10 +464,10 @@ function FilterField({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="search-filter">
-      <span className="search-filter-label">{label}</span>
+    <label className="sp-filter">
+      <span className="sp-filter-label">{label}</span>
       <input
-        className="search-filter-input"
+        className="sp-filter-input"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -338,14 +478,15 @@ function FilterField({
 }
 
 // =====================================================================
-// Body — file groups
+// Threads — the scrollable left-column results
 // =====================================================================
 
-function Body({
+function Threads({
   sessionId,
   cwd,
   query,
-  options,
+  replace,
+  selected,
   collapsed,
   results,
   status,
@@ -354,7 +495,8 @@ function Body({
   sessionId: string;
   cwd: string;
   query: string;
-  options: typeof EMPTY_VIEW.options;
+  replace: string;
+  selected: typeof EMPTY_VIEW.selected;
   collapsed: Record<string, boolean>;
   results: SearchResults | null;
   status: "idle" | "searching" | "ok" | "error";
@@ -362,17 +504,15 @@ function Body({
 }) {
   if (!cwd) {
     return (
-      <div className="search-body">
-        <div className="search-empty">
-          open a project session to search its files
-        </div>
+      <div className="sp-threads-wrap">
+        <div className="sp-empty">open a project session</div>
       </div>
     );
   }
   if (status === "error") {
     return (
-      <div className="search-body">
-        <div className="search-err">
+      <div className="sp-threads-wrap">
+        <div className="sp-err">
           {error?.includes("invalid")
             ? `invalid regex: ${error}`
             : (error ?? "search failed")}
@@ -382,175 +522,218 @@ function Body({
   }
   if (!query.trim()) {
     return (
-      <div className="search-body">
-        <div className="search-empty">
-          start typing to search the project · respects the Cmd-P exclusions
+      <div className="sp-threads-wrap">
+        <div className="sp-empty">
+          start typing to search
+          <span className="sp-empty-sub">
+            tab → replace · ⌘↵ replace all
+          </span>
         </div>
       </div>
     );
   }
   if (status === "searching" && !results) {
     return (
-      <div className="search-body">
-        <div className="search-loading">searching…</div>
+      <div className="sp-threads-wrap">
+        <div className="sp-loading">searching…</div>
       </div>
     );
   }
   if (results && results.files.length === 0) {
     return (
-      <div className="search-body">
-        <div className="search-empty">no matches</div>
+      <div className="sp-threads-wrap">
+        <div className="sp-empty">no matches</div>
       </div>
     );
   }
+  if (!results) return <div className="sp-threads-wrap" />;
   return (
-    <div className="search-body">
-      {results?.files.map((f) => (
-        <FileGroup
-          key={f.path}
+    <div className="sp-threads">
+      {results.files.map((file) => (
+        <Thread
+          key={file.path}
           sessionId={sessionId}
           repo={cwd}
-          file={f}
-          options={options}
-          collapsed={!!collapsed[f.path]}
+          file={file}
+          isSelectedFile={selected?.path === file.path}
+          selectedIndex={selected?.matchIndex ?? -1}
+          collapsed={!!collapsed[file.path]}
+          replace={replace}
         />
       ))}
     </div>
   );
 }
 
-function FileGroup({
+function Thread({
   sessionId,
   repo,
   file,
-  options,
+  isSelectedFile,
+  selectedIndex,
   collapsed,
+  replace,
 }: {
   sessionId: string;
   repo: string;
   file: SearchFile;
-  options: typeof EMPTY_VIEW.options;
+  isSelectedFile: boolean;
+  selectedIndex: number;
   collapsed: boolean;
+  replace: string;
 }) {
   const name = basename(file.path);
   const dir = dirname(file.path);
   return (
-    <div className={`search-file${collapsed ? " collapsed" : ""}`}>
+    <div className={`sp-thread${collapsed ? " collapsed" : ""}`}>
       <button
-        className="search-file-head"
+        type="button"
+        className="sp-thread-who"
         onClick={() =>
           cmd.toggleGlobalSearchFileCollapsed(sessionId, file.path)
         }
+        aria-expanded={!collapsed}
+        title={collapsed ? "Expand file" : "Collapse file"}
       >
-        <span className={`search-chev${collapsed ? "" : " open"}`}>
-          <IconChevron size={10} />
-        </span>
-        <FileIcon name={name} size={14} />
-        <span className="search-file-name">{name}</span>
-        {dir && <span className="search-file-dir">{dir}</span>}
-        <span className="search-file-count">{file.matches.length}</span>
+        <span className={`sp-thread-chev${collapsed ? "" : " open"}`}>▸</span>
+        <FileIcon name={name} size={13} />
+        <span className="sp-thread-name">{name}</span>
+        {dir && <span className="sp-thread-dir">{dir}/</span>}
+        <span className="sp-thread-count">{file.matches.length}</span>
       </button>
       {!collapsed && (
-        <Snippet repo={repo} file={file} options={options} />
+        <div className="sp-thread-msgs">
+          {file.matches.map((m, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`sp-msg${
+                isSelectedFile && i === selectedIndex ? " sel" : ""
+              }`}
+              onClick={() =>
+                cmd.setGlobalSearchSelected(sessionId, {
+                  path: file.path,
+                  matchIndex: i,
+                })
+              }
+              onDoubleClick={() =>
+                cmd.requestOpenFile(
+                  `${repo}/${file.path}`,
+                  m.line - 1,
+                  m.ranges[0]?.start ?? 0,
+                )
+              }
+              title={replace ? `${m.text}  →  (with replace)` : m.text}
+            >
+              <span className="sp-msg-ln">{m.line}</span>
+              <span className="sp-msg-tx">
+                <HighlightedLine hit={m} replace={replace} />
+              </span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
+/** Render the matched line with the matched ranges marked, and (if a
+ *  replacement string is present) a green inline indicator showing the
+ *  new value next to the first match span. We render at most one indicator
+ *  per line to keep the list scannable. */
+function HighlightedLine({
+  hit,
+  replace,
+}: {
+  hit: SearchHit;
+  replace: string;
+}) {
+  const ranges = hit.ranges;
+  if (ranges.length === 0) return <>{hit.text}</>;
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  ranges.forEach((r, i) => {
+    if (r.start > cursor) parts.push(hit.text.slice(cursor, r.start));
+    parts.push(
+      <mark key={`m${i}`}>{hit.text.slice(r.start, r.end)}</mark>,
+    );
+    if (replace && i === 0) {
+      parts.push(
+        <span key={`r${i}`} className="sp-msg-repl">
+          {" → "}
+          {replace}
+        </span>,
+      );
+    }
+    cursor = r.end;
+  });
+  if (cursor < hit.text.length) parts.push(hit.text.slice(cursor));
+  return <>{parts}</>;
+}
+
 // =====================================================================
-// Snippet — a mini CodeMirror view with the matched lines + highlighting
+// Preview pane — wider right pane, single CodeMirror tracking `selected`
 // =====================================================================
 
-const matchMark = Decoration.mark({ class: "cm-search-match" });
-const matchLineMark = Decoration.line({ class: "cm-search-line" });
-
-interface SnippetMatch {
-  /** snippet line, 1-based */
+const setSelectedLineEffect = StateEffect.define<{
   line: number;
   ranges: { start: number; end: number }[];
-}
+}>();
 
-function buildSnippet(file: SearchFile): {
-  doc: string;
-  index: SnippetIndex;
-  marks: SnippetMatch[];
-} {
-  const lines: string[] = [];
-  const originalLine = new Map<number, number>();
-  const marks: SnippetMatch[] = [];
-  file.matches.forEach((m, i) => {
-    const snippetLine = i + 1;
-    lines.push(m.text);
-    originalLine.set(snippetLine, m.line);
-    marks.push({ line: snippetLine, ranges: m.ranges });
-  });
-  return {
-    doc: lines.join("\n"),
-    index: { originalLine },
-    marks,
-  };
-}
+const hitLineMark = Decoration.line({ class: "cm-sp-hit-line" });
+const hitMatchMark = Decoration.mark({ class: "cm-sp-hit-match" });
 
-function decorationsFor(state: EditorState, marks: SnippetMatch[]): DecorationSet {
-  const markRanges: { from: number; to: number; deco: ReturnType<typeof Decoration.mark> }[] = [];
-  const lineDecos: { pos: number; deco: ReturnType<typeof Decoration.line> }[] = [];
-  for (const m of marks) {
-    if (m.line < 1 || m.line > state.doc.lines) continue;
-    const line = state.doc.line(m.line);
-    lineDecos.push({ pos: line.from, deco: matchLineMark });
-    for (const r of m.ranges) {
-      const from = Math.min(line.from + r.start, line.to);
-      const to = Math.min(line.from + r.end, line.to);
-      if (to > from) markRanges.push({ from, to, deco: matchMark });
-    }
+function previewDecorations(
+  state: EditorState,
+  payload: { line: number; ranges: { start: number; end: number }[] } | null,
+): DecorationSet {
+  if (!payload || payload.line < 1 || payload.line > state.doc.lines) {
+    return Decoration.none;
   }
-  const all = [
-    ...lineDecos.map((l) => l.deco.range(l.pos)),
-    ...markRanges.map((b) => b.deco.range(b.from, b.to)),
-  ];
-  // `Decoration.set(..., sort=true)` handles the (from, startSide) ordering
-  // line decorations need to interleave properly with mark decorations.
-  return Decoration.set(all, true);
+  const line = state.doc.line(payload.line);
+  const decos: CMRange<Decoration>[] = [];
+  decos.push(hitLineMark.range(line.from));
+  for (const r of payload.ranges) {
+    const from = Math.min(line.from + r.start, line.to);
+    const to = Math.min(line.from + r.end, line.to);
+    if (to > from) decos.push(hitMatchMark.range(from, to));
+  }
+  return Decoration.set(decos, true);
 }
 
-const setMarksEffect = StateEffect.define<SnippetMatch[]>();
-
-function snippetDecorationField(initial: SnippetMatch[]) {
+function previewDecorationField() {
   return StateField.define<DecorationSet>({
-    create: (state) => decorationsFor(state, initial),
+    create: () => Decoration.none,
     update(value, tr) {
-      let marks: SnippetMatch[] | null = null;
+      let next: { line: number; ranges: { start: number; end: number }[] } | null =
+        null;
+      let touched = false;
       for (const e of tr.effects) {
-        if (e.is(setMarksEffect)) marks = e.value;
+        if (e.is(setSelectedLineEffect)) {
+          next = e.value;
+          touched = true;
+        }
       }
-      if (marks !== null || tr.docChanged) {
-        return decorationsFor(tr.state, marks ?? initial);
-      }
+      if (touched) return previewDecorations(tr.state, next);
+      if (tr.docChanged) return Decoration.none;
       return value;
     },
     provide: (f) => EditorView.decorations.from(f),
   });
 }
 
-function clickToOpenPlugin(onOpen: (snippetLine: number) => void) {
+function previewDoubleClickPlugin(onOpen: () => void) {
   return ViewPlugin.define(() => ({}), {
     eventHandlers: {
-      click: (e, view) => {
-        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-        if (pos == null) return false;
-        const lineObj = view.state.doc.lineAt(pos);
-        onOpen(lineObj.number);
+      dblclick: () => {
+        onOpen();
         return false;
       },
     },
   });
 }
 
-function makeSnippetExtensions(
-  path: string,
-  marks: SnippetMatch[],
-  onOpen: (snippetLine: number) => void,
-) {
+function makePreviewExtensions(path: string, onOpen: () => void) {
   const language = languageFor(path);
   return [
     EditorState.readOnly.of(true),
@@ -559,45 +742,23 @@ function makeSnippetExtensions(
     auraExtensions,
     ...language,
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-    lineNumbers({
-      formatNumber: (n) => {
-        const m = marks[n - 1];
-        return m ? String(m.line) : "";
-      },
-    }),
-    snippetDecorationField(marks),
-    clickToOpenPlugin(onOpen),
+    lineNumbers(),
+    previewDecorationField(),
+    previewDoubleClickPlugin(onOpen),
     keymap.of([
-      {
-        key: "Alt-Enter",
-        preventDefault: true,
-        run: (view) => {
-          const line = view.state.doc.lineAt(
-            view.state.selection.main.head,
-          ).number;
-          onOpen(line);
-          return true;
-        },
-      },
       {
         key: "Enter",
         preventDefault: true,
-        run: (view) => {
-          const line = view.state.doc.lineAt(
-            view.state.selection.main.head,
-          ).number;
-          onOpen(line);
+        run: () => {
+          onOpen();
           return true;
         },
       },
     ]),
     EditorView.theme({
-      "&": {
-        background: "transparent",
-        fontSize: "12px",
-      },
+      "&": { background: "transparent", fontSize: "12px" },
       ".cm-scroller": {
-        lineHeight: "1.55",
+        lineHeight: "1.65",
         fontFamily: "var(--mono)",
       },
       ".cm-gutters": {
@@ -607,20 +768,18 @@ function makeSnippetExtensions(
         paddingRight: "10px",
       },
       ".cm-lineNumbers .cm-gutterElement": {
-        padding: "0 4px",
-        minWidth: "32px",
+        padding: "0 6px",
+        minWidth: "38px",
         textAlign: "right",
         fontVariantNumeric: "tabular-nums",
         fontSize: "11px",
       },
-      ".cm-content": { padding: "4px 0" },
-      ".cm-line": { padding: "0 12px" },
+      ".cm-content": { padding: "8px 0" },
+      ".cm-line": { padding: "0 14px" },
       "&.cm-focused": { outline: "none" },
     }),
     EditorView.domEventHandlers({
       keydown: (e) => {
-        // Allow Esc to bubble up to the project shortcuts; swallow other
-        // keys so typing in the snippet doesn't trigger window shortcuts.
         if (e.key === "Escape") return false;
         e.stopPropagation();
         return false;
@@ -629,62 +788,220 @@ function makeSnippetExtensions(
   ];
 }
 
-function Snippet({
+interface PreviewState {
+  doc: string | null;
+  path: string | null;
+  err: string | null;
+}
+
+function PreviewArea({
   repo,
-  file,
-  options,
+  query,
+  replace,
+  results,
+  status,
+  selected,
 }: {
   repo: string;
-  file: SearchFile;
-  options: typeof EMPTY_VIEW.options;
+  query: string;
+  replace: string;
+  results: SearchResults | null;
+  status: "idle" | "searching" | "ok" | "error";
+  selected: typeof EMPTY_VIEW.selected;
 }) {
-  void options;
+  // Show a quiet placeholder in the preview column whenever there's nothing
+  // to preview yet — keeps the split structure intact so the layout doesn't
+  // jump around as the user types.
+  if (!repo) {
+    return (
+      <div className="sp-preview">
+        <div className="sp-preview-empty">no project open</div>
+      </div>
+    );
+  }
+  if (!query.trim()) {
+    return (
+      <div className="sp-preview">
+        <div className="sp-preview-empty">preview will appear here</div>
+      </div>
+    );
+  }
+  if (status === "searching" && !results) {
+    return (
+      <div className="sp-preview">
+        <div className="sp-preview-loading">searching…</div>
+      </div>
+    );
+  }
+  if (!results || results.files.length === 0) {
+    return (
+      <div className="sp-preview">
+        <div className="sp-preview-empty">nothing to preview</div>
+      </div>
+    );
+  }
+  return (
+    <Preview
+      repo={repo}
+      results={results}
+      selected={selected}
+      replace={replace}
+    />
+  );
+}
+
+function Preview({
+  repo,
+  results,
+  selected,
+  replace,
+}: {
+  repo: string;
+  results: SearchResults;
+  selected: typeof EMPTY_VIEW.selected;
+  replace: string;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const built = useMemo(() => buildSnippet(file), [file]);
+  const [cache, setCache] = useState<PreviewState>({
+    doc: null,
+    path: null,
+    err: null,
+  });
 
-  const indexRef = useRef(built.index);
-  indexRef.current = built.index;
+  // Resolve the currently-selected file + match. Falls back to the first
+  // file's first match.
+  const resolved = useMemo(() => {
+    if (!results || results.files.length === 0) return null;
+    if (selected) {
+      const file = results.files.find((f) => f.path === selected.path);
+      if (file && file.matches[selected.matchIndex]) {
+        return { file, hit: file.matches[selected.matchIndex] };
+      }
+    }
+    const first = results.files[0];
+    return { file: first, hit: first.matches[0] };
+  }, [results, selected]);
 
-  const openAt = useCallback(
-    (snippetLine: number) => {
-      const original = indexRef.current.originalLine.get(snippetLine);
-      if (original == null) return;
-      cmd.requestOpenFile(`${repo}/${file.path}`, original - 1, 0);
-    },
-    [repo, file.path],
-  );
+  // Load file content whenever the resolved file path changes. We cache the
+  // most-recently-loaded file so flipping between matches in the same file
+  // is instant; switching files triggers exactly one read_file round-trip.
+  useEffect(() => {
+    if (!resolved) return;
+    const wantedPath = `${repo}/${resolved.file.path}`;
+    let cancelled = false;
+    if (cache.path === wantedPath && cache.doc != null) return;
+    fsapi
+      .readFile(wantedPath)
+      .then((doc) => {
+        if (cancelled) return;
+        setCache({ doc, path: wantedPath, err: null });
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setCache({ doc: null, path: wantedPath, err: errMessage(e) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, resolved, cache.path, cache.doc]);
 
+  // (Re)build the editor whenever the loaded file changes.
   useEffect(() => {
     if (!hostRef.current) return;
-    const exts = makeSnippetExtensions(file.path, built.marks, (line) =>
-      openAt(line),
-    );
-    const state = EditorState.create({
-      doc: built.doc,
-      extensions: exts,
+    if (!resolved || cache.doc == null || cache.path == null) return;
+    if (cache.path !== `${repo}/${resolved.file.path}`) return;
+
+    const exts = makePreviewExtensions(resolved.file.path, () => {
+      const hit = resolved.hit;
+      if (!hit) return;
+      cmd.requestOpenFile(
+        `${repo}/${resolved.file.path}`,
+        hit.line - 1,
+        hit.ranges[0]?.start ?? 0,
+      );
     });
+    const state = EditorState.create({ doc: cache.doc, extensions: exts });
     const view = new EditorView({ parent: hostRef.current, state });
     viewRef.current = view;
     const unreg = registerView(view);
+
     return () => {
       unreg();
       view.destroy();
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file.path]);
+  }, [cache.doc, cache.path, repo]);
 
+  // Push the selected line's highlights into the existing editor and
+  // scroll it into view.
   useEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || !resolved) return;
+    const hit = resolved.hit;
+    if (!hit) return;
+    const lineNo = hit.line;
+    if (lineNo < 1 || lineNo > view.state.doc.lines) return;
+    const line = view.state.doc.line(lineNo);
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: built.doc },
-      effects: setMarksEffect.of(built.marks),
+      effects: [
+        setSelectedLineEffect.of({ line: lineNo, ranges: hit.ranges }),
+        EditorView.scrollIntoView(line.from, { y: "center" }),
+      ],
     });
-  }, [built.doc, built.marks]);
+  }, [resolved, cache.doc]);
 
-  return <div className="search-snippet" ref={hostRef} />;
+  if (!resolved) {
+    return (
+      <div className="sp-preview">
+        <div className="sp-preview-empty">no match selected</div>
+      </div>
+    );
+  }
+
+  const { file, hit } = resolved;
+  const total = file.matches.length;
+  const currentIndex = file.matches.findIndex((m) => m === hit) + 1;
+
+  return (
+    <div className="sp-preview">
+      <button
+        type="button"
+        className="sp-preview-head"
+        onClick={() =>
+          cmd.requestOpenFile(
+            `${repo}/${file.path}`,
+            hit.line - 1,
+            hit.ranges[0]?.start ?? 0,
+          )
+        }
+        title={`Open ${file.path} at line ${hit.line}`}
+      >
+        <FileIcon name={basename(file.path)} size={13} />
+        <span className="sp-preview-name">{basename(file.path)}</span>
+        <span className="sp-preview-dir">{dirname(file.path)}/</span>
+        <span className="sp-preview-meta">
+          line {hit.line} · {currentIndex} of {total}
+          {replace && (
+            <span className="sp-preview-repl"> → {replace}</span>
+          )}
+        </span>
+        <span className="sp-preview-open" aria-hidden>
+          ↗
+        </span>
+      </button>
+      {cache.err ? (
+        <div className="sp-preview-err">
+          could not load {file.path}: {cache.err}
+        </div>
+      ) : cache.doc == null ? (
+        <div className="sp-preview-loading">loading…</div>
+      ) : (
+        <div className="sp-preview-host" ref={hostRef} />
+      )}
+    </div>
+  );
 }
 
 // =====================================================================
@@ -693,15 +1010,18 @@ function Snippet({
 
 function Footer() {
   return (
-    <div className="search-foot">
+    <div className="sp-foot">
       <span>
-        <kbd>↵</kbd> open at cursor
+        <kbd>↵</kbd> open
       </span>
       <span>
-        <kbd>⌥↵</kbd> open at cursor
+        <kbd>tab</kbd> replace
       </span>
       <span>
-        <kbd>⌘⇧F</kbd> focus search
+        <kbd>⌘↵</kbd> replace all
+      </span>
+      <span>
+        <kbd>⌘⇧F</kbd> focus
       </span>
     </div>
   );

@@ -15,7 +15,10 @@ use grep_matcher::{Match, Matcher};
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::{BinaryDetection, Searcher, Sink, SinkMatch};
 use ignore::WalkBuilder;
+use regex::bytes::RegexBuilder as BytesRegexBuilder;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 
 use crate::error::{AppError, AppResult};
 use crate::files;
@@ -71,6 +74,27 @@ pub struct SearchResults {
     pub file_count: usize,
     pub match_count: usize,
     pub truncated: bool,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Serialize)]
+pub struct ReplaceFile {
+    pub path: String,
+    pub match_count: usize,
+}
+
+#[derive(Serialize)]
+pub struct ReplaceError {
+    pub path: String,
+    pub reason: String,
+}
+
+#[derive(Serialize)]
+pub struct ReplaceResults {
+    pub files: Vec<ReplaceFile>,
+    pub file_count: usize,
+    pub match_count: usize,
+    pub errors: Vec<ReplaceError>,
     pub elapsed_ms: u64,
 }
 
@@ -285,4 +309,206 @@ pub async fn project_search(
         truncated,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
+}
+
+// ---- replace ----------------------------------------------------------
+//
+// Mirrors `project_search`'s walker + glob filtering so the set of files
+// considered is identical. For each candidate we build a `regex::bytes`
+// matcher with the same flags, run `replace_all` over the file bytes, and
+// only rewrite the file when the content actually changed.
+//
+// Replacements run literally for plain queries; in regex mode `$1` / `${name}`
+// backreferences work as `regex`'s standard replacement syntax. Errors per
+// file (read/write/utf8) are collected into `errors[]` rather than aborting
+// — partial completion is usually what you want here.
+
+fn build_bytes_regex(query: &str, opts: &SearchOptions) -> AppResult<regex::bytes::Regex> {
+    let raw = if opts.is_regex {
+        query.to_string()
+    } else {
+        regex_escape(query)
+    };
+    let pattern = if opts.whole_word {
+        format!(r"\b{}\b", raw)
+    } else {
+        raw
+    };
+    BytesRegexBuilder::new(&pattern)
+        .case_insensitive(!opts.case_sensitive)
+        .multi_line(true)
+        .build()
+        .map_err(|e| AppError::Search(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn project_search_replace(
+    repo: String,
+    query: String,
+    replace: String,
+    options: SearchOptions,
+) -> AppResult<ReplaceResults> {
+    let started = std::time::Instant::now();
+
+    if query.is_empty() {
+        return Ok(ReplaceResults {
+            files: vec![],
+            file_count: 0,
+            match_count: 0,
+            errors: vec![],
+            elapsed_ms: 0,
+        });
+    }
+
+    // Two matchers: grep-regex for counting hits via the searcher (so the
+    // pre-flight count matches `project_search` exactly), and regex::bytes
+    // for the actual in-memory rewrite.
+    let count_matcher = build_matcher(&query, &options)?;
+    let rewrite_re = build_bytes_regex(&query, &options)?;
+    let include = build_glob(&options.include)?;
+    let exclude = build_glob(&options.exclude)?;
+    let replacement_bytes = replace.as_bytes().to_vec();
+
+    let walker = WalkBuilder::new(&repo)
+        .hidden(false)
+        .git_ignore(false)
+        .git_exclude(false)
+        .git_global(false)
+        .ignore(false)
+        .parents(false)
+        .follow_links(false)
+        .filter_entry(|entry| {
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if !is_dir {
+                return true;
+            }
+            let name = entry.file_name().to_string_lossy();
+            !files::should_skip_dir(&name)
+        })
+        .build();
+
+    let mut changed: Vec<ReplaceFile> = Vec::new();
+    let mut errors: Vec<ReplaceError> = Vec::new();
+    let mut total_matches: usize = 0;
+    let root_len = repo.len() + 1;
+
+    let mut searcher = Searcher::new();
+    searcher.set_binary_detection(BinaryDetection::quit(b'\x00'));
+
+    for entry in walker.flatten() {
+        let ft = match entry.file_type() {
+            Some(t) => t,
+            None => continue,
+        };
+        if !ft.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        let path_str = path.to_string_lossy();
+        if path_str.len() <= root_len {
+            continue;
+        }
+        let rel = path_str[root_len..].to_string();
+
+        if let Some(ref inc) = include {
+            if !inc.is_match(&rel) {
+                continue;
+            }
+        }
+        if let Some(ref exc) = exclude {
+            if exc.is_match(&rel) {
+                continue;
+            }
+        }
+        if let Ok(meta) = entry.metadata() {
+            if meta.len() > MAX_FILE_BYTES {
+                continue;
+            }
+        }
+
+        // Cheap pre-flight: skip files with no matches at all so we don't
+        // pay the read+rewrite cost on irrelevant files. We use the same
+        // sink as project_search but only need to know if anything matched.
+        let mut bail = false;
+        let mut sink_matches: Vec<SearchHit> = Vec::new();
+        {
+            let mut sink = FileSink {
+                matches: &mut sink_matches,
+                matcher: &count_matcher,
+                limit: MAX_PER_FILE,
+                hit_limit: &mut bail,
+            };
+            let _ = searcher.search_path(&count_matcher, path, &mut sink);
+        }
+        let count = sink_matches.len();
+        if count == 0 {
+            continue;
+        }
+
+        // Read, rewrite, write-back. If the file isn't valid UTF-8 we skip
+        // it — replace on arbitrary binary data is a footgun and the
+        // searcher already filters binaries earlier, but the byte-regex
+        // doesn't care so we double-check here.
+        let original = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                errors.push(ReplaceError {
+                    path: rel.clone(),
+                    reason: format!("read failed: {e}"),
+                });
+                continue;
+            }
+        };
+        if std::str::from_utf8(&original).is_err() {
+            errors.push(ReplaceError {
+                path: rel.clone(),
+                reason: "skipped: file is not valid UTF-8".to_string(),
+            });
+            continue;
+        }
+
+        let rewritten =
+            rewrite_re.replace_all(&original, replacement_bytes.as_slice()).into_owned();
+        if rewritten == original {
+            continue;
+        }
+
+        let tmp = sibling_tmp(path);
+        if let Err(e) = fs::write(&tmp, &rewritten) {
+            errors.push(ReplaceError {
+                path: rel.clone(),
+                reason: format!("write failed: {e}"),
+            });
+            continue;
+        }
+        // Atomic-ish: rename onto the original path. On the same filesystem
+        // this swaps in one syscall so editors / file watchers see exactly
+        // one change rather than a half-written intermediate.
+        if let Err(e) = fs::rename(&tmp, path) {
+            let _ = fs::remove_file(&tmp);
+            errors.push(ReplaceError {
+                path: rel.clone(),
+                reason: format!("rename failed: {e}"),
+            });
+            continue;
+        }
+
+        total_matches += count;
+        changed.push(ReplaceFile { path: rel, match_count: count });
+    }
+
+    let file_count = changed.len();
+    Ok(ReplaceResults {
+        files: changed,
+        file_count,
+        match_count: total_matches,
+        errors,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
+fn sibling_tmp(path: &std::path::Path) -> PathBuf {
+    let mut name = path.file_name().map(|s| s.to_os_string()).unwrap_or_default();
+    name.push(".sikemux.replace.tmp");
+    path.with_file_name(name)
 }
