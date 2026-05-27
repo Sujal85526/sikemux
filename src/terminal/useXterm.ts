@@ -62,18 +62,18 @@ export function useXterm(opts: {
 }): void {
   const { hostRef, ptyReady, shouldMount, active } = opts;
   const termRef = useRef<Terminal | null>(null);
+  // Synchronous "boot is in flight" flag. Set BEFORE the first await so a
+  // second caller (e.g. the focus effect firing right after the lifecycle
+  // effect) bails immediately instead of racing through `term.open(host)`
+  // and ending up with two xterm DOM trees in the same host element.
+  const bootingRef = useRef(false);
   // Captures `active` for the boot completion: if the user navigated
   // away mid-boot we must not steal focus when the xterm finally renders.
   const activeRef = useRef(active);
   activeRef.current = active;
-  // Sticky "has this pane ever been visited?" flag. Drives the boot
-  // decision on subsequent session-active flips so cold session opens
-  // don't spin up 4-6 xterms at once.
-  const everActiveRef = useRef(false);
-  if (active) everActiveRef.current = true;
   // Escape hatch for the focus effect — lets a first-visit Alt+] kick
-  // boot off without forcing this effect to depend on `active` (which
-  // would tear down + remount on every focus flip).
+  // boot off without forcing the lifecycle effect to depend on `active`
+  // (which would tear down + remount on every focus flip).
   const bootRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -83,9 +83,18 @@ export function useXterm(opts: {
     let cleanup = () => {};
 
     const boot = async () => {
-      if (disposed || termRef.current) return;
+      // Three-way guard: already disposed, already mounted, or another
+      // call is mid-boot. The bootingRef arm is the critical one —
+      // termRef is only set late in this function (after `await`s), so
+      // without it two callers could both pass the (termRef === null)
+      // check and both proceed to `new Terminal()` + `term.open(host)`.
+      if (disposed || termRef.current || bootingRef.current) return;
+      bootingRef.current = true;
       const pid = await ptyReady.current!.catch(() => null);
-      if (disposed || pid === null) return;
+      if (disposed || pid === null) {
+        bootingRef.current = false;
+        return;
+      }
 
       const term = new Terminal({
         fontFamily: FONT,
@@ -148,6 +157,7 @@ export function useXterm(opts: {
         void invoke("pty_unsubscribe", { id: pid, subId });
         unregisterTheme();
         term.dispose();
+        bootingRef.current = false;
         return;
       }
       if (snapshot.length > 0) term.write(new Uint8Array(snapshot));
@@ -210,6 +220,7 @@ export function useXterm(opts: {
       ro.observe(host);
 
       termRef.current = term;
+      bootingRef.current = false;
       // Only steal focus if the user is actually looking at this pane
       // right now. Reading activeRef here (not the `active` captured
       // when boot started) means a boot that started while the pane
@@ -235,11 +246,12 @@ export function useXterm(opts: {
       ]).then(boot, boot);
     bootRef.current = fontsThenBoot;
 
-    // Eager-boot iff this pane has been activated at least once. On the
-    // first session activation (everActiveRef still false), defer until
-    // the user navigates here — keeps cold session opens cheap when
-    // 4-6 windows would otherwise all boot simultaneously.
-    if (everActiveRef.current) fontsThenBoot();
+    // Single boot trigger: the focus effect below. We intentionally do
+    // NOT eager-boot here — the previous "boot iff everActiveRef" path
+    // could race with the focus effect's own bootRef call, ending up
+    // with two xterm DOMs in the same host. The focus effect handles
+    // both first-visit-after-mount and first-visit-after-session-
+    // reactivation (it re-runs on shouldMount changes).
 
     return () => {
       disposed = true;
