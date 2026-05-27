@@ -1,5 +1,10 @@
 import { create } from "zustand";
+import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID } from "../themes";
+
+// We do not currently put Map / Set into the store, but enabling this
+// once is cheap and protects future code that does.
+enableMapSet();
 import { makePane, newId } from "./layout";
 import type { GitCmdEntry, GitModal } from "./gitTypes";
 import type {
@@ -202,3 +207,17 @@ export const useStore = create<StoreState>(() => {
 // Convenience for non-React code (commands, persist, event handlers).
 export const getState = useStore.getState;
 export const setState = useStore.setState;
+
+// Immer-backed mutator. Lets command code write nested updates as if
+// they were mutable (`d.sessions[id].name = x`) and immer hands the
+// store back a properly-immutable, structurally-shared next state.
+// Unchanged subtrees keep their identity so the persist short-circuit
+// (which compares slice references) keeps working, and React selectors
+// only re-render where they actually need to.
+//
+// Use this in place of the deeply-spread `setState((st) => ({ a: { ...st.a,
+// [id]: { ...st.a[id], k: v } } }))` patterns. Plain top-level patches
+// (`setState({ pickerOpen: true })`) stay as-is — no need to convert.
+export function mutate(fn: (draft: Draft<StoreState>) => void): void {
+  setState((st) => produce(st, fn));
+}

@@ -89,6 +89,9 @@ importers:
       codemirror:
         specifier: ^6.0.1
         version: 6.0.2
+      immer:
+        specifier: ^11.1.8
+        version: 11.1.8
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -97,7 +100,7 @@ importers:
         version: 19.2.6(react@19.2.6)
       zustand:
         specifier: ^5.0.2
-        version: 5.0.13(@types/react@19.2.15)(react@19.2.6)
+        version: 5.0.13(@types/react@19.2.15)(immer@11.1.8)(react@19.2.6)
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2
@@ -818,6 +821,9 @@ packages:
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
+
+  immer@11.1.8:
+    resolution: {integrity: sha512-/tbkHMW7y10Lx6i1crLjD4/OhNkRG+Fo7byZHtah0547nIeXYcpIXaUh0IAQY6gO5459qpGGYapcEOHtFXkIuA==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -1658,6 +1664,8 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
+  immer@11.1.8: {}
+
   js-tokens@4.0.0: {}
 
   jsesc@3.1.0: {}
@@ -1760,7 +1768,8 @@ snapshots:
 
   yallist@3.1.1: {}
 
-  zustand@5.0.13(@types/react@19.2.15)(react@19.2.6):
+  zustand@5.0.13(@types/react@19.2.15)(immer@11.1.8)(react@19.2.6):
     optionalDependencies:
       '@types/react': 19.2.15
+      immer: 11.1.8
       react: 19.2.6

@@ -6,7 +6,7 @@ import { emit } from "./bus";
 import { fetchResource, invalidate } from "./resources";
 import { awsIdentityR } from "./resources.defs";
 import { inferEnv, legacyProjectForEnv } from "./rundeckShape";
-import { getState, setState, type StoreState } from "./store";
+import { getState, mutate, setState, type StoreState } from "./store";
 import { swallow } from "./toast";
 import {
   collectPanes,
@@ -86,42 +86,46 @@ import type {
 // Do not start the split alongside other in-flight work — it touches
 // every component that does `import * as cmd from "../state/commands"`.
 
+// `patchSession`/`patchWindow` used to spread-rebuild the entity map on
+// every call. Now they hand the entity to an immer draft and let the
+// draft handle structural sharing. Callers still write a pure
+// transformation (`s => ({ ...s, name: x })`) because that's the local
+// vocabulary used 50+ times in this file — the immer benefit lives at
+// the parent-map level where most allocations happened.
 const patchSession = (id: string, fn: (s: Session) => Session): void =>
-  setState((st) =>
-    st.sessions[id]
-      ? { sessions: { ...st.sessions, [id]: fn(st.sessions[id]) } }
-      : {},
-  );
+  mutate((d) => {
+    const cur = d.sessions[id];
+    if (!cur) return;
+    d.sessions[id] = fn(cur as Session);
+  });
 
 const patchWindow = (id: string, fn: (w: Window) => Window): void =>
-  setState((st) =>
-    st.windows[id] ? { windows: { ...st.windows, [id]: fn(st.windows[id]) } } : {},
-  );
+  mutate((d) => {
+    const cur = d.windows[id];
+    if (!cur) return;
+    d.windows[id] = fn(cur as Window);
+  });
 
 // Most mutations want "with the active session, if there is one, do X" or
-// "with the active window, if there is one, do X". Without these helpers
-// every command repeats a 3-line guard. `fn` may return a partial state
-// patch, or nothing for the no-op case.
-type Patch = Partial<StoreState> | void;
-
-const withActiveSession = (
-  fn: (st: StoreState, session: Session) => Patch,
-): void =>
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
-    return fn(st, session) ?? {};
+// "with the active window, if there is one, do X". The immer draft form
+// lets the body just mutate the draft in place — no patch return, no
+// shallow-spread ceremony at the call site.
+const withActiveSession = (fn: (d: StoreState, session: Session) => void): void =>
+  mutate((d) => {
+    const session = d.sessions[d.activeSessionId];
+    if (!session) return;
+    fn(d as unknown as StoreState, session as Session);
   });
 
 const withActiveWindow = (
-  fn: (st: StoreState, win: Window, session: Session) => Patch,
+  fn: (d: StoreState, win: Window, session: Session) => void,
 ): void =>
-  setState((st) => {
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return {};
-    const win = st.windows[session.activeWindowId];
-    if (!win) return {};
-    return fn(st, win, session) ?? {};
+  mutate((d) => {
+    const session = d.sessions[d.activeSessionId];
+    if (!session) return;
+    const win = d.windows[session.activeWindowId];
+    if (!win) return;
+    fn(d as unknown as StoreState, win as Window, session as Session);
   });
 
 const basename = (p: string): string =>
@@ -164,77 +168,52 @@ function projectWindows(cwd: string): Window[] {
  *  Used by persist.applyHydrate to migrate snapshots created before the
  *  search-pane was introduced. */
 export function ensureSearchWindow(): void {
-  setState((st) => {
-    const winPatch: Record<string, Window> = {};
-    const owners: Record<string, string[]> = {};
-    let changed = false;
-    for (const sid of st.sessionOrder) {
-      const sess = st.sessions[sid];
+  mutate((d) => {
+    for (const sid of d.sessionOrder) {
+      const sess = d.sessions[sid];
       if (sess.kind !== "project") continue;
-      const winIds = st.windowsBySession[sid] ?? [];
-      const hasSearch = winIds.some(
-        (id) => st.windows[id]?.role === "search",
-      );
-      if (hasSearch) continue;
+      const winIds = d.windowsBySession[sid] ?? [];
+      if (winIds.some((id) => d.windows[id]?.role === "search")) continue;
       const w = makeWindow(sess.cwd, "search", {
         kind: "search",
         fixed: true,
         role: "search",
       });
-      winPatch[w.id] = w;
-      owners[sid] = [...winIds, w.id];
-      changed = true;
+      d.windows[w.id] = w;
+      d.windowsBySession[sid] = [...winIds, w.id];
     }
-    if (!changed) return {};
-    return {
-      windows: { ...st.windows, ...winPatch },
-      windowsBySession: { ...st.windowsBySession, ...owners },
-    };
   });
 }
 
 function attachSession(
-  st: StoreState,
+  d: StoreState,
   session: Session,
   windows: Window[],
   agents: Agent[] = [],
-): Partial<StoreState> {
-  const winMap = { ...st.windows };
-  const agentMap = { ...st.agents };
-  for (const w of windows) winMap[w.id] = w;
-  for (const a of agents) agentMap[a.id] = a;
-  return {
-    sessions: { ...st.sessions, [session.id]: session },
-    sessionOrder: [...st.sessionOrder, session.id],
-    windows: winMap,
-    agents: agentMap,
-    windowsBySession: {
-      ...st.windowsBySession,
-      [session.id]: windows.map((w) => w.id),
-    },
-    agentsBySession: {
-      ...st.agentsBySession,
-      [session.id]: agents.map((a) => a.id),
-    },
-    activeSessionId: session.id,
-    zoomedPaneId: null,
-    pickerOpen: false,
-  };
+): void {
+  d.sessions[session.id] = session;
+  d.sessionOrder.push(session.id);
+  for (const w of windows) d.windows[w.id] = w;
+  for (const a of agents) d.agents[a.id] = a;
+  d.windowsBySession[session.id] = windows.map((w) => w.id);
+  d.agentsBySession[session.id] = agents.map((a) => a.id);
+  d.activeSessionId = session.id;
+  d.zoomedPaneId = null;
+  d.pickerOpen = false;
 }
 
 // ---- Sessions ---------------------------------------------------------
 
 export function createProjectSession(cwd: string): void {
-  setState((st) => {
-    const existing = st.sessionOrder
-      .map((id) => st.sessions[id])
+  mutate((d) => {
+    const existing = d.sessionOrder
+      .map((id) => d.sessions[id])
       .find((s) => s.cwd === cwd && s.kind === "project");
     if (existing) {
-      return {
-        pickerOpen: false,
-        zoomedPaneId: null,
-        activeSessionId: existing.id,
-      };
+      d.pickerOpen = false;
+      d.zoomedPaneId = null;
+      d.activeSessionId = existing.id;
+      return;
     }
     const windows = projectWindows(cwd);
     const session: Session = {
@@ -248,15 +227,15 @@ export function createProjectSession(cwd: string): void {
       activeAgentId: null,
       view: "windows",
     };
-    return attachSession(st, session, windows);
+    attachSession(d as unknown as StoreState, session, windows);
   });
 }
 
 export function createCommandSession(): void {
-  setState((st) => {
+  mutate((d) => {
     const used = new Set<number>();
-    for (const id of st.sessionOrder) {
-      const s = st.sessions[id];
+    for (const id of d.sessionOrder) {
+      const s = d.sessions[id];
       if (s.kind === "command") {
         const n = parseInt(s.name, 10);
         if (Number.isFinite(n)) used.add(n);
@@ -276,21 +255,20 @@ export function createCommandSession(): void {
       activeAgentId: null,
       view: "windows",
     };
-    return attachSession(st, session, [win]);
+    attachSession(d as unknown as StoreState, session, [win]);
   });
 }
 
 export function createSshSession(alias: string): void {
-  setState((st) => {
-    const existing = st.sessionOrder
-      .map((id) => st.sessions[id])
+  mutate((d) => {
+    const existing = d.sessionOrder
+      .map((id) => d.sessions[id])
       .find((s) => s.kind === "ssh" && s.name === alias);
     if (existing) {
-      return {
-        pickerOpen: false,
-        zoomedPaneId: null,
-        activeSessionId: existing.id,
-      };
+      d.pickerOpen = false;
+      d.zoomedPaneId = null;
+      d.activeSessionId = existing.id;
+      return;
     }
     const win = makeWindow("", alias, { startup: `ssh ${alias}`, role: "named" });
     const session: Session = {
@@ -304,17 +282,19 @@ export function createSshSession(alias: string): void {
       activeAgentId: null,
       view: "windows",
     };
-    return attachSession(st, session, [win]);
+    attachSession(d as unknown as StoreState, session, [win]);
   });
 }
 
 export function openAwsSession(): void {
-  setState((st) => {
-    const existing = st.sessionOrder
-      .map((id) => st.sessions[id])
+  mutate((d) => {
+    const existing = d.sessionOrder
+      .map((id) => d.sessions[id])
       .find((s) => s.kind === "aws");
     if (existing) {
-      return { activeSessionId: existing.id, zoomedPaneId: null };
+      d.activeSessionId = existing.id;
+      d.zoomedPaneId = null;
+      return;
     }
     const pane = makePane("", { kind: "aws" });
     const win: Window = {
@@ -336,17 +316,19 @@ export function openAwsSession(): void {
       activeAgentId: null,
       view: "windows",
     };
-    return attachSession(st, session, [win]);
+    attachSession(d as unknown as StoreState, session, [win]);
   });
 }
 
 export function openRundeckSession(): void {
-  setState((st) => {
-    const existing = st.sessionOrder
-      .map((id) => st.sessions[id])
+  mutate((d) => {
+    const existing = d.sessionOrder
+      .map((id) => d.sessions[id])
       .find((s) => s.kind === "rundeck");
     if (existing) {
-      return { activeSessionId: existing.id, zoomedPaneId: null };
+      d.activeSessionId = existing.id;
+      d.zoomedPaneId = null;
+      return;
     }
     const pane = makePane("", { kind: "rundeck" });
     const win: Window = {
@@ -368,7 +350,7 @@ export function openRundeckSession(): void {
       activeAgentId: null,
       view: "windows",
     };
-    return attachSession(st, session, [win]);
+    attachSession(d as unknown as StoreState, session, [win]);
   });
 }
 
@@ -380,42 +362,33 @@ const rundeckView = (
 ): RundeckView => st.rundeckViews[paneId] ?? { stack: [{ kind: "matrix" }] };
 
 export function rundeckPush(paneId: string, level: RundeckLevel): void {
-  setState((st) => {
-    const cur = rundeckView(st, paneId);
-    const next: RundeckView = { stack: [...cur.stack, level] };
-    return {
-      rundeckViews: { ...st.rundeckViews, [paneId]: next },
-    };
+  mutate((d) => {
+    const cur = rundeckView(d as unknown as StoreState, paneId);
+    d.rundeckViews[paneId] = { stack: [...cur.stack, level] };
   });
 }
 
 export function rundeckReplace(paneId: string, level: RundeckLevel): void {
-  setState((st) => {
-    const cur = rundeckView(st, paneId);
+  mutate((d) => {
+    const cur = rundeckView(d as unknown as StoreState, paneId);
     const stack = cur.stack.slice(0, -1);
     stack.push(level);
-    return {
-      rundeckViews: { ...st.rundeckViews, [paneId]: { stack } },
-    };
+    d.rundeckViews[paneId] = { stack };
   });
 }
 
 export function rundeckPop(paneId: string): void {
-  setState((st) => {
-    const cur = rundeckView(st, paneId);
-    if (cur.stack.length <= 1) return {};
-    const stack = cur.stack.slice(0, -1);
-    return { rundeckViews: { ...st.rundeckViews, [paneId]: { stack } } };
+  mutate((d) => {
+    const cur = rundeckView(d as unknown as StoreState, paneId);
+    if (cur.stack.length <= 1) return;
+    d.rundeckViews[paneId] = { stack: cur.stack.slice(0, -1) };
   });
 }
 
 export function rundeckHome(paneId: string): void {
-  setState((st) => ({
-    rundeckViews: {
-      ...st.rundeckViews,
-      [paneId]: { stack: [{ kind: "matrix" }] },
-    },
-  }));
+  mutate((d) => {
+    d.rundeckViews[paneId] = { stack: [{ kind: "matrix" }] };
+  });
 }
 
 /** Pane-level project selector (Rundeck pane only). The picker offers
@@ -427,13 +400,10 @@ export function setRundeckProject(
   project: string,
   envFolder: string | null = null,
 ): void {
-  setState((st) => ({
-    rundeck: {
-      ...st.rundeck,
-      activeProject: project,
-      activeEnvFolder: envFolder,
-    },
-  }));
+  mutate((d) => {
+    d.rundeck.activeProject = project;
+    d.rundeck.activeEnvFolder = envFolder;
+  });
 }
 
 /** From a project session: jump to the Rundeck service detail (execution
@@ -475,80 +445,57 @@ export async function openRundeckServiceFor(
 }
 
 function rundeckReplaceStack(paneId: string, stack: RundeckLevel[]): void {
-  setState((st) => ({
-    rundeckViews: { ...st.rundeckViews, [paneId]: { stack } },
-  }));
+  mutate((d) => {
+    d.rundeckViews[paneId] = { stack };
+  });
 }
 
 export function selectSession(id: string): void {
-  setState((st) =>
-    st.sessions[id]
-      ? { activeSessionId: id, zoomedPaneId: null, pickerOpen: false }
-      : {},
-  );
+  mutate((d) => {
+    if (!d.sessions[id]) return;
+    d.activeSessionId = id;
+    d.zoomedPaneId = null;
+    d.pickerOpen = false;
+  });
 }
 
 export function closeSession(id: string): void {
-  setState((st) => {
-    if (st.sessionOrder.length <= 1) return {};
-    const closed = st.sessions[id];
-    if (!closed) return {};
-    const idx = st.sessionOrder.indexOf(id);
-    const sessionOrder = st.sessionOrder.filter((x) => x !== id);
-    const sessions = { ...st.sessions };
-    delete sessions[id];
+  mutate((d) => {
+    if (d.sessionOrder.length <= 1) return;
+    const closed = d.sessions[id];
+    if (!closed) return;
+    const idx = d.sessionOrder.indexOf(id);
+    const winIds = d.windowsBySession[id] ?? [];
+    const agentIds = d.agentsBySession[id] ?? [];
 
-    // Drop windows + agents that belonged to this session.
-    const winIds = st.windowsBySession[id] ?? [];
-    const agentIds = st.agentsBySession[id] ?? [];
-    const windows = { ...st.windows };
-    const agents = { ...st.agents };
-    const editorViews = { ...st.editorViews };
-    const gitViews = { ...st.gitViews };
-    const ecsViews = { ...st.ecsViews };
     for (const wid of winIds) {
-      const w = st.windows[wid];
+      const w = d.windows[wid];
       if (w) {
-        for (const p of collectPanes(w.root)) {
-          delete editorViews[p.id];
-          delete gitViews[p.id];
-          delete ecsViews[p.id];
+        for (const p of collectPanes(w.root as unknown as Window["root"])) {
+          delete d.editorViews[p.id];
+          delete d.gitViews[p.id];
+          delete d.ecsViews[p.id];
         }
       }
-      delete windows[wid];
+      delete d.windows[wid];
     }
-    for (const aid of agentIds) delete agents[aid];
-    const windowsBySession = { ...st.windowsBySession };
-    const agentsBySession = { ...st.agentsBySession };
-    delete windowsBySession[id];
-    delete agentsBySession[id];
+    for (const aid of agentIds) delete d.agents[aid];
+    delete d.windowsBySession[id];
+    delete d.agentsBySession[id];
+    delete d.sessions[id];
+    d.sessionOrder = d.sessionOrder.filter((x) => x !== id);
 
-    const activeSessionId =
-      st.activeSessionId === id
-        ? sessionOrder[Math.min(idx, sessionOrder.length - 1)]
-        : st.activeSessionId;
-    const recent: RecentEntry[] =
-      closed.kind === "command"
-        ? st.recent
-        : [
-            { kind: closed.kind, name: closed.name, cwd: closed.cwd },
-            ...st.recent.filter((r) => r.cwd !== closed.cwd),
-          ].slice(0, 12);
-
-    return {
-      zoomedPaneId: null,
-      sessions,
-      sessionOrder,
-      windows,
-      agents,
-      windowsBySession,
-      agentsBySession,
-      activeSessionId,
-      recent,
-      editorViews,
-      gitViews,
-      ecsViews,
-    };
+    if (d.activeSessionId === id) {
+      d.activeSessionId =
+        d.sessionOrder[Math.min(idx, d.sessionOrder.length - 1)];
+    }
+    if (closed.kind !== "command") {
+      d.recent = [
+        { kind: closed.kind, name: closed.name, cwd: closed.cwd },
+        ...d.recent.filter((r) => r.cwd !== closed.cwd),
+      ].slice(0, 12);
+    }
+    d.zoomedPaneId = null;
   });
 }
 
@@ -557,16 +504,17 @@ export function closeActiveSession(): void {
 }
 
 export function cycleSession(delta: number): void {
-  setState((st) => {
-    const cur = st.sessions[st.activeSessionId];
-    if (!cur) return {};
-    const groupIds = st.sessionOrder.filter(
-      (id) => st.sessions[id].kind === cur.kind,
+  mutate((d) => {
+    const cur = d.sessions[d.activeSessionId];
+    if (!cur) return;
+    const groupIds = d.sessionOrder.filter(
+      (id) => d.sessions[id].kind === cur.kind,
     );
-    if (groupIds.length < 2) return {};
+    if (groupIds.length < 2) return;
     const idx = groupIds.indexOf(cur.id);
-    const next = groupIds[(idx + delta + groupIds.length) % groupIds.length];
-    return { activeSessionId: next, zoomedPaneId: null };
+    d.activeSessionId =
+      groupIds[(idx + delta + groupIds.length) % groupIds.length];
+    d.zoomedPaneId = null;
   });
 }
 
@@ -579,34 +527,40 @@ const GROUP_ORDER: SessionKind[] = ["project", "ssh", "aws", "rundeck", "command
 /** Jump to the first session of the next/previous SessionKind group
  *  (Projects → SSH → Cloud → CI/CD → Command → wrap). Skips empty groups. */
 export function cycleSessionGroup(delta: number): void {
-  setState((st) => {
-    const cur = st.sessions[st.activeSessionId];
-    if (!cur) return {};
+  mutate((d) => {
+    const cur = d.sessions[d.activeSessionId];
+    if (!cur) return;
     // Find non-empty groups in the canonical order, preserving the
     // SessionKind sequence the user sees on the rail.
     const populated = GROUP_ORDER.filter((kind) =>
-      st.sessionOrder.some((id) => st.sessions[id]?.kind === kind),
+      d.sessionOrder.some((id) => d.sessions[id]?.kind === kind),
     );
-    if (populated.length < 2) return {};
+    if (populated.length < 2) return;
     const curIdx = populated.indexOf(cur.kind);
-    if (curIdx === -1) return {};
+    if (curIdx === -1) return;
     const nextKind =
       populated[(curIdx + delta + populated.length) % populated.length];
-    const nextId = st.sessionOrder.find(
-      (id) => st.sessions[id]?.kind === nextKind,
+    const nextId = d.sessionOrder.find(
+      (id) => d.sessions[id]?.kind === nextKind,
     );
-    if (!nextId) return {};
-    return { activeSessionId: nextId, zoomedPaneId: null };
+    if (!nextId) return;
+    d.activeSessionId = nextId;
+    d.zoomedPaneId = null;
   });
 }
 
 export function togglePin(id: string): void {
-  patchSession(id, (s) => ({ ...s, pinned: !s.pinned }));
+  mutate((d) => {
+    const s = d.sessions[id];
+    if (s) s.pinned = !s.pinned;
+  });
 }
 
 export function reopenRecent(entry: RecentEntry): void {
   createProjectSession(entry.cwd);
-  setState((st) => ({ recent: st.recent.filter((r) => r.cwd !== entry.cwd) }));
+  mutate((d) => {
+    d.recent = d.recent.filter((r) => r.cwd !== entry.cwd);
+  });
 }
 
 export function setEnv(env: Env): void {
@@ -616,105 +570,81 @@ export function setEnv(env: Env): void {
 // ---- Layout / panes ---------------------------------------------------
 
 export function splitActivePane(dir: SplitDir): void {
-  withActiveWindow((st, w, session) => {
+  withActiveWindow((d, w, session) => {
     const np = makePane(session.cwd);
-    return {
-      zoomedPaneId: null,
-      windows: {
-        ...st.windows,
-        [w.id]: {
-          ...w,
-          root: splitPane(w.root, w.activePaneId, dir, np),
-          activePaneId: np.id,
-        },
-      },
-    };
+    const win = d.windows[w.id];
+    if (!win) return;
+    win.root = splitPane(w.root, w.activePaneId, dir, np);
+    win.activePaneId = np.id;
+    d.zoomedPaneId = null;
   });
 }
 
 export function closeActivePane(): void {
-  withActiveWindow((st, w, session) => {
+  withActiveWindow((d, w, session) => {
     const root = removePane(w.root, w.activePaneId);
-    if (root === null && w.fixed) return {};
+    if (root === null && w.fixed) return;
+    d.zoomedPaneId = null;
     if (root === null) {
-      const winIds = st.windowsBySession[session.id] ?? [];
+      const winIds = d.windowsBySession[session.id] ?? [];
       if (winIds.length <= 1) {
         // Last window — reset to a fresh terminal in place.
         const fresh = makeWindow(session.cwd, w.name);
-        const windows = { ...st.windows };
-        delete windows[w.id];
-        windows[fresh.id] = fresh;
-        return {
-          zoomedPaneId: null,
-          windows,
-          windowsBySession: {
-            ...st.windowsBySession,
-            [session.id]: [fresh.id],
-          },
-          sessions: {
-            ...st.sessions,
-            [session.id]: { ...session, activeWindowId: fresh.id },
-          },
-        };
+        delete d.windows[w.id];
+        d.windows[fresh.id] = fresh;
+        d.windowsBySession[session.id] = [fresh.id];
+        d.sessions[session.id].activeWindowId = fresh.id;
+        return;
       }
       const idx = winIds.indexOf(w.id);
       const remaining = winIds.filter((id) => id !== w.id);
       const nextId = remaining[Math.min(idx, remaining.length - 1)];
-      const windows = { ...st.windows };
-      delete windows[w.id];
-      return {
-        zoomedPaneId: null,
-        windows,
-        windowsBySession: { ...st.windowsBySession, [session.id]: remaining },
-        sessions: {
-          ...st.sessions,
-          [session.id]: { ...session, activeWindowId: nextId },
-        },
-      };
+      delete d.windows[w.id];
+      d.windowsBySession[session.id] = remaining;
+      d.sessions[session.id].activeWindowId = nextId;
+      return;
     }
     const remaining = collectPanes(root);
-    return {
-      zoomedPaneId: null,
-      windows: {
-        ...st.windows,
-        [w.id]: { ...w, root, activePaneId: remaining[0].id },
-      },
-    };
+    const win = d.windows[w.id];
+    if (!win) return;
+    win.root = root;
+    win.activePaneId = remaining[0].id;
   });
 }
 
 export function focusPane(paneId: string): void {
-  withActiveWindow((st, w) => ({
-    windows: { ...st.windows, [w.id]: { ...w, activePaneId: paneId } },
-  }));
+  withActiveWindow((d, w) => {
+    const win = d.windows[w.id];
+    if (win) win.activePaneId = paneId;
+  });
 }
 
 export function moveFocus(dir: FocusDir): void {
-  withActiveWindow((st, w) => {
+  withActiveWindow((d, w) => {
     const { panes } = computeLayout(w.root);
     const next = neighborPane(panes, w.activePaneId, dir);
     if (!next) return;
-    return {
-      windows: { ...st.windows, [w.id]: { ...w, activePaneId: next } },
-    };
+    const win = d.windows[w.id];
+    if (win) win.activePaneId = next;
   });
 }
 
 export function resizeActivePane(dir: FocusDir): void {
-  withActiveWindow((st, w) => ({
-    windows: {
-      ...st.windows,
-      [w.id]: { ...w, root: resizeTowards(w.root, w.activePaneId, dir) },
-    },
-  }));
+  withActiveWindow((d, w) => {
+    const win = d.windows[w.id];
+    if (win) win.root = resizeTowards(w.root, w.activePaneId, dir);
+  });
 }
 
 export function toggleZoom(): void {
-  withActiveSession((st, session) => {
-    if (st.zoomedPaneId) return { zoomedPaneId: null };
+  withActiveSession((d, session) => {
+    if (d.zoomedPaneId) {
+      d.zoomedPaneId = null;
+      return;
+    }
     if (session.view !== "windows") return;
-    const w = st.windows[session.activeWindowId];
-    return w ? { zoomedPaneId: w.activePaneId } : undefined;
+    const w = d.windows[session.activeWindowId];
+    if (w) d.zoomedPaneId = w.activePaneId;
   });
 }
 
@@ -732,29 +662,23 @@ export function setSplitSizes(
 // ---- Windows / tabs ---------------------------------------------------
 
 export function newWindow(): void {
-  withActiveSession((st, session) => {
-    const winIds = st.windowsBySession[session.id] ?? [];
+  withActiveSession((d, session) => {
+    const winIds = d.windowsBySession[session.id] ?? [];
     const w = makeWindow(session.cwd, String(winIds.length + 1));
-    return {
-      zoomedPaneId: null,
-      windows: { ...st.windows, [w.id]: w },
-      windowsBySession: {
-        ...st.windowsBySession,
-        [session.id]: [...winIds, w.id],
-      },
-      sessions: {
-        ...st.sessions,
-        [session.id]: { ...session, activeWindowId: w.id, view: "windows" },
-      },
-    };
+    d.windows[w.id] = w;
+    d.windowsBySession[session.id] = [...winIds, w.id];
+    const sess = d.sessions[session.id];
+    sess.activeWindowId = w.id;
+    sess.view = "windows";
+    d.zoomedPaneId = null;
   });
 }
 
 export function closeActiveWindow(): void {
-  withActiveSession((st, session) => {
-    const closing = st.windows[session.activeWindowId];
+  withActiveSession((d, session) => {
+    const closing = d.windows[session.activeWindowId];
     if (!closing || closing.fixed) return;
-    const winIds = st.windowsBySession[session.id] ?? [];
+    const winIds = d.windowsBySession[session.id] ?? [];
     if (winIds.length <= 1) return;
     const idx = winIds.indexOf(closing.id);
     const remaining = winIds.filter((id) => id !== closing.id);
@@ -762,48 +686,32 @@ export function closeActiveWindow(): void {
     // user's attention stays inside the terminal stack.
     let nextId = remaining[Math.min(idx, remaining.length - 1)];
     if (closing.role === "term") {
-      const isTerm = (id: string) => st.windows[id]?.role === "term";
+      const isTerm = (id: string) => d.windows[id]?.role === "term";
       const before = remaining.slice(0, idx).reverse().find(isTerm);
       const after = remaining.slice(idx).find(isTerm);
       nextId = before ?? after ?? nextId;
     }
-    const windows = { ...st.windows };
-    delete windows[closing.id];
     // Prune pane views that lived in the closing window.
-    const editorViews = { ...st.editorViews };
-    const gitViews = { ...st.gitViews };
-    const ecsViews = { ...st.ecsViews };
-    for (const p of collectPanes(closing.root)) {
-      delete editorViews[p.id];
-      delete gitViews[p.id];
-      delete ecsViews[p.id];
+    for (const p of collectPanes(closing.root as unknown as Window["root"])) {
+      delete d.editorViews[p.id];
+      delete d.gitViews[p.id];
+      delete d.ecsViews[p.id];
     }
-    return {
-      zoomedPaneId: null,
-      windows,
-      windowsBySession: { ...st.windowsBySession, [session.id]: remaining },
-      sessions: {
-        ...st.sessions,
-        [session.id]: { ...session, activeWindowId: nextId },
-      },
-      editorViews,
-      gitViews,
-      ecsViews,
-    };
+    delete d.windows[closing.id];
+    d.windowsBySession[session.id] = remaining;
+    d.sessions[session.id].activeWindowId = nextId;
+    d.zoomedPaneId = null;
   });
 }
 
 export function selectWindowId(id: string): void {
-  withActiveSession((st, session) => {
-    const winIds = st.windowsBySession[session.id] ?? [];
+  withActiveSession((d, session) => {
+    const winIds = d.windowsBySession[session.id] ?? [];
     if (!winIds.includes(id)) return;
-    return {
-      zoomedPaneId: null,
-      sessions: {
-        ...st.sessions,
-        [session.id]: { ...session, activeWindowId: id, view: "windows" },
-      },
-    };
+    const sess = d.sessions[session.id];
+    sess.activeWindowId = id;
+    sess.view = "windows";
+    d.zoomedPaneId = null;
   });
 }
 
@@ -864,20 +772,12 @@ function agentStartup(
  *  AgentLayer includes `skipPermissions`, so a state flip naturally
  *  triggers unmount → fresh spawn. Persists across reloads. */
 export function toggleAgentSkipPermissions(id: string): void {
-  setState((st) => {
-    const a = st.agents[id];
-    if (!a) return {};
+  mutate((d) => {
+    const a = d.agents[id];
+    if (!a) return;
     const next = !a.skipPermissions;
-    return {
-      agents: {
-        ...st.agents,
-        [id]: {
-          ...a,
-          skipPermissions: next,
-          startup: agentStartup(a.type, a.resumeId, next),
-        },
-      },
-    };
+    a.skipPermissions = next;
+    a.startup = agentStartup(a.type, a.resumeId, next);
   });
 }
 
@@ -886,22 +786,20 @@ export function addAgent(
   resumeId?: string,
   title?: string,
 ): void {
-  withActiveSession((st, session) => {
+  withActiveSession((d, session) => {
     if (session.kind !== "project") return;
-    const ownedIds = st.agentsBySession[session.id] ?? [];
+    const ownedIds = d.agentsBySession[session.id] ?? [];
     const existing = resumeId
       ? ownedIds
-          .map((id) => st.agents[id])
+          .map((id) => d.agents[id])
           .find((a) => a && a.type === type && a.resumeId === resumeId)
       : undefined;
+    const sess = d.sessions[session.id];
+    d.zoomedPaneId = null;
     if (existing) {
-      return {
-        zoomedPaneId: null,
-        sessions: {
-          ...st.sessions,
-          [session.id]: { ...session, activeAgentId: existing.id, view: "agent" },
-        },
-      };
+      sess.activeAgentId = existing.id;
+      sess.view = "agent";
+      return;
     }
     const agent: Agent = {
       id: newId("agent"),
@@ -910,86 +808,60 @@ export function addAgent(
       startup: agentStartup(type, resumeId),
       resumeId,
     };
-    return {
-      zoomedPaneId: null,
-      agents: { ...st.agents, [agent.id]: agent },
-      agentsBySession: {
-        ...st.agentsBySession,
-        [session.id]: [...ownedIds, agent.id],
-      },
-      sessions: {
-        ...st.sessions,
-        [session.id]: { ...session, activeAgentId: agent.id, view: "agent" },
-      },
-    };
+    d.agents[agent.id] = agent;
+    d.agentsBySession[session.id] = [...ownedIds, agent.id];
+    sess.activeAgentId = agent.id;
+    sess.view = "agent";
   });
 }
 
 export function selectAgent(id: string): void {
-  withActiveSession((st, session) => ({
-    sessions: {
-      ...st.sessions,
-      [session.id]: { ...session, activeAgentId: id, view: "agent" },
-    },
-  }));
+  withActiveSession((d, session) => {
+    const sess = d.sessions[session.id];
+    sess.activeAgentId = id;
+    sess.view = "agent";
+  });
 }
 
 export function closeAgent(id: string): void {
-  setState((st) => {
-    const ownerId = st.sessionOrder.find((sid) =>
-      (st.agentsBySession[sid] ?? []).includes(id),
+  mutate((d) => {
+    const ownerId = d.sessionOrder.find((sid) =>
+      (d.agentsBySession[sid] ?? []).includes(id),
     );
-    if (!ownerId) return {};
-    const owner = st.sessions[ownerId];
-    const ownedIds = (st.agentsBySession[ownerId] ?? []).filter(
-      (aid) => aid !== id,
-    );
+    if (!ownerId) return;
+    const owner = d.sessions[ownerId];
+    const ownedIds = (d.agentsBySession[ownerId] ?? []).filter((aid) => aid !== id);
     const wasActive = owner.activeAgentId === id;
-    const agents = { ...st.agents };
-    delete agents[id];
-    return {
-      agents,
-      agentsBySession: { ...st.agentsBySession, [ownerId]: ownedIds },
-      sessions: {
-        ...st.sessions,
-        [ownerId]: {
-          ...owner,
-          activeAgentId: wasActive ? (ownedIds[0] ?? null) : owner.activeAgentId,
-          view: wasActive && ownedIds.length === 0 ? "windows" : owner.view,
-        },
-      },
-    };
+    delete d.agents[id];
+    d.agentsBySession[ownerId] = ownedIds;
+    if (wasActive) {
+      owner.activeAgentId = ownedIds[0] ?? null;
+      if (ownedIds.length === 0) owner.view = "windows";
+    }
   });
 }
 
 export function focusAgents(): void {
-  withActiveSession((st, session) => {
-    const ids = st.agentsBySession[session.id] ?? [];
-    return {
-      zoomedPaneId: null,
-      sessions: {
-        ...st.sessions,
-        [session.id]: {
-          ...session,
-          view: "agent",
-          activeAgentId: session.activeAgentId ?? (ids[0] ?? null),
-        },
-      },
-    };
+  withActiveSession((d, session) => {
+    const ids = d.agentsBySession[session.id] ?? [];
+    const sess = d.sessions[session.id];
+    sess.view = "agent";
+    sess.activeAgentId = session.activeAgentId ?? (ids[0] ?? null);
+    d.zoomedPaneId = null;
   });
   emit({ type: "agent-focus", sessionId: getState().activeSessionId });
 }
 
 export function toggleAgentBookmark(b: AgentBookmark): void {
-  setState((st) => {
-    const has = st.agentBookmarks.some(
+  mutate((d) => {
+    const idx = d.agentBookmarks.findIndex(
       (x) => x.type === b.type && x.id === b.id,
     );
-    return {
-      agentBookmarks: has
-        ? st.agentBookmarks.filter((x) => !(x.type === b.type && x.id === b.id))
-        : [b, ...st.agentBookmarks],
-    };
+    if (idx >= 0) {
+      d.agentBookmarks.splice(idx, 1);
+    } else {
+      d.agentBookmarks.unshift(b);
+    }
   });
 }
 
@@ -1004,14 +876,13 @@ export function openAgentBookmark(b: AgentBookmark): void {
       .map((aid) => st.agents[aid])
       .find((a) => a && a.type === b.type && a.resumeId === b.id);
     if (live) {
-      setState((cur) => ({
-        activeSessionId: id,
-        zoomedPaneId: null,
-        sessions: {
-          ...cur.sessions,
-          [id]: { ...cur.sessions[id], activeAgentId: live.id, view: "agent" },
-        },
-      }));
+      mutate((d) => {
+        d.activeSessionId = id;
+        d.zoomedPaneId = null;
+        const sess = d.sessions[id];
+        sess.activeAgentId = live.id;
+        sess.view = "agent";
+      });
       return;
     }
   }
@@ -1043,20 +914,18 @@ export function openAgentBookmark(b: AgentBookmark): void {
         .filter((a) => a && a.type === b.type && !a.resumeId);
       if (freshs.length === 1) {
         const fresh = freshs[0]!;
-        setState((c2) => ({
-          agents: {
-            ...c2.agents,
-            [fresh.id]: { ...fresh, resumeId: b.id, title: b.title },
-          },
-          sessions: {
-            ...c2.sessions,
-            [dest.id]: {
-              ...c2.sessions[dest.id],
-              activeAgentId: fresh.id,
-              view: "agent",
-            },
-          },
-        }));
+        mutate((d) => {
+          const a = d.agents[fresh.id];
+          if (a) {
+            a.resumeId = b.id;
+            a.title = b.title;
+          }
+          const sess = d.sessions[dest.id];
+          if (sess) {
+            sess.activeAgentId = fresh.id;
+            sess.view = "agent";
+          }
+        });
         return;
       }
     }
@@ -1103,24 +972,15 @@ export function requestOpenFile(
 ): void {
   // Navigate the active session to its files window if needed, so the
   // editor pane is mounted before the event fires.
-  withActiveSession((st, session) => {
-    const winIds = st.windowsBySession[session.id] ?? [];
-    const filesId = winIds.find((id) => st.windows[id]?.role === "files");
+  withActiveSession((d, session) => {
+    const winIds = d.windowsBySession[session.id] ?? [];
+    const filesId = winIds.find((id) => d.windows[id]?.role === "files");
     if (!filesId) return;
-    if (session.activeWindowId === filesId && session.view === "windows") {
-      return { zoomedPaneId: null };
-    }
-    return {
-      zoomedPaneId: null,
-      sessions: {
-        ...st.sessions,
-        [session.id]: {
-          ...session,
-          activeWindowId: filesId,
-          view: "windows",
-        },
-      },
-    };
+    d.zoomedPaneId = null;
+    if (session.activeWindowId === filesId && session.view === "windows") return;
+    const sess = d.sessions[session.id];
+    sess.activeWindowId = filesId;
+    sess.view = "windows";
   });
   emit({ type: "open-file", path, line, character });
 }
@@ -1219,15 +1079,13 @@ export function setEditorView(
   paneId: string,
   patch: Partial<StoreState["editorViews"][string]>,
 ): void {
-  setState((st) => {
-    const cur = st.editorViews[paneId] ?? {
+  mutate((d) => {
+    const cur = d.editorViews[paneId] ?? {
       openTabs: [],
       activePath: null,
       treeWidth: 210,
     };
-    return {
-      editorViews: { ...st.editorViews, [paneId]: { ...cur, ...patch } },
-    };
+    d.editorViews[paneId] = { ...cur, ...patch };
   });
 }
 
@@ -1235,28 +1093,29 @@ export function setGitView(
   paneId: string,
   patch: Partial<StoreState["gitViews"][string]>,
 ): void {
-  setState((st) => {
-    const cur: StoreState["gitViews"][string] = st.gitViews[paneId] ?? {
-      panel: "files" as GitPanel,
-      selected: { files: 0, branches: 0, commits: 0 },
-    };
-    return {
-      gitViews: { ...st.gitViews, [paneId]: { ...cur, ...patch } },
-    };
+  mutate((d) => {
+    const cur: StoreState["gitViews"][string] = (d.gitViews[paneId] ??
+      ({
+        panel: "files" as GitPanel,
+        selected: { files: 0, branches: 0, commits: 0 },
+      } as unknown as StoreState["gitViews"][string])) as StoreState["gitViews"][string];
+    d.gitViews[paneId] = { ...cur, ...patch };
   });
 }
 
 export function setEcsLevel(paneId: string, level: EcsLevel): void {
-  setState((st) => ({ ecsViews: { ...st.ecsViews, [paneId]: level } }));
+  mutate((d) => {
+    d.ecsViews[paneId] = level;
+  });
 }
 
 export function setBillingExpandedMonth(
   profile: string,
   month: string | null,
 ): void {
-  setState((st) => ({
-    expandedBillingMonth: { ...st.expandedBillingMonth, [profile]: month },
-  }));
+  mutate((d) => {
+    d.expandedBillingMonth[profile] = month;
+  });
 }
 
 // ---- Global search (Cmd+Shift+F) -------------------------------------
@@ -1297,12 +1156,9 @@ export function focusGlobalSearch(): void {
 
 export function setGlobalSearchQuery(sessionId: string, query: string): void {
   const cur = searchViewFor(sessionId);
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: { ...cur, query },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = { ...cur, query };
+  });
 }
 
 export function setGlobalSearchOption<
@@ -1313,15 +1169,12 @@ export function setGlobalSearchOption<
   value: (typeof DEFAULT_SEARCH_VIEW.options)[K],
 ): void {
   const cur = searchViewFor(sessionId);
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: {
-        ...cur,
-        options: { ...cur.options, [key]: value },
-      },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = {
+      ...cur,
+      options: { ...cur.options, [key]: value },
+    };
+  });
 }
 
 export function toggleGlobalSearchFileCollapsed(
@@ -1333,22 +1186,16 @@ export function toggleGlobalSearchFileCollapsed(
   const next = { ...cur.collapsed };
   if (wasCollapsed) delete next[path];
   else next[path] = true;
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: { ...cur, collapsed: next },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = { ...cur, collapsed: next };
+  });
 }
 
 export function expandAllGlobalSearchFiles(sessionId: string): void {
   const cur = searchViewFor(sessionId);
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: { ...cur, collapsed: {} },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = { ...cur, collapsed: {} };
+  });
 }
 
 export function collapseAllGlobalSearchFiles(
@@ -1358,12 +1205,9 @@ export function collapseAllGlobalSearchFiles(
   const cur = searchViewFor(sessionId);
   const next: Record<string, boolean> = {};
   for (const p of paths) next[p] = true;
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: { ...cur, collapsed: next },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = { ...cur, collapsed: next };
+  });
 }
 
 export function setGlobalSearchReplace(
@@ -1371,12 +1215,9 @@ export function setGlobalSearchReplace(
   replace: string,
 ): void {
   const cur = searchViewFor(sessionId);
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: { ...cur, replace },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = { ...cur, replace };
+  });
 }
 
 export function setGlobalSearchSelected(
@@ -1384,20 +1225,14 @@ export function setGlobalSearchSelected(
   selected: { path: string; matchIndex: number } | null,
 ): void {
   const cur = searchViewFor(sessionId);
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: { ...cur, selected },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = { ...cur, selected };
+  });
 }
 
 export function toggleGlobalSearchReplaceOpen(sessionId: string): void {
   const cur = searchViewFor(sessionId);
-  setState((st) => ({
-    globalSearchBySession: {
-      ...st.globalSearchBySession,
-      [sessionId]: { ...cur, replaceOpen: !cur.replaceOpen },
-    },
-  }));
+  mutate((d) => {
+    d.globalSearchBySession[sessionId] = { ...cur, replaceOpen: !cur.replaceOpen };
+  });
 }
