@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { memo, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type {
   Agent,
@@ -108,6 +108,7 @@ export function Workspace() {
               session={session}
               win={win}
               areaRef={areaRef}
+              sessionActive={isActive}
               topInset={inset ? TERM_TABS_H : 0}
               visible={
                 isActive &&
@@ -133,6 +134,7 @@ export function Workspace() {
               session={session}
               agent={agent}
               tabsShown={sessTabs}
+              sessionActive={isActive}
               visible={
                 isActive &&
                 session.view === "agent" &&
@@ -242,16 +244,21 @@ function AgentTabsBar({
 }
 
 // An agent's terminal — a single full-stage PTY running the agent CLI.
-function AgentLayer({
+// Memo'd so an unrelated store update doesn't re-render every agent of
+// every project. All props are shallow-equal friendly (stable refs from
+// the store + primitives).
+const AgentLayer = memo(function AgentLayer({
   session,
   agent,
   visible,
   tabsShown,
+  sessionActive,
 }: {
   session: Session;
   agent: Agent;
   visible: boolean;
   tabsShown: boolean;
+  sessionActive: boolean;
 }) {
   return (
     <div className={`window-layer${visible ? " visible" : ""}`}>
@@ -269,25 +276,34 @@ function AgentLayer({
             cwd={session.cwd || undefined}
             startup={agent.startup}
             active={visible}
+            sessionActive={sessionActive}
           />
         </div>
       </div>
     </div>
   );
-}
+});
 
-function WindowLayer({
+// Memo'd at the layer boundary — the largest single perf win for users
+// with many projects open. Without this, every store update (fs events,
+// AWS chip refreshes, anything) re-runs WindowLayer for every window of
+// every session — O(projects × windows) work per mutation. With memo,
+// only the two layers whose `visible` actually flipped re-render on a
+// window switch.
+const WindowLayer = memo(function WindowLayer({
   session,
   win,
   visible,
   areaRef,
   topInset = 0,
+  sessionActive,
 }: {
   session: Session;
   win: WindowT;
   visible: boolean;
   areaRef: RefObject<HTMLDivElement | null>;
   topInset?: number;
+  sessionActive: boolean;
 }) {
   const zoomedPaneId = useStore((s) => s.zoomedPaneId);
   const { panes, dividers } = useMemo(() => computeLayout(win.root), [win.root]);
@@ -347,6 +363,7 @@ function WindowLayer({
                   cwd={p.cwd || session.cwd || undefined}
                   startup={p.startup}
                   active={visible && isActive && shown}
+                  sessionActive={sessionActive}
                 />
               )}
             </div>
@@ -365,7 +382,7 @@ function WindowLayer({
         ))}
     </div>
   );
-}
+});
 
 function DividerHandle({
   d,

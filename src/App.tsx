@@ -150,15 +150,15 @@ export default function App() {
       <TopBar />
       <div className="body">
         {leftOpen && <SideRail />}
-        <main className="stage">
+        <main className={`stage${settingsOpen ? " stage--settings" : ""}`}>
           <Workspace />
+          {settingsOpen && <SettingsPanel />}
         </main>
         {rightOpen && activeSessionIsProject && <AgentRail />}
       </div>
       {pickerOpen && <SeshPicker />}
       {agentPaletteOpen && <AgentPalette />}
       {filePaletteOpen && <FilePalette />}
-      {settingsOpen && <SettingsPanel />}
       {awsAuthModal && <AwsAuthModal />}
       <Toaster />
     </div>

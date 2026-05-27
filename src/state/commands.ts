@@ -714,6 +714,16 @@ export function selectWindowId(id: string): void {
     const winIds = d.windowsBySession[session.id] ?? [];
     if (!winIds.includes(id)) return;
     const sess = d.sessions[session.id];
+    // No-op when we're already exactly here. Skipping the writes avoids
+    // an unnecessary store notification, which fans out to every Workspace
+    // subscriber on the hot Alt+]/[ cycling path.
+    if (
+      sess.activeWindowId === id &&
+      sess.view === "windows" &&
+      d.zoomedPaneId === null
+    ) {
+      return;
+    }
     sess.activeWindowId = id;
     sess.view = "windows";
     d.zoomedPaneId = null;

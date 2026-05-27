@@ -32,28 +32,35 @@ interface AttachResult {
 }
 
 // ARCH: PTY screen state lives in a Rust-side `vt100::Parser`. This pane
-// owns the PTY for its full lifetime but the xterm + WebGL context is
-// only mounted while `active` is true. On show:
-//   1. spawn xterm
-//   2. `pty_attach` returns { subId, snapshot } in a single IPC — atomic
-//      against the reader thread so we never duplicate/drop bytes
-//   3. write the snapshot once → screen state restored without replaying
-//      N seconds of history
-//   4. subsequent live bytes arrive on the Channel
-// On hide:
-//   * unsubscribe and dispose the xterm — frees the WebGL context. The
-//     Rust parser keeps tracking output; the next show gets a fresh
-//     snapshot. Lets us run 100s of hidden agents inside WebKit's
-//     ~8-16 concurrent WebGL-context cap.
+// owns the PTY for its full lifetime. The xterm + WebGL context is
+// mounted while the OWNING SESSION is foregrounded (sessionActive=true) —
+// not just while this specific pane is visible. That way Alt+]/[ cycling
+// within a project keeps every term's xterm warm, and revisits cost ~0
+// (no boot, no pty_attach IPC, no snapshot replay).
+//
+// On session-switch (sessionActive flips false) we tear down the xterm
+// and unsubscribe, which frees the WebGL context. That bounds memory and
+// keeps us under WebKit's ~8-16 concurrent WebGL-context cap even at
+// 20+ open projects with running agents.
+//
+// `active` (this specific pane being the visible one within the session)
+// now only drives focus.
 export function TerminalPane({
   cwd,
   startup,
   active,
+  sessionActive,
 }: {
   cwd?: string;
   startup?: string;
   active: boolean;
+  /** Whether this terminal's OWNING SESSION is the foregrounded project
+   *  session. Controls the xterm lifecycle: alive while true, torn down
+   *  when it flips false. Defaults to `active` so call sites that don't
+   *  differentiate (single-term contexts) get the legacy behavior. */
+  sessionActive?: boolean;
 }) {
+  const shouldMount = sessionActive ?? active;
   const hostRef = useRef<HTMLDivElement>(null);
   const ptyIdRef = useRef<number | null>(null);
   // Resolves once the PTY id is known. The active-effect awaits this so a
@@ -130,15 +137,36 @@ export function TerminalPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- xterm lifecycle (only while active) ----
+  // The xterm + WebGL context live behind these refs so the
+  // active-driven focus effect (below) can re-focus without remounting,
+  // and so a boot in flight when the user navigates away knows whether
+  // to skip the final `term.focus()`.
+  const termRef = useRef<Terminal | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // Once a pane has been activated at least once, we boot it eagerly on
+  // subsequent session-active flips (instead of waiting for the user to
+  // hit Alt+] back to it). Otherwise fresh sessions with many windows
+  // would cold-boot every term immediately on selection, which is the
+  // opposite of what we want.
+  const everActiveRef = useRef(false);
+  if (active) everActiveRef.current = true;
+  const bootRef = useRef<() => void>(() => {});
+
+  // ---- xterm lifecycle (keyed to OWNING SESSION being active) ----
+  // The xterm stays alive across active=true/false flips inside the
+  // session (Alt+] cycling) and only tears down when sessionActive flips
+  // false (you switched to another project). This bounds the live WebGL
+  // contexts to the active project's terms while keeping within-project
+  // navigation instant.
   useEffect(() => {
-    if (!active) return;
+    if (!shouldMount) return;
     const host = hostRef.current!;
     let disposed = false;
     let cleanup = () => {};
 
     const boot = async () => {
-      if (disposed) return;
+      if (disposed || termRef.current) return;
       const pid = await ptyReadyRef.current!.catch(() => null);
       if (disposed || pid === null) return;
 
@@ -270,7 +298,12 @@ export function TerminalPane({
       const ro = new ResizeObserver(resize);
       ro.observe(host);
 
-      term.focus();
+      termRef.current = term;
+      // Only steal focus if the user is actually looking at this pane
+      // right now. Reading activeRef means a boot that started while the
+      // pane was active but completed after the user navigated away
+      // won't yank focus back.
+      if (activeRef.current) term.focus();
 
       cleanup = () => {
         unregisterTheme();
@@ -278,20 +311,47 @@ export function TerminalPane({
         dataSub.dispose();
         void invoke("pty_unsubscribe", { id: pid, subId });
         term.dispose();
+        termRef.current = null;
       };
     };
 
-    Promise.all([
-      document.fonts.load('13px "JetBrainsMono Nerd Font"'),
-      document.fonts.load('italic 13px "JetBrainsMono Nerd Font"'),
-      document.fonts.load('bold 13px "JetBrainsMono Nerd Font"'),
-    ]).then(boot, boot);
+    // Expose boot to the focus effect so a first-visit Alt+] (sessionActive
+    // already true, active flipping false→true on a not-yet-booted pane)
+    // can kick the boot off without us needing to re-trigger this whole
+    // effect by depending on `active`.
+    const fontsThenBoot = () =>
+      void Promise.all([
+        document.fonts.load('13px "JetBrainsMono Nerd Font"'),
+        document.fonts.load('italic 13px "JetBrainsMono Nerd Font"'),
+        document.fonts.load('bold 13px "JetBrainsMono Nerd Font"'),
+      ]).then(boot, boot);
+    bootRef.current = fontsThenBoot;
+
+    // Eager-boot if the pane has been activated at least once. On first
+    // session activation (everActiveRef still false), we defer until the
+    // user navigates here — that's what keeps cold opens cheap when 4-6
+    // windows would otherwise all boot simultaneously.
+    if (everActiveRef.current) fontsThenBoot();
 
     return () => {
       disposed = true;
+      bootRef.current = () => {};
       cleanup();
     };
-  }, [active]);
+  }, [shouldMount]);
+
+  // ---- focus + lazy first-boot on active flips ----
+  // Cheap: no dispose, no remount. If the pane has never booted (first
+  // visit), kick the boot here so the user doesn't wait for sessionActive
+  // to retoggle.
+  useEffect(() => {
+    if (!active) return;
+    if (termRef.current) {
+      termRef.current.focus();
+    } else if (shouldMount) {
+      bootRef.current();
+    }
+  }, [active, shouldMount]);
 
   return <div ref={hostRef} className="terminal-host" />;
 }
