@@ -139,13 +139,16 @@ async fn write_all_async(writer: &AsyncFd<File>, mut data: &[u8]) -> std::io::Re
 }
 
 #[tauri::command]
-pub fn pty_spawn(
+pub async fn pty_spawn(
     manager: State<'_, PtyManager>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     startup: Option<String>,
 ) -> AppResult<u32> {
+    // Has to be `async fn` so the body runs inside Tauri's tokio
+    // runtime — both `AsyncFd::new` and `tokio::spawn` below panic
+    // ("no reactor running") when called from a sync Tauri command.
     let pair = NativePtySystem::default()
         .openpty(pty_size(cols, rows))
         .map_err(pty_err)?;
