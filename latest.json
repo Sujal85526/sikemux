@@ -1,11 +1,11 @@
 {
-  "version": "0.1.9",
-  "notes": "Rundeck pane no longer reports \"not configured\" on cold boot \u2014 the client now refreshes config from disk on every request, also picking up `rnd login` from the CLI live. Clicking a project in the tree resets the nav stack to the matrix instead of stranding you on a stale deploy/execution page. Rundeck project tree honors window transparency like every other rail. Terminal panes no longer double-mount xterm when boot races focus.",
-  "pub_date": "2026-05-27T20:10:47Z",
+  "version": "0.1.10",
+  "notes": "Custom in-editor find/replace bar replaces CodeMirror's panel \u2014 VSCode-style layout, real \"N of M\" counter, draggable opacity & blur sliders, chevron toggles replace, Cmd-F refocuses + seeds from selection on every press. Editor: Tab indents, Cmd-Alt-Up/Down duplicates the line, undo back to the saved buffer now clears the dirty dot. Global search: Aa/ab/.* moved inline into the find input, \"\u2026\" reveal for files-to-include / exclude, Cmd-Shift-F seeds from selection. Settings: full-pane layout with theme-aware surfaces, no more solid tiles, opacity slider goes 0.00\u20131.00 with no floor. Project session close-X visible on hover. Agent rail's controls moved from footer to header. Fixed: global search false-cancelling across background sessions; \u2318P opening a file no longer wipes the other tabs; Rundeck pane no longer reports \"not configured\" on cold boot; rundeck tree-click resets the nav stack.",
+  "pub_date": "2026-05-27T23:19:22Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWI0TFYwUjhMRkJ2a054NjdwK0dLMXBIR053dlNlUDVsWDhRbk5GZHl1Y1Yydzd0WnkwU0hNSUdoUnBLNTlCYnk2YUlUeHRrUlJDWUcwY0hvekl3MXdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5OTEyNjQ2CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CnhWbGo0Rit4cnFEM3JSYnh2dm01ZDI3SGhiU2ZEOEhtVjc2NTNBS1A3ZHRaQll3TFRRMVlnOE4zM3JPcnpHOGRBQ2QzSjdrcnUrb0pKTzZZUk54WENRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.9/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVlVWUZhcGJLaEJVUjlTNk9UUGhNOW9WVWFZT3lUZnJtUHMvb0tlamdtQUhTVEY3ZXIvUUdOMXkyRW43RVRrRzVTME5QalA3dnpPanRyQ2pReWh0UUFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5OTIzOTYyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmJmdmh1dEsrQ0lWaGtWbHZZWjBrcWVNUEpQYVJnQmVIK0hMcUp2dzNVZDVPK2tHTHk3STVtRS94ZnZ6QXJscWQ1cFNKVzFFNFFQK3k5dndwT2ZFN0R3PT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.10/Sikemux.app.tar.gz"
     }
   }
 }
