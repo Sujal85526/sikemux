@@ -3650,6 +3650,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "ignore",
+ "libc",
  "linked-hash-map",
  "notify",
  "objc2",

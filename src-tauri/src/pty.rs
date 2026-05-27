@@ -33,7 +33,9 @@
 //   pty_kill        — terminate the PTY process
 
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::{Read, Write};
+use std::os::fd::FromRawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -41,6 +43,7 @@ use dashmap::DashMap;
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use tauri::ipc::Channel;
 use tauri::State;
+use tokio::io::unix::AsyncFd;
 
 use crate::error::{AppError, AppResult};
 
@@ -50,9 +53,17 @@ fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
 
 /// One running pseudo-terminal: the master + child + headless parser +
 /// the set of frontend Channels currently subscribed to live output.
+///
+/// I/O model: the master fd is set to non-blocking and dup'd twice. The
+/// reader-side dup is owned by the reader tokio task; the writer-side
+/// dup is wrapped in an `AsyncFd` and guarded by a tokio Mutex so
+/// `pty_write` calls serialise without ever blocking a worker thread.
+/// The original master fd is retained inside `portable_pty::MasterPty`
+/// purely so resize ioctls + child cleanup still work — neither cares
+/// about O_NONBLOCK.
 struct Pty {
     master: Mutex<Box<dyn MasterPty + Send>>,
-    writer: Mutex<Box<dyn Write + Send>>,
+    write_async: tokio::sync::Mutex<AsyncFd<File>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     /// Tracks the current screen grid + scrollback. Always up to date,
     /// even when no one's subscribed — that's the whole point.
@@ -118,13 +129,51 @@ pub fn pty_spawn(
     let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().map_err(pty_err)?;
-    let writer = pair.master.take_writer().map_err(pty_err)?;
+    // Get the master fd and set the underlying open-file-description to
+    // O_NONBLOCK. This is shared across every dup of the master (a
+    // property of the file description, not the fd), which is exactly
+    // what we need: the reader and writer dups below inherit it, and the
+    // master fd itself only ever sees ioctl (resize) — unaffected by
+    // O_NONBLOCK.
+    let master_fd = pair
+        .master
+        .as_raw_fd()
+        .ok_or_else(|| pty_err("master pty has no fd"))?;
+    unsafe {
+        let flags = libc::fcntl(master_fd, libc::F_GETFL);
+        if flags < 0 {
+            return Err(pty_err(std::io::Error::last_os_error()));
+        }
+        if libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+            return Err(pty_err(std::io::Error::last_os_error()));
+        }
+    }
+
+    // Two independent dups of the master fd — one for the async reader,
+    // one for the async writer. dup() returns a new fd referring to the
+    // same kernel open-file-description, so closing one (e.g. on pty_kill
+    // dropping the Pty) does not invalidate the others; portable_pty's
+    // own fd inside `pair.master` stays alive until that struct drops.
+    let (read_raw, write_raw) = unsafe {
+        let r = libc::dup(master_fd);
+        let w = libc::dup(master_fd);
+        if r < 0 || w < 0 {
+            // Roll back whichever succeeded so we don't leak.
+            if r >= 0 { libc::close(r); }
+            if w >= 0 { libc::close(w); }
+            return Err(pty_err(std::io::Error::last_os_error()));
+        }
+        (r, w)
+    };
+    let read_file = unsafe { File::from_raw_fd(read_raw) };
+    let write_file = unsafe { File::from_raw_fd(write_raw) };
+    let read_async = AsyncFd::new(read_file).map_err(pty_err)?;
+    let write_async = AsyncFd::new(write_file).map_err(pty_err)?;
     let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
 
     let pty = Arc::new(Pty {
         master: Mutex::new(pair.master),
-        writer: Mutex::new(writer),
+        write_async: tokio::sync::Mutex::new(write_async),
         child: Mutex::new(child),
         parser: Mutex::new(vt100::Parser::new(rows, cols, PARSER_SCROLLBACK)),
         subscribers: Mutex::new(HashMap::new()),
@@ -132,12 +181,11 @@ pub fn pty_spawn(
 
     // Reader — feeds parser then fans bytes out to subscribers.
     //
-    // Lives on tokio's blocking pool (via `tauri::async_runtime::spawn_blocking`)
-    // rather than `std::thread::spawn`. portable_pty's reader is sync
-    // `std::io::Read`, so we can't yet drive it with `AsyncRead` cleanly
-    // without juggling raw fds — but routing through the blocking pool
-    // means the thread is at least managed (configurable cap,
-    // observable, drained on shutdown) instead of detached.
+    // Runs as a plain tokio task (no dedicated OS thread). `AsyncFd`
+    // parks the task until the kernel signals readability via kqueue
+    // (macOS) / epoll (linux), at which point `try_io` does a single
+    // non-blocking read. WouldBlock just loops back to `readable().await`
+    // after clearing the readiness flag, so we never busy-spin.
     //
     // Atomicity invariant (vs `pty_attach`): a freshly-attached subscriber
     // must see EXACTLY the bytes NOT present in the snapshot it got back.
@@ -152,16 +200,24 @@ pub fn pty_spawn(
     // without explicit unsub) are GC'd on send error so the map stays
     // bounded.
     let pty_reader = pty.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::spawn(async move {
         let mut buf = [0u8; 65536];
         loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
+            let mut guard = match read_async.readable().await {
+                Ok(g) => g,
+                Err(_) => break,
+            };
+            let res = guard.try_io(|inner| {
+                // impl Read for &File — avoids needing &mut File.
+                let mut f = inner.get_ref();
+                f.read(&mut buf)
+            });
+            match res {
+                Ok(Ok(0)) => break,              // EOF
+                Ok(Err(_)) => break,             // I/O error
+                Err(_would_block) => continue,    // spurious wake; loop
+                Ok(Ok(n)) => {
                     let bytes = &buf[..n];
-                    // Snapshot the subscriber list under both locks so
-                    // pty_attach can't slip a new subscriber between
-                    // "bytes processed" and "fan-out determined".
                     let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
                         let Ok(mut parser) = pty_reader.parser.lock() else { break };
                         parser.process(bytes);
@@ -184,7 +240,6 @@ pub fn pty_spawn(
                         }
                     }
                 }
-                Err(_) => break,
             }
         }
         // Notify on EOF — empty payload is the frontend's "process exited"
@@ -280,11 +335,32 @@ pub fn pty_attach(
 }
 
 #[tauri::command]
-pub fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) -> AppResult<()> {
-    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
-    let mut writer = pty.writer.lock().map_err(pty_err)?;
-    writer.write_all(data.as_bytes()).map_err(AppError::from)?;
-    writer.flush().map_err(AppError::from)
+pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) -> AppResult<()> {
+    // Clone the Arc out of DashMap immediately so we don't hold a shard
+    // across .await points (which would risk deadlocking the manager).
+    let pty = manager
+        .ptys
+        .get(&id)
+        .map(|r| r.clone())
+        .ok_or(AppError::BadArg("pty not found"))?;
+    let writer = pty.write_async.lock().await;
+    let mut remaining = data.as_bytes();
+    while !remaining.is_empty() {
+        let mut guard = writer.writable().await.map_err(pty_err)?;
+        let res = guard.try_io(|inner| {
+            let mut f = inner.get_ref();
+            f.write(remaining)
+        });
+        match res {
+            Ok(Ok(0)) => return Err(pty_err("pty write returned 0")),
+            Ok(Ok(n)) => {
+                remaining = &remaining[n..];
+            }
+            Ok(Err(e)) => return Err(AppError::from(e)),
+            Err(_would_block) => continue,
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
