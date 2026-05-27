@@ -10,20 +10,20 @@ import { useEffect, useRef } from "react";
 // moved since the last keystroke. Hover handlers gate selection updates on
 // it. VSCode and Telescope both use this pattern.
 export function useMouseActive(): { current: boolean } {
-  const ref = useRef(false);
-  useEffect(() => {
-    const onMove = () => {
-      ref.current = true;
-    };
-    const onKey = () => {
-      ref.current = false;
-    };
-    window.addEventListener("mousemove", onMove, true);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("mousemove", onMove, true);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, []);
-  return ref;
+    const ref = useRef(false);
+    useEffect(() => {
+        const onMove = () => {
+            ref.current = true;
+        };
+        const onKey = () => {
+            ref.current = false;
+        };
+        window.addEventListener("mousemove", onMove, true);
+        window.addEventListener("keydown", onKey, true);
+        return () => {
+            window.removeEventListener("mousemove", onMove, true);
+            window.removeEventListener("keydown", onKey, true);
+        };
+    }, []);
+    return ref;
 }

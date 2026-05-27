@@ -1,13 +1,5 @@
-import {
-  StateEffect,
-  StateField,
-  type Extension,
-} from "@codemirror/state";
-import {
-  Decoration,
-  EditorView,
-  ViewPlugin,
-} from "@codemirror/view";
+import { StateEffect, StateField, type Extension } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import { languageFromPath, lsp } from "../api/lsp";
 import { swallow } from "../state/toast";
 
@@ -20,26 +12,24 @@ type Range = { from: number; to: number } | null;
 const setLink = StateEffect.define<Range>();
 
 const linkField = StateField.define<Range>({
-  create: () => null,
-  update(v, tr) {
-    for (const e of tr.effects) if (e.is(setLink)) v = e.value;
-    return v;
-  },
-  provide: (f) =>
-    EditorView.decorations.compute([f], (state) => {
-      const r = state.field(f);
-      if (!r) return Decoration.none;
-      return Decoration.set([
-        Decoration.mark({ class: "cm-lsp-link" }).range(r.from, r.to),
-      ]);
-    }),
+    create: () => null,
+    update(v, tr) {
+        for (const e of tr.effects) if (e.is(setLink)) v = e.value;
+        return v;
+    },
+    provide: (f) =>
+        EditorView.decorations.compute([f], (state) => {
+            const r = state.field(f);
+            if (!r) return Decoration.none;
+            return Decoration.set([Decoration.mark({ class: "cm-lsp-link" }).range(r.from, r.to)]);
+        }),
 });
 
 // EditorPane sets this so the handler knows which project/file to query.
 let ctx: { project: string; path: string } | null = null;
 
 export function setHoverLinkContext(c: typeof ctx) {
-  ctx = c;
+    ctx = c;
 }
 
 let debounceTimer: number | undefined;
@@ -47,82 +37,82 @@ let lastView: EditorView | null = null;
 let lastRangeKey = "";
 
 function clear(view: EditorView) {
-  if (view.state.field(linkField, false)) {
-    view.dispatch({ effects: setLink.of(null) });
-  }
-  lastRangeKey = "";
+    if (view.state.field(linkField, false)) {
+        view.dispatch({ effects: setLink.of(null) });
+    }
+    lastRangeKey = "";
 }
 
 const hoverHandlers = EditorView.domEventHandlers({
-  mousemove(event, view) {
-    lastView = view;
-    if (!(event.metaKey || event.ctrlKey)) {
-      clear(view);
-      return false;
-    }
-    if (!ctx) return false;
-    const lang = languageFromPath(ctx.path);
-    if (!lang) return false;
-    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-    if (pos == null) {
-      clear(view);
-      return false;
-    }
-    const word = view.state.wordAt(pos);
-    if (!word) {
-      clear(view);
-      return false;
-    }
-    const key = `${word.from}:${word.to}`;
-    if (key === lastRangeKey) return false;
-    lastRangeKey = key;
-    if (debounceTimer) window.clearTimeout(debounceTimer);
-    const line = view.state.doc.lineAt(word.from);
-    const character = word.from - line.from;
-    const lineNo = line.number - 1;
-    debounceTimer = window.setTimeout(() => {
-      if (!ctx) return;
-      void lsp
-        .definition(ctx.project, lang, ctx.path, lineNo, character)
-        .then((locs) => {
-          if (locs.length === 0 || lastRangeKey !== key) return;
-          if (!view.state.field(linkField, false)) {
-            view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
-          } else {
-            view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
-          }
-        })
-        .catch(swallow("lsp hover"));
-    }, 120);
-    return false;
-  },
-  mouseleave(_event, view) {
-    clear(view);
-    return false;
-  },
+    mousemove(event, view) {
+        lastView = view;
+        if (!(event.metaKey || event.ctrlKey)) {
+            clear(view);
+            return false;
+        }
+        if (!ctx) return false;
+        const lang = languageFromPath(ctx.path);
+        if (!lang) return false;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos == null) {
+            clear(view);
+            return false;
+        }
+        const word = view.state.wordAt(pos);
+        if (!word) {
+            clear(view);
+            return false;
+        }
+        const key = `${word.from}:${word.to}`;
+        if (key === lastRangeKey) return false;
+        lastRangeKey = key;
+        if (debounceTimer) window.clearTimeout(debounceTimer);
+        const line = view.state.doc.lineAt(word.from);
+        const character = word.from - line.from;
+        const lineNo = line.number - 1;
+        debounceTimer = window.setTimeout(() => {
+            if (!ctx) return;
+            void lsp
+                .definition(ctx.project, lang, ctx.path, lineNo, character)
+                .then((locs) => {
+                    if (locs.length === 0 || lastRangeKey !== key) return;
+                    if (!view.state.field(linkField, false)) {
+                        view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
+                    } else {
+                        view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
+                    }
+                })
+                .catch(swallow("lsp hover"));
+        }, 120);
+        return false;
+    },
+    mouseleave(_event, view) {
+        clear(view);
+        return false;
+    },
 });
 
 // Clear the underline as soon as Meta/Ctrl is released anywhere in the app.
 const keyReleasePlugin = ViewPlugin.fromClass(
-  class {
-    constructor(public view: EditorView) {
-      document.addEventListener("keyup", this.onKeyUp);
-      window.addEventListener("blur", this.onBlur);
-    }
-    destroy() {
-      document.removeEventListener("keyup", this.onKeyUp);
-      window.removeEventListener("blur", this.onBlur);
-    }
-    onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Meta" || e.key === "Control") {
-        const v = lastView ?? this.view;
-        clear(v);
-      }
-    };
-    onBlur = () => clear(lastView ?? this.view);
-  },
+    class {
+        constructor(public view: EditorView) {
+            document.addEventListener("keyup", this.onKeyUp);
+            window.addEventListener("blur", this.onBlur);
+        }
+        destroy() {
+            document.removeEventListener("keyup", this.onKeyUp);
+            window.removeEventListener("blur", this.onBlur);
+        }
+        onKeyUp = (e: KeyboardEvent) => {
+            if (e.key === "Meta" || e.key === "Control") {
+                const v = lastView ?? this.view;
+                clear(v);
+            }
+        };
+        onBlur = () => clear(lastView ?? this.view);
+    },
 );
 
 export function lspHoverLink(): Extension {
-  return [linkField, hoverHandlers, keyReleasePlugin];
+    return [linkField, hoverHandlers, keyReleasePlugin];
 }

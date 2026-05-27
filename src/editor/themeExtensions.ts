@@ -10,103 +10,98 @@ import { tags as t } from "@lezer/highlight";
 import type { Theme } from "../themes";
 
 export function buildEditorExtensions(theme: Theme): Extension {
-  const editorTheme = EditorView.theme(
-    {
-      "&": { color: theme.editor.fg, backgroundColor: theme.editor.bg },
-      ".cm-content": {
-        caretColor: theme.editor.caret,
-        fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", monospace',
-        fontSize: "13px",
-      },
-      ".cm-cursor, .cm-dropCursor": { borderLeftColor: theme.editor.caret },
-      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-        { backgroundColor: theme.editor.selection },
-      ".cm-activeLine": { backgroundColor: theme.editor.activeLine },
-      ".cm-gutters": {
-        backgroundColor: "transparent",
-        color: theme.editor.gutter,
-        border: "none",
-      },
-      ".cm-activeLineGutter": {
-        backgroundColor: "transparent",
-        color: theme.editor.gutterActive,
-      },
-      ".cm-scroller": {
-        fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", monospace',
-        lineHeight: "1.6",
-      },
-      ".cm-selectionMatch": { backgroundColor: theme.chrome.accDim },
-      ".cm-foldPlaceholder": {
-        backgroundColor: theme.chrome.bgRaised,
-        color: theme.chrome.inkDim,
-        border: "none",
-      },
-      "&.cm-editor.cm-focused": { outline: "none" },
-    },
-    { dark: theme.dark },
-  );
+    const editorTheme = EditorView.theme(
+        {
+            "&": { color: theme.editor.fg, backgroundColor: theme.editor.bg },
+            ".cm-content": {
+                caretColor: theme.editor.caret,
+                fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", monospace',
+                fontSize: "13px",
+            },
+            ".cm-cursor, .cm-dropCursor": { borderLeftColor: theme.editor.caret },
+            "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: theme.editor.selection },
+            ".cm-activeLine": { backgroundColor: theme.editor.activeLine },
+            ".cm-gutters": {
+                backgroundColor: "transparent",
+                color: theme.editor.gutter,
+                border: "none",
+            },
+            ".cm-activeLineGutter": {
+                backgroundColor: "transparent",
+                color: theme.editor.gutterActive,
+            },
+            ".cm-scroller": {
+                fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", monospace',
+                lineHeight: "1.6",
+            },
+            ".cm-selectionMatch": { backgroundColor: theme.chrome.accDim },
+            ".cm-foldPlaceholder": {
+                backgroundColor: theme.chrome.bgRaised,
+                color: theme.chrome.inkDim,
+                border: "none",
+            },
+            "&.cm-editor.cm-focused": { outline: "none" },
+        },
+        { dark: theme.dark },
+    );
 
-  const highlight = HighlightStyle.define([
-    {
-      tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword],
-      color: theme.highlight.keyword,
-    },
-    {
-      tag: [t.string, t.special(t.string), t.regexp],
-      color: theme.highlight.string,
-    },
-    {
-      tag: [t.comment, t.lineComment, t.blockComment],
-      color: theme.highlight.comment,
-      fontStyle: "italic",
-    },
-    {
-      tag: [t.number, t.bool, t.atom, t.null],
-      color: theme.highlight.number,
-    },
-    {
-      tag: [
-        t.function(t.variableName),
-        t.function(t.propertyName),
-        t.macroName,
-      ],
-      color: theme.highlight.function,
-    },
-    {
-      tag: [t.typeName, t.className, t.namespace],
-      color: theme.highlight.type,
-    },
-    {
-      tag: [t.variableName, t.definition(t.variableName)],
-      color: theme.highlight.variable,
-    },
-    { tag: [t.propertyName], color: theme.highlight.property },
-    { tag: [t.tagName], color: theme.highlight.tag },
-    { tag: [t.attributeName], color: theme.highlight.number },
-    {
-      tag: [t.operator, t.punctuation, t.bracket, t.separator],
-      color: theme.highlight.operator,
-    },
-    { tag: [t.heading], color: theme.highlight.heading, fontWeight: "bold" },
-    { tag: [t.link, t.url], color: theme.highlight.link },
-    { tag: [t.invalid], color: theme.highlight.invalid },
-    {
-      tag: [t.meta, t.processingInstruction],
-      color: theme.highlight.meta,
-    },
-  ]);
+    const highlight = HighlightStyle.define([
+        {
+            tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword],
+            color: theme.highlight.keyword,
+        },
+        {
+            tag: [t.string, t.special(t.string), t.regexp],
+            color: theme.highlight.string,
+        },
+        {
+            tag: [t.comment, t.lineComment, t.blockComment],
+            color: theme.highlight.comment,
+            fontStyle: "italic",
+        },
+        {
+            tag: [t.number, t.bool, t.atom, t.null],
+            color: theme.highlight.number,
+        },
+        {
+            tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName],
+            color: theme.highlight.function,
+        },
+        {
+            tag: [t.typeName, t.className, t.namespace],
+            color: theme.highlight.type,
+        },
+        {
+            tag: [t.variableName, t.definition(t.variableName)],
+            color: theme.highlight.variable,
+        },
+        { tag: [t.propertyName], color: theme.highlight.property },
+        { tag: [t.tagName], color: theme.highlight.tag },
+        { tag: [t.attributeName], color: theme.highlight.number },
+        {
+            tag: [t.operator, t.punctuation, t.bracket, t.separator],
+            color: theme.highlight.operator,
+        },
+        { tag: [t.heading], color: theme.highlight.heading, fontWeight: "bold" },
+        { tag: [t.link, t.url], color: theme.highlight.link },
+        { tag: [t.invalid], color: theme.highlight.invalid },
+        {
+            tag: [t.meta, t.processingInstruction],
+            color: theme.highlight.meta,
+        },
+    ]);
 
-  return [
-    editorTheme,
-    syntaxHighlighting(highlight),
-    indentationMarkers({
-      thickness: 1,
-      colors: {
-        light: theme.editor.indent,
-        dark: theme.editor.indent,
-        activeLight: theme.editor.indentActive,
-        activeDark: theme.editor.indentActive,
-      },
-    }),
-  ];
+    return [
+        editorTheme,
+        syntaxHighlighting(highlight),
+        indentationMarkers({
+            thickness: 1,
+            colors: {
+                light: theme.editor.indent,
+                dark: theme.editor.indent,
+                activeLight: theme.editor.indentActive,
+                activeDark: theme.editor.indentActive,
+            },
+        }),
+    ];
 }
