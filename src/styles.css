@@ -2823,23 +2823,23 @@ button {
 }
 
 /* agent rail — footer strip (type picker + search + new) */
-.agent-footer {
+.agent-header {
     display: flex;
     align-items: center;
     gap: 4px;
     padding: 6px 8px;
-    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     flex: 0 0 auto;
 }
-.agent-footer-types,
-.agent-footer-actions {
+.agent-header-types,
+.agent-header-actions {
     display: flex;
     gap: 2px;
 }
-.agent-footer-types {
+.agent-header-types {
     flex: 1;
 }
-.agent-footer-btn {
+.agent-header-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2850,11 +2850,11 @@ button {
         color 0.12s,
         background 0.12s;
 }
-.agent-footer-btn:hover {
+.agent-header-btn:hover {
     color: var(--ink);
     background: var(--rail-2);
 }
-.agent-footer-btn.active {
+.agent-header-btn.active {
     color: var(--acc);
     background: var(--acc-soft);
 }

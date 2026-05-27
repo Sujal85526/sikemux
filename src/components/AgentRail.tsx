@@ -82,8 +82,8 @@ export function AgentRail() {
   if (!isProject) {
     return (
       <aside className="agent-rail">
+        <AgentHeader type={type} setType={setType} />
         <div className="agent-empty">agents are project-scoped</div>
-        <AgentFooter type={type} setType={setType} />
       </aside>
     );
   }
@@ -95,9 +95,10 @@ export function AgentRail() {
 
   return (
     <aside className="agent-rail">
+      <AgentHeader type={type} setType={setType} />
       <div className="rail-scroll">
         {noContent && (
-          <div className="agent-empty">no agents yet — start one below</div>
+          <div className="agent-empty">no agents yet — start one above</div>
         )}
 
         {pinnedDisplay.length > 0 && (
@@ -232,13 +233,11 @@ export function AgentRail() {
           </div>
         )}
       </div>
-
-      <AgentFooter type={type} setType={setType} />
     </aside>
   );
 }
 
-function AgentFooter({
+function AgentHeader({
   type,
   setType,
 }: {
@@ -246,12 +245,12 @@ function AgentFooter({
   setType: (t: AgentType) => void;
 }) {
   return (
-    <div className="agent-footer">
-      <div className="agent-footer-types">
+    <div className="agent-header">
+      <div className="agent-header-types">
         {AGENT_TYPES.map((t) => (
           <button
             key={t}
-            className={`agent-footer-btn${type === t ? " active" : ""}`}
+            className={`agent-header-btn${type === t ? " active" : ""}`}
             title={t}
             onClick={() => setType(t)}
           >
@@ -259,16 +258,16 @@ function AgentFooter({
           </button>
         ))}
       </div>
-      <div className="agent-footer-actions">
+      <div className="agent-header-actions">
         <button
-          className="agent-footer-btn"
+          className="agent-header-btn"
           title="Search agent sessions"
           onClick={cmd.openAgentPalette}
         >
           <IconSearch size={15} />
         </button>
         <button
-          className="agent-footer-btn"
+          className="agent-header-btn"
           title={`new ${type} agent`}
           onClick={() => cmd.addAgent(type)}
         >
