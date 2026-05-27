@@ -173,10 +173,12 @@ export const useStore = create<StoreState>(() => {
     leftRailOpen: true,
     rightRailOpen: true,
     rundeck: {
-      // Default to the dev legacy project on first launch. User picks
-      // any project (and optional env folder for product projects) from
-      // the tree sub-rail inside the Rundeck pane; selection persists.
-      activeProject: "dev",
+      // No hardcoded default. On first launch the pane shows whatever
+      // upstream returns and the user picks; selection persists.
+      // `prodEnvs` stays as a sensible default for the type-to-confirm
+      // gating on the deploy view — it's a user-overridable safety
+      // setting, not a project list.
+      activeProject: "",
       activeEnvFolder: null,
       prodEnvs: ["prod", "production"],
     },

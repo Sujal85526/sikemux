@@ -3,9 +3,9 @@ import { awsApi } from "../api/aws";
 import { rundeckApi } from "../api/rundeck";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
-import { fetchResource, invalidate } from "./resources";
-import { awsIdentityR } from "./resources.defs";
-import { inferEnv, legacyProjectForEnv } from "./rundeckShape";
+import { fetchResource, invalidate, peekResource } from "./resources";
+import { awsIdentityR, rndProjectsR } from "./resources.defs";
+import { inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { swallow } from "./toast";
 import {
@@ -408,14 +408,19 @@ export function setRundeckProject(
 
 /** From a project session: jump to the Rundeck service detail (execution
  *  history) for (basename(cwd), session.env). Resolves env → Rundeck
- *  project via the legacy alias table — sufficient for the chip's
- *  primary use case (Swish legacy services). Product-style sessions
- *  would need explicit per-session project config; not wired yet. */
+ *  project by matching name against the live upstream project list —
+ *  no alias table. If the user has e.g. a `staging` project upstream,
+ *  envLabel "staging" finds it; if not, the chip just doesn't fire. */
 export async function openRundeckServiceFor(
   service: string,
   envLabel: string,
 ): Promise<void> {
-  const project = legacyProjectForEnv(envLabel);
+  // Ensure the projects list is in cache (cheap if already loaded).
+  const projects = (await fetchResource(rndProjectsR).catch(() => null))
+    ?? peekResource(rndProjectsR)
+    ?? [];
+  const envLower = envLabel.toLowerCase();
+  const project = projects.find((p) => p.name.toLowerCase() === envLower)?.name;
   if (!project) return;
   openRundeckSession();
   const after = getState();

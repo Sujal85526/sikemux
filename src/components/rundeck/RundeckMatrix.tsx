@@ -3,11 +3,7 @@ import { type MatrixCell, type RundeckEnvSpec } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { useResource } from "../../state/resources";
 import { rndMatrixR } from "../../state/resources.defs";
-import {
-  envFolderOf,
-  inferEnv,
-  isLegacyProject,
-} from "../../state/rundeckShape";
+import { envFolderOf, inferEnv } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
@@ -17,11 +13,10 @@ interface Props {
 
 /** Job list for the currently-selected Rundeck project.
  *
- *  Legacy projects (dev/staging/Preprod/production) render a flat list
- *  of `backend/<svc>` rows. Product projects (contractiq/marketingiq/
- *  channeliq) render the jobs grouped by env folder (the first segment
- *  of each job's group path — `dev/backend/...` → `dev` group header).
- *  No synthesis: this is exactly the tree the API hands us. */
+ *  Layout is derived from the jobs themselves: when any job's group has
+ *  a slash, we group cells by the first segment (env folder). Flat
+ *  projects fall into a single `_ungrouped` bucket and render flat.
+ *  No project-name table, no synthesis — exactly what the API returns. */
 export function RundeckMatrix({ paneId }: Props) {
   const project = useStore((s) => s.rundeck.activeProject);
   const envFolder = useStore((s) => s.rundeck.activeEnvFolder);
@@ -37,33 +32,35 @@ export function RundeckMatrix({ paneId }: Props) {
 
   const data = res.data;
   const env = data?.envs[0] ?? null;
-  // Apply the tree-driven env-folder filter (product projects only) BEFORE
-  // sorting/grouping so totals + group headers reflect the visible scope.
+  // Apply the tree-driven env-folder filter BEFORE sorting/grouping so
+  // totals + group headers reflect the visible scope. Filter is a no-op
+  // for projects whose jobs aren't nested under env folders.
   const cells = useMemo(() => {
     const list = (env?.cells ?? []).filter((c) => {
       if (!envFolder) return true;
-      if (isLegacyProject(project)) return true;
       return envFolderOf(c.group) === envFolder;
     });
     list.sort((a, b) => a.name.localeCompare(b.name));
     return list;
-  }, [env, envFolder, project]);
+  }, [env, envFolder]);
   const loading = res.status === "loading" && !data;
 
-  // Group cells by env folder when the project is product-style and no
-  // explicit folder filter is active. When a folder filter IS active we
-  // show a flat list (the folder header would be redundant). Legacy
-  // projects always render flat.
+  // Group cells by env folder. When a folder filter is active we render
+  // flat (the folder header would be redundant). When no folder filter
+  // is set, projects whose jobs are flat collapse into one `_ungrouped`
+  // bucket — visually equivalent to a flat list, no special case needed.
   const groups = useMemo(() => {
-    if (isLegacyProject(project) || envFolder) {
-      return [{ env: null, cells }];
-    }
+    if (envFolder) return [{ env: null, cells }];
     const map = new Map<string, MatrixCell[]>();
     for (const c of cells) {
       const folder = envFolderOf(c.group) ?? "_ungrouped";
       const arr = map.get(folder) ?? [];
       arr.push(c);
       map.set(folder, arr);
+    }
+    // If every cell landed in `_ungrouped`, render flat (no header).
+    if (map.size === 1 && map.has("_ungrouped")) {
+      return [{ env: null, cells }];
     }
     // Stable order: alphabetical, with `_ungrouped` last.
     return [...map.entries()]
@@ -76,7 +73,7 @@ export function RundeckMatrix({ paneId }: Props) {
         env: folder === "_ungrouped" ? null : folder,
         cells: group,
       }));
-  }, [cells, project, envFolder]);
+  }, [cells, envFolder]);
 
   if (!project) {
     return (

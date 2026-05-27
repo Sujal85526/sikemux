@@ -7,8 +7,7 @@ import { ENVS } from "../state/types";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
 import { swallow } from "../state/toast";
-import { awsIdentityR, rndMatrixR } from "../state/resources.defs";
-import { legacyProjectForEnv } from "../state/rundeckShape";
+import { awsIdentityR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import {
   IconBattery,
@@ -292,15 +291,20 @@ export function TopBar() {
       }
     : null;
 
-  // Project-session deploy chip: maps session.env via the legacy alias
-  // table to a Rundeck project name. Product-style sessions aren't wired
-  // in here yet — they'd need an explicit per-session product binding.
+  // Project-session deploy chip: look up a Rundeck project whose name
+  // matches `session.env` (case-insensitive) against the live upstream
+  // list. No alias table — if there's no matching project upstream, the
+  // chip just doesn't show.
+  const rndProjects = useResource(rndProjectsR);
   const deployTarget =
     isProject && session.cwd
       ? (() => {
           const svc = session.cwd.replace(/\/+$/, "").split("/").pop();
           if (!svc) return null;
-          const project = legacyProjectForEnv(session.env);
+          const envLower = session.env.toLowerCase();
+          const project = (rndProjects.data ?? []).find(
+            (p) => p.name.toLowerCase() === envLower,
+          )?.name;
           if (!project) return null;
           return { service: svc, envLabel: session.env, project };
         })()

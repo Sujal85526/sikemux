@@ -2,61 +2,43 @@ import { useMemo } from "react";
 import * as cmd from "../../state/commands";
 import { useResource } from "../../state/resources";
 import { rndJobsR, rndProjectsR } from "../../state/resources.defs";
-import { envFolderOf, isLegacyProject } from "../../state/rundeckShape";
+import { envFolderOf } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
 import { IconChevron, IconFolder } from "../Icons";
 
-/** Tree sub-rail inside the Rundeck pane. Two sections:
+/** Tree sub-rail inside the Rundeck pane. Lists every project upstream
+ *  returns from `rnd_projects`, in the order Rundeck reports them —
+ *  no Legacy/Product split, no hardcoded names. Each project's children
+ *  (env folders) are derived from its job groups; projects whose jobs
+ *  are flat collapse into a leaf row.
  *
- *  - **Legacy** (env-as-project): single row per project, no children.
- *    Selecting jumps the matrix to that project's flat job list.
- *  - **Product**: row per project + indented env-folder children
- *    (`dev/`, `production/`) derived from `rnd_jobs`. Selecting the
- *    project header shows all env folders grouped; selecting an env
- *    folder narrows the matrix to that subtree.
- *
- *  Production-tier rows (legacy `production`, product env folder
- *  `production`) are tinted so the user can't miss them when picking. */
+ *  Env-folder rows named `production` get a subtle tint so the user
+ *  can't miss them when picking a deploy target. */
 export function RundeckProjectTree() {
   const projects = useResource(rndProjectsR);
   const activeProject = useStore((s) => s.rundeck.activeProject);
   const activeEnvFolder = useStore((s) => s.rundeck.activeEnvFolder);
 
-  const { legacy, product } = useMemo(() => {
-    const all = projects.data ?? [];
-    return {
-      legacy: all.filter((p) => isLegacyProject(p.name)),
-      product: all.filter((p) => !isLegacyProject(p.name)),
-    };
-  }, [projects.data]);
+  const list = projects.data ?? [];
 
   return (
     <aside className="rnd-tree">
-      <Section label="Legacy">
-        {legacy.map((p) => (
-          <LegacyRow
-            key={p.name}
-            project={p.name}
-            active={p.name === activeProject}
-          />
-        ))}
-        {legacy.length === 0 && projects.status === "loading" && (
-          <TreeHint>loading…</TreeHint>
-        )}
-      </Section>
-      <Section label="Product">
-        {product.map((p) => (
-          <ProductRow
+      <div className="rnd-tree-section">
+        {list.map((p) => (
+          <ProjectRow
             key={p.name}
             project={p.name}
             activeProject={activeProject}
             activeEnvFolder={activeEnvFolder}
           />
         ))}
-        {product.length === 0 && projects.status === "loading" && (
+        {list.length === 0 && projects.status === "loading" && (
           <TreeHint>loading…</TreeHint>
         )}
-      </Section>
+        {list.length === 0 && projects.status === "ok" && (
+          <TreeHint>no projects</TreeHint>
+        )}
+      </div>
       {projects.error && !projects.data && (
         <div className="rnd-tree-err">{projects.error}</div>
       )}
@@ -64,50 +46,11 @@ export function RundeckProjectTree() {
   );
 }
 
-function Section({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rnd-tree-section">
-      <div className="rnd-tree-section-h">{label}</div>
-      {children}
-    </div>
-  );
-}
-
 function TreeHint({ children }: { children: React.ReactNode }) {
   return <div className="rnd-tree-hint">{children}</div>;
 }
 
-function LegacyRow({
-  project,
-  active,
-}: {
-  project: string;
-  active: boolean;
-}) {
-  const isProd = project.toLowerCase() === "production";
-  return (
-    <button
-      type="button"
-      className={`rnd-tree-row${active ? " active" : ""}${isProd ? " prod" : ""}`}
-      onClick={() => cmd.setRundeckProject(project, null)}
-      title={`${project} (legacy)`}
-    >
-      <span className="rnd-tree-chev" aria-hidden />
-      <span className="rnd-tree-ic">
-        <IconFolder size={11} />
-      </span>
-      <span className="rnd-tree-name">{project}</span>
-    </button>
-  );
-}
-
-function ProductRow({
+function ProjectRow({
   project,
   activeProject,
   activeEnvFolder,
@@ -116,10 +59,9 @@ function ProductRow({
   activeProject: string;
   activeEnvFolder: string | null;
 }) {
-  // We always fetch jobs for each product project so the tree can show
-  // env-folder children + counts. Lightweight (one API call per
-  // product, cached) and lets the user navigate without first having to
-  // select the project.
+  // Fetch jobs to determine whether this project has env folders. One
+  // call per project, cached. If any job's group has a slash, render
+  // expandable; otherwise it's a flat leaf.
   const jobs = useResource(rndJobsR, project);
   const folders = useMemo(() => {
     const map = new Map<string, number>();
@@ -132,28 +74,33 @@ function ProductRow({
   }, [jobs.data]);
 
   const isActiveProject = project === activeProject;
-  const expanded = isActiveProject || folders.length > 0;
+  const hasFolders = folders.length > 0;
+  const expanded = isActiveProject || hasFolders;
 
   return (
     <div className="rnd-tree-group">
       <button
         type="button"
-        className={`rnd-tree-row${isActiveProject && activeEnvFolder === null ? " active" : ""}`}
+        className={`rnd-tree-row${
+          isActiveProject && activeEnvFolder === null ? " active" : ""
+        }`}
         onClick={() => cmd.setRundeckProject(project, null)}
-        title={`${project} (product) — all env folders`}
+        title={project}
       >
         <span className="rnd-tree-chev">
-          <IconChevron
-            size={9}
-            className={`rnd-tree-chev-ic${expanded ? " open" : ""}`}
-          />
+          {hasFolders ? (
+            <IconChevron
+              size={9}
+              className={`rnd-tree-chev-ic${expanded ? " open" : ""}`}
+            />
+          ) : null}
         </span>
         <span className="rnd-tree-ic">
           <IconFolder size={11} />
         </span>
         <span className="rnd-tree-name">{project}</span>
       </button>
-      {expanded && (
+      {expanded && hasFolders && (
         <div className="rnd-tree-children">
           {folders.map(([folder, count]) => {
             const isLeafActive =
@@ -165,7 +112,7 @@ function ProductRow({
                 key={folder}
                 className={`rnd-tree-leaf${isLeafActive ? " active" : ""}${isProd ? " prod" : ""}`}
                 onClick={() => cmd.setRundeckProject(project, folder)}
-                title={`${project} · ${folder}/backend`}
+                title={`${project} · ${folder}/`}
               >
                 <span className="rnd-tree-leaf-name">{folder}/</span>
                 <span className="rnd-tree-leaf-n">{count}</span>
@@ -174,9 +121,6 @@ function ProductRow({
           })}
           {folders.length === 0 && jobs.status === "loading" && (
             <div className="rnd-tree-hint indent">loading…</div>
-          )}
-          {folders.length === 0 && jobs.status !== "loading" && (
-            <div className="rnd-tree-hint indent muted">no jobs</div>
           )}
         </div>
       )}
