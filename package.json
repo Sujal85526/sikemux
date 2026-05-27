@@ -30,6 +30,7 @@
     "@codemirror/view": "^6.35.0",
     "@lezer/highlight": "^1.2.1",
     "@replit/codemirror-indentation-markers": "^6.5.3",
+    "@tanstack/react-virtual": "^3.13.26",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-process": "^2",

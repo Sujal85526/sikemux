@@ -138,6 +138,7 @@ pub fn run() {
             settings::expand_path,
             search::project_search,
             search::project_search_replace,
+            search::read_file_window,
             ssh::ssh_hosts,
             aws::auth::aws_profiles,
             aws::auth::aws_caller_identity,

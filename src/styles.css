@@ -5220,7 +5220,8 @@ button {
     margin-left: 4px;
 }
 
-/* Replace action reads as an underlined accent word, not a button slab. */
+/* Replace action reads as an underlined accent word, not a button slab.
+   Two stages: preview (accent purple) → commit (live green). */
 .sp-replace-btn {
     background: transparent;
     color: var(--acc);
@@ -5244,6 +5245,34 @@ button {
     border-bottom-color: transparent;
     cursor: not-allowed;
 }
+.sp-replace-btn.sp-replace-btn-commit {
+    color: var(--live);
+    border-bottom-color: var(--live);
+}
+.sp-replace-btn.sp-replace-btn-commit:hover {
+    color: var(--ink);
+    border-bottom-color: var(--ink);
+}
+
+/* "stale" indicator surfaces when fs events fire while results are shown.
+   One-click rerun to refresh. */
+.sp-stale {
+    background: transparent;
+    border: 0;
+    color: var(--warn);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    padding: 0 6px 0 0;
+    margin-right: 2px;
+    border-bottom: 1px dashed rgba(255, 202, 133, 0.5);
+}
+.sp-stale:hover {
+    color: var(--ink);
+    border-bottom-color: var(--ink);
+}
 
 /* threaded list area */
 .sp-threads-wrap {
@@ -5252,14 +5281,19 @@ button {
     place-items: center;
     padding: 24px 14px;
 }
+/* Virtualizer-driven: the scrollable container sets the viewport, the
+   inner spacer reserves total height, and absolute rows position via
+   translateY. Padding/gap moved onto the rows themselves so layout stays
+   correct even when rows are absolute-positioned. */
 .sp-threads {
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 8px 8px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
     min-width: 0;
+    contain: strict;
+}
+.sp-threads-spacer {
+    position: relative;
+    width: 100%;
 }
 .sp-empty,
 .sp-loading,
@@ -5283,6 +5317,8 @@ button {
     color: var(--danger);
 }
 
+/* Legacy non-virtualized wrapper, no longer rendered but left in CSS to
+   avoid accidental regressions if SearchPane is reverted. */
 .sp-thread {
     display: flex;
     flex-direction: column;
@@ -5296,14 +5332,14 @@ button {
     font-family: var(--mono);
     font-size: 11px;
     min-width: 0;
-    padding: 2px 4px;
+    padding: 4px 12px 4px 8px;
     width: 100%;
+    height: 24px;
     background: transparent;
     border: 0;
     color: inherit;
     text-align: left;
     cursor: pointer;
-    border-radius: 3px;
     transition: background 0.08s, color 0.08s;
 }
 .sp-thread-who:hover {
@@ -5356,19 +5392,21 @@ button {
 }
 .sp-msg {
     display: grid;
-    grid-template-columns: 40px 1fr;
+    grid-template-columns: 48px 1fr;
     width: 100%;
-    padding: 2px 9px;
+    padding: 2px 12px 2px 20px;
+    height: 20px;
     background: transparent;
     border: 0;
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 11px;
-    line-height: 1.55;
+    line-height: 16px;
     cursor: pointer;
     text-align: left;
     border-radius: 0;
     transition: background 0.08s, color 0.08s;
+    align-items: center;
 }
 .sp-msg:hover {
     background: rgba(255, 255, 255, 0.03);
@@ -5464,14 +5502,34 @@ button {
     transition: color 0.12s, transform 0.12s;
     display: inline-block;
 }
-.sp-preview-host {
+/* Preview body wraps the always-mounted host so we can overlay
+   loading/err messages on top of it without unmounting the editor. */
+.sp-preview-body {
     flex: 1;
+    position: relative;
     overflow: hidden;
     min-height: 0;
+}
+.sp-preview-host {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
 }
 .sp-preview-host .cm-editor {
     background: transparent !important;
     height: 100%;
+}
+.sp-preview-overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.18);
+    pointer-events: none;
 }
 .sp-preview-empty,
 .sp-preview-loading,
@@ -5483,6 +5541,9 @@ button {
     font-family: var(--mono);
     font-size: 12px;
     padding: 24px;
+}
+.sp-preview-overlay.sp-preview-err {
+    color: var(--danger);
 }
 .sp-preview-err {
     color: var(--danger);
