@@ -959,3 +959,246 @@ pub async fn git_stash_rename(
     Ok(())
 }
 
+// ---- remotes -------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+pub struct GitRemote {
+    pub name: String,
+    /// Fetch URL — the one we display + use for cloning context.
+    pub url: String,
+}
+
+/// `git remote -v` shape: `<name>\t<url> (fetch|push)` per line. We keep
+/// only the fetch URL since that's authoritative for branch listing.
+#[tauri::command]
+pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
+    let out = git_ok(&repo, &["remote", "-v"])?;
+    let mut seen: std::collections::HashMap<String, String> = Default::default();
+    for line in out.lines() {
+        // Format: "origin\tgit@github.com:foo/bar.git (fetch)"
+        let mut parts = line.split('\t');
+        let name = parts.next().unwrap_or("").trim().to_string();
+        let rest = parts.next().unwrap_or("");
+        if name.is_empty() || rest.is_empty() {
+            continue;
+        }
+        // Only keep fetch URLs.
+        let is_fetch = rest.trim_end().ends_with("(fetch)");
+        if !is_fetch {
+            continue;
+        }
+        let url = rest
+            .rsplitn(2, ' ')
+            .nth(1)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !url.is_empty() {
+            seen.insert(name, url);
+        }
+    }
+    let mut list: Vec<GitRemote> = seen
+        .into_iter()
+        .map(|(name, url)| GitRemote { name, url })
+        .collect();
+    list.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(list)
+}
+
+#[tauri::command]
+pub async fn git_remote_add(
+    repo: String,
+    name: String,
+    url: String,
+) -> Result<(), String> {
+    git_ok(&repo, &["remote", "add", &name, &url])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_remote_remove(repo: String, name: String) -> Result<(), String> {
+    git_ok(&repo, &["remote", "remove", &name])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_remote_rename(
+    repo: String,
+    old_name: String,
+    new_name: String,
+) -> Result<(), String> {
+    git_ok(&repo, &["remote", "rename", &old_name, &new_name])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_remote_set_url(
+    repo: String,
+    name: String,
+    url: String,
+) -> Result<(), String> {
+    git_ok(&repo, &["remote", "set-url", &name, &url])?;
+    Ok(())
+}
+
+/// Fetch a single remote when `remote` is set, otherwise `--all`. Always
+/// passes `--prune` so stale remote-tracking branches get reaped — this
+/// matches lazygit's default and avoids the "branch shows up after it was
+/// deleted upstream" trap.
+#[tauri::command]
+pub async fn git_fetch(repo: String, remote: Option<String>) -> Result<String, String> {
+    let out = match remote {
+        Some(r) if !r.is_empty() => git_ok(&repo, &["fetch", "--prune", &r])?,
+        _ => git_ok(&repo, &["fetch", "--all", "--prune"])?,
+    };
+    Ok(out)
+}
+
+// ---- remote branches -----------------------------------------------------
+
+#[derive(Serialize, Clone)]
+pub struct GitRemoteBranch {
+    /// Branch name WITHOUT the remote prefix (`main` not `origin/main`).
+    pub name: String,
+    /// Full ref form (`origin/main`) — what `git checkout --track` expects.
+    pub full_ref: String,
+    /// True if this is the symbolic HEAD pointer for the remote (e.g.
+    /// `origin/HEAD -> origin/main`). UI shows it differently and skips
+    /// it from most ops.
+    pub is_head_pointer: bool,
+    /// Local branch currently tracking this remote ref, if any.
+    pub tracked_by: Option<String>,
+    /// Tip subject line for the branch (best-effort).
+    pub subject: Option<String>,
+}
+
+/// List branches under `refs/remotes/<remote>/`. We use `for-each-ref` so
+/// we can extract the upstream-of mapping + the tip subject in a single
+/// command instead of fanning out N `log -1` calls.
+#[tauri::command]
+pub async fn git_remote_branches(
+    repo: String,
+    remote: String,
+) -> Result<Vec<GitRemoteBranch>, String> {
+    let prefix = format!("refs/remotes/{remote}/");
+    let format = "%(refname:short)%09%(symref)%09%(subject)";
+    let out = git_ok(
+        &repo,
+        &[
+            "for-each-ref",
+            "--sort=refname",
+            &format!("--format={format}"),
+            &prefix,
+        ],
+    )?;
+
+    // Build the local-branch → upstream map once so we can annotate each
+    // remote branch with its tracking local. The cheap form:
+    // `git for-each-ref refs/heads --format='%(refname:short)\t%(upstream:short)'`.
+    let mut upstreams: std::collections::HashMap<String, String> = Default::default();
+    if let Ok(locals) = git_ok(
+        &repo,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)\t%(upstream:short)",
+            "refs/heads/",
+        ],
+    ) {
+        for line in locals.lines() {
+            let mut p = line.splitn(2, '\t');
+            let local = p.next().unwrap_or("").to_string();
+            let upstream = p.next().unwrap_or("").trim().to_string();
+            if !upstream.is_empty() {
+                upstreams.insert(upstream, local);
+            }
+        }
+    }
+
+    let mut list = Vec::new();
+    for line in out.lines() {
+        let mut p = line.splitn(3, '\t');
+        let full_ref = p.next().unwrap_or("").to_string();
+        let symref = p.next().unwrap_or("").trim().to_string();
+        let subject = p.next().unwrap_or("").to_string();
+        if full_ref.is_empty() {
+            continue;
+        }
+        let name = full_ref
+            .strip_prefix(&format!("{remote}/"))
+            .unwrap_or(&full_ref)
+            .to_string();
+        let is_head_pointer = !symref.is_empty() || name == "HEAD";
+        list.push(GitRemoteBranch {
+            name,
+            full_ref: full_ref.clone(),
+            is_head_pointer,
+            tracked_by: upstreams.get(&full_ref).cloned(),
+            subject: if subject.is_empty() { None } else { Some(subject) },
+        });
+    }
+    Ok(list)
+}
+
+/// Check out a remote branch into a new local tracking branch. If
+/// `local_name` is omitted, uses the remote branch's leaf name (so
+/// `origin/feat/foo` → local `feat/foo`).
+#[tauri::command]
+pub async fn git_checkout_remote_branch(
+    repo: String,
+    remote: String,
+    branch: String,
+    local_name: Option<String>,
+) -> Result<(), String> {
+    let full_ref = format!("{remote}/{branch}");
+    let local = local_name.unwrap_or_else(|| branch.clone());
+    // If the local already exists, just `checkout <local>`; otherwise
+    // create-and-track.
+    let exists = git_ok(
+        &repo,
+        &["show-ref", "--verify", "--quiet", &format!("refs/heads/{local}")],
+    )
+    .is_ok();
+    if exists {
+        git_ok(&repo, &["checkout", &local])?;
+    } else {
+        git_ok(
+            &repo,
+            &["checkout", "-b", &local, "--track", &full_ref],
+        )?;
+    }
+    Ok(())
+}
+
+/// Delete a remote branch by pushing the empty ref. Strict form
+/// `git push <remote> --delete <branch>` — the one lazygit invokes.
+#[tauri::command]
+pub async fn git_delete_remote_branch(
+    repo: String,
+    remote: String,
+    branch: String,
+) -> Result<(), String> {
+    git_ok(&repo, &["push", &remote, "--delete", &branch])?;
+    Ok(())
+}
+
+/// Point a local branch's upstream at the given remote ref. Pass `null` /
+/// empty `upstream` to clear the upstream entirely (matches lazygit's
+/// "unset upstream" flow).
+#[tauri::command]
+pub async fn git_set_upstream(
+    repo: String,
+    branch: String,
+    upstream: Option<String>,
+) -> Result<(), String> {
+    match upstream {
+        Some(u) if !u.is_empty() => {
+            git_ok(&repo, &["branch", &format!("--set-upstream-to={u}"), &branch])?;
+        }
+        _ => {
+            git_ok(&repo, &["branch", "--unset-upstream", &branch])?;
+        }
+    }
+    Ok(())
+}
+
+

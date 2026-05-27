@@ -14,11 +14,18 @@ export interface EditorPaneView {
   treeWidth: number;
 }
 
-export type GitPanel = "files" | "branches" | "commits";
+export type GitPanel = "files" | "branches" | "remotes" | "commits";
 
 export interface GitPaneView {
   panel: GitPanel;
   selected: Record<GitPanel, number>;
+  /** When set, the Remotes panel is drilled into that remote's branches
+   *  view. `null` = show the flat list of remotes. */
+  remoteDrill: string | null;
+  /** Per-remote selection index in the drill view. Keyed by remote name
+   *  so switching back to a previously-visited remote keeps the cursor
+   *  where the user left it. */
+  remoteBranchSelected: Record<string, number>;
 }
 
 export interface GlobalSearchView {

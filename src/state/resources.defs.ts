@@ -14,7 +14,13 @@ import {
   type SqsQueue,
 } from "../api/aws";
 import { filesApi } from "../api/files";
-import { git, type GitOverview, type GitStatus } from "../api/git";
+import {
+  git,
+  type GitOverview,
+  type GitRemote,
+  type GitRemoteBranch,
+  type GitStatus,
+} from "../api/git";
 import {
   rundeckApi,
   type MatrixResult,
@@ -49,6 +55,19 @@ export const gitFileAtR = resource({
   fetch: (repo: string, rev: string, path: string): Promise<string> =>
     git.fileAt(repo, rev, path),
   // SHA-keyed reads are immutable; HEAD reads we invalidate via bus.
+});
+
+export const gitRemotesR = resource({
+  kind: "git.remotes",
+  fetch: (repo: string): Promise<GitRemote[]> => git.remotes(repo),
+  staleAfterMs: 5 * 60_000,
+});
+
+export const gitRemoteBranchesR = resource({
+  kind: "git.remoteBranches",
+  fetch: (repo: string, remote: string): Promise<GitRemoteBranch[]> =>
+    git.remoteBranches(repo, remote),
+  staleAfterMs: 30_000,
 });
 
 // ---- AWS --------------------------------------------------------------

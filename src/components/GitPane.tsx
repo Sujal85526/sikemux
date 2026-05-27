@@ -11,7 +11,11 @@ import {
   toggleGitCmdLog,
 } from "../state/git";
 import { useResource } from "../state/resources";
-import { gitOverviewR } from "../state/resources.defs";
+import {
+  gitOverviewR,
+  gitRemoteBranchesR,
+  gitRemotesR,
+} from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError, swallow } from "../state/toast";
 import type { GitPanel } from "../state/types";
@@ -30,7 +34,9 @@ type RightView =
 
 const DEFAULT_VIEW = {
   panel: "files" as GitPanel,
-  selected: { files: 0, branches: 0, commits: 0 },
+  selected: { files: 0, branches: 0, remotes: 0, commits: 0 },
+  remoteDrill: null as string | null,
+  remoteBranchSelected: {} as Record<string, number>,
 };
 
 // Lazygit-style git pane. Per-pane view state (focused panel + per-panel
@@ -50,13 +56,27 @@ export function GitPane({
   const repo = cwd;
   const view = useStore((s) => s.gitViews[paneId] ?? DEFAULT_VIEW);
   const { panel, selected: sel } = view;
+  const remoteDrill = view.remoteDrill ?? null;
+  const remoteBranchSelected = view.remoteBranchSelected ?? {};
   const modalOpen = useStore((s) => s.gitModal !== null);
 
   const overview = useResource(gitOverviewR, repo || "");
+  const remotesRes = useResource(gitRemotesR, repo || "");
+  // Only fetch remote branches when we've actually drilled into a
+  // remote — keeps cold-start cost off until the user asks for it.
+  const remoteBranchesRes = useResource(
+    gitRemoteBranchesR,
+    repo || "",
+    remoteDrill ?? "",
+  );
   const status = repo ? overview.data?.status ?? null : null;
   const branches = repo ? overview.data?.branches ?? [] : [];
   const commits = repo ? overview.data?.log ?? [] : [];
   const files = status?.files ?? [];
+  const remotes = repo ? remotesRes.data ?? [] : [];
+  const remoteBranches =
+    repo && remoteDrill ? remoteBranchesRes.data ?? [] : [];
+  const currentBranch = branches.find((b) => b.current)?.name ?? "";
 
   const [right, setRight] = useState<RightView>({ mode: "output", text: "" });
   const [busy, setBusy] = useState<string | null>(null);
@@ -74,14 +94,14 @@ export function GitPane({
   // pane but resets on remount.
   const [searchByPanel, setSearchByPanel] = useState<
     Record<GitPanel, string>
-  >({ files: "", branches: "", commits: "" });
+  >({ files: "", branches: "", remotes: "", commits: "" });
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Range-select anchor per panel. `null` = no range; otherwise the
   // anchor index. Range select is the lazygit `v` model.
   const [rangeByPanel, setRangeByPanel] = useState<
     Record<GitPanel, number | null>
-  >({ files: null, branches: null, commits: null });
+  >({ files: null, branches: null, remotes: null, commits: null });
 
   // ---- filesystem watcher ----
   useEffect(() => {
@@ -138,12 +158,47 @@ export function GitPane({
     [commits, commitQuery],
   );
 
+  // Remotes filter applies to the panel content currently visible:
+  // either the list of remotes itself OR (when drilled in) the remote's
+  // branches. Same query slot — flipping in / out of the drill keeps
+  // the filter text so it's easy to refine a search across both views.
+  const remotesQuery = searchByPanel.remotes;
+  const filteredRemotes = useMemo(
+    () =>
+      remotesQuery
+        ? remotes.filter(
+            (r) =>
+              r.name.toLowerCase().includes(remotesQuery.toLowerCase()) ||
+              r.url.toLowerCase().includes(remotesQuery.toLowerCase()),
+          )
+        : remotes,
+    [remotes, remotesQuery],
+  );
+  const filteredRemoteBranches = useMemo(
+    () =>
+      remotesQuery
+        ? remoteBranches.filter((b) =>
+            b.name.toLowerCase().includes(remotesQuery.toLowerCase()),
+          )
+        : remoteBranches,
+    [remoteBranches, remotesQuery],
+  );
+  // Selection cursor inside a drilled-in remote — keyed by remote name
+  // so backing out + drilling back in restores the cursor position.
+  const remoteBranchSel = remoteDrill
+    ? remoteBranchSelected[remoteDrill] ?? 0
+    : 0;
+
   const lenFor = (p: GitPanel) =>
     p === "files"
       ? filteredFiles.length
       : p === "branches"
         ? filteredBranches.length
-        : filteredCommits.length;
+        : p === "remotes"
+          ? remoteDrill
+            ? filteredRemoteBranches.length
+            : filteredRemotes.length
+          : filteredCommits.length;
 
   // Range = [min(anchor, sel), max(anchor, sel)] when anchor set.
   const rangeFor = (p: GitPanel): [number, number] | null => {
@@ -184,15 +239,61 @@ export function GitPane({
           title: b.name,
           subtitle: "branch tip",
         });
+    } else if (panel === "remotes") {
+      if (remoteDrill) {
+        // Drilled into a remote — selected row is a remote branch.
+        // Show its tip diff via the existing CommitReview surface
+        // (which accepts any rev, not just commit shas).
+        if (filteredRemoteBranches.length === 0) {
+          setRight({ mode: "output", text: `(no branches under ${remoteDrill}/)` });
+          return;
+        }
+        const rb =
+          filteredRemoteBranches[
+            Math.min(remoteBranchSel, filteredRemoteBranches.length - 1)
+          ];
+        if (rb)
+          setRight({
+            mode: "commit",
+            rev: rb.full_ref,
+            title: rb.full_ref,
+            subtitle: rb.tracked_by
+              ? `tracked by ${rb.tracked_by}`
+              : "remote branch tip",
+          });
+      } else {
+        // Showing the flat remotes list — right pane is a key/value
+        // summary of the selected remote.
+        if (filteredRemotes.length === 0) {
+          setRight({
+            mode: "output",
+            text: remotes.length === 0 ? "(no remotes configured)" : "no matches",
+          });
+          return;
+        }
+        const r =
+          filteredRemotes[Math.min(sel.remotes, filteredRemotes.length - 1)];
+        if (r)
+          setRight({
+            mode: "output",
+            text: `remote: ${r.name}\nurl:    ${r.url}\n\npress enter to browse this remote's branches\npress f to fetch · n to add · r to rename · e to edit url · d to delete`,
+          });
+      }
     }
   }, [
     panel,
     sel.files,
     sel.commits,
     sel.branches,
+    sel.remotes,
+    remoteDrill,
+    remoteBranchSel,
     filteredFiles,
     filteredCommits,
     filteredBranches,
+    filteredRemotes,
+    filteredRemoteBranches,
+    remotes.length,
   ]);
 
   // ---- action helpers ----
@@ -236,6 +337,15 @@ export function GitPane({
   const setSel = (next: typeof sel) =>
     cmd.setGitView(paneId, { selected: next });
 
+  // Drill the Remotes panel into (or out of) a specific remote's
+  // branches view. `null` = back to the flat remotes list.
+  const setRemoteDrill = (name: string | null) =>
+    cmd.setGitView(paneId, { remoteDrill: name });
+  const setRemoteBranchSel = (name: string, idx: number) =>
+    cmd.setGitView(paneId, {
+      remoteBranchSelected: { ...remoteBranchSelected, [name]: idx },
+    });
+
   const toggleStage = () => {
     const r = rangeFor("files");
     if (r) {
@@ -276,6 +386,16 @@ export function GitPane({
   const moveSel = (d: number) => {
     const len = lenFor(panel);
     if (len === 0) return;
+    // Remotes panel drilled into a remote → cursor lives in the
+    // per-remote `remoteBranchSelected` map instead of the flat
+    // `selected.remotes` slot.
+    if (panel === "remotes" && remoteDrill) {
+      setRemoteBranchSel(
+        remoteDrill,
+        Math.max(0, Math.min(len - 1, remoteBranchSel + d)),
+      );
+      return;
+    }
     setSel({
       ...sel,
       [panel]: Math.max(0, Math.min(len - 1, sel[panel] + d)),
@@ -426,6 +546,187 @@ export function GitPane({
     }
   };
 
+  // ---- remotes panel actions ----
+  const doFetch = (remote: string | null) => {
+    void run(
+      remote ? `fetching ${remote}…` : "fetching all remotes…",
+      async () => {
+        const out = await git.fetch(repo, remote);
+        // Surface bringing-down counts when git emits them — `out` from
+        // `git fetch --prune` is usually empty on success, so default
+        // to a friendly tick.
+        return out.trim().length > 0
+          ? out
+          : `✓ fetched ${remote ?? "all"}`;
+      },
+    );
+    // Branches data depends on remote tip — bounce the matching cache.
+    void remotesRes.refresh();
+    if (remoteDrill) void remoteBranchesRes.refresh();
+  };
+
+  const openAddRemotePrompt = () => {
+    openGitPrompt({
+      title: "Add remote",
+      placeholder: "name (e.g. upstream) — then you'll enter the URL",
+      onConfirm: (name) => {
+        const n = name.trim();
+        if (!n) return;
+        openGitPrompt({
+          title: `Add remote · ${n}`,
+          placeholder: "URL (https://… or git@…)",
+          onConfirm: (url) => {
+            const u = url.trim();
+            if (!u) return;
+            void run(`adding remote ${n}`, async () => {
+              await git.remoteAdd(repo, n, u);
+              await remotesRes.refresh();
+              return `✓ added remote ${n} → ${u}`;
+            });
+          },
+        });
+      },
+    });
+  };
+
+  const openRemoteRowMenu = () => {
+    const r = filteredRemotes[sel.remotes];
+    if (!r) return;
+    openGitMenu(`Remote · ${r.name}`, [
+      {
+        key: "enter",
+        label: "browse branches",
+        run: () => setRemoteDrill(r.name),
+      },
+      {
+        key: "f",
+        label: "fetch this remote",
+        hint: "git fetch --prune <name>",
+        run: () => doFetch(r.name),
+      },
+      {
+        key: "e",
+        label: "edit url",
+        run: () => {
+          openGitPrompt({
+            title: `Edit url · ${r.name}`,
+            initial: r.url,
+            onConfirm: (u) => {
+              const url = u.trim();
+              if (!url || url === r.url) return;
+              void run(`setting url for ${r.name}`, async () => {
+                await git.remoteSetUrl(repo, r.name, url);
+                await remotesRes.refresh();
+                return `✓ ${r.name} → ${url}`;
+              });
+            },
+          });
+        },
+      },
+      {
+        key: "r",
+        label: "rename",
+        run: () => {
+          openGitPrompt({
+            title: `Rename remote · ${r.name}`,
+            initial: r.name,
+            onConfirm: (n) => {
+              const newName = n.trim();
+              if (!newName || newName === r.name) return;
+              void run(`renaming ${r.name} → ${newName}`, async () => {
+                await git.remoteRename(repo, r.name, newName);
+                await remotesRes.refresh();
+                return `✓ ${r.name} → ${newName}`;
+              });
+            },
+          });
+        },
+      },
+      {
+        key: "d",
+        label: "delete remote",
+        destructive: true,
+        run: () => {
+          openGitConfirm({
+            title: `Remove remote ${r.name}?`,
+            body: `Removes the local remote configuration. Won't touch the upstream repo.`,
+            destructive: true,
+            confirmLabel: "remove",
+            onConfirm: () => {
+              void run(`removing remote ${r.name}`, async () => {
+                await git.remoteRemove(repo, r.name);
+                await remotesRes.refresh();
+                return `✓ removed ${r.name}`;
+              });
+            },
+          });
+        },
+      },
+    ]);
+  };
+
+  const openRemoteBranchMenu = () => {
+    if (!remoteDrill) return;
+    const rb = filteredRemoteBranches[remoteBranchSel];
+    if (!rb || rb.is_head_pointer) return;
+    openGitMenu(`${rb.full_ref}`, [
+      {
+        key: "space",
+        label: rb.tracked_by
+          ? `checkout local ${rb.tracked_by}`
+          : `checkout (create local ${rb.name})`,
+        run: () => {
+          void run(`checking out ${rb.full_ref}`, async () => {
+            await git.checkoutRemoteBranch(
+              repo,
+              remoteDrill,
+              rb.name,
+              rb.tracked_by ?? null,
+            );
+            return `✓ on ${rb.tracked_by ?? rb.name}`;
+          });
+        },
+      },
+      {
+        key: "M",
+        label: `merge ${rb.full_ref} into HEAD`,
+        run: () => doMerge(rb.full_ref),
+      },
+      {
+        key: "u",
+        label: `set as upstream of ${currentBranch || "HEAD"}`,
+        disabled: !currentBranch,
+        run: () => {
+          if (!currentBranch) return;
+          void run(`setting upstream of ${currentBranch}`, async () => {
+            await git.setUpstream(repo, currentBranch, rb.full_ref);
+            return `✓ ${currentBranch} now tracks ${rb.full_ref}`;
+          });
+        },
+      },
+      {
+        key: "d",
+        label: "delete remote branch",
+        destructive: true,
+        run: () => {
+          openGitConfirm({
+            title: `Delete ${rb.full_ref}?`,
+            body: `Pushes a delete to ${remoteDrill}. The upstream branch will be gone for everyone.`,
+            destructive: true,
+            confirmLabel: "delete upstream",
+            onConfirm: () => {
+              void run(`deleting ${rb.full_ref}`, async () => {
+                await git.deleteRemoteBranch(repo, remoteDrill, rb.name);
+                await remoteBranchesRes.refresh();
+                return `✓ deleted ${rb.full_ref}`;
+              });
+            },
+          });
+        },
+      },
+    ]);
+  };
+
   const openHelpCheatsheet = () => {
     openGitCheatsheet("Git pane keybindings", [
       {
@@ -460,6 +761,31 @@ export function GitPane({
           { keys: "n / N", label: "new branch (from selected / from HEAD)" },
           { keys: "M", label: "merge menu" },
           { keys: "d", label: "delete menu" },
+          { keys: "c", label: "checkout by name" },
+        ],
+      },
+      {
+        title: "Remotes (list)",
+        rows: [
+          { keys: "enter", label: "drill into remote's branches" },
+          { keys: "n", label: "add remote" },
+          { keys: "f", label: "fetch this remote" },
+          { keys: "F", label: "fetch all remotes" },
+          { keys: "e", label: "edit url" },
+          { keys: "r", label: "rename" },
+          { keys: "d", label: "delete" },
+          { keys: "...", label: "any of the above also openable via menu" },
+        ],
+      },
+      {
+        title: "Remotes (drilled)",
+        rows: [
+          { keys: "esc", label: "back to remotes list" },
+          { keys: "space / enter", label: "checkout (creates tracking branch)" },
+          { keys: "M", label: "merge into HEAD" },
+          { keys: "u", label: "set as upstream of current branch" },
+          { keys: "d", label: "delete remote branch" },
+          { keys: "f / F", label: "fetch (this remote / all)" },
         ],
       },
       {
@@ -516,26 +842,40 @@ export function GitPane({
           [panel]: s[panel] === null ? sel[panel] : null,
         }));
       } else if (k === "Escape") {
-        // Cascade: range first, then search, then nothing.
+        // Cascade: range first, then search, then (in remotes) un-drill,
+        // then nothing.
         if (rangeByPanel[panel] !== null) {
           setRangeByPanel((s) => ({ ...s, [panel]: null }));
         } else if (searchByPanel[panel]) {
           setSearchByPanel((s) => ({ ...s, [panel]: "" }));
+        } else if (panel === "remotes" && remoteDrill) {
+          setRemoteDrill(null);
         } else handled = false;
       } else if (k === "2") setPanel("files");
       else if (k === "3") setPanel("branches");
-      else if (k === "4") setPanel("commits");
+      else if (k === "4") setPanel("remotes");
+      else if (k === "5") setPanel("commits");
       else if (k === "Tab")
         setPanel(
           panel === "files"
             ? "branches"
             : panel === "branches"
-              ? "commits"
-              : "files",
+              ? "remotes"
+              : panel === "remotes"
+                ? "commits"
+                : "files",
         );
       else if (k === "j" || k === "ArrowDown") moveSel(1);
       else if (k === "k" || k === "ArrowUp") moveSel(-1);
-      else if (k === "r") void overview.refresh();
+      else if (k === "r") {
+        // `r` is global refresh (overview); on the remotes panel, also
+        // refresh the remote-specific cache the user is staring at.
+        void overview.refresh();
+        if (panel === "remotes") {
+          void remotesRes.refresh();
+          if (remoteDrill) void remoteBranchesRes.refresh();
+        }
+      } else if (k === "F") doFetch(null);
       else if (k === "P")
         void run("pushing…", async () => `↑ ${await git.push(repo)}`);
       else if (k === "p")
@@ -583,6 +923,66 @@ export function GitPane({
             );
           },
         });
+      }
+      // ----- remotes (flat list) -----
+      else if (panel === "remotes" && !remoteDrill && k === "Enter") {
+        const r = filteredRemotes[sel.remotes];
+        if (r) setRemoteDrill(r.name);
+      } else if (panel === "remotes" && !remoteDrill && k === "n") {
+        openAddRemotePrompt();
+      } else if (panel === "remotes" && !remoteDrill && k === "f") {
+        const r = filteredRemotes[sel.remotes];
+        if (r) doFetch(r.name);
+      } else if (panel === "remotes" && !remoteDrill && k === "e") {
+        openRemoteRowMenu();
+        // Re-issue the `e` action explicitly so users don't need to press
+        // the menu hotkey when they're aiming directly at "edit url".
+        // (The menu still acts as the discoverable surface.)
+      } else if (
+        panel === "remotes" &&
+        !remoteDrill &&
+        (k === "d" || k === "r")
+      ) {
+        // Both `d` (delete) and `r` (rename) live in the row menu —
+        // open it so the user always sees the consequences before
+        // committing.
+        openRemoteRowMenu();
+      }
+      // ----- remotes (drilled into a remote) -----
+      else if (panel === "remotes" && remoteDrill && k === "Enter") {
+        openRemoteBranchMenu();
+      } else if (
+        panel === "remotes" &&
+        remoteDrill &&
+        (k === " " || k === "Space")
+      ) {
+        const rb = filteredRemoteBranches[remoteBranchSel];
+        if (rb && !rb.is_head_pointer) {
+          void run(`checking out ${rb.full_ref}`, async () => {
+            await git.checkoutRemoteBranch(
+              repo,
+              remoteDrill,
+              rb.name,
+              rb.tracked_by ?? null,
+            );
+            return `✓ on ${rb.tracked_by ?? rb.name}`;
+          });
+        }
+      } else if (panel === "remotes" && remoteDrill && k === "M") {
+        const rb = filteredRemoteBranches[remoteBranchSel];
+        if (rb && !rb.is_head_pointer) doMerge(rb.full_ref);
+      } else if (panel === "remotes" && remoteDrill && k === "u") {
+        const rb = filteredRemoteBranches[remoteBranchSel];
+        if (rb && !rb.is_head_pointer && currentBranch) {
+          void run(`setting upstream of ${currentBranch}`, async () => {
+            await git.setUpstream(repo, currentBranch, rb.full_ref);
+            return `✓ ${currentBranch} now tracks ${rb.full_ref}`;
+          });
+        }
+      } else if (panel === "remotes" && remoteDrill && k === "d") {
+        openRemoteBranchMenu();
+      } else if (panel === "remotes" && remoteDrill && k === "f") {
+        doFetch(remoteDrill);
       } else handled = false;
       if (handled) {
         e.preventDefault();
@@ -596,6 +996,7 @@ export function GitPane({
   const panelFiles = panel === "files";
   const filesRange = rangeFor("files");
   const branchesRange = rangeFor("branches");
+  const remotesRange = rangeFor("remotes");
   const commitsRange = rangeFor("commits");
 
   return (
@@ -781,6 +1182,121 @@ export function GitPane({
 
         <GitPanelBlock
           n={4}
+          label={remoteDrill ? `Remotes · ${remoteDrill}` : "Remotes"}
+          focused={panel === "remotes"}
+          onFocus={() => {
+            setPanel("remotes");
+            // Re-focus also un-drills if user clicks the header — gives
+            // them a way back without the keyboard.
+            if (remoteDrill && panel === "remotes") setRemoteDrill(null);
+          }}
+          flex={1}
+          rangeBadge={
+            remotesRange
+              ? `range ${remotesRange[1] - remotesRange[0] + 1}`
+              : null
+          }
+          filterBadge={searchByPanel.remotes || null}
+        >
+          {remoteDrill ? (
+            <>
+              <button
+                type="button"
+                className="git-row git-row-back"
+                onClick={() => setRemoteDrill(null)}
+                title="Back to remotes (esc)"
+              >
+                <span className="git-row-back-glyph">←</span>
+                <span className="git-path">{remoteDrill}</span>
+                <span className="git-row-hint">esc to go back</span>
+              </button>
+              {filteredRemoteBranches.length === 0 && (
+                <div className="git-empty">
+                  {remoteBranchesRes.status === "loading"
+                    ? "loading…"
+                    : remotesQuery
+                      ? "no matches"
+                      : `no branches under ${remoteDrill}/`}
+                </div>
+              )}
+              {filteredRemoteBranches.map((rb, i) => {
+                const inRange =
+                  remotesRange !== null &&
+                  i >= remotesRange[0] &&
+                  i <= remotesRange[1];
+                return (
+                  <div
+                    key={rb.full_ref}
+                    className={`git-row${
+                      panel === "remotes" && remoteBranchSel === i
+                        ? " sel"
+                        : ""
+                    }${inRange ? " ranged" : ""}${rb.is_head_pointer ? " muted" : ""}`}
+                    onClick={() => {
+                      setPanel("remotes");
+                      setRemoteBranchSel(remoteDrill, i);
+                    }}
+                    title={
+                      rb.is_head_pointer
+                        ? `${rb.full_ref} (HEAD pointer)`
+                        : rb.full_ref
+                    }
+                  >
+                    <span className="gb-dot remote" />
+                    <span className="git-path">{rb.name}</span>
+                    {rb.tracked_by && (
+                      <span className="git-tracked">
+                        ↻ {rb.tracked_by}
+                      </span>
+                    )}
+                    {rb.is_head_pointer && (
+                      <span className="git-row-hint">HEAD</span>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              {filteredRemotes.length === 0 && (
+                <div className="git-empty">
+                  {remotesRes.status === "loading"
+                    ? "loading…"
+                    : remotesQuery
+                      ? "no matches"
+                      : "no remotes — press n to add"}
+                </div>
+              )}
+              {filteredRemotes.map((r, i) => {
+                const inRange =
+                  remotesRange !== null &&
+                  i >= remotesRange[0] &&
+                  i <= remotesRange[1];
+                return (
+                  <div
+                    key={r.name}
+                    className={`git-row${
+                      panel === "remotes" && sel.remotes === i ? " sel" : ""
+                    }${inRange ? " ranged" : ""}`}
+                    onClick={() => {
+                      setPanel("remotes");
+                      setSel({ ...sel, remotes: i });
+                    }}
+                    onDoubleClick={() => setRemoteDrill(r.name)}
+                    title={r.url}
+                  >
+                    <span className="gb-dot remote" />
+                    <span className="git-path">{r.name}</span>
+                    <span className="git-remote-url">{r.url}</span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </GitPanelBlock>
+
+        <GitPanelBlock
+          n={5}
           label="Commits"
           focused={panel === "commits"}
           onFocus={() => setPanel("commits")}

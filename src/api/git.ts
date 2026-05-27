@@ -43,6 +43,19 @@ export interface GitStash {
 export type DiscardMode = "unstaged" | "staged" | "all";
 export type StashMode = "all" | "staged" | "unstaged";
 
+export interface GitRemote {
+  name: string;
+  url: string;
+}
+
+export interface GitRemoteBranch {
+  name: string;
+  full_ref: string;
+  is_head_pointer: boolean;
+  tracked_by: string | null;
+  subject: string | null;
+}
+
 // Frontend cache for `git_file_at` keyed on immutable revs (sha-shaped). The
 // backend already caches; this saves the IPC round-trip altogether for repeat
 // reads of the same baseline (e.g. mounting many diff editors).
@@ -128,6 +141,39 @@ export const git = {
     invoke<void>("git_stash_branch", { repo, index, name }),
   stashRename: (repo: string, index: number, newMessage: string) =>
     invoke<void>("git_stash_rename", { repo, index, newMessage }),
+
+  // ---- remotes ----
+  remotes: (repo: string) => invoke<GitRemote[]>("git_remotes", { repo }),
+  remoteAdd: (repo: string, name: string, url: string) =>
+    invoke<void>("git_remote_add", { repo, name, url }),
+  remoteRemove: (repo: string, name: string) =>
+    invoke<void>("git_remote_remove", { repo, name }),
+  remoteRename: (repo: string, oldName: string, newName: string) =>
+    invoke<void>("git_remote_rename", { repo, oldName, newName }),
+  remoteSetUrl: (repo: string, name: string, url: string) =>
+    invoke<void>("git_remote_set_url", { repo, name, url }),
+  fetch: (repo: string, remote?: string | null) =>
+    invoke<string>("git_fetch", { repo, remote: remote ?? null }),
+
+  // ---- remote branches ----
+  remoteBranches: (repo: string, remote: string) =>
+    invoke<GitRemoteBranch[]>("git_remote_branches", { repo, remote }),
+  checkoutRemoteBranch: (
+    repo: string,
+    remote: string,
+    branch: string,
+    localName?: string | null,
+  ) =>
+    invoke<void>("git_checkout_remote_branch", {
+      repo,
+      remote,
+      branch,
+      localName: localName ?? null,
+    }),
+  deleteRemoteBranch: (repo: string, remote: string, branch: string) =>
+    invoke<void>("git_delete_remote_branch", { repo, remote, branch }),
+  setUpstream: (repo: string, branch: string, upstream: string | null) =>
+    invoke<void>("git_set_upstream", { repo, branch, upstream }),
 };
 
 export const isStaged = (f: GitFile) => f.index !== " " && f.index !== "?";

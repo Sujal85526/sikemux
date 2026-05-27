@@ -1995,6 +1995,72 @@ button {
     background: var(--live);
     box-shadow: 0 0 6px rgba(97, 255, 202, 0.7);
 }
+.gb-dot.remote {
+    background: var(--acc);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--acc) 60%, transparent);
+}
+
+/* Remote URL trailing column on the remotes-list rows. Truncates from
+   the left when long so the ".git" suffix stays readable. */
+.git-remote-url {
+    color: var(--ink-faint);
+    font-size: 10.5px;
+    margin-left: auto;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: right;
+}
+
+/* Tracking-branch annotation on a remote-branch row — e.g. ↻ feat/foo
+   means the local `feat/foo` branch is tracking this ref. */
+.git-tracked {
+    color: var(--live);
+    font-size: 10.5px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* "Back" pseudo-row shown at the top of a drilled remote-branches view.
+   Subtle, clickable, mirrors lazygit's chevron-back affordance. */
+.git-row.git-row-back {
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed var(--line);
+    color: var(--ink-dim);
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11.5px;
+}
+.git-row.git-row-back:hover {
+    background: var(--acc-soft);
+    color: var(--ink);
+}
+.git-row-back-glyph {
+    color: var(--acc);
+    font-weight: 700;
+    margin-right: 4px;
+}
+.git-row-hint {
+    color: var(--ink-faint);
+    font-size: 10px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* Muted variant — used for `origin/HEAD` and similar non-clickable rows
+   inside a drilled remote. */
+.git-row.muted {
+    color: var(--ink-faint);
+    cursor: default;
+}
+.git-row.muted .git-path {
+    color: var(--ink-faint);
+}
 .gc-hash {
     color: var(--warn);
     font-size: 11px;
