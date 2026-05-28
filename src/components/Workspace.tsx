@@ -73,7 +73,6 @@ export function Workspace() {
                             session={session}
                             win={win}
                             areaRef={areaRef}
-                            sessionActive={isActive}
                             topInset={inset ? TERM_TABS_H : 0}
                             visible={isActive && session.view === "windows" && wid === session.activeWindowId}
                         />
@@ -95,7 +94,6 @@ export function Workspace() {
                             session={session}
                             agent={agent}
                             tabsShown={sessTabs}
-                            sessionActive={isActive}
                             visible={isActive && session.view === "agent" && aid === session.activeAgentId}
                         />
                     );
@@ -186,13 +184,11 @@ const AgentLayer = memo(function AgentLayer({
     agent,
     visible,
     tabsShown,
-    sessionActive,
 }: {
     session: Session;
     agent: Agent;
     visible: boolean;
     tabsShown: boolean;
-    sessionActive: boolean;
 }) {
     return (
         <div className={`window-layer${visible ? " visible" : ""}`}>
@@ -205,7 +201,7 @@ const AgentLayer = memo(function AgentLayer({
                     height: tabsShown ? `calc(100% - ${AGENT_TABS_H}px)` : "100%",
                 }}>
                 <div className="pane pane-terminal">
-                    <TerminalPane cwd={session.cwd || undefined} startup={agent.startup} active={visible} sessionActive={sessionActive} />
+                    <TerminalPane cwd={session.cwd || undefined} startup={agent.startup} active={visible} visible={visible} />
                 </div>
             </div>
         </div>
@@ -224,14 +220,12 @@ const WindowLayer = memo(function WindowLayer({
     visible,
     areaRef,
     topInset = 0,
-    sessionActive,
 }: {
     session: Session;
     win: WindowT;
     visible: boolean;
     areaRef: RefObject<HTMLDivElement | null>;
     topInset?: number;
-    sessionActive: boolean;
 }) {
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
     const { panes, dividers } = useMemo(() => computeLayout(win.root), [win.root]);
@@ -245,6 +239,8 @@ const WindowLayer = memo(function WindowLayer({
                 const shown = !zoomActive || isZoomed;
                 const rect = isZoomed ? FULL : panes.get(p.id)!;
                 const isActive = p.id === win.activePaneId;
+                const paneVisible = visible && shown;
+                const paneActive = paneVisible && isActive;
                 return (
                     <div
                         key={p.id}
@@ -259,21 +255,21 @@ const WindowLayer = memo(function WindowLayer({
                         }}>
                         <div className={`pane pane-${p.kind}`} onMouseDown={() => visible && cmd.focusPane(p.id)}>
                             {p.kind === "editor" ? (
-                                <EditorPane paneId={p.id} cwd={p.cwd || session.cwd} active={visible && isActive && shown} />
+                                <EditorPane paneId={p.id} cwd={p.cwd || session.cwd} active={paneActive} visible={paneVisible} />
                             ) : p.kind === "git" ? (
-                                <GitPane paneId={p.id} cwd={p.cwd || session.cwd} active={visible && isActive && shown} />
+                                <GitPane paneId={p.id} cwd={p.cwd || session.cwd} active={paneVisible} />
                             ) : p.kind === "aws" ? (
-                                <AwsPane />
+                                <AwsPane active={paneVisible} />
                             ) : p.kind === "rundeck" ? (
-                                <RundeckPane paneId={p.id} active={visible && isActive && shown} />
+                                <RundeckPane paneId={p.id} active={paneVisible} />
                             ) : p.kind === "search" ? (
-                                <SearchPane sessionId={session.id} cwd={p.cwd || session.cwd} active={visible && isActive && shown} />
+                                <SearchPane sessionId={session.id} cwd={p.cwd || session.cwd} active={paneActive} visible={paneVisible} />
                             ) : (
                                 <TerminalPane
                                     cwd={p.cwd || session.cwd || undefined}
                                     startup={p.startup}
-                                    active={visible && isActive && shown}
-                                    sessionActive={sessionActive}
+                                    active={paneActive}
+                                    visible={paneVisible}
                                 />
                             )}
                         </div>

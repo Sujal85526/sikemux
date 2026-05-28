@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useResource, type ResourceHandle } from "../../state/resources";
+import { useResourceEnabled, type ResourceHandle } from "../../state/resources";
 import { billingMonthsR, ec2InstancesR, lambdaFnsR, s3BucketsR, sqsQueuesR } from "../../state/resources.defs";
 import * as cmd from "../../state/commands";
 import { useStore } from "../../state/store";
@@ -31,8 +31,8 @@ function Frame<T>({
 // ============================================================
 // EC2
 // ============================================================
-export function AwsEc2View({ profile }: { profile: string }) {
-    const handle = useResource(ec2InstancesR, profile);
+export function AwsEc2View({ profile, active }: { profile: string; active: boolean }) {
+    const handle = useResourceEnabled(active, ec2InstancesR, profile);
     return (
         <div className="aws-view">
             <AwsRefresh handle={handle} />
@@ -74,8 +74,8 @@ export function AwsEc2View({ profile }: { profile: string }) {
 // ============================================================
 // Lambda
 // ============================================================
-export function AwsLambdaView({ profile }: { profile: string }) {
-    const handle = useResource(lambdaFnsR, profile);
+export function AwsLambdaView({ profile, active }: { profile: string; active: boolean }) {
+    const handle = useResourceEnabled(active, lambdaFnsR, profile);
     return (
         <div className="aws-view">
             <AwsRefresh handle={handle} />
@@ -112,8 +112,8 @@ export function AwsLambdaView({ profile }: { profile: string }) {
 // ============================================================
 // SQS
 // ============================================================
-export function AwsSqsView({ profile }: { profile: string }) {
-    const handle = useResource(sqsQueuesR, profile);
+export function AwsSqsView({ profile, active }: { profile: string; active: boolean }) {
+    const handle = useResourceEnabled(active, sqsQueuesR, profile);
     return (
         <div className="aws-view">
             <AwsRefresh handle={handle} />
@@ -188,8 +188,8 @@ function splitCharges(by_service: { amount: string }[]): {
     return { gross, credits, net: gross + credits };
 }
 
-export function AwsBillingView({ profile }: { profile: string }) {
-    const handle = useResource(billingMonthsR, profile, 5);
+export function AwsBillingView({ profile, active }: { profile: string; active: boolean }) {
+    const handle = useResourceEnabled(active, billingMonthsR, profile, 5);
     const expanded = useStore((s) => s.expandedBillingMonth[profile] ?? null);
     const data = handle.data;
 
@@ -362,8 +362,8 @@ export function AwsBillingView({ profile }: { profile: string }) {
 // ============================================================
 // S3
 // ============================================================
-export function AwsS3View({ profile }: { profile: string }) {
-    const handle = useResource(s3BucketsR, profile);
+export function AwsS3View({ profile, active }: { profile: string; active: boolean }) {
+    const handle = useResourceEnabled(active, s3BucketsR, profile);
     return (
         <div className="aws-view">
             <AwsRefresh handle={handle} />

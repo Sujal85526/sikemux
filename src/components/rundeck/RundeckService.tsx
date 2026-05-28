@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { type RundeckExecution } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
-import { useResource } from "../../state/resources";
+import { useResourceEnabled } from "../../state/resources";
 import { rndExecutionsR } from "../../state/resources.defs";
 import { useStore } from "../../state/store";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
@@ -15,10 +15,11 @@ interface Props {
         service: string;
         jobId: string;
     };
+    active: boolean;
 }
 
-export function RundeckService({ paneId, level }: Props) {
-    const execs = useResource(rndExecutionsR, level.jobId, 25);
+export function RundeckService({ paneId, level, active }: Props) {
+    const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, 25);
 
     return (
         <div className="rnd-service">

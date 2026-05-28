@@ -5,7 +5,7 @@ import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
 import { ENVS } from "../state/types";
 import * as cmd from "../state/commands";
-import { useResource } from "../state/resources";
+import { useResource, useResourceEnabled } from "../state/resources";
 import { swallow } from "../state/toast";
 import { awsIdentityR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
@@ -242,7 +242,7 @@ export function TopBar() {
     // matches `session.env` (case-insensitive) against the live upstream
     // list. No alias table — if there's no matching project upstream, the
     // chip just doesn't show.
-    const rndProjects = useResource(rndProjectsR);
+    const rndProjects = useResourceEnabled(isProject, rndProjectsR);
     const deployTarget =
         isProject && session.cwd
             ? (() => {

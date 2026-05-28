@@ -17,9 +17,10 @@ interface Props {
     logGroup: string;
     /** Omit to tail the whole group (recommended for service-level). */
     logStream?: string | null;
+    active: boolean;
 }
 
-export function AwsLogTailView({ profile, logGroup, logStream }: Props) {
+export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) {
     const [lines, setLines] = useState<string[]>([]);
     const [err, setErr] = useState<string | null>(null);
     const [tailId, setTailId] = useState<number | null>(null);
@@ -28,6 +29,7 @@ export function AwsLogTailView({ profile, logGroup, logStream }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        if (!active) return;
         let cancelled = false;
         const ch = new Channel<string>();
         setLines([]);
@@ -70,7 +72,7 @@ export function AwsLogTailView({ profile, logGroup, logStream }: Props) {
             setLive(false);
             setTailId(null);
         };
-    }, [profile, logGroup, logStream]);
+    }, [profile, logGroup, logStream, active]);
 
     useEffect(() => {
         if (!pinned) return;

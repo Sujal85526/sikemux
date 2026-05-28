@@ -154,14 +154,17 @@ export interface ResourceHandle<T> {
   refresh: () => Promise<void>;
 }
 
-/** Read a resource. Fetches on mount; refetches if stale; dedups inflight. */
-export function useResource<Args extends unknown[], T>(
+/** Read a resource only while `enabled` is true. Keeps hidden mounted panes
+ *  subscribed safely without starting backend work. */
+export function useResourceEnabled<Args extends unknown[], T>(
+  enabled: boolean,
   def: ResourceDef<Args, T>,
   ...args: Args
 ): ResourceHandle<T> {
-  const key = keyOf(def.kind, args as unknown[], def as unknown as AnyDef);
+  const key = enabled ? keyOf(def.kind, args as unknown[], def as unknown as AnyDef) : "";
 
   useEffect(() => {
+    if (!enabled) return;
     const entry = cache.get(key);
     const stale =
       !entry ||
@@ -171,10 +174,11 @@ export function useResource<Args extends unknown[], T>(
       void trigger(def, key, args).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [enabled, key]);
 
   const entry = useSyncExternalStore(
     (cb) => {
+      if (!enabled) return () => {};
       let set = subs.get(key);
       if (!set) {
         set = new Set();
@@ -186,7 +190,7 @@ export function useResource<Args extends unknown[], T>(
         if (set!.size === 0) subs.delete(key);
       };
     },
-    () => cache.get(key) as Entry<T> | undefined,
+    () => enabled ? (cache.get(key) as Entry<T> | undefined) : undefined,
     () => undefined,
   );
 
@@ -194,8 +198,16 @@ export function useResource<Args extends unknown[], T>(
     data: entry?.data,
     status: entry?.status ?? "loading",
     error: entry?.error,
-    refresh: () => trigger(def, key, args).then(() => {}),
+    refresh: () => enabled ? trigger(def, key, args).then(() => {}) : Promise.resolve(),
   };
+}
+
+/** Read a resource. Fetches on mount; refetches if stale; dedups inflight. */
+export function useResource<Args extends unknown[], T>(
+  def: ResourceDef<Args, T>,
+  ...args: Args
+): ResourceHandle<T> {
+  return useResourceEnabled(true, def, ...args);
 }
 
 /** Fire-and-forget fetch (for prefetch or imperative actions). */

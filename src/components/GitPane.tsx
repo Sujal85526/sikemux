@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { git, hasUnstaged, isStaged } from "../api/git";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, runGitCmd, toggleGitCmdLog } from "../state/git";
-import { useResource } from "../state/resources";
+import { useResourceEnabled } from "../state/resources";
 import { gitOverviewR, gitRemoteBranchesR, gitRemotesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError, swallow } from "../state/toast";
@@ -41,11 +41,11 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const remoteBranchSelected = view.remoteBranchSelected ?? {};
     const modalOpen = useStore((s) => s.gitModal !== null);
 
-    const overview = useResource(gitOverviewR, repo || "");
-    const remotesRes = useResource(gitRemotesR, repo || "");
+    const overview = useResourceEnabled(active && !!repo, gitOverviewR, repo || "");
+    const remotesRes = useResourceEnabled(active && !!repo, gitRemotesR, repo || "");
     // Only fetch remote branches when we've actually drilled into a
     // remote — keeps cold-start cost off until the user asks for it.
-    const remoteBranchesRes = useResource(gitRemoteBranchesR, repo || "", remoteDrill ?? "");
+    const remoteBranchesRes = useResourceEnabled(active && !!repo && !!remoteDrill, gitRemoteBranchesR, repo || "", remoteDrill ?? "");
     const status = repo ? (overview.data?.status ?? null) : null;
     const branches = repo ? (overview.data?.branches ?? []) : [];
     const commits = repo ? (overview.data?.log ?? []) : [];
@@ -75,12 +75,12 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     // ---- filesystem watcher ----
     useEffect(() => {
-        if (!repo) return;
+        if (!repo || !active) return;
         git.watchStart(repo).catch(reportError("git watch"));
         return () => {
             git.watchStop(repo).catch(swallow("git watch stop"));
         };
-    }, [repo]);
+    }, [repo, active]);
 
     useEffect(() => {
         if (commitMode) commitInputRef.current?.focus();
@@ -159,6 +159,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     // ---- load the right pane for the selected row ----
     useEffect(() => {
+        if (!active) return;
         if (panel === "files") {
             if (filteredFiles.length === 0) {
                 setRight({ mode: "output", text: "" });
@@ -235,6 +236,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         filteredRemotes,
         filteredRemoteBranches,
         remotes.length,
+        active,
     ]);
 
     // ---- action helpers ----

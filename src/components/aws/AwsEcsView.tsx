@@ -1,4 +1,4 @@
-import { useResource } from "../../state/resources";
+import { useResourceEnabled } from "../../state/resources";
 import { ecsClustersR, ecsServiceLogConfigR, ecsServicesR, ecsTasksR } from "../../state/resources.defs";
 import { awsApi, type EcsService, type EcsTask } from "../../api/aws";
 import { reportError } from "../../state/toast";
@@ -11,6 +11,7 @@ import { AwsRefresh } from "./AwsRefresh";
 
 interface ViewProps {
     profile: string;
+    active: boolean;
 }
 
 function relative(iso: string | null): string {
@@ -39,17 +40,18 @@ function statusOf(s: EcsService): "ok" | "warn" | "fail" | "off" {
 // → fresh "clusters" view. Re-mounting the pane preserves where you were.
 const DEFAULT_LEVEL: EcsLevel = { kind: "clusters" };
 
-export function AwsEcsView({ profile }: ViewProps) {
+export function AwsEcsView({ profile, active }: ViewProps) {
     const level = useStore((s) => s.ecsViews[profile] ?? DEFAULT_LEVEL);
     const setLevel = (l: EcsLevel) => cmd.setEcsLevel(profile, l);
 
     return (
         <div className="aws-view">
             <Breadcrumb level={level} onJump={setLevel} />
-            {level.kind === "clusters" && <ClustersList profile={profile} onPick={(c) => setLevel({ kind: "services", cluster: c })} />}
+            {level.kind === "clusters" && <ClustersList profile={profile} active={active} onPick={(c) => setLevel({ kind: "services", cluster: c })} />}
             {level.kind === "services" && (
                 <ServicesList
                     profile={profile}
+                    active={active}
                     cluster={level.cluster}
                     onPick={(s) =>
                         setLevel({
@@ -64,6 +66,7 @@ export function AwsEcsView({ profile }: ViewProps) {
             {level.kind === "service" && (
                 <ServiceView
                     profile={profile}
+                    active={active}
                     cluster={level.cluster}
                     service={level.service}
                     tab={level.tab}
@@ -138,8 +141,8 @@ function Breadcrumb({ level, onJump }: { level: EcsLevel; onJump: (l: EcsLevel) 
 // ---------------------------------------------------------------------------
 // Clusters
 // ---------------------------------------------------------------------------
-function ClustersList({ profile, onPick }: { profile: string; onPick: (cluster: string) => void }) {
-    const handle = useResource(ecsClustersR, profile);
+function ClustersList({ profile, active, onPick }: { profile: string; active: boolean; onPick: (cluster: string) => void }) {
+    const handle = useResourceEnabled(active, ecsClustersR, profile);
     const { data, error, status } = handle;
     if (status === "error" && error)
         return (
@@ -196,8 +199,8 @@ function ClustersList({ profile, onPick }: { profile: string; onPick: (cluster: 
 // ---------------------------------------------------------------------------
 // Services in a cluster
 // ---------------------------------------------------------------------------
-function ServicesList({ profile, cluster, onPick }: { profile: string; cluster: string; onPick: (service: string) => void }) {
-    const handle = useResource(ecsServicesR, profile, cluster);
+function ServicesList({ profile, active, cluster, onPick }: { profile: string; active: boolean; cluster: string; onPick: (service: string) => void }) {
+    const handle = useResourceEnabled(active, ecsServicesR, profile, cluster);
     const { data, error, status } = handle;
     const refresh = <AwsRefresh handle={handle} />;
     if (status === "error" && error)
@@ -262,6 +265,7 @@ function ServicesList({ profile, cluster, onPick }: { profile: string; cluster: 
 // ---------------------------------------------------------------------------
 function ServiceView({
     profile,
+    active,
     cluster,
     service,
     tab,
@@ -271,6 +275,7 @@ function ServiceView({
     onClearFilter,
 }: {
     profile: string;
+    active: boolean;
     cluster: string;
     service: string;
     tab: "logs" | "tasks";
@@ -279,7 +284,7 @@ function ServiceView({
     onPickTask: (taskId: string, stream: string) => void;
     onClearFilter: () => void;
 }) {
-    const cfg = useResource(ecsServiceLogConfigR, profile, cluster, service);
+    const cfg = useResourceEnabled(active, ecsServiceLogConfigR, profile, cluster, service);
 
     return (
         <div className="aws-view">
@@ -312,6 +317,7 @@ function ServiceView({
                             profile={profile}
                             logGroup={cfg.data.log_group}
                             logStream={taskFilter?.stream ?? null}
+                            active={active}
                         />
                     )}
                 </>
@@ -320,6 +326,7 @@ function ServiceView({
             {tab === "tasks" && (
                 <TasksList
                     profile={profile}
+                    active={active}
                     cluster={cluster}
                     service={service}
                     onPick={(t) => {
@@ -337,8 +344,8 @@ function ServiceView({
 // ---------------------------------------------------------------------------
 // Tasks list
 // ---------------------------------------------------------------------------
-function TasksList({ profile, cluster, service, onPick }: { profile: string; cluster: string; service: string; onPick: (t: EcsTask) => void }) {
-    const { data, error, status } = useResource(ecsTasksR, profile, cluster, service);
+function TasksList({ profile, active, cluster, service, onPick }: { profile: string; active: boolean; cluster: string; service: string; onPick: (t: EcsTask) => void }) {
+    const { data, error, status } = useResourceEnabled(active, ecsTasksR, profile, cluster, service);
     if (status === "error" && error) return <div className="aws-err">{error}</div>;
     if (!data) return <div className="aws-loading">loading tasks…</div>;
     if (data.length === 0) return <div className="aws-empty">no tasks</div>;

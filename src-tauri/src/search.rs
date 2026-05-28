@@ -24,7 +24,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use crate::error::{AppError, AppResult};
 use crate::files;
@@ -296,20 +296,33 @@ fn build_bytes_regex(query: &str, opts: &SearchOptions) -> AppResult<regex::byte
 
 // ---- cancellation -------------------------------------------------------
 //
-// Every search bumps `GENERATION`. Workers loop-check that the generation
-// they were spawned under is still current; if not, they bail. The Channel
-// passed in already absorbs late writes (the JS side ignores chunks from
-// older request ids), so cancellation here is purely a "stop walking"
-// optimization, not a correctness requirement.
+// Every search bumps a generation scoped to its repo. Workers loop-check that
+// the generation they were spawned under is still current; if not, they bail.
+// Scoping by repo lets two project search panes run independently instead of
+// cancelling each other.
 
-static GENERATION: AtomicU64 = AtomicU64::new(0);
-
-fn bump_generation() -> u64 {
-    GENERATION.fetch_add(1, Ordering::SeqCst) + 1
+fn generations() -> &'static dashmap::DashMap<String, AtomicU64> {
+    static GENERATIONS: OnceLock<dashmap::DashMap<String, AtomicU64>> = OnceLock::new();
+    GENERATIONS.get_or_init(dashmap::DashMap::new)
 }
 
-fn is_current(gen: u64) -> bool {
-    GENERATION.load(Ordering::Relaxed) == gen
+fn bump_generation(repo: &str) -> u64 {
+    let entry = generations()
+        .entry(repo.to_string())
+        .or_insert_with(|| AtomicU64::new(0));
+    entry.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+fn is_current(repo: &str, gen: u64) -> bool {
+    generations()
+        .get(repo)
+        .map(|entry| entry.load(Ordering::Relaxed) == gen)
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn project_search_cancel(repo: String) {
+    let _ = bump_generation(&repo);
 }
 
 // ---- walker construction (shared by search + replace) ------------------
@@ -359,7 +372,7 @@ pub async fn project_search(
     options: SearchOptions,
     on_file: tauri::ipc::Channel<SearchFile>,
 ) -> AppResult<SearchResults> {
-    let gen = bump_generation();
+    let gen = bump_generation(&repo);
 
     if query.is_empty() {
         return Ok(SearchResults {
@@ -452,7 +465,7 @@ fn run_search(
     impl<'a> ParallelVisitor for Visitor<'a> {
         fn visit(&mut self, entry: Result<DirEntry, ignore::Error>) -> WalkState {
             // Cheap fast-path bails before any per-entry work.
-            if !is_current(self.gen) {
+            if !is_current(self.repo, self.gen) {
                 self.cancelled.store(true, Ordering::Relaxed);
                 return WalkState::Quit;
             }

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { type MatrixCell, type RundeckEnvSpec } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
-import { useResource } from "../../state/resources";
+import { useResourceEnabled } from "../../state/resources";
 import { rndMatrixR } from "../../state/resources.defs";
 import { envFolderOf, inferEnv } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
@@ -9,6 +9,7 @@ import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
 interface Props {
     paneId: string;
+    active: boolean;
 }
 
 /** Job list for the currently-selected Rundeck project.
@@ -17,7 +18,7 @@ interface Props {
  *  a slash, we group cells by the first segment (env folder). Flat
  *  projects fall into a single `_ungrouped` bucket and render flat.
  *  No project-name table, no synthesis — exactly what the API returns. */
-export function RundeckMatrix({ paneId }: Props) {
+export function RundeckMatrix({ paneId, active }: Props) {
     const project = useStore((s) => s.rundeck.activeProject);
     const envFolder = useStore((s) => s.rundeck.activeEnvFolder);
 
@@ -28,7 +29,7 @@ export function RundeckMatrix({ paneId }: Props) {
         [project],
     );
 
-    const res = useResource(rndMatrixR, specs);
+    const res = useResourceEnabled(active && specs.length > 0, rndMatrixR, specs);
 
     const data = res.data;
     const env = data?.envs[0] ?? null;

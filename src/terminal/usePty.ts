@@ -2,10 +2,11 @@ import { useEffect, useRef, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { registerPtyDrop } from "../state/dropRegistry";
 
-/** Mount-once lifecycle around a single Tauri PTY.
+/** Lazy lifecycle around a single Tauri PTY.
  *
- *  Spawns on mount, kills on unmount. `cwd` and `startup` are captured
- *  at spawn time — later changes have no effect. `startup` (when set)
+ *  Spawns the first time `spawnWhen` becomes true, kills on unmount.
+ *  `cwd` and `startup` are captured at spawn time — later changes have
+ *  no effect. `startup` (when set)
  *  is written by the backend on the first byte of shell output, so
  *  the frontend never needs a delay timer.
  *
@@ -24,15 +25,49 @@ export function usePty(opts: {
   cwd?: string;
   startup?: string;
   hostRef: RefObject<HTMLDivElement | null>;
+  spawnWhen?: boolean;
 }): RefObject<Promise<number> | null> {
-  const { cwd, startup, hostRef } = opts;
+  const { cwd, startup, hostRef, spawnWhen = true } = opts;
   const readyRef = useRef<Promise<number> | null>(null);
   const pidRef = useRef<number | null>(null);
+  const spawnedRef = useRef(false);
+  const disposedRef = useRef(false);
+  const unregisterDropRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host) return;
-    let disposed = false;
+    if (host) {
+      unregisterDropRef.current = registerPtyDrop(host, (paths) => {
+        const pid = pidRef.current;
+        if (pid === null || paths.length === 0) return;
+        const body = paths
+          .map((p) => p.replace(/([\s'"\\])/g, "\\$1"))
+          .join(" ");
+        void invoke("pty_write", {
+          id: pid,
+          data: `\x1b[200~${body}\x1b[201~`,
+        });
+      });
+    }
+
+    return () => {
+      disposedRef.current = true;
+      const id = pidRef.current;
+      pidRef.current = null;
+      unregisterDropRef.current?.();
+      unregisterDropRef.current = null;
+      if (id !== null) void invoke("pty_kill", { id });
+    };
+    // cwd/startup are captured at spawn — re-running this effect would
+    // mean killing the live shell and spinning a new one, which is never
+    // what the caller wants.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!spawnWhen || spawnedRef.current || disposedRef.current) return;
+    spawnedRef.current = true;
+
     let resolveReady: (id: number) => void = () => {};
     let rejectReady: (e: unknown) => void = () => {};
     readyRef.current = new Promise<number>((resolve, reject) => {
@@ -47,7 +82,7 @@ export function usePty(opts: {
       startup: startup ?? null,
     }).then(
       (id) => {
-        if (disposed) {
+        if (disposedRef.current) {
           // User unmounted between IPC send and reply — kill the orphan
           // shell rather than leaking it; consumers won't see this id.
           void invoke("pty_kill", { id });
@@ -56,33 +91,16 @@ export function usePty(opts: {
         pidRef.current = id;
         resolveReady(id);
       },
-      (err) => rejectReady(err),
+      (err) => {
+        spawnedRef.current = false;
+        readyRef.current = null;
+        rejectReady(err);
+      },
     );
-
-    const unregisterDrop = registerPtyDrop(host, (paths) => {
-      const pid = pidRef.current;
-      if (pid === null || paths.length === 0) return;
-      const body = paths
-        .map((p) => p.replace(/([\s'"\\])/g, "\\$1"))
-        .join(" ");
-      void invoke("pty_write", {
-        id: pid,
-        data: `\x1b[200~${body}\x1b[201~`,
-      });
-    });
-
-    return () => {
-      disposed = true;
-      const id = pidRef.current;
-      pidRef.current = null;
-      unregisterDrop();
-      if (id !== null) void invoke("pty_kill", { id });
-    };
-    // cwd/startup are captured at spawn — re-running this effect would
-    // mean killing the live shell and spinning a new one, which is never
-    // what the caller wants.
+    // cwd/startup are captured at first spawn. Later prop changes should not
+    // kill or restart a live shell.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [spawnWhen]);
 
   return readyRef;
 }

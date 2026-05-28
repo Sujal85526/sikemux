@@ -1,6 +1,6 @@
 import { useState } from "react";
 import * as cmd from "../state/commands";
-import { useResource } from "../state/resources";
+import { useResourceEnabled } from "../state/resources";
 import { agentSessionsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { AGENT_TYPES, type Agent, type AgentType } from "../state/types";
@@ -35,7 +35,7 @@ export function AgentRail() {
 
     // Disk-scanned recent agent sessions for this project + type. Hooks
     // mounted unconditionally; we just ignore the fetch when not project.
-    const recents = useResource(agentSessionsR, type, isProject ? cwd : "");
+    const recents = useResourceEnabled(isProject && !!cwd, agentSessionsR, type, isProject ? cwd : "");
     const disk = isProject ? (recents.data ?? []) : [];
 
     if (!session) return null;

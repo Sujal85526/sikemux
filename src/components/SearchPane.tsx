@@ -76,10 +76,12 @@ export function SearchPane({
     sessionId,
     cwd,
     active,
+    visible,
 }: {
     sessionId: string;
     cwd: string;
     active: boolean;
+    visible: boolean;
 }) {
     // Use the per-pane session id (passed from Workspace) instead of the
     // global activeSessionId. Workspace keeps inactive sessions mounted
@@ -132,23 +134,26 @@ export function SearchPane({
     // Debounced streaming search. Each invocation bumps requestIdRef; late
     // chunks/responses from prior runs are filtered out by id check.
     //
-    // Gated on `active` so the search only runs for the visible pane —
-    // Workspace keeps inactive sessions mounted, so without this gate
-    // every project's SearchPane would fire its own project_search in
-    // parallel, bumping the Rust-side GENERATION and cancelling each
-    // other (visible as `0/0 partial` in the active pane).
+    // Gated on `visible` so hidden mounted panes do not spend CPU walking
+    // repositories just because their query state is persisted.
     useEffect(() => {
-        if (!cwd || !active) return;
+        if (!cwd || !visible) {
+            requestIdRef.current++;
+            return;
+        }
         if (!view.query.trim()) {
             setFiles([]);
             setSummary(null);
             setStatus("idle");
             setError(null);
+            void searchApi.cancel(cwd).catch(() => {});
             return;
         }
         setStatus("searching");
         setReplacePreview(null);
+        let started = false;
         const handle = window.setTimeout(() => {
+            started = true;
             const id = ++requestIdRef.current;
             setFiles([]);
             searchApi
@@ -176,8 +181,10 @@ export function SearchPane({
         }, DEBOUNCE_MS);
         return () => {
             window.clearTimeout(handle);
+            requestIdRef.current++;
+            if (started) void searchApi.cancel(cwd).catch(() => {});
         };
-    }, [cwd, active, view.query, view.options]);
+    }, [cwd, visible, view.query, view.options]);
 
     // Auto-select the first match whenever the file list refreshes and the
     // previous selection is no longer present.
@@ -206,12 +213,12 @@ export function SearchPane({
     // user might be in the middle of skimming results; a one-click refresh
     // is more polite.
     useEffect(() => {
-        if (!cwd) return;
+        if (!cwd || !visible) return;
         return subscribe("fs-changed", (e) => {
             if (!e.repo || !cwd.startsWith(e.repo)) return;
             if (files.length > 0) setStale(true);
         });
-    }, [cwd, files.length]);
+    }, [cwd, visible, files.length]);
 
     const refresh = useCallback(() => {
         // Rerun the same query by bumping a stamp via setStatus then

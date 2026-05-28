@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionKind } from "../state/types";
 import * as cmd from "../state/commands";
-import { useResource } from "../state/resources";
+import { useResourceEnabled } from "../state/resources";
 import { projectRootsScanR, sshHostsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { SshHost } from "../api/ssh";
@@ -62,8 +62,8 @@ export function SeshPicker() {
         inputRef.current?.focus();
     }, []);
 
-    const scanned = useResource(projectRootsScanR, showProjects && projectRoots.length > 0 ? projectRoots : []);
-    const hostsR = useResource(sshHostsR);
+    const scanned = useResourceEnabled(showProjects && projectRoots.length > 0, projectRootsScanR, showProjects ? projectRoots : []);
+    const hostsR = useResourceEnabled(showSsh, sshHostsR);
     const projects = showProjects ? (scanned.data ?? []) : [];
     const hosts = showSsh ? (hostsR.data ?? []) : [];
 

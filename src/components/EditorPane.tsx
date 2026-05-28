@@ -58,11 +58,12 @@ function scrollToLine(view: EditorView, line: number, character: number) {
 // the pane preserve them, and they persist across reloads. The CM view is
 // imperative — its per-tab states live in a useRef so switching tabs
 // preserves content, undo and cursor.
-export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: string; active: boolean }) {
+export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; cwd: string; active: boolean; visible: boolean }) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const states = useRef<Map<string, EditorState>>(new Map());
     const currentRef = useRef<string | null>(null);
+    const hydratedRef = useRef(false);
     const saveRef = useRef<() => boolean>(() => false);
 
     // Dirty state is CM-derived and changes every keystroke — kept local
@@ -320,16 +321,18 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
         }
     };
 
-    // Hydrate CM with tabs persisted across reloads. Runs once on mount when
-    // the store already has a list of openTabs (from boot_init's snapshot).
+    // Hydrate CM with tabs persisted across reloads. Hidden project panes are
+    // mounted for state preservation, so defer the file reads until the editor
+    // is actually visible.
     useEffect(() => {
+        if (!visible || hydratedRef.current) return;
         if (!viewRef.current) return;
-        if (states.current.size > 0) return;
         if (tabs.length === 0) return;
         let cancelled = false;
         (async () => {
             for (const path of tabs) {
                 if (cancelled) return;
+                if (states.current.has(path)) continue;
                 try {
                     const content = await fsapi.readFile(path);
                     if (cancelled) return;
@@ -350,13 +353,55 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
                 const content = states.current.get(want)?.doc.toString() ?? "";
                 void openDoc(want, content);
             }
+            if (!cancelled) hydratedRef.current = true;
         })();
         return () => {
             cancelled = true;
         };
         // Only fire once at mount; tabs/activePath churn afterwards is normal.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [visible]);
+
+    // On activation, catch up clean tabs with disk. This covers background
+    // agent writes that happened while the project watcher/editor subscriber
+    // was intentionally inactive.
+    useEffect(() => {
+        if (!visible || !cwd) return;
+        if (!hydratedRef.current && tabs.length > 0 && states.current.size === 0) return;
+        let cancelled = false;
+        (async () => {
+            const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
+            for (const path of tabsNow) {
+                if (cancelled || dirtyRef.current.has(path)) continue;
+                let fresh: string;
+                try {
+                    fresh = await fsapi.readFile(path);
+                } catch {
+                    continue;
+                }
+                if (cancelled) return;
+                const isActive = currentRef.current === path;
+                const view = viewRef.current;
+                if (isActive && view) {
+                    const current = view.state.doc.toString();
+                    if (current === fresh) continue;
+                    const head = Math.min(view.state.selection.main.head, fresh.length);
+                    view.dispatch({
+                        changes: { from: 0, to: view.state.doc.length, insert: fresh },
+                        selection: { anchor: head },
+                    });
+                } else {
+                    const cached = states.current.get(path);
+                    if (cached && cached.doc.toString() === fresh) continue;
+                    states.current.set(path, makeState(path, fresh));
+                }
+                savedRef.current.set(path, fresh);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [visible, cwd, paneId, makeState, tabs.length]);
 
     // Live external-edit reload. When fs_watch fires for our repo (agent
     // wrote a file, git checkout swapped contents, etc.), re-read every
@@ -364,7 +409,7 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
     // skipped — never clobber the user's in-flight edits. Zed-style: the
     // editor always matches disk unless the user has unsaved changes.
     useEffect(() => {
-        if (!cwd) return;
+        if (!cwd || !visible) return;
         return subscribe("fs-changed", async (e) => {
             if (e.repo && e.repo !== cwd) return;
             const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
@@ -401,7 +446,7 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
             }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cwd, paneId]);
+    }, [cwd, paneId, visible]);
 
     // Open-file events from the bus (Cmd-P palette, git review jump, LSP nav).
     useEffect(() => {
@@ -469,7 +514,14 @@ export function EditorPane({ paneId, cwd, active }: { paneId: string; cwd: strin
 
     return (
         <div className="editor-pane">
-            <FileTree cwd={cwd} activePath={activePath} onOpenFile={(entry) => void openPath(entry.path)} width={treeWidth} onResize={setTreeWidth} />
+            <FileTree
+                cwd={cwd}
+                activePath={activePath}
+                onOpenFile={(entry) => void openPath(entry.path)}
+                width={treeWidth}
+                onResize={setTreeWidth}
+                active={visible}
+            />
             <div className="ed-main">
                 <div className="ed-tabs">
                     {tabs.map((path) => {

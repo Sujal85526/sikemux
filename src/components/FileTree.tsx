@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
 import { subscribe } from "../state/bus";
-import { useResource } from "../state/resources";
+import { useResourceEnabled } from "../state/resources";
 import { gitStatusR } from "../state/resources.defs";
 import { reportError, swallow } from "../state/toast";
 import { registerFolderDrop } from "../state/dropRegistry";
@@ -28,6 +28,7 @@ interface FileTreeProps {
     onOpenFile: (entry: DirEntry) => void;
     width: number;
     onResize: (w: number) => void;
+    active: boolean;
     /** When the file tree should auto-reveal a path (e.g. tab switched). */
     revealPath?: string | null;
 }
@@ -38,7 +39,7 @@ interface NewEntryRequest {
     kind: "file" | "folder";
 }
 
-export function FileTree({ cwd, activePath, onOpenFile, width, onResize, revealPath }: FileTreeProps) {
+export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active, revealPath }: FileTreeProps) {
     const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     // Row the user clicked last — folder selections decide where "new file"
@@ -55,7 +56,10 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, revealP
     // Highlight folder row currently being drag-hovered.
     const [dragOver, setDragOver] = useState<string | null>(null);
 
-    const status = useResource(gitStatusR, cwd || "");
+    const expandedRef = useRef(expanded);
+    expandedRef.current = expanded;
+
+    const status = useResourceEnabled(active && !!cwd, gitStatusR, cwd || "");
     const gitMap = (() => {
         const m = new Map<string, GitFile>();
         if (cwd && status.data) {
@@ -75,9 +79,9 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, revealP
 
     // Load root.
     useEffect(() => {
-        if (!cwd) return;
+        if (!cwd || !active) return;
         void loadDir(cwd);
-    }, [cwd, loadDir]);
+    }, [cwd, active, loadDir]);
 
     // Live watcher: when the backend reports a filesystem change in this
     // repo, re-fetch every open dir (root + every expanded). Cheap — a few
@@ -85,22 +89,19 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, revealP
     // for git overview. Same recipe Zed uses: never trust a cached listing
     // once the watcher fires.
     useEffect(() => {
-        if (!cwd) return;
+        if (!cwd || !active) return;
         const unsubscribe = subscribe("fs-changed", (e) => {
             if (e.repo && e.repo !== cwd) return;
             void loadDir(cwd);
-            for (const p of expanded) void loadDir(p);
+            for (const p of expandedRef.current) void loadDir(p);
         });
         return unsubscribe;
-        // expanded is intentionally tracked via the live ref below — we want
-        // to re-read every currently-open dir at event time, not snapshot.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cwd, loadDir]);
+    }, [cwd, active, loadDir]);
 
     // Reveal the active file by expanding every ancestor.
     useEffect(() => {
         const path = revealPath ?? activePath;
-        if (!path || !cwd || !path.startsWith(`${cwd}/`)) return;
+        if (!active || !path || !cwd || !path.startsWith(`${cwd}/`)) return;
         const rel = path.slice(cwd.length + 1);
         const parts = rel.split("/");
         if (parts.length < 2) return;
@@ -119,7 +120,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, revealP
             if (!dirs[par]) void loadDir(par);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [revealPath, activePath, cwd]);
+    }, [revealPath, activePath, cwd, active]);
 
     useEffect(() => {
         if (newRequest) newInputRef.current?.focus();
@@ -374,7 +375,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, revealP
     const rootScrollRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         const el = rootScrollRef.current;
-        if (!el || !cwd) return;
+        if (!el || !cwd || !active) return;
         return registerFolderDrop(el, async (paths) => {
             try {
                 for (const p of paths) await fsapi.copyIntoDir(p, cwd);
@@ -383,7 +384,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, revealP
                 reportError("drop")(err);
             }
         });
-    }, [cwd, loadDir]);
+    }, [cwd, active, loadDir]);
 
     const handleDragOver = (e: React.DragEvent) => {
         // Prevent the webview's default navigate-to-file://. Tauri's drop

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { rundeckApi, type BranchRelation, type PlanResult, type PushAction } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
-import { useResource } from "../../state/resources";
+import { useResourceEnabled } from "../../state/resources";
 import { rndPlanR } from "../../state/resources.defs";
 import { useStore } from "../../state/store";
 
@@ -15,6 +15,7 @@ interface Props {
         jobId: string;
         branch: string;
     };
+    active: boolean;
 }
 
 const RELATION_BANNER: Record<BranchRelation, { kind: "ok" | "warn" | "danger" | "muted"; text: string }> = {
@@ -48,7 +49,7 @@ const PUSH_LABEL: Record<PushAction, string> = {
     "will-not-push-detached": "Local HEAD is detached — will not push.",
 };
 
-export function RundeckDeploy({ paneId, level }: Props) {
+export function RundeckDeploy({ paneId, level, active }: Props) {
     const settings = useStore((s) => s.rundeck);
     const isProd = settings.prodEnvs.includes(level.env);
 
@@ -62,7 +63,7 @@ export function RundeckDeploy({ paneId, level }: Props) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const plan = useResource(rndPlanR, level.project, level.service, branch, repoPath);
+    const plan = useResourceEnabled(active, rndPlanR, level.project, level.service, branch, repoPath);
 
     const banner = useMemo(() => {
         if (!plan.data) return null;

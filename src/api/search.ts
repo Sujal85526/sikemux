@@ -91,6 +91,7 @@ export const searchApi = {
             onFile: channel,
         });
     },
+    cancel: (repo: string): Promise<void> => invoke("project_search_cancel", { repo }),
     replace: (repo: string, query: string, replace: string, options: SearchOptions, dryRun: boolean): Promise<ReplaceResults> =>
         invoke<ReplaceResults>("project_search_replace", {
             repo,

@@ -136,6 +136,7 @@ pub fn run() {
             settings::scan_project_roots,
             settings::expand_path,
             search::project_search,
+            search::project_search_cancel,
             search::project_search_replace,
             search::read_file_window,
             ssh::ssh_hosts,

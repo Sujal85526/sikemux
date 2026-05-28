@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as cmd from "../../state/commands";
-import { useResource } from "../../state/resources";
+import { useResourceEnabled } from "../../state/resources";
 import { rndJobsR, rndProjectsR } from "../../state/resources.defs";
 import { envFolderOf } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
@@ -14,8 +14,8 @@ import { IconChevron, IconFolder } from "../Icons";
  *
  *  Env-folder rows named `production` get a subtle tint so the user
  *  can't miss them when picking a deploy target. */
-export function RundeckProjectTree({ paneId }: { paneId: string }) {
-    const projects = useResource(rndProjectsR);
+export function RundeckProjectTree({ paneId, active }: { paneId: string; active: boolean }) {
+    const projects = useResourceEnabled(active, rndProjectsR);
     const activeProject = useStore((s) => s.rundeck.activeProject);
     const activeEnvFolder = useStore((s) => s.rundeck.activeEnvFolder);
 
@@ -25,7 +25,14 @@ export function RundeckProjectTree({ paneId }: { paneId: string }) {
         <aside className="rnd-tree">
             <div className="rnd-tree-section">
                 {list.map((p) => (
-                    <ProjectRow key={p.name} paneId={paneId} project={p.name} activeProject={activeProject} activeEnvFolder={activeEnvFolder} />
+                    <ProjectRow
+                        key={p.name}
+                        paneId={paneId}
+                        project={p.name}
+                        activeProject={activeProject}
+                        activeEnvFolder={activeEnvFolder}
+                        active={active}
+                    />
                 ))}
                 {list.length === 0 && projects.status === "loading" && <TreeHint>loading…</TreeHint>}
                 {list.length === 0 && projects.status === "ok" && <TreeHint>no projects</TreeHint>}
@@ -44,16 +51,18 @@ function ProjectRow({
     project,
     activeProject,
     activeEnvFolder,
+    active,
 }: {
     paneId: string;
     project: string;
     activeProject: string;
     activeEnvFolder: string | null;
+    active: boolean;
 }) {
     // Fetch jobs to determine whether this project has env folders. One
     // call per project, cached. If any job's group has a slash, render
     // expandable; otherwise it's a flat leaf.
-    const jobs = useResource(rndJobsR, project);
+    const jobs = useResourceEnabled(active, rndJobsR, project);
     const folders = useMemo(() => {
         const map = new Map<string, number>();
         for (const j of jobs.data ?? []) {

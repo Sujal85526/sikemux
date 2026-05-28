@@ -103,11 +103,12 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
     registry()
         .lock()
         .map_err(watch_err)?
-        .insert(repo, Arc::new(WatchHandle { _watcher: watcher }));
+        .insert(repo.clone(), Arc::new(WatchHandle { _watcher: watcher }));
 
-    // First "synthetic" emit so the frontend gets an immediate refresh after
-    // subscribing — saves the caller from doing it manually.
-    let _ = app.emit::<ChangePayload>("git_changed", ChangePayload { repo: String::new() });
+    // First repo-scoped synthetic emit so the frontend refreshes this project
+    // after subscribing. Keep it scoped; an empty repo means "invalidate all"
+    // on the JS side and causes an O(open projects) refetch storm.
+    let _ = app.emit::<ChangePayload>("git_changed", ChangePayload { repo });
     Ok(())
 }
 
@@ -116,4 +117,3 @@ pub fn repo_watch_stop(repo: String) -> AppResult<()> {
     registry().lock().map_err(watch_err)?.remove(&repo);
     Ok(())
 }
-

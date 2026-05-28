@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import * as cmd from "../../state/commands";
-import { useResource } from "../../state/resources";
+import { useResourceEnabled } from "../../state/resources";
 import { rndStatusR } from "../../state/resources.defs";
 import { useStore } from "../../state/store";
 import type { RundeckView } from "../../state/types";
@@ -24,7 +24,7 @@ const HOME: RundeckView = { stack: [{ kind: "matrix" }] };
  *  everything renders inline so deep navigation is a first-class citizen. */
 export function RundeckPane({ paneId, active }: Props) {
     const view = useStore((s) => s.rundeckViews[paneId] ?? HOME);
-    const status = useResource(rndStatusR);
+    const status = useResourceEnabled(active, rndStatusR);
 
     // Auto-clear stack to "matrix" on first mount so an old persisted nav
     // doesn't strand us inside an execution that's long gone.
@@ -57,12 +57,12 @@ export function RundeckPane({ paneId, active }: Props) {
                 />
             );
         }
-        if (top.kind === "matrix") return <RundeckMatrix paneId={paneId} />;
-        if (top.kind === "service") return <RundeckService paneId={paneId} level={top} />;
-        if (top.kind === "deploy") return <RundeckDeploy paneId={paneId} level={top} />;
-        if (top.kind === "execution") return <RundeckExecution paneId={paneId} level={top} />;
+        if (top.kind === "matrix") return <RundeckMatrix paneId={paneId} active={active} />;
+        if (top.kind === "service") return <RundeckService paneId={paneId} level={top} active={active} />;
+        if (top.kind === "deploy") return <RundeckDeploy paneId={paneId} level={top} active={active} />;
+        if (top.kind === "execution") return <RundeckExecution paneId={paneId} level={top} active={active} />;
         return null;
-    }, [paneId, status, top]);
+    }, [paneId, status, top, active]);
 
     // The project tree only makes sense once we're past auth — for login
     // / loading states the body owns the whole pane width.
@@ -72,7 +72,7 @@ export function RundeckPane({ paneId, active }: Props) {
         <div className="rnd-pane" data-active={active ? "1" : "0"}>
             <RundeckBreadcrumb paneId={paneId} status={status.data ?? null} />
             <div className="rnd-cols">
-                {showTree && <RundeckProjectTree paneId={paneId} />}
+                {showTree && <RundeckProjectTree paneId={paneId} active={active} />}
                 <div className="rnd-body">{body}</div>
             </div>
         </div>

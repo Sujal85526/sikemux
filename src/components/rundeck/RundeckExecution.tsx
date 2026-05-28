@@ -11,6 +11,7 @@ interface Props {
         project: string;
         service: string;
     };
+    active: boolean;
 }
 
 const STEP_STATE: Record<string, { label: string; cls: "pending" | "running" | "ok" | "fail" | "skip" }> = {
@@ -24,7 +25,7 @@ const STEP_STATE: Record<string, { label: string; cls: "pending" | "running" | "
     NOT_ELIGIBLE: { label: "—", cls: "skip" },
 };
 
-export function RundeckExecution({ paneId: _paneId, level }: Props) {
+export function RundeckExecution({ paneId: _paneId, level, active }: Props) {
     const [execution, setExecution] = useState<Execution | null>(null);
     const [state, setState] = useState<RundeckWorkflowState | null>(null);
     const [terminal, setTerminal] = useState(false);
@@ -47,11 +48,14 @@ export function RundeckExecution({ paneId: _paneId, level }: Props) {
     // execution+state so the UI catches up to whatever happened while
     // hidden.
     useEffect(() => {
+        if (!active) return;
         let watchId: number | undefined;
         let logsId: number | undefined;
         let alive = true;
 
         const start = () => {
+            setEntries([]);
+            setLogsCompleted(false);
             rundeckApi
                 .watchStart(level.executionId, (u) => {
                     if (!alive) return;
@@ -108,7 +112,7 @@ export function RundeckExecution({ paneId: _paneId, level }: Props) {
             document.removeEventListener("visibilitychange", onVisibility);
             stop();
         };
-    }, [level.executionId]);
+    }, [level.executionId, active]);
 
     // ---- auto-scroll log when followTail is on ----
     useEffect(() => {

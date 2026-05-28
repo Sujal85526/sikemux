@@ -34,18 +34,13 @@ interface AttachResult {
  *
  *  Lifecycle gating:
  *  - `shouldMount` drives mount/unmount of the xterm + WebGL context.
- *    When the owning session backgrounds (Alt+Tab to another project)
- *    the xterm is torn down, freeing its WebGL slot — that's how we
- *    stay under WebKit's ~8-16 concurrent-context cap with 20+ open
- *    projects.
- *  - `active` drives focus + first-visit boot. It never remounts; the
- *    xterm stays warm across Alt+] cycling within a session.
+ *    When the pane hides, the xterm is torn down, freeing its WebGL
+ *    slot while the backend PTY keeps running.
+ *  - `active` only drives focus. It never remounts.
  *
- *  First-visit policy: a fresh session's panes don't all boot the
- *  moment shouldMount goes true. Only panes that have been activated
- *  at least once (`everActive`) boot eagerly on a re-foreground; the
- *  rest wait until the user navigates to them, which the focus effect
- *  kicks off via `bootRef`.
+ *  First-visit policy: visible panes boot immediately; hidden panes wait
+ *  until they become visible, so offscreen tabs do not allocate DOM,
+ *  canvas, or WebGL resources.
  *
  *  Also handles, inside the boot:
  *  - snapshot-vs-stream race: chunks arriving while pty_attach is
@@ -90,7 +85,12 @@ export function useXterm(opts: {
       // check and both proceed to `new Terminal()` + `term.open(host)`.
       if (disposed || termRef.current || bootingRef.current) return;
       bootingRef.current = true;
-      const pid = await ptyReady.current!.catch(() => null);
+      const ready = ptyReady.current;
+      if (!ready) {
+        bootingRef.current = false;
+        return;
+      }
+      const pid = await ready.catch(() => null);
       if (disposed || pid === null) {
         bootingRef.current = false;
         return;
@@ -246,12 +246,7 @@ export function useXterm(opts: {
       ]).then(boot, boot);
     bootRef.current = fontsThenBoot;
 
-    // Single boot trigger: the focus effect below. We intentionally do
-    // NOT eager-boot here — the previous "boot iff everActiveRef" path
-    // could race with the focus effect's own bootRef call, ending up
-    // with two xterm DOMs in the same host. The focus effect handles
-    // both first-visit-after-mount and first-visit-after-session-
-    // reactivation (it re-runs on shouldMount changes).
+    fontsThenBoot();
 
     return () => {
       disposed = true;
@@ -260,9 +255,9 @@ export function useXterm(opts: {
     };
   }, [shouldMount, hostRef, ptyReady]);
 
-  // Focus + lazy first-boot on active flips. Cheap: no dispose, no
-  // remount. If the pane has never booted (first visit), kick boot here
-  // so the user doesn't have to wait for sessionActive to retoggle.
+  // Focus on active flips. If focus wins a race before the visibility
+  // effect's font promise calls boot, this is still safe: bootingRef
+  // prevents duplicate xterm instances.
   useEffect(() => {
     if (!active) return;
     if (termRef.current) {

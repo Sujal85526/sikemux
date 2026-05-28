@@ -4,39 +4,36 @@ import { usePty } from "./usePty";
 import { useXterm } from "./useXterm";
 
 // PTY screen state lives in a Rust-side `vt100::Parser`. This pane owns
-// the PTY for its entire mount; the xterm + WebGL context is mounted
-// only while the OWNING SESSION is foregrounded (not just while this
-// specific pane is the visible one within the session).
+// the PTY for its entire mount after first visibility; the xterm + WebGL
+// context is mounted only while this pane is visible.
 //
 // Two refs, one host, two hooks:
-//   usePty   — spawn on mount, kill on unmount, drag-drop wiring
-//   useXterm — xterm boot/teardown gated on shouldMount, focus on active
+//   usePty   — lazy spawn, kill on unmount, drag-drop wiring
+//   useXterm — xterm boot/teardown gated on visibility, focus on active
 //
-// `active`         — this pane is the visible one inside its session
-// `sessionActive`  — the session itself is the foregrounded one
+// `active`  — this pane has focus
+// `visible` — this pane is actually shown in the current window/agent tab
 //
-// Splitting them means within-session navigation (Alt+]) keeps every
-// term's xterm warm — revisits cost ~0 IPC. Switching projects tears
-// down the previous project's xterms, freeing WebGL contexts so we
-// stay under WebKit's ~8-16 concurrent-context cap even at 20+ open
-// projects with running agents.
+// Hidden terminal tabs keep their backend PTY alive but release xterm's
+// DOM/WebGL work until the user brings them back.
 export function TerminalPane({
   cwd,
   startup,
   active,
-  sessionActive,
+  visible = active,
+  spawnWhen = visible,
 }: {
   cwd?: string;
   startup?: string;
   active: boolean;
-  /** Defaults to `active` so callers without per-session granularity
-   *  (single-term contexts) get the legacy "alive only while visible"
-   *  behaviour for free. */
-  sessionActive?: boolean;
+  visible?: boolean;
+  /** First selection boots the PTY. After that the PTY stays alive until
+   *  the pane unmounts, even when this flips back to false. */
+  spawnWhen?: boolean;
 }) {
-  const shouldMount = sessionActive ?? active;
+  const shouldMount = visible;
   const hostRef = useRef<HTMLDivElement>(null);
-  const ptyReady = usePty({ cwd, startup, hostRef });
+  const ptyReady = usePty({ cwd, startup, hostRef, spawnWhen });
   useXterm({ hostRef, ptyReady, shouldMount, active });
 
   return <div ref={hostRef} className="terminal-host" />;

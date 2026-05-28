@@ -42,10 +42,8 @@ let lastSaved = "";
 const PERSISTED_KEYS = [
   "sessions",
   "windows",
-  "agents",
   "sessionOrder",
   "windowsBySession",
-  "agentsBySession",
   "activeSessionId",
   "recent",
   "agentBookmarks",
@@ -103,16 +101,20 @@ function packPrefs(s: StoreState): PersistedPrefs {
 
 function snapshot(): string {
   const s = getState();
-  const sessions = s.sessionOrder.map((id) => s.sessions[id]).filter(Boolean);
+  const sessions = s.sessionOrder.map((id) => s.sessions[id]).filter(Boolean).map((sess) => {
+    if (sess.activeAgentId == null && sess.view !== "agent") return sess;
+    return { ...sess, activeAgentId: null, view: "windows" as const };
+  });
   const windowsBySession: Record<string, Window[]> = {};
   const agentsBySession: Record<string, Agent[]> = {};
   for (const sess of sessions) {
     windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? [])
       .map((id) => s.windows[id])
       .filter(Boolean);
-    agentsBySession[sess.id] = (s.agentsBySession[sess.id] ?? [])
-      .map((id) => s.agents[id])
-      .filter(Boolean);
+    // Live agents are runtime processes, not restart state. Persisting them
+    // relaunches every old CLI on app boot, which is expensive and can burn
+    // tokens unexpectedly. Bookmarks remain persisted separately.
+    agentsBySession[sess.id] = [];
   }
   const snap: PersistedSnapshot = {
     version: VERSION,
@@ -146,18 +148,17 @@ export function applyHydrate(raw: string): void {
   const agents: Record<string, Agent> = {};
   const windowsBySession: Record<string, string[]> = {};
   const agentsBySession: Record<string, string[]> = {};
-  for (const s of data.sessions) sessions[s.id] = s;
+  for (const s of data.sessions) {
+    sessions[s.id] = { ...s, activeAgentId: null, view: s.view === "agent" ? "windows" : s.view };
+  }
   for (const [sid, ws] of Object.entries(data.windowsBySession ?? {})) {
     windowsBySession[sid] = ws.map((w) => {
       windows[w.id] = { ...w, role: deriveRole(w) };
       return w.id;
     });
   }
-  for (const [sid, as] of Object.entries(data.agentsBySession ?? {})) {
-    agentsBySession[sid] = as.map((a) => {
-      agents[a.id] = a;
-      return a.id;
-    });
+  for (const sid of Object.keys(windowsBySession)) {
+    agentsBySession[sid] = [];
   }
   // Drop editor-view entries for panes that no longer exist.
   const validPaneIds = new Set<string>();
