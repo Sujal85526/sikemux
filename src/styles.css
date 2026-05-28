@@ -2202,19 +2202,12 @@ button {
     flex: none;
     font-variant-numeric: tabular-nums;
 }
-/* author initials chip — colour set inline from a hash of the email */
+/* author initials — coloured text (no chip), colour hashed from the email */
 .gg-author {
-    width: 19px;
-    height: 19px;
-    border-radius: 6px;
     flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 8.5px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.02em;
-    color: var(--void);
+    letter-spacing: 0.04em;
 }
 /* ref decoration badges (HEAD / branch / remote / tag) */
 .gg-refs {

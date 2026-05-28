@@ -301,7 +301,7 @@ export function GitGraph({
                             </span>
                         )}
                         <span className="gg-subj">{c.subject}</span>
-                        <span className="gg-author" style={{ background: authorColor(c.author_email || c.author) }}>
+                        <span className="gg-author" style={{ color: authorColor(c.author_email || c.author) }}>
                             {initials(c.author)}
                         </span>
                         <span className="gg-when">{c.date}</span>
