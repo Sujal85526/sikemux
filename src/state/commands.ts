@@ -650,6 +650,90 @@ export function closeActivePane(): void {
   });
 }
 
+function pruneWindowViews(d: StoreState, win: Window): void {
+  for (const p of collectPanes(win.root)) {
+    delete d.editorViews[p.id];
+    delete d.gitViews[p.id];
+    delete d.ecsViews[p.id];
+    delete d.rundeckViews[p.id];
+  }
+}
+
+function replaceWithFreshTerminalTab(
+  d: StoreState,
+  session: Session,
+  closing: Window,
+): void {
+  const winIds = d.windowsBySession[session.id] ?? [];
+  const fresh = makeWindow(session.cwd, closing.name, {
+    fixed: closing.fixed,
+    role: "term",
+  });
+  pruneWindowViews(d, closing);
+  delete d.windows[closing.id];
+  d.windows[fresh.id] = fresh;
+  d.windowsBySession[session.id] = winIds.map((id) =>
+    id === closing.id ? fresh.id : id,
+  );
+  const sess = d.sessions[session.id];
+  sess.activeWindowId = fresh.id;
+  sess.view = "windows";
+  d.zoomedPaneId = null;
+}
+
+export function closeActiveTerminalTab(): void {
+  withActiveSession((d, session) => {
+    if (session.view !== "windows") return;
+    const closing = d.windows[session.activeWindowId];
+    if (!closing || closing.role !== "term") return;
+
+    const winIds = d.windowsBySession[session.id] ?? [];
+    const termIds = winIds.filter((id) => d.windows[id]?.role === "term");
+    if (termIds.length <= 1) {
+      // Keep every session with one usable terminal target. This mirrors
+      // closing the last tab in terminal apps that immediately leave a
+      // fresh shell behind instead of removing the whole terminal surface.
+      replaceWithFreshTerminalTab(d, session, closing);
+      return;
+    }
+
+    const idx = winIds.indexOf(closing.id);
+    const remaining = winIds.filter((id) => id !== closing.id);
+    const isTerm = (id: string) => d.windows[id]?.role === "term";
+    const before = remaining.slice(0, idx).reverse().find(isTerm);
+    const after = remaining.slice(idx).find(isTerm);
+    const nextId =
+      before ?? after ?? remaining[Math.min(idx, remaining.length - 1)];
+
+    pruneWindowViews(d, closing);
+    delete d.windows[closing.id];
+    d.windowsBySession[session.id] = remaining;
+    const sess = d.sessions[session.id];
+    sess.activeWindowId = nextId;
+    sess.view = "windows";
+    d.zoomedPaneId = null;
+  });
+}
+
+export function closeActiveFocusTarget(): void {
+  const st = getState();
+  const session = st.sessions[st.activeSessionId];
+  if (!session) return;
+
+  if (session.view === "agent") {
+    if (session.activeAgentId) closeAgent(session.activeAgentId);
+    return;
+  }
+
+  const win = st.windows[session.activeWindowId];
+  if (win?.role === "term") {
+    closeActiveTerminalTab();
+    return;
+  }
+
+  closeActivePane();
+}
+
 export function focusPane(paneId: string): void {
   withActiveWindow((d, w) => {
     const win = d.windows[w.id];
@@ -730,11 +814,7 @@ export function closeActiveWindow(): void {
       nextId = before ?? after ?? nextId;
     }
     // Prune pane views that lived in the closing window.
-    for (const p of collectPanes(closing.root as unknown as Window["root"])) {
-      delete d.editorViews[p.id];
-      delete d.gitViews[p.id];
-      delete d.ecsViews[p.id];
-    }
+    pruneWindowViews(d, closing);
     delete d.windows[closing.id];
     d.windowsBySession[session.id] = remaining;
     d.sessions[session.id].activeWindowId = nextId;

@@ -73,7 +73,7 @@ export function useKeymap(): void {
                     cmd.toggleZoom();
                     break;
                 case "KeyW":
-                    cmd.closeActivePane();
+                    cmd.closeActiveFocusTarget();
                     break;
                 case "KeyN": {
                     // Context-aware new:
