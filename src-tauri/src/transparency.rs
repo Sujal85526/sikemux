@@ -33,7 +33,9 @@ mod imp {
     /// SAFETY: `ns_window` must be a live `NSWindow*`.
     pub unsafe fn apply(ns_window: *mut c_void, blur_radius: i32) {
         let window = ns_window as *mut AnyObject;
-        if window.is_null() { return; }
+        if window.is_null() {
+            return;
+        }
 
         // [window setOpaque:NO]
         let _: () = msg_send![&*window, setOpaque: false];
@@ -43,8 +45,7 @@ mod imp {
         // working while letting CGS punch the blur through.
         let ns_color = objc2::class!(NSColor);
         let white: *mut AnyObject = msg_send![ns_color, whiteColor];
-        let clear: *mut AnyObject =
-            msg_send![&*white, colorWithAlphaComponent: 0.001_f64];
+        let clear: *mut AnyObject = msg_send![&*white, colorWithAlphaComponent: 0.001_f64];
         let _: () = msg_send![&*window, setBackgroundColor: &*clear];
 
         // CGS blur via the private connection
@@ -66,10 +67,7 @@ pub unsafe fn apply(_ns_window: *mut std::ffi::c_void, _blur_radius: i32) {}
 /// Tauri command — re-apply transparency + blur at runtime from the
 /// settings panel. Takes a clamped radius (0–80).
 #[tauri::command]
-pub fn set_window_blur(
-    window: tauri::WebviewWindow,
-    radius: i32,
-) -> crate::error::AppResult<()> {
+pub fn set_window_blur(window: tauri::WebviewWindow, radius: i32) -> crate::error::AppResult<()> {
     // No caps — pass through whatever the user typed. CGS clamps internally
     // anyway, and negative values just disable blur.
     #[cfg(target_os = "macos")]
@@ -77,7 +75,9 @@ pub fn set_window_blur(
         let handle = window
             .ns_window()
             .map_err(|e| crate::error::AppError::Window(e.to_string()))?;
-        unsafe { apply(handle, radius); }
+        unsafe {
+            apply(handle, radius);
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {

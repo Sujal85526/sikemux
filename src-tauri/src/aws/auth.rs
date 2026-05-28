@@ -63,7 +63,11 @@ fn parse_ini(
     let mut current: Option<(bool, String)> = None;
 
     for raw in content.lines() {
-        let line = raw.split(|c| c == '#' || c == ';').next().unwrap_or("").trim();
+        let line = raw
+            .split(|c| c == '#' || c == ';')
+            .next()
+            .unwrap_or("")
+            .trim();
         if line.is_empty() {
             continue;
         }
@@ -80,8 +84,12 @@ fn parse_ini(
             }
             continue;
         }
-        let Some((ref is_session, ref key)) = current else { continue };
-        let Some((k, v)) = line.split_once('=') else { continue };
+        let Some((ref is_session, ref key)) = current else {
+            continue;
+        };
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
         let k = k.trim().to_string();
         let v = v.trim().to_string();
         let bucket = if *is_session {
@@ -115,14 +123,11 @@ pub fn aws_profiles() -> Vec<AwsProfile> {
         if let Ok(content) = fs::read_to_string(&path) {
             let (profiles, sessions) = parse_ini(&content);
             for (name, p) in profiles {
-                let session = p
-                    .get("sso_session")
-                    .and_then(|s| sessions.get(s))
-                    .cloned();
+                let session = p.get("sso_session").and_then(|s| sessions.get(s)).cloned();
                 let pick = |key: &str| -> Option<String> {
-                    p.get(key).cloned().or_else(|| {
-                        session.as_ref().and_then(|s| s.get(key).cloned())
-                    })
+                    p.get(key)
+                        .cloned()
+                        .or_else(|| session.as_ref().and_then(|s| s.get(key).cloned()))
                 };
                 let entry = AwsProfile {
                     region: p.get("region").cloned(),

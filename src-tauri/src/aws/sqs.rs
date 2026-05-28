@@ -20,12 +20,9 @@ pub async fn aws_sqs_queues(profile: String) -> AppResult<Vec<SqsQueue>> {
         #[serde(default, rename = "QueueUrls")]
         urls: Vec<String>,
     }
-    let resp: Resp = aws_json_async(
-        &profile,
-        &["sqs", "list-queues", "--output", "json"],
-    )
-    .await
-    .unwrap_or(Resp { urls: vec![] });
+    let resp: Resp = aws_json_async(&profile, &["sqs", "list-queues", "--output", "json"])
+        .await
+        .unwrap_or(Resp { urls: vec![] });
 
     let mut out = Vec::new();
     for url in resp.urls {

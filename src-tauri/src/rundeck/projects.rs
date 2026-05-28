@@ -55,8 +55,7 @@ impl RundeckJob {
 
 #[tauri::command]
 pub async fn rnd_jobs(project: String) -> AppResult<Vec<RundeckJob>> {
-    let mut out: Vec<RundeckJob> =
-        get_json(&format!("/project/{project}/jobs"), &[]).await?;
+    let mut out: Vec<RundeckJob> = get_json(&format!("/project/{project}/jobs"), &[]).await?;
     out.sort_by(|a, b| a.qualified_name().cmp(&b.qualified_name()));
     Ok(out)
 }
@@ -239,4 +238,3 @@ pub async fn resolve_job(project: &str, service_ref: &str) -> AppResult<RundeckJ
 pub async fn rnd_resolve_job(project: String, service: String) -> AppResult<RundeckJob> {
     resolve_job(&project, &service).await
 }
-

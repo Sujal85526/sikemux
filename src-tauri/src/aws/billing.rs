@@ -33,10 +33,7 @@ pub struct BillingService {
 }
 
 #[tauri::command]
-pub async fn aws_billing_months(
-    profile: String,
-    months_back: u32,
-) -> AppResult<Vec<BillingMonth>> {
+pub async fn aws_billing_months(profile: String, months_back: u32) -> AppResult<Vec<BillingMonth>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| crate::error::AppError::Other(e.to_string()))?

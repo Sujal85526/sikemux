@@ -70,7 +70,9 @@ fn walk(
     if remaining <= 0 {
         return;
     }
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let p = entry.path();
         if !p.is_dir() {
@@ -107,7 +109,10 @@ pub async fn scan_project_roots(roots: Vec<ProjectRoot>) -> Vec<ProjectEntry> {
         // candidates (pre-init projects, scratch dirs, etc.).
         let root_path = root.to_string_lossy().into_owned();
         if seen.insert(root_path.clone()) {
-            out.push(ProjectEntry { name: name_of(&root), path: root_path });
+            out.push(ProjectEntry {
+                name: name_of(&root),
+                path: root_path,
+            });
         }
         // If the root itself is a git repo, don't enumerate its insides
         // — it's already the project.

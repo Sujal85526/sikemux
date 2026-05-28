@@ -24,11 +24,8 @@ pub async fn aws_s3_buckets(profile: String) -> AppResult<Vec<S3Bucket>> {
         #[serde(rename = "CreationDate")]
         created: Option<String>,
     }
-    let resp: Resp = aws_json_async(
-        &profile,
-        &["s3api", "list-buckets", "--output", "json"],
-    )
-    .await?;
+    let resp: Resp =
+        aws_json_async(&profile, &["s3api", "list-buckets", "--output", "json"]).await?;
     let mut out: Vec<S3Bucket> = resp
         .buckets
         .into_iter()

@@ -93,10 +93,7 @@ pub struct EcsService {
 }
 
 #[tauri::command]
-pub async fn aws_ecs_services(
-    profile: String,
-    cluster: String,
-) -> AppResult<Vec<EcsService>> {
+pub async fn aws_ecs_services(profile: String, cluster: String) -> AppResult<Vec<EcsService>> {
     #[derive(Deserialize)]
     struct ArnList {
         #[serde(rename = "serviceArns")]
@@ -365,12 +362,19 @@ pub async fn aws_ecs_service_log_config(
                 return None;
             }
             let opts = lc.get("options")?;
-            let group = opts.get("awslogs-group").and_then(|v| v.as_str())?.to_string();
+            let group = opts
+                .get("awslogs-group")
+                .and_then(|v| v.as_str())?
+                .to_string();
             let region = opts
                 .get("awslogs-region")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = c
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             Some(EcsServiceLog {
                 log_group: group,
                 container_name: name,
@@ -438,7 +442,10 @@ pub async fn aws_ecs_task_log_config(
                 return None;
             }
             let opts = lc.get("options")?;
-            let group = opts.get("awslogs-group").and_then(|v| v.as_str())?.to_string();
+            let group = opts
+                .get("awslogs-group")
+                .and_then(|v| v.as_str())?
+                .to_string();
             let prefix = opts
                 .get("awslogs-stream-prefix")
                 .and_then(|v| v.as_str())
@@ -447,7 +454,11 @@ pub async fn aws_ecs_task_log_config(
                 .get("awslogs-region")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = c
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let stream = if prefix.is_empty() {
                 format!("{}/{}", name, task_id)
             } else {

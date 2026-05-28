@@ -132,7 +132,12 @@ fn now_ms() -> u64 {
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
-    PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }
+    PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    }
 }
 
 /// Drive a non-blocking write to completion against a tokio `AsyncFd`.
@@ -175,15 +180,13 @@ fn ensure_sweeper(app: AppHandle) {
         ticker.tick().await; // skip the immediate first tick
         loop {
             ticker.tick().await;
-            let Some(mgr) = app.try_state::<PtyManager>() else { return; };
+            let Some(mgr) = app.try_state::<PtyManager>() else {
+                return;
+            };
             let now = now_ms();
             // Snapshot ids first so we never hold a DashMap shard across
             // the parser lock acquisition.
-            let candidates: Vec<Arc<Pty>> = mgr
-                .ptys
-                .iter()
-                .map(|e| e.value().clone())
-                .collect();
+            let candidates: Vec<Arc<Pty>> = mgr.ptys.iter().map(|e| e.value().clone()).collect();
             for pty in candidates {
                 if pty.trimmed.load(Ordering::Relaxed) {
                     continue;
@@ -273,8 +276,12 @@ pub async fn pty_spawn(
         let w = libc::dup(master_fd);
         if r < 0 || w < 0 {
             // Roll back whichever succeeded so we don't leak.
-            if r >= 0 { libc::close(r); }
-            if w >= 0 { libc::close(w); }
+            if r >= 0 {
+                libc::close(r);
+            }
+            if w >= 0 {
+                libc::close(w);
+            }
             return Err(pty_err(std::io::Error::last_os_error()));
         }
         (r, w)
@@ -336,9 +343,9 @@ pub async fn pty_spawn(
                 f.read(&mut buf)
             });
             match res {
-                Ok(Ok(0)) => break,              // EOF
-                Ok(Err(_)) => break,             // I/O error
-                Err(_would_block) => continue,    // spurious wake; loop
+                Ok(Ok(0)) => break,            // EOF
+                Ok(Err(_)) => break,           // I/O error
+                Err(_would_block) => continue, // spurious wake; loop
                 Ok(Ok(n)) => {
                     let bytes = &buf[..n];
                     pty_reader
@@ -346,7 +353,9 @@ pub async fn pty_spawn(
                         .store(now_ms(), Ordering::Relaxed);
                     pty_reader.trimmed.store(false, Ordering::Relaxed);
                     let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
-                        let Ok(mut parser) = pty_reader.parser.lock() else { break };
+                        let Ok(mut parser) = pty_reader.parser.lock() else {
+                            break;
+                        };
                         parser.process(bytes);
                         match pty_reader.subscribers.lock() {
                             Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
@@ -363,7 +372,9 @@ pub async fn pty_spawn(
                         }
                         if !dead.is_empty() {
                             if let Ok(mut subs) = pty_reader.subscribers.lock() {
-                                for d in dead { subs.remove(&d); }
+                                for d in dead {
+                                    subs.remove(&d);
+                                }
                             }
                         }
                     }
@@ -396,18 +407,20 @@ pub fn pty_subscribe(
     id: u32,
     on_event: Channel<Vec<u8>>,
 ) -> AppResult<u32> {
-    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
+    let pty = manager
+        .ptys
+        .get(&id)
+        .ok_or(AppError::BadArg("pty not found"))?;
     let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
-    pty.subscribers.lock().map_err(pty_err)?.insert(sub_id, on_event);
+    pty.subscribers
+        .lock()
+        .map_err(pty_err)?
+        .insert(sub_id, on_event);
     Ok(sub_id)
 }
 
 #[tauri::command]
-pub fn pty_unsubscribe(
-    manager: State<'_, PtyManager>,
-    id: u32,
-    sub_id: u32,
-) -> AppResult<()> {
+pub fn pty_unsubscribe(manager: State<'_, PtyManager>, id: u32, sub_id: u32) -> AppResult<()> {
     if let Some(pty) = manager.ptys.get(&id) {
         if let Ok(mut subs) = pty.subscribers.lock() {
             subs.remove(&sub_id);
@@ -423,25 +436,41 @@ pub struct AttachResult {
     pub snapshot: Vec<u8>,
 }
 
+fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
+    let mut snapshot = Vec::new();
+    if screen.alternate_screen() {
+        // vt100::Screen::state_formatted() restores contents and input
+        // modes, but not which screen buffer is active. Re-enter alt
+        // screen before replaying alt-buffer contents so xterm's wheel
+        // behavior matches the live PTY after a hidden-pane reattach.
+        snapshot.extend_from_slice(b"\x1b[?1049h");
+    }
+    snapshot.extend(screen.state_formatted());
+    snapshot
+}
+
 /// Atomic snapshot + subscribe. The parser lock is held while we both
 /// capture the screen contents AND insert the subscriber into the
 /// fan-out map, so the reader task (which holds parser → broadcast in
 /// the same nested order) cannot interleave a byte that ends up both in
 /// the snapshot and in the channel — or one that's in neither.
 ///
-/// `snapshot` is the visible screen + scrollback as an ANSI byte stream
-/// (`contents_formatted` — cursor, attrs, colors all baked in). Writing
-/// it to a fresh xterm reproduces the visual state at the moment of the
-/// call; bounded in size by `PARSER_SCROLLBACK` rows.
+/// `snapshot` is the visible screen + scrollback plus input modes as an
+/// ANSI byte stream. Writing it to a fresh xterm reproduces the visual
+/// state and the mode state that affects input/wheel handling at the
+/// moment of the call; bounded in size by `PARSER_SCROLLBACK` rows.
 #[tauri::command]
 pub fn pty_attach(
     manager: State<'_, PtyManager>,
     id: u32,
     on_event: Channel<Vec<u8>>,
 ) -> AppResult<AttachResult> {
-    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
+    let pty = manager
+        .ptys
+        .get(&id)
+        .ok_or(AppError::BadArg("pty not found"))?;
     let parser = pty.parser.lock().map_err(pty_err)?;
-    let snapshot = parser.screen().contents_formatted();
+    let snapshot = attach_snapshot(parser.screen());
     let mut subs = pty.subscribers.lock().map_err(pty_err)?;
     let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
     subs.insert(sub_id, on_event);
@@ -466,13 +495,11 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
 }
 
 #[tauri::command]
-pub fn pty_resize(
-    manager: State<'_, PtyManager>,
-    id: u32,
-    cols: u16,
-    rows: u16,
-) -> AppResult<()> {
-    let pty = manager.ptys.get(&id).ok_or(AppError::BadArg("pty not found"))?;
+pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16) -> AppResult<()> {
+    let pty = manager
+        .ptys
+        .get(&id)
+        .ok_or(AppError::BadArg("pty not found"))?;
     {
         let master = pty.master.lock().map_err(pty_err)?;
         master.resize(pty_size(cols, rows)).map_err(pty_err)?;
@@ -488,7 +515,7 @@ pub fn pty_resize(
 
 #[cfg(test)]
 mod tests {
-    use super::PARSER_SCROLLBACK;
+    use super::{attach_snapshot, PARSER_SCROLLBACK};
 
     #[test]
     fn snapshot_round_trips_visible_state() {
@@ -508,6 +535,39 @@ mod tests {
             b.screen().contents(),
             "snapshot did not round-trip cleanly",
         );
+    }
+
+    #[test]
+    fn attach_snapshot_restores_input_modes() {
+        let mut a = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
+        a.process(b"\x1b[?2004h\x1b[?1000h\x1b[?1006h");
+        let dump = attach_snapshot(a.screen());
+
+        let mut b = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
+        b.process(&dump);
+
+        assert!(b.screen().bracketed_paste());
+        assert_eq!(
+            b.screen().mouse_protocol_mode(),
+            vt100::MouseProtocolMode::PressRelease,
+        );
+        assert_eq!(
+            b.screen().mouse_protocol_encoding(),
+            vt100::MouseProtocolEncoding::Sgr,
+        );
+    }
+
+    #[test]
+    fn attach_snapshot_restores_alternate_screen() {
+        let mut a = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
+        a.process(b"normal\r\n\x1b[?1049halt");
+        let dump = attach_snapshot(a.screen());
+
+        let mut b = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
+        b.process(&dump);
+
+        assert!(b.screen().alternate_screen());
+        assert_eq!(b.screen().contents(), a.screen().contents());
     }
 
     #[test]

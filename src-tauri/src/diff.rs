@@ -51,17 +51,29 @@ fn diff_hunks_sync(baseline: &str, current: &str) -> Vec<DiffHunk> {
 
     fn flush_add(out: &mut Vec<DiffHunk>, start: &mut Option<u32>, end: u32) {
         if let Some(s) = start.take() {
-            out.push(DiffHunk { kind: DiffKind::Add, start: s, end });
+            out.push(DiffHunk {
+                kind: DiffKind::Add,
+                start: s,
+                end,
+            });
         }
     }
     fn flush_mod(out: &mut Vec<DiffHunk>, start: &mut Option<u32>, end: u32) {
         if let Some(s) = start.take() {
-            out.push(DiffHunk { kind: DiffKind::Mod, start: s, end });
+            out.push(DiffHunk {
+                kind: DiffKind::Mod,
+                start: s,
+                end,
+            });
         }
     }
     fn flush_del(out: &mut Vec<DiffHunk>, at: &mut Option<u32>) {
         if let Some(a) = at.take() {
-            out.push(DiffHunk { kind: DiffKind::Del, start: a, end: a });
+            out.push(DiffHunk {
+                kind: DiffKind::Del,
+                start: a,
+                end: a,
+            });
         }
     }
 

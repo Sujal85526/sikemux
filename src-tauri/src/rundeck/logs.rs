@@ -143,9 +143,10 @@ pub async fn rnd_logs_start(
                     }
                     // 1.5s, 3s, 6s, 12s, 24s, 30s (capped).
                     let exp = 1u64 << consecutive_errors.min(6);
-                    sleep_dur =
-                        Duration::from_millis((POLL_INTERVAL.as_millis() as u64).saturating_mul(exp))
-                            .min(MAX_BACKOFF);
+                    sleep_dur = Duration::from_millis(
+                        (POLL_INTERVAL.as_millis() as u64).saturating_mul(exp),
+                    )
+                    .min(MAX_BACKOFF);
                 }
             }
             sleep(sleep_dur).await;

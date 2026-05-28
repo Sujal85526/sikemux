@@ -74,8 +74,8 @@ pub fn should_skip_dir(name: &str) -> bool {
 fn walk(repo: &str) -> Vec<String> {
     let mut out = Vec::new();
     let walker = WalkBuilder::new(repo)
-        .hidden(false)         // show dotfiles — .env, .vscode/, etc. are findable
-        .git_ignore(false)     // gitignored ≠ uninteresting (env files, secrets)
+        .hidden(false) // show dotfiles — .env, .vscode/, etc. are findable
+        .git_ignore(false) // gitignored ≠ uninteresting (env files, secrets)
         .git_exclude(false)
         .git_global(false)
         .ignore(false)
@@ -131,7 +131,10 @@ pub async fn list_project_files(repo: String) -> Result<Vec<String>, String> {
     let arc = Arc::new(files);
     cache().insert(
         repo,
-        Entry { files: arc.clone(), fetched_at: Instant::now() },
+        Entry {
+            files: arc.clone(),
+            fetched_at: Instant::now(),
+        },
     );
     Ok((*arc).clone())
 }

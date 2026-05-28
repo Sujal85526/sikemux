@@ -52,8 +52,7 @@ pub async fn rnd_executions(
     max: Option<u32>,
     only_succeeded: Option<bool>,
 ) -> AppResult<Vec<Execution>> {
-    let mut query: Vec<(&str, String)> =
-        vec![("max", max.unwrap_or(25).to_string())];
+    let mut query: Vec<(&str, String)> = vec![("max", max.unwrap_or(25).to_string())];
     if only_succeeded.unwrap_or(false) {
         query.push(("status", "succeeded".into()));
     }

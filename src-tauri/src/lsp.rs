@@ -69,7 +69,11 @@ fn key(project: &str, language: &str) -> String {
 }
 
 fn server_for(project: &str, language: &str) -> Option<ServerHandle> {
-    registry().lock().ok()?.get(&key(project, language)).cloned()
+    registry()
+        .lock()
+        .ok()?
+        .get(&key(project, language))
+        .cloned()
 }
 
 // (bin, args) tuple for a language. Order matters only for display.
@@ -126,7 +130,9 @@ fn send(server: &ServerHandle, msg: &Value) -> AppResult<()> {
         return Err(AppError::Lsp("server shut down".into()));
     }
     let mut guard = server.stdin.lock().map_err(lsp)?;
-    let stdin = guard.as_mut().ok_or_else(|| AppError::Lsp("stdin gone".into()))?;
+    let stdin = guard
+        .as_mut()
+        .ok_or_else(|| AppError::Lsp("stdin gone".into()))?;
     write_frame(stdin, msg)
 }
 
@@ -135,14 +141,20 @@ fn read_message(reader: &mut BufReader<ChildStdout>) -> Option<Value> {
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line).ok()?;
-        if n == 0 { return None; }
+        if n == 0 {
+            return None;
+        }
         let line = line.trim_end_matches(|c| c == '\r' || c == '\n');
-        if line.is_empty() { break; }
+        if line.is_empty() {
+            break;
+        }
         if let Some(v) = line.strip_prefix("Content-Length:") {
             content_length = v.trim().parse().ok()?;
         }
     }
-    if content_length == 0 { return None; }
+    if content_length == 0 {
+        return None;
+    }
     let mut buf = vec![0u8; content_length];
     reader.read_exact(&mut buf).ok()?;
     serde_json::from_slice(&buf).ok()
@@ -152,10 +164,7 @@ fn next_id(server: &ServerHandle) -> i64 {
     // If the mutex is poisoned a request thread crashed mid-allocate.
     // Recover the inner counter instead of crashing the whole LSP layer —
     // a duplicate id is preferable to a panic taking the editor down.
-    let mut id = server
-        .next_id
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let mut id = server.next_id.lock().unwrap_or_else(|p| p.into_inner());
     let v = *id;
     *id += 1;
     v
@@ -194,11 +203,7 @@ fn notify(server: &ServerHandle, method: &str, params: Value) -> AppResult<()> {
     send(server, &n)
 }
 
-fn spawn_server(
-    project: &str,
-    language: &str,
-    app: AppHandle,
-) -> AppResult<ServerHandle> {
+fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<ServerHandle> {
     let (bin, args) = server_command(language)
         .ok_or_else(|| AppError::Lsp(format!("no language server configured for `{language}`")))?;
     let mut child = Command::new(&bin)
@@ -210,7 +215,10 @@ fn spawn_server(
         .spawn()
         .map_err(|e| AppError::Lsp(format!("spawn {bin}: {e}")))?;
     let stdin = child.stdin.take().ok_or(AppError::Lsp("no stdin".into()))?;
-    let stdout = child.stdout.take().ok_or(AppError::Lsp("no stdout".into()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or(AppError::Lsp("no stdout".into()))?;
     let stderr = child.stderr.take();
 
     let server = Arc::new(Server {
@@ -227,7 +235,10 @@ fn spawn_server(
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         while let Some(msg) = read_message(&mut reader) {
-            if reader_server.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+            if reader_server
+                .shutdown
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
                 break;
             }
             if let Some(id) = msg.get("id").and_then(|i| i.as_i64()) {
@@ -261,7 +272,10 @@ fn spawn_server(
             let mut reader = BufReader::new(stderr);
             let mut sink = String::new();
             loop {
-                if drain_server.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                if drain_server
+                    .shutdown
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
                     break;
                 }
                 sink.clear();
@@ -306,15 +320,13 @@ fn spawn_server(
 // ---- Tauri commands -----------------------------------------------------
 
 #[tauri::command]
-pub async fn lsp_start(
-    app: AppHandle,
-    project: String,
-    language: String,
-) -> AppResult<()> {
+pub async fn lsp_start(app: AppHandle, project: String, language: String) -> AppResult<()> {
     let k = key(&project, &language);
     {
         let reg = registry().lock().map_err(lsp)?;
-        if reg.contains_key(&k) { return Ok(()); }
+        if reg.contains_key(&k) {
+            return Ok(());
+        }
     }
     // The initialize handshake blocks up to 20 s on slow servers; off the
     // Tauri worker pool so unrelated IPC isn't starved.
@@ -347,7 +359,9 @@ pub async fn lsp_stop(project: String) -> AppResult<()> {
     // Actual kill is potentially slow (SIGKILL + wait); off-thread.
     task::spawn_blocking(move || {
         for server in to_kill {
-            server.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+            server
+                .shutdown
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             // Drop stdin so the server's read loop sees EOF and exits
             // cleanly; if it doesn't, fall through to kill().
             if let Ok(mut g) = server.stdin.lock() {
@@ -373,8 +387,8 @@ pub async fn lsp_open(
     path: String,
     content: String,
 ) -> AppResult<()> {
-    let server = server_for(&project, &language)
-        .ok_or(AppError::Lsp("server not started".into()))?;
+    let server =
+        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     task::spawn_blocking(move || {
         notify(
             &server,
@@ -401,8 +415,8 @@ pub async fn lsp_change(
     content: String,
     version: u32,
 ) -> AppResult<()> {
-    let server = server_for(&project, &language)
-        .ok_or(AppError::Lsp("server not started".into()))?;
+    let server =
+        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     // Cheap content-hash dedup: if the previous payload for this path
     // hashed to the same value, skip the IPC + LSP reparse. Catches
     // undo-back-to-saved and the debounce firing without an actual edit.
@@ -433,7 +447,9 @@ pub async fn lsp_change(
 }
 
 fn parse_locations(result: &Value) -> Vec<LspLocation> {
-    if result.is_null() { return vec![]; }
+    if result.is_null() {
+        return vec![];
+    }
     if let Some(arr) = result.as_array() {
         return arr
             .iter()
@@ -463,8 +479,8 @@ pub async fn lsp_locations(
     character: u32,
     kind: LspKind,
 ) -> AppResult<Vec<LspLocation>> {
-    let server = server_for(&project, &language)
-        .ok_or(AppError::Lsp("server not started".into()))?;
+    let server =
+        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     let (method, with_context) = match kind {
         LspKind::Definition => ("textDocument/definition", false),
         LspKind::Implementation => ("textDocument/implementation", false),

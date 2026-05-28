@@ -22,7 +22,13 @@ pub struct SshHost {
     port: Option<u16>,
 }
 
-fn flush(out: &mut Vec<SshHost>, aliases: &[String], hn: &Option<String>, user: &Option<String>, port: Option<u16>) {
+fn flush(
+    out: &mut Vec<SshHost>,
+    aliases: &[String],
+    hn: &Option<String>,
+    user: &Option<String>,
+    port: Option<u16>,
+) {
     for alias in aliases {
         if alias.contains('*') || alias.contains('?') {
             continue;
@@ -38,9 +44,13 @@ fn flush(out: &mut Vec<SshHost>, aliases: &[String], hn: &Option<String>, user: 
 
 #[tauri::command]
 pub fn ssh_hosts() -> Vec<SshHost> {
-    let Ok(home) = std::env::var("HOME") else { return Vec::new() };
+    let Ok(home) = std::env::var("HOME") else {
+        return Vec::new();
+    };
     let path = PathBuf::from(home).join(".ssh/config");
-    let Ok(content) = fs::read_to_string(&path) else { return Vec::new() };
+    let Ok(content) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
 
     let mut out: Vec<SshHost> = Vec::new();
     let mut aliases: Vec<String> = Vec::new();

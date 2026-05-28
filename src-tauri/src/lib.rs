@@ -58,7 +58,9 @@ pub fn run() {
                 use tauri::Manager;
                 if let Some(window) = app.get_webview_window("main") {
                     if let Ok(handle) = window.ns_window() {
-                        unsafe { transparency::apply(handle, 0); }
+                        unsafe {
+                            transparency::apply(handle, 0);
+                        }
                     }
                 }
             }

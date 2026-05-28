@@ -156,11 +156,21 @@ mod tests {
         // updated to match.
         assert_eq!(AppError::AwsTokenExpired.category(), "aws-token-expired");
         assert_eq!(AppError::AwsNoCredentials.category(), "aws-no-credentials");
-        assert_eq!(AppError::AwsCliMissing("aws".into()).category(), "aws-cli-missing");
-        assert_eq!(AppError::RundeckUnconfigured.category(), "rundeck-unconfigured");
+        assert_eq!(
+            AppError::AwsCliMissing("aws".into()).category(),
+            "aws-cli-missing"
+        );
+        assert_eq!(
+            AppError::RundeckUnconfigured.category(),
+            "rundeck-unconfigured"
+        );
         assert_eq!(AppError::RundeckAuth("x".into()).category(), "rundeck-auth");
         assert_eq!(
-            AppError::RundeckHttp { status: 401, message: "".into() }.category(),
+            AppError::RundeckHttp {
+                status: 401,
+                message: "".into()
+            }
+            .category(),
             "rundeck-http"
         );
         assert_eq!(AppError::BadArg("x").category(), "bad-arg");
@@ -171,7 +181,10 @@ mod tests {
 
     #[test]
     fn wire_payload_round_trip() {
-        let e = AppError::RundeckHttp { status: 401, message: "boom".into() };
+        let e = AppError::RundeckHttp {
+            status: 401,
+            message: "boom".into(),
+        };
         let s = serde_json::to_string(&e).unwrap();
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         assert_eq!(v["category"], "rundeck-http");

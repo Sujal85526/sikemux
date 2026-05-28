@@ -118,11 +118,11 @@ async fn request_json<T: DeserializeOwned>(
             // Another request may have just refreshed the token — peek first.
             let cur = config::refresh_from_disk().await?;
             if !cur.token.is_empty() {
-                match send_with_token(method.clone(), endpoint, body, query, Some(&cur.token))
-                    .await
+                match send_with_token(method.clone(), endpoint, body, query, Some(&cur.token)).await
                 {
-                    Ok(retry) if retry.status() != StatusCode::UNAUTHORIZED
-                        && retry.status() != StatusCode::FORBIDDEN =>
+                    Ok(retry)
+                        if retry.status() != StatusCode::UNAUTHORIZED
+                            && retry.status() != StatusCode::FORBIDDEN =>
                     {
                         return decode(retry).await;
                     }
@@ -131,8 +131,7 @@ async fn request_json<T: DeserializeOwned>(
             }
             reauth_with_stored_creds().await?
         };
-        let retry =
-            send_with_token(method, endpoint, body, query, Some(&new_token)).await?;
+        let retry = send_with_token(method, endpoint, body, query, Some(&new_token)).await?;
         return decode(retry).await;
     }
     decode(resp).await

@@ -100,18 +100,35 @@ fn status_chars(s: Status) -> (char, char) {
     // map (index, worktree) to porcelain X / Y chars
     let mut x = ' ';
     let mut y = ' ';
-    if s.contains(Status::INDEX_NEW) { x = 'A'; }
-    else if s.contains(Status::INDEX_MODIFIED) { x = 'M'; }
-    else if s.contains(Status::INDEX_DELETED) { x = 'D'; }
-    else if s.contains(Status::INDEX_RENAMED) { x = 'R'; }
-    else if s.contains(Status::INDEX_TYPECHANGE) { x = 'T'; }
+    if s.contains(Status::INDEX_NEW) {
+        x = 'A';
+    } else if s.contains(Status::INDEX_MODIFIED) {
+        x = 'M';
+    } else if s.contains(Status::INDEX_DELETED) {
+        x = 'D';
+    } else if s.contains(Status::INDEX_RENAMED) {
+        x = 'R';
+    } else if s.contains(Status::INDEX_TYPECHANGE) {
+        x = 'T';
+    }
 
-    if s.contains(Status::WT_NEW) { y = '?'; if x == ' ' { x = '?'; } }
-    else if s.contains(Status::WT_MODIFIED) { y = 'M'; }
-    else if s.contains(Status::WT_DELETED) { y = 'D'; }
-    else if s.contains(Status::WT_RENAMED) { y = 'R'; }
-    else if s.contains(Status::WT_TYPECHANGE) { y = 'T'; }
-    else if s.contains(Status::CONFLICTED) { x = 'U'; y = 'U'; }
+    if s.contains(Status::WT_NEW) {
+        y = '?';
+        if x == ' ' {
+            x = '?';
+        }
+    } else if s.contains(Status::WT_MODIFIED) {
+        y = 'M';
+    } else if s.contains(Status::WT_DELETED) {
+        y = 'D';
+    } else if s.contains(Status::WT_RENAMED) {
+        y = 'R';
+    } else if s.contains(Status::WT_TYPECHANGE) {
+        y = 'T';
+    } else if s.contains(Status::CONFLICTED) {
+        x = 'U';
+        y = 'U';
+    }
 
     (x, y)
 }
@@ -140,9 +157,7 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
                 if let Some(n) = up.name().ok().flatten() {
                     status.upstream = Some(n.to_string());
                 }
-                if let (Some(local_oid), Some(up_oid)) =
-                    (head.target(), up.get().target())
-                {
+                if let (Some(local_oid), Some(up_oid)) = (head.target(), up.get().target()) {
                     if let Ok((ahead, behind)) = repo.graph_ahead_behind(local_oid, up_oid) {
                         status.ahead = ahead as i32;
                         status.behind = behind as i32;
@@ -151,7 +166,9 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
             }
         }
     } else if let Ok(rname) = repo.head_detached() {
-        if rname { status.branch = "HEAD".to_string(); }
+        if rname {
+            status.branch = "HEAD".to_string();
+        }
     }
     if status.branch.is_empty() {
         // unborn branch — pull from HEAD reference name
@@ -174,7 +191,9 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
             None => continue,
         };
         let (x, y) = status_chars(entry.status());
-        if x == ' ' && y == ' ' { continue; }
+        if x == ' ' && y == ' ' {
+            continue;
+        }
         status.files.push(GitFile {
             path,
             index: x.to_string(),
@@ -226,7 +245,11 @@ fn read_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
             .map(|c| c.time().seconds())
             .unwrap_or(0);
         rows.push(Row {
-            branch: GitBranch { name, current: is_current, upstream },
+            branch: GitBranch {
+                name,
+                current: is_current,
+                upstream,
+            },
             committed_at,
             is_current,
         });
@@ -251,11 +274,21 @@ fn relative_time(secs: i64) -> String {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     let d = (now - secs).max(0);
-    if d < 60 { return format!("{}s ago", d); }
-    if d < 3600 { return format!("{}m ago", d / 60); }
-    if d < 86400 { return format!("{}h ago", d / 3600); }
-    if d < 86400 * 30 { return format!("{}d ago", d / 86400); }
-    if d < 86400 * 365 { return format!("{}mo ago", d / (86400 * 30)); }
+    if d < 60 {
+        return format!("{}s ago", d);
+    }
+    if d < 3600 {
+        return format!("{}m ago", d / 60);
+    }
+    if d < 86400 {
+        return format!("{}h ago", d / 3600);
+    }
+    if d < 86400 * 30 {
+        return format!("{}d ago", d / 86400);
+    }
+    if d < 86400 * 365 {
+        return format!("{}mo ago", d / (86400 * 30));
+    }
     format!("{}y ago", d / (86400 * 365))
 }
 
@@ -269,9 +302,17 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
         .map_err(|e| e.message().to_string())?;
     let mut out = Vec::with_capacity(limit);
     for (i, oid) in revwalk.enumerate() {
-        if i >= limit { break; }
-        let oid = match oid { Ok(o) => o, Err(_) => continue };
-        let commit = match repo.find_commit(oid) { Ok(c) => c, Err(_) => continue };
+        if i >= limit {
+            break;
+        }
+        let oid = match oid {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let commit = match repo.find_commit(oid) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
         let short = commit
             .as_object()
             .short_id()
@@ -356,9 +397,7 @@ fn write_diff_to_string(diff: &git2::Diff) -> Result<String, String> {
             DiffLineType::Context => out.push(' '),
             DiffLineType::Addition => out.push('+'),
             DiffLineType::Deletion => out.push('-'),
-            DiffLineType::FileHeader
-            | DiffLineType::HunkHeader
-            | DiffLineType::Binary => {}
+            DiffLineType::FileHeader | DiffLineType::HunkHeader | DiffLineType::Binary => {}
             _ => {}
         }
         out.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
@@ -375,10 +414,7 @@ pub async fn git_diff(repo: String, path: String, staged: bool) -> Result<String
     opts.pathspec(&path).context_lines(3);
 
     if staged {
-        let head_tree = r
-            .head()
-            .ok()
-            .and_then(|h| h.peel_to_tree().ok());
+        let head_tree = r.head().ok().and_then(|h| h.peel_to_tree().ok());
         let diff = r
             .diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))
             .map_err(|e| e.message().to_string())?;
@@ -389,12 +425,21 @@ pub async fn git_diff(repo: String, path: String, staged: bool) -> Result<String
         .diff_index_to_workdir(None, Some(&mut opts))
         .map_err(|e| e.message().to_string())?;
     let s = write_diff_to_string(&diff)?;
-    if !s.trim().is_empty() { return Ok(s); }
+    if !s.trim().is_empty() {
+        return Ok(s);
+    }
 
     // Untracked — fall back to git no-index for parity with the old impl.
     let (_, so, _) = run_git(
         &repo,
-        &["diff", "--no-ext-diff", "--no-index", "--", "/dev/null", &path],
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-index",
+            "--",
+            "/dev/null",
+            &path,
+        ],
     )?;
     Ok(so)
 }
@@ -456,10 +501,7 @@ pub async fn git_unstage_all(repo: String) -> Result<(), String> {
 
 // ---- show / file_at -------------------------------------------------------
 
-fn revparse_commit<'a>(
-    repo: &'a Repository,
-    rev: &str,
-) -> Result<git2::Commit<'a>, String> {
+fn revparse_commit<'a>(repo: &'a Repository, rev: &str) -> Result<git2::Commit<'a>, String> {
     repo.revparse_single(rev)
         .and_then(|o| o.peel_to_commit())
         .map_err(|e| e.message().to_string())
@@ -488,10 +530,7 @@ fn file_at_cache() -> &'static Mutex<linked_hash_map::LinkedHashMap<FileAtKey, S
 }
 
 fn is_immutable_rev(rev: &str) -> bool {
-    let head = rev
-        .split(|c| c == '~' || c == '^')
-        .next()
-        .unwrap_or(rev);
+    let head = rev.split(|c| c == '~' || c == '^').next().unwrap_or(rev);
     head.len() >= 7 && head.chars().all(|c| c.is_ascii_hexdigit())
 }
 
@@ -543,10 +582,7 @@ pub async fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, 
     let r = open_repo(&repo)?;
     let commit = revparse_commit(&r, &rev)?;
     let new_tree = commit.tree().map_err(|e| e.message().to_string())?;
-    let parent_tree = commit
-        .parent(0)
-        .ok()
-        .and_then(|p| p.tree().ok());
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
     let diff = r
         .diff_tree_to_tree(parent_tree.as_ref(), Some(&new_tree), None)
         .map_err(|e| e.message().to_string())?;
@@ -555,7 +591,9 @@ pub async fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, 
         &mut |d, _| {
             if let Some(p) = d.new_file().path().or_else(|| d.old_file().path()) {
                 let s = p.to_string_lossy().into_owned();
-                if !paths.contains(&s) { paths.push(s); }
+                if !paths.contains(&s) {
+                    paths.push(s);
+                }
             }
             true
         },
@@ -605,9 +643,10 @@ pub async fn git_push(repo: String) -> Result<String, String> {
         return Ok(format!("{so}{se}").trim().to_string());
     }
     if se.contains("has no upstream branch") || se.contains("--set-upstream") {
-        let branch = git_ok(&repo, &["branch", "--show-current"])?.trim().to_string();
-        let (ok2, so2, se2) =
-            run_git(&repo, &["push", "--set-upstream", "origin", &branch])?;
+        let branch = git_ok(&repo, &["branch", "--show-current"])?
+            .trim()
+            .to_string();
+        let (ok2, so2, se2) = run_git(&repo, &["push", "--set-upstream", "origin", &branch])?;
         return if ok2 {
             Ok(format!("{so2}{se2}").trim().to_string())
         } else {
@@ -643,8 +682,8 @@ fn clean_commit_message(raw: &str) -> Result<String, String> {
         t = te[..te.len() - 3].to_string();
     }
     const CONV: [&str; 11] = [
-        "feat", "fix", "refactor", "chore", "docs", "test", "perf", "build", "ci",
-        "style", "revert",
+        "feat", "fix", "refactor", "chore", "docs", "test", "perf", "build", "ci", "style",
+        "revert",
     ];
     let mut lines: Vec<&str> = t.lines().collect();
     while let Some(first) = lines.first() {
@@ -669,7 +708,16 @@ fn clean_commit_message(raw: &str) -> Result<String, String> {
 }
 
 fn run_hermes(prompt: &str) -> Result<String, String> {
-    let args = ["chat", "-Q", "-m", "openai/gpt-5.5", "-t", "safe", "-q", prompt];
+    let args = [
+        "chat",
+        "-Q",
+        "-m",
+        "openai/gpt-5.5",
+        "-t",
+        "safe",
+        "-q",
+        prompt,
+    ];
     let home = std::env::var("HOME").unwrap_or_default();
     let candidates = [
         "hermes".to_string(),
@@ -807,11 +855,7 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
 /// For new (untracked) files, "unstaged" and "all" both remove the file
 /// since there's no index or HEAD version to restore from.
 #[tauri::command]
-pub async fn git_discard_file(
-    repo: String,
-    path: String,
-    mode: String,
-) -> Result<(), String> {
+pub async fn git_discard_file(repo: String, path: String, mode: String) -> Result<(), String> {
     // Detect new/untracked files — these can't be `git checkout`'d.
     let (_, ls, _) = run_git(&repo, &["ls-files", "--error-unmatch", "--", &path])?;
     let tracked = !ls.is_empty()
@@ -866,17 +910,19 @@ pub async fn git_stash_list(repo: String) -> Result<Vec<GitStash>, String> {
     // Format chosen so we don't depend on lazy field parsing — `%gd` is
     // the selector (`stash@{N}`), `%gs` is the message. We compute branch
     // from the message prefix (`WIP on <branch>:` / `On <branch>:`).
-    let out = git_ok(
-        &repo,
-        &["stash", "list", "--format=%gd%x09%gs"],
-    )?;
+    let out = git_ok(&repo, &["stash", "list", "--format=%gd%x09%gs"])?;
     let mut entries = Vec::new();
     for (idx, line) in out.lines().enumerate() {
         let mut parts = line.splitn(2, '\t');
         let refname = parts.next().unwrap_or("").to_string();
         let message = parts.next().unwrap_or("").to_string();
         let branch = parse_stash_branch(&message);
-        entries.push(GitStash { index: idx, refname, branch, message });
+        entries.push(GitStash {
+            index: idx,
+            refname,
+            branch,
+            message,
+        });
     }
     Ok(entries)
 }
@@ -887,12 +933,7 @@ fn parse_stash_branch(message: &str) -> String {
         .strip_prefix("WIP on ")
         .or_else(|| message.strip_prefix("On "))
         .unwrap_or(message);
-    stripped
-        .split(':')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string()
+    stripped.split(':').next().unwrap_or("").trim().to_string()
 }
 
 /// Create a new stash. `mode`:
@@ -954,11 +995,7 @@ pub async fn git_stash_drop(repo: String, index: usize) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn git_stash_branch(
-    repo: String,
-    index: usize,
-    name: String,
-) -> Result<(), String> {
+pub async fn git_stash_branch(repo: String, index: usize, name: String) -> Result<(), String> {
     let r = format!("stash@{{{index}}}");
     git_ok(&repo, &["stash", "branch", &name, &r])?;
     Ok(())
@@ -1011,12 +1048,7 @@ pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
         if !is_fetch {
             continue;
         }
-        let url = rest
-            .rsplitn(2, ' ')
-            .nth(1)
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let url = rest.rsplitn(2, ' ').nth(1).unwrap_or("").trim().to_string();
         if !url.is_empty() {
             seen.insert(name, url);
         }
@@ -1030,11 +1062,7 @@ pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
 }
 
 #[tauri::command]
-pub async fn git_remote_add(
-    repo: String,
-    name: String,
-    url: String,
-) -> Result<(), String> {
+pub async fn git_remote_add(repo: String, name: String, url: String) -> Result<(), String> {
     git_ok(&repo, &["remote", "add", &name, &url])?;
     Ok(())
 }
@@ -1056,11 +1084,7 @@ pub async fn git_remote_rename(
 }
 
 #[tauri::command]
-pub async fn git_remote_set_url(
-    repo: String,
-    name: String,
-    url: String,
-) -> Result<(), String> {
+pub async fn git_remote_set_url(repo: String, name: String, url: String) -> Result<(), String> {
     git_ok(&repo, &["remote", "set-url", &name, &url])?;
     Ok(())
 }
@@ -1157,7 +1181,11 @@ pub async fn git_remote_branches(
             full_ref: full_ref.clone(),
             is_head_pointer,
             tracked_by: upstreams.get(&full_ref).cloned(),
-            subject: if subject.is_empty() { None } else { Some(subject) },
+            subject: if subject.is_empty() {
+                None
+            } else {
+                Some(subject)
+            },
         });
     }
     Ok(list)
@@ -1179,16 +1207,18 @@ pub async fn git_checkout_remote_branch(
     // create-and-track.
     let exists = git_ok(
         &repo,
-        &["show-ref", "--verify", "--quiet", &format!("refs/heads/{local}")],
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{local}"),
+        ],
     )
     .is_ok();
     if exists {
         git_ok(&repo, &["checkout", &local])?;
     } else {
-        git_ok(
-            &repo,
-            &["checkout", "-b", &local, "--track", &full_ref],
-        )?;
+        git_ok(&repo, &["checkout", "-b", &local, "--track", &full_ref])?;
     }
     Ok(())
 }
@@ -1216,7 +1246,10 @@ pub async fn git_set_upstream(
 ) -> Result<(), String> {
     match upstream {
         Some(u) if !u.is_empty() => {
-            git_ok(&repo, &["branch", &format!("--set-upstream-to={u}"), &branch])?;
+            git_ok(
+                &repo,
+                &["branch", &format!("--set-upstream-to={u}"), &branch],
+            )?;
         }
         _ => {
             git_ok(&repo, &["branch", "--unset-upstream", &branch])?;
@@ -1224,5 +1257,3 @@ pub async fn git_set_upstream(
     }
     Ok(())
 }
-
-

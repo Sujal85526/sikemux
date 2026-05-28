@@ -157,7 +157,12 @@ impl<'a, M: Matcher> Sink for FileSink<'a, M> {
 
         let (text, truncated_text, ranges) = clip_text_and_ranges(trimmed, ranges);
 
-        self.matches.push(SearchHit { line, text, truncated_text, ranges });
+        self.matches.push(SearchHit {
+            line,
+            text,
+            truncated_text,
+            ranges,
+        });
         Ok(true)
     }
 }
@@ -385,11 +390,9 @@ pub async fn project_search(
         });
     }
 
-    tauri::async_runtime::spawn_blocking(move || {
-        run_search(repo, query, options, on_file, gen)
-    })
-    .await
-    .map_err(|e| AppError::Search(format!("join: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || run_search(repo, query, options, on_file, gen))
+        .await
+        .map_err(|e| AppError::Search(format!("join: {e}")))?
 }
 
 fn run_search(
@@ -746,18 +749,19 @@ fn run_replace(
             }
 
             if dry_run {
-                return Ok(Some(ReplaceFile { path: rel, match_count }));
+                return Ok(Some(ReplaceFile {
+                    path: rel,
+                    match_count,
+                }));
             }
 
             // tempfile gives us a unique sibling path that auto-cleans if
             // we drop it without persisting. NamedTempFile::persist does
             // the atomic rename for us.
             let parent = path.parent().unwrap_or_else(|| Path::new("."));
-            let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| {
-                ReplaceError {
-                    path: rel.clone(),
-                    reason: format!("tempfile failed: {e}"),
-                }
+            let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| ReplaceError {
+                path: rel.clone(),
+                reason: format!("tempfile failed: {e}"),
             })?;
             tmp.write_all(&rewritten).map_err(|e| ReplaceError {
                 path: rel.clone(),
@@ -768,7 +772,10 @@ fn run_replace(
                 reason: format!("rename failed: {}", e.error),
             })?;
 
-            Ok(Some(ReplaceFile { path: rel, match_count }))
+            Ok(Some(ReplaceFile {
+                path: rel,
+                match_count,
+            }))
         })
         .collect();
 

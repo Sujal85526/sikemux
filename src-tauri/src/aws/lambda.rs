@@ -36,11 +36,8 @@ pub async fn aws_lambda_functions(profile: String) -> AppResult<Vec<LambdaFn>> {
         #[serde(rename = "Handler")]
         handler: Option<String>,
     }
-    let resp: Resp = aws_json_async(
-        &profile,
-        &["lambda", "list-functions", "--output", "json"],
-    )
-    .await?;
+    let resp: Resp =
+        aws_json_async(&profile, &["lambda", "list-functions", "--output", "json"]).await?;
     let mut out: Vec<LambdaFn> = resp
         .functions
         .into_iter()

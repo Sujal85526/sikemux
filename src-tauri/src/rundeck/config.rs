@@ -35,7 +35,9 @@ impl RundeckConfig {
 }
 
 pub fn config_path() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".rd-config"))
+    std::env::var("HOME")
+        .ok()
+        .map(|h| PathBuf::from(h).join(".rd-config"))
 }
 
 /// Strip POSIX-style %q quoting that bash's `printf '%q'` produces. Handles
@@ -98,7 +100,9 @@ fn read_file() -> AppResult<RundeckConfig> {
         if line.is_empty() {
             continue;
         }
-        let Some((k, v)) = line.split_once('=') else { continue };
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
         let val = unquote(v);
         match k.trim() {
             "RD_URL" => cfg.url = val.trim_end_matches('/').to_string(),

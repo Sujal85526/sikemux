@@ -145,10 +145,7 @@ pub(super) async fn describe_in_chunks<R: DeserializeOwned + Send + 'static>(
         return Ok(Vec::new());
     }
     let chunk_size = chunk_size.max(1);
-    let chunks: Vec<Vec<String>> = arns
-        .chunks(chunk_size)
-        .map(|c| c.to_vec())
-        .collect();
+    let chunks: Vec<Vec<String>> = arns.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
     let futs = chunks.into_iter().map(|chunk| {
         let profile = profile.clone();

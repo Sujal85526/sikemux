@@ -122,9 +122,7 @@ pub async fn rnd_plan(
         Ok(r) => r,
         Err(_) => return Ok(plan),
     };
-    plan.git_root = repo
-        .workdir()
-        .map(|p| p.to_string_lossy().to_string());
+    plan.git_root = repo.workdir().map(|p| p.to_string_lossy().to_string());
 
     // Best-effort fetch — we want fresh refs but tolerate offline machines.
     let _ = std::process::Command::new("git")
@@ -146,10 +144,9 @@ pub async fn rnd_plan(
 
     // Dirty tree
     if let Ok(statuses) = repo.statuses(None) {
-        plan.dirty = statuses.iter().any(|s| {
-            !s.status().is_ignored()
-                && !(s.status().is_empty())
-        });
+        plan.dirty = statuses
+            .iter()
+            .any(|s| !s.status().is_ignored() && !(s.status().is_empty()));
     }
 
     // Upstream + ahead/behind
@@ -189,8 +186,7 @@ pub async fn rnd_plan(
         (None, _) => BranchRelation::UnknownNoDeployedBranch,
         (Some(d), _) if d == &target_branch => BranchRelation::Same,
         (Some(d), true) => {
-            let deployed_ref =
-                repo.find_reference(&format!("refs/remotes/origin/{d}"));
+            let deployed_ref = repo.find_reference(&format!("refs/remotes/origin/{d}"));
             if deployed_ref.is_err() {
                 BranchRelation::UnknownDeployedNotOnOrigin
             } else {
@@ -203,8 +199,7 @@ pub async fn rnd_plan(
                 match (target_ref, deployed_oid) {
                     (Some(t), Some(d_oid)) => {
                         let is_ancestor =
-                            repo.graph_descendant_of(t, d_oid).unwrap_or(false)
-                                || t == d_oid;
+                            repo.graph_descendant_of(t, d_oid).unwrap_or(false) || t == d_oid;
                         if is_ancestor {
                             BranchRelation::TargetContainsDeployed
                         } else {

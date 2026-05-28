@@ -115,10 +115,7 @@ pub async fn aws_logs_tail_start(
 }
 
 #[tauri::command]
-pub fn aws_logs_tail_stop(
-    manager: tauri::State<'_, LogsTailManager>,
-    id: u32,
-) -> AppResult<()> {
+pub fn aws_logs_tail_stop(manager: tauri::State<'_, LogsTailManager>, id: u32) -> AppResult<()> {
     if let Some((_, mut child)) = manager.tails.remove(&id) {
         // start_kill is sync (just sends the signal); the actual reaping
         // happens when kill_on_drop fires on the Child's Drop, or when

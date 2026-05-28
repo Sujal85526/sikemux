@@ -16,11 +16,7 @@ use std::process::Command;
 use crate::error::AppResult;
 
 #[tauri::command]
-pub async fn open_url(
-    url: String,
-    app: Option<String>,
-    shortcut: Option<String>,
-) -> AppResult<()> {
+pub async fn open_url(url: String, app: Option<String>, shortcut: Option<String>) -> AppResult<()> {
     let app = app.filter(|s| !s.trim().is_empty());
     let shortcut = shortcut.filter(|s| !s.trim().is_empty());
 
@@ -49,10 +45,7 @@ pub async fn open_url(
 }
 
 #[tauri::command]
-pub async fn macos_focus_app(
-    app: String,
-    shortcut: Option<String>,
-) -> AppResult<()> {
+pub async fn macos_focus_app(app: String, shortcut: Option<String>) -> AppResult<()> {
     if app.trim().is_empty() {
         return Ok(()); // no-op when no app configured
     }
@@ -76,10 +69,7 @@ fn run_focus(app_name: &str, shortcut: Option<&str>) {
 #[cfg(target_os = "macos")]
 fn build_activate_and_switch(app_name: &str, shortcut: Option<&str>) -> String {
     let app_esc = escape_applescript(app_name);
-    let mut s = format!(
-        "tell application \"{}\" to activate\ndelay 0.4\n",
-        app_esc
-    );
+    let mut s = format!("tell application \"{}\" to activate\ndelay 0.4\n", app_esc);
     if let Some(sc) = shortcut.and_then(parse_shortcut) {
         let (mods, key) = sc;
         s.push_str("tell application \"System Events\"\n");
@@ -137,13 +127,41 @@ fn key_code_for(key: &str) -> Option<u8> {
         return None;
     }
     Some(match k.as_str() {
-        "1" => 18, "2" => 19, "3" => 20, "4" => 21, "5" => 23,
-        "6" => 22, "7" => 26, "8" => 28, "9" => 25, "0" => 29,
-        "a" => 0,  "b" => 11, "c" => 8,  "d" => 2,  "e" => 14,
-        "f" => 3,  "g" => 5,  "h" => 4,  "i" => 34, "j" => 38,
-        "k" => 40, "l" => 37, "m" => 46, "n" => 45, "o" => 31,
-        "p" => 35, "q" => 12, "r" => 15, "s" => 1,  "t" => 17,
-        "u" => 32, "v" => 9,  "w" => 13, "x" => 7,  "y" => 16,
+        "1" => 18,
+        "2" => 19,
+        "3" => 20,
+        "4" => 21,
+        "5" => 23,
+        "6" => 22,
+        "7" => 26,
+        "8" => 28,
+        "9" => 25,
+        "0" => 29,
+        "a" => 0,
+        "b" => 11,
+        "c" => 8,
+        "d" => 2,
+        "e" => 14,
+        "f" => 3,
+        "g" => 5,
+        "h" => 4,
+        "i" => 34,
+        "j" => 38,
+        "k" => 40,
+        "l" => 37,
+        "m" => 46,
+        "n" => 45,
+        "o" => 31,
+        "p" => 35,
+        "q" => 12,
+        "r" => 15,
+        "s" => 1,
+        "t" => 17,
+        "u" => 32,
+        "v" => 9,
+        "w" => 13,
+        "x" => 7,
+        "y" => 16,
         "z" => 6,
         _ => return None,
     })

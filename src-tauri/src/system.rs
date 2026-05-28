@@ -53,10 +53,7 @@ pub fn fix_path_from_login_shell() {
         "/opt/homebrew/sbin".to_string(),
         "/usr/local/bin".to_string(),
     ];
-    let mut parts: Vec<&str> = shell_path
-        .split(':')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut parts: Vec<&str> = shell_path.split(':').filter(|s| !s.is_empty()).collect();
     for d in &extra {
         if !parts.iter().any(|p| *p == d.as_str()) {
             parts.push(d.as_str());
@@ -85,7 +82,11 @@ pub fn recent_dirs() -> Vec<String> {
 }
 
 fn zoxide_dirs() -> Vec<String> {
-    for bin in ["zoxide", "/opt/homebrew/bin/zoxide", "/usr/local/bin/zoxide"] {
+    for bin in [
+        "zoxide",
+        "/opt/homebrew/bin/zoxide",
+        "/usr/local/bin/zoxide",
+    ] {
         if let Ok(out) = Command::new(bin).args(["query", "--list"]).output() {
             if out.status.success() {
                 return String::from_utf8_lossy(&out.stdout)
@@ -124,13 +125,23 @@ pub struct BatteryStatus {
 pub fn battery_status() -> BatteryStatus {
     #[cfg(not(target_os = "macos"))]
     {
-        return BatteryStatus { percent: None, charging: false, time_remaining: None };
+        return BatteryStatus {
+            percent: None,
+            charging: false,
+            time_remaining: None,
+        };
     }
     #[cfg(target_os = "macos")]
     {
         let out = match Command::new("pmset").args(["-g", "batt"]).output() {
             Ok(o) if o.status.success() => o,
-            _ => return BatteryStatus { percent: None, charging: false, time_remaining: None },
+            _ => {
+                return BatteryStatus {
+                    percent: None,
+                    charging: false,
+                    time_remaining: None,
+                }
+            }
         };
         parse_pmset(&String::from_utf8_lossy(&out.stdout))
     }
@@ -181,7 +192,11 @@ fn parse_pmset(text: &str) -> BatteryStatus {
         }
         break;
     }
-    BatteryStatus { percent, charging, time_remaining }
+    BatteryStatus {
+        percent,
+        charging,
+        time_remaining,
+    }
 }
 
 /// Single round-trip the renderer uses on boot — home dir + persisted state

@@ -71,9 +71,7 @@ pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
 
     let final_url = resp.url().to_string();
     if final_url.contains("/user/error") || final_url.contains("/user/login") {
-        return Err(AppError::RundeckAuth(
-            "invalid username or password".into(),
-        ));
+        return Err(AppError::RundeckAuth("invalid username or password".into()));
     }
     let status = resp.status();
     if !status.is_success() && !status.is_redirection() {
@@ -197,8 +195,7 @@ pub async fn rnd_status() -> RundeckStatus {
         };
     }
 
-    let info: AppResult<serde_json::Value> =
-        super::client::get_json("/system/info", &[]).await;
+    let info: AppResult<serde_json::Value> = super::client::get_json("/system/info", &[]).await;
     match info {
         Ok(v) => RundeckStatus {
             configured: true,
@@ -242,15 +239,14 @@ pub async fn rnd_login(req: LoginRequest) -> AppResult<LoginResult> {
     config::save(cfg).await?;
 
     // Verify against /system/info so the user gets immediate feedback.
-    let version: Option<String> =
-        super::client::get_json::<serde_json::Value>("/system/info", &[])
-            .await
-            .ok()
-            .and_then(|v| {
-                v.pointer("/system/rundeck/version")
-                    .and_then(|s| s.as_str())
-                    .map(String::from)
-            });
+    let version: Option<String> = super::client::get_json::<serde_json::Value>("/system/info", &[])
+        .await
+        .ok()
+        .and_then(|v| {
+            v.pointer("/system/rundeck/version")
+                .and_then(|s| s.as_str())
+                .map(String::from)
+        });
 
     Ok(LoginResult {
         url,
