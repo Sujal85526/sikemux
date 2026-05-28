@@ -95,6 +95,10 @@ pub struct GitCommit {
     /// Ref decorations pointing at this commit: `HEAD`, local branches,
     /// `origin/main`, `tag: v0.1.11`. Rendered as lazygit-style badges.
     refs: Vec<String>,
+    /// True when this commit is ahead of the current branch's upstream
+    /// (reachable from HEAD but not from `@{u}`) — i.e. not yet pushed.
+    /// Drives the unpushed-vs-pushed lane colour in the graph.
+    unpushed: bool,
 }
 
 #[derive(Serialize)]
@@ -342,6 +346,41 @@ fn build_ref_map(repo: &Repository) -> std::collections::HashMap<String, Vec<Str
     map
 }
 
+/// Set of commit oids that are ahead of the current branch's upstream —
+/// reachable from HEAD but not from `@{u}`. Empty when HEAD is detached or
+/// the branch has no upstream (nothing to compare against → all "pushed").
+fn unpushed_set(repo: &Repository) -> std::collections::HashSet<String> {
+    let mut set = std::collections::HashSet::new();
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(_) => return set,
+    };
+    let head_oid = match head.target() {
+        Some(o) => o,
+        None => return set,
+    };
+    let upstream_oid = head
+        .shorthand()
+        .and_then(|name| repo.find_branch(name, BranchType::Local).ok())
+        .and_then(|b| b.upstream().ok())
+        .and_then(|u| u.get().target());
+    let upstream_oid = match upstream_oid {
+        Some(o) => o,
+        None => return set,
+    };
+    let mut revwalk = match repo.revwalk() {
+        Ok(r) => r,
+        Err(_) => return set,
+    };
+    if revwalk.push(head_oid).is_err() || revwalk.hide(upstream_oid).is_err() {
+        return set;
+    }
+    for oid in revwalk.flatten() {
+        set.insert(oid.to_string());
+    }
+    set
+}
+
 fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
     let mut revwalk = repo.revwalk().map_err(|e| e.message().to_string())?;
     if revwalk.push_head().is_err() {
@@ -353,6 +392,7 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
         .set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
         .map_err(|e| e.message().to_string())?;
     let ref_map = build_ref_map(repo);
+    let unpushed = unpushed_set(repo);
     let mut out = Vec::with_capacity(limit);
     for (i, oid) in revwalk.enumerate() {
         if i >= limit {
@@ -374,6 +414,7 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             .unwrap_or_else(|| oid.to_string()[..7].to_string());
         let full = oid.to_string();
         let refs = ref_map.get(&full).cloned().unwrap_or_default();
+        let is_unpushed = unpushed.contains(&full);
         out.push(GitCommit {
             hash: short,
             full_hash: full,
@@ -382,6 +423,7 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             author_email: commit.author().email().unwrap_or("").to_string(),
             date: relative_time(commit.time().seconds()),
             subject: commit.summary().unwrap_or("").to_string(),
+            unpushed: is_unpushed,
             refs,
         });
     }

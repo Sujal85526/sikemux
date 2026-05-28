@@ -29,6 +29,7 @@ export interface GitCommit {
     date: string;
     subject: string;
     refs: string[];
+    unpushed: boolean;
 }
 
 export interface GitOverview {
