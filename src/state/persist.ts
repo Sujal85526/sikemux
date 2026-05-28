@@ -1,26 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ensureSearchWindow, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
-import type {
-  Agent,
-  EditorPaneView,
-  PersistedPrefs,
-  PersistedSnapshot,
-  Session,
-  Window,
-  WindowRole,
-} from "./types";
+import type { Agent, EditorPaneView, PersistedPrefs, PersistedSnapshot, Session, Window, WindowRole } from "./types";
 
 // Backfill role for windows persisted before WindowRole existed. Inferred
 // from name + structural cues so legacy snapshots open without state loss.
 function deriveRole(w: Window): WindowRole {
-  if (w.role) return w.role;
-  if (w.name === "files") return "files";
-  if (w.name === "git") return "git";
-  if (w.name === "aws") return "aws";
-  if (w.name === "rundeck") return "rundeck";
-  if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
-  return "named";
+    if (w.role) return w.role;
+    if (w.name === "files") return "files";
+    if (w.name === "git") return "git";
+    if (w.name === "aws") return "aws";
+    if (w.name === "rundeck") return "rundeck";
+    if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
+    return "named";
 }
 
 // Boot/save round-trip. The wire format is described by PersistedSnapshot.
@@ -40,25 +32,26 @@ let lastSaved = "";
 // (expensive) JSON.stringify when every persisted slice is reference-
 // equal to what we last sent to disk.
 const PERSISTED_KEYS = [
-  "sessions",
-  "windows",
-  "sessionOrder",
-  "windowsBySession",
-  "activeSessionId",
-  "recent",
-  "agentBookmarks",
-  "editorViews",
-  "projectRoots",
-  "themeId",
-  "windowOpacity",
-  "windowBlur",
-  "cloudBrowser",
-  "cloudBrowserShortcut",
-  "awsProfile",
-  "awsService",
-  "leftRailOpen",
-  "rightRailOpen",
-  "rundeck",
+    "sessions",
+    "windows",
+    "sessionOrder",
+    "windowsBySession",
+    "activeSessionId",
+    "recent",
+    "agentBookmarks",
+    "editorViews",
+    "projectRoots",
+    "themeId",
+    "windowOpacity",
+    "windowBlur",
+    "cloudBrowser",
+    "cloudBrowserShortcut",
+    "awsProfile",
+    "awsService",
+    "leftRailOpen",
+    "rightRailOpen",
+    "zenMode",
+    "rundeck",
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
 
@@ -70,186 +63,186 @@ type SliceShot = { [K in PersistedKey]: StoreState[K] };
 let lastSlices: SliceShot | null = null;
 
 function takeSlices(s: StoreState): SliceShot {
-  const out = {} as SliceShot;
-  for (const k of PERSISTED_KEYS) {
-    (out as Record<string, unknown>)[k] = s[k];
-  }
-  return out;
+    const out = {} as SliceShot;
+    for (const k of PERSISTED_KEYS) {
+        (out as Record<string, unknown>)[k] = s[k];
+    }
+    return out;
 }
 
 function slicesEqual(a: SliceShot, b: SliceShot): boolean {
-  for (const k of PERSISTED_KEYS) {
-    if (a[k] !== b[k]) return false;
-  }
-  return true;
+    for (const k of PERSISTED_KEYS) {
+        if (a[k] !== b[k]) return false;
+    }
+    return true;
 }
 
 function packPrefs(s: StoreState): PersistedPrefs {
-  return {
-    projectRoots: s.projectRoots,
-    themeId: s.themeId,
-    windowOpacity: s.windowOpacity,
-    windowBlur: s.windowBlur,
-    cloudBrowser: s.cloudBrowser,
-    cloudBrowserShortcut: s.cloudBrowserShortcut,
-    awsProfile: s.awsProfile,
-    awsService: s.awsService,
-    leftRailOpen: s.leftRailOpen,
-    rightRailOpen: s.rightRailOpen,
-  };
+    return {
+        projectRoots: s.projectRoots,
+        themeId: s.themeId,
+        windowOpacity: s.windowOpacity,
+        windowBlur: s.windowBlur,
+        cloudBrowser: s.cloudBrowser,
+        cloudBrowserShortcut: s.cloudBrowserShortcut,
+        awsProfile: s.awsProfile,
+        awsService: s.awsService,
+        leftRailOpen: s.leftRailOpen,
+        rightRailOpen: s.rightRailOpen,
+        zenMode: s.zenMode,
+    };
 }
 
 function snapshot(): string {
-  const s = getState();
-  const sessions = s.sessionOrder.map((id) => s.sessions[id]).filter(Boolean).map((sess) => {
-    if (sess.activeAgentId == null && sess.view !== "agent") return sess;
-    return { ...sess, activeAgentId: null, view: "windows" as const };
-  });
-  const windowsBySession: Record<string, Window[]> = {};
-  const agentsBySession: Record<string, Agent[]> = {};
-  for (const sess of sessions) {
-    windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? [])
-      .map((id) => s.windows[id])
-      .filter(Boolean);
-    // Live agents are runtime processes, not restart state. Persisting them
-    // relaunches every old CLI on app boot, which is expensive and can burn
-    // tokens unexpectedly. Bookmarks remain persisted separately.
-    agentsBySession[sess.id] = [];
-  }
-  const snap: PersistedSnapshot = {
-    version: VERSION,
-    sessions,
-    windowsBySession,
-    agentsBySession,
-    sessionOrder: s.sessionOrder,
-    activeSessionId: s.activeSessionId,
-    recent: s.recent,
-    agentBookmarks: s.agentBookmarks,
-    prefs: packPrefs(s),
-    editorViews: s.editorViews,
-  };
-  return JSON.stringify(snap);
+    const s = getState();
+    const sessions = s.sessionOrder
+        .map((id) => s.sessions[id])
+        .filter(Boolean)
+        .map((sess) => {
+            if (sess.activeAgentId == null && sess.view !== "agent") return sess;
+            return { ...sess, activeAgentId: null, view: "windows" as const };
+        });
+    const windowsBySession: Record<string, Window[]> = {};
+    const agentsBySession: Record<string, Agent[]> = {};
+    for (const sess of sessions) {
+        windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).map((id) => s.windows[id]).filter(Boolean);
+        // Live agents are runtime processes, not restart state. Persisting them
+        // relaunches every old CLI on app boot, which is expensive and can burn
+        // tokens unexpectedly. Bookmarks remain persisted separately.
+        agentsBySession[sess.id] = [];
+    }
+    const snap: PersistedSnapshot = {
+        version: VERSION,
+        sessions,
+        windowsBySession,
+        agentsBySession,
+        sessionOrder: s.sessionOrder,
+        activeSessionId: s.activeSessionId,
+        recent: s.recent,
+        agentBookmarks: s.agentBookmarks,
+        prefs: packPrefs(s),
+        editorViews: s.editorViews,
+    };
+    return JSON.stringify(snap);
 }
 
 /** Hydrate the store from a raw JSON string (e.g. boot_init's return). */
 export function applyHydrate(raw: string): void {
-  if (!raw) return;
-  let data: PersistedSnapshot;
-  try {
-    data = JSON.parse(raw) as PersistedSnapshot;
-  } catch {
-    return;
-  }
-  if (data.version !== VERSION) return;
-  if (!Array.isArray(data.sessions) || data.sessions.length === 0) return;
+    if (!raw) return;
+    let data: PersistedSnapshot;
+    try {
+        data = JSON.parse(raw) as PersistedSnapshot;
+    } catch {
+        return;
+    }
+    if (data.version !== VERSION) return;
+    if (!Array.isArray(data.sessions) || data.sessions.length === 0) return;
 
-  const sessions: Record<string, Session> = {};
-  const windows: Record<string, Window> = {};
-  const agents: Record<string, Agent> = {};
-  const windowsBySession: Record<string, string[]> = {};
-  const agentsBySession: Record<string, string[]> = {};
-  for (const s of data.sessions) {
-    sessions[s.id] = { ...s, activeAgentId: null, view: s.view === "agent" ? "windows" : s.view };
-  }
-  for (const [sid, ws] of Object.entries(data.windowsBySession ?? {})) {
-    windowsBySession[sid] = ws.map((w) => {
-      windows[w.id] = { ...w, role: deriveRole(w) };
-      return w.id;
+    const sessions: Record<string, Session> = {};
+    const windows: Record<string, Window> = {};
+    const agents: Record<string, Agent> = {};
+    const windowsBySession: Record<string, string[]> = {};
+    const agentsBySession: Record<string, string[]> = {};
+    for (const s of data.sessions) {
+        sessions[s.id] = { ...s, activeAgentId: null, view: s.view === "agent" ? "windows" : s.view };
+    }
+    for (const [sid, ws] of Object.entries(data.windowsBySession ?? {})) {
+        windowsBySession[sid] = ws.map((w) => {
+            windows[w.id] = { ...w, role: deriveRole(w) };
+            return w.id;
+        });
+    }
+    for (const sid of Object.keys(windowsBySession)) {
+        agentsBySession[sid] = [];
+    }
+    // Drop editor-view entries for panes that no longer exist.
+    const validPaneIds = new Set<string>();
+    for (const w of Object.values(windows)) {
+        const walk = (n: Window["root"]): void => {
+            if (n.type === "pane") validPaneIds.add(n.id);
+            else n.children.forEach(walk);
+        };
+        walk(w.root);
+    }
+    const editorViews: Record<string, EditorPaneView> = {};
+    for (const [pid, v] of Object.entries(data.editorViews ?? {})) {
+        if (validPaneIds.has(pid)) editorViews[pid] = v;
+    }
+
+    const activeSessionId = sessions[data.activeSessionId]
+        ? data.activeSessionId
+        : (data.sessionOrder.find((id) => sessions[id]) ?? Object.keys(sessions)[0]);
+
+    const cur = getState();
+    setState({
+        sessions,
+        windows,
+        agents,
+        sessionOrder: data.sessionOrder.filter((id) => sessions[id]),
+        windowsBySession,
+        agentsBySession,
+        activeSessionId,
+        recent: data.recent ?? [],
+        agentBookmarks: data.agentBookmarks ?? [],
+        editorViews,
+        // Prefs — fall back to current defaults if a field is missing.
+        projectRoots: data.prefs?.projectRoots ? normaliseProjectRoots(data.prefs.projectRoots) : cur.projectRoots,
+        themeId: data.prefs?.themeId ?? cur.themeId,
+        windowOpacity: data.prefs?.windowOpacity ?? cur.windowOpacity,
+        windowBlur: data.prefs?.windowBlur ?? cur.windowBlur,
+        cloudBrowser: data.prefs?.cloudBrowser ?? cur.cloudBrowser,
+        cloudBrowserShortcut: data.prefs?.cloudBrowserShortcut ?? cur.cloudBrowserShortcut,
+        awsProfile: data.prefs?.awsProfile ?? cur.awsProfile,
+        awsService: data.prefs?.awsService ?? cur.awsService,
+        leftRailOpen: data.prefs?.leftRailOpen ?? cur.leftRailOpen,
+        rightRailOpen: data.prefs?.rightRailOpen ?? cur.rightRailOpen,
+        zenMode: data.prefs?.zenMode ?? cur.zenMode,
+        // Persisted rundeck slice. Older snapshots may have stored an
+        // `activeEnv` (legacy alias-based shape) — we just drop it and let
+        // the user re-pick a project from the live upstream list. No name
+        // table here; the only thing we do preserve is the user's prodEnvs
+        // safety setting if they customised it.
+        rundeck: (() => {
+            const raw = data.prefs?.rundeck as
+                | {
+                      activeProject?: string;
+                      activeEnvFolder?: string | null;
+                      prodEnvs?: string[];
+                  }
+                | undefined;
+            if (!raw) return cur.rundeck;
+            return {
+                activeProject: raw.activeProject ?? "",
+                activeEnvFolder: raw.activeEnvFolder ?? null,
+                prodEnvs: raw.prodEnvs ?? cur.rundeck.prodEnvs,
+            };
+        })(),
     });
-  }
-  for (const sid of Object.keys(windowsBySession)) {
-    agentsBySession[sid] = [];
-  }
-  // Drop editor-view entries for panes that no longer exist.
-  const validPaneIds = new Set<string>();
-  for (const w of Object.values(windows)) {
-    const walk = (n: Window["root"]): void => {
-      if (n.type === "pane") validPaneIds.add(n.id);
-      else n.children.forEach(walk);
-    };
-    walk(w.root);
-  }
-  const editorViews: Record<string, EditorPaneView> = {};
-  for (const [pid, v] of Object.entries(data.editorViews ?? {})) {
-    if (validPaneIds.has(pid)) editorViews[pid] = v;
-  }
-
-  const activeSessionId = sessions[data.activeSessionId]
-    ? data.activeSessionId
-    : (data.sessionOrder.find((id) => sessions[id]) ?? Object.keys(sessions)[0]);
-
-  const cur = getState();
-  setState({
-    sessions,
-    windows,
-    agents,
-    sessionOrder: data.sessionOrder.filter((id) => sessions[id]),
-    windowsBySession,
-    agentsBySession,
-    activeSessionId,
-    recent: data.recent ?? [],
-    agentBookmarks: data.agentBookmarks ?? [],
-    editorViews,
-    // Prefs — fall back to current defaults if a field is missing.
-    projectRoots: data.prefs?.projectRoots
-      ? normaliseProjectRoots(data.prefs.projectRoots)
-      : cur.projectRoots,
-    themeId: data.prefs?.themeId ?? cur.themeId,
-    windowOpacity: data.prefs?.windowOpacity ?? cur.windowOpacity,
-    windowBlur: data.prefs?.windowBlur ?? cur.windowBlur,
-    cloudBrowser: data.prefs?.cloudBrowser ?? cur.cloudBrowser,
-    cloudBrowserShortcut:
-      data.prefs?.cloudBrowserShortcut ?? cur.cloudBrowserShortcut,
-    awsProfile: data.prefs?.awsProfile ?? cur.awsProfile,
-    awsService: data.prefs?.awsService ?? cur.awsService,
-    leftRailOpen: data.prefs?.leftRailOpen ?? cur.leftRailOpen,
-    rightRailOpen: data.prefs?.rightRailOpen ?? cur.rightRailOpen,
-    // Persisted rundeck slice. Older snapshots may have stored an
-    // `activeEnv` (legacy alias-based shape) — we just drop it and let
-    // the user re-pick a project from the live upstream list. No name
-    // table here; the only thing we do preserve is the user's prodEnvs
-    // safety setting if they customised it.
-    rundeck: (() => {
-      const raw = data.prefs?.rundeck as
-        | {
-            activeProject?: string;
-            activeEnvFolder?: string | null;
-            prodEnvs?: string[];
-          }
-        | undefined;
-      if (!raw) return cur.rundeck;
-      return {
-        activeProject: raw.activeProject ?? "",
-        activeEnvFolder: raw.activeEnvFolder ?? null,
-        prodEnvs: raw.prodEnvs ?? cur.rundeck.prodEnvs,
-      };
-    })(),
-  });
-  // Snapshots from before the search pane existed lack a search window
-  // for project sessions — add one in place so the user doesn't have to
-  // close + reopen every project to get it.
-  ensureSearchWindow();
-  lastSaved = snapshot();
-  lastSlices = takeSlices(getState());
+    // Snapshots from before the search pane existed lack a search window
+    // for project sessions — add one in place so the user doesn't have to
+    // close + reopen every project to get it.
+    ensureSearchWindow();
+    lastSaved = snapshot();
+    lastSlices = takeSlices(getState());
 }
 
 /** Debounced save on every store change. Returns an unsubscribe function. */
 export function subscribePersist(): () => void {
-  let timer: number | undefined;
-  return useStore.subscribe(() => {
-    if (timer) window.clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      // Cheap ref-equality check across the persisted slices. View-only
-      // state changing (modals, hover, focus) hits this path and exits
-      // before we ever build the snapshot string.
-      const slices = takeSlices(getState());
-      if (lastSlices && slicesEqual(lastSlices, slices)) return;
-      lastSlices = slices;
+    let timer: number | undefined;
+    return useStore.subscribe(() => {
+        if (timer) window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+            // Cheap ref-equality check across the persisted slices. View-only
+            // state changing (modals, hover, focus) hits this path and exits
+            // before we ever build the snapshot string.
+            const slices = takeSlices(getState());
+            if (lastSlices && slicesEqual(lastSlices, slices)) return;
+            lastSlices = slices;
 
-      const snap = snapshot();
-      if (snap === lastSaved) return;
-      lastSaved = snap;
-      void invoke("state_save", { data: snap });
-    }, 600);
-  });
+            const snap = snapshot();
+            if (snap === lastSaved) return;
+            lastSaved = snap;
+            void invoke("state_save", { data: snap });
+        }, 600);
+    });
 }

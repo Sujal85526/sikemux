@@ -7,6 +7,11 @@ import { useMouseActive } from "../hooks/useMouseActive";
 import { AgentIcon, IconSearch } from "./Icons";
 
 type Row = AgentSession & { type: AgentType };
+type NewAgentItem = { kind: "new"; type: AgentType };
+type ResumeAgentItem = { kind: "resume"; row: Row };
+type AgentItem = NewAgentItem | ResumeAgentItem;
+
+const labelForType = (type: AgentType): string => type;
 
 function ago(unixSecs: number): string {
     if (!unixSecs) return "";
@@ -70,18 +75,33 @@ export function AgentPalette() {
 
     const items = useMemo(() => {
         const q = query.trim();
-        const ranked = rows.map((r) => ({ r, score: fuzzy(q, r.title) })).filter((x) => x.score >= 0);
+        const fresh = AGENT_TYPES.map((type): AgentItem => ({ kind: "new", type }));
+        const resumable = rows.map((row): AgentItem => ({ kind: "resume", row }));
+        const all = [...fresh, ...resumable];
+        const ranked = all
+            .map((item) => ({
+                item,
+                score: fuzzy(
+                    q,
+                    item.kind === "new" ? `new ${labelForType(item.type)} ${item.type}` : `${item.row.title} ${item.row.type}`,
+                ),
+            }))
+            .filter((x) => x.score >= 0);
         if (q) ranked.sort((a, b) => a.score - b.score);
-        return ranked.map((x) => x.r);
+        return ranked.map((x) => x.item);
     }, [rows, query]);
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));
     }, [items.length]);
 
-    const activate = (r: Row | undefined) => {
-        if (!r) return;
-        cmd.addAgent(r.type, r.id, r.title);
+    const activate = (item: AgentItem | undefined) => {
+        if (!item) return;
+        if (item.kind === "new") {
+            cmd.addAgent(item.type);
+        } else {
+            cmd.addAgent(item.row.type, item.row.id, item.row.title);
+        }
         cmd.closeAgentPalette();
     };
 
@@ -121,24 +141,29 @@ export function AgentPalette() {
                 </div>
 
                 <div className="picker-list">
-                    {items.length === 0 && <div className="picker-empty">no agent sessions</div>}
-                    {items.map((r, i) => (
-                        <button
-                            key={`${r.type}-${r.id}`}
-                            className={`picker-item${i === sel ? " sel" : ""}`}
-                            onMouseEnter={() => {
-                                if (mouseActive.current) setSel(i);
-                            }}
-                            onClick={() => activate(r)}>
-                            <span className={`picker-icon agent-glyph ${r.type}`}>
-                                <AgentIcon type={r.type} size={14} />
-                            </span>
-                            <span className="picker-name">{r.title}</span>
-                            <span className="picker-sub">
-                                {r.type} · {ago(r.mtime)}
-                            </span>
-                        </button>
-                    ))}
+                    {items.length === 0 && <div className="picker-empty">no agent matches</div>}
+                    {items.map((item, i) => {
+                        const type = item.kind === "new" ? item.type : item.row.type;
+                        return (
+                            <button
+                                key={item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`}
+                                className={`picker-item${i === sel ? " sel" : ""}`}
+                                onMouseEnter={() => {
+                                    if (mouseActive.current) setSel(i);
+                                }}
+                                onClick={() => activate(item)}>
+                                <span className={`picker-icon agent-glyph ${type}`}>
+                                    <AgentIcon type={type} size={14} />
+                                </span>
+                                <span className="picker-name">
+                                    {item.kind === "new" ? `new ${labelForType(type)}` : item.row.title}
+                                </span>
+                                <span className="picker-sub">
+                                    {item.kind === "new" ? "start agent" : `${type} · ${ago(item.row.mtime)}`}
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
         </div>

@@ -27,8 +27,7 @@
 }
 @font-face {
     font-family: "JetBrainsMono Nerd Font";
-    src: url("/fonts/JetBrainsMonoNerdFontMono-BoldItalic.ttf")
-        format("truetype");
+    src: url("/fonts/JetBrainsMonoNerdFontMono-BoldItalic.ttf") format("truetype");
     font-weight: 700;
     font-style: italic;
     font-display: block;
@@ -54,9 +53,7 @@
     --cmd: #ff6ac1;
     --danger: #ff6767;
 
-    --mono:
-        "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "SF Mono",
-        Menlo, monospace;
+    --mono: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 * {
@@ -78,11 +75,7 @@ body {
      toggles `html.is-transparent` we strip every overlay surface (chrome,
      pane, terminal) so this body wash is the single tinted layer — see the
      `html.is-transparent` rules below. */
-    background: color-mix(
-        in srgb,
-        var(--bg, var(--void)) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--bg, var(--void)) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
     font-family: var(--mono);
     font-size: 12.5px;
@@ -248,11 +241,7 @@ button {
     flex: 0 0 auto;
     /* All chrome surfaces respect --window-opacity so the whole window dims
      uniformly when the user pulls the opacity slider. */
-    background: color-mix(
-        in srgb,
-        var(--rail) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
     border-bottom: 1px solid var(--line);
     position: relative;
     z-index: 5;
@@ -482,11 +471,7 @@ button {
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
-    background: color-mix(
-        in srgb,
-        var(--rail) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
     overflow: hidden;
 }
 .side-rail {
@@ -745,16 +730,22 @@ button {
     cursor: pointer;
     color: var(--ink);
     text-align: left;
-    transition: background 0.12s, color 0.12s;
+    transition:
+        background 0.12s,
+        color 0.12s;
 }
-.proj-row:hover { color: var(--ink); }
+.proj-row:hover {
+    color: var(--ink);
+}
 .proj-row.expanded {
     padding: 6px 12px;
     border-left-color: var(--acc);
     background: linear-gradient(90deg, var(--acc-soft), transparent 75%);
     color: var(--acc);
 }
-.proj-row.expanded .proj-name { font-weight: 600; }
+.proj-row.expanded .proj-name {
+    font-weight: 600;
+}
 
 .proj-folder {
     display: inline-flex;
@@ -797,7 +788,9 @@ button {
 }
 
 /* Indented child rows under the expanded project. */
-.proj-tree.active { padding-bottom: 4px; }
+.proj-tree.active {
+    padding-bottom: 4px;
+}
 .proj-children {
     display: flex;
     flex-direction: column;
@@ -807,9 +800,9 @@ button {
 }
 
 .proj-child-tick {
-  height: 1px;
-  width: 6px;
-  background-color: color-mix(in srgb, var(--acc) 20%, transparent);
+    height: 1px;
+    width: 6px;
+    background-color: color-mix(in srgb, var(--acc) 20%, transparent);
 }
 
 .proj-child {
@@ -823,14 +816,18 @@ button {
     cursor: pointer;
     color: var(--ink-faint);
     text-align: left;
-    transition: color 0.12s, background 0.12s;
+    transition:
+        color 0.12s,
+        background 0.12s;
 }
-.proj-child:hover { color: var(--ink); }
+.proj-child:hover {
+    color: var(--ink);
+}
 .proj-child.active {
     color: var(--acc);
 }
 .proj-child.active .proj-child-ic {
-  color: var(--live);
+    color: var(--live);
 }
 
 .proj-child-ic {
@@ -894,15 +891,32 @@ button {
     background: var(--live);
 }
 /* Agents: AgentIcon SVG inherits color via currentColor. */
-.proj-pip-claude { color: var(--brand-claude); }
-.proj-pip-codex  { color: var(--brand-codex); }
-.proj-pip-hermes { color: var(--brand-hermes); }
+.proj-pip-claude {
+    color: var(--brand-claude);
+}
+.proj-pip-codex {
+    color: var(--brand-codex);
+}
+.proj-pip-hermes {
+    color: var(--brand-hermes);
+}
 
 /* Brand-tone palette shared by .proj-hint-n and .proj-child-n. */
-.badge-term   { background: var(--live); }
-.badge-claude { background: var(--brand-claude); color: white; }
-.badge-codex  { background: var(--brand-codex); color: var(--void); }
-.badge-hermes { background: var(--brand-hermes); color: white; }
+.badge-term {
+    background: var(--live);
+}
+.badge-claude {
+    background: var(--brand-claude);
+    color: white;
+}
+.badge-codex {
+    background: var(--brand-codex);
+    color: var(--void);
+}
+.badge-hermes {
+    background: var(--brand-hermes);
+    color: white;
+}
 
 .rail-foot {
     display: flex;
@@ -1054,11 +1068,7 @@ button {
     border-radius: 0;
     /* color-mix so the active --window-opacity actually shows the desktop
      through the pane background (terminal cells stay opaque per xterm bg). */
-    background: color-mix(
-        in srgb,
-        var(--pane) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
     overflow: hidden;
 }
 /* terminals get slight breathing room; editor/git stay flush */
@@ -1157,11 +1167,7 @@ button {
     max-height: 62vh;
     display: flex;
     flex-direction: column;
-    background: color-mix(
-        in srgb,
-        var(--rail-2) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
     border: 1px solid var(--line);
     border-radius: 0;
     box-shadow:
@@ -1349,7 +1355,9 @@ button {
     opacity: 0.5;
     transition: opacity 0.12s;
 }
-.ed-tree:hover .ed-tree-actions { opacity: 1; }
+.ed-tree:hover .ed-tree-actions {
+    opacity: 1;
+}
 .ed-tree-act {
     display: inline-flex;
     align-items: center;
@@ -1361,7 +1369,9 @@ button {
     padding: 2px 3px;
     line-height: 1;
 }
-.ed-tree-act:hover { color: var(--acc); }
+.ed-tree-act:hover {
+    color: var(--acc);
+}
 
 .tree-row.selected {
     background: color-mix(in srgb, var(--acc) 14%, transparent);
@@ -1387,7 +1397,9 @@ button {
     padding: 1px 0;
     outline: none;
 }
-.tree-new-input:focus { border-bottom-color: var(--acc); }
+.tree-new-input:focus {
+    border-bottom-color: var(--acc);
+}
 .ed-tree-scroll {
     flex: 1;
     overflow-y: auto;
@@ -2501,11 +2513,7 @@ button {
     flex-direction: column;
     flex: 0 0 auto;
     width: 252px;
-    background: color-mix(
-        in srgb,
-        var(--rail) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
     border-left: 1px solid var(--line);
     overflow: hidden;
     animation: slideR 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
@@ -3506,11 +3514,7 @@ button {
     gap: 12px;
     height: 40px;
     padding: 0 14px;
-    background: color-mix(
-        in srgb,
-        var(--rail) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
     border-bottom: 1px solid var(--line);
     flex: 0 0 auto;
 }
@@ -3564,21 +3568,9 @@ button {
     /* Surface tokens that honor --window-opacity (set on :root by the
        slider). Every panel/input/list bg below derives from these, so the
        settings pane fades with the rest of the app. */
-    --s-bg: color-mix(
-        in srgb,
-        var(--bg) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
-    --s-bg-dim: color-mix(
-        in srgb,
-        var(--bg-dim) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
-    --s-bg-raised: color-mix(
-        in srgb,
-        var(--bg-raised) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    --s-bg: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
+    --s-bg-dim: color-mix(in srgb, var(--bg-dim) calc(var(--window-opacity, 1) * 100%), transparent);
+    --s-bg-raised: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
 
     background: var(--s-bg);
 }
@@ -4302,7 +4294,6 @@ button {
     font: inherit;
 }
 
-
 .picker-link {
     background: none;
     border: none;
@@ -4326,7 +4317,10 @@ button {
     padding: 0 10px;
     height: 24px;
     border: 1px solid var(--line);
-    background: var(--bg-raised, var(--rail-2));
+    /* Transparent so the chip inherits the window's opacity wash (matches
+       the sibling .tb-deploy-chip). A solid --rail-2 fill here stayed opaque
+       under reduced --window-opacity and read as a hard surface. */
+    background: transparent;
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 11px;
@@ -4488,7 +4482,10 @@ button {
     border: 1px solid var(--line);
     color: var(--ink-faint);
     cursor: pointer;
-    transition: color 0.12s, border-color 0.12s, background 0.12s;
+    transition:
+        color 0.12s,
+        border-color 0.12s,
+        background 0.12s;
 }
 .aws-refresh:hover:not(:disabled) {
     color: var(--acc);
@@ -4503,7 +4500,9 @@ button {
     animation: aws-refresh-spin 0.9s linear infinite;
 }
 @keyframes aws-refresh-spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* ---- breadcrumb ---------------------------------------------------------
@@ -4582,11 +4581,7 @@ button {
     text-transform: uppercase;
     color: var(--ink-faint);
     padding: 10px 16px;
-    background: color-mix(
-        in srgb,
-        var(--chrome-bg, var(--rail-2)) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--chrome-bg, var(--rail-2)) calc(var(--window-opacity, 1) * 100%), transparent);
     border-bottom: 1px solid var(--line);
     position: sticky;
     top: 0;
@@ -4882,11 +4877,7 @@ button {
 }
 .aws-empty-card {
     width: min(560px, 100%);
-    background: color-mix(
-        in srgb,
-        var(--chrome-bg, var(--rail-2)) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--chrome-bg, var(--rail-2)) calc(var(--window-opacity, 1) * 100%), transparent);
     border: 1px solid var(--line);
     padding: 28px 30px 26px;
     box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.65);
@@ -5010,11 +5001,7 @@ button {
 /* ---- auth modal ------------------------------------------------------- */
 .aws-auth-modal {
     width: min(520px, calc(100vw - 80px));
-    background: color-mix(
-        in srgb,
-        var(--chrome-bg, var(--rail-2)) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--chrome-bg, var(--rail-2)) calc(var(--window-opacity, 1) * 100%), transparent);
     border: 1px solid var(--line);
     display: flex;
     flex-direction: column;
@@ -5204,11 +5191,7 @@ button {
     overflow-y: auto;
     overflow-x: auto;
     padding: 10px 20px 18px;
-    background: color-mix(
-        in srgb,
-        var(--chrome-bg, var(--bg-dim)) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--chrome-bg, var(--bg-dim)) calc(var(--window-opacity, 1) * 100%), transparent);
     font-size: 11.5px;
     line-height: 1.55;
     /* Opt back into text selection — body sets user-select:none globally. */
@@ -5241,25 +5224,70 @@ button {
    else that renders raw log text). Token classes are emitted by
    src/components/aws/logHighlight.tsx; matched groups light up against
    the existing palette so nothing new bleeds into the design tokens. */
-.lt { font-variant-numeric: tabular-nums; }
-.lt-ts        { color: var(--ink-faint); }
-.lt-lvl-err   { color: var(--danger); font-weight: 700; }
-.lt-lvl-warn  { color: var(--warn);   font-weight: 700; }
-.lt-lvl-info  { color: var(--live);   font-weight: 600; }
-.lt-lvl-debug { color: var(--ink-faint); }
-.lt-method    { color: var(--cmd);    font-weight: 600; }
-.lt-status-2  { color: var(--live); }
-.lt-status-3  { color: var(--acc); }
-.lt-status-4  { color: var(--warn); }
-.lt-status-5  { color: var(--danger); font-weight: 600; }
-.lt-url       { color: var(--acc); text-decoration: underline dotted; text-underline-offset: 2px; }
-.lt-uuid      { color: var(--ink-faint); }
-.lt-ip        { color: var(--ink-dim); }
-.lt-jkey      { color: var(--acc); }
-.lt-jstr      { color: #b9c2d8; }
-.lt-bool      { color: var(--cmd); }
-.lt-num       { color: var(--warn); }
-.lt-tag       { color: var(--ink-dim); }
+.lt {
+    font-variant-numeric: tabular-nums;
+}
+.lt-ts {
+    color: var(--ink-faint);
+}
+.lt-lvl-err {
+    color: var(--danger);
+    font-weight: 700;
+}
+.lt-lvl-warn {
+    color: var(--warn);
+    font-weight: 700;
+}
+.lt-lvl-info {
+    color: var(--live);
+    font-weight: 600;
+}
+.lt-lvl-debug {
+    color: var(--ink-faint);
+}
+.lt-method {
+    color: var(--cmd);
+    font-weight: 600;
+}
+.lt-status-2 {
+    color: var(--live);
+}
+.lt-status-3 {
+    color: var(--acc);
+}
+.lt-status-4 {
+    color: var(--warn);
+}
+.lt-status-5 {
+    color: var(--danger);
+    font-weight: 600;
+}
+.lt-url {
+    color: var(--acc);
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+.lt-uuid {
+    color: var(--ink-faint);
+}
+.lt-ip {
+    color: var(--ink-dim);
+}
+.lt-jkey {
+    color: var(--acc);
+}
+.lt-jstr {
+    color: #b9c2d8;
+}
+.lt-bool {
+    color: var(--cmd);
+}
+.lt-num {
+    color: var(--warn);
+}
+.lt-tag {
+    color: var(--ink-dim);
+}
 
 /* ---- AWS billing: credits / net columns + sub-sections --------------- */
 .aws-billing-stat.credit .aws-billing-stat-value {
@@ -5439,7 +5467,9 @@ button {
     font-size: 10px;
     line-height: 1;
     cursor: pointer;
-    transition: color 0.12s, transform 0.15s;
+    transition:
+        color 0.12s,
+        transform 0.15s;
 }
 .sp-chev:hover {
     color: var(--ink);
@@ -5469,8 +5499,12 @@ button {
     background: transparent;
     border: 0;
 }
-.sp-av.find { color: var(--acc); }
-.sp-av.repl { color: var(--live); }
+.sp-av.find {
+    color: var(--acc);
+}
+.sp-av.repl {
+    color: var(--live);
+}
 
 .sp-input {
     background: transparent;
@@ -5570,7 +5604,9 @@ button {
     font-weight: 700;
     letter-spacing: 0.04em;
     cursor: pointer;
-    transition: color 0.12s, border-color 0.12s;
+    transition:
+        color 0.12s,
+        border-color 0.12s;
     border-bottom: 1px solid transparent;
 }
 .sp-toggle:hover {
@@ -5626,7 +5662,10 @@ button {
     letter-spacing: 0.04em;
     cursor: pointer;
     border-bottom: 1px solid var(--acc-line);
-    transition: color 0.12s, border-color 0.12s, opacity 0.12s;
+    transition:
+        color 0.12s,
+        border-color 0.12s,
+        opacity 0.12s;
 }
 .sp-replace-btn:hover {
     color: var(--ink);
@@ -5732,7 +5771,9 @@ button {
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transition: background 0.08s, color 0.08s;
+    transition:
+        background 0.08s,
+        color 0.08s;
 }
 .sp-thread-who:hover {
     background: rgba(255, 255, 255, 0.03);
@@ -5743,7 +5784,9 @@ button {
     color: var(--ink-faint);
     font-size: 9px;
     line-height: 1;
-    transition: transform 0.15s, color 0.12s;
+    transition:
+        transform 0.15s,
+        color 0.12s;
     display: inline-block;
 }
 .sp-thread-chev.open {
@@ -5797,7 +5840,9 @@ button {
     cursor: pointer;
     text-align: left;
     border-radius: 0;
-    transition: background 0.08s, color 0.08s;
+    transition:
+        background 0.08s,
+        color 0.08s;
     align-items: center;
 }
 .sp-msg:hover {
@@ -5824,7 +5869,7 @@ button {
     white-space: nowrap;
 }
 .sp-msg-tx mark {
-    background: rgba(255, 220, 90, 0.20);
+    background: rgba(255, 220, 90, 0.2);
     color: #ffe27a;
     padding: 0 1px;
     border-radius: 2px;
@@ -5858,7 +5903,9 @@ button {
     text-align: left;
     color: inherit;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s;
+    transition:
+        background 0.12s,
+        color 0.12s;
 }
 .sp-preview-head:hover {
     background: rgba(255, 255, 255, 0.03);
@@ -5891,7 +5938,9 @@ button {
     font-size: 11px;
     font-weight: 700;
     margin-left: 4px;
-    transition: color 0.12s, transform 0.12s;
+    transition:
+        color 0.12s,
+        transform 0.12s;
     display: inline-block;
 }
 /* Preview body wraps the always-mounted host so we can overlay
@@ -5977,7 +6026,6 @@ button {
     font-weight: 700;
 }
 
-
 /* ============================================================
  * In-editor find / replace bar (.ed-findbar)
  * ============================================================
@@ -6009,11 +6057,7 @@ button {
        at lower opacity the panel reads as a third translucent layer on
        top of (pane on top of body), each compounding instead of all
        collapsing to one tinted wash. */
-    background: color-mix(
-        in srgb,
-        var(--bg-raised) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
     border: 1px solid var(--line);
     box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.55);
     color: var(--ink-dim);
@@ -6242,11 +6286,7 @@ button {
 .rnd-tree {
     width: 196px;
     flex-shrink: 0;
-    background: color-mix(
-        in srgb,
-        var(--rail) calc(var(--window-opacity, 1) * 100%),
-        transparent
-    );
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
     border-right: 1px solid var(--line);
     padding: 10px 0 16px;
     overflow-y: auto;
@@ -6266,8 +6306,12 @@ button {
     color: var(--ink-faint);
     font-size: 11px;
 }
-.rnd-tree-hint.indent { padding-left: 28px; }
-.rnd-tree-hint.muted { font-style: italic; }
+.rnd-tree-hint.indent {
+    padding-left: 28px;
+}
+.rnd-tree-hint.muted {
+    font-style: italic;
+}
 .rnd-tree-err {
     margin: 8px 12px;
     padding: 6px 10px;
@@ -6295,17 +6339,25 @@ button {
     font-family: var(--mono);
     font-size: 12px;
     text-align: left;
-    transition: color 0.1s, background 0.1s;
+    transition:
+        color 0.1s,
+        background 0.1s;
 }
-.rnd-tree-row:hover { color: var(--ink); }
+.rnd-tree-row:hover {
+    color: var(--ink);
+}
 .rnd-tree-row.active {
     color: var(--ink);
     background: var(--acc-soft);
     border-left-color: var(--acc);
     font-weight: 600;
 }
-.rnd-tree-row.prod { color: var(--danger); }
-.rnd-tree-row.prod:hover { color: color-mix(in srgb, var(--danger) 80%, white); }
+.rnd-tree-row.prod {
+    color: var(--danger);
+}
+.rnd-tree-row.prod:hover {
+    color: color-mix(in srgb, var(--danger) 80%, white);
+}
 .rnd-tree-row.prod.active {
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     border-left-color: var(--danger);
@@ -6325,15 +6377,21 @@ button {
 .rnd-tree-chev-ic.open {
     transform: rotate(90deg);
 }
-.rnd-tree-row.active .rnd-tree-chev { color: var(--acc); }
-.rnd-tree-row.prod.active .rnd-tree-chev { color: var(--danger); }
+.rnd-tree-row.active .rnd-tree-chev {
+    color: var(--acc);
+}
+.rnd-tree-row.prod.active .rnd-tree-chev {
+    color: var(--danger);
+}
 
 .rnd-tree-ic {
     display: inline-flex;
     color: var(--live);
     flex-shrink: 0;
 }
-.rnd-tree-row.prod .rnd-tree-ic { color: var(--danger); }
+.rnd-tree-row.prod .rnd-tree-ic {
+    color: var(--danger);
+}
 
 .rnd-tree-name {
     flex: 1 1 auto;
@@ -6363,14 +6421,20 @@ button {
     font-size: 11.5px;
     text-align: left;
 }
-.rnd-tree-leaf:hover { color: var(--ink-dim); }
+.rnd-tree-leaf:hover {
+    color: var(--ink-dim);
+}
 .rnd-tree-leaf.active {
     color: var(--acc);
     background: var(--acc-soft);
     font-weight: 600;
 }
-.rnd-tree-leaf.prod { color: color-mix(in srgb, var(--danger) 75%, var(--ink-faint)); }
-.rnd-tree-leaf.prod:hover { color: var(--danger); }
+.rnd-tree-leaf.prod {
+    color: color-mix(in srgb, var(--danger) 75%, var(--ink-faint));
+}
+.rnd-tree-leaf.prod:hover {
+    color: var(--danger);
+}
 .rnd-tree-leaf.prod.active {
     color: var(--danger);
     background: color-mix(in srgb, var(--danger) 12%, transparent);
@@ -6387,8 +6451,12 @@ button {
     margin-left: 8px;
     flex-shrink: 0;
 }
-.rnd-tree-leaf.active .rnd-tree-leaf-n { color: var(--acc); }
-.rnd-tree-leaf.prod.active .rnd-tree-leaf-n { color: var(--danger); }
+.rnd-tree-leaf.active .rnd-tree-leaf-n {
+    color: var(--acc);
+}
+.rnd-tree-leaf.prod.active .rnd-tree-leaf-n {
+    color: var(--danger);
+}
 
 /* ---- branch palette ---- */
 .rnd-branch-main {
@@ -7452,4 +7520,66 @@ button {
     border-radius: 50%;
     background: currentColor;
     flex: 0 0 auto;
+}
+
+/* ============================================================
+   Top-bar Git chip — active-project branch + dirty state.
+   Transparent surface so it inherits the window opacity wash,
+   matching .tb-deploy-chip / .tb-aws-chip.
+   ============================================================ */
+.tb-git-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 10px;
+    max-width: 200px;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+        color 0.12s,
+        border-color 0.12s;
+}
+.tb-git-chip:hover {
+    color: var(--ink);
+    border-color: var(--ink-faint);
+}
+.tb-git-chip > * {
+    flex: 0 0 auto;
+}
+.tb-git-branch {
+    color: var(--ink);
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.tb-git-track {
+    display: inline-flex;
+    gap: 4px;
+    color: var(--ink-faint);
+    font-size: 10px;
+}
+.tb-git-ahead {
+    color: var(--live);
+}
+.tb-git-behind {
+    color: var(--warn);
+}
+.tb-git-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    flex: 0 0 auto;
+}
+.tb-git-dot.dirty {
+    background: var(--warn);
+    box-shadow: 0 0 6px rgba(255, 202, 133, 0.5);
 }

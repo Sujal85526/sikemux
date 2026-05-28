@@ -7,9 +7,23 @@ import { ENVS } from "../state/types";
 import * as cmd from "../state/commands";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { swallow } from "../state/toast";
-import { awsIdentityR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
+import { awsIdentityR, gitStatusR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { IconBattery, IconChevron, IconCommand, IconFolder, IconPanelLeft, IconPanelRight, IconRundeck, IconZoom, Logo, WindowIcon } from "./Icons";
+import {
+    IconAws,
+    IconBattery,
+    IconChevron,
+    IconCommand,
+    IconFocus,
+    IconFolder,
+    IconGit,
+    IconPanelLeft,
+    IconPanelRight,
+    IconRundeck,
+    IconZoom,
+    Logo,
+    WindowIcon,
+} from "./Icons";
 import { useMemo } from "react";
 import { branchKind, statusKind } from "./rundeck/branchStyle";
 
@@ -56,7 +70,7 @@ function AwsChip() {
 
     return (
         <button className="tb-aws-chip" onClick={onClick} title="AWS">
-            <CloudIcon size={14} />
+            <IconAws size={14} />
             <span className="tb-aws-label">{profile ? profile.slice(0, 18) : "aws"}</span>
             <span className={`tb-aws-dot ${dotClass}`} />
         </button>
@@ -90,12 +104,10 @@ function DeployChip({ service, envLabel, project }: { service: string; envLabel:
             onClick={onClick}
             title={hasDeploy ? `Last deploy: ${cell!.status ?? "?"} · ${branch}` : `No deploy history for ${service} on ${envLabel}`}>
             <IconRundeck size={12} />
-            <span className="tb-deploy-svc">{service}</span>
             {loading ? (
                 <span className="tb-deploy-meta muted">…</span>
             ) : hasDeploy ? (
                 <>
-                    <span className="tb-deploy-sep">·</span>
                     <span className={`tb-deploy-branch rnd-branch-${k}`}>{branch}</span>
                     <span className={`tb-deploy-dot rnd-status-${sk}`} />
                 </>
@@ -104,11 +116,32 @@ function DeployChip({ service, envLabel, project }: { service: string; envLabel:
     );
 }
 
-function CloudIcon({ size = 14 }: { size?: number }) {
+// Active-project Git chip — branch name, ahead/behind, and a dirty dot.
+// Subscribes to gitStatusR for the session's cwd (same cache entry the Git
+// pane uses, refreshed by the `git_changed` watcher), so it stays live
+// without a dedicated poll. Click → focuses the session's Git window.
+function GitChip({ repo }: { repo: string }) {
+    const res = useResource(gitStatusR, repo);
+    const st = res.data;
+    if (!st) return null;
+
+    const dirty = st.files.length > 0;
+    const ahead = st.ahead;
+    const behind = st.behind;
+    const title = `${st.branch}${st.upstream ? ` → ${st.upstream}` : ""}${dirty ? ` · ${st.files.length} changed` : " · clean"}${ahead ? ` · ahead ${ahead}` : ""}${behind ? ` · behind ${behind}` : ""}`;
+
     return (
-        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 18H6a4 4 0 0 1-.7-7.94 6 6 0 0 1 11.43-1.39A4.5 4.5 0 0 1 19 18z" />
-        </svg>
+        <button className="tb-git-chip" onClick={cmd.openGitPane} title={title}>
+            <IconGit size={12} />
+            <span className="tb-git-branch">{st.branch}</span>
+            {(ahead > 0 || behind > 0) && (
+                <span className="tb-git-track">
+                    {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
+                    {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
+                </span>
+            )}
+            <span className={`tb-git-dot${dirty ? " dirty" : ""}`} />
+        </button>
     );
 }
 
@@ -221,6 +254,7 @@ export function TopBar() {
     const zoomed = useStore((s) => s.zoomedPaneId != null);
     const leftOpen = useStore((s) => s.leftRailOpen);
     const rightOpen = useStore((s) => s.rightRailOpen);
+    const zen = useStore((s) => s.zenMode);
     const [envOpen, setEnvOpen] = useState(false);
 
     if (!session || !win) return null;
@@ -297,6 +331,7 @@ export function TopBar() {
                         zoom
                     </span>
                 )}
+                {isProject && session.cwd && <GitChip repo={session.cwd} />}
                 {envPicker && (
                     <div className="env-dd">
                         <button className="env-dd-btn" onClick={() => setEnvOpen((v) => !v)} title="Session environment">
@@ -336,6 +371,9 @@ export function TopBar() {
                     <span className="tb-ampm">{t.ap}</span>
                 </span>
                 <div className="tb-toggles">
+                    <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} title="Focus mode — hide rails">
+                        <IconFocus size={15} />
+                    </button>
                     <button className={`tb-btn${leftOpen ? " on" : ""}`} onClick={cmd.toggleLeftRail} title="Toggle sessions rail">
                         <IconPanelLeft size={15} />
                     </button>

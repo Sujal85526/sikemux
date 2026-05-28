@@ -195,6 +195,16 @@ export function IconAws({ size = 16, className }: IconProps) {
     );
 }
 
+// Focus / zen mode — four corner brackets framing the center, evoking a
+// "collapse chrome, focus the stage" intent. Toggles the rails off/on.
+export function IconFocus({ size, className }: IconProps) {
+    return (
+        <Svg size={size} className={className}>
+            <path d="M2 5.5V2.5h3M14 5.5V2.5h-3M2 10.5v3h3M14 10.5v3h-3" />
+        </Svg>
+    );
+}
+
 export function IconChevron({ size, className }: IconProps) {
     return (
         <Svg size={size} className={className}>

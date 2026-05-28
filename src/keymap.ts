@@ -77,13 +77,19 @@ export function useKeymap(): void {
                     break;
                 case "KeyN": {
                     // Context-aware new:
+                    //   agents  → agent picker
                     //   project → new terminal window
                     //   command → fresh command session
                     //   ssh     → opens the ssh picker
+                    //   cloud / ci-cd → focus their singleton surface
                     const active = st.sessions[st.activeSessionId];
-                    if (active?.kind === "ssh") cmd.openPicker("ssh");
+                    if (active?.view === "agent") cmd.openAgentPalette();
+                    else if (active?.kind === "project") cmd.newWindow();
                     else if (active?.kind === "command") cmd.createCommandSession();
-                    else cmd.newWindow();
+                    else if (active?.kind === "ssh") cmd.openPicker("ssh");
+                    else if (active?.kind === "aws") cmd.openAwsSession();
+                    else if (active?.kind === "rundeck") cmd.openRundeckSession();
+                    else handled = false;
                     break;
                 }
                 case "BracketRight":

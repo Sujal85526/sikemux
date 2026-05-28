@@ -33,8 +33,9 @@ interface BootInfo {
 
 export default function App() {
     useKeymap();
-    const leftOpen = useStore((s) => s.leftRailOpen);
-    const rightOpen = useStore((s) => s.rightRailOpen);
+    const zen = useStore((s) => s.zenMode);
+    const leftOpen = useStore((s) => s.leftRailOpen) && !zen;
+    const rightOpen = useStore((s) => s.rightRailOpen) && !zen;
     // Agents are project-scoped — hide the rail elsewhere so the workspace
     // recovers its full width.
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
