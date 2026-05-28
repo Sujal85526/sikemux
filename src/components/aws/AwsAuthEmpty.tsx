@@ -1,5 +1,5 @@
 import * as cmd from "../../state/commands";
-import { useResource } from "../../state/resources";
+import { useResource, useResourceEnabled } from "../../state/resources";
 import { awsIdentityR, awsProfilesR } from "../../state/resources.defs";
 import { deriveAuthState } from "../../state/awsAuth";
 
@@ -8,7 +8,7 @@ import { deriveAuthState } from "../../state/awsAuth";
 //   - selected profile is unauthed → big sign-in card with SSO start URL
 export function AwsAuthEmpty({ mode, profile }: { mode: "no-profile" | "unauthed"; profile?: string }) {
     const profilesR = useResource(awsProfilesR);
-    const identity = useResource(awsIdentityR, profile ?? "", false);
+    const identity = useResourceEnabled(!!profile, awsIdentityR, profile ?? "", false);
     const auth = deriveAuthState(profile ?? null, identity);
     const profiles = profilesR.data ?? null;
 

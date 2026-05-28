@@ -13,13 +13,14 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { AwsAuthModal } from "./components/aws/AwsAuthModal";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
+import { git } from "./api/git";
 import { useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, subscribePersist } from "./state/persist";
 import { dispatchFolder, dispatchPty } from "./state/dropRegistry";
-import { swallow } from "./state/toast";
+import { reportError, swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity } from "./themes/bus";
@@ -42,6 +43,15 @@ export default function App() {
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const awsAuthModal = useStore((s) => s.awsAuthModal);
+    const projectRepoKey = useStore((s) =>
+        s.sessionOrder
+            .map((id) => {
+                const sess = s.sessions[id];
+                return sess?.kind === "project" ? sess.cwd : "";
+            })
+            .filter(Boolean)
+            .join("\0"),
+    );
 
     useEffect(() => {
         let unsub = () => {};
@@ -80,6 +90,22 @@ export default function App() {
             void handle.then((u) => u());
         };
     }, []);
+
+    // Watch every open project, independent of which pane is visible. File
+    // tree reloads, editor external-change reloads, git status, and Cmd-P
+    // cache invalidation all rely on this event stream; tying it to the Git
+    // pane made agent/terminal edits invisible while users worked elsewhere.
+    useEffect(() => {
+        const repos = projectRepoKey ? projectRepoKey.split("\0") : [];
+        for (const repo of repos) {
+            git.watchStart(repo).catch(reportError("repo watch"));
+        }
+        return () => {
+            for (const repo of repos) {
+                git.watchStop(repo).catch(swallow("repo watch stop"));
+            }
+        };
+    }, [projectRepoKey]);
 
     // Rundeck auth expired (token rejected, unconfigured, 401/403). Wipe all
     // rnd.* cache so stale matrices don't flash, and force rnd.status to

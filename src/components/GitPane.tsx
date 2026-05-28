@@ -6,7 +6,7 @@ import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, runGitCm
 import { useResourceEnabled } from "../state/resources";
 import { gitOverviewR, gitRemoteBranchesR, gitRemotesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { reportError, swallow } from "../state/toast";
+import { reportError } from "../state/toast";
 import type { GitPanel } from "../state/types";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
@@ -72,15 +72,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     // Range-select anchor per panel. `null` = no range; otherwise the
     // anchor index. Range select is the lazygit `v` model.
     const [rangeByPanel, setRangeByPanel] = useState<Record<GitPanel, number | null>>({ files: null, branches: null, remotes: null, commits: null });
-
-    // ---- filesystem watcher ----
-    useEffect(() => {
-        if (!repo || !active) return;
-        git.watchStart(repo).catch(reportError("git watch"));
-        return () => {
-            git.watchStop(repo).catch(swallow("git watch stop"));
-        };
-    }, [repo, active]);
 
     useEffect(() => {
         if (commitMode) commitInputRef.current?.focus();

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as cmd from "../state/commands";
-import { useResource } from "../state/resources";
+import { useResourceEnabled } from "../state/resources";
 import { filesListR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { useMouseActive } from "../hooks/useMouseActive";
@@ -48,7 +48,7 @@ export function FilePalette() {
     const listRef = useRef<HTMLDivElement>(null);
     const mouseActive = useMouseActive();
 
-    const list = useResource(filesListR, cwd || "");
+    const list = useResourceEnabled(!!cwd, filesListR, cwd || "");
     const all = cwd ? (list.data ?? []) : [];
 
     useEffect(() => {

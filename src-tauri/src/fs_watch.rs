@@ -4,9 +4,8 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
+use std::time::Duration;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -27,13 +26,6 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<WatchHandle>>> {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-// Monotonic anchor for debounce math — process-start Instant, so deltas in
-// millis are immune to wall-clock jumps (NTP, sleep/resume, DST).
-fn epoch() -> Instant {
-    static E: OnceLock<Instant> = OnceLock::new();
-    *E.get_or_init(Instant::now)
-}
-
 #[derive(Serialize, Clone)]
 struct ChangePayload {
     repo: String,
@@ -42,24 +34,73 @@ struct ChangePayload {
 // 200ms debounce — fsevents on macOS fires bursts for a single save.
 const DEBOUNCE_MS: u64 = 200;
 
-fn debounce_emit(app: &AppHandle, repo: &str, last_emit: &Arc<AtomicU64>) {
-    let now_mono = epoch().elapsed().as_millis() as u64;
-    let prev = last_emit.load(Ordering::Relaxed);
-    if now_mono.saturating_sub(prev) < DEBOUNCE_MS {
-        return;
+fn spawn_debouncer(app: AppHandle, repo: String, mut rx: tokio::sync::mpsc::UnboundedReceiver<()>) {
+    tauri::async_runtime::spawn(async move {
+        while rx.recv().await.is_some() {
+            loop {
+                let sleep = tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS));
+                tokio::pin!(sleep);
+                let mut closed = false;
+                loop {
+                    tokio::select! {
+                        _ = &mut sleep => break,
+                        msg = rx.recv() => {
+                            if msg.is_none() {
+                                closed = true;
+                                break;
+                            }
+                            sleep
+                                .as_mut()
+                                .reset(tokio::time::Instant::now() + Duration::from_millis(DEBOUNCE_MS));
+                        }
+                    }
+                }
+                if closed {
+                    return;
+                }
+                // File list for the Cmd-P palette is stale now — drop the cache
+                // so the next palette open rewalks. Cheap; the walk itself is
+                // debounced behind user interaction.
+                crate::files::invalidate(&repo);
+                let _ = app.emit("git_changed", ChangePayload { repo: repo.clone() });
+                break;
+            }
+        }
+    });
+}
+
+fn is_git_signal(path: &Path) -> bool {
+    let mut after_git = false;
+    for c in path.components() {
+        let s = c.as_os_str().to_string_lossy();
+        if !after_git {
+            if s == ".git" {
+                after_git = true;
+            }
+            continue;
+        }
+        return matches!(
+            s.as_ref(),
+            "HEAD"
+                | "index"
+                | "packed-refs"
+                | "MERGE_HEAD"
+                | "REBASE_HEAD"
+                | "CHERRY_PICK_HEAD"
+                | "BISECT_LOG"
+                | "refs"
+                | "logs"
+                | "rebase-merge"
+                | "rebase-apply"
+        );
     }
-    last_emit.store(now_mono, Ordering::Relaxed);
-    // File list for the Cmd-P palette is stale now — drop the cache so the
-    // next palette open rewalks. Cheap; the walk itself is debounced behind
-    // user interaction.
-    crate::files::invalidate(repo);
-    let _ = app.emit(
-        "git_changed",
-        ChangePayload { repo: repo.to_string() },
-    );
+    false
 }
 
 fn should_ignore(path: &Path) -> bool {
+    if is_git_signal(path) {
+        return false;
+    }
     // Share the file-palette denylist (build artifacts, dep caches, VCS
     // metadata) so a `cargo test` / `pytest` / `npm run build` in the
     // watched repo doesn't fire thousands of fs events that all clear the
@@ -83,23 +124,25 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
         }
     }
 
-    let app_clone = app.clone();
-    let repo_clone = repo.clone();
-    let last_emit = Arc::new(AtomicU64::new(0));
-    let last_clone = last_emit.clone();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    spawn_debouncer(app.clone(), repo.clone(), rx);
 
-    let mut watcher = notify::recommended_watcher(
-        move |res: notify::Result<Event>| {
-            let Ok(event) = res else { return };
-            let interesting = matches!(
-                event.kind,
-                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-            );
-            if !interesting { return; }
-            if event.paths.iter().all(|p| should_ignore(p)) { return; }
-            debounce_emit(&app_clone, &repo_clone, &last_clone);
-        },
-    )
+    let tx_events = tx.clone();
+
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
+        let Ok(event) = res else { return };
+        let interesting = matches!(
+            event.kind,
+            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+        );
+        if !interesting {
+            return;
+        }
+        if event.paths.iter().all(|p| should_ignore(p)) {
+            return;
+        }
+        let _ = tx_events.send(());
+    })
     .map_err(watch_err)?;
 
     watcher
@@ -114,6 +157,7 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
     // First repo-scoped synthetic emit so the frontend refreshes this project
     // after subscribing. Keep it scoped; an empty repo means "invalidate all"
     // on the JS side and causes an O(open projects) refetch storm.
+    crate::files::invalidate(&repo);
     let _ = app.emit::<ChangePayload>("git_changed", ChangePayload { repo });
     Ok(())
 }

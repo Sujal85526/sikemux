@@ -1,6 +1,7 @@
 use std::fs;
 
 use serde::Serialize;
+use tauri::async_runtime::spawn_blocking;
 
 use crate::error::{AppError, AppResult};
 
@@ -14,7 +15,13 @@ pub struct DirEntry {
 /// List a directory, directories first then files, both alphabetical.
 /// `.git` is hidden; other dotfiles are kept (it's a code editor).
 #[tauri::command]
-pub fn read_dir(path: String) -> AppResult<Vec<DirEntry>> {
+pub async fn read_dir(path: String) -> AppResult<Vec<DirEntry>> {
+    spawn_blocking(move || read_dir_sync(path))
+        .await
+        .map_err(|e| AppError::Other(format!("read_dir join: {e}")))?
+}
+
+fn read_dir_sync(path: String) -> AppResult<Vec<DirEntry>> {
     let mut out = Vec::new();
     for entry in fs::read_dir(&path)? {
         let entry = entry?;
@@ -38,20 +45,30 @@ pub fn read_dir(path: String) -> AppResult<Vec<DirEntry>> {
 }
 
 #[tauri::command]
-pub fn read_file(path: String) -> AppResult<String> {
-    fs::read_to_string(&path).map_err(AppError::from)
+pub async fn read_file(path: String) -> AppResult<String> {
+    spawn_blocking(move || fs::read_to_string(&path).map_err(AppError::from))
+        .await
+        .map_err(|e| AppError::Other(format!("read_file join: {e}")))?
 }
 
 #[tauri::command]
-pub fn write_file(path: String, content: String) -> AppResult<()> {
-    fs::write(&path, content).map_err(AppError::from)
+pub async fn write_file(path: String, content: String) -> AppResult<()> {
+    spawn_blocking(move || fs::write(&path, content).map_err(AppError::from))
+        .await
+        .map_err(|e| AppError::Other(format!("write_file join: {e}")))?
 }
 
 /// Create an empty file. Fails if it already exists so we never blow away
 /// an existing file with a "new file" action. Parent dirs are auto-created
 /// so the caller can pass nested paths in one go.
 #[tauri::command]
-pub fn create_file(path: String) -> AppResult<()> {
+pub async fn create_file(path: String) -> AppResult<()> {
+    spawn_blocking(move || create_file_sync(path))
+        .await
+        .map_err(|e| AppError::Other(format!("create_file join: {e}")))?
+}
+
+fn create_file_sync(path: String) -> AppResult<()> {
     let p = std::path::PathBuf::from(&path);
     if p.exists() {
         return Err(AppError::Fs(format!("already exists: {}", path)));
@@ -65,22 +82,33 @@ pub fn create_file(path: String) -> AppResult<()> {
 /// Create a directory (and any missing parents). Idempotent — succeeds if
 /// the dir already exists, since "new folder" is forgiving.
 #[tauri::command]
-pub fn create_dir(path: String) -> AppResult<()> {
-    fs::create_dir_all(&path).map_err(AppError::from)
+pub async fn create_dir(path: String) -> AppResult<()> {
+    spawn_blocking(move || fs::create_dir_all(&path).map_err(AppError::from))
+        .await
+        .map_err(|e| AppError::Other(format!("create_dir join: {e}")))?
 }
 
 /// Rename / move an entry. Refuses to overwrite an existing path so the
 /// rename UI can never silently clobber a file. Caller passes absolute
 /// `src` + absolute `dest`.
 #[tauri::command]
-pub fn rename_path(src: String, dest: String) -> AppResult<()> {
+pub async fn rename_path(src: String, dest: String) -> AppResult<()> {
+    spawn_blocking(move || rename_path_sync(src, dest))
+        .await
+        .map_err(|e| AppError::Other(format!("rename_path join: {e}")))?
+}
+
+fn rename_path_sync(src: String, dest: String) -> AppResult<()> {
     let src_p = std::path::PathBuf::from(&src);
     let dest_p = std::path::PathBuf::from(&dest);
     if !src_p.exists() {
         return Err(AppError::Fs(format!("source missing: {}", src)));
     }
     if dest_p.exists() {
-        return Err(AppError::Fs(format!("destination already exists: {}", dest)));
+        return Err(AppError::Fs(format!(
+            "destination already exists: {}",
+            dest
+        )));
     }
     if let Some(parent) = dest_p.parent() {
         fs::create_dir_all(parent)?;
@@ -92,7 +120,13 @@ pub fn rename_path(src: String, dest: String) -> AppResult<()> {
 /// If a same-named file already exists we append " (N)" until unique, so
 /// Finder-drop never overwrites silently. Returns the final landing path.
 #[tauri::command]
-pub fn copy_into_dir(src: String, dir: String) -> AppResult<String> {
+pub async fn copy_into_dir(src: String, dir: String) -> AppResult<String> {
+    spawn_blocking(move || copy_into_dir_sync(src, dir))
+        .await
+        .map_err(|e| AppError::Other(format!("copy_into_dir join: {e}")))?
+}
+
+fn copy_into_dir_sync(src: String, dir: String) -> AppResult<String> {
     let src_path = std::path::PathBuf::from(&src);
     if !src_path.exists() {
         return Err(AppError::Fs(format!("source missing: {}", src)));

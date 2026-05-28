@@ -28,7 +28,7 @@ function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
 // and the AwsPane subscribe to the same cache entry.
 function AwsChip() {
     const profile = useStore((s) => s.awsProfile);
-    const identity = useResource(awsIdentityR, profile ?? "", false);
+    const identity = useResourceEnabled(!!profile, awsIdentityR, profile ?? "", false);
     const status = profile ? identity.data?.status : undefined;
 
     const dotClass =

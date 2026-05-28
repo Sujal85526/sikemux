@@ -32,7 +32,13 @@ pub fn state_load() -> String {
 }
 
 #[tauri::command]
-pub fn state_save(data: String) -> AppResult<()> {
+pub async fn state_save(data: String) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || state_save_sync(data))
+        .await
+        .map_err(|e| AppError::Other(format!("state_save join: {e}")))?
+}
+
+fn state_save_sync(data: String) -> AppResult<()> {
     let path = state_path().ok_or(AppError::State("no home directory".into()))?;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
