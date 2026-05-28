@@ -1,11 +1,11 @@
 {
-  "version": "0.1.10",
-  "notes": "Custom in-editor find/replace bar replaces CodeMirror's panel \u2014 VSCode-style layout, real \"N of M\" counter, draggable opacity & blur sliders, chevron toggles replace, Cmd-F refocuses + seeds from selection on every press. Editor: Tab indents, Cmd-Alt-Up/Down duplicates the line, undo back to the saved buffer now clears the dirty dot. Global search: Aa/ab/.* moved inline into the find input, \"\u2026\" reveal for files-to-include / exclude, Cmd-Shift-F seeds from selection. Settings: full-pane layout with theme-aware surfaces, no more solid tiles, opacity slider goes 0.00\u20131.00 with no floor. Project session close-X visible on hover. Agent rail's controls moved from footer to header. Fixed: global search false-cancelling across background sessions; \u2318P opening a file no longer wipes the other tabs; Rundeck pane no longer reports \"not configured\" on cold boot; rundeck tree-click resets the nav stack.",
-  "pub_date": "2026-05-27T23:19:22Z",
+  "version": "0.1.11",
+  "notes": "Performance & stability release. Backend: language servers now shut down when their project closes (was leaking ~500MB rust-analyzer/pyright per project) and their stderr is drained so they can't deadlock; git status/overview/branches/log/file-at, diff, and the project-file walk all moved off the IPC worker pool so an fs storm in one repo no longer stalls terminal input; the fs watcher now ignores build/test/cache dirs (cargo/pytest/node runs stop firing cache-busting events); Rundeck config is mtime-cached instead of re-read every poll; Rundeck log/watch pollers back off exponentially on errors and give up instead of hammering an unreachable instance; AWS log tails and Rundeck handles self-prune on exit; idle background terminals reclaim scrollback memory after 10 min. Frontend: closing a project reaps its LSP servers; the git diff baseline only refetches on real git ops instead of every save; saving a file no longer triggers a re-read of every open tab.",
+  "pub_date": "2026-05-28T17:46:55Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVlVWUZhcGJLaEJVUjlTNk9UUGhNOW9WVWFZT3lUZnJtUHMvb0tlamdtQUhTVEY3ZXIvUUdOMXkyRW43RVRrRzVTME5QalA3dnpPanRyQ2pReWh0UUFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5OTIzOTYyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmJmdmh1dEsrQ0lWaGtWbHZZWjBrcWVNUEpQYVJnQmVIK0hMcUp2dzNVZDVPK2tHTHk3STVtRS94ZnZ6QXJscWQ1cFNKVzFFNFFQK3k5dndwT2ZFN0R3PT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.10/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVk1L1pQd0ZOMThjMnZXY1UzbnNDeEsvaXhTOGJ3Tkh6UHpWVzgwRHpmYnYzTkFjMDJGbnBXU3AvSUZaTDJNVVlxdjB4bnlkazN5WG9PVWIxQnJ5SmdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5OTkwNDE0CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CklwUUV0N2oveVc3T1NnUUFFQW1KWXFNVGVDbFBLKzZxaXFDY1JESmJmL2Z2N2MybXZPa2xZWDQrNkVpVEs0OGlyTzlPK3h5OVZzYlUzOTJ6cWVxcUN3PT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.11/Sikemux.app.tar.gz"
     }
   }
 }
