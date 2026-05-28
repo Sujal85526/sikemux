@@ -251,7 +251,10 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         }
         if (!opts?.silent) setBusy(label || "running");
         try {
-            const out = await runGitCmd(label, fn, { showError: false });
+            // Pass repo so a successful op emits `git-refresh` — useGitBaseline
+            // and any other listener refetch HEAD state instead of waiting for
+            // the fs watcher to fire (which it does, but later).
+            const out = await runGitCmd(label, fn, { showError: false, repo });
             if (typeof out === "string" && out && !opts?.silent) {
                 setRight({ mode: "output", text: out });
             }

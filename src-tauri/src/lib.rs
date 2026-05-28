@@ -128,6 +128,7 @@ pub fn run() {
             git::git_delete_remote_branch,
             git::git_set_upstream,
             lsp::lsp_start,
+            lsp::lsp_stop,
             lsp::lsp_open,
             lsp::lsp_change,
             lsp::lsp_locations,

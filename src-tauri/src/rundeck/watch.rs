@@ -45,6 +45,7 @@ fn is_terminal(status: &Option<String>) -> bool {
 
 #[tauri::command]
 pub async fn rnd_watch_start(
+    app: tauri::AppHandle,
     manager: State<'_, WatchManager>,
     execution_id: u64,
     on_update: Channel<WatchUpdate>,
@@ -52,12 +53,18 @@ pub async fn rnd_watch_start(
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let handle = tokio::spawn(async move {
         let mut last_status: Option<String> = None;
+        let mut consecutive_errors: u32 = 0;
+        const POLL_INTERVAL: Duration = Duration::from_millis(1500);
+        const MAX_BACKOFF: Duration = Duration::from_secs(30);
+        const ERROR_GIVEUP: u32 = 8;
+
         loop {
             let exec_res: AppResult<Execution> =
                 get_json(&format!("/execution/{execution_id}"), &[]).await;
             let state_res: AppResult<WorkflowState> =
                 get_json(&format!("/execution/{execution_id}/state"), &[]).await;
 
+            let both_failed = exec_res.is_err() && state_res.is_err();
             let (execution, state, error) = match (exec_res, state_res) {
                 (Ok(e), Ok(s)) => {
                     last_status = e.status.clone();
@@ -71,7 +78,13 @@ pub async fn rnd_watch_start(
                 (Err(ee), Err(_)) => (None, None, Some(ee.to_string())),
             };
 
-            let terminal = is_terminal(&last_status);
+            if both_failed {
+                consecutive_errors = consecutive_errors.saturating_add(1);
+            } else {
+                consecutive_errors = 0;
+            }
+
+            let terminal = is_terminal(&last_status) || consecutive_errors >= ERROR_GIVEUP;
             let payload = WatchUpdate {
                 execution,
                 state,
@@ -86,12 +99,24 @@ pub async fn rnd_watch_start(
             if terminal {
                 break;
             }
-            sleep(Duration::from_millis(1500)).await;
+
+            let sleep_dur = if consecutive_errors == 0 {
+                POLL_INTERVAL
+            } else {
+                let exp = 1u64 << consecutive_errors.min(6);
+                Duration::from_millis((POLL_INTERVAL.as_millis() as u64).saturating_mul(exp))
+                    .min(MAX_BACKOFF)
+            };
+            sleep(sleep_dur).await;
+        }
+        // Self-prune so terminated executions don't leak JoinHandles. The
+        // stop command is still useful for the "user navigates away mid-
+        // run" path; this one covers natural-exit + channel-close.
+        use tauri::Manager;
+        if let Some(mgr) = app.try_state::<WatchManager>() {
+            mgr.handles.remove(&id);
         }
     });
-    // We keep the handle so a stop request can abort the task. DashMap drop
-    // also clears it if the loop ends naturally; we just keep the spurious
-    // dead handle around until the user explicitly stops.
     manager.handles.insert(id, handle);
     Ok(id)
 }

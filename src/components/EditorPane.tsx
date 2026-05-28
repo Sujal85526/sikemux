@@ -11,7 +11,7 @@ import { lspNav, setLspContext } from "../editor/lspNav";
 import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
 import { lspPeek } from "../editor/lspPeek";
 import { fsapi } from "../api/fs";
-import { emit, subscribe } from "../state/bus";
+import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { invalidate } from "../state/resources";
 import { useStore } from "../state/store";
@@ -147,11 +147,16 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     next.delete(path);
                     return next;
                 });
-                // Don't wait for the fs watcher — invalidate locally so the diff
-                // gutter / git pane / file tree status decorations update now.
+                // Don't wait for the fs watcher — invalidate locally so the
+                // diff gutter / git pane / file tree status decorations
+                // update now. We deliberately do NOT also `emit("fs-changed")`
+                // here: that would make every other open tab re-read from
+                // disk through the fs-changed subscriber below, including the
+                // file we just wrote. The Rust fs watcher emits a real
+                // git_changed ~200ms later and that one IS scoped to actual
+                // external observers.
                 if (cwd) {
                     invalidate((kind, args) => (kind.startsWith("git.") || kind === "files.list") && args[0] === cwd);
-                    emit({ type: "fs-changed", repo: cwd });
                 }
             })
             .catch(reportError("save"));
@@ -365,9 +370,14 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     // On activation, catch up clean tabs with disk. This covers background
     // agent writes that happened while the project watcher/editor subscriber
     // was intentionally inactive.
+    //
+    // `tabs.length` was previously in the deps, which caused this effect to
+    // re-fire (and read every tab from disk) whenever the user opened or
+    // closed a tab. openPath already does the read for new tabs, and the
+    // visible-pane fs-changed subscriber below keeps existing tabs in sync —
+    // so resync is only needed at the visibility transition.
     useEffect(() => {
         if (!visible || !cwd) return;
-        if (!hydratedRef.current && tabs.length > 0 && states.current.size === 0) return;
         let cancelled = false;
         (async () => {
             const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
@@ -401,7 +411,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         return () => {
             cancelled = true;
         };
-    }, [visible, cwd, paneId, makeState, tabs.length]);
+    }, [visible, cwd, paneId, makeState]);
 
     // Live external-edit reload. When fs_watch fires for our repo (agent
     // wrote a file, git checkout swapped contents, etc.), re-read every

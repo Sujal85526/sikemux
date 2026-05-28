@@ -5,6 +5,7 @@
 // flow through so the command log stays the single source of truth for
 // "what did I just trigger".
 
+import { emit } from "./bus";
 import type {
   GitCheatsheetSection,
   GitMenuItem,
@@ -113,11 +114,16 @@ export function clearGitCmdLog(): void {
  *  re-throws after logging the error — callers handle UX in the catch.
  *
  *  Truncates detail to ~4 KB so a chatty `git log` output doesn't grow
- *  the store transcript unboundedly. */
+ *  the store transcript unboundedly.
+ *
+ *  Pass `repo` so a successful op emits the `git-refresh` bus event —
+ *  consumers like `useGitBaseline` listen for that to refetch HEAD
+ *  content. Skipping it (or passing null) is fine for read-only calls
+ *  that can't move HEAD or rewrite the index. */
 export async function runGitCmd<T>(
   label: string,
   fn: () => Promise<T>,
-  opts?: { showError?: boolean },
+  opts?: { showError?: boolean; repo?: string | null },
 ): Promise<T> {
   const id = pushLogEntry(label);
   try {
@@ -129,6 +135,7 @@ export async function runGitCmd<T>(
           : out
         : undefined;
     patchLogEntry(id, { status: "ok", detail });
+    if (opts?.repo) emit({ type: "git-refresh", repo: opts.repo });
     return out;
   } catch (e) {
     const msg = String(e);

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { awsApi } from "../api/aws";
+import { lsp } from "../api/lsp";
 import { rundeckApi } from "../api/rundeck";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
@@ -482,6 +483,10 @@ export function selectSession(id: string): void {
 }
 
 export function closeSession(id: string): void {
+  // Capture cwd before mutate so we can shut down the project's LSP
+  // servers after the store update — LSP servers are per (project,
+  // language) keyed by cwd, and they live forever otherwise.
+  const closingCwd = getState().sessions[id]?.cwd;
   mutate((d) => {
     if (d.sessionOrder.length <= 1) return;
     const closed = d.sessions[id];
@@ -519,6 +524,17 @@ export function closeSession(id: string): void {
     }
     d.zoomedPaneId = null;
   });
+  // Reap LSP servers owned by this project — only if no other still-open
+  // session shares the same cwd. rust-analyzer / pyright are heavy; left
+  // running, they add up to GBs across a busy session.
+  if (closingCwd) {
+    const stillOpen = Object.values(getState().sessions).some(
+      (s) => s.cwd === closingCwd,
+    );
+    if (!stillOpen) {
+      void lsp.stop(closingCwd).catch(() => {});
+    }
+  }
 }
 
 export function closeActiveSession(): void {

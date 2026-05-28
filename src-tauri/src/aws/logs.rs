@@ -27,6 +27,7 @@ static NEXT_TAIL_ID: AtomicU32 = AtomicU32::new(1);
 
 #[tauri::command]
 pub async fn aws_logs_tail_start(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, LogsTailManager>,
     profile: String,
     log_group: String,
@@ -76,7 +77,13 @@ pub async fn aws_logs_tail_start(
 
     // stdout — emit each line. Empty payload signals end-of-stream so the
     // UI can flip "live" → "ended". Tokio task = no OS thread per tail.
+    //
+    // Also: when this task ends (EOF, channel closed, child died), prune
+    // the manager entry. Otherwise dead Children accumulate in the
+    // DashMap until app shutdown — a slow leak across a session that
+    // navigates through many ECS services.
     let line_ch = on_line.clone();
+    let prune_app = app.clone();
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
@@ -85,6 +92,10 @@ pub async fn aws_logs_tail_start(
             }
         }
         let _ = line_ch.send(String::new());
+        use tauri::Manager;
+        if let Some(mgr) = prune_app.try_state::<LogsTailManager>() {
+            mgr.tails.remove(&id);
+        }
     });
     // stderr drain — surface failures (e.g. "log group does not exist") as
     // a prefixed line on the same channel so the user sees them.

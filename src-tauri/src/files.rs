@@ -115,14 +115,23 @@ fn walk(repo: &str) -> Vec<String> {
 pub async fn list_project_files(repo: String) -> Result<Vec<String>, String> {
     if let Some(hit) = cache().get(&repo) {
         if hit.fetched_at.elapsed() < TTL {
+            // One clone here is unavoidable because the IPC layer will
+            // serialise the Vec into JSON; but we deliberately did NOT
+            // also `arc = Arc::new(files.clone())` on insert — see below.
             return Ok((*hit.files).clone());
         }
     }
-    let files = walk(&repo);
-    let arc = Arc::new(files.clone());
+    // The walk itself is CPU-bound (parallel ignore::Walk + sort). It used
+    // to run synchronously on a tokio runtime thread, which on big repos
+    // ties up an executor and stalls unrelated IPC.
+    let repo_for_blocking = repo.clone();
+    let files: Vec<String> = tauri::async_runtime::spawn_blocking(move || walk(&repo_for_blocking))
+        .await
+        .map_err(|e| format!("walk join: {e}"))?;
+    let arc = Arc::new(files);
     cache().insert(
         repo,
-        Entry { files: arc, fetched_at: Instant::now() },
+        Entry { files: arc.clone(), fetched_at: Instant::now() },
     );
-    Ok(files)
+    Ok((*arc).clone())
 }

@@ -7,6 +7,23 @@ use git2::{
     BranchType, DiffFormat, DiffLineType, DiffOptions, ErrorCode, Repository, Status, StatusOptions,
 };
 use serde::Serialize;
+use tauri::async_runtime::spawn_blocking;
+
+/// Run a synchronous closure off the Tauri worker pool. Every `pub fn`
+/// command in this module used to block the worker thread while libgit2
+/// walked the repo; with many projects open + an fs-watch storm, that
+/// pool gets saturated and unrelated IPC (PTY input, etc.) stalls.
+async fn run_blocking<T, E, F>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, E> + Send + 'static,
+    T: Send + 'static,
+    E: std::fmt::Display + Send + 'static,
+{
+    spawn_blocking(f)
+        .await
+        .map_err(|e| format!("join: {e}"))
+        .and_then(|r| r.map_err(|e| e.to_string()))
+}
 
 // ---- helpers --------------------------------------------------------------
 
@@ -168,8 +185,8 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
 }
 
 #[tauri::command]
-pub fn git_status(repo: String) -> Result<GitStatus, String> {
-    read_status(&open_repo(&repo)?)
+pub async fn git_status(repo: String) -> Result<GitStatus, String> {
+    run_blocking(move || read_status(&open_repo(&repo)?)).await
 }
 
 // ---- branches & log -------------------------------------------------------
@@ -224,8 +241,8 @@ fn read_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
 }
 
 #[tauri::command]
-pub fn git_branches(repo: String) -> Result<Vec<GitBranch>, String> {
-    read_branches(&open_repo(&repo)?)
+pub async fn git_branches(repo: String) -> Result<Vec<GitBranch>, String> {
+    run_blocking(move || read_branches(&open_repo(&repo)?)).await
 }
 
 fn relative_time(secs: i64) -> String {
@@ -272,18 +289,21 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
 }
 
 #[tauri::command]
-pub fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
-    read_log(&open_repo(&repo)?, 60)
+pub async fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
+    run_blocking(move || read_log(&open_repo(&repo)?, 60)).await
 }
 
 #[tauri::command]
-pub fn git_overview(repo: String) -> Result<GitOverview, String> {
-    let r = open_repo(&repo)?;
-    Ok(GitOverview {
-        status: read_status(&r)?,
-        branches: read_branches(&r)?,
-        log: read_log(&r, 60)?,
+pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
+    run_blocking(move || -> Result<GitOverview, String> {
+        let r = open_repo(&repo)?;
+        Ok(GitOverview {
+            status: read_status(&r)?,
+            branches: read_branches(&r)?,
+            log: read_log(&r, 60)?,
+        })
     })
+    .await
 }
 
 #[tauri::command]
@@ -476,7 +496,7 @@ fn is_immutable_rev(rev: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
+pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
     let cacheable = is_immutable_rev(&rev);
     let key = (repo.clone(), rev.clone(), path.clone());
     if cacheable {
@@ -486,32 +506,36 @@ pub fn git_file_at(repo: String, rev: String, path: String) -> Result<String, St
             }
         }
     }
-    let r = open_repo(&repo)?;
-    let content = match revparse_commit(&r, &rev) {
-        Ok(commit) => {
-            let tree = commit.tree().map_err(|e| e.message().to_string())?;
-            match tree.get_path(Path::new(&path)) {
-                Ok(entry) => {
-                    let blob = r
-                        .find_blob(entry.id())
-                        .map_err(|e| e.message().to_string())?;
-                    String::from_utf8_lossy(blob.content()).into_owned()
+    let cache_key = key.clone();
+    run_blocking(move || -> Result<String, String> {
+        let r = open_repo(&repo)?;
+        let content = match revparse_commit(&r, &rev) {
+            Ok(commit) => {
+                let tree = commit.tree().map_err(|e| e.message().to_string())?;
+                match tree.get_path(Path::new(&path)) {
+                    Ok(entry) => {
+                        let blob = r
+                            .find_blob(entry.id())
+                            .map_err(|e| e.message().to_string())?;
+                        String::from_utf8_lossy(blob.content()).into_owned()
+                    }
+                    Err(e) if e.code() == ErrorCode::NotFound => String::new(),
+                    Err(e) => return Err(e.message().to_string()),
                 }
-                Err(e) if e.code() == ErrorCode::NotFound => String::new(),
-                Err(e) => return Err(e.message().to_string()),
+            }
+            Err(_) => String::new(),
+        };
+        if cacheable {
+            if let Ok(mut cache) = file_at_cache().lock() {
+                cache.insert(cache_key, content.clone());
+                while cache.len() > FILE_AT_CACHE_CAP {
+                    cache.pop_front();
+                }
             }
         }
-        Err(_) => String::new(),
-    };
-    if cacheable {
-        if let Ok(mut cache) = file_at_cache().lock() {
-            cache.insert(key, content.clone());
-            while cache.len() > FILE_AT_CACHE_CAP {
-                cache.pop_front();
-            }
-        }
-    }
-    Ok(content)
+        Ok(content)
+    })
+    .await
 }
 
 #[tauri::command]

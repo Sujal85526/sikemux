@@ -11,6 +11,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -135,37 +136,72 @@ fn write_file(cfg: &RundeckConfig) -> AppResult<()> {
     Ok(())
 }
 
-fn cache() -> &'static RwLock<RundeckConfig> {
-    static C: OnceLock<RwLock<RundeckConfig>> = OnceLock::new();
-    C.get_or_init(|| RwLock::new(RundeckConfig::default()))
+struct CacheEntry {
+    cfg: RundeckConfig,
+    /// mtime of `~/.rd-config` at the last successful read. `None` means
+    /// the cache is empty / the file didn't exist.
+    seen_mtime: Option<SystemTime>,
 }
 
-/// Reload the in-process cache from disk. Called before each request — cheap
-/// (small file, OS cache) and ensures a `rnd login` from a terminal is
-/// picked up live.
+fn cache() -> &'static RwLock<CacheEntry> {
+    static C: OnceLock<RwLock<CacheEntry>> = OnceLock::new();
+    C.get_or_init(|| {
+        RwLock::new(CacheEntry {
+            cfg: RundeckConfig::default(),
+            seen_mtime: None,
+        })
+    })
+}
+
+fn mtime_of(path: &PathBuf) -> Option<SystemTime> {
+    fs::metadata(path).ok().and_then(|m| m.modified().ok())
+}
+
+/// Reload the in-process cache from disk when `~/.rd-config` has changed.
+/// Called before every Rundeck API request — used to re-read the file
+/// each time (~600 B), which was visible during heavy log-tail polling
+/// (2 pollers × every 1.5s × multiple disk reads each). Now we stat the
+/// file (one syscall) and only re-read on an mtime change, so a long
+/// session with no `rnd login` does effectively zero disk work.
 pub async fn refresh_from_disk() -> AppResult<RundeckConfig> {
+    let path = match config_path() {
+        Some(p) => p,
+        None => return Ok(RundeckConfig::default()),
+    };
+    let cur_mtime = mtime_of(&path);
+    {
+        let r = cache().read().await;
+        if r.seen_mtime == cur_mtime && cur_mtime.is_some() {
+            return Ok(r.cfg.clone());
+        }
+    }
     let fresh = read_file()?;
     let mut w = cache().write().await;
-    *w = fresh.clone();
+    w.cfg = fresh.clone();
+    w.seen_mtime = cur_mtime;
     Ok(fresh)
 }
 
 pub async fn get() -> RundeckConfig {
-    cache().read().await.clone()
+    cache().read().await.cfg.clone()
 }
 
 pub async fn save(cfg: RundeckConfig) -> AppResult<()> {
     write_file(&cfg)?;
+    let path = config_path();
     let mut w = cache().write().await;
-    *w = cfg;
+    w.cfg = cfg;
+    w.seen_mtime = path.as_ref().and_then(mtime_of);
     Ok(())
 }
 
 /// Update only the token (used after auto-refresh). Keeps url/user/password
 /// untouched so we don't race with a concurrent `save` carrying new creds.
 pub async fn update_token(token: String) -> AppResult<()> {
+    let path = config_path();
     let mut w = cache().write().await;
-    w.token = token;
-    write_file(&w)?;
+    w.cfg.token = token;
+    write_file(&w.cfg)?;
+    w.seen_mtime = path.as_ref().and_then(mtime_of);
     Ok(())
 }

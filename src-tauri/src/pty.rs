@@ -37,13 +37,14 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::FromRawFd;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use tokio::io::unix::AsyncFd;
 
 use crate::error::{AppError, AppResult};
@@ -71,6 +72,14 @@ struct Pty {
     parser: Mutex<vt100::Parser>,
     /// Live xterm subscribers. Empty = PTY runs invisibly.
     subscribers: Mutex<HashMap<u32, Channel<Vec<u8>>>>,
+    /// Millis-since-process-start of the last chunk processed. The idle
+    /// sweeper reads this without contending with the reader because it's
+    /// an atomic, not a Mutex.
+    last_activity_ms: AtomicU64,
+    /// Set true once the sweeper has reseeded the parser at the smaller
+    /// scrollback so we don't repeatedly rebuild a parser that's already
+    /// at idle size. Cleared on any new activity.
+    trimmed: AtomicBool,
 }
 
 /// All live PTYs, keyed by an id handed back to the frontend.
@@ -104,8 +113,23 @@ static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(1);
 // the frontend's xterm scrollback (`TerminalPane.tsx`'s SCROLLBACK) so a
 // reattach can repaint the full visible history. At 80 cols of mostly-
 // cleared cells, 10k rows ≈ 1.6 MB per PTY. 100 PTYs → ~160 MB worst-case.
-// If memory becomes an issue, drop this and the xterm constant together.
+// The sweeper below reclaims this back to IDLE_SCROLLBACK for any PTY
+// that's been silent for IDLE_TRIM and has no subscribers attached.
 pub const PARSER_SCROLLBACK: usize = 10_000;
+const IDLE_SCROLLBACK: usize = 2_000;
+const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
+const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+
+// Process-start anchor so all `last_activity_ms` values are monotonic
+// deltas in ms — immune to wall-clock jumps (NTP, sleep/resume).
+fn epoch() -> Instant {
+    static E: OnceLock<Instant> = OnceLock::new();
+    *E.get_or_init(Instant::now)
+}
+
+fn now_ms() -> u64 {
+    epoch().elapsed().as_millis() as u64
+}
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }
@@ -138,14 +162,72 @@ async fn write_all_async(writer: &AsyncFd<File>, mut data: &[u8]) -> std::io::Re
     Ok(())
 }
 
+/// One-shot sweeper kickoff. Spawns a single background task on the first
+/// `pty_spawn` of the process; subsequent calls are no-ops.
+fn ensure_sweeper(app: AppHandle) {
+    static SPAWNED: AtomicBool = AtomicBool::new(false);
+    if SPAWNED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(SWEEP_INTERVAL);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        ticker.tick().await; // skip the immediate first tick
+        loop {
+            ticker.tick().await;
+            let Some(mgr) = app.try_state::<PtyManager>() else { return; };
+            let now = now_ms();
+            // Snapshot ids first so we never hold a DashMap shard across
+            // the parser lock acquisition.
+            let candidates: Vec<Arc<Pty>> = mgr
+                .ptys
+                .iter()
+                .map(|e| e.value().clone())
+                .collect();
+            for pty in candidates {
+                if pty.trimmed.load(Ordering::Relaxed) {
+                    continue;
+                }
+                let last = pty.last_activity_ms.load(Ordering::Relaxed);
+                if now.saturating_sub(last) < IDLE_TRIM.as_millis() as u64 {
+                    continue;
+                }
+                let has_subs = match pty.subscribers.lock() {
+                    Ok(s) => !s.is_empty(),
+                    Err(_) => true, // be conservative on poison
+                };
+                if has_subs {
+                    // Don't shrink under an attached xterm — a reattach
+                    // would lose scrollback the user might be scrolling
+                    // through right now.
+                    continue;
+                }
+                // Re-seed the parser at the smaller scrollback. The
+                // round-trip-via-contents_formatted invariant is exercised
+                // by the test below.
+                if let Ok(mut parser) = pty.parser.lock() {
+                    let (rows, cols) = parser.screen().size();
+                    let snapshot = parser.screen().contents_formatted();
+                    let mut fresh = vt100::Parser::new(rows, cols, IDLE_SCROLLBACK);
+                    fresh.process(&snapshot);
+                    *parser = fresh;
+                }
+                pty.trimmed.store(true, Ordering::Relaxed);
+            }
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn pty_spawn(
+    app: AppHandle,
     manager: State<'_, PtyManager>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     startup: Option<String>,
 ) -> AppResult<u32> {
+    ensure_sweeper(app);
     // Has to be `async fn` so the body runs inside Tauri's tokio
     // runtime — both `AsyncFd::new` and `tokio::spawn` below panic
     // ("no reactor running") when called from a sync Tauri command.
@@ -209,6 +291,8 @@ pub async fn pty_spawn(
         child: Mutex::new(child),
         parser: Mutex::new(vt100::Parser::new(rows, cols, PARSER_SCROLLBACK)),
         subscribers: Mutex::new(HashMap::new()),
+        last_activity_ms: AtomicU64::new(now_ms()),
+        trimmed: AtomicBool::new(false),
     });
 
     // Reader — feeds parser then fans bytes out to subscribers.
@@ -257,6 +341,10 @@ pub async fn pty_spawn(
                 Err(_would_block) => continue,    // spurious wake; loop
                 Ok(Ok(n)) => {
                     let bytes = &buf[..n];
+                    pty_reader
+                        .last_activity_ms
+                        .store(now_ms(), Ordering::Relaxed);
+                    pty_reader.trimmed.store(false, Ordering::Relaxed);
                     let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
                         let Ok(mut parser) = pty_reader.parser.lock() else { break };
                         parser.process(bytes);

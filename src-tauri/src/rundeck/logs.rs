@@ -59,6 +59,7 @@ pub struct LogTick {
 /// 0 (or None) to start at tail.
 #[tauri::command]
 pub async fn rnd_logs_start(
+    app: tauri::AppHandle,
     manager: State<'_, LogsManager>,
     execution_id: u64,
     backlog: Option<u32>,
@@ -69,6 +70,13 @@ pub async fn rnd_logs_start(
         let mut offset = String::from("0");
         let mut last_modified: Option<String> = None;
         let mut first_pass = true;
+        // Exponential backoff on consecutive transport errors so a stale
+        // token / network outage doesn't turn into a 1.5s-poll DoS against
+        // the Rundeck instance for the life of the app session.
+        let mut consecutive_errors: u32 = 0;
+        const MAX_BACKOFF: Duration = Duration::from_secs(30);
+        const POLL_INTERVAL: Duration = Duration::from_millis(1500);
+        const ERROR_GIVEUP: u32 = 8;
 
         loop {
             let mut query: Vec<(&str, String)> = vec![("format", "json".into())];
@@ -93,8 +101,10 @@ pub async fn rnd_logs_start(
             let res: AppResult<LogChunk> =
                 get_json(&format!("/execution/{execution_id}/output"), &query).await;
 
+            let mut sleep_dur = POLL_INTERVAL;
             match res {
                 Ok(chunk) => {
+                    consecutive_errors = 0;
                     if let Some(o) = &chunk.offset {
                         offset = o.clone();
                     }
@@ -116,15 +126,35 @@ pub async fn rnd_logs_start(
                     }
                 }
                 Err(e) => {
+                    consecutive_errors = consecutive_errors.saturating_add(1);
                     let tick = LogTick {
                         entries: vec![],
-                        completed: false,
+                        completed: consecutive_errors >= ERROR_GIVEUP,
                         error: Some(e.to_string()),
                     };
-                    let _ = on_chunk.send(tick);
+                    if on_chunk.send(tick).is_err() {
+                        break;
+                    }
+                    if consecutive_errors >= ERROR_GIVEUP {
+                        // Surrender — the UI will surface the last error and
+                        // the user can re-mount the pane to retry. Better
+                        // than hammering an unreachable instance forever.
+                        break;
+                    }
+                    // 1.5s, 3s, 6s, 12s, 24s, 30s (capped).
+                    let exp = 1u64 << consecutive_errors.min(6);
+                    sleep_dur =
+                        Duration::from_millis((POLL_INTERVAL.as_millis() as u64).saturating_mul(exp))
+                            .min(MAX_BACKOFF);
                 }
             }
-            sleep(Duration::from_millis(1500)).await;
+            sleep(sleep_dur).await;
+        }
+        // Self-prune from the DashMap so terminated executions don't
+        // accumulate dead JoinHandles for the rest of the session.
+        use tauri::Manager;
+        if let Some(mgr) = app.try_state::<LogsManager>() {
+            mgr.handles.remove(&id);
         }
     });
     manager.handles.insert(id, handle);

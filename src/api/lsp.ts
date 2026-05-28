@@ -32,6 +32,7 @@ export const uriToPath = (uri: string): string => (uri.startsWith("file://") ? d
 
 export const lsp = {
     start: (project: string, language: string) => invoke<void>("lsp_start", { project, language }),
+    stop: (project: string) => invoke<void>("lsp_stop", { project }),
     open: (project: string, language: string, path: string, content: string) => invoke<void>("lsp_open", { project, language, path, content }),
     change: (project: string, language: string, path: string, content: string, version: number) =>
         invoke<void>("lsp_change", { project, language, path, content, version }),

@@ -60,11 +60,17 @@ fn debounce_emit(app: &AppHandle, repo: &str, last_emit: &Arc<AtomicU64>) {
 }
 
 fn should_ignore(path: &Path) -> bool {
-    // Skip noisy non-repo paths: target/, node_modules/, dist/. We can't know
-    // the user's full ignore list, but these three cover ~99% of churn.
+    // Share the file-palette denylist (build artifacts, dep caches, VCS
+    // metadata) so a `cargo test` / `pytest` / `npm run build` in the
+    // watched repo doesn't fire thousands of fs events that all clear the
+    // resource cache and re-run `git_overview`. `.DS_Store` is a file so
+    // it's not covered by should_skip_dir; keep the explicit check.
     path.components().any(|c| {
         let s = c.as_os_str().to_string_lossy();
-        s == "target" || s == "node_modules" || s == "dist" || s == ".DS_Store"
+        if s == ".DS_Store" {
+            return true;
+        }
+        crate::files::should_skip_dir(&s)
     })
 }
 

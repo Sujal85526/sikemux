@@ -4,6 +4,9 @@
 
 use serde::Serialize;
 use similar::{ChangeTag, TextDiff};
+use tauri::async_runtime::spawn_blocking;
+
+use crate::error::{AppError, AppResult};
 
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
@@ -21,11 +24,20 @@ pub struct DiffHunk {
 }
 
 #[tauri::command]
-pub fn diff_hunks(baseline: String, current: String) -> Vec<DiffHunk> {
+pub async fn diff_hunks(baseline: String, current: String) -> AppResult<Vec<DiffHunk>> {
+    // similar's Myers diff is O(N*D); on multi-MB files it's tens of ms.
+    // Off-thread so the Tauri worker pool isn't blocked by per-keystroke
+    // diff calls coming from every visible editor.
+    spawn_blocking(move || diff_hunks_sync(&baseline, &current))
+        .await
+        .map_err(|e| AppError::Other(format!("diff join: {e}")))
+}
+
+fn diff_hunks_sync(baseline: &str, current: &str) -> Vec<DiffHunk> {
     if baseline == current {
         return Vec::new();
     }
-    let diff = TextDiff::from_lines(&baseline, &current);
+    let diff = TextDiff::from_lines(baseline, current);
     let mut out: Vec<DiffHunk> = Vec::new();
     let mut cur_line: u32 = 0; // 0-based line in `current`
     let mut run_add_start: Option<u32> = None;

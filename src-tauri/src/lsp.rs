@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -12,6 +12,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
+use tokio::task;
 
 use crate::error::{AppError, AppResult};
 
@@ -39,10 +40,21 @@ pub struct LspLocation {
 
 // Stdin and the pending map are independent — splitting them lets the reader
 // thread deliver responses while a writer is mid-flight.
+//
+// `child` is held so `lsp_stop` can SIGKILL the server process; without it
+// the language server would outlive every session that ever opened it.
+// `shutdown` flips true once a stop has been issued — readers and writers
+// check it so they bail without spamming errors as the child dies.
 struct Server {
-    stdin: Mutex<ChildStdin>,
+    child: Mutex<Option<Child>>,
+    stdin: Mutex<Option<ChildStdin>>,
     next_id: Mutex<i64>,
     pending: Mutex<HashMap<i64, mpsc::Sender<Value>>>,
+    // Per-(path) hash of last didChange payload — drops no-op resends
+    // (rare, but the 300 ms debounce can land an identical doc when the
+    // user undoes back to the saved state).
+    last_change: Mutex<HashMap<String, u64>>,
+    shutdown: std::sync::atomic::AtomicBool,
 }
 
 type ServerHandle = Arc<Server>;
@@ -110,8 +122,12 @@ fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> AppResult<()> {
 }
 
 fn send(server: &ServerHandle, msg: &Value) -> AppResult<()> {
-    let mut stdin = server.stdin.lock().map_err(lsp)?;
-    write_frame(&mut stdin, msg)
+    if server.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(AppError::Lsp("server shut down".into()));
+    }
+    let mut guard = server.stdin.lock().map_err(lsp)?;
+    let stdin = guard.as_mut().ok_or_else(|| AppError::Lsp("stdin gone".into()))?;
+    write_frame(stdin, msg)
 }
 
 fn read_message(reader: &mut BufReader<ChildStdout>) -> Option<Value> {
@@ -195,11 +211,15 @@ fn spawn_server(
         .map_err(|e| AppError::Lsp(format!("spawn {bin}: {e}")))?;
     let stdin = child.stdin.take().ok_or(AppError::Lsp("no stdin".into()))?;
     let stdout = child.stdout.take().ok_or(AppError::Lsp("no stdout".into()))?;
+    let stderr = child.stderr.take();
 
     let server = Arc::new(Server {
-        stdin: Mutex::new(stdin),
+        child: Mutex::new(Some(child)),
+        stdin: Mutex::new(Some(stdin)),
         next_id: Mutex::new(1),
         pending: Mutex::new(HashMap::new()),
+        last_change: Mutex::new(HashMap::new()),
+        shutdown: std::sync::atomic::AtomicBool::new(false),
     });
 
     let reader_server = server.clone();
@@ -207,6 +227,9 @@ fn spawn_server(
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         while let Some(msg) = read_message(&mut reader) {
+            if reader_server.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
             if let Some(id) = msg.get("id").and_then(|i| i.as_i64()) {
                 if msg.get("method").is_some() {
                     // Server-initiated request — reply with null result so
@@ -221,7 +244,34 @@ fn spawn_server(
                 }
             }
         }
+        // Reader exit unblocks any pending RPC waiters so they fail fast
+        // instead of timing out — important when lsp_stop is racing us.
+        if let Ok(mut pending) = reader_server.pending.lock() {
+            pending.clear();
+        }
     });
+
+    // Drain stderr on its own thread. rust-analyzer / pyright emit a LOT of
+    // log noise on stderr; without draining, the OS pipe fills and write()
+    // calls inside the server start to block, freezing hover / definition
+    // with no obvious cause.
+    if let Some(stderr) = stderr {
+        let drain_server = server.clone();
+        thread::spawn(move || {
+            let mut reader = BufReader::new(stderr);
+            let mut sink = String::new();
+            loop {
+                if drain_server.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                sink.clear();
+                match reader.read_line(&mut sink) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => continue,
+                }
+            }
+        });
+    }
 
     let init = json!({
         "processId": std::process::id(),
@@ -266,13 +316,58 @@ pub async fn lsp_start(
         let reg = registry().lock().map_err(lsp)?;
         if reg.contains_key(&k) { return Ok(()); }
     }
-    let server = spawn_server(&project, &language, app)?;
+    // The initialize handshake blocks up to 20 s on slow servers; off the
+    // Tauri worker pool so unrelated IPC isn't starved.
+    let server = task::spawn_blocking(move || spawn_server(&project, &language, app))
+        .await
+        .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
     registry().lock().map_err(lsp)?.insert(k, server);
     Ok(())
 }
 
+/// Shut every server owned by this project down. Called from the close-
+/// session path so a long-running rust-analyzer doesn't hang around with
+/// 500 MB resident after the user moves on. Idempotent.
 #[tauri::command]
-pub fn lsp_open(
+pub async fn lsp_stop(project: String) -> AppResult<()> {
+    let prefix_suffix = format!("::{project}");
+    let mut to_kill: Vec<ServerHandle> = Vec::new();
+    if let Ok(mut reg) = registry().lock() {
+        let keys: Vec<String> = reg
+            .keys()
+            .filter(|k| k.ends_with(&prefix_suffix))
+            .cloned()
+            .collect();
+        for k in keys {
+            if let Some(s) = reg.remove(&k) {
+                to_kill.push(s);
+            }
+        }
+    }
+    // Actual kill is potentially slow (SIGKILL + wait); off-thread.
+    task::spawn_blocking(move || {
+        for server in to_kill {
+            server.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+            // Drop stdin so the server's read loop sees EOF and exits
+            // cleanly; if it doesn't, fall through to kill().
+            if let Ok(mut g) = server.stdin.lock() {
+                g.take();
+            }
+            if let Ok(mut g) = server.child.lock() {
+                if let Some(mut c) = g.take() {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn lsp_open(
     project: String,
     language: String,
     path: String,
@@ -280,22 +375,26 @@ pub fn lsp_open(
 ) -> AppResult<()> {
     let server = server_for(&project, &language)
         .ok_or(AppError::Lsp("server not started".into()))?;
-    notify(
-        &server,
-        "textDocument/didOpen",
-        json!({
-            "textDocument": {
-                "uri": path_to_uri(&path),
-                "languageId": language,
-                "version": 1,
-                "text": content
-            }
-        }),
-    )
+    task::spawn_blocking(move || {
+        notify(
+            &server,
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": path_to_uri(&path),
+                    "languageId": language,
+                    "version": 1,
+                    "text": content
+                }
+            }),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
 
 #[tauri::command]
-pub fn lsp_change(
+pub async fn lsp_change(
     project: String,
     language: String,
     path: String,
@@ -304,14 +403,33 @@ pub fn lsp_change(
 ) -> AppResult<()> {
     let server = server_for(&project, &language)
         .ok_or(AppError::Lsp("server not started".into()))?;
-    notify(
-        &server,
-        "textDocument/didChange",
-        json!({
-            "textDocument": { "uri": path_to_uri(&path), "version": version },
-            "contentChanges": [{ "text": content }]
-        }),
-    )
+    // Cheap content-hash dedup: if the previous payload for this path
+    // hashed to the same value, skip the IPC + LSP reparse. Catches
+    // undo-back-to-saved and the debounce firing without an actual edit.
+    let h = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        content.hash(&mut hasher);
+        hasher.finish()
+    };
+    if let Ok(mut last) = server.last_change.lock() {
+        if last.get(&path) == Some(&h) {
+            return Ok(());
+        }
+        last.insert(path.clone(), h);
+    }
+    task::spawn_blocking(move || {
+        notify(
+            &server,
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": path_to_uri(&path), "version": version },
+                "contentChanges": [{ "text": content }]
+            }),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
 
 fn parse_locations(result: &Value) -> Vec<LspLocation> {
@@ -359,5 +477,8 @@ pub async fn lsp_locations(
     if with_context {
         params["context"] = json!({ "includeDeclaration": false });
     }
-    Ok(parse_locations(&request(&server, method, params)?))
+    let result = task::spawn_blocking(move || request(&server, method, params))
+        .await
+        .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
+    Ok(parse_locations(&result))
 }
