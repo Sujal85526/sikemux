@@ -96,7 +96,7 @@ export function AgentRail() {
                                     onClick={() => cmd.openAgentBookmark(b)}>
                                     <span className={`agent-glyph ${b.type}`}>
                                         <span className="agent-glyph-icon">
-                                            <AgentIcon type={b.type} size={16} />
+                                            <AgentIcon type={b.type} size={20} />
                                         </span>
                                         {liveAgentId && (
                                             <span
@@ -137,7 +137,7 @@ export function AgentRail() {
                                 <button key={a.id} className={`agent-row closable${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
                                     <span className={`agent-glyph ${a.type}`}>
                                         <span className="agent-glyph-icon">
-                                            <AgentIcon type={a.type} size={16} />
+                                            <AgentIcon type={a.type} size={20} />
                                         </span>
                                         <span
                                             className="agent-glyph-x"
@@ -175,8 +175,8 @@ export function AgentRail() {
                         <div className="rail-group-label">Recent</div>
                         {recentDisplay.map((s) => (
                             <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(type, s.id, s.title)}>
-                                <span className={`agent-glyph ${type} dim`}>
-                                    <AgentIcon type={type} size={16} />
+                                <span className={`agent-glyph ${type}`}>
+                                    <AgentIcon type={type} size={20} />
                                 </span>
                                 <span className="agent-title">{s.title}</span>
                                 <span
@@ -209,7 +209,7 @@ function AgentHeader({ type, setType }: { type: AgentType; setType: (t: AgentTyp
             <div className="agent-header-types">
                 {AGENT_TYPES.map((t) => (
                     <button key={t} className={`agent-header-btn${type === t ? " active" : ""}`} title={t} onClick={() => setType(t)}>
-                        <AgentIcon type={t} size={16} />
+                        <AgentIcon type={t} size={18} />
                     </button>
                 ))}
             </div>

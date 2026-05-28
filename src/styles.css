@@ -2139,6 +2139,148 @@ button {
     font-size: 11px;
 }
 
+/* ============================================================
+   COMMIT GRAPH (panel 5) — lazygit-style lanes + author chips
+   ============================================================ */
+.git-graph {
+    position: relative;
+    min-height: 0;
+}
+/* Canvas paints only the lane gutter (lanes, bezier branch/merge curves,
+   nodes). Rows render their own text on top with a matching left pad.
+   pointer-events:none so clicks fall through to the rows. */
+.git-graph-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+.gg-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 10px;
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    white-space: nowrap;
+    transition: background 0.1s;
+}
+.gg-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+.gg-row.sel {
+    background: var(--rail-2);
+    color: var(--ink);
+}
+.git-panel.focused .gg-row.sel {
+    background: var(--acc-soft);
+    box-shadow: inset 0 0 0 1px var(--acc-line);
+}
+.gg-row.ranged {
+    background: rgba(124, 197, 255, 0.08);
+}
+.gg-hash {
+    color: var(--ink-faint);
+    font-size: 11px;
+    flex: none;
+    font-variant-numeric: tabular-nums;
+}
+.gg-subj {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink);
+}
+.gg-when {
+    color: var(--ink-faint);
+    font-size: 10.5px;
+    flex: none;
+    font-variant-numeric: tabular-nums;
+}
+/* author initials chip — colour set inline from a hash of the email */
+.gg-author {
+    width: 19px;
+    height: 19px;
+    border-radius: 6px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--void);
+}
+/* ref decoration badges (HEAD / branch / remote / tag) */
+.gg-refs {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+}
+.gg-ref {
+    font-size: 9.5px;
+    line-height: 1;
+    padding: 2px 7px 2px 6px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gg-ref::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex: none;
+    background: var(--ink-faint);
+}
+.gg-ref.head {
+    color: var(--acc);
+    border-color: var(--acc-line);
+    background: var(--acc-soft);
+}
+.gg-ref.head::before {
+    background: var(--acc);
+}
+.gg-ref.remote {
+    color: #7cc5ff;
+    border-color: rgba(124, 197, 255, 0.3);
+    background: rgba(124, 197, 255, 0.08);
+}
+.gg-ref.remote::before {
+    background: #7cc5ff;
+}
+.gg-ref.tag {
+    color: var(--warn);
+    border-color: rgba(255, 202, 133, 0.3);
+    background: rgba(255, 202, 133, 0.08);
+}
+.gg-ref.tag::before {
+    background: var(--warn);
+    border-radius: 1px;
+}
+.gg-ref.branch {
+    color: var(--live);
+    border-color: rgba(97, 255, 202, 0.28);
+    background: rgba(97, 255, 202, 0.07);
+}
+.gg-ref.branch::before {
+    background: var(--live);
+}
+
 .git-right {
     flex: 1;
     min-width: 0;
@@ -4314,7 +4456,7 @@ button {
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    padding: 0 10px;
+    padding: 0 10px 0px 6px;
     height: 24px;
     border: 1px solid var(--line);
     /* Transparent so the chip inherits the window's opacity wash (matches

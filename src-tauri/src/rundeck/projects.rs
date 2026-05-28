@@ -206,21 +206,22 @@ pub async fn rnd_branches_matrix(envs: Vec<EnvSpec>) -> AppResult<MatrixResult> 
     })
 }
 
+fn job_matches_service_ref(job: &RundeckJob, service_ref: &str) -> bool {
+    let target = service_ref.trim_matches('/');
+    if target.contains('/') {
+        job.qualified_name() == target
+    } else {
+        job.name == target
+    }
+}
+
 /// Convenience for the deploy flow — resolves group/name to a single job id,
 /// erroring on ambiguity. Mirrors `_find_job_id` in the bash CLI.
 pub async fn resolve_job(project: &str, service_ref: &str) -> AppResult<RundeckJob> {
     let jobs = rnd_jobs(project.to_string()).await?;
-    let (target_group, target_name) = match service_ref.split_once('/') {
-        Some((g, n)) => (Some(g.to_string()), n.to_string()),
-        None => (None, service_ref.to_string()),
-    };
     let matches: Vec<&RundeckJob> = jobs
         .iter()
-        .filter(|j| j.name == target_name)
-        .filter(|j| match &target_group {
-            Some(g) => j.group.as_deref() == Some(g.as_str()),
-            None => true,
-        })
+        .filter(|j| job_matches_service_ref(j, service_ref))
         .collect();
     match matches.as_slice() {
         [] => Err(crate::error::AppError::Rundeck(format!(
@@ -237,4 +238,35 @@ pub async fn resolve_job(project: &str, service_ref: &str) -> AppResult<RundeckJ
 #[tauri::command]
 pub async fn rnd_resolve_job(project: String, service: String) -> AppResult<RundeckJob> {
     resolve_job(&project, &service).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{job_matches_service_ref, RundeckJob};
+
+    fn job(group: Option<&str>, name: &str) -> RundeckJob {
+        RundeckJob {
+            id: "id".into(),
+            name: name.into(),
+            group: group.map(str::to_string),
+            project: "project".into(),
+            description: None,
+            href: None,
+            permalink: None,
+        }
+    }
+
+    #[test]
+    fn matches_nested_group_service_refs() {
+        let j = job(Some("dev/backend"), "content-service");
+        assert!(job_matches_service_ref(&j, "dev/backend/content-service"));
+        assert!(!job_matches_service_ref(&j, "dev"));
+        assert!(!job_matches_service_ref(&j, "dev/content-service"));
+    }
+
+    #[test]
+    fn name_only_refs_still_match_any_group() {
+        let j = job(Some("dev/backend"), "content-service");
+        assert!(job_matches_service_ref(&j, "content-service"));
+    }
 }

@@ -4,7 +4,7 @@ import { git, hasUnstaged, isStaged } from "../api/git";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, runGitCmd, toggleGitCmdLog } from "../state/git";
 import { useResourceEnabled } from "../state/resources";
-import { gitOverviewR, gitRemoteBranchesR, gitRemotesR } from "../state/resources.defs";
+import { gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { GitPanel } from "../state/types";
@@ -12,6 +12,7 @@ import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
+import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
 
 const basenameOf = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
@@ -22,11 +23,13 @@ type RightView =
     | { mode: "output"; text: string };
 
 const DEFAULT_VIEW = {
-    panel: "files" as GitPanel,
-    selected: { files: 0, branches: 0, remotes: 0, commits: 0 },
+    panel: "status" as GitPanel,
+    selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
     remoteDrill: null as string | null,
     remoteBranchSelected: {} as Record<string, number>,
 };
+
+const GIT_PANEL_ORDER: GitPanel[] = ["status", "files", "branches", "remotes", "commits", "stashes"];
 
 // Lazygit-style git pane. Per-pane view state (focused panel + per-panel
 // selection) lives in store.gitViews so switching sessions and coming
@@ -35,7 +38,14 @@ const DEFAULT_VIEW = {
 // from store slices set by helpers in state/git.ts.
 export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; active: boolean }) {
     const repo = cwd;
-    const view = useStore((s) => s.gitViews[paneId] ?? DEFAULT_VIEW);
+    const storedView = useStore((s) => s.gitViews[paneId]);
+    const view = {
+        ...DEFAULT_VIEW,
+        ...(storedView ?? {}),
+        selected: { ...DEFAULT_VIEW.selected, ...(storedView?.selected ?? {}) },
+        remoteDrill: storedView?.remoteDrill ?? DEFAULT_VIEW.remoteDrill,
+        remoteBranchSelected: storedView?.remoteBranchSelected ?? DEFAULT_VIEW.remoteBranchSelected,
+    };
     const { panel, selected: sel } = view;
     const remoteDrill = view.remoteDrill ?? null;
     const remoteBranchSelected = view.remoteBranchSelected ?? {};
@@ -43,6 +53,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     const overview = useResourceEnabled(active && !!repo, gitOverviewR, repo || "");
     const remotesRes = useResourceEnabled(active && !!repo, gitRemotesR, repo || "");
+    const stashesRes = useResourceEnabled(active && !!repo, gitStashesR, repo || "");
     // Only fetch remote branches when we've actually drilled into a
     // remote — keeps cold-start cost off until the user asks for it.
     const remoteBranchesRes = useResourceEnabled(active && !!repo && !!remoteDrill, gitRemoteBranchesR, repo || "", remoteDrill ?? "");
@@ -51,6 +62,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const commits = repo ? (overview.data?.log ?? []) : [];
     const files = status?.files ?? [];
     const remotes = repo ? (remotesRes.data ?? []) : [];
+    const stashes = repo ? (stashesRes.data ?? []) : [];
     const remoteBranches = repo && remoteDrill ? (remoteBranchesRes.data ?? []) : [];
     const currentBranch = branches.find((b) => b.current)?.name ?? "";
 
@@ -66,12 +78,26 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     // Per-panel filter — typed via `/`, applied as a substring match.
     // Persisted in component state so it survives tab-switches within the
     // pane but resets on remount.
-    const [searchByPanel, setSearchByPanel] = useState<Record<GitPanel, string>>({ files: "", branches: "", remotes: "", commits: "" });
+    const [searchByPanel, setSearchByPanel] = useState<Record<GitPanel, string>>({
+        status: "",
+        files: "",
+        branches: "",
+        remotes: "",
+        commits: "",
+        stashes: "",
+    });
     const [searchOpen, setSearchOpen] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     // Range-select anchor per panel. `null` = no range; otherwise the
     // anchor index. Range select is the lazygit `v` model.
-    const [rangeByPanel, setRangeByPanel] = useState<Record<GitPanel, number | null>>({ files: null, branches: null, remotes: null, commits: null });
+    const [rangeByPanel, setRangeByPanel] = useState<Record<GitPanel, number | null>>({
+        status: null,
+        files: null,
+        branches: null,
+        remotes: null,
+        commits: null,
+        stashes: null,
+    });
 
     useEffect(() => {
         if (commitMode) commitInputRef.current?.focus();
@@ -89,6 +115,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const fileQuery = searchByPanel.files;
     const branchQuery = searchByPanel.branches;
     const commitQuery = searchByPanel.commits;
+    const stashQuery = searchByPanel.stashes;
     const filteredFiles = useMemo(
         () => (fileQuery ? files.filter((f) => f.path.toLowerCase().includes(fileQuery.toLowerCase())) : files),
         [files, fileQuery],
@@ -105,6 +132,18 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                   )
                 : commits,
         [commits, commitQuery],
+    );
+    const filteredStashes = useMemo(
+        () =>
+            stashQuery
+                ? stashes.filter(
+                      (s) =>
+                          s.message.toLowerCase().includes(stashQuery.toLowerCase()) ||
+                          s.branch.toLowerCase().includes(stashQuery.toLowerCase()) ||
+                          s.refname.toLowerCase().includes(stashQuery.toLowerCase()),
+                  )
+                : stashes,
+        [stashes, stashQuery],
     );
 
     // Remotes filter applies to the panel content currently visible:
@@ -130,7 +169,9 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const remoteBranchSel = remoteDrill ? (remoteBranchSelected[remoteDrill] ?? 0) : 0;
 
     const lenFor = (p: GitPanel) =>
-        p === "files"
+        p === "status"
+            ? 1
+            : p === "files"
             ? filteredFiles.length
             : p === "branches"
               ? filteredBranches.length
@@ -138,7 +179,9 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 ? remoteDrill
                     ? filteredRemoteBranches.length
                     : filteredRemotes.length
-                : filteredCommits.length;
+                : p === "commits"
+                  ? filteredCommits.length
+                  : filteredStashes.length;
 
     // Range = [min(anchor, sel), max(anchor, sel)] when anchor set.
     const rangeFor = (p: GitPanel): [number, number] | null => {
@@ -151,7 +194,26 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     // ---- load the right pane for the selected row ----
     useEffect(() => {
         if (!active) return;
-        if (panel === "files") {
+        if (panel === "status") {
+            if (!status) {
+                setRight({ mode: "output", text: "" });
+                return;
+            }
+            setRight({
+                mode: "output",
+                text: [
+                    `branch:   ${status.branch || "(unknown)"}`,
+                    `upstream: ${status.upstream ?? "(none)"}`,
+                    `ahead:    ${status.ahead}`,
+                    `behind:   ${status.behind}`,
+                    `changes:  ${files.length}`,
+                    `stashes:  ${stashes.length}`,
+                    "",
+                    "p pull · P push · F fetch all · ^P open PR",
+                    "1 status · 2 files · 3 branches · 4 remotes · 5 commits · 6 stashes",
+                ].join("\n"),
+            });
+        } else if (panel === "files") {
             if (filteredFiles.length === 0) {
                 setRight({ mode: "output", text: "" });
                 return;
@@ -212,6 +274,22 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         text: `remote: ${r.name}\nurl:    ${r.url}\n\npress enter to browse this remote's branches\npress f to fetch · n to add · r to rename · e to edit url · d to delete`,
                     });
             }
+        } else if (panel === "stashes") {
+            if (filteredStashes.length === 0) {
+                setRight({
+                    mode: "output",
+                    text: stashes.length === 0 ? "(no stashes)" : "no matches",
+                });
+                return;
+            }
+            const s = filteredStashes[Math.min(sel.stashes, filteredStashes.length - 1)];
+            if (s)
+                setRight({
+                    mode: "commit",
+                    rev: s.refname,
+                    title: s.refname,
+                    subtitle: s.message,
+                });
         }
     }, [
         panel,
@@ -219,13 +297,18 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         sel.commits,
         sel.branches,
         sel.remotes,
+        sel.stashes,
         remoteDrill,
         remoteBranchSel,
+        status,
+        files.length,
+        stashes.length,
         filteredFiles,
         filteredCommits,
         filteredBranches,
         filteredRemotes,
         filteredRemoteBranches,
+        filteredStashes,
         remotes.length,
         active,
     ]);
@@ -251,6 +334,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             }
             setBusy(null);
             void overview.refresh();
+            void stashesRes.refresh();
             return out;
         } catch (err) {
             const msg = String(err);
@@ -262,6 +346,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 errorTimerRef.current = undefined;
             }, 3500);
             void overview.refresh();
+            void stashesRes.refresh();
             return undefined;
         }
     }
@@ -347,6 +432,32 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         });
     };
 
+    const openBranchRenamePrompt = () => {
+        const b = filteredBranches[sel.branches];
+        if (!b) return;
+        openGitPrompt({
+            title: `Rename branch · ${b.name}`,
+            initial: b.name,
+            onConfirm: (name) => {
+                const n = name.trim();
+                if (!n || n === b.name) return;
+                void run(`renaming branch ${b.name} → ${n}`, async () => {
+                    await git.branchRename(repo, b.name, n);
+                    return `✓ ${b.name} → ${n}`;
+                });
+            },
+        });
+    };
+
+    const refreshRepoState = () => {
+        void overview.refresh();
+        void stashesRes.refresh();
+        if (panel === "remotes") {
+            void remotesRes.refresh();
+            if (remoteDrill) void remoteBranchesRes.refresh();
+        }
+    };
+
     // ---- per-panel menu builders (lazygit verbs surfaced as modals) ----
     const openFilesDiscardMenu = () => {
         const f = filteredFiles[sel.files];
@@ -426,6 +537,202 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         ]);
     };
 
+    const selectedStash = () => filteredStashes[sel.stashes];
+
+    const applySelectedStash = () => {
+        const s = selectedStash();
+        if (!s) return;
+        void run(`applying ${s.refname}`, async () => {
+            await git.stashApply(repo, s.index);
+            return `✓ applied ${s.refname}`;
+        });
+    };
+
+    const popSelectedStash = () => {
+        const s = selectedStash();
+        if (!s) return;
+        void run(`popping ${s.refname}`, async () => {
+            await git.stashPop(repo, s.index);
+            return `✓ popped ${s.refname}`;
+        });
+    };
+
+    const openStashBranchPrompt = () => {
+        const s = selectedStash();
+        if (!s) return;
+        openGitPrompt({
+            title: `Branch from ${s.refname}`,
+            placeholder: "branch name",
+            onConfirm: (name) => {
+                const n = name.trim();
+                if (!n) return;
+                void run(`branching from ${s.refname}`, async () => {
+                    await git.stashBranch(repo, s.index, n);
+                    return `✓ created ${n} from ${s.refname}`;
+                });
+            },
+        });
+    };
+
+    const openStashRenamePrompt = () => {
+        const s = selectedStash();
+        if (!s) return;
+        openGitPrompt({
+            title: `Rename ${s.refname}`,
+            initial: s.message,
+            onConfirm: (message) => {
+                const m = message.trim();
+                if (!m || m === s.message) return;
+                void run(`renaming ${s.refname}`, async () => {
+                    await git.stashRename(repo, s.index, m);
+                    return `✓ renamed ${s.refname}`;
+                });
+            },
+        });
+    };
+
+    const openStashDropConfirm = () => {
+        const s = selectedStash();
+        if (!s) return;
+        openGitConfirm({
+            title: `Drop ${s.refname}?`,
+            body: "This permanently deletes the stash entry.",
+            destructive: true,
+            confirmLabel: "drop",
+            onConfirm: () => {
+                void run(`dropping ${s.refname}`, async () => {
+                    await git.stashDrop(repo, s.index);
+                    return `✓ dropped ${s.refname}`;
+                });
+            },
+        });
+    };
+
+    const openStashRowMenu = () => {
+        const s = filteredStashes[sel.stashes];
+        if (!s) return;
+        const title = `${s.refname} · ${s.message}`;
+        openGitMenu(title, [
+            {
+                key: "a",
+                label: "apply stash",
+                hint: "keep stash",
+                run: applySelectedStash,
+            },
+            {
+                key: "p",
+                label: "pop stash",
+                hint: "apply + drop",
+                run: popSelectedStash,
+            },
+            {
+                key: "b",
+                label: "create branch from stash",
+                run: openStashBranchPrompt,
+            },
+            {
+                key: "r",
+                label: "rename stash",
+                run: openStashRenamePrompt,
+            },
+            {
+                key: "d",
+                label: "drop stash",
+                destructive: true,
+                run: openStashDropConfirm,
+            },
+        ]);
+    };
+
+    const selectedCommit = () => filteredCommits[sel.commits];
+
+    const openCommitBranchPrompt = () => {
+        const c = selectedCommit();
+        if (!c) return;
+        openGitPrompt({
+            title: `Branch from ${c.hash}`,
+            placeholder: "branch name",
+            onConfirm: (name) => {
+                const n = name.trim();
+                if (!n) return;
+                void run(`creating ${n} from ${c.hash}`, async () => {
+                    await git.branchCreate(repo, n, c.hash);
+                    return `✓ created + checked out ${n}\n  from ${c.hash}`;
+                });
+            },
+        });
+    };
+
+    const openCommitResetMenu = () => {
+        const c = selectedCommit();
+        if (!c) return;
+        const resetTo = (mode: "soft" | "mixed" | "hard") => () => {
+            openGitConfirm({
+                title: `${mode} reset to ${c.hash}?`,
+                body:
+                    mode === "soft"
+                        ? "Moves HEAD to this commit and keeps all later changes staged."
+                        : mode === "mixed"
+                          ? "Moves HEAD to this commit and keeps all later changes in the working tree."
+                          : "Moves HEAD to this commit and discards all later changes from the index and working tree.",
+                destructive: mode === "hard",
+                confirmLabel: `${mode} reset`,
+                onConfirm: async () => {
+                    await run(`reset --${mode} ${c.hash}`, async () => {
+                        await git.reset(repo, c.hash, mode);
+                        return `✓ reset --${mode} ${c.hash}`;
+                    });
+                },
+            });
+        };
+        openGitMenu(`Reset to ${c.hash}`, [
+            { key: "s", label: "soft reset", hint: "keep changes staged", run: resetTo("soft") },
+            { key: "m", label: "mixed reset", hint: "keep changes unstaged", run: resetTo("mixed") },
+            { key: "h", label: "hard reset", hint: "discard later changes", destructive: true, run: resetTo("hard") },
+        ]);
+    };
+
+    const openCommitRevertConfirm = () => {
+        const c = selectedCommit();
+        if (!c) return;
+        openGitConfirm({
+            title: `Revert ${c.hash}?`,
+            body: "Creates a new commit that reverses this commit. Existing history is preserved.",
+            confirmLabel: "revert",
+            onConfirm: async () => {
+                await run(`reverting ${c.hash}`, async () => {
+                    await git.revert(repo, c.hash);
+                    return `✓ reverted ${c.hash}`;
+                });
+            },
+        });
+    };
+
+    const openCommitRowMenu = () => {
+        const c = selectedCommit();
+        if (!c) return;
+
+        openGitMenu(`${c.hash} · ${c.subject}`, [
+            {
+                key: "b",
+                label: "create branch from commit",
+                run: openCommitBranchPrompt,
+            },
+            {
+                key: "r",
+                label: "reset to this commit",
+                hint: "choose soft / mixed / hard",
+                run: openCommitResetMenu,
+            },
+            {
+                key: "v",
+                label: "revert this commit",
+                hint: "new inverse commit",
+                run: openCommitRevertConfirm,
+            },
+        ]);
+    };
+
     const openBranchVerbsMenu = (mode: "merge" | "delete") => {
         const b = filteredBranches[sel.branches];
         if (!b) return;
@@ -440,7 +747,10 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     key: "s",
                     label: "squash merge",
                     run: () => {
-                        openGitMenu("not yet wired", [{ key: "esc", label: "squash merge backend pending", run: () => {} }]);
+                        void run(`squash merging ${b.name}…`, async () => {
+                            const out = await git.mergeSquash(repo, b.name);
+                            return `✓ squash merged ${b.name}${out ? `\n\n${out}` : ""}`;
+                        });
                     },
                 },
             ]);
@@ -453,7 +763,39 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     disabled: b.current,
                     hint: b.current ? "(can't delete current branch)" : undefined,
                     run: () => {
-                        openGitMenu("not yet wired", [{ key: "esc", label: "delete-branch backend pending", run: () => {} }]);
+                        openGitConfirm({
+                            title: `Delete ${b.name}?`,
+                            body: "Deletes the local branch only. Use force delete if Git refuses because the branch is not merged.",
+                            destructive: true,
+                            confirmLabel: "delete",
+                            onConfirm: async () => {
+                                await run(`deleting branch ${b.name}`, async () => {
+                                    await git.branchDelete(repo, b.name, false);
+                                    return `✓ deleted branch ${b.name}`;
+                                });
+                            },
+                        });
+                    },
+                },
+                {
+                    key: "D",
+                    label: "force delete local branch",
+                    destructive: true,
+                    disabled: b.current,
+                    hint: b.current ? "(can't delete current branch)" : "git branch -D",
+                    run: () => {
+                        openGitConfirm({
+                            title: `Force delete ${b.name}?`,
+                            body: "This deletes the local branch even if it has commits that are not merged anywhere else.",
+                            destructive: true,
+                            confirmLabel: "force delete",
+                            onConfirm: async () => {
+                                await run(`force deleting branch ${b.name}`, async () => {
+                                    await git.branchDelete(repo, b.name, true);
+                                    return `✓ force deleted branch ${b.name}`;
+                                });
+                            },
+                        });
                     },
                 },
             ]);
@@ -634,7 +976,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             {
                 title: "Global",
                 rows: [
-                    { keys: "tab / 2 / 3 / 4", label: "switch panel" },
+                    { keys: "tab / 1..6", label: "switch panel" },
                     { keys: "?", label: "open this cheatsheet" },
                     { keys: "@", label: "toggle command log" },
                     { keys: "/", label: "filter current panel" },
@@ -643,6 +985,15 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     { keys: "P / p", label: "push / pull" },
                     { keys: "^P", label: "open pull-request page" },
                     { keys: "esc", label: "close modal / clear filter or range" },
+                ],
+            },
+            {
+                title: "Status",
+                rows: [
+                    { keys: "enter / space", label: "jump to files" },
+                    { keys: "p / P", label: "pull / push" },
+                    { keys: "F", label: "fetch all remotes" },
+                    { keys: "^P", label: "open pull-request page" },
                 ],
             },
             {
@@ -663,6 +1014,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     { keys: "n / N", label: "new branch (from selected / from HEAD)" },
                     { keys: "M", label: "merge menu" },
                     { keys: "d", label: "delete menu" },
+                    { keys: "R", label: "rename branch" },
                     { keys: "c", label: "checkout by name" },
                 ],
             },
@@ -693,8 +1045,21 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             {
                 title: "Commits",
                 rows: [
-                    { keys: "enter", label: "show diff" },
-                    { keys: "milestone 4", label: "squash / fixup / reword / drop / move / cherry-pick" },
+                    { keys: "enter / space", label: "actions menu" },
+                    { keys: "b", label: "create branch from commit" },
+                    { keys: "r", label: "reset to commit menu" },
+                    { keys: "v", label: "revert commit" },
+                ],
+            },
+            {
+                title: "Stashes",
+                rows: [
+                    { keys: "enter", label: "actions menu" },
+                    { keys: "space / a", label: "apply stash" },
+                    { keys: "p", label: "pop stash" },
+                    { keys: "b", label: "branch from stash" },
+                    { keys: "r", label: "rename stash" },
+                    { keys: "d", label: "drop stash" },
                 ],
             },
         ]);
@@ -737,6 +1102,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             if (k === "?") openHelpCheatsheet();
             else if (k === "@") toggleGitCmdLog();
             else if (k === "/") setSearchOpen(true);
+            else if (k === "v" && panel === "commits") openCommitRevertConfirm();
             else if (k === "v") {
                 // Toggle range anchor on current panel.
                 setRangeByPanel((s) => ({
@@ -753,25 +1119,29 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 } else if (panel === "remotes" && remoteDrill) {
                     setRemoteDrill(null);
                 } else handled = false;
-            } else if (k === "2") setPanel("files");
+            } else if (k === "1") setPanel("status");
+            else if (k === "2") setPanel("files");
             else if (k === "3") setPanel("branches");
             else if (k === "4") setPanel("remotes");
             else if (k === "5") setPanel("commits");
-            else if (k === "Tab")
-                setPanel(panel === "files" ? "branches" : panel === "branches" ? "remotes" : panel === "remotes" ? "commits" : "files");
+            else if (k === "6") setPanel("stashes");
+            else if (k === "Tab") {
+                const i = GIT_PANEL_ORDER.indexOf(panel);
+                setPanel(GIT_PANEL_ORDER[(i + 1) % GIT_PANEL_ORDER.length]);
+            }
             else if (k === "j" || k === "ArrowDown") moveSel(1);
             else if (k === "k" || k === "ArrowUp") moveSel(-1);
             else if (k === "r") {
-                // `r` is global refresh (overview); on the remotes panel, also
-                // refresh the remote-specific cache the user is staring at.
-                void overview.refresh();
-                if (panel === "remotes") {
-                    void remotesRes.refresh();
-                    if (remoteDrill) void remoteBranchesRes.refresh();
-                }
+                if (panel === "stashes") openStashRenamePrompt();
+                else if (panel === "commits") openCommitResetMenu();
+                else if (panel === "remotes" && !remoteDrill) openRemoteRowMenu();
+                else refreshRepoState();
             } else if (k === "F") doFetch(null);
             else if (k === "P") void run("pushing…", async () => `↑ ${await git.push(repo)}`);
+            else if (k === "p" && panel === "stashes") popSelectedStash();
             else if (k === "p") void run("pulling…", async () => `↓ ${await git.pull(repo)}`);
+            // ----- status -----
+            else if (panel === "status" && (k === "Enter" || k === " ")) setPanel("files");
             // ----- files -----
             else if (panel === "files" && k === " ") toggleStage();
             else if (panel === "files" && k === "a") {
@@ -796,6 +1166,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 openBranchVerbsMenu("merge");
             } else if (panel === "branches" && k === "d") {
                 openBranchVerbsMenu("delete");
+            } else if (panel === "branches" && k === "R") {
+                openBranchRenamePrompt();
             } else if (panel === "branches" && k === "c") {
                 // Lazygit `c` on branches = "checkout by name" prompt.
                 openGitPrompt({
@@ -858,6 +1230,26 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 openRemoteBranchMenu();
             } else if (panel === "remotes" && remoteDrill && k === "f") {
                 doFetch(remoteDrill);
+            }
+            // ----- commits -----
+            else if (panel === "commits" && (k === "Enter" || k === " ")) {
+                openCommitRowMenu();
+            } else if (panel === "commits" && k === "b") {
+                openCommitBranchPrompt();
+            } else if (panel === "commits" && k === "v") {
+                openCommitRevertConfirm();
+            }
+            // ----- stashes -----
+            else if (panel === "stashes" && k === "Enter") {
+                openStashRowMenu();
+            } else if (panel === "stashes" && (k === " " || k === "a")) {
+                applySelectedStash();
+            } else if (panel === "stashes" && k === "p") {
+                popSelectedStash();
+            } else if (panel === "stashes" && k === "b") {
+                openStashBranchPrompt();
+            } else if (panel === "stashes" && k === "d") {
+                openStashDropConfirm();
             } else handled = false;
             if (handled) {
                 e.preventDefault();
@@ -868,11 +1260,17 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         return () => window.removeEventListener("keydown", onKey, true);
     });
 
+    const panelStatus = panel === "status";
     const panelFiles = panel === "files";
     const filesRange = rangeFor("files");
     const branchesRange = rangeFor("branches");
     const remotesRange = rangeFor("remotes");
     const commitsRange = rangeFor("commits");
+    const stashesRange = rangeFor("stashes");
+    const stagedCount = filteredFiles.filter(isStaged).length;
+    const unstagedCount = filteredFiles.filter(hasUnstaged).length;
+    const upstreamLabel = status?.upstream ?? "no upstream";
+    const trackLabel = status && (status.ahead > 0 || status.behind > 0) ? `↑${status.ahead} ↓${status.behind}` : "in sync";
 
     return (
         <div className="git-pane">
@@ -944,13 +1342,12 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 )}
 
                 <GitPanelBlock
-                    n={2}
-                    label="Files"
-                    focused={panel === "files"}
-                    onFocus={() => setPanel("files")}
-                    flex={2}
-                    rangeBadge={filesRange ? `range ${filesRange[1] - filesRange[0] + 1}` : null}
-                    filterBadge={searchByPanel.files || null}
+                    n={1}
+                    label="Status"
+                    focused={panel === "status"}
+                    onFocus={() => setPanel("status")}
+                    flex={0.7}
+                    filterBadge={searchByPanel.status || null}
                     extra={
                         busy && (
                             <span className={`git-panel-busy${busy.startsWith("✗") ? " error" : ""}`}>
@@ -959,6 +1356,41 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                             </span>
                         )
                     }>
+                    <div
+                        className={`git-row${panelStatus ? " sel" : ""}`}
+                        onClick={() => {
+                            setPanel("status");
+                            setSel({ ...sel, status: 0 });
+                        }}
+                        onDoubleClick={() => setPanel("files")}>
+                        <span className={`gb-dot${files.length > 0 ? " remote" : " cur"}`} />
+                        <span className="git-path">{status?.branch || "(loading)"}</span>
+                        <span className="git-row-hint">{trackLabel}</span>
+                    </div>
+                    <div className="git-row muted">
+                        <span className="gc-hash">up</span>
+                        <span className="git-path">{upstreamLabel}</span>
+                    </div>
+                    <div className="git-row muted">
+                        <span className="gc-hash">wt</span>
+                        <span className="git-path">
+                            {files.length === 0 ? "clean tree" : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`}
+                        </span>
+                    </div>
+                    <div className="git-row muted">
+                        <span className="gc-hash">st</span>
+                        <span className="git-path">{stashes.length === 1 ? "1 stash" : `${stashes.length} stashes`}</span>
+                    </div>
+                </GitPanelBlock>
+
+                <GitPanelBlock
+                    n={2}
+                    label="Files"
+                    focused={panel === "files"}
+                    onFocus={() => setPanel("files")}
+                    flex={2}
+                    rangeBadge={filesRange ? `range ${filesRange[1] - filesRange[0] + 1}` : null}
+                    filterBadge={searchByPanel.files || null}>
                     {filteredFiles.length === 0 && <div className="git-empty">{fileQuery ? "no matches" : "clean tree"}</div>}
                     {filteredFiles.map((f, i) => {
                         const inRange = filesRange !== null && i >= filesRange[0] && i <= filesRange[1];
@@ -1097,19 +1529,48 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     flex={1}
                     rangeBadge={commitsRange ? `range ${commitsRange[1] - commitsRange[0] + 1}` : null}
                     filterBadge={searchByPanel.commits || null}>
-                    {filteredCommits.map((c, i) => {
-                        const inRange = commitsRange !== null && i >= commitsRange[0] && i <= commitsRange[1];
+                    {filteredCommits.length === 0 ? (
+                        <div className="git-empty">{commitQuery ? "no matches" : "no commits"}</div>
+                    ) : (
+                        <GitGraph
+                            commits={filteredCommits}
+                            selectedIndex={Math.min(sel.commits, filteredCommits.length - 1)}
+                            focused={panel === "commits"}
+                            range={commitsRange}
+                            onSelect={(i) => {
+                                setPanel("commits");
+                                setSel({ ...sel, commits: i });
+                            }}
+                            onActivate={openCommitRowMenu}
+                        />
+                    )}
+                </GitPanelBlock>
+
+                <GitPanelBlock
+                    n={6}
+                    label="Stashes"
+                    focused={panel === "stashes"}
+                    onFocus={() => setPanel("stashes")}
+                    flex={1}
+                    rangeBadge={stashesRange ? `range ${stashesRange[1] - stashesRange[0] + 1}` : null}
+                    filterBadge={searchByPanel.stashes || null}>
+                    {filteredStashes.length === 0 && (
+                        <div className="git-empty">{stashesRes.status === "loading" ? "loading…" : stashQuery ? "no matches" : "no stashes"}</div>
+                    )}
+                    {filteredStashes.map((s, i) => {
+                        const inRange = stashesRange !== null && i >= stashesRange[0] && i <= stashesRange[1];
                         return (
                             <div
-                                key={c.hash}
-                                className={`git-row${panel === "commits" && sel.commits === i ? " sel" : ""}${inRange ? " ranged" : ""}`}
+                                key={s.refname}
+                                className={`git-row${panel === "stashes" && sel.stashes === i ? " sel" : ""}${inRange ? " ranged" : ""}`}
                                 onClick={() => {
-                                    setPanel("commits");
-                                    setSel({ ...sel, commits: i });
-                                }}>
-                                <span className="gc-hash">{c.hash}</span>
-                                <span className="git-path">{c.subject}</span>
-                                <span className="gc-date">{c.date}</span>
+                                    setPanel("stashes");
+                                    setSel({ ...sel, stashes: i });
+                                }}
+                                onDoubleClick={openStashRowMenu}>
+                                <span className="gc-hash">{s.refname}</span>
+                                <span className="git-path">{s.message}</span>
+                                {s.branch && <span className="git-row-hint">{s.branch}</span>}
                             </div>
                         );
                     })}

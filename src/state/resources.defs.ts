@@ -20,6 +20,7 @@ import {
   type GitRemote,
   type GitRemoteBranch,
   type GitStatus,
+  type GitStash,
 } from "../api/git";
 import {
   rundeckApi,
@@ -67,6 +68,12 @@ export const gitRemoteBranchesR = resource({
   kind: "git.remoteBranches",
   fetch: (repo: string, remote: string): Promise<GitRemoteBranch[]> =>
     git.remoteBranches(repo, remote),
+  staleAfterMs: 30_000,
+});
+
+export const gitStashesR = resource({
+  kind: "git.stashes",
+  fetch: (repo: string): Promise<GitStash[]> => git.stashList(repo),
   staleAfterMs: 30_000,
 });
 

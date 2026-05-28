@@ -1191,8 +1191,10 @@ export function setGitView(paneId: string, patch: Partial<StoreState["gitViews"]
     mutate((d) => {
         const cur: StoreState["gitViews"][string] = (d.gitViews[paneId] ??
             ({
-                panel: "files" as GitPanel,
-                selected: { files: 0, branches: 0, commits: 0 },
+                panel: "status" as GitPanel,
+                selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
+                remoteDrill: null,
+                remoteBranchSelected: {},
             } as unknown as StoreState["gitViews"][string])) as StoreState["gitViews"][string];
         d.gitViews[paneId] = { ...cur, ...patch };
     });

@@ -1,6 +1,7 @@
 import { type RundeckStatus } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { getState, useStore } from "../../state/store";
+import type { RundeckLevel } from "../../state/types";
 import { IconChevron } from "../Icons";
 
 interface Props {
@@ -16,36 +17,7 @@ export function RundeckBreadcrumb({ paneId, status }: Props) {
     const activeEnvFolder = useStore((s) => s.rundeck.activeEnvFolder);
     const stack = view?.stack ?? [{ kind: "matrix" as const }];
 
-    const matrixLabel = activeEnvFolder ? `${activeProject} · ${activeEnvFolder}` : activeProject || "deployments";
-
-    const labels = stack.map((lvl, i) => {
-        switch (lvl.kind) {
-            case "matrix":
-                return {
-                    i,
-                    label: matrixLabel,
-                    onClick: () => cmd.rundeckHome(paneId),
-                };
-            case "service":
-                return {
-                    i,
-                    label: `${lvl.env} · ${lvl.service}`,
-                    onClick: () => popTo(paneId, i),
-                };
-            case "deploy":
-                return {
-                    i,
-                    label: `deploy ${lvl.service} → ${lvl.env}`,
-                    onClick: () => popTo(paneId, i),
-                };
-            case "execution":
-                return {
-                    i,
-                    label: `#${lvl.executionId} · ${lvl.service}`,
-                    onClick: () => popTo(paneId, i),
-                };
-        }
-    });
+    const labels = breadcrumbLabels(paneId, stack, activeProject, activeEnvFolder);
 
     return (
         <div className="rnd-bar">
@@ -56,7 +28,7 @@ export function RundeckBreadcrumb({ paneId, status }: Props) {
             </button>
             <div className="rnd-bar-trail">
                 {labels.map((l, idx) => (
-                    <span key={l.i} className="rnd-crumb-row">
+                    <span key={l.key} className="rnd-crumb-row">
                         {idx > 0 && (
                             <span className="rnd-crumb-sep">
                                 <IconChevron size={9} />
@@ -88,6 +60,64 @@ function popTo(paneId: string, index: number) {
         if (!v || v.stack.length - 1 <= index) break;
         cmd.rundeckPop(paneId);
     }
+}
+
+interface Crumb {
+    key: string;
+    label: string;
+    onClick: () => void;
+}
+
+function breadcrumbLabels(
+    paneId: string,
+    stack: RundeckLevel[],
+    activeProject: string,
+    activeEnvFolder: string | null,
+): Crumb[] {
+    const top = stack[stack.length - 1];
+    if (!top || top.kind === "matrix") {
+        return projectCrumbs(paneId, activeProject, activeEnvFolder);
+    }
+
+    if (top.kind === "service" || top.kind === "deploy") {
+        return [
+            ...projectCrumbs(paneId, top.project, top.env),
+            ...serviceCrumbs(paneId, stack.length - 1, top.service, top.env),
+        ];
+    }
+
+    return [
+        ...projectCrumbs(paneId, top.project, activeEnvFolder),
+        ...serviceCrumbs(paneId, stack.length - 1, top.service, activeEnvFolder ?? undefined),
+        {
+            key: `execution-${top.executionId}`,
+            label: `#${top.executionId}`,
+            onClick: () => popTo(paneId, stack.length - 1),
+        },
+    ];
+}
+
+function projectCrumbs(paneId: string, project: string, env: string | null | undefined): Crumb[] {
+    if (!project) {
+        return [{ key: "deployments", label: "deployments", onClick: () => cmd.rundeckHome(paneId) }];
+    }
+    return [
+        { key: `project-${project}`, label: project, onClick: () => cmd.rundeckHome(paneId) },
+        ...(env ? [{ key: `env-${env}`, label: env, onClick: () => cmd.rundeckHome(paneId) }] : []),
+    ];
+}
+
+function serviceCrumbs(paneId: string, stackIndex: number, service: string, env?: string | null): Crumb[] {
+    const parts = service
+        .split("/")
+        .map((p) => p.trim())
+        .filter(Boolean);
+    const normalized = env && parts[0] === env ? parts.slice(1) : parts;
+    return normalized.map((label, i) => ({
+        key: `svc-${stackIndex}-${i}-${label}`,
+        label,
+        onClick: () => popTo(paneId, stackIndex),
+    }));
 }
 
 function hostFromUrl(url: string): string {

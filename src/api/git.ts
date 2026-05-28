@@ -22,9 +22,13 @@ export interface GitBranch {
 
 export interface GitCommit {
     hash: string;
+    full_hash: string;
+    parents: string[];
     author: string;
+    author_email: string;
     date: string;
     subject: string;
+    refs: string[];
 }
 
 export interface GitOverview {
@@ -83,7 +87,12 @@ export const git = {
             name,
             startPoint: startPoint ?? null,
         }),
+    branchDelete: (repo: string, name: string, force: boolean) => invoke<void>("git_branch_delete", { repo, name, force }),
+    branchRename: (repo: string, oldName: string, newName: string) => invoke<void>("git_branch_rename", { repo, oldName, newName }),
     merge: (repo: string, branch: string) => invoke<string>("git_merge", { repo, branch }),
+    mergeSquash: (repo: string, branch: string) => invoke<string>("git_merge_squash", { repo, branch }),
+    reset: (repo: string, rev: string, mode: "soft" | "mixed" | "hard") => invoke<void>("git_reset", { repo, rev, mode }),
+    revert: (repo: string, rev: string) => invoke<void>("git_revert", { repo, rev }),
     log: (repo: string) => invoke<GitCommit[]>("git_log", { repo }),
     show: (repo: string, rev: string) => invoke<string>("git_show", { repo, rev }),
     fileAt: async (repo: string, rev: string, path: string): Promise<string> => {

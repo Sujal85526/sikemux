@@ -81,10 +81,20 @@ pub struct GitBranch {
 
 #[derive(Serialize, Clone)]
 pub struct GitCommit {
+    /// Short, human-facing id (`8b075bd`).
     hash: String,
+    /// Full oid — used by the frontend graph to match parents/children.
+    full_hash: String,
+    /// Full oids of this commit's parents (>1 == a merge).
+    parents: Vec<String>,
     author: String,
+    /// Stable key for the author colour chip (initials avatar).
+    author_email: String,
     date: String,
     subject: String,
+    /// Ref decorations pointing at this commit: `HEAD`, local branches,
+    /// `origin/main`, `tag: v0.1.11`. Rendered as lazygit-style badges.
+    refs: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -292,14 +302,57 @@ fn relative_time(secs: i64) -> String {
     format!("{}y ago", d / (86400 * 365))
 }
 
+/// Map commit oid (full hex) → ref decorations (`HEAD`, local branches,
+/// remote branches, tags). Built once per log read so the graph timeline
+/// can render lazygit-style ref badges without N extra git calls.
+fn build_ref_map(repo: &Repository) -> std::collections::HashMap<String, Vec<String>> {
+    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    // HEAD first so it renders leftmost on its commit.
+    if let Ok(head) = repo.head() {
+        if let Some(oid) = head.target() {
+            map.entry(oid.to_string())
+                .or_default()
+                .push("HEAD".to_string());
+        }
+    }
+    if let Ok(refs) = repo.references() {
+        for r in refs.flatten() {
+            let name = match r.shorthand() {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            // `HEAD` is handled above; `origin/HEAD` & friends are symbolic
+            // pointers, not real branches — skip the noise.
+            if name == "HEAD" || name.ends_with("/HEAD") {
+                continue;
+            }
+            // peel_to_commit resolves annotated tags down to their commit.
+            let oid = match r.peel_to_commit() {
+                Ok(c) => c.id(),
+                Err(_) => continue,
+            };
+            let label = if r.is_tag() {
+                format!("tag: {name}")
+            } else {
+                name
+            };
+            map.entry(oid.to_string()).or_default().push(label);
+        }
+    }
+    map
+}
+
 fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
     let mut revwalk = repo.revwalk().map_err(|e| e.message().to_string())?;
     if revwalk.push_head().is_err() {
         return Ok(Vec::new());
     }
+    // Topological + time keeps first-parent chains contiguous so the graph
+    // lanes read cleanly, while still showing newest commits first.
     revwalk
-        .set_sorting(git2::Sort::NONE)
+        .set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
         .map_err(|e| e.message().to_string())?;
+    let ref_map = build_ref_map(repo);
     let mut out = Vec::with_capacity(limit);
     for (i, oid) in revwalk.enumerate() {
         if i >= limit {
@@ -319,11 +372,17 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             .ok()
             .and_then(|b| b.as_str().map(String::from))
             .unwrap_or_else(|| oid.to_string()[..7].to_string());
+        let full = oid.to_string();
+        let refs = ref_map.get(&full).cloned().unwrap_or_default();
         out.push(GitCommit {
             hash: short,
+            full_hash: full,
+            parents: commit.parent_ids().map(|p| p.to_string()).collect(),
             author: commit.author().name().unwrap_or("").to_string(),
+            author_email: commit.author().email().unwrap_or("").to_string(),
             date: relative_time(commit.time().seconds()),
             subject: commit.summary().unwrap_or("").to_string(),
+            refs,
         });
     }
     Ok(out)
@@ -375,6 +434,30 @@ pub async fn git_branch_create(
     git_ok(&repo, &args).map(|_| ())
 }
 
+#[tauri::command]
+pub async fn git_branch_delete(repo: String, name: String, force: bool) -> Result<(), String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("branch name is empty".into());
+    }
+    let flag = if force { "-D" } else { "-d" };
+    git_ok(&repo, &["branch", flag, trimmed]).map(|_| ())
+}
+
+#[tauri::command]
+pub async fn git_branch_rename(
+    repo: String,
+    old_name: String,
+    new_name: String,
+) -> Result<(), String> {
+    let old_trimmed = old_name.trim();
+    let new_trimmed = new_name.trim();
+    if old_trimmed.is_empty() || new_trimmed.is_empty() {
+        return Err("branch name is empty".into());
+    }
+    git_ok(&repo, &["branch", "-m", old_trimmed, new_trimmed]).map(|_| ())
+}
+
 /// Merge `branch` into the current HEAD with a merge commit (--no-ff so the
 /// branch topology stays visible — common lazygit / Tower convention).
 /// Returns the merge command output; conflict text comes back as the Err
@@ -386,6 +469,39 @@ pub async fn git_merge(repo: String, branch: String) -> Result<String, String> {
         return Err("branch name is empty".into());
     }
     git_ok(&repo, &["merge", "--no-ff", trimmed])
+}
+
+#[tauri::command]
+pub async fn git_merge_squash(repo: String, branch: String) -> Result<String, String> {
+    let trimmed = branch.trim();
+    if trimmed.is_empty() {
+        return Err("branch name is empty".into());
+    }
+    git_ok(&repo, &["merge", "--squash", trimmed])
+}
+
+#[tauri::command]
+pub async fn git_reset(repo: String, rev: String, mode: String) -> Result<(), String> {
+    let trimmed = rev.trim();
+    if trimmed.is_empty() {
+        return Err("revision is empty".into());
+    }
+    let flag = match mode.as_str() {
+        "soft" => "--soft",
+        "mixed" => "--mixed",
+        "hard" => "--hard",
+        other => return Err(format!("unknown reset mode: {other}")),
+    };
+    git_ok(&repo, &["reset", flag, trimmed]).map(|_| ())
+}
+
+#[tauri::command]
+pub async fn git_revert(repo: String, rev: String) -> Result<(), String> {
+    let trimmed = rev.trim();
+    if trimmed.is_empty() {
+        return Err("revision is empty".into());
+    }
+    git_ok(&repo, &["revert", "--no-edit", trimmed]).map(|_| ())
 }
 
 // ---- diff -----------------------------------------------------------------

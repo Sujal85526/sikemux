@@ -70,7 +70,7 @@ function AwsChip() {
 
     return (
         <button className="tb-aws-chip" onClick={onClick} title="AWS">
-            <IconAws size={14} />
+            <IconAws size={24} />
             <span className="tb-aws-label">{profile ? profile.slice(0, 18) : "aws"}</span>
             <span className={`tb-aws-dot ${dotClass}`} />
         </button>

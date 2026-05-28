@@ -14,7 +14,7 @@ export interface EditorPaneView {
   treeWidth: number;
 }
 
-export type GitPanel = "files" | "branches" | "remotes" | "commits";
+export type GitPanel = "status" | "files" | "branches" | "remotes" | "commits" | "stashes";
 
 export interface GitPaneView {
   panel: GitPanel;
