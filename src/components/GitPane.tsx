@@ -10,7 +10,7 @@ import { reportError } from "../state/toast";
 import type { GitPanel } from "../state/types";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
-import { IconCommit, IconFetch, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
+import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitGraph } from "./git/GitGraph";
@@ -1262,7 +1262,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         <div className="git-pane">
             <div className="git-toolbar">
                     <span className="git-tb-status">
-                        <span className={`gb-dot${files.length > 0 ? " remote" : " cur"}`} />
+                        <IconGit size={13} className={`git-tb-icon${files.length > 0 ? " dirty" : ""}`} />
                         <span className="git-tb-branch" title={`upstream: ${upstreamLabel}`}>
                             {currentBranch || status?.branch || "—"}
                         </span>

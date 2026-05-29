@@ -1701,8 +1701,9 @@ button {
     gap: 6px;
     flex: 0 0 auto;
     width: 100%;
-    /* taller bar so the quick actions have real presence (was cramped) */
-    height: 38px;
+    /* match the agents rail header (.agent-header, 40px) so the two top
+       rows divide at the same line */
+    height: 41px;
     padding: 0 10px;
     border-bottom: 1px solid var(--line);
     /* opacity-aware fill so window translucency shows through (matches the
@@ -1716,6 +1717,13 @@ button {
     gap: 8px;
     min-width: 0;
     overflow: hidden;
+}
+.git-tb-icon {
+    flex: none;
+    color: var(--live);
+}
+.git-tb-icon.dirty {
+    color: var(--warn);
 }
 .git-tb-branch {
     color: var(--acc);
@@ -1883,7 +1891,9 @@ button {
     display: flex;
     align-items: center;
     gap: 7px;
-    height: 26px;
+    /* match the right pane's .merge-header (29px) so the left commit-panel
+       header and the right diff header divide at the same line */
+    height: 29px;
     flex: 0 0 auto;
     padding: 0 9px;
     border-bottom: 1px solid var(--line);
