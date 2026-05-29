@@ -230,7 +230,7 @@ pub async fn pty_spawn(
     cwd: Option<String>,
     startup: Option<String>,
 ) -> AppResult<u32> {
-    ensure_sweeper(app);
+    ensure_sweeper(app.clone());
     // Has to be `async fn` so the body runs inside Tauri's tokio
     // runtime — both `AsyncFd::new` and `tokio::spawn` below panic
     // ("no reactor running") when called from a sync Tauri command.
@@ -329,6 +329,7 @@ pub async fn pty_spawn(
     // without explicit unsub) are GC'd on send error so the map stays
     // bounded.
     let pty_reader = pty.clone();
+    let app_reader = app.clone();
     let mut startup_pending = startup.filter(|s| !s.is_empty());
     tokio::spawn(async move {
         let mut buf = [0u8; 65536];
@@ -394,6 +395,13 @@ pub async fn pty_spawn(
             for ch in subs.values() {
                 let _ = ch.send(Vec::new());
             }
+        }
+        // If the shell exits by itself, there is no frontend unmount to call
+        // `pty_kill`. Remove the manager entry here so the retained master,
+        // reader, and writer fds are released instead of accumulating until
+        // the app hits macOS' GUI maxfiles limit.
+        if let Some(mgr) = app_reader.try_state::<PtyManager>() {
+            mgr.ptys.remove(&id);
         }
     });
 

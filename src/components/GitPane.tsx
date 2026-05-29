@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { git, hasUnstaged, isStaged } from "../api/git";
+import { git, hasUnstaged, isStaged, type GitFile } from "../api/git";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, runGitCmd, toggleGitCmdLog } from "../state/git";
 import { useResourceEnabled } from "../state/resources";
 import { gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { reportError } from "../state/toast";
+import { errMessage, reportError } from "../state/toast";
 import type { GitPanel } from "../state/types";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
@@ -19,7 +19,7 @@ import { GitModalRenderer } from "./git/GitModalRenderer";
 const basenameOf = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 type RightView =
-    | { mode: "merge"; path: string }
+    | { mode: "merge"; file: GitFile }
     | { mode: "commit"; rev: string; title: string; subtitle: string }
     | { mode: "output"; text: string };
 
@@ -88,6 +88,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     // Only fetch remote branches when we've actually drilled into a
     // remote — keeps cold-start cost off until the user asks for it.
     const remoteBranchesRes = useResourceEnabled(active && !!repo && !!remoteDrill, gitRemoteBranchesR, repo || "", remoteDrill ?? "");
+    const overviewLoading = !!repo && overview.status === "loading" && !overview.data;
+    const overviewError = !!repo && overview.status === "error" && !overview.data ? (overview.error ?? "failed to load git state") : null;
     const status = repo ? (overview.data?.status ?? null) : null;
     const branches = repo ? (overview.data?.branches ?? []) : [];
     const commits = repo ? (overview.data?.log ?? []) : [];
@@ -95,7 +97,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const remotes = repo ? (remotesRes.data ?? []) : [];
     const stashes = repo ? (stashesRes.data ?? []) : [];
     const remoteBranches = repo && remoteDrill ? (remoteBranchesRes.data ?? []) : [];
-    const currentBranch = branches.find((b) => b.current)?.name ?? "";
+    const currentBranch = branches.find((b) => b.current)?.name ?? status?.branch ?? "";
 
     const [right, setRight] = useState<RightView>({ mode: "output", text: "" });
     const [busy, setBusy] = useState<string | null>(null);
@@ -234,6 +236,14 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     // ---- load the right pane for the selected row ----
     useEffect(() => {
         if (!active) return;
+        if (overviewLoading) {
+            setRight({ mode: "output", text: "loading git state..." });
+            return;
+        }
+        if (overviewError) {
+            setRight({ mode: "output", text: `x ${overviewError}` });
+            return;
+        }
         if (panel === "files") {
             if (filteredFiles.length === 0) {
                 // Clean tree (or filtered to nothing) — instead of a blank
@@ -245,7 +255,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 return;
             }
             const f = filteredFiles[Math.min(sel.files, filteredFiles.length - 1)];
-            if (f) setRight({ mode: "merge", path: f.path });
+            if (f) setRight({ mode: "merge", file: f });
         } else if (panel === "commits") {
             if (filteredCommits.length === 0) return;
             const c = filteredCommits[Math.min(sel.commits, filteredCommits.length - 1)];
@@ -336,6 +346,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         filteredRemoteBranches,
         filteredStashes,
         remotes.length,
+        overviewLoading,
+        overviewError,
         active,
     ]);
 
@@ -359,11 +371,11 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 setRight({ mode: "output", text: out });
             }
             setBusy(null);
-            void overview.refresh();
-            void stashesRes.refresh();
+            void overview.refresh().catch(reportError("git refresh"));
+            void stashesRes.refresh().catch(reportError("stash refresh"));
             return out;
         } catch (err) {
-            const msg = String(err);
+            const msg = errMessage(err);
             setRight({ mode: "output", text: `✗ ${msg}` });
             reportError(label || "git")(err);
             setBusy(`✗ ${msg.length > 80 ? msg.slice(0, 80) + "…" : msg}`);
@@ -371,8 +383,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 setBusy(null);
                 errorTimerRef.current = undefined;
             }, 3500);
-            void overview.refresh();
-            void stashesRes.refresh();
+            void overview.refresh().catch(reportError("git refresh"));
+            void stashesRes.refresh().catch(reportError("stash refresh"));
             return undefined;
         }
     }
@@ -490,11 +502,11 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     };
 
     const refreshRepoState = () => {
-        void overview.refresh();
-        void stashesRes.refresh();
+        void overview.refresh().catch(reportError("git refresh"));
+        void stashesRes.refresh().catch(reportError("stash refresh"));
         if (panel === "remotes") {
-            void remotesRes.refresh();
-            if (remoteDrill) void remoteBranchesRes.refresh();
+            void remotesRes.refresh().catch(reportError("remote refresh"));
+            if (remoteDrill) void remoteBranchesRes.refresh().catch(reportError("remote branch refresh"));
         }
     };
 
@@ -852,8 +864,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             return out.trim().length > 0 ? out : `✓ fetched ${remote ?? "all"}`;
         });
         // Branches data depends on remote tip — bounce the matching cache.
-        void remotesRes.refresh();
-        if (remoteDrill) void remoteBranchesRes.refresh();
+        void remotesRes.refresh().catch(reportError("remote refresh"));
+        if (remoteDrill) void remoteBranchesRes.refresh().catch(reportError("remote branch refresh"));
     };
 
     const openAddRemotePrompt = () => {
@@ -1306,18 +1318,27 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const stagedCount = filteredFiles.filter(isStaged).length;
     const unstagedCount = filteredFiles.filter(hasUnstaged).length;
     const upstreamLabel = status?.upstream ?? "no upstream";
+    const toolbarBranchText = overviewLoading ? "loading" : overviewError ? "git error" : currentBranch || status?.branch || "—";
+    const changedText = overviewLoading
+        ? "loading repo..."
+        : overviewError
+          ? `x ${overviewError}`
+          : files.length === 0
+            ? "clean"
+            : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`;
+    const fileEmptyText = overviewLoading ? "loading repo..." : overviewError ? `x ${overviewError}` : fileQuery ? "no matches" : "clean tree";
+    const branchEmptyText = overviewLoading ? "loading repo..." : overviewError ? `x ${overviewError}` : branchQuery ? "no matches" : "no branches";
+    const commitEmptyText = overviewLoading ? "loading repo..." : overviewError ? `x ${overviewError}` : commitQuery ? "no matches" : "no commits";
 
     return (
         <div className="git-pane">
             <div className="git-toolbar">
                     <span className="git-tb-status">
                         <IconGit size={13} className={`git-tb-icon${files.length > 0 ? " dirty" : ""}`} />
-                        <span className="git-tb-branch" title={`upstream: ${upstreamLabel}`}>
-                            {currentBranch || status?.branch || "—"}
+                        <span className="git-tb-branch" title={overviewError ?? `upstream: ${upstreamLabel}`}>
+                            {toolbarBranchText}
                         </span>
-                        <span className="git-tb-changed">
-                            {files.length === 0 ? "clean" : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`}
-                        </span>
+                        <span className={`git-tb-changed${overviewError ? " error" : ""}`}>{changedText}</span>
                         {stashes.length > 0 && (
                             <span className="git-tb-stash">{stashes.length === 1 ? "1 stash" : `${stashes.length} stashes`}</span>
                         )}
@@ -1501,7 +1522,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     ]}
                     rangeBadge={filesRange ? `range ${filesRange[1] - filesRange[0] + 1}` : null}
                     filterBadge={searchByPanel.files || null}>
-                    {filteredFiles.length === 0 && <div className="git-empty">{fileQuery ? "no matches" : "clean tree"}</div>}
+                    {filteredFiles.length === 0 && <div className={`git-empty${overviewError ? " error" : ""}`}>{fileEmptyText}</div>}
                     {filteredFiles.map((f, i) => {
                         const inRange = filesRange !== null && i >= filesRange[0] && i <= filesRange[1];
                         return (
@@ -1540,6 +1561,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     ]}
                     rangeBadge={branchesRange ? `range ${branchesRange[1] - branchesRange[0] + 1}` : null}
                     filterBadge={searchByPanel.branches || null}>
+                    {filteredBranches.length === 0 && <div className={`git-empty${overviewError ? " error" : ""}`}>{branchEmptyText}</div>}
                     {filteredBranches.map((b, i) => {
                         const inRange = branchesRange !== null && i >= branchesRange[0] && i <= branchesRange[1];
                         return (
@@ -1577,7 +1599,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     rangeBadge={commitsRange ? `range ${commitsRange[1] - commitsRange[0] + 1}` : null}
                     filterBadge={searchByPanel.commits || null}>
                     {filteredCommits.length === 0 ? (
-                        <div className="git-empty">{commitQuery ? "no matches" : "no commits"}</div>
+                        <div className={`git-empty${overviewError ? " error" : ""}`}>{commitEmptyText}</div>
                     ) : (
                         <GitGraph
                             commits={filteredCommits}
@@ -1619,8 +1641,10 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                 <span className="git-row-hint">esc to go back</span>
                             </button>
                             {filteredRemoteBranches.length === 0 && (
-                                <div className="git-empty">
-                                    {remoteBranchesRes.status === "loading"
+                                <div className={`git-empty${remoteBranchesRes.status === "error" && !remoteBranchesRes.data ? " error" : ""}`}>
+                                    {remoteBranchesRes.status === "error" && !remoteBranchesRes.data
+                                        ? `x ${remoteBranchesRes.error ?? "failed to load remote branches"}`
+                                        : remoteBranchesRes.status === "loading"
                                         ? "loading…"
                                         : remotesQuery
                                           ? "no matches"
@@ -1651,8 +1675,14 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     ) : (
                         <>
                             {filteredRemotes.length === 0 && (
-                                <div className="git-empty">
-                                    {remotesRes.status === "loading" ? "loading…" : remotesQuery ? "no matches" : "no remotes — press n to add"}
+                                <div className={`git-empty${remotesRes.status === "error" && !remotesRes.data ? " error" : ""}`}>
+                                    {remotesRes.status === "error" && !remotesRes.data
+                                        ? `x ${remotesRes.error ?? "failed to load remotes"}`
+                                        : remotesRes.status === "loading"
+                                          ? "loading…"
+                                          : remotesQuery
+                                            ? "no matches"
+                                            : "no remotes — press n to add"}
                                 </div>
                             )}
                             {filteredRemotes.map((r, i) => {
@@ -1720,11 +1750,11 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             <div className="git-right">
                 {right.mode === "merge" ? (
                     <MergeReview
-                        key={right.path}
+                        key={`${right.file.path}:${right.file.index}:${right.file.worktree}`}
                         repo={repo}
-                        path={right.path}
+                        file={right.file}
                         onOpenFile={(abs) => cmd.requestOpenFile(abs)}
-                        onSaved={() => void overview.refresh()}
+                        onSaved={() => void overview.refresh().catch(reportError("git refresh"))}
                     />
                 ) : right.mode === "commit" ? (
                     <CommitReview

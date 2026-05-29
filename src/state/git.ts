@@ -11,7 +11,7 @@ import type {
   GitMenuItem,
   GitPromptSuggestion,
 } from "./gitTypes";
-import { reportError } from "./toast";
+import { errMessage, reportError } from "./toast";
 import { getState, setState } from "./store";
 
 // ---- modal control ------------------------------------------------------
@@ -138,7 +138,7 @@ export async function runGitCmd<T>(
     if (opts?.repo) emit({ type: "git-refresh", repo: opts.repo });
     return out;
   } catch (e) {
-    const msg = String(e);
+    const msg = errMessage(e);
     patchLogEntry(id, {
       status: "error",
       detail: msg.length > 4096 ? msg.slice(0, 4096) + "…" : msg,

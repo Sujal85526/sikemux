@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { unifiedMergeView } from "@codemirror/merge";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
@@ -7,7 +7,7 @@ import { git } from "../api/git";
 import { fsapi } from "../api/fs";
 import { auraExtensions, languageFor } from "../editor/codemirror";
 import { registerView } from "../themes/bus";
-import { swallow } from "../state/toast";
+import { errMessage, swallow } from "../state/toast";
 
 // A headerless CodeMirror unified-merge view of one file. `autoHeight` makes
 // it grow to its content (for stacking in an accordion) rather than fill.
@@ -29,6 +29,7 @@ export function DiffEditor({
     onSaved?: () => void;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
+    const [error, setError] = useState<string | null>(null);
     // Live ref to the latest onSaved so the mount-effect dep list stays
     // stable. Without this, parents that pass a fresh inline arrow ({
     // onSaved={() => …} }) cause the entire CodeMirror EditorView to
@@ -43,6 +44,7 @@ export function DiffEditor({
         let view: EditorView | null = null;
         let unregister: (() => void) | null = null;
         const absPath = `${repo}/${path}`;
+        setError(null);
 
         const save = (v: EditorView): boolean => {
             void fsapi
@@ -53,10 +55,17 @@ export function DiffEditor({
         };
 
         void (async () => {
-            const [base, head] = await Promise.all([
-                git.fileAt(repo, baseRev, path).catch(() => ""),
-                headRev ? git.fileAt(repo, headRev, path).catch(() => "") : fsapi.readFile(absPath).catch(() => ""),
-            ]);
+            let base = "";
+            let head = "";
+            try {
+                [base, head] = await Promise.all([
+                    git.fileAt(repo, baseRev, path),
+                    headRev ? git.fileAt(repo, headRev, path) : readWorkingFile(absPath),
+                ]);
+            } catch (err) {
+                if (!cancelled) setError(errMessage(err));
+                return;
+            }
             if (cancelled || !hostRef.current) return;
 
             // Syntax highlighting parses the whole document — skip it for huge
@@ -105,11 +114,29 @@ export function DiffEditor({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [repo, path, baseRev, headRev, editable, autoHeight]);
 
-    return <div className={`diff-editor${autoHeight ? " auto" : ""}`} ref={hostRef} />;
+    return (
+        <div className={`diff-editor${autoHeight ? " auto" : ""}`} ref={hostRef}>
+            {error && <div className="diff-editor-error">x {error}</div>}
+        </div>
+    );
 }
 
 function countLines(s: string): number {
     let n = 1;
     for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
     return n;
+}
+
+async function readWorkingFile(path: string): Promise<string> {
+    try {
+        return await fsapi.readFile(path);
+    } catch (err) {
+        if (isMissingFileError(err)) return "";
+        throw err;
+    }
+}
+
+function isMissingFileError(err: unknown): boolean {
+    const msg = errMessage(err).toLowerCase();
+    return msg.includes("no such file") || msg.includes("not found") || msg.includes("os error 2");
 }

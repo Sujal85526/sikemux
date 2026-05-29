@@ -54,6 +54,22 @@ fn git_ok(repo: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+fn git_has_head(repo: &str) -> bool {
+    git_ok(repo, &["rev-parse", "--verify", "HEAD"]).is_ok()
+}
+
+fn path_in_index(repo: &str, path: &str) -> bool {
+    run_git(repo, &["ls-files", "--error-unmatch", "--", path])
+        .map(|(ok, so, _)| ok && !so.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn path_in_head(repo: &str, path: &str) -> bool {
+    run_git(repo, &["ls-tree", "-r", "--name-only", "HEAD", "--", path])
+        .map(|(ok, so, _)| ok && so.lines().any(|line| line == path))
+        .unwrap_or(false)
+}
+
 // ---- types ----------------------------------------------------------------
 
 #[derive(Serialize, Clone)]
@@ -706,21 +722,32 @@ pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<Stri
     let cache_key = key.clone();
     run_blocking(move || -> Result<String, String> {
         let r = open_repo(&repo)?;
-        let content = match revparse_commit(&r, &rev) {
-            Ok(commit) => {
-                let tree = commit.tree().map_err(|e| e.message().to_string())?;
-                match tree.get_path(Path::new(&path)) {
-                    Ok(entry) => {
-                        let blob = r
-                            .find_blob(entry.id())
-                            .map_err(|e| e.message().to_string())?;
-                        String::from_utf8_lossy(blob.content()).into_owned()
-                    }
-                    Err(e) if e.code() == ErrorCode::NotFound => String::new(),
-                    Err(e) => return Err(e.message().to_string()),
+        let content = if rev == ":index" {
+            let idx = r.index().map_err(|e| e.message().to_string())?;
+            match idx.get_path(Path::new(&path), 0) {
+                Some(entry) => {
+                    let blob = r.find_blob(entry.id).map_err(|e| e.message().to_string())?;
+                    String::from_utf8_lossy(blob.content()).into_owned()
                 }
+                None => String::new(),
             }
-            Err(_) => String::new(),
+        } else {
+            match revparse_commit(&r, &rev) {
+                Ok(commit) => {
+                    let tree = commit.tree().map_err(|e| e.message().to_string())?;
+                    match tree.get_path(Path::new(&path)) {
+                        Ok(entry) => {
+                            let blob = r
+                                .find_blob(entry.id())
+                                .map_err(|e| e.message().to_string())?;
+                            String::from_utf8_lossy(blob.content()).into_owned()
+                        }
+                        Err(e) if e.code() == ErrorCode::NotFound => String::new(),
+                        Err(e) => return Err(e.message().to_string()),
+                    }
+                }
+                Err(_) => String::new(),
+            }
         };
         if cacheable {
             if let Ok(mut cache) = file_at_cache().lock() {
@@ -1059,6 +1086,27 @@ fn cap_diff(mut diff: String) -> String {
     diff
 }
 
+fn staged_diff(repo: &str) -> Result<(String, String), String> {
+    Ok((
+        git_ok(repo, &["diff", "--cached", "--stat"])?,
+        git_ok(repo, &["diff", "--cached", "--no-ext-diff", "--unified=3"])?,
+    ))
+}
+
+fn worktree_diff(repo: &str) -> Result<(String, String), String> {
+    if git_has_head(repo) {
+        Ok((
+            git_ok(repo, &["diff", "HEAD", "--stat"])?,
+            git_ok(repo, &["diff", "HEAD", "--no-ext-diff", "--unified=3"])?,
+        ))
+    } else {
+        Ok((
+            git_ok(repo, &["diff", "--stat"])?,
+            git_ok(repo, &["diff", "--no-ext-diff", "--unified=3"])?,
+        ))
+    }
+}
+
 /// Generate a commit message WITHOUT staging or committing — backs the `✦`
 /// button + the `g` keybinding. Prefers the staged diff; if nothing's
 /// staged, falls back to the full working-tree diff so it still works
@@ -1069,12 +1117,9 @@ pub async fn git_ai_message(
     provider: Option<String>,
     model: Option<String>,
 ) -> Result<String, String> {
-    let mut stat = git_ok(&repo, &["diff", "--cached", "--stat"]).unwrap_or_default();
-    let mut diff =
-        git_ok(&repo, &["diff", "--cached", "--no-ext-diff", "--unified=3"]).unwrap_or_default();
+    let (mut stat, mut diff) = staged_diff(&repo)?;
     if diff.trim().is_empty() {
-        stat = git_ok(&repo, &["diff", "HEAD", "--stat"]).unwrap_or_default();
-        diff = git_ok(&repo, &["diff", "HEAD", "--no-ext-diff", "--unified=3"]).unwrap_or_default();
+        (stat, diff) = worktree_diff(&repo)?;
     }
     if diff.trim().is_empty() {
         return Err("Nothing to describe — stage changes or edit some files first.".into());
@@ -1106,10 +1151,8 @@ pub async fn git_ai_commit(
             return Err("Nothing to commit — working tree is clean.".into());
         }
     }
-    let stat = git_ok(&repo, &["diff", "--cached", "--stat"]).unwrap_or_default();
-    let diff = cap_diff(
-        git_ok(&repo, &["diff", "--cached", "--no-ext-diff", "--unified=3"]).unwrap_or_default(),
-    );
+    let (stat, diff) = staged_diff(&repo)?;
+    let diff = cap_diff(diff);
     let prompt = commit_message_prompt(&repo, &stat, &diff);
 
     let provider = GitAiProvider::parse(provider)?;
@@ -1177,30 +1220,28 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
 /// since there's no index or HEAD version to restore from.
 #[tauri::command]
 pub async fn git_discard_file(repo: String, path: String, mode: String) -> Result<(), String> {
-    // Detect new/untracked files — these can't be `git checkout`'d.
-    let (_, ls, _) = run_git(&repo, &["ls-files", "--error-unmatch", "--", &path])?;
-    let tracked = !ls.is_empty()
-        || git_ok(&repo, &["ls-files", "--", &path])
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
-
     match mode.as_str() {
         "staged" => {
-            git_ok(&repo, &["reset", "HEAD", "--", &path])?;
+            if git_has_head(&repo) {
+                git_ok(&repo, &["reset", "HEAD", "--", &path])?;
+            } else if path_in_index(&repo, &path) {
+                git_ok(&repo, &["rm", "-f", "--cached", "--", &path])?;
+            }
         }
         "unstaged" => {
-            if tracked {
-                git_ok(&repo, &["checkout", "HEAD", "--", &path])?;
+            if path_in_index(&repo, &path) {
+                git_ok(&repo, &["checkout", "--", &path])?;
             } else {
-                // Untracked → just delete from the working tree.
                 git_ok(&repo, &["clean", "-f", "--", &path])?;
             }
         }
         "all" => {
-            // Wipe the index entry, then nuke the worktree copy.
-            if tracked {
-                let _ = git_ok(&repo, &["reset", "HEAD", "--", &path]);
+            if path_in_head(&repo, &path) {
+                git_ok(&repo, &["reset", "HEAD", "--", &path])?;
                 git_ok(&repo, &["checkout", "HEAD", "--", &path])?;
+            } else if path_in_index(&repo, &path) {
+                git_ok(&repo, &["rm", "-f", "--cached", "--", &path])?;
+                git_ok(&repo, &["clean", "-f", "--", &path])?;
             } else {
                 git_ok(&repo, &["clean", "-f", "--", &path])?;
             }
@@ -1577,4 +1618,82 @@ pub async fn git_set_upstream(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, path::Path};
+    use tempfile::tempdir;
+
+    fn repo_arg(repo: &Path) -> String {
+        repo.to_string_lossy().into_owned()
+    }
+
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {:?}\nstdout:\n{}\nstderr:\n{}",
+            args,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    fn init_repo() -> tempfile::TempDir {
+        let td = tempdir().expect("tempdir");
+        git(td.path(), &["init"]);
+        git(td.path(), &["config", "user.email", "sikemux@example.test"]);
+        git(td.path(), &["config", "user.name", "sikemux"]);
+        td
+    }
+
+    fn commit_base(repo: &Path) {
+        fs::write(repo.join("f.txt"), "base\n").expect("write base");
+        git(repo, &["add", "f.txt"]);
+        git(repo, &["commit", "-m", "base"]);
+    }
+
+    #[tokio::test]
+    async fn discard_unstaged_preserves_staged_changes() {
+        let td = init_repo();
+        commit_base(td.path());
+
+        fs::write(td.path().join("f.txt"), "staged\n").expect("write staged");
+        git(td.path(), &["add", "f.txt"]);
+        fs::write(td.path().join("f.txt"), "unstaged\n").expect("write unstaged");
+
+        git_discard_file(repo_arg(td.path()), "f.txt".into(), "unstaged".into())
+            .await
+            .expect("discard unstaged");
+
+        assert_eq!(
+            fs::read_to_string(td.path().join("f.txt")).expect("read worktree"),
+            "staged\n"
+        );
+        assert_eq!(git(td.path(), &["show", ":f.txt"]), "staged\n");
+    }
+
+    #[tokio::test]
+    async fn discard_all_removes_staged_new_file() {
+        let td = init_repo();
+        commit_base(td.path());
+
+        fs::write(td.path().join("new.txt"), "new\n").expect("write new");
+        git(td.path(), &["add", "new.txt"]);
+
+        git_discard_file(repo_arg(td.path()), "new.txt".into(), "all".into())
+            .await
+            .expect("discard all");
+
+        assert!(!td.path().join("new.txt").exists());
+        assert_eq!(git(td.path(), &["status", "--porcelain"]), "");
+    }
 }
