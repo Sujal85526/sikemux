@@ -1,6 +1,6 @@
 import { type RundeckStatus } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
-import { getState, useStore } from "../../state/store";
+import { useStore } from "../../state/store";
 import type { RundeckLevel } from "../../state/types";
 import { IconChevron } from "../Icons";
 
@@ -37,7 +37,7 @@ export function RundeckBreadcrumb({ paneId, status }: Props) {
                         <button
                             className={`rnd-crumb${idx === labels.length - 1 ? " current" : ""}`}
                             onClick={l.onClick}
-                            disabled={idx === labels.length - 1}>
+                            disabled={l.disabled || idx === labels.length - 1}>
                             {l.label}
                         </button>
                     </span>
@@ -54,18 +54,11 @@ export function RundeckBreadcrumb({ paneId, status }: Props) {
     );
 }
 
-function popTo(paneId: string, index: number) {
-    for (let i = 0; i < 32; i += 1) {
-        const v = getState().rundeckViews[paneId];
-        if (!v || v.stack.length - 1 <= index) break;
-        cmd.rundeckPop(paneId);
-    }
-}
-
 interface Crumb {
     key: string;
     label: string;
     onClick: () => void;
+    disabled?: boolean;
 }
 
 function breadcrumbLabels(
@@ -79,20 +72,52 @@ function breadcrumbLabels(
         return projectCrumbs(paneId, activeProject, activeEnvFolder);
     }
 
-    if (top.kind === "service" || top.kind === "deploy") {
+    if (top.kind === "service") {
         return [
             ...projectCrumbs(paneId, top.project, top.env),
-            ...serviceCrumbs(paneId, stack.length - 1, top.service, top.env),
+            ...serviceCrumbs(paneId, top.service, top.env, {
+                disabled: true,
+            }),
         ];
     }
 
+    if (top.kind === "deploy") {
+        const serviceIndex = findPriorServiceIndex(stack, top.project, top.service);
+        return [
+            ...projectCrumbs(paneId, top.project, top.env),
+            ...serviceCrumbs(paneId, top.service, top.env, {
+                onClick: serviceIndex >= 0
+                    ? () => cmd.rundeckPopTo(paneId, serviceIndex)
+                    : () =>
+                          cmd.rundeckReplace(paneId, {
+                              kind: "service",
+                              env: top.env,
+                              project: top.project,
+                              service: top.service,
+                              jobId: top.jobId,
+                              repoPath: top.repoPath,
+                          }),
+            }),
+            {
+                key: `deploy-${top.project}-${top.service}-${top.branch}`,
+                label: "deploy",
+                onClick: () => cmd.rundeckPopTo(paneId, stack.length - 1),
+            },
+        ];
+    }
+
+    const serviceIndex = findPriorServiceIndex(stack, top.project, top.service);
+    const env = top.env ?? activeEnvFolder;
     return [
-        ...projectCrumbs(paneId, top.project, activeEnvFolder),
-        ...serviceCrumbs(paneId, stack.length - 1, top.service, activeEnvFolder ?? undefined),
+        ...projectCrumbs(paneId, top.project, env),
+        ...serviceCrumbs(paneId, top.service, env, {
+            disabled: serviceIndex < 0,
+            onClick: serviceIndex >= 0 ? () => cmd.rundeckPopTo(paneId, serviceIndex) : undefined,
+        }),
         {
             key: `execution-${top.executionId}`,
             label: `#${top.executionId}`,
-            onClick: () => popTo(paneId, stack.length - 1),
+            onClick: () => cmd.rundeckPopTo(paneId, stack.length - 1),
         },
     ];
 }
@@ -101,23 +126,42 @@ function projectCrumbs(paneId: string, project: string, env: string | null | und
     if (!project) {
         return [{ key: "deployments", label: "deployments", onClick: () => cmd.rundeckHome(paneId) }];
     }
+    const envFolder = env && env.toLowerCase() !== project.toLowerCase() ? env : null;
     return [
-        { key: `project-${project}`, label: project, onClick: () => cmd.rundeckHome(paneId) },
-        ...(env ? [{ key: `env-${env}`, label: env, onClick: () => cmd.rundeckHome(paneId) }] : []),
+        { key: `project-${project}`, label: project, onClick: () => cmd.selectRundeckProject(paneId, project, null) },
+        ...(envFolder
+            ? [{ key: `env-${envFolder}`, label: envFolder, onClick: () => cmd.selectRundeckProject(paneId, project, envFolder) }]
+            : []),
     ];
 }
 
-function serviceCrumbs(paneId: string, stackIndex: number, service: string, env?: string | null): Crumb[] {
+function serviceCrumbs(
+    paneId: string,
+    service: string,
+    env: string | null | undefined,
+    opts: { onClick?: () => void; disabled?: boolean },
+): Crumb[] {
     const parts = service
         .split("/")
         .map((p) => p.trim())
         .filter(Boolean);
     const normalized = env && parts[0] === env ? parts.slice(1) : parts;
     return normalized.map((label, i) => ({
-        key: `svc-${stackIndex}-${i}-${label}`,
+        key: `svc-${i}-${label}`,
         label,
-        onClick: () => popTo(paneId, stackIndex),
+        onClick: opts.onClick ?? (() => cmd.rundeckHome(paneId)),
+        disabled: opts.disabled,
     }));
+}
+
+function findPriorServiceIndex(stack: RundeckLevel[], project: string, service: string): number {
+    for (let i = stack.length - 2; i >= 0; i -= 1) {
+        const level = stack[i];
+        if (level.kind === "service" && level.project === project && level.service === service) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 function hostFromUrl(url: string): string {

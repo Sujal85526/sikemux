@@ -159,6 +159,7 @@ function DeployRow({ paneId, project, cell }: { paneId: string; project: string;
 
     const deploy = (e: React.MouseEvent) => {
         e.stopPropagation();
+        open();
         cmd.rundeckPush(paneId, {
             kind: "deploy",
             env,
@@ -172,11 +173,14 @@ function DeployRow({ paneId, project, cell }: { paneId: string; project: string;
     const openLast = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (cell.execution_id == null) return;
+        open();
         cmd.rundeckPush(paneId, {
             kind: "execution",
             executionId: cell.execution_id,
             project,
             service: cell.service,
+            env,
+            jobId: cell.job_id,
         });
     };
 

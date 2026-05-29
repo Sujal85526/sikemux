@@ -99,6 +99,9 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
                 executionId: res.id,
                 project: level.project,
                 service: level.service,
+                env: level.env,
+                jobId: level.jobId,
+                repoPath,
             });
         } catch (e) {
             const msg = typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e);

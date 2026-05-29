@@ -77,7 +77,7 @@ export type RundeckLevel =
       branch: string;
       repoPath?: string;
     }
-  | { kind: "execution"; executionId: number; service: string; project: string };
+  | { kind: "execution"; executionId: number; service: string; project: string; env?: string; jobId?: string; repoPath?: string };
 
 export interface RundeckView {
   /** Pane-scoped navigation stack so back/forward feels right. */

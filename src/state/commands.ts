@@ -367,6 +367,14 @@ export function rundeckPop(paneId: string): void {
     });
 }
 
+export function rundeckPopTo(paneId: string, index: number): void {
+    mutate((d) => {
+        const cur = rundeckView(d as unknown as StoreState, paneId);
+        const target = Math.max(0, Math.min(index, cur.stack.length - 1));
+        d.rundeckViews[paneId] = { stack: cur.stack.slice(0, target + 1) };
+    });
+}
+
 export function rundeckHome(paneId: string): void {
     mutate((d) => {
         d.rundeckViews[paneId] = { stack: [{ kind: "matrix" }] };

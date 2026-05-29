@@ -4,6 +4,8 @@ import { rundeckApi, type RundeckExecution } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { useResourceEnabled } from "../../state/resources";
 import { rndExecutionsR } from "../../state/resources.defs";
+import { useStore } from "../../state/store";
+import { IconFetch, IconGit, IconRefresh, IconRun } from "../Icons";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
 interface Props {
@@ -21,34 +23,69 @@ interface Props {
 
 export function RundeckService({ paneId, level, active }: Props) {
     const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, 25);
+    const prodEnvs = useStore((s) => s.rundeck.prodEnvs);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [manualBranch, setManualBranch] = useState("");
+    const tone = envTone(level.env, prodEnvs);
 
     return (
         <div className="rnd-service">
-            <div className="rnd-section-head">
-                <div className="rnd-section-title">
-                    <span className="rnd-section-eyebrow">{level.env}</span>
-                    <span className="rnd-section-name">{level.service}</span>
-                    <span className="rnd-section-proj">{level.project}</span>
-                </div>
-                <div className="rnd-section-actions">
-                    <button
-                        className="rnd-btn rnd-btn-primary"
-                        onClick={() => void deployCurrentBranch(paneId, level, setActionError)}
-                        title="Deploy current local branch">
-                        deploy current branch
+            <div className="rnd-svc-bar">
+                <span className={`rnd-env rnd-env-${tone}`} title={`environment: ${level.env}`}>
+                    <span className="rnd-env-dot" />
+                    {level.env}
+                </span>
+                <ServicePath service={level.service} />
+                <span className="rnd-svc-proj">{level.project}</span>
+
+                <span className="rnd-svc-spacer" />
+
+                <form
+                    className="rnd-composer"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        deployBranch(paneId, level, manualBranch, setActionError);
+                    }}>
+                    <input
+                        type="text"
+                        value={manualBranch}
+                        onChange={(e) => setManualBranch(e.target.value)}
+                        placeholder="branch name"
+                        spellCheck={false}
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        title="Branch to deploy"
+                    />
+                    <button className="rnd-composer-go" disabled={!manualBranch.trim()} title="Review and deploy this branch">
+                        <IconRun size={11} />
+                        deploy
                     </button>
-                    <button
-                        className="rnd-btn"
-                        onClick={() => void redeployLast(paneId, level, execs.data ?? [], setActionError)}
-                        disabled={!execs.data?.length}
-                        title="Redeploy the last successful branch">
-                        redeploy last
-                    </button>
-                    <button className="rnd-btn-sm" onClick={() => execs.refresh()} disabled={execs.status === "loading"}>
-                        refresh
-                    </button>
-                </div>
+                </form>
+
+                <span className="rnd-svc-div" />
+
+                <button
+                    className="rnd-ghost-btn"
+                    onClick={() => void deployCurrentBranch(paneId, level, setActionError)}
+                    title="Deploy current local branch">
+                    <IconGit size={13} />
+                    current branch
+                </button>
+                <button
+                    className="rnd-ghost-btn"
+                    onClick={() => void redeployLast(paneId, level, execs.data ?? [], setActionError)}
+                    disabled={!execs.data?.length}
+                    title="Redeploy the last successful branch">
+                    <IconFetch size={13} />
+                    redeploy last
+                </button>
+                <button
+                    className="rnd-icon-btn"
+                    onClick={() => execs.refresh()}
+                    disabled={execs.status === "loading"}
+                    title="Refresh executions">
+                    <IconRefresh size={13} />
+                </button>
             </div>
 
             {actionError && <div className="rnd-banner danger">{actionError}</div>}
@@ -72,7 +109,42 @@ export function RundeckService({ paneId, level, active }: Props) {
     );
 }
 
-function ExecutionRow({ paneId, level, ex }: { paneId: string; level: { env: string; project: string; service: string }; ex: RundeckExecution }) {
+/** Renders a service path with dimmed ancestors and a bright leaf, e.g.
+ *  dev / backend / **content-service** — so the eye lands on the actual job. */
+function ServicePath({ service }: { service: string }) {
+    const parts = service
+        .split("/")
+        .map((p) => p.trim())
+        .filter(Boolean);
+    if (parts.length === 0) return <span className="rnd-svc-path">{service}</span>;
+    return (
+        <span className="rnd-svc-path" title={service}>
+            {parts.map((part, i) => (
+                <span key={`${i}-${part}`} className="rnd-svc-part">
+                    {i > 0 && <span className="rnd-svc-slash">/</span>}
+                    <span className={i === parts.length - 1 ? "rnd-svc-leaf" : "rnd-svc-seg"}>{part}</span>
+                </span>
+            ))}
+        </span>
+    );
+}
+
+/** Cosmetic env-pill tone: configured prod envs → danger, staging-ish → warn,
+ *  everything else → live (mint). */
+function envTone(env: string, prodEnvs: string[]): "prod" | "stg" | "dev" {
+    if (prodEnvs.includes(env)) return "prod";
+    return /stag|stg|uat|qa|pre/.test(env.toLowerCase()) ? "stg" : "dev";
+}
+
+function ExecutionRow({
+    paneId,
+    level,
+    ex,
+}: {
+    paneId: string;
+    level: { env: string; project: string; service: string; jobId: string; repoPath?: string };
+    ex: RundeckExecution;
+}) {
     const branch = ex.job?.options?.BRANCH ?? null;
     const kind = branchKind(branch);
     const sk = statusKind(ex.status);
@@ -89,6 +161,9 @@ function ExecutionRow({ paneId, level, ex }: { paneId: string; level: { env: str
                     executionId: ex.id,
                     project: level.project,
                     service: level.service,
+                    env: level.env,
+                    jobId: level.jobId,
+                    repoPath: level.repoPath,
                 })
             }>
             <span className={`rnd-exec-status rnd-status-${sk}`}>{ex.status}</span>
@@ -102,6 +177,29 @@ function ExecutionRow({ paneId, level, ex }: { paneId: string; level: { env: str
             <span className="rnd-exec-dur">{dur}</span>
         </button>
     );
+}
+
+function deployBranch(
+    paneId: string,
+    level: { env: string; project: string; service: string; jobId: string; repoPath?: string },
+    branch: string,
+    setError: (message: string | null) => void,
+) {
+    const branchValue = branch.trim();
+    if (!branchValue) {
+        setError("Enter a branch to deploy.");
+        return;
+    }
+    setError(null);
+    cmd.rundeckPush(paneId, {
+        kind: "deploy",
+        env: level.env,
+        project: level.project,
+        service: level.service,
+        jobId: level.jobId,
+        branch: branchValue,
+        repoPath: level.repoPath,
+    });
 }
 
 async function deployCurrentBranch(
