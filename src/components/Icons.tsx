@@ -372,3 +372,85 @@ export function IconRundeck({ size = 14, className }: IconProps) {
         </svg>
     );
 }
+
+// ── git toolbar / action icons — lucide-style on a 24-grid ──
+function Svg24({ size = 14, children }: { size?: number; children: React.ReactNode }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true">
+            {children}
+        </svg>
+    );
+}
+
+// arrow up to a line — push
+export function IconPush({ size = 14 }: { size?: number }) {
+    return (
+        <Svg24 size={size}>
+            <path d="M5 4h14" />
+            <path d="M12 20V9" />
+            <path d="M7 13l5-5 5 5" />
+        </Svg24>
+    );
+}
+
+// arrow down to a line — pull
+export function IconPull({ size = 14 }: { size?: number }) {
+    return (
+        <Svg24 size={size}>
+            <path d="M5 20h14" />
+            <path d="M12 4v11" />
+            <path d="M7 11l5 5 5-5" />
+        </Svg24>
+    );
+}
+
+// circular arrows — fetch
+export function IconFetch({ size = 14 }: { size?: number }) {
+    return (
+        <Svg24 size={size}>
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v5h-5" />
+        </Svg24>
+    );
+}
+
+// git pull-request glyph — two nodes + branch arm
+export function IconPullRequest({ size = 14 }: { size?: number }) {
+    return (
+        <Svg24 size={size}>
+            <circle cx="6" cy="6" r="2.5" />
+            <circle cx="6" cy="18" r="2.5" />
+            <path d="M6 8.5v7" />
+            <path d="M15 6h1.5A2.5 2.5 0 0 1 19 8.5V16" />
+            <path d="M15 3l-3 3 3 3" />
+        </Svg24>
+    );
+}
+
+// git commit — node on a line
+export function IconCommit({ size = 14 }: { size?: number }) {
+    return (
+        <Svg24 size={size}>
+            <circle cx="12" cy="12" r="3" />
+            <path d="M3 12h6M15 12h6" />
+        </Svg24>
+    );
+}
+
+// four-point sparkle — AI (filled)
+export function IconSparkle({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2c.5 4.2 2.8 6.5 7 7-4.2.5-6.5 2.8-7 7-.5-4.2-2.8-6.5-7-7 4.2-.5 6.5-2.8 7-7z" />
+        </svg>
+    );
+}

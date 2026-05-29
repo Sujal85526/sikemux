@@ -10,6 +10,7 @@ import { reportError } from "../state/toast";
 import type { GitPanel } from "../state/types";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
+import { IconCommit, IconFetch, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitGraph } from "./git/GitGraph";
@@ -23,13 +24,15 @@ type RightView =
     | { mode: "output"; text: string };
 
 const DEFAULT_VIEW = {
-    panel: "status" as GitPanel,
+    panel: "files" as GitPanel,
     selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
     remoteDrill: null as string | null,
     remoteBranchSelected: {} as Record<string, number>,
 };
 
-const GIT_PANEL_ORDER: GitPanel[] = ["status", "files", "branches", "remotes", "commits", "stashes"];
+// Status was folded into the git toolbar; remotes/stashes are revealed
+// on demand. Tab cycles the panels that are actually on screen.
+const GIT_PANEL_ORDER: GitPanel[] = ["files", "branches", "commits", "remotes", "stashes"];
 
 // Lazygit-style git pane. Per-pane view state (focused panel + per-panel
 // selection) lives in store.gitViews so switching sessions and coming
@@ -46,7 +49,10 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         remoteDrill: storedView?.remoteDrill ?? DEFAULT_VIEW.remoteDrill,
         remoteBranchSelected: storedView?.remoteBranchSelected ?? DEFAULT_VIEW.remoteBranchSelected,
     };
-    const { panel, selected: sel } = view;
+    const sel = view.selected;
+    // Status panel was removed (its info now lives in the git toolbar). Coerce
+    // any old persisted "status" selection back to the files panel.
+    const panel: GitPanel = view.panel === "status" ? "files" : view.panel;
     const remoteDrill = view.remoteDrill ?? null;
     const remoteBranchSelected = view.remoteBranchSelected ?? {};
     const modalOpen = useStore((s) => s.gitModal !== null);
@@ -68,9 +74,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     const [right, setRight] = useState<RightView>({ mode: "output", text: "" });
     const [busy, setBusy] = useState<string | null>(null);
-    const [commitMode, setCommitMode] = useState(false);
     const [commitText, setCommitText] = useState("");
-    const commitInputRef = useRef<HTMLInputElement>(null);
+    const commitInputRef = useRef<HTMLTextAreaElement>(null);
     const [branchInput, setBranchInput] = useState<{ startPoint: string } | null>(null);
     const [branchText, setBranchText] = useState("");
     const branchInputRef = useRef<HTMLInputElement>(null);
@@ -98,10 +103,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         commits: null,
         stashes: null,
     });
-
-    useEffect(() => {
-        if (commitMode) commitInputRef.current?.focus();
-    }, [commitMode]);
 
     useEffect(() => {
         if (branchInput) branchInputRef.current?.focus();
@@ -194,28 +195,14 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     // ---- load the right pane for the selected row ----
     useEffect(() => {
         if (!active) return;
-        if (panel === "status") {
-            if (!status) {
-                setRight({ mode: "output", text: "" });
-                return;
-            }
-            setRight({
-                mode: "output",
-                text: [
-                    `branch:   ${status.branch || "(unknown)"}`,
-                    `upstream: ${status.upstream ?? "(none)"}`,
-                    `ahead:    ${status.ahead}`,
-                    `behind:   ${status.behind}`,
-                    `changes:  ${files.length}`,
-                    `stashes:  ${stashes.length}`,
-                    "",
-                    "p pull · P push · F fetch all · ^P open PR",
-                    "1 status · 2 files · 3 branches · 4 remotes · 5 commits · 6 stashes",
-                ].join("\n"),
-            });
-        } else if (panel === "files") {
+        if (panel === "files") {
             if (filteredFiles.length === 0) {
-                setRight({ mode: "output", text: "" });
+                // Clean tree (or filtered to nothing) — instead of a blank
+                // right pane, surface the latest commit so there's always
+                // something useful on screen.
+                const c = filteredCommits[0] ?? commits[0];
+                if (c) setRight({ mode: "commit", rev: c.hash, title: c.hash, subtitle: c.subject });
+                else setRight({ mode: "output", text: "" });
                 return;
             }
             const f = filteredFiles[Math.min(sel.files, filteredFiles.length - 1)];
@@ -354,6 +341,13 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const setPanel = (p: GitPanel) => cmd.setGitView(paneId, { panel: p });
     const setSel = (next: typeof sel) => cmd.setGitView(paneId, { selected: next });
 
+    // Stashes panel only exists while there are stashes — if the last one
+    // goes away while it's focused, fall back to the commits panel.
+    useEffect(() => {
+        if (panel === "stashes" && stashes.length === 0) setPanel("commits");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [panel, stashes.length]);
+
     // Drill the Remotes panel into (or out of) a specific remote's
     // branches view. `null` = back to the flat remotes list.
     const setRemoteDrill = (name: string | null) => cmd.setGitView(paneId, { remoteDrill: name });
@@ -385,8 +379,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     const doCommit = (message: string) => {
         if (!message.trim()) return;
-        setCommitMode(false);
         setCommitText("");
+        commitInputRef.current?.blur();
         void run("committing", async () => {
             await git.commit(repo, message);
             return `✓ committed\n\n${message}`;
@@ -976,7 +970,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             {
                 title: "Global",
                 rows: [
-                    { keys: "tab / 1..6", label: "switch panel" },
+                    { keys: "tab / 2..6", label: "switch panel" },
                     { keys: "?", label: "open this cheatsheet" },
                     { keys: "@", label: "toggle command log" },
                     { keys: "/", label: "filter current panel" },
@@ -985,15 +979,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     { keys: "P / p", label: "push / pull" },
                     { keys: "^P", label: "open pull-request page" },
                     { keys: "esc", label: "close modal / clear filter or range" },
-                ],
-            },
-            {
-                title: "Status",
-                rows: [
-                    { keys: "enter / space", label: "jump to files" },
-                    { keys: "p / P", label: "pull / push" },
-                    { keys: "F", label: "fetch all remotes" },
-                    { keys: "^P", label: "open pull-request page" },
                 ],
             },
             {
@@ -1067,13 +1052,15 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     // ---- keyboard ----
     useEffect(() => {
-        if (!active || commitMode || branchInput || modalOpen) return;
+        if (!active || branchInput || modalOpen) return;
         const onKey = (e: KeyboardEvent) => {
             if (e.altKey || e.metaKey) return;
             if (useStore.getState().pickerOpen) return;
             // Don't hijack while the user is typing in the diff/merge editor.
             const ae = document.activeElement;
             if (ae && ae.closest(".cm-editor")) return;
+            // …or while the always-on commit message input is focused.
+            if (ae && ae.closest(".git-commit-panel")) return;
             // …or while the per-panel search input is focused.
             if (searchOpen) {
                 if (e.key === "Escape") {
@@ -1119,15 +1106,18 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 } else if (panel === "remotes" && remoteDrill) {
                     setRemoteDrill(null);
                 } else handled = false;
-            } else if (k === "1") setPanel("status");
-            else if (k === "2") setPanel("files");
+            } else if (k === "2") setPanel("files");
             else if (k === "3") setPanel("branches");
-            else if (k === "4") setPanel("remotes");
-            else if (k === "5") setPanel("commits");
-            else if (k === "6") setPanel("stashes");
-            else if (k === "Tab") {
-                const i = GIT_PANEL_ORDER.indexOf(panel);
-                setPanel(GIT_PANEL_ORDER[(i + 1) % GIT_PANEL_ORDER.length]);
+            else if (k === "4") setPanel("commits");
+            else if (k === "5") setPanel("remotes");
+            else if (k === "6") {
+                if (stashes.length > 0) setPanel("stashes");
+            } else if (k === "Tab") {
+                // Cycle only the panels that are actually on screen — stashes
+                // is hidden when empty.
+                const order = GIT_PANEL_ORDER.filter((p) => p !== "stashes" || stashes.length > 0);
+                const i = order.indexOf(panel);
+                setPanel(order[(i + 1) % order.length]);
             }
             else if (k === "j" || k === "ArrowDown") moveSel(1);
             else if (k === "k" || k === "ArrowUp") moveSel(-1);
@@ -1140,14 +1130,12 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             else if (k === "P") void run("pushing…", async () => `↑ ${await git.push(repo)}`);
             else if (k === "p" && panel === "stashes") popSelectedStash();
             else if (k === "p") void run("pulling…", async () => `↓ ${await git.pull(repo)}`);
-            // ----- status -----
-            else if (panel === "status" && (k === "Enter" || k === " ")) setPanel("files");
             // ----- files -----
             else if (panel === "files" && k === " ") toggleStage();
             else if (panel === "files" && k === "a") {
                 const anyUnstaged = filteredFiles.some(hasUnstaged);
                 void run("", () => (anyUnstaged ? git.stageAll(repo) : git.unstageAll(repo)));
-            } else if (panel === "files" && k === "c") setCommitMode(true);
+            } else if (panel === "files" && k === "c") commitInputRef.current?.focus();
             else if (panel === "files" && k === "C") void aiCommit();
             else if (panel === "files" && k === "d") openFilesDiscardMenu();
             else if (panel === "files" && k === "s") openFilesStashMenu();
@@ -1260,7 +1248,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         return () => window.removeEventListener("keydown", onKey, true);
     });
 
-    const panelStatus = panel === "status";
     const panelFiles = panel === "files";
     const filesRange = rangeFor("files");
     const branchesRange = rangeFor("branches");
@@ -1274,27 +1261,104 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     return (
         <div className="git-pane">
+            <div className="git-toolbar">
+                    <span className="git-tb-status">
+                        <span className={`gb-dot${files.length > 0 ? " remote" : " cur"}`} />
+                        <span className="git-tb-branch" title={`upstream: ${upstreamLabel}`}>
+                            {currentBranch || status?.branch || "—"}
+                        </span>
+                        <span className={`git-tb-sync${status && (status.ahead > 0 || status.behind > 0) ? " warn" : " ok"}`}>{trackLabel}</span>
+                        <span className="git-tb-changed">
+                            {files.length === 0 ? "clean" : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`}
+                        </span>
+                        {stashes.length > 0 && (
+                            <span className="git-tb-stash">{stashes.length === 1 ? "1 stash" : `${stashes.length} stashes`}</span>
+                        )}
+                        {busy && (
+                            <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
+                                {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
+                                <span>{busy}</span>
+                            </span>
+                        )}
+                    </span>
+                    <span className="git-tb-grow" />
+                    <button
+                        className="git-tbtn live"
+                        type="button"
+                        onClick={() => void run("pushing…", async () => `↑ ${await git.push(repo)}`)}
+                        title="Push (P)">
+                        <IconPush size={13} />push<kbd className="git-kbd">P</kbd>
+                    </button>
+                    <button
+                        className="git-tbtn"
+                        type="button"
+                        onClick={() => void run("pulling…", async () => `↓ ${await git.pull(repo)}`)}
+                        title="Pull (p)">
+                        <IconPull size={13} />pull<kbd className="git-kbd">p</kbd>
+                    </button>
+                    <button className="git-tbtn" type="button" onClick={() => doFetch(null)} title="Fetch all remotes (F)">
+                        <IconFetch size={13} />fetch<kbd className="git-kbd">F</kbd>
+                    </button>
+                    <button
+                        className="git-tbtn"
+                        type="button"
+                        onClick={() =>
+                            void run("opening PR…", async () => {
+                                const url = await git.prOpen(repo);
+                                return `→ ${url}`;
+                            })
+                        }
+                        title="Open pull request (⌃P)">
+                        <IconPullRequest size={13} />PR
+                    </button>
+                    <button className="git-tbtn icon" type="button" onClick={refreshRepoState} title="Refresh (r)">
+                        <IconRefresh size={14} />
+                    </button>
+            </div>
+            <div className="git-body">
             <div className="git-left">
-                {commitMode && (
-                    <div className="git-commit-bar">
-                        <input
+                <div className="git-commit-panel">
+                    <div className="git-panel-head">
+                        <span className="git-panel-n">1</span>
+                        <span className="git-panel-label">Commit</span>
+                    </div>
+                    <div className="git-cp-body">
+                        <textarea
                             ref={commitInputRef}
-                            className="git-commit-input"
+                            className="git-cp-input"
                             placeholder="commit message…"
                             value={commitText}
                             spellCheck={false}
+                            rows={3}
                             onChange={(e) => setCommitText(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === "Enter") doCommit(commitText);
+                                // Multi-line input → Enter is a newline; commit on
+                                // ⌘/Ctrl+Enter. Esc clears + blurs.
+                                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) doCommit(commitText);
                                 else if (e.key === "Escape") {
-                                    setCommitMode(false);
                                     setCommitText("");
+                                    commitInputRef.current?.blur();
                                 }
                                 e.stopPropagation();
                             }}
                         />
+                        <button
+                            className="git-cp-ai"
+                            type="button"
+                            onClick={() => void aiCommit()}
+                            title="AI commit — stages everything + writes the message (C)">
+                            <IconSparkle size={17} />
+                        </button>
+                        <button
+                            className="git-cp-commit"
+                            type="button"
+                            disabled={!commitText.trim()}
+                            onClick={() => doCommit(commitText)}
+                            title="Commit staged (⌘⏎)">
+                            <IconCommit size={13} />commit
+                        </button>
                     </div>
-                )}
+                </div>
                 {branchInput && (
                     <div className="git-commit-bar">
                         <input
@@ -1342,53 +1406,22 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 )}
 
                 <GitPanelBlock
-                    n={1}
-                    label="Status"
-                    focused={panel === "status"}
-                    onFocus={() => setPanel("status")}
-                    flex={0.7}
-                    filterBadge={searchByPanel.status || null}
-                    extra={
-                        busy && (
-                            <span className={`git-panel-busy${busy.startsWith("✗") ? " error" : ""}`}>
-                                {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
-                                <span>{busy}</span>
-                            </span>
-                        )
-                    }>
-                    <div
-                        className={`git-row${panelStatus ? " sel" : ""}`}
-                        onClick={() => {
-                            setPanel("status");
-                            setSel({ ...sel, status: 0 });
-                        }}
-                        onDoubleClick={() => setPanel("files")}>
-                        <span className={`gb-dot${files.length > 0 ? " remote" : " cur"}`} />
-                        <span className="git-path">{status?.branch || "(loading)"}</span>
-                        <span className="git-row-hint">{trackLabel}</span>
-                    </div>
-                    <div className="git-row muted">
-                        <span className="gc-hash">up</span>
-                        <span className="git-path">{upstreamLabel}</span>
-                    </div>
-                    <div className="git-row muted">
-                        <span className="gc-hash">wt</span>
-                        <span className="git-path">
-                            {files.length === 0 ? "clean tree" : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`}
-                        </span>
-                    </div>
-                    <div className="git-row muted">
-                        <span className="gc-hash">st</span>
-                        <span className="git-path">{stashes.length === 1 ? "1 stash" : `${stashes.length} stashes`}</span>
-                    </div>
-                </GitPanelBlock>
-
-                <GitPanelBlock
                     n={2}
                     label="Files"
                     focused={panel === "files"}
                     onFocus={() => setPanel("files")}
-                    flex={2}
+                    flex={panel === "files" ? 2.6 : 1.4}
+                    actions={[
+                        {
+                            key: "a",
+                            label: filteredFiles.some(hasUnstaged) ? "stage all" : "unstage all",
+                            onClick: () => {
+                                const anyUnstaged = filteredFiles.some(hasUnstaged);
+                                void run("", () => (anyUnstaged ? git.stageAll(repo) : git.unstageAll(repo)));
+                            },
+                        },
+                        { key: "s", label: "stash", tone: "warn", onClick: openFilesStashMenu },
+                    ]}
                     rangeBadge={filesRange ? `range ${filesRange[1] - filesRange[0] + 1}` : null}
                     filterBadge={searchByPanel.files || null}>
                     {filteredFiles.length === 0 && <div className="git-empty">{fileQuery ? "no matches" : "clean tree"}</div>}
@@ -1416,7 +1449,18 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     label="Branches"
                     focused={panel === "branches"}
                     onFocus={() => setPanel("branches")}
-                    flex={1}
+                    flex={panel === "branches" ? 2.6 : 1}
+                    actions={[
+                        {
+                            key: "n",
+                            label: "new",
+                            onClick: () => {
+                                setBranchInput({ startPoint: "" });
+                                setBranchText("");
+                            },
+                        },
+                        { key: "M", label: "merge", onClick: () => openBranchVerbsMenu("merge") },
+                    ]}
                     rangeBadge={branchesRange ? `range ${branchesRange[1] - branchesRange[0] + 1}` : null}
                     filterBadge={searchByPanel.branches || null}>
                     {filteredBranches.map((b, i) => {
@@ -1444,15 +1488,50 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
                 <GitPanelBlock
                     n={4}
+                    label="Commits"
+                    focused={panel === "commits"}
+                    onFocus={() => setPanel("commits")}
+                    flex={panel === "commits" ? 2.6 : 1}
+                    actions={[
+                        { key: "b", label: "branch", onClick: openCommitBranchPrompt },
+                        { key: "r", label: "reset", tone: "warn", onClick: openCommitResetMenu },
+                        { key: "v", label: "revert", tone: "danger", onClick: openCommitRevertConfirm },
+                    ]}
+                    rangeBadge={commitsRange ? `range ${commitsRange[1] - commitsRange[0] + 1}` : null}
+                    filterBadge={searchByPanel.commits || null}>
+                    {filteredCommits.length === 0 ? (
+                        <div className="git-empty">{commitQuery ? "no matches" : "no commits"}</div>
+                    ) : (
+                        <GitGraph
+                            commits={filteredCommits}
+                            selectedIndex={Math.min(sel.commits, filteredCommits.length - 1)}
+                            focused={panel === "commits"}
+                            range={commitsRange}
+                            onSelect={(i) => {
+                                setPanel("commits");
+                                setSel({ ...sel, commits: i });
+                            }}
+                            onActivate={openCommitRowMenu}
+                        />
+                    )}
+                </GitPanelBlock>
+
+                {panel === "remotes" && (
+                <GitPanelBlock
+                    n={5}
                     label={remoteDrill ? `Remotes · ${remoteDrill}` : "Remotes"}
                     focused={panel === "remotes"}
                     onFocus={() => {
                         setPanel("remotes");
                         // Re-focus also un-drills if user clicks the header — gives
                         // them a way back without the keyboard.
-                        if (remoteDrill && panel === "remotes") setRemoteDrill(null);
+                        if (remoteDrill) setRemoteDrill(null);
                     }}
-                    flex={1}
+                    flex={2.6}
+                    actions={[
+                        { key: "n", label: "add", onClick: openAddRemotePrompt },
+                        { key: "F", label: "fetch", onClick: () => doFetch(null) },
+                    ]}
                     rangeBadge={remotesRange ? `range ${remotesRange[1] - remotesRange[0] + 1}` : null}
                     filterBadge={searchByPanel.remotes || null}>
                     {remoteDrill ? (
@@ -1520,38 +1599,19 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         </>
                     )}
                 </GitPanelBlock>
+                )}
 
-                <GitPanelBlock
-                    n={5}
-                    label="Commits"
-                    focused={panel === "commits"}
-                    onFocus={() => setPanel("commits")}
-                    flex={1}
-                    rangeBadge={commitsRange ? `range ${commitsRange[1] - commitsRange[0] + 1}` : null}
-                    filterBadge={searchByPanel.commits || null}>
-                    {filteredCommits.length === 0 ? (
-                        <div className="git-empty">{commitQuery ? "no matches" : "no commits"}</div>
-                    ) : (
-                        <GitGraph
-                            commits={filteredCommits}
-                            selectedIndex={Math.min(sel.commits, filteredCommits.length - 1)}
-                            focused={panel === "commits"}
-                            range={commitsRange}
-                            onSelect={(i) => {
-                                setPanel("commits");
-                                setSel({ ...sel, commits: i });
-                            }}
-                            onActivate={openCommitRowMenu}
-                        />
-                    )}
-                </GitPanelBlock>
-
+                {stashes.length > 0 && (
                 <GitPanelBlock
                     n={6}
                     label="Stashes"
                     focused={panel === "stashes"}
                     onFocus={() => setPanel("stashes")}
-                    flex={1}
+                    flex={panel === "stashes" ? 2.6 : 1}
+                    actions={[
+                        { key: "p", label: "pop", onClick: popSelectedStash },
+                        { key: "d", label: "drop", tone: "danger", onClick: openStashDropConfirm },
+                    ]}
                     rangeBadge={stashesRange ? `range ${stashesRange[1] - stashesRange[0] + 1}` : null}
                     filterBadge={searchByPanel.stashes || null}>
                     {filteredStashes.length === 0 && (
@@ -1575,6 +1635,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         );
                     })}
                 </GitPanelBlock>
+                )}
 
                 <GitCmdLogBar />
             </div>
@@ -1609,10 +1670,18 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     </div>
                 )}
             </div>
+            </div>
 
             <GitModalRenderer />
         </div>
     );
+}
+
+interface PanelAction {
+    key?: string;
+    label: string;
+    onClick: () => void;
+    tone?: "ai" | "live" | "warn" | "danger";
 }
 
 function GitPanelBlock({
@@ -1624,6 +1693,7 @@ function GitPanelBlock({
     extra,
     rangeBadge,
     filterBadge,
+    actions,
     children,
 }: {
     n: number;
@@ -1634,6 +1704,7 @@ function GitPanelBlock({
     extra?: ReactNode;
     rangeBadge?: string | null;
     filterBadge?: string | null;
+    actions?: PanelAction[];
     children: ReactNode;
 }) {
     return (
@@ -1644,6 +1715,24 @@ function GitPanelBlock({
                 {filterBadge && <span className="git-panel-pill">/{filterBadge}</span>}
                 {rangeBadge && <span className="git-panel-pill range">{rangeBadge}</span>}
                 {extra}
+                {actions && actions.length > 0 && (
+                    <span className="git-head-actions">
+                        {actions.map((a) => (
+                            <button
+                                key={a.label}
+                                type="button"
+                                className={`git-hbtn${a.tone ? ` ${a.tone}` : ""}`}
+                                title={a.label}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    a.onClick();
+                                }}>
+                                {a.label}
+                                {a.key && <kbd className="git-kbd">{a.key}</kbd>}
+                            </button>
+                        ))}
+                    </span>
+                )}
             </div>
             <div className="git-panel-body">{children}</div>
         </div>

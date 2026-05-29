@@ -1534,7 +1534,17 @@ button {
    ============================================================ */
 .git-pane {
     display: flex;
+    flex-direction: column;
     height: 100%;
+    width: 100%;
+}
+
+/* body row sits under the full-width toolbar and holds the left column +
+   right diff/commit view */
+.git-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
     width: 100%;
 }
 
@@ -1575,6 +1585,102 @@ button {
 .git-commit-bar {
     flex: 0 0 auto;
 }
+
+/* Persistent commit panel — sits directly under the git toolbar: a tall
+   textarea with the AI sparkle floated top-right and the commit button
+   bottom-right. Backgrounds stay translucent so window opacity shows. */
+.git-commit-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    /* single frame: the panel's bottom border is the only divider; the
+       textarea is flush + borderless so there's no second inset box */
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+}
+/* body wraps the textarea + the two floating buttons; it owns the
+   positioning context so the sparkle/commit anchor below the header. */
+.git-cp-body {
+    position: relative;
+    flex: 0 0 auto;
+}
+.git-cp-input {
+    display: block;
+    width: 100%;
+    height: 82px;
+    resize: none;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: var(--ink);
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.55;
+    /* room for the floating sparkle (top-right) + commit button (bottom) */
+    padding: 10px 34px 36px 12px;
+    outline: none;
+}
+.git-cp-input::placeholder {
+    color: var(--ink-faint);
+}
+/* AI sparkle — minimal, top-right corner */
+.git-cp-ai {
+    position: absolute;
+    top: 3px;
+    right: 5px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--cmd);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+        color 0.1s,
+        transform 0.1s;
+}
+.git-cp-ai:hover {
+    color: var(--acc);
+    transform: scale(1.12);
+}
+/* commit button — minimal, bottom-right corner */
+.git-cp-commit {
+    position: absolute;
+    bottom: 10px;
+    right: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 11px;
+    border: 1px solid var(--acc-line);
+    background: var(--acc-soft);
+    color: var(--acc);
+    font-family: var(--mono);
+    font-size: 11px;
+    border-radius: 0;
+    cursor: pointer;
+    transition:
+        background 0.1s,
+        opacity 0.1s;
+}
+.git-cp-commit svg {
+    flex: none;
+}
+.git-cp-commit:hover {
+    background: color-mix(in srgb, var(--acc) 22%, transparent);
+}
+.git-cp-commit:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.git-cp-commit:disabled:hover {
+    background: var(--acc-soft);
+}
 .git-commit-input {
     width: 100%;
     background: var(--void);
@@ -1585,6 +1691,183 @@ button {
     font-size: 12px;
     padding: 7px 10px;
     outline: none;
+}
+
+/* ── git toolbar — quick actions + compact repo status (replaces the old
+   Status panel) ── */
+.git-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    width: 100%;
+    /* taller bar so the quick actions have real presence (was cramped) */
+    height: 38px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--line);
+    /* opacity-aware fill so window translucency shows through (matches the
+       app top bar) instead of a solid rail strip */
+    background: linear-gradient(180deg, color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent), transparent);
+    overflow: hidden;
+}
+.git-tb-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+}
+.git-tb-branch {
+    color: var(--acc);
+    font-weight: 700;
+    white-space: nowrap;
+}
+.git-tb-sync {
+    font-size: 10.5px;
+    white-space: nowrap;
+}
+.git-tb-sync.ok {
+    color: var(--live);
+}
+.git-tb-sync.warn {
+    color: var(--warn);
+}
+.git-tb-changed {
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.git-tb-stash {
+    font-size: 10px;
+    color: var(--warn);
+    white-space: nowrap;
+}
+.git-tb-busy {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    color: var(--warn);
+    font-style: italic;
+    white-space: nowrap;
+}
+.git-tb-busy.error {
+    color: var(--danger);
+    font-style: normal;
+}
+.git-tb-grow {
+    flex: 1 1 auto;
+}
+.git-tbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 9px;
+    flex: 0 0 auto;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    border-radius: 0;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+        color 0.1s,
+        border-color 0.1s,
+        background 0.1s;
+}
+.git-tbtn:hover {
+    color: var(--ink);
+    border-color: var(--acc-line);
+}
+.git-tbtn svg {
+    flex: none;
+    opacity: 0.85;
+}
+/* icon-only toolbar button (refresh) — square */
+.git-tbtn.icon {
+    width: 26px;
+    padding: 0;
+    justify-content: center;
+}
+.git-tbtn.pri {
+    color: var(--acc);
+    border-color: var(--acc-line);
+    background: var(--acc-soft);
+}
+.git-tbtn.ai {
+    color: var(--cmd);
+    border-color: rgba(255, 106, 193, 0.3);
+}
+.git-tbtn.live {
+    color: var(--live);
+    border-color: rgba(97, 255, 202, 0.3);
+}
+
+/* keybind hint — plain monospace glyph, no box. Faint by default so it
+   sits behind the label, brightens with the button on hover. */
+.git-kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1;
+    color: var(--ink-faint);
+    margin-left: 1px;
+}
+.git-tbtn:hover .git-kbd,
+.git-hbtn:hover .git-kbd {
+    color: var(--ink-dim);
+}
+
+/* per-panel header action buttons — revealed when the panel is focused or
+   hovered (lazygit-style). */
+.git-head-actions {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+.git-panel.focused .git-head-actions,
+.git-panel:hover .git-head-actions {
+    display: flex;
+}
+.git-hbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 18px;
+    padding: 0 7px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    border-radius: 0;
+    cursor: pointer;
+}
+.git-hbtn:hover {
+    color: var(--ink);
+    border-color: var(--acc-line);
+}
+.git-hbtn.warn {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 36%, transparent);
+}
+.git-hbtn.danger {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.git-hbtn.ai {
+    color: var(--cmd);
+}
+.git-hbtn.live {
+    color: var(--live);
+}
+.git-hbtn .git-kbd {
+    font-size: 8px;
 }
 
 .git-panel {
@@ -2220,7 +2503,7 @@ button {
     font-size: 9.5px;
     line-height: 1;
     padding: 2px 7px 2px 6px;
-    border-radius: 20px;
+    border-radius: 0;
     display: inline-flex;
     align-items: center;
     gap: 4px;

@@ -242,15 +242,13 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, se
         ctx.fill();
 
         if (r.isHead) {
-            ctx.save();
-            ctx.shadowColor = c;
-            ctx.shadowBlur = 9;
-            ctx.lineWidth = 2.4;
+            // HEAD = hollow ring with a filled core. No glow — keep it flat
+            // to match the rest of the UI.
+            ctx.lineWidth = 2.2;
             ctx.strokeStyle = c;
             ctx.beginPath();
             ctx.arc(nodeX, yMid, NODE_R + 1, 0, Math.PI * 2);
             ctx.stroke();
-            ctx.restore();
             ctx.fillStyle = c;
             ctx.beginPath();
             ctx.arc(nodeX, yMid, 2.3, 0, Math.PI * 2);
