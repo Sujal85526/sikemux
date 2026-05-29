@@ -1,11 +1,11 @@
 {
-  "version": "0.1.12",
-  "notes": "feat(git): commit graph timeline, top toolbar, AI commit message generation",
-  "pub_date": "2026-05-29T09:31:54Z",
+  "version": "0.1.13",
+  "notes": "rundeck deploy and git pane fixes",
+  "pub_date": "2026-05-29T12:56:56Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVNOQ3dqeEw3VTB6T202Z1ducFU1dVpqbU4xY2VHVDErSFppckg3MFlQYWZqckZVU3R0UDd1M3BjSTYrMUgvZ09aMzZYRGtxc1Nab0NUT3IwcVRWYUFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMDQ3MTEzCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmRLeHRrVHJ6K094YkNQdkMvNE9ma2RJY25HeEtJS2ZXL3VkbTVBWmRqL2ozZnFCTmJlVG44bUtqcnI3Ym1WdWJxYTVUWE4xRUE4VzR0MjFxZWRFOUJBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.12/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVhxbmZVY1h2ZUxwRjJ2U1B3RE5BZXI4eThkalh1SkxEZ0RFVkRTY3d5MFArck5QMCtVeStpUlArRXdJWEt4SGNOdjVybWZvWEN0TWFxcFhRdXJvU3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMDU5NDE1CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjdGMnUxcmt6NjRxUDNrSnE3cjVJUlJtZ3I5OUV0L2tzb0JNL0FYdmVIZWZWYXlkem92WlcwaDlmZ25RaWRMRUdCTllBN3dIaWo3T2JESm9RZ1VxWUNBPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.13/Sikemux.app.tar.gz"
     }
   }
 }
