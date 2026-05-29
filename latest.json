@@ -1,11 +1,11 @@
 {
-  "version": "0.1.11",
-  "notes": "Performance & stability release. Backend: language servers now shut down when their project closes (was leaking ~500MB rust-analyzer/pyright per project) and their stderr is drained so they can't deadlock; git status/overview/branches/log/file-at, diff, and the project-file walk all moved off the IPC worker pool so an fs storm in one repo no longer stalls terminal input; the fs watcher now ignores build/test/cache dirs (cargo/pytest/node runs stop firing cache-busting events); Rundeck config is mtime-cached instead of re-read every poll; Rundeck log/watch pollers back off exponentially on errors and give up instead of hammering an unreachable instance; AWS log tails and Rundeck handles self-prune on exit; idle background terminals reclaim scrollback memory after 10 min. Frontend: closing a project reaps its LSP servers; the git diff baseline only refetches on real git ops instead of every save; saving a file no longer triggers a re-read of every open tab.",
-  "pub_date": "2026-05-28T17:46:55Z",
+  "version": "0.1.12",
+  "notes": "feat(git): commit graph timeline, top toolbar, AI commit message generation",
+  "pub_date": "2026-05-29T09:31:54Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVk1L1pQd0ZOMThjMnZXY1UzbnNDeEsvaXhTOGJ3Tkh6UHpWVzgwRHpmYnYzTkFjMDJGbnBXU3AvSUZaTDJNVVlxdjB4bnlkazN5WG9PVWIxQnJ5SmdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5OTkwNDE0CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CklwUUV0N2oveVc3T1NnUUFFQW1KWXFNVGVDbFBLKzZxaXFDY1JESmJmL2Z2N2MybXZPa2xZWDQrNkVpVEs0OGlyTzlPK3h5OVZzYlUzOTJ6cWVxcUN3PT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.11/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVNOQ3dqeEw3VTB6T202Z1ducFU1dVpqbU4xY2VHVDErSFppckg3MFlQYWZqckZVU3R0UDd1M3BjSTYrMUgvZ09aMzZYRGtxc1Nab0NUT3IwcVRWYUFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMDQ3MTEzCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmRLeHRrVHJ6K094YkNQdkMvNE9ma2RJY25HeEtJS2ZXL3VkbTVBWmRqL2ozZnFCTmJlVG44bUtqcnI3Ym1WdWJxYTVUWE4xRUE4VzR0MjFxZWRFOUJBPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.12/Sikemux.app.tar.gz"
     }
   }
 }
