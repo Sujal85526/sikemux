@@ -183,6 +183,7 @@ function DeployRow({ paneId, project, cell }: { paneId: string; project: string;
     return (
         <div
             className="rnd-list-row"
+            title={cell.error ?? undefined}
             onClick={(e) => {
                 if (e.metaKey || e.ctrlKey) deploy(e);
                 else open();

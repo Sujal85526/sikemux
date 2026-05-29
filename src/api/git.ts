@@ -40,6 +40,7 @@ export interface GitOverview {
 
 export interface GitStash {
     index: number;
+    sha: string;
     refname: string;
     branch: string;
     message: string;
@@ -132,11 +133,11 @@ export const git = {
             mode,
             message: message ?? null,
         }),
-    stashApply: (repo: string, index: number) => invoke<void>("git_stash_apply", { repo, index }),
-    stashPop: (repo: string, index: number) => invoke<void>("git_stash_pop", { repo, index }),
-    stashDrop: (repo: string, index: number) => invoke<void>("git_stash_drop", { repo, index }),
-    stashBranch: (repo: string, index: number, name: string) => invoke<void>("git_stash_branch", { repo, index, name }),
-    stashRename: (repo: string, index: number, newMessage: string) => invoke<void>("git_stash_rename", { repo, index, newMessage }),
+    stashApply: (repo: string, refname: string, sha: string) => invoke<void>("git_stash_apply", { repo, refname, sha }),
+    stashPop: (repo: string, refname: string, sha: string) => invoke<void>("git_stash_pop", { repo, refname, sha }),
+    stashDrop: (repo: string, refname: string, sha: string) => invoke<void>("git_stash_drop", { repo, refname, sha }),
+    stashBranch: (repo: string, refname: string, sha: string, name: string) => invoke<void>("git_stash_branch", { repo, refname, sha, name }),
+    stashRename: (repo: string, refname: string, sha: string, newMessage: string) => invoke<void>("git_stash_rename", { repo, refname, sha, newMessage }),
 
     // ---- remotes ----
     remotes: (repo: string) => invoke<GitRemote[]>("git_remotes", { repo }),

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { git } from "../../api/git";
 import { rundeckApi, type BranchRelation, type PlanResult, type PushAction } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { useResourceEnabled } from "../../state/resources";
@@ -14,6 +15,7 @@ interface Props {
         service: string;
         jobId: string;
         branch: string;
+        repoPath?: string;
     };
     active: boolean;
 }
@@ -53,17 +55,24 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
     const settings = useStore((s) => s.rundeck);
     const isProd = settings.prodEnvs.includes(level.env);
 
-    // Active session cwd → repo path used by the plan endpoint for local
-    // inspection. Empty string → "no repo" semantics.
+    // Source project cwd → repo path used by the plan endpoint for local
+    // inspection. Empty string → "no repo" semantics. Deploy views opened
+    // from a project session carry this explicitly because the active session
+    // becomes the Rundeck session after navigation.
     const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const repoPath = session?.cwd ?? "";
+    const repoPath = level.repoPath ?? session?.cwd ?? "";
 
     const [branch, setBranch] = useState(level.branch);
     const [prodInput, setProdInput] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const plan = useResourceEnabled(active, rndPlanR, level.project, level.service, branch, repoPath);
+    useEffect(() => {
+        setBranch(level.branch);
+    }, [level.branch, level.jobId, level.project, level.service]);
+
+    const branchValue = branch.trim();
+    const plan = useResourceEnabled(active && !!branchValue, rndPlanR, level.project, level.service, branchValue, repoPath);
 
     const banner = useMemo(() => {
         if (!plan.data) return null;
@@ -71,14 +80,18 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
     }, [plan.data]);
 
     const prodOk = !isProd || prodInput.trim() === level.env;
-    const canDeploy = !!branch && !busy && prodOk;
+    const planReady = plan.status === "ok" && plan.data?.target_branch === branchValue;
+    const canDeploy = !!branchValue && !busy && prodOk && planReady;
 
     const deploy = async () => {
         if (!canDeploy) return;
         setBusy(true);
         setError(null);
         try {
-            const res = await rundeckApi.run(level.project, level.service, branch);
+            if (plan.data?.push_action === "will-push-current" && repoPath) {
+                await git.push(repoPath);
+            }
+            const res = await rundeckApi.run(level.project, level.service, branchValue);
             // Replace deploy view with the live execution view — single forward
             // navigation, no popups.
             cmd.rundeckReplace(paneId, {
@@ -131,9 +144,11 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
                         <span className="rnd-spinner inline" /> computing plan…
                     </div>
                 )}
+                {!branchValue && <div className="rnd-plan-row muted">Enter a branch to compute the deploy plan.</div>}
                 {plan.data && <PlanTable plan={plan.data} isProd={isProd} />}
                 {banner && <div className={`rnd-banner ${banner.kind}`}>{banner.text}</div>}
                 {plan.data?.branch_relation_detail && <div className="rnd-banner muted">{plan.data.branch_relation_detail}</div>}
+                {plan.error && <div className="rnd-banner danger">{plan.error}</div>}
             </div>
 
             {isProd && (

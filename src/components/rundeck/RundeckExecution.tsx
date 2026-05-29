@@ -196,9 +196,10 @@ export function RundeckExecution({ paneId: _paneId, level, active }: Props) {
                     </div>
                     <div className="rnd-steps-list">
                         {(state?.steps ?? []).length === 0 && <div className="rnd-empty muted compact">waiting for steps…</div>}
-                        {(state?.steps ?? []).map((s, i) => (
-                            <StepRow key={i} idx={i} step={s} selected={stepFilter === String(i + 1)} onClick={() => setStepFilter(String(i + 1))} />
-                        ))}
+                        {(state?.steps ?? []).map((s, i) => {
+                            const filterKey = stepFilterKey(s, i);
+                            return <StepRow key={i} idx={i} step={s} selected={stepFilter === filterKey} onClick={() => setStepFilter(filterKey)} />;
+                        })}
                     </div>
                 </aside>
 
@@ -232,6 +233,10 @@ export function RundeckExecution({ paneId: _paneId, level, active }: Props) {
     );
 }
 
+function stepFilterKey(step: RundeckStep, idx: number): string {
+    return step.stepctx ?? String(idx + 1);
+}
+
 function StepRow({ idx, step, selected, onClick }: { idx: number; step: RundeckStep; selected: boolean; onClick: () => void }) {
     // Rundeck's /state returns these flat (no stepState wrapper) — see
     // executions.rs for the API shape note.
@@ -242,7 +247,7 @@ function StepRow({ idx, step, selected, onClick }: { idx: number; step: RundeckS
         <button className={`rnd-step${selected ? " selected" : ""} step-${ui.cls}`} onClick={onClick} title={stateName}>
             <span className="rnd-step-num">{idx + 1}</span>
             <span className={`rnd-step-glyph step-${ui.cls}`}>{ui.label}</span>
-            <span className="rnd-step-label">step {step.stepctx ?? step.id ?? idx + 1}</span>
+            <span className="rnd-step-label">step {stepFilterKey(step, idx)}</span>
             <span className="rnd-step-dur">{dur}</span>
         </button>
     );

@@ -28,11 +28,13 @@ export interface GitPromptSuggestion {
  *  state lives in the store so React just re-renders. */
 export type GitModal =
   | {
+      ownerPaneId: string | null;
       kind: "menu";
       title: string;
       items: GitMenuItem[];
     }
   | {
+      ownerPaneId: string | null;
       kind: "confirm";
       title: string;
       body: string;
@@ -42,6 +44,7 @@ export type GitModal =
       onConfirm: () => void | Promise<void>;
     }
   | {
+      ownerPaneId: string | null;
       kind: "prompt";
       title: string;
       placeholder?: string;
@@ -51,6 +54,7 @@ export type GitModal =
       onConfirm: (value: string) => void | Promise<void>;
     }
   | {
+      ownerPaneId: string | null;
       kind: "cheatsheet";
       title: string;
       sections: GitCheatsheetSection[];

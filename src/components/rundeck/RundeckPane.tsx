@@ -45,7 +45,7 @@ export function RundeckPane({ paneId, active }: Props) {
             // so the user just retypes the password.
             return <RundeckLogin paneId={paneId} initialUrl={status.data.url} initialUser={status.data.user} onDone={() => status.refresh()} />;
         }
-        if (status.data && status.data.configured && !status.data.ok) {
+        if (status.data && status.data.configured && !status.data.ok && status.data.auth_failed) {
             // Token rejected — show the login form with a hint.
             return (
                 <RundeckLogin
@@ -56,6 +56,9 @@ export function RundeckPane({ paneId, active }: Props) {
                     onDone={() => status.refresh()}
                 />
             );
+        }
+        if (status.data && status.data.configured && !status.data.ok) {
+            return <RundeckStatusError message={status.data.message ?? "Rundeck connection failed"} onRetry={() => status.refresh()} />;
         }
         if (top.kind === "matrix") return <RundeckMatrix paneId={paneId} active={active} />;
         if (top.kind === "service") return <RundeckService paneId={paneId} level={top} active={active} />;
@@ -75,6 +78,17 @@ export function RundeckPane({ paneId, active }: Props) {
                 {showTree && <RundeckProjectTree paneId={paneId} active={active} />}
                 <div className="rnd-body">{body}</div>
             </div>
+        </div>
+    );
+}
+
+function RundeckStatusError({ message, onRetry }: { message: string; onRetry: () => void }) {
+    return (
+        <div className="rnd-empty">
+            <div className="rnd-empty-msg">couldn't reach Rundeck — {message}</div>
+            <button className="rnd-btn-sm" onClick={onRetry}>
+                retry
+            </button>
         </div>
     );
 }

@@ -86,7 +86,7 @@ function DeployChip({ service, envLabel, project }: { service: string; envLabel:
     // Same cache entry the Rundeck pane uses → no extra fetch when both are open.
     const spec = useMemo(() => [{ label: envLabel, project, only_succeeded: true }], [envLabel, project]);
     const res = useResource(rndMatrixR, spec);
-    const cell = res.data?.envs[0]?.cells.find((c) => c.service === service);
+    const cell = res.data?.envs[0]?.cells.find((c) => c.name === service || c.service === service || c.service.endsWith(`/${service}`));
 
     const branch = cell?.branch ?? null;
     const k = branchKind(branch);

@@ -67,7 +67,7 @@ export type EcsLevel =
 
 export type RundeckLevel =
   | { kind: "matrix" }
-  | { kind: "service"; env: string; project: string; service: string; jobId: string }
+  | { kind: "service"; env: string; project: string; service: string; jobId: string; repoPath?: string }
   | {
       kind: "deploy";
       env: string;
@@ -75,6 +75,7 @@ export type RundeckLevel =
       service: string;
       jobId: string;
       branch: string;
+      repoPath?: string;
     }
   | { kind: "execution"; executionId: number; service: string; project: string };
 

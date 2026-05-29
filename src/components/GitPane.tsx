@@ -595,7 +595,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         const s = selectedStash();
         if (!s) return;
         void run(`applying ${s.refname}`, async () => {
-            await git.stashApply(repo, s.index);
+            await git.stashApply(repo, s.refname, s.sha);
             return `✓ applied ${s.refname}`;
         });
     };
@@ -604,7 +604,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         const s = selectedStash();
         if (!s) return;
         void run(`popping ${s.refname}`, async () => {
-            await git.stashPop(repo, s.index);
+            await git.stashPop(repo, s.refname, s.sha);
             return `✓ popped ${s.refname}`;
         });
     };
@@ -619,7 +619,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 const n = name.trim();
                 if (!n) return;
                 void run(`branching from ${s.refname}`, async () => {
-                    await git.stashBranch(repo, s.index, n);
+                    await git.stashBranch(repo, s.refname, s.sha, n);
                     return `✓ created ${n} from ${s.refname}`;
                 });
             },
@@ -636,7 +636,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 const m = message.trim();
                 if (!m || m === s.message) return;
                 void run(`renaming ${s.refname}`, async () => {
-                    await git.stashRename(repo, s.index, m);
+                    await git.stashRename(repo, s.refname, s.sha, m);
                     return `✓ renamed ${s.refname}`;
                 });
             },
@@ -653,7 +653,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             confirmLabel: "drop",
             onConfirm: () => {
                 void run(`dropping ${s.refname}`, async () => {
-                    await git.stashDrop(repo, s.index);
+                    await git.stashDrop(repo, s.refname, s.sha);
                     return `✓ dropped ${s.refname}`;
                 });
             },
@@ -858,14 +858,13 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const doFetch = (remote: string | null) => {
         void run(remote ? `fetching ${remote}…` : "fetching all remotes…", async () => {
             const out = await git.fetch(repo, remote);
+            await remotesRes.refresh();
+            if (remoteDrill) await remoteBranchesRes.refresh();
             // Surface bringing-down counts when git emits them — `out` from
             // `git fetch --prune` is usually empty on success, so default
             // to a friendly tick.
             return out.trim().length > 0 ? out : `✓ fetched ${remote ?? "all"}`;
         });
-        // Branches data depends on remote tip — bounce the matching cache.
-        void remotesRes.refresh().catch(reportError("remote refresh"));
-        if (remoteDrill) void remoteBranchesRes.refresh().catch(reportError("remote branch refresh"));
     };
 
     const openAddRemotePrompt = () => {
@@ -1779,7 +1778,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             </div>
             </div>
 
-            <GitModalRenderer />
+            <GitModalRenderer paneId={paneId} active={active} />
         </div>
     );
 }

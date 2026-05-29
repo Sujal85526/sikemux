@@ -34,6 +34,7 @@ export interface RundeckStatus {
     token_present: boolean;
     rundeck_version: string | null;
     ok: boolean;
+    auth_failed: boolean;
     message: string | null;
 }
 
@@ -89,6 +90,7 @@ export interface MatrixCell {
     ended_at: string | null;
     execution_id: number | null;
     permalink: string | null;
+    error: string | null;
 }
 
 export interface MatrixEnv {

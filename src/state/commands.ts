@@ -400,6 +400,9 @@ export function selectRundeckProject(paneId: string, project: string, envFolder:
  *  no alias table. If the user has e.g. a `staging` project upstream,
  *  envLabel "staging" finds it; if not, the chip just doesn't fire. */
 export async function openRundeckServiceFor(service: string, envLabel: string): Promise<void> {
+    const before = getState();
+    const sourceSession = before.sessions[before.activeSessionId];
+    const sourceRepoPath = sourceSession?.kind === "project" ? sourceSession.cwd : "";
     // Ensure the projects list is in cache (cheap if already loaded).
     const projects = (await fetchResource(rndProjectsR).catch(() => null)) ?? peekResource(rndProjectsR) ?? [];
     const envLower = envLabel.toLowerCase();
@@ -424,6 +427,7 @@ export async function openRundeckServiceFor(service: string, envLabel: string): 
                 project,
                 service,
                 jobId: job.id,
+                repoPath: sourceRepoPath,
             },
         ]);
     } catch {

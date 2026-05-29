@@ -16,8 +16,15 @@ import { getState, setState } from "./store";
 
 // ---- modal control ------------------------------------------------------
 
+function currentPaneId(): string | null {
+  const st = getState();
+  const session = st.sessions[st.activeSessionId];
+  if (!session || session.view !== "windows") return null;
+  return st.windows[session.activeWindowId]?.activePaneId ?? null;
+}
+
 export function openGitMenu(title: string, items: GitMenuItem[]): void {
-  setState({ gitModal: { kind: "menu", title, items } });
+  setState({ gitModal: { ownerPaneId: currentPaneId(), kind: "menu", title, items } });
 }
 
 export function openGitConfirm(opts: {
@@ -30,6 +37,7 @@ export function openGitConfirm(opts: {
 }): void {
   setState({
     gitModal: {
+      ownerPaneId: currentPaneId(),
       kind: "confirm",
       title: opts.title,
       body: opts.body,
@@ -51,6 +59,7 @@ export function openGitPrompt(opts: {
 }): void {
   setState({
     gitModal: {
+      ownerPaneId: currentPaneId(),
       kind: "prompt",
       title: opts.title,
       placeholder: opts.placeholder,
@@ -66,7 +75,7 @@ export function openGitCheatsheet(
   title: string,
   sections: GitCheatsheetSection[],
 ): void {
-  setState({ gitModal: { kind: "cheatsheet", title, sections } });
+  setState({ gitModal: { ownerPaneId: currentPaneId(), kind: "cheatsheet", title, sections } });
 }
 
 export function closeGitModal(): void {

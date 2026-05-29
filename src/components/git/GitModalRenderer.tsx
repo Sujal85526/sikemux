@@ -5,11 +5,16 @@ import { useStore } from "../../state/store";
 /** Single mounted modal renderer. Reads `store.gitModal` and paints
  *  whichever variant is active. Captures keys at the window level while
  *  open so panel keybindings don't fire underneath. */
-export function GitModalRenderer() {
+export function GitModalRenderer({ paneId, active }: { paneId: string; active: boolean }) {
     const modal = useStore((s) => s.gitModal);
+    const ownsModal = !!modal && modal.ownerPaneId === paneId;
 
     useEffect(() => {
-        if (!modal) return;
+        if (!modal || !ownsModal) return;
+        if (!active) {
+            closeGitModal();
+            return;
+        }
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 e.preventDefault();
@@ -26,9 +31,9 @@ export function GitModalRenderer() {
         };
         window.addEventListener("keydown", onKey, true);
         return () => window.removeEventListener("keydown", onKey, true);
-    }, [modal]);
+    }, [modal, ownsModal, active]);
 
-    if (!modal) return null;
+    if (!modal || !ownsModal || !active) return null;
     return (
         <div className="git-modal-scrim" onClick={closeGitModal}>
             <div className={`git-modal git-modal-${modal.kind}`} onClick={(e) => e.stopPropagation()}>

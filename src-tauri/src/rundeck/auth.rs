@@ -172,7 +172,20 @@ pub struct RundeckStatus {
     pub token_present: bool,
     pub rundeck_version: Option<String>,
     pub ok: bool,
+    pub auth_failed: bool,
     pub message: Option<String>,
+}
+
+fn is_auth_failure(e: &AppError) -> bool {
+    matches!(
+        e,
+        AppError::RundeckAuth(_)
+            | AppError::RundeckUnconfigured
+            | AppError::RundeckHttp {
+                status: 401 | 403,
+                ..
+            }
+    )
 }
 
 #[tauri::command]
@@ -191,6 +204,7 @@ pub async fn rnd_status() -> RundeckStatus {
             token_present: !cfg.token.is_empty(),
             rundeck_version: None,
             ok: false,
+            auth_failed: false,
             message: None,
         };
     }
@@ -207,6 +221,7 @@ pub async fn rnd_status() -> RundeckStatus {
                 .and_then(|s| s.as_str())
                 .map(String::from),
             ok: true,
+            auth_failed: false,
             message: None,
         },
         Err(e) => RundeckStatus {
@@ -216,6 +231,7 @@ pub async fn rnd_status() -> RundeckStatus {
             token_present: true,
             rundeck_version: None,
             ok: false,
+            auth_failed: is_auth_failure(&e),
             message: Some(e.to_string()),
         },
     }

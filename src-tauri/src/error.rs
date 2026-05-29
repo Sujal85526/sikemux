@@ -104,6 +104,8 @@ impl From<&str> for AppError {
 struct Wire<'a> {
     category: &'a str,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<u16>,
 }
 
 impl Serialize for AppError {
@@ -111,6 +113,10 @@ impl Serialize for AppError {
         Wire {
             category: self.category(),
             message: self.to_string(),
+            status: match self {
+                AppError::RundeckHttp { status, .. } => Some(*status),
+                _ => None,
+            },
         }
         .serialize(ser)
     }

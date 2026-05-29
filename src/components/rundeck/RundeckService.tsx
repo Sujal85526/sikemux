@@ -1,9 +1,9 @@
-import { useEffect } from "react";
-import { type RundeckExecution } from "../../api/rundeck";
+import { useEffect, useState } from "react";
+import { git } from "../../api/git";
+import { rundeckApi, type RundeckExecution } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { useResourceEnabled } from "../../state/resources";
 import { rndExecutionsR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
 interface Props {
@@ -14,12 +14,14 @@ interface Props {
         project: string;
         service: string;
         jobId: string;
+        repoPath?: string;
     };
     active: boolean;
 }
 
 export function RundeckService({ paneId, level, active }: Props) {
     const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, 25);
+    const [actionError, setActionError] = useState<string | null>(null);
 
     return (
         <div className="rnd-service">
@@ -32,13 +34,13 @@ export function RundeckService({ paneId, level, active }: Props) {
                 <div className="rnd-section-actions">
                     <button
                         className="rnd-btn rnd-btn-primary"
-                        onClick={() => deployCurrentBranch(paneId, level)}
+                        onClick={() => void deployCurrentBranch(paneId, level, setActionError)}
                         title="Deploy current local branch">
                         deploy current branch
                     </button>
                     <button
                         className="rnd-btn"
-                        onClick={() => redeployLast(paneId, level, execs.data ?? [])}
+                        onClick={() => void redeployLast(paneId, level, execs.data ?? [], setActionError)}
                         disabled={!execs.data?.length}
                         title="Redeploy the last successful branch">
                         redeploy last
@@ -48,6 +50,8 @@ export function RundeckService({ paneId, level, active }: Props) {
                     </button>
                 </div>
             </div>
+
+            {actionError && <div className="rnd-banner danger">{actionError}</div>}
 
             <div className="rnd-history">
                 <div className="rnd-history-head">
@@ -100,26 +104,22 @@ function ExecutionRow({ paneId, level, ex }: { paneId: string; level: { env: str
     );
 }
 
-async function deployCurrentBranch(paneId: string, level: { env: string; project: string; service: string; jobId: string }) {
-    // Need a local branch — use the active session's cwd to introspect via plan.
-    const session = useStore.getState().sessions[useStore.getState().activeSessionId];
-    const repoPath = session?.cwd ?? "";
-    // Heuristic default: 'main'. The deploy view will run a fresh plan() and
-    // surface the real current branch — at which point the user can edit.
-    cmd.rundeckPush(paneId, {
-        kind: "deploy",
-        env: level.env,
-        project: level.project,
-        service: level.service,
-        jobId: level.jobId,
-        branch: "main",
-    });
-    void repoPath;
-}
-
-function redeployLast(paneId: string, level: { env: string; project: string; service: string; jobId: string }, execs: RundeckExecution[]) {
-    const lastOk = execs.find((e) => e.status === "succeeded");
-    const branch = lastOk?.job?.options?.BRANCH ?? "main";
+async function deployCurrentBranch(
+    paneId: string,
+    level: { env: string; project: string; service: string; jobId: string; repoPath?: string },
+    setError: (message: string | null) => void,
+) {
+    setError(null);
+    const repoPath = level.repoPath ?? "";
+    let branch = "";
+    if (repoPath) {
+        try {
+            const status = await git.status(repoPath);
+            branch = status.branch === "HEAD" ? "" : status.branch;
+        } catch (e) {
+            setError(typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e));
+        }
+    }
     cmd.rundeckPush(paneId, {
         kind: "deploy",
         env: level.env,
@@ -127,6 +127,39 @@ function redeployLast(paneId: string, level: { env: string; project: string; ser
         service: level.service,
         jobId: level.jobId,
         branch,
+        repoPath,
+    });
+}
+
+async function redeployLast(
+    paneId: string,
+    level: { env: string; project: string; service: string; jobId: string; repoPath?: string },
+    execs: RundeckExecution[],
+    setError: (message: string | null) => void,
+) {
+    setError(null);
+    let branch = execs.find((e) => e.status === "succeeded" && e.job?.options?.BRANCH)?.job?.options?.BRANCH ?? "";
+    if (!branch) {
+        try {
+            const latest = await rundeckApi.executions(level.jobId, 1, true);
+            branch = latest[0]?.job?.options?.BRANCH ?? "";
+        } catch (e) {
+            setError(typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e));
+            return;
+        }
+    }
+    if (!branch) {
+        setError("No successful execution with a BRANCH option found.");
+        return;
+    }
+    cmd.rundeckPush(paneId, {
+        kind: "deploy",
+        env: level.env,
+        project: level.project,
+        service: level.service,
+        jobId: level.jobId,
+        branch,
+        repoPath: level.repoPath,
     });
 }
 

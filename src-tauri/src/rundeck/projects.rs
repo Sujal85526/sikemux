@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use futures::future::join_all;
+use futures::{future::join_all, stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
@@ -112,6 +112,7 @@ pub struct MatrixCell {
     pub ended_at: Option<String>,
     pub execution_id: Option<u64>,
     pub permalink: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -156,19 +157,26 @@ async fn fetch_last_for_job(job: &RundeckJob, only_succeeded: bool) -> MatrixCel
         ended_at: None,
         execution_id: None,
         permalink: None,
+        error: None,
     };
-    if let Ok(resp) = result {
-        if let Some(ex) = resp.executions.into_iter().next() {
-            cell.execution_id = Some(ex.id);
-            cell.status = ex.status;
-            cell.user = ex.user;
-            cell.permalink = ex.permalink;
-            cell.started_at = ex.date_started.and_then(|d| d.date);
-            cell.ended_at = ex.date_ended.and_then(|d| d.date);
-            cell.branch = ex
-                .job
-                .and_then(|j| j.options)
-                .and_then(|opts| opts.get("BRANCH").cloned());
+    match result {
+        Ok(resp) => {
+            if let Some(ex) = resp.executions.into_iter().next() {
+                cell.execution_id = Some(ex.id);
+                cell.status = ex.status;
+                cell.user = ex.user;
+                cell.permalink = ex.permalink;
+                cell.started_at = ex.date_started.and_then(|d| d.date);
+                cell.ended_at = ex.date_ended.and_then(|d| d.date);
+                cell.branch = ex
+                    .job
+                    .and_then(|j| j.options)
+                    .and_then(|opts| opts.get("BRANCH").cloned());
+            }
+        }
+        Err(e) => {
+            cell.status = Some("error".into());
+            cell.error = Some(e.to_string());
         }
     }
     cell
@@ -182,11 +190,12 @@ pub async fn rnd_branches_matrix(envs: Vec<EnvSpec>) -> AppResult<MatrixResult> 
         let jobs_result = rnd_jobs(spec.project.clone()).await;
         let (cells, err) = match jobs_result {
             Ok(jobs) => {
-                let cells = join_all(
-                    jobs.iter()
-                        .map(|j| fetch_last_for_job(j, spec.only_succeeded)),
-                )
-                .await;
+                let mut cells = stream::iter(jobs.into_iter())
+                    .map(|j| async move { fetch_last_for_job(&j, spec.only_succeeded).await })
+                    .buffer_unordered(8)
+                    .collect::<Vec<_>>()
+                    .await;
+                cells.sort_by(|a, b| a.service.cmp(&b.service));
                 (cells, None)
             }
             Err(e) => (Vec::new(), Some(e.to_string())),

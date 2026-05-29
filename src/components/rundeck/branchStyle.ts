@@ -27,7 +27,7 @@ export function statusKind(status: string | null | undefined): "succeeded" | "fa
     if (!status) return "unknown";
     const s = status.toLowerCase();
     if (s === "succeeded") return "succeeded";
-    if (s === "failed" || s === "timedout" || s === "other-failed") return "failed";
+    if (s === "failed" || s === "timedout" || s === "other-failed" || s === "error") return "failed";
     if (s === "running") return "running";
     if (s === "aborted") return "aborted";
     return "unknown";

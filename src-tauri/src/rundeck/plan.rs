@@ -69,6 +69,7 @@ pub async fn rnd_plan(
     target_branch: String,
     repo_path: String,
 ) -> AppResult<PlanResult> {
+    let target_branch = target_branch.trim().to_string();
     let job = resolve_job(&project, &service).await?;
 
     // Last-successful deploy via API; tolerant of error (caller still wants

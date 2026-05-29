@@ -818,37 +818,43 @@ fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn git_commit(repo: String, message: String) -> Result<String, String> {
-    commit_with_message(&repo, &message)
+    run_blocking(move || commit_with_message(&repo, &message)).await
 }
 
 #[tauri::command]
 pub async fn git_push(repo: String) -> Result<String, String> {
-    let (ok, so, se) = run_git(&repo, &["push"])?;
-    if ok {
-        return Ok(format!("{so}{se}").trim().to_string());
-    }
-    if se.contains("has no upstream branch") || se.contains("--set-upstream") {
-        let branch = git_ok(&repo, &["branch", "--show-current"])?
-            .trim()
-            .to_string();
-        let (ok2, so2, se2) = run_git(&repo, &["push", "--set-upstream", "origin", &branch])?;
-        return if ok2 {
-            Ok(format!("{so2}{se2}").trim().to_string())
-        } else {
-            Err(se2)
-        };
-    }
-    Err(se)
+    run_blocking(move || -> Result<String, String> {
+        let (ok, so, se) = run_git(&repo, &["push"])?;
+        if ok {
+            return Ok(format!("{so}{se}").trim().to_string());
+        }
+        if se.contains("has no upstream branch") || se.contains("--set-upstream") {
+            let branch = git_ok(&repo, &["branch", "--show-current"])?
+                .trim()
+                .to_string();
+            let (ok2, so2, se2) = run_git(&repo, &["push", "--set-upstream", "origin", &branch])?;
+            return if ok2 {
+                Ok(format!("{so2}{se2}").trim().to_string())
+            } else {
+                Err(se2)
+            };
+        }
+        Err(se)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_pull(repo: String) -> Result<String, String> {
-    let (ok, so, se) = run_git(&repo, &["pull", "--ff-only"])?;
-    if ok {
-        Ok(format!("{so}{se}").trim().to_string())
-    } else {
-        Err(se)
-    }
+    run_blocking(move || -> Result<String, String> {
+        let (ok, so, se) = run_git(&repo, &["pull", "--ff-only"])?;
+        if ok {
+            Ok(format!("{so}{se}").trim().to_string())
+        } else {
+            Err(se)
+        }
+    })
+    .await
 }
 
 // ---- AI commit ------------------------------------------------------------
@@ -1208,12 +1214,12 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
 
 /// Discard changes to a single file. `mode`:
 ///   - "unstaged"       → revert working tree to match the index
-///                        (= `git checkout -- <path>`). Staged changes are
+///                        (= `git restore --worktree <path>`). Staged changes are
 ///                        preserved.
 ///   - "staged"         → unstage but leave the worktree alone
-///                        (= `git reset HEAD <path>`).
+///                        (= `git restore --staged <path>`).
 ///   - "all"            → discard staged AND unstaged changes: first
-///                        reset, then checkout. For untracked files this
+///                        unstage, then restore. For untracked files this
 ///                        deletes the file (= `git clean -f <path>`).
 ///
 /// For new (untracked) files, "unstaged" and "all" both remove the file
@@ -1222,26 +1228,24 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
 pub async fn git_discard_file(repo: String, path: String, mode: String) -> Result<(), String> {
     match mode.as_str() {
         "staged" => {
-            if git_has_head(&repo) {
-                git_ok(&repo, &["reset", "HEAD", "--", &path])?;
-            } else if path_in_index(&repo, &path) {
-                git_ok(&repo, &["rm", "-f", "--cached", "--", &path])?;
-            }
+            git_ok(&repo, &["restore", "--staged", "--", &path])
+                .or_else(|_| git_ok(&repo, &["reset", "HEAD", "--", &path]))
+                .or_else(|_| git_ok(&repo, &["rm", "--cached", "--ignore-unmatch", "--", &path]))?;
         }
         "unstaged" => {
             if path_in_index(&repo, &path) {
-                git_ok(&repo, &["checkout", "--", &path])?;
+                // Restore the worktree from the index, preserving staged
+                // content. `checkout HEAD -- path` would also wipe staged edits.
+                git_ok(&repo, &["restore", "--worktree", "--", &path])?;
             } else {
                 git_ok(&repo, &["clean", "-f", "--", &path])?;
             }
         }
         "all" => {
+            let _ = git_ok(&repo, &["restore", "--staged", "--", &path])
+                .or_else(|_| git_ok(&repo, &["reset", "HEAD", "--", &path]));
             if path_in_head(&repo, &path) {
-                git_ok(&repo, &["reset", "HEAD", "--", &path])?;
-                git_ok(&repo, &["checkout", "HEAD", "--", &path])?;
-            } else if path_in_index(&repo, &path) {
-                git_ok(&repo, &["rm", "-f", "--cached", "--", &path])?;
-                git_ok(&repo, &["clean", "-f", "--", &path])?;
+                git_ok(&repo, &["restore", "--worktree", "--", &path])?;
             } else {
                 git_ok(&repo, &["clean", "-f", "--", &path])?;
             }
@@ -1259,6 +1263,9 @@ pub struct GitStash {
     /// single session, but it shifts whenever the user drops/pops, so
     /// the UI re-reads after every mutation.
     index: usize,
+    /// Stash commit id. This is the stable guard used before apply/pop/drop so
+    /// external stash-list edits cannot make a stale UI row target another stash.
+    sha: String,
     /// `stash@{N}` — the symbolic ref form, useful for `git stash apply <ref>`.
     refname: String,
     /// Branch name the stash was created from.
@@ -1272,15 +1279,17 @@ pub async fn git_stash_list(repo: String) -> Result<Vec<GitStash>, String> {
     // Format chosen so we don't depend on lazy field parsing — `%gd` is
     // the selector (`stash@{N}`), `%gs` is the message. We compute branch
     // from the message prefix (`WIP on <branch>:` / `On <branch>:`).
-    let out = git_ok(&repo, &["stash", "list", "--format=%gd%x09%gs"])?;
+    let out = git_ok(&repo, &["stash", "list", "--format=%H%x09%gd%x09%gs"])?;
     let mut entries = Vec::new();
     for (idx, line) in out.lines().enumerate() {
-        let mut parts = line.splitn(2, '\t');
+        let mut parts = line.splitn(3, '\t');
+        let sha = parts.next().unwrap_or("").to_string();
         let refname = parts.next().unwrap_or("").to_string();
         let message = parts.next().unwrap_or("").to_string();
         let branch = parse_stash_branch(&message);
         entries.push(GitStash {
             index: idx,
+            sha,
             refname,
             branch,
             message,
@@ -1296,6 +1305,33 @@ fn parse_stash_branch(message: &str) -> String {
         .or_else(|| message.strip_prefix("On "))
         .unwrap_or(message);
     stripped.split(':').next().unwrap_or("").trim().to_string()
+}
+
+fn resolve_stash_ref(repo: &str, refname: &str, expected_sha: &str) -> Result<String, String> {
+    let cur_sha = git_ok(repo, &["rev-parse", refname])
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if !expected_sha.is_empty() && cur_sha == expected_sha {
+        return Ok(refname.to_string());
+    }
+
+    let out = git_ok(repo, &["stash", "list", "--format=%H%x09%gd"])?;
+    for line in out.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let sha = parts.next().unwrap_or("");
+        let name = parts.next().unwrap_or("");
+        if sha == expected_sha && !name.is_empty() {
+            return Ok(name.to_string());
+        }
+    }
+
+    if expected_sha.is_empty() && !cur_sha.is_empty() {
+        return Ok(refname.to_string());
+    }
+    Err(format!(
+        "stash {refname} changed or no longer exists; refresh the stash list"
+    ))
 }
 
 /// Create a new stash. `mode`:
@@ -1336,29 +1372,34 @@ pub async fn git_stash_push(
 }
 
 #[tauri::command]
-pub async fn git_stash_apply(repo: String, index: usize) -> Result<(), String> {
-    let r = format!("stash@{{{index}}}");
+pub async fn git_stash_apply(repo: String, refname: String, sha: String) -> Result<(), String> {
+    let r = resolve_stash_ref(&repo, &refname, &sha)?;
     git_ok(&repo, &["stash", "apply", &r])?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn git_stash_pop(repo: String, index: usize) -> Result<(), String> {
-    let r = format!("stash@{{{index}}}");
+pub async fn git_stash_pop(repo: String, refname: String, sha: String) -> Result<(), String> {
+    let r = resolve_stash_ref(&repo, &refname, &sha)?;
     git_ok(&repo, &["stash", "pop", &r])?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn git_stash_drop(repo: String, index: usize) -> Result<(), String> {
-    let r = format!("stash@{{{index}}}");
+pub async fn git_stash_drop(repo: String, refname: String, sha: String) -> Result<(), String> {
+    let r = resolve_stash_ref(&repo, &refname, &sha)?;
     git_ok(&repo, &["stash", "drop", &r])?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn git_stash_branch(repo: String, index: usize, name: String) -> Result<(), String> {
-    let r = format!("stash@{{{index}}}");
+pub async fn git_stash_branch(
+    repo: String,
+    refname: String,
+    sha: String,
+    name: String,
+) -> Result<(), String> {
+    let r = resolve_stash_ref(&repo, &refname, &sha)?;
     git_ok(&repo, &["stash", "branch", &name, &r])?;
     Ok(())
 }
@@ -1366,12 +1407,13 @@ pub async fn git_stash_branch(repo: String, index: usize, name: String) -> Resul
 #[tauri::command]
 pub async fn git_stash_rename(
     repo: String,
-    index: usize,
+    refname: String,
+    sha: String,
     new_message: String,
 ) -> Result<(), String> {
     // No native `git stash rename` — drop + stash store with the new
     // message preserves the stash content while replacing its label.
-    let r = format!("stash@{{{index}}}");
+    let r = resolve_stash_ref(&repo, &refname, &sha)?;
     // Grab the underlying commit SHA for the stash so we can re-store.
     let sha = git_ok(&repo, &["rev-parse", &r])?.trim().to_string();
     if sha.is_empty() {
@@ -1457,11 +1499,14 @@ pub async fn git_remote_set_url(repo: String, name: String, url: String) -> Resu
 /// deleted upstream" trap.
 #[tauri::command]
 pub async fn git_fetch(repo: String, remote: Option<String>) -> Result<String, String> {
-    let out = match remote {
-        Some(r) if !r.is_empty() => git_ok(&repo, &["fetch", "--prune", &r])?,
-        _ => git_ok(&repo, &["fetch", "--all", "--prune"])?,
-    };
-    Ok(out)
+    run_blocking(move || -> Result<String, String> {
+        let out = match remote {
+            Some(r) if !r.is_empty() => git_ok(&repo, &["fetch", "--prune", &r])?,
+            _ => git_ok(&repo, &["fetch", "--all", "--prune"])?,
+        };
+        Ok(out)
+    })
+    .await
 }
 
 // ---- remote branches -----------------------------------------------------

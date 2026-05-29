@@ -257,7 +257,7 @@ const WindowLayer = memo(function WindowLayer({
                             {p.kind === "editor" ? (
                                 <EditorPane paneId={p.id} cwd={p.cwd || session.cwd} active={paneActive} visible={paneVisible} />
                             ) : p.kind === "git" ? (
-                                <GitPane paneId={p.id} cwd={p.cwd || session.cwd} active={paneVisible} />
+                                <GitPane paneId={p.id} cwd={p.cwd || session.cwd} active={paneActive} />
                             ) : p.kind === "aws" ? (
                                 <AwsPane active={paneVisible} />
                             ) : p.kind === "rundeck" ? (

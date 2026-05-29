@@ -87,6 +87,10 @@ pub async fn rnd_run(
     branch: String,
     extra_options: Option<HashMap<String, String>>,
 ) -> AppResult<RunResult> {
+    let branch = branch.trim().to_string();
+    if branch.is_empty() {
+        return Err(crate::error::AppError::BadArg("branch is empty"));
+    }
     let job = resolve_job(&project, &service).await?;
     let mut options: HashMap<&str, String> = HashMap::new();
     options.insert("BRANCH", branch);

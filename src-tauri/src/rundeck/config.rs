@@ -96,8 +96,11 @@ fn read_file() -> AppResult<RundeckConfig> {
     let content = fs::read_to_string(&path)?;
     let mut cfg = RundeckConfig::default();
     for raw in content.lines() {
-        let line = raw.split('#').next().unwrap_or("").trim();
+        let line = raw.trim();
         if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('#') {
             continue;
         }
         let Some((k, v)) = line.split_once('=') else {
