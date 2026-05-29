@@ -24,6 +24,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd -P)"
 
+# ---- 0. load secrets from .env ----
+# Gitignored .env holds TAURI_SIGNING_PRIVATE_KEY (+ optional _PASSWORD) so
+# you don't have to export them every release. Anything already in the
+# environment wins, so you can still override ad-hoc.
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
 VERSION="${1:-}"
 NOTES="${2:-}"
 PUBLISH="${RELEASE_PUBLISH:-0}"
@@ -37,36 +48,47 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-# ---- 1. version sanity ----
+# ---- 1. bump version everywhere ----
+# Single source of truth = the VERSION arg. We rewrite package.json,
+# tauri.conf.json, and Cargo.toml to match so the bundled binary's
+# CFBundleShortVersionString lines up with the manifest "version" the OTA
+# updater compares. Cargo.lock is refreshed by the build in step 3.
+echo "→ Bumping version to $VERSION"
+node -e "
+  const fs = require('fs');
+  for (const p of ['package.json', 'src-tauri/tauri.conf.json']) {
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    j.version = '$VERSION';
+    fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+  }
+"
+# Cargo.toml: only the first `version = ` under [package] (line ~3).
+/usr/bin/sed -i '' -e "1,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" \
+  "$ROOT/src-tauri/Cargo.toml"
+
 PKG_VER="$(node -p "require('./package.json').version")"
 TAURI_VER="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-
 if [[ "$PKG_VER" != "$VERSION" || "$TAURI_VER" != "$VERSION" ]]; then
-  cat >&2 <<EOF
-Version mismatch:
-  argument          $VERSION
-  package.json      $PKG_VER
-  tauri.conf.json   $TAURI_VER
-
-Bump both files first, then re-run.
-EOF
+  echo "Version bump failed (package.json=$PKG_VER tauri.conf.json=$TAURI_VER)" >&2
   exit 1
 fi
 
 # ---- 2. signing key sanity ----
 if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
   cat >&2 <<EOF
-TAURI_SIGNING_PRIVATE_KEY not set.
+TAURI_SIGNING_PRIVATE_KEY not set (and no .env provided it).
 
-Run:
-  export TAURI_SIGNING_PRIVATE_KEY="\$(cat ~/.tauri/sikemux.key)"
-  # if you set a key password:
-  # export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="…"
+Add it to $ROOT/.env:
+  TAURI_SIGNING_PRIVATE_KEY=<contents of ~/.tauri/sikemux.key>
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD=    # empty if the key has no password
 
 Then re-run.
 EOF
   exit 1
 fi
+# Default the password to empty so the bundler doesn't block on a prompt
+# when the key has no passphrase.
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 
 # ---- 3. build ----
 echo "→ Building v$VERSION"
