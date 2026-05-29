@@ -1060,12 +1060,15 @@ export function openAgentBookmark(b: AgentBookmark): void {
 // ---- UI flags ---------------------------------------------------------
 
 export const setHome = (home: string): void => setState({ home });
-export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode });
+export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, rundeckJobPaletteOpen: false });
 export const closePicker = (): void => setState({ pickerOpen: false });
-export const openAgentPalette = (): void => setState({ agentPaletteOpen: true });
+export const openAgentPalette = (): void => setState({ agentPaletteOpen: true, rundeckJobPaletteOpen: false });
 export const closeAgentPalette = (): void => setState({ agentPaletteOpen: false });
-export const openFilePalette = (): void => setState({ filePaletteOpen: true });
+export const openFilePalette = (): void => setState({ filePaletteOpen: true, rundeckJobPaletteOpen: false });
 export const closeFilePalette = (): void => setState({ filePaletteOpen: false });
+export const openRundeckJobPalette = (): void =>
+    setState({ rundeckJobPaletteOpen: true, pickerOpen: false, filePaletteOpen: false, agentPaletteOpen: false });
+export const closeRundeckJobPalette = (): void => setState({ rundeckJobPaletteOpen: false });
 export const openSettings = (): void => setState({ settingsOpen: true });
 export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));

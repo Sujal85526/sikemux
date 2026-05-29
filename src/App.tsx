@@ -11,6 +11,7 @@ import { FilePalette } from "./components/FilePalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AwsAuthModal } from "./components/aws/AwsAuthModal";
+import { RundeckJobPalette } from "./components/rundeck/RundeckJobPalette";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { git } from "./api/git";
@@ -42,6 +43,7 @@ export default function App() {
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
+    const rundeckJobPaletteOpen = useStore((s) => s.rundeckJobPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const awsAuthModal = useStore((s) => s.awsAuthModal);
     const projectRepoKey = useStore((s) =>
@@ -184,6 +186,7 @@ export default function App() {
             {pickerOpen && <SeshPicker />}
             {agentPaletteOpen && <AgentPalette />}
             {filePaletteOpen && <FilePalette />}
+            {rundeckJobPaletteOpen && <RundeckJobPalette />}
             {awsAuthModal && <AwsAuthModal />}
             <Toaster />
         </div>

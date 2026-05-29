@@ -5,6 +5,7 @@ import { useResourceEnabled } from "../../state/resources";
 import { rndMatrixR } from "../../state/resources.defs";
 import { envFolderOf, inferEnv } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
+import { IconSearch } from "../Icons";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
 interface Props {
@@ -103,9 +104,15 @@ export function RundeckMatrix({ paneId, active }: Props) {
                         </>
                     )}
                 </span>
-                <button className="rnd-btn-sm" onClick={() => res.refresh()} disabled={loading} title="Refresh">
-                    refresh
-                </button>
+                <div className="rnd-list-tools">
+                    <button className="rnd-btn-sm" onClick={cmd.openRundeckJobPalette} disabled={cells.length === 0} title="Search jobs">
+                        <IconSearch size={12} />
+                        search
+                    </button>
+                    <button className="rnd-btn-sm" onClick={() => res.refresh()} disabled={loading} title="Refresh">
+                        refresh
+                    </button>
+                </div>
             </div>
 
             {env?.error && <div className="rnd-banner warn">{env.error}</div>}

@@ -7439,6 +7439,11 @@ button {
     color: var(--ink-faint);
     opacity: 0.5;
 }
+.rnd-list-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
 
 .rnd-list-rows {
     flex: 1;

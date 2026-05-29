@@ -21,8 +21,16 @@ export function useKeymap(): void {
             if (e.code === "KeyP" && !e.shiftKey) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                if (getState().filePaletteOpen) cmd.closeFilePalette();
-                else cmd.openFilePalette();
+                const st = getState();
+                const active = st.sessions[st.activeSessionId];
+                if (active?.kind === "rundeck") {
+                    if (st.rundeckJobPaletteOpen) cmd.closeRundeckJobPalette();
+                    else cmd.openRundeckJobPalette();
+                } else if (st.filePaletteOpen) {
+                    cmd.closeFilePalette();
+                } else {
+                    cmd.openFilePalette();
+                }
             } else if (e.code === "KeyF" && e.shiftKey) {
                 // Cmd/Ctrl+Shift+F → jump to the project's search window. Project
                 // sessions only (no-op elsewhere — see focusGlobalSearch).
@@ -46,7 +54,7 @@ export function useKeymap(): void {
         const handler = (e: KeyboardEvent): void => {
             if (!e.altKey || e.metaKey || e.ctrlKey) return;
             const st = getState();
-            if (st.pickerOpen || st.filePaletteOpen || st.agentPaletteOpen || st.settingsOpen) return; // modals own the keyboard
+            if (st.pickerOpen || st.filePaletteOpen || st.agentPaletteOpen || st.rundeckJobPaletteOpen || st.settingsOpen) return; // modals own the keyboard
             const shift = e.shiftKey;
             let handled = true;
 

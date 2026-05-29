@@ -81,6 +81,7 @@ export interface ViewState {
     pickerMode: PickerMode;
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
+    rundeckJobPaletteOpen: boolean;
     settingsOpen: boolean;
     awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
     lspResults: LspResults | null;
@@ -193,6 +194,7 @@ export const useStore = create<StoreState>(() => {
         pickerMode: "all",
         agentPaletteOpen: false,
         filePaletteOpen: false,
+        rundeckJobPaletteOpen: false,
         settingsOpen: false,
         awsAuthModal: null,
         lspResults: null,
