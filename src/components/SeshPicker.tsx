@@ -68,6 +68,23 @@ export function SeshPicker() {
     const hosts = showSsh ? (hostsR.data ?? []) : [];
 
     const pretty = (p: string) => (home && p.startsWith(home) ? `~${p.slice(home.length)}` : p);
+    const expandRoot = (p: string) => {
+        if (!home) return p;
+        if (p === "~") return home;
+        if (p.startsWith("~/")) return `${home}${p.slice(1)}`;
+        return p;
+    };
+    const projectLabel = (cwd: string, fallback: string) => {
+        const roots = projectRoots
+            .map((r) => expandRoot(r.path).replace(/\/+$/, ""))
+            .filter(Boolean)
+            .sort((a, b) => b.length - a.length);
+        for (const root of roots) {
+            if (cwd === root) return fallback;
+            if (cwd.startsWith(`${root}/`)) return cwd.slice(root.length + 1);
+        }
+        return fallback;
+    };
 
     const items = useMemo<Item[]>(() => {
         const wantKind = (k: SessionKind) => mode === "all" || (mode === "projects" && k === "project") || (mode === "ssh" && k === "ssh");
@@ -76,7 +93,7 @@ export function SeshPicker() {
             .map((s) => ({
                 kind: "session",
                 id: s.id,
-                name: s.name,
+                name: s.kind === "project" ? projectLabel(s.cwd, s.name) : s.name,
                 sub: s.kind === "project" ? pretty(s.cwd) : s.kind === "ssh" ? "ssh" : "command",
                 sk: s.kind,
             }));
@@ -119,7 +136,7 @@ export function SeshPicker() {
         }
         return [...s, ...d, ...h];
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessions, projects, hosts, query, home, mode]);
+    }, [sessions, projects, hosts, query, home, mode, projectRoots]);
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));

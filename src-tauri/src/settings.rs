@@ -49,6 +49,23 @@ fn name_of(p: &Path) -> String {
         .unwrap_or_else(|| p.to_string_lossy().into_owned())
 }
 
+fn relative_name(root: &Path, p: &Path) -> String {
+    let Ok(rel) = p.strip_prefix(root) else {
+        return name_of(p);
+    };
+    if rel.as_os_str().is_empty() {
+        return name_of(p);
+    }
+    let s = rel
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    if s.is_empty() {
+        name_of(p)
+    } else {
+        s
+    }
+}
+
 fn is_repo(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
@@ -62,6 +79,7 @@ pub fn expand_path(path: String) -> String {
 // emitted by the caller. Within the walk, only git repos are emitted;
 // repos are also terminal — we never descend into one.
 fn walk(
+    root: &Path,
     dir: &Path,
     remaining: i64,
     out: &mut Vec<ProjectEntry>,
@@ -85,12 +103,15 @@ fn walk(
         if is_repo(&p) {
             let path = p.to_string_lossy().into_owned();
             if seen.insert(path.clone()) {
-                out.push(ProjectEntry { name, path });
+                out.push(ProjectEntry {
+                    name: relative_name(root, &p),
+                    path,
+                });
             }
             // Terminal — repos don't get their innards scanned.
             continue;
         }
-        walk(&p, remaining - 1, out, seen);
+        walk(root, &p, remaining - 1, out, seen);
     }
 }
 
@@ -119,7 +140,7 @@ pub async fn scan_project_roots(roots: Vec<ProjectRoot>) -> Vec<ProjectEntry> {
         if is_repo(&root) {
             continue;
         }
-        walk(&root, r.depth.max(0), &mut out, &mut seen);
+        walk(&root, &root, r.depth.max(0), &mut out, &mut seen);
     }
 
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));

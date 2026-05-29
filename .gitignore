@@ -7,3 +7,4 @@ dist-ssr
 data/
 src-tauri/icons/build/
 .env
+.design/

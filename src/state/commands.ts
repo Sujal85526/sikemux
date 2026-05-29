@@ -5,7 +5,7 @@ import { rundeckApi } from "../api/rundeck";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
 import { fetchResource, invalidate, peekResource } from "./resources";
-import { awsIdentityR, rndProjectsR } from "./resources.defs";
+import { awsIdentityR, projectRootsScanR, rndProjectsR } from "./resources.defs";
 import { inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { swallow } from "./toast";
@@ -1136,12 +1136,14 @@ export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrow
 
 export function addProjectRoot(path: string, depth = 1): void {
     setState((s) => (s.projectRoots.some((r) => r.path === path) ? {} : { projectRoots: [...s.projectRoots, { path, depth }] }));
+    invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
 export function removeProjectRoot(path: string): void {
     setState((s) => ({
         projectRoots: s.projectRoots.filter((r) => r.path !== path),
     }));
+    invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
 export function setProjectRootDepth(path: string, depth: number): void {
@@ -1149,6 +1151,7 @@ export function setProjectRootDepth(path: string, depth: number): void {
     setState((s) => ({
         projectRoots: s.projectRoots.map((r) => (r.path === path ? { ...r, depth: d } : r)),
     }));
+    invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
 // Persist may hand us a legacy array of plain strings — normalise to the
