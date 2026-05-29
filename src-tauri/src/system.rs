@@ -70,6 +70,58 @@ pub fn fix_path_from_login_shell() {
     unsafe { std::env::set_var("PATH", new_path) };
 }
 
+/// Raise this process's open-file-descriptor soft limit toward its hard
+/// limit. See the call site in `lib.rs` for the why: macOS `launchd` hands
+/// GUI-launched apps a soft `RLIMIT_NOFILE` of 256, but sikemux holds one
+/// fd per live PTY plus the webview, language servers, fs watchers, and
+/// sockets — a heavy multi-terminal/agent/project session blows past 256
+/// and every fd-hungry op (git, spawning a process, opening a file) then
+/// fails with EMFILE ("Too many open files"). A higher limit costs no
+/// memory — it's a ceiling, not an allocation — so this is safe on low-end
+/// devices too.
+#[cfg(unix)]
+pub fn raise_fd_limit() {
+    unsafe {
+        let mut lim = std::mem::zeroed::<libc::rlimit>();
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
+            return;
+        }
+        // Dev builds inherit the launching terminal's already-high ulimit;
+        // nothing to do there.
+        if lim.rlim_cur >= 65_536 {
+            return;
+        }
+        // Try progressively smaller soft limits until one sticks. macOS
+        // rejects a soft limit above `kern.maxfilesperproc` with EINVAL, so
+        // we descend; even the smallest rung (10_240) dwarfs launchd's 256
+        // and covers thousands of PTYs/sockets.
+        for &cand in &[131_072u64, 65_536, 16_384, 10_240] {
+            let cand = cand as libc::rlim_t;
+            let hard = lim.rlim_max;
+            let target = if hard == libc::RLIM_INFINITY {
+                cand
+            } else if cand <= hard {
+                cand
+            } else {
+                hard
+            };
+            if target <= lim.rlim_cur {
+                continue;
+            }
+            let next = libc::rlimit {
+                rlim_cur: target,
+                rlim_max: lim.rlim_max,
+            };
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &next) == 0 {
+                return;
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn raise_fd_limit() {}
+
 #[tauri::command]
 pub fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_default()

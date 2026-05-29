@@ -22,6 +22,14 @@ use pty::PtyManager;
 use rundeck::{RundeckLogsManager, RundeckWatchManager};
 
 pub fn run() {
+    // Raise our open-file-descriptor limit FIRST, before any subsystem
+    // opens an fd. macOS launchd hands GUI apps a soft RLIMIT_NOFILE of 256;
+    // a heavy multi-terminal/agent/project session holds far more than that
+    // (one fd per PTY + webview + language servers + watchers + sockets) and
+    // would otherwise hit EMFILE — git ops, process spawns, and file opens
+    // all start failing with "Too many open files".
+    system::raise_fd_limit();
+
     // Inherit the user's shell PATH so spawned subprocesses (hermes for
     // AI commits, rnd CLI, aws CLI, claude, etc.) resolve the same way
     // they do in `make dev`. macOS GUI launches otherwise get a minimal

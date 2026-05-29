@@ -25,6 +25,24 @@ where
         .and_then(|r| r.map_err(|e| e.to_string()))
 }
 
+/// Cap on concurrent libgit2 tree walks (`git_status` / `git_log` /
+/// `git_overview`). Each walk transiently opens a fistful of fds — index,
+/// refs, packfiles, and the recursive untracked-dir scan. With many
+/// projects fs-watched at once, a single `npm build` or a busy agent fans a
+/// `git_changed` burst across every repo simultaneously; without a cap
+/// that's N parallel walks all grabbing fds + CPU, a transient spike that
+/// was a contributing factor to the EMFILE wall. 4 lets a few panes refresh
+/// in parallel while bounding the peak.
+const GIT_WALK_CONCURRENCY: usize = 4;
+
+async fn git_walk_permit() -> Result<tokio::sync::SemaphorePermit<'static>, String> {
+    static S: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    S.get_or_init(|| tokio::sync::Semaphore::new(GIT_WALK_CONCURRENCY))
+        .acquire()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---- helpers --------------------------------------------------------------
 
 fn open_repo(path: &str) -> Result<Repository, String> {
@@ -235,6 +253,7 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
 
 #[tauri::command]
 pub async fn git_status(repo: String) -> Result<GitStatus, String> {
+    let _permit = git_walk_permit().await?;
     run_blocking(move || read_status(&open_repo(&repo)?)).await
 }
 
@@ -448,11 +467,13 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
 
 #[tauri::command]
 pub async fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
+    let _permit = git_walk_permit().await?;
     run_blocking(move || read_log(&open_repo(&repo)?, 60)).await
 }
 
 #[tauri::command]
 pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
+    let _permit = git_walk_permit().await?;
     run_blocking(move || -> Result<GitOverview, String> {
         let r = open_repo(&repo)?;
         Ok(GitOverview {

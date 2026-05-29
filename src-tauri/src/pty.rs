@@ -36,13 +36,13 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::os::fd::FromRawFd;
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
+use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tokio::io::unix::AsyncFd;
@@ -53,19 +53,24 @@ fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
     AppError::Pty(e.to_string())
 }
 
-/// One running pseudo-terminal: the master + child + headless parser +
+/// One running pseudo-terminal: the master fd + child + headless parser +
 /// the set of frontend Channels currently subscribed to live output.
 ///
-/// I/O model: the master fd is set to non-blocking and dup'd twice. The
-/// reader-side dup is owned by the reader tokio task; the writer-side
-/// dup is wrapped in an `AsyncFd` and guarded by a tokio Mutex so
-/// `pty_write` calls serialise without ever blocking a worker thread.
-/// The original master fd is retained inside `portable_pty::MasterPty`
-/// purely so resize ioctls + child cleanup still work — neither cares
-/// about O_NONBLOCK.
+/// I/O model: the master fd is set non-blocking and wrapped in a SINGLE
+/// `AsyncFd`. The reader tokio task awaits its `readable()` side; every
+/// `pty_write` awaits its `writable()` side under `write_lock` so writes
+/// never block a worker thread and never interleave. We therefore hold
+/// exactly one fd per PTY (down from three: master + read-dup + write-dup)
+/// — see `pty_spawn` for how the lone dup keeps the child's controlling
+/// terminal alive after portable_pty's `MasterPty` is dropped.
 struct Pty {
-    master: Mutex<Box<dyn MasterPty + Send>>,
-    write_async: tokio::sync::Mutex<AsyncFd<File>>,
+    /// The PTY master as one non-blocking fd, servicing both directions.
+    /// Resize is an ioctl straight on this fd (see `pty_resize`).
+    io: AsyncFd<File>,
+    /// Serialises concurrent writers so two `pty_write`s can't interleave
+    /// bytes on the shared fd. Reads need no guard — only the reader task
+    /// reads.
+    write_lock: tokio::sync::Mutex<()>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     /// Tracks the current screen grid + scrollback. Always up to date,
     /// even when no one's subscribed — that's the whole point.
@@ -261,40 +266,32 @@ pub async fn pty_spawn(
         if flags < 0 {
             return Err(pty_err(std::io::Error::last_os_error()));
         }
+        // O_NONBLOCK lives on the open-file-description, so the dup below
+        // inherits it — one fd, both directions, never blocking.
         if libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
             return Err(pty_err(std::io::Error::last_os_error()));
         }
     }
 
-    // Two independent dups of the master fd — one for the async reader,
-    // one for the async writer. dup() returns a new fd referring to the
-    // same kernel open-file-description, so closing one (e.g. on pty_kill
-    // dropping the Pty) does not invalidate the others; portable_pty's
-    // own fd inside `pair.master` stays alive until that struct drops.
-    let (read_raw, write_raw) = unsafe {
-        let r = libc::dup(master_fd);
-        let w = libc::dup(master_fd);
-        if r < 0 || w < 0 {
-            // Roll back whichever succeeded so we don't leak.
-            if r >= 0 {
-                libc::close(r);
-            }
-            if w >= 0 {
-                libc::close(w);
-            }
-            return Err(pty_err(std::io::Error::last_os_error()));
-        }
-        (r, w)
-    };
-    let read_file = unsafe { File::from_raw_fd(read_raw) };
-    let write_file = unsafe { File::from_raw_fd(write_raw) };
-    let read_async = AsyncFd::new(read_file).map_err(pty_err)?;
-    let write_async = AsyncFd::new(write_file).map_err(pty_err)?;
+    // ONE fd per PTY (was three). dup() the master once, then drop
+    // portable_pty's `MasterPty`: that closes the fd it owned, but our dup
+    // refers to the SAME kernel open-file-description, so the master end
+    // stays open and the child keeps its controlling terminal (no SIGHUP).
+    // The single `AsyncFd` services both reads and writes; resize is an
+    // ioctl on this fd. At ~50+ live shells this is the difference between
+    // ~150 fds and ~50 — the headroom that keeps a heavy session off the
+    // process fd limit.
+    let dup_fd = unsafe { libc::dup(master_fd) };
+    if dup_fd < 0 {
+        return Err(pty_err(std::io::Error::last_os_error()));
+    }
+    drop(pair.master);
+    let io_file = unsafe { File::from_raw_fd(dup_fd) };
     let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
 
     let pty = Arc::new(Pty {
-        master: Mutex::new(pair.master),
-        write_async: tokio::sync::Mutex::new(write_async),
+        io: AsyncFd::new(io_file).map_err(pty_err)?,
+        write_lock: tokio::sync::Mutex::new(()),
         child: Mutex::new(child),
         parser: Mutex::new(vt100::Parser::new(rows, cols, PARSER_SCROLLBACK)),
         subscribers: Mutex::new(HashMap::new()),
@@ -334,59 +331,64 @@ pub async fn pty_spawn(
     tokio::spawn(async move {
         let mut buf = [0u8; 65536];
         loop {
-            let mut guard = match read_async.readable().await {
-                Ok(g) => g,
-                Err(_) => break,
+            // Read off the single master fd. The readiness guard is scoped
+            // tight and dropped before we touch the parser or inject the
+            // startup line, so the same `AsyncFd`'s writable() side stays
+            // free for a concurrent `pty_write`.
+            let n = {
+                let mut guard = match pty_reader.io.readable().await {
+                    Ok(g) => g,
+                    Err(_) => break,
+                };
+                match guard.try_io(|inner| {
+                    // impl Read for &File — avoids needing &mut File.
+                    let mut f = inner.get_ref();
+                    f.read(&mut buf)
+                }) {
+                    Ok(Ok(0)) => break,            // EOF
+                    Ok(Ok(n)) => n,
+                    Ok(Err(_)) => break,           // I/O error
+                    Err(_would_block) => continue, // spurious wake; loop
+                }
             };
-            let res = guard.try_io(|inner| {
-                // impl Read for &File — avoids needing &mut File.
-                let mut f = inner.get_ref();
-                f.read(&mut buf)
-            });
-            match res {
-                Ok(Ok(0)) => break,            // EOF
-                Ok(Err(_)) => break,           // I/O error
-                Err(_would_block) => continue, // spurious wake; loop
-                Ok(Ok(n)) => {
-                    let bytes = &buf[..n];
-                    pty_reader
-                        .last_activity_ms
-                        .store(now_ms(), Ordering::Relaxed);
-                    pty_reader.trimmed.store(false, Ordering::Relaxed);
-                    let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
-                        let Ok(mut parser) = pty_reader.parser.lock() else {
-                            break;
-                        };
-                        parser.process(bytes);
-                        match pty_reader.subscribers.lock() {
-                            Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
-                            Err(_) => Vec::new(),
-                        }
-                    };
-                    if !snapshot.is_empty() {
-                        let chunk = bytes.to_vec();
-                        let mut dead: Vec<u32> = Vec::new();
-                        for (sub_id, ch) in &snapshot {
-                            if ch.send(chunk.clone()).is_err() {
-                                dead.push(*sub_id);
-                            }
-                        }
-                        if !dead.is_empty() {
-                            if let Ok(mut subs) = pty_reader.subscribers.lock() {
-                                for d in dead {
-                                    subs.remove(&d);
-                                }
-                            }
-                        }
-                    }
-                    // First-output gate: shell has printed its prompt
-                    // and reached the read loop; safe to inject startup.
-                    if let Some(line) = startup_pending.take() {
-                        let writer = pty_reader.write_async.lock().await;
-                        let payload = format!("{line}\r");
-                        let _ = write_all_async(&writer, payload.as_bytes()).await;
+            let bytes = &buf[..n];
+            pty_reader
+                .last_activity_ms
+                .store(now_ms(), Ordering::Relaxed);
+            pty_reader.trimmed.store(false, Ordering::Relaxed);
+            let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
+                let Ok(mut parser) = pty_reader.parser.lock() else {
+                    break;
+                };
+                parser.process(bytes);
+                match pty_reader.subscribers.lock() {
+                    Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
+                    Err(_) => Vec::new(),
+                }
+            };
+            if !snapshot.is_empty() {
+                let chunk = bytes.to_vec();
+                let mut dead: Vec<u32> = Vec::new();
+                for (sub_id, ch) in &snapshot {
+                    if ch.send(chunk.clone()).is_err() {
+                        dead.push(*sub_id);
                     }
                 }
+                if !dead.is_empty() {
+                    if let Ok(mut subs) = pty_reader.subscribers.lock() {
+                        for d in dead {
+                            subs.remove(&d);
+                        }
+                    }
+                }
+            }
+            // First-output gate: shell has printed its prompt and reached
+            // the read loop; safe to inject startup. Serialised behind the
+            // same write_lock as pty_write so bytes can't interleave.
+            if let Some(line) = startup_pending.take() {
+                let _g = pty_reader.write_lock.lock().await;
+                let payload = format!("{line}\r");
+                let _ = write_all_async(&pty_reader.io, payload.as_bytes()).await;
             }
         }
         // Notify on EOF — empty payload is the frontend's "process exited"
@@ -397,9 +399,8 @@ pub async fn pty_spawn(
             }
         }
         // If the shell exits by itself, there is no frontend unmount to call
-        // `pty_kill`. Remove the manager entry here so the retained master,
-        // reader, and writer fds are released instead of accumulating until
-        // the app hits macOS' GUI maxfiles limit.
+        // `pty_kill`. Remove the manager entry here so the retained master
+        // fd is released instead of accumulating toward the process fd limit.
         if let Some(mgr) = app_reader.try_state::<PtyManager>() {
             mgr.ptys.remove(&id);
         }
@@ -496,8 +497,10 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
         .get(&id)
         .map(|r| r.clone())
         .ok_or(AppError::BadArg("pty not found"))?;
-    let writer = pty.write_async.lock().await;
-    write_all_async(&writer, data.as_bytes())
+    // Serialise writers on the shared fd; the reader's readable() side is
+    // unaffected and keeps draining concurrently.
+    let _guard = pty.write_lock.lock().await;
+    write_all_async(&pty.io, data.as_bytes())
         .await
         .map_err(AppError::from)
 }
@@ -508,9 +511,19 @@ pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16)
         .ptys
         .get(&id)
         .ok_or(AppError::BadArg("pty not found"))?;
-    {
-        let master = pty.master.lock().map_err(pty_err)?;
-        master.resize(pty_size(cols, rows)).map_err(pty_err)?;
+    // Resize via TIOCSWINSZ straight on the master fd (the kernel also
+    // raises SIGWINCH on the foreground process group). This is exactly
+    // what portable_pty's MasterPty::resize did internally — we just issue
+    // the ioctl ourselves now that we no longer retain the MasterPty.
+    let ws = libc::winsize {
+        ws_row: rows,
+        ws_col: cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let rc = unsafe { libc::ioctl(pty.io.get_ref().as_raw_fd(), libc::TIOCSWINSZ, &ws as *const _) };
+    if rc != 0 {
+        return Err(pty_err(std::io::Error::last_os_error()));
     }
     // Resize the parser too so the grid the snapshot returns matches the
     // xterm's geometry — otherwise re-attach lands on a mis-sized canvas.
@@ -583,6 +596,61 @@ mod tests {
         // If this number changes, update SCROLLBACK in TerminalPane.tsx
         // so reattach doesn't repaint a truncated history.
         assert_eq!(PARSER_SCROLLBACK, 10_000);
+    }
+
+    // The load-bearing invariant of the single-fd PTY design: after we dup
+    // the master and drop portable_pty's `MasterPty`, the dup must keep the
+    // master open-file-description (and therefore the child's controlling
+    // terminal) alive. The child sleeps, THEN prints — so if dropping the
+    // MasterPty had hung up the terminal, the child would take SIGHUP during
+    // the sleep and the read below would hit EOF before the marker arrives.
+    #[test]
+    fn lone_master_dup_keeps_child_alive_after_masterpty_drop() {
+        use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+        use std::io::Read;
+        use std::os::fd::FromRawFd;
+
+        let pair = NativePtySystem::default()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("sleep 0.2; printf MARKER");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+
+        let master_fd = pair.master.as_raw_fd().expect("master fd");
+        let dup_fd = unsafe { libc::dup(master_fd) };
+        assert!(dup_fd >= 0, "dup failed");
+        // The whole point: drop the MasterPty (closes the fd it owned) while
+        // our dup still references the same OFD.
+        drop(pair.master);
+
+        let mut file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
+        let mut got = String::new();
+        let mut buf = [0u8; 256];
+        loop {
+            match file.read(&mut buf) {
+                Ok(0) => break, // EOF — child gone / pty closed
+                Ok(n) => {
+                    got.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if got.contains("MARKER") {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        let _ = child.wait();
+        assert!(
+            got.contains("MARKER"),
+            "child did not survive MasterPty drop / output never reached the lone dup; got {got:?}"
+        );
     }
 }
 

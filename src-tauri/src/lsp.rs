@@ -55,9 +55,20 @@ struct Server {
     // user undoes back to the saved state).
     last_change: Mutex<HashMap<String, u64>>,
     shutdown: std::sync::atomic::AtomicBool,
+    /// Logical LRU stamp, bumped on every message we send. The backstop cap
+    /// evicts the smallest (least-recently-used) when too many servers pile
+    /// up. See `enforce_server_cap`.
+    last_used: std::sync::atomic::AtomicU64,
 }
 
 type ServerHandle = Arc<Server>;
+
+/// Monotonic logical clock for LRU ordering — cheaper and jump-proof vs
+/// wall-clock time; we only need relative ordering, not real timestamps.
+fn lsp_tick() -> u64 {
+    static CLOCK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    CLOCK.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 fn registry() -> &'static Mutex<HashMap<String, ServerHandle>> {
     static R: OnceLock<Mutex<HashMap<String, ServerHandle>>> = OnceLock::new();
@@ -129,6 +140,9 @@ fn send(server: &ServerHandle, msg: &Value) -> AppResult<()> {
     if server.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
         return Err(AppError::Lsp("server shut down".into()));
     }
+    server
+        .last_used
+        .store(lsp_tick(), std::sync::atomic::Ordering::Relaxed);
     let mut guard = server.stdin.lock().map_err(lsp)?;
     let stdin = guard
         .as_mut()
@@ -228,6 +242,7 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
         pending: Mutex::new(HashMap::new()),
         last_change: Mutex::new(HashMap::new()),
         shutdown: std::sync::atomic::AtomicBool::new(false),
+        last_used: std::sync::atomic::AtomicU64::new(lsp_tick()),
     });
 
     let reader_server = server.clone();
@@ -317,6 +332,59 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
     Ok(server)
 }
 
+/// Generous backstop on concurrent language servers. This is deliberately
+/// NOT active management: rust-analyzer / gopls re-index on restart, so
+/// evicting a server the user is about to use trades a multi-second stall
+/// for a little RAM. The frontend already stops a project's servers when
+/// the project closes (`lsp_stop`), so in normal use the live set == open
+/// projects. This cap only bites in the pathological case (a stop that
+/// never arrived, or an extreme number of simultaneously-open projects),
+/// where something has to give and the least-recently-touched project is
+/// the least-bad victim. Keep it high enough that ordinary multi-project
+/// work never trips it.
+const MAX_LSP_SERVERS: usize = 12;
+
+/// SIGKILL + reap a server. Shared by `lsp_stop` and the backstop cap.
+fn shutdown_server(server: ServerHandle) {
+    server
+        .shutdown
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    // Drop stdin so the server's read loop sees EOF and exits cleanly; if
+    // it doesn't, fall through to kill().
+    if let Ok(mut g) = server.stdin.lock() {
+        g.take();
+    }
+    if let Ok(mut g) = server.child.lock() {
+        if let Some(mut c) = g.take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
+/// If we're over `MAX_LSP_SERVERS`, evict the least-recently-used server
+/// (never the one just started). The kill happens off-thread.
+fn enforce_server_cap(just_started: &str) {
+    let victim_key = {
+        let reg = match registry().lock() {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+        if reg.len() <= MAX_LSP_SERVERS {
+            return;
+        }
+        reg.iter()
+            .filter(|(k, _)| k.as_str() != just_started)
+            .min_by_key(|(_, s)| s.last_used.load(std::sync::atomic::Ordering::Relaxed))
+            .map(|(k, _)| k.clone())
+    };
+    let Some(key) = victim_key else { return };
+    let victim = registry().lock().ok().and_then(|mut r| r.remove(&key));
+    if let Some(server) = victim {
+        task::spawn_blocking(move || shutdown_server(server));
+    }
+}
+
 // ---- Tauri commands -----------------------------------------------------
 
 #[tauri::command]
@@ -333,7 +401,9 @@ pub async fn lsp_start(app: AppHandle, project: String, language: String) -> App
     let server = task::spawn_blocking(move || spawn_server(&project, &language, app))
         .await
         .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
-    registry().lock().map_err(lsp)?.insert(k, server);
+    registry().lock().map_err(lsp)?.insert(k.clone(), server);
+    // Backstop: keep the concurrent-server count bounded (see the const).
+    enforce_server_cap(&k);
     Ok(())
 }
 
@@ -359,20 +429,7 @@ pub async fn lsp_stop(project: String) -> AppResult<()> {
     // Actual kill is potentially slow (SIGKILL + wait); off-thread.
     task::spawn_blocking(move || {
         for server in to_kill {
-            server
-                .shutdown
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-            // Drop stdin so the server's read loop sees EOF and exits
-            // cleanly; if it doesn't, fall through to kill().
-            if let Ok(mut g) = server.stdin.lock() {
-                g.take();
-            }
-            if let Ok(mut g) = server.child.lock() {
-                if let Some(mut c) = g.take() {
-                    let _ = c.kill();
-                    let _ = c.wait();
-                }
-            }
+            shutdown_server(server);
         }
     })
     .await
