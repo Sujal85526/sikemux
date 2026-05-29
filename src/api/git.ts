@@ -115,6 +115,8 @@ export const git = {
     push: (repo: string) => invoke<string>("git_push", { repo }),
     pull: (repo: string) => invoke<string>("git_pull", { repo }),
     aiCommit: (repo: string, provider: string, model: string) => invoke<string>("git_ai_commit", { repo, provider, model }),
+    // Generate a commit message from the diff without staging or committing.
+    aiMessage: (repo: string, provider: string, model: string) => invoke<string>("git_ai_message", { repo, provider, model }),
     prOpen: (repo: string) => invoke<string>("pr_open", { repo }),
     watchStart: (repo: string) => invoke<void>("repo_watch_start", { repo }),
     watchStop: (repo: string) => invoke<void>("repo_watch_stop", { repo }),

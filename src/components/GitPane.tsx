@@ -10,7 +10,7 @@ import { reportError } from "../state/toast";
 import type { GitPanel } from "../state/types";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
-import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
+import { IconChevron, IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitGraph } from "./git/GitGraph";
@@ -38,10 +38,14 @@ const AI_PROVIDER_LABEL: Record<GitAiProvider, string> = {
     claude: "Claude",
 };
 
+// Model lists mirror each CLI's own `/model` picker (verified against the
+// installed binaries) so the names are real and accepted by `--model` / `-m`.
+//   claude: the `/model` aliases (sonnet/opus/haiku/opusplan/sonnet[1m]/default)
+//   codex:  the gpt model ids codex ships; config default is gpt-5.5
 const AI_MODELS: Record<GitAiProvider, string[]> = {
     hermes: ["openai/gpt-5.5", "openai/gpt-5.1", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.1", "google/gemini-2.5-pro"],
-    codex: ["gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5-codex", "gpt-5.1", "gpt-5"],
-    claude: ["sonnet", "opus", "haiku", "claude-sonnet-4-6", "claude-opus-4-1"],
+    codex: ["gpt-5.5", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.1-codex-mini", "gpt-5.1", "gpt-5"],
+    claude: ["sonnet", "opus", "haiku", "opusplan", "sonnet[1m]", "default"],
 };
 
 const DEFAULT_AI_PROVIDER: GitAiProvider = "hermes";
@@ -422,11 +426,17 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         });
     };
 
-    const aiCommit = () =>
-        run(`${AI_PROVIDER_LABEL[aiProvider]} is writing the commit…`, async () => {
+    // Generate a commit message from the diff and drop it into the message
+    // box — does NOT stage or commit. Backs the ✦ button + the `g` keybind.
+    // Not `silent`, so the busy loader shows while hermes/claude/codex run.
+    // The closure returns void, so `run` won't dump anything into the right
+    // pane — the message lands only in the commit textarea.
+    const generateCommitMessage = () =>
+        run(`${AI_PROVIDER_LABEL[aiProvider]} is writing the message…`, async () => {
             const model = aiModel.trim() || defaultAiModel(aiProvider);
-            const msg = await git.aiCommit(repo, aiProvider, model);
-            return `✓ AI commit\n\n${msg}`;
+            const msg = await git.aiMessage(repo, aiProvider, model);
+            setCommitText(msg);
+            commitInputRef.current?.focus();
         });
 
     const moveSel = (d: number) => {
@@ -1022,8 +1032,10 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 rows: [
                     { keys: "space", label: "stage / unstage selected (or range)" },
                     { keys: "a", label: "toggle stage all" },
-                    { keys: "c", label: "commit staged" },
-                    { keys: "C", label: "AI commit with selected provider/model" },
+                    { keys: "c", label: "focus commit message box" },
+                    { keys: "C", label: "commit the typed message" },
+                    { keys: "g", label: "generate commit message (AI)" },
+                    { keys: "⌘⏎", label: "commit (from message box)" },
                     { keys: "d", label: "discard menu" },
                     { keys: "s", label: "stash menu" },
                 ],
@@ -1172,7 +1184,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 const anyUnstaged = filteredFiles.some(hasUnstaged);
                 void run("", () => (anyUnstaged ? git.stageAll(repo) : git.unstageAll(repo)));
             } else if (panel === "files" && k === "c") commitInputRef.current?.focus();
-            else if (panel === "files" && k === "C") void aiCommit();
+            else if (panel === "files" && k === "C") doCommit(commitText);
+            else if (panel === "files" && k === "g") void generateCommitMessage();
             else if (panel === "files" && k === "d") openFilesDiscardMenu();
             else if (panel === "files" && k === "s") openFilesStashMenu();
             // ----- branches -----
@@ -1357,47 +1370,36 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             <div className="git-left">
                 <div className="git-commit-panel">
                     <div className="git-panel-head">
-                        <span className="git-panel-n">1</span>
-                        <span className="git-panel-label">Commit</span>
+                        <button type="button" className="git-cp-headfocus" onClick={() => commitInputRef.current?.focus()} title="Focus commit message">
+                            <span className="git-panel-n">1</span>
+                            <span className="git-panel-label">Commit</span>
+                        </button>
                         <div className="git-cp-head-actions">
-                            <select
-                                className="git-cp-select git-cp-provider"
+                            <GitSelect
+                                title="AI provider"
+                                width={76}
                                 value={aiProvider}
-                                title="AI commit provider"
-                                onChange={(e) => {
-                                    const provider = isGitAiProvider(e.target.value) ? e.target.value : DEFAULT_AI_PROVIDER;
+                                label={AI_PROVIDER_LABEL[aiProvider]}
+                                options={(Object.keys(AI_PROVIDER_LABEL) as GitAiProvider[]).map((p) => ({ value: p, label: AI_PROVIDER_LABEL[p] }))}
+                                onSelect={(v) => {
+                                    const provider = isGitAiProvider(v) ? v : DEFAULT_AI_PROVIDER;
                                     setAiProvider(provider);
                                     setAiModel(defaultAiModel(provider));
                                 }}
-                                onKeyDown={(e) => e.stopPropagation()}>
-                                {Object.entries(AI_PROVIDER_LABEL).map(([value, label]) => (
-                                    <option value={value} key={value}>
-                                        {label}
-                                    </option>
-                                ))}
-                            </select>
-                            <input
-                                className="git-cp-select git-cp-model"
-                                list={`git-ai-models-${aiProvider}`}
-                                value={aiModel}
-                                title="AI commit model"
-                                placeholder="model"
-                                spellCheck={false}
-                                autoCapitalize="off"
-                                autoCorrect="off"
-                                onChange={(e) => setAiModel(e.target.value)}
-                                onKeyDown={(e) => e.stopPropagation()}
                             />
-                            <datalist id={`git-ai-models-${aiProvider}`}>
-                                {AI_MODELS[aiProvider].map((model) => (
-                                    <option value={model} key={model} />
-                                ))}
-                            </datalist>
+                            <GitSelect
+                                title="AI model"
+                                width={150}
+                                value={aiModel || defaultAiModel(aiProvider)}
+                                label={aiModel || defaultAiModel(aiProvider)}
+                                options={AI_MODELS[aiProvider].map((m) => ({ value: m, label: m }))}
+                                onSelect={(v) => setAiModel(v)}
+                            />
                             <button
                                 className="git-cp-ai"
                                 type="button"
-                                onClick={() => void aiCommit()}
-                                title={`AI commit with ${AI_PROVIDER_LABEL[aiProvider]} · ${aiModel || defaultAiModel(aiProvider)} (C)`}>
+                                onClick={() => void generateCommitMessage()}
+                                title={`Generate commit message with ${AI_PROVIDER_LABEL[aiProvider]} · ${aiModel || defaultAiModel(aiProvider)} (g) — does not stage or commit`}>
                                 <IconSparkle size={15} />
                             </button>
                         </div>
@@ -1748,6 +1750,63 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             </div>
 
             <GitModalRenderer />
+        </div>
+    );
+}
+
+// Custom dropdown — replaces the native <select> for the AI provider/model
+// pickers so they match the app's chrome (sharp corners, rail-2 menu, accent
+// active state) instead of the OS widget. Scrim closes on outside click.
+function GitSelect({
+    value,
+    label,
+    options,
+    onSelect,
+    title,
+    width,
+}: {
+    value: string;
+    label: string;
+    options: { value: string; label: string }[];
+    onSelect: (value: string) => void;
+    title?: string;
+    width?: number;
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="git-dd">
+            <button
+                type="button"
+                className="git-dd-btn"
+                style={width ? { width } : undefined}
+                title={title}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setOpen((v) => !v);
+                }}>
+                <span className="git-dd-val">{label}</span>
+                <IconChevron size={9} className="git-dd-chev" />
+            </button>
+            {open && (
+                <>
+                    <div className="git-dd-scrim" onClick={() => setOpen(false)} />
+                    <div className="git-dd-menu">
+                        {options.map((o) => (
+                            <button
+                                key={o.value}
+                                type="button"
+                                className={`git-dd-item${o.value === value ? " active" : ""}`}
+                                onClick={() => {
+                                    onSelect(o.value);
+                                    setOpen(false);
+                                }}>
+                                <span className="git-dd-check">{o.value === value ? "✓" : ""}</span>
+                                <span className="git-dd-item-label">{o.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
         </div>
     );
 }

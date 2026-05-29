@@ -115,6 +115,7 @@ pub fn run() {
             git::git_push,
             git::git_pull,
             git::git_ai_commit,
+            git::git_ai_message,
             git::pr_open,
             git::git_discard_file,
             git::git_stash_list,

@@ -907,7 +907,7 @@ impl GitAiProvider {
     fn default_model(self) -> &'static str {
         match self {
             Self::Hermes => "openai/gpt-5.5",
-            Self::Codex => "gpt-5.1-codex-max",
+            Self::Codex => "gpt-5.5",
             Self::Claude => "sonnet",
         }
     }
@@ -987,6 +987,9 @@ fn run_ai_commit_model(
                 .args(["chat", "-Q", "-m", model, "-t", "safe", "-q", prompt]);
             cmd
         }),
+        // `codex exec` is the non-interactive path — it has no
+        // `--ask-for-approval` (that's interactive-only); `--sandbox read-only`
+        // is enough for a read-only generate. Prompt is piped via stdin (`-`).
         GitAiProvider::Codex => run_ai_candidate(provider, Some(prompt), |bin| {
             let mut cmd = Command::new(bin);
             cmd.current_dir(repo).args([
@@ -997,8 +1000,6 @@ fn run_ai_commit_model(
                 repo,
                 "--sandbox",
                 "read-only",
-                "--ask-for-approval",
-                "never",
                 "--skip-git-repo-check",
                 "--ephemeral",
                 "--color",
@@ -1007,22 +1008,82 @@ fn run_ai_commit_model(
             ]);
             cmd
         }),
-        GitAiProvider::Claude => run_ai_candidate(provider, None, |bin| {
+        // Feed the prompt over stdin (not as a positional arg) — claude's
+        // `--print` mode reads stdin, and passing the prompt as an argument
+        // alongside flags is brittle (it gets misparsed → "Input must be
+        // provided either through stdin or as a prompt argument").
+        GitAiProvider::Claude => run_ai_candidate(provider, Some(prompt), |bin| {
             let mut cmd = Command::new(bin);
-            cmd.current_dir(repo).args([
-                "-p",
-                "--model",
-                model,
-                "--output-format",
-                "text",
-                "--no-session-persistence",
-                "--tools",
-                "",
-                prompt,
-            ]);
+            cmd.current_dir(repo)
+                .args(["--print", "--model", model, "--output-format", "text"]);
             cmd
         }),
     }
+}
+
+/// Build the AI prompt from a stat + diff. Shared by the generate-only
+/// (`git_ai_message`) and stage-and-commit (`git_ai_commit`) paths so the
+/// message style stays identical.
+fn commit_message_prompt(repo: &str, stat: &str, diff: &str) -> String {
+    let branch = git_ok(repo, &["branch", "--show-current"])
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let repo_name = std::path::Path::new(repo)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    format!(
+        "You are generating a Git commit message from the staged diff below.\n\
+         Return ONLY the commit message. No markdown, no explanation, no quotes, no code fences.\n\n\
+         Rules:\n\
+         - First line: conventional commit format: type(scope): subject\n\
+         - Imperative mood, no trailing period, <=72 chars if possible\n\
+         - For trivial changes: subject line only\n\
+         - For non-trivial changes: blank line after subject, then 2-6 bullets starting with \"- \"\n\
+         - Common types: feat, fix, refactor, chore, docs, test, perf, build, ci, style\n\
+         - Scope should be short and inferred from files/package/service when obvious; omit scope if unclear\n\n\
+         Repo: {repo_name}\n\
+         Branch: {branch}\n\n\
+         Staged stat:\n{stat}\n\n\
+         Staged diff:\n{diff}\n"
+    )
+}
+
+/// Truncate an over-long diff so the prompt stays within budget.
+fn cap_diff(mut diff: String) -> String {
+    if diff.len() > DIFF_LIMIT {
+        diff.truncate(DIFF_LIMIT);
+        diff.push_str("\n\n[diff truncated — exceeds size limit]\n");
+    }
+    diff
+}
+
+/// Generate a commit message WITHOUT staging or committing — backs the `✦`
+/// button + the `g` keybinding. Prefers the staged diff; if nothing's
+/// staged, falls back to the full working-tree diff so it still works
+/// before you stage anything.
+#[tauri::command]
+pub async fn git_ai_message(
+    repo: String,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<String, String> {
+    let mut stat = git_ok(&repo, &["diff", "--cached", "--stat"]).unwrap_or_default();
+    let mut diff =
+        git_ok(&repo, &["diff", "--cached", "--no-ext-diff", "--unified=3"]).unwrap_or_default();
+    if diff.trim().is_empty() {
+        stat = git_ok(&repo, &["diff", "HEAD", "--stat"]).unwrap_or_default();
+        diff = git_ok(&repo, &["diff", "HEAD", "--no-ext-diff", "--unified=3"]).unwrap_or_default();
+    }
+    if diff.trim().is_empty() {
+        return Err("Nothing to describe — stage changes or edit some files first.".into());
+    }
+    let diff = cap_diff(diff);
+    let prompt = commit_message_prompt(&repo, &stat, &diff);
+    let provider = GitAiProvider::parse(provider)?;
+    let model = model.unwrap_or_else(|| provider.default_model().to_string());
+    clean_commit_message(&run_ai_commit_model(&repo, provider, &model, &prompt)?)
 }
 
 #[tauri::command]
@@ -1045,38 +1106,11 @@ pub async fn git_ai_commit(
             return Err("Nothing to commit — working tree is clean.".into());
         }
     }
-    let branch = git_ok(&repo, &["branch", "--show-current"])
-        .unwrap_or_default()
-        .trim()
-        .to_string();
     let stat = git_ok(&repo, &["diff", "--cached", "--stat"]).unwrap_or_default();
-    let mut diff =
-        git_ok(&repo, &["diff", "--cached", "--no-ext-diff", "--unified=3"]).unwrap_or_default();
-    let truncated = diff.len() > DIFF_LIMIT;
-    if truncated {
-        diff.truncate(DIFF_LIMIT);
-        diff.push_str("\n\n[diff truncated — exceeds size limit]\n");
-    }
-    let repo_name = std::path::Path::new(&repo)
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-
-    let prompt = format!(
-        "You are generating a Git commit message from the staged diff below.\n\
-         Return ONLY the commit message. No markdown, no explanation, no quotes, no code fences.\n\n\
-         Rules:\n\
-         - First line: conventional commit format: type(scope): subject\n\
-         - Imperative mood, no trailing period, <=72 chars if possible\n\
-         - For trivial changes: subject line only\n\
-         - For non-trivial changes: blank line after subject, then 2-6 bullets starting with \"- \"\n\
-         - Common types: feat, fix, refactor, chore, docs, test, perf, build, ci, style\n\
-         - Scope should be short and inferred from files/package/service when obvious; omit scope if unclear\n\n\
-         Repo: {repo_name}\n\
-         Branch: {branch}\n\n\
-         Staged stat:\n{stat}\n\n\
-         Staged diff:\n{diff}\n"
+    let diff = cap_diff(
+        git_ok(&repo, &["diff", "--cached", "--no-ext-diff", "--unified=3"]).unwrap_or_default(),
     );
+    let prompt = commit_message_prompt(&repo, &stat, &diff);
 
     let provider = GitAiProvider::parse(provider)?;
     let model = model.unwrap_or_else(|| provider.default_model().to_string());

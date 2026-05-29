@@ -1598,6 +1598,18 @@ button {
     border-bottom: 1px solid var(--line);
     background: transparent;
 }
+/* clickable "1 Commit" cluster in the panel header — focuses the textarea.
+   Resets button chrome so it reads as the plain numbered label. */
+.git-cp-headfocus {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: text;
+    font: inherit;
+}
 /* body wraps the textarea + the two floating buttons; it owns the
    positioning context so the sparkle/commit anchor below the header. */
 .git-cp-body {
@@ -1662,29 +1674,100 @@ button {
     gap: 6px;
     max-width: calc(100% - 24px);
 }
-.git-cp-select {
-    height: 22px;
+/* custom AI provider/model dropdown (replaces native <select>) */
+.git-dd {
+    position: relative;
+    flex: 0 1 auto;
     min-width: 0;
+}
+.git-dd-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 22px;
+    padding: 0 7px;
     border: 1px solid var(--line);
     background: color-mix(in srgb, var(--void) 82%, transparent);
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 10.5px;
     border-radius: 0;
-    outline: none;
+    cursor: pointer;
+    transition:
+        color 0.1s,
+        border-color 0.1s;
 }
-.git-cp-select:focus {
+.git-dd-btn:hover {
+    color: var(--ink);
     border-color: var(--acc-line);
+}
+.git-dd-val {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+.git-dd-chev {
+    flex: 0 0 auto;
+    color: var(--ink-faint);
+    transform: rotate(90deg);
+}
+.git-dd-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+.git-dd-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 41;
+    min-width: 100%;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--rail-2);
+    border: 1px solid var(--line);
+    box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.7);
+    padding: 3px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.git-dd-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 8px;
+    border: none;
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.git-dd-item:hover {
+    background: var(--rail);
     color: var(--ink);
 }
-.git-cp-provider {
-    width: 68px;
-    flex: 0 0 auto;
+.git-dd-item.active {
+    color: var(--acc);
 }
-.git-cp-model {
-    width: 124px;
-    padding: 0 7px;
-    flex: 0 1 124px;
+.git-dd-check {
+    width: 9px;
+    flex: 0 0 auto;
+    color: var(--acc);
+    font-size: 9px;
+}
+.git-dd-item-label {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .git-cp-commit {
     display: inline-flex;
