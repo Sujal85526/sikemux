@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -865,45 +865,172 @@ fn clean_commit_message(raw: &str) -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
-fn run_hermes(prompt: &str) -> Result<String, String> {
-    let args = [
-        "chat",
-        "-Q",
-        "-m",
-        "openai/gpt-5.5",
-        "-t",
-        "safe",
-        "-q",
-        prompt,
-    ];
-    let home = std::env::var("HOME").unwrap_or_default();
-    let candidates = [
-        "hermes".to_string(),
-        format!("{home}/.local/bin/hermes"),
-        format!("{home}/.cargo/bin/hermes"),
-        format!("{home}/.opencode/bin/hermes"),
-        "/opt/homebrew/bin/hermes".to_string(),
-        "/usr/local/bin/hermes".to_string(),
-    ];
-    for bin in &candidates {
-        match Command::new(bin).args(args).output() {
-            Ok(out) if out.status.success() => {
-                return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
-            }
-            Ok(out) => {
-                return Err(format!(
-                    "hermes failed: {}",
-                    String::from_utf8_lossy(&out.stderr)
-                ));
-            }
-            Err(_) => continue,
+#[derive(Clone, Copy)]
+enum GitAiProvider {
+    Hermes,
+    Codex,
+    Claude,
+}
+
+impl GitAiProvider {
+    fn parse(raw: Option<String>) -> Result<Self, String> {
+        match raw
+            .as_deref()
+            .unwrap_or("hermes")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "hermes" => Ok(Self::Hermes),
+            "codex" => Ok(Self::Codex),
+            "claude" => Ok(Self::Claude),
+            other => Err(format!("unknown AI commit provider: {other}")),
         }
     }
-    Err("hermes not found on PATH".into())
+
+    fn bin(self) -> &'static str {
+        match self {
+            Self::Hermes => "hermes",
+            Self::Codex => "codex",
+            Self::Claude => "claude",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Hermes => "hermes",
+            Self::Codex => "codex",
+            Self::Claude => "claude",
+        }
+    }
+
+    fn default_model(self) -> &'static str {
+        match self {
+            Self::Hermes => "openai/gpt-5.5",
+            Self::Codex => "gpt-5.1-codex-max",
+            Self::Claude => "sonnet",
+        }
+    }
+}
+
+fn command_candidates(name: &str) -> Vec<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    vec![
+        name.to_string(),
+        format!("{home}/.local/bin/{name}"),
+        format!("{home}/.cargo/bin/{name}"),
+        format!("{home}/.opencode/bin/{name}"),
+        format!("/opt/homebrew/bin/{name}"),
+        format!("/usr/local/bin/{name}"),
+    ]
+}
+
+fn run_ai_candidate<F>(
+    provider: GitAiProvider,
+    stdin_text: Option<&str>,
+    mut build: F,
+) -> Result<String, String>
+where
+    F: FnMut(&str) -> Command,
+{
+    for bin in command_candidates(provider.bin()) {
+        let mut cmd = build(&bin);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        if stdin_text.is_some() {
+            cmd.stdin(Stdio::piped());
+        }
+        match cmd.spawn() {
+            Ok(mut child) => {
+                if let Some(text) = stdin_text {
+                    child
+                        .stdin
+                        .take()
+                        .ok_or("no stdin")?
+                        .write_all(text.as_bytes())
+                        .map_err(|e| e.to_string())?;
+                }
+                let out = child.wait_with_output().map_err(|e| e.to_string())?;
+                if out.status.success() {
+                    return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+                }
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let detail = if stderr.trim().is_empty() {
+                    stdout.trim()
+                } else {
+                    stderr.trim()
+                };
+                return Err(format!("{} failed: {detail}", provider.label()));
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => continue,
+            Err(e) => return Err(format!("{} failed: {e}", provider.label())),
+        }
+    }
+    Err(format!("{} not found on PATH", provider.bin()))
+}
+
+fn run_ai_commit_model(
+    repo: &str,
+    provider: GitAiProvider,
+    model: &str,
+    prompt: &str,
+) -> Result<String, String> {
+    let model = if model.trim().is_empty() {
+        provider.default_model()
+    } else {
+        model.trim()
+    };
+    match provider {
+        GitAiProvider::Hermes => run_ai_candidate(provider, None, |bin| {
+            let mut cmd = Command::new(bin);
+            cmd.current_dir(repo)
+                .args(["chat", "-Q", "-m", model, "-t", "safe", "-q", prompt]);
+            cmd
+        }),
+        GitAiProvider::Codex => run_ai_candidate(provider, Some(prompt), |bin| {
+            let mut cmd = Command::new(bin);
+            cmd.current_dir(repo).args([
+                "exec",
+                "-m",
+                model,
+                "-C",
+                repo,
+                "--sandbox",
+                "read-only",
+                "--ask-for-approval",
+                "never",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--color",
+                "never",
+                "-",
+            ]);
+            cmd
+        }),
+        GitAiProvider::Claude => run_ai_candidate(provider, None, |bin| {
+            let mut cmd = Command::new(bin);
+            cmd.current_dir(repo).args([
+                "-p",
+                "--model",
+                model,
+                "--output-format",
+                "text",
+                "--no-session-persistence",
+                "--tools",
+                "",
+                prompt,
+            ]);
+            cmd
+        }),
+    }
 }
 
 #[tauri::command]
-pub async fn git_ai_commit(repo: String) -> Result<String, String> {
+pub async fn git_ai_commit(
+    repo: String,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<String, String> {
     // Auto-stage all working changes if nothing's been staged yet — pressing
     // Shift+C should "just commit," matching VSCode / Cursor's AI-commit UX.
     if git_ok(&repo, &["diff", "--cached", "--name-only"])?
@@ -951,7 +1078,9 @@ pub async fn git_ai_commit(repo: String) -> Result<String, String> {
          Staged diff:\n{diff}\n"
     );
 
-    let message = clean_commit_message(&run_hermes(&prompt)?)?;
+    let provider = GitAiProvider::parse(provider)?;
+    let model = model.unwrap_or_else(|| provider.default_model().to_string());
+    let message = clean_commit_message(&run_ai_commit_model(&repo, provider, &model, &prompt)?)?;
     commit_with_message(&repo, &message)?;
     Ok(message)
 }

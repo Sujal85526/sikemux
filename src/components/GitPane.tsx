@@ -30,6 +30,27 @@ const DEFAULT_VIEW = {
     remoteBranchSelected: {} as Record<string, number>,
 };
 
+type GitAiProvider = "hermes" | "codex" | "claude";
+
+const AI_PROVIDER_LABEL: Record<GitAiProvider, string> = {
+    hermes: "Hermes",
+    codex: "Codex",
+    claude: "Claude",
+};
+
+const AI_MODELS: Record<GitAiProvider, string[]> = {
+    hermes: ["openai/gpt-5.5", "openai/gpt-5.1", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.1", "google/gemini-2.5-pro"],
+    codex: ["gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5-codex", "gpt-5.1", "gpt-5"],
+    claude: ["sonnet", "opus", "haiku", "claude-sonnet-4-6", "claude-opus-4-1"],
+};
+
+const DEFAULT_AI_PROVIDER: GitAiProvider = "hermes";
+const AI_PROVIDER_STORAGE = "sikemux.git.ai.provider";
+const AI_MODEL_STORAGE = "sikemux.git.ai.model";
+
+const isGitAiProvider = (v: string | null): v is GitAiProvider => v === "hermes" || v === "codex" || v === "claude";
+const defaultAiModel = (provider: GitAiProvider) => AI_MODELS[provider][0];
+
 // Status was folded into the git toolbar; remotes/stashes are revealed
 // on demand. Tab cycles the panels that are actually on screen.
 const GIT_PANEL_ORDER: GitPanel[] = ["files", "branches", "commits", "remotes", "stashes"];
@@ -76,6 +97,15 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const [busy, setBusy] = useState<string | null>(null);
     const [commitText, setCommitText] = useState("");
     const commitInputRef = useRef<HTMLTextAreaElement>(null);
+    const [aiProvider, setAiProvider] = useState<GitAiProvider>(() => {
+        const stored = window.localStorage.getItem(AI_PROVIDER_STORAGE);
+        return isGitAiProvider(stored) ? stored : DEFAULT_AI_PROVIDER;
+    });
+    const [aiModel, setAiModel] = useState(() => {
+        const storedProvider = window.localStorage.getItem(AI_PROVIDER_STORAGE);
+        const provider = isGitAiProvider(storedProvider) ? storedProvider : DEFAULT_AI_PROVIDER;
+        return window.localStorage.getItem(AI_MODEL_STORAGE) || defaultAiModel(provider);
+    });
     const [branchInput, setBranchInput] = useState<{ startPoint: string } | null>(null);
     const [branchText, setBranchText] = useState("");
     const branchInputRef = useRef<HTMLInputElement>(null);
@@ -111,6 +141,11 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     useEffect(() => {
         if (searchOpen) searchInputRef.current?.focus();
     }, [searchOpen]);
+
+    useEffect(() => {
+        window.localStorage.setItem(AI_PROVIDER_STORAGE, aiProvider);
+        window.localStorage.setItem(AI_MODEL_STORAGE, aiModel);
+    }, [aiProvider, aiModel]);
 
     // ---- filtered + range-clamped lists ----
     const fileQuery = searchByPanel.files;
@@ -388,8 +423,9 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     };
 
     const aiCommit = () =>
-        run("hermes is writing the commit…", async () => {
-            const msg = await git.aiCommit(repo);
+        run(`${AI_PROVIDER_LABEL[aiProvider]} is writing the commit…`, async () => {
+            const model = aiModel.trim() || defaultAiModel(aiProvider);
+            const msg = await git.aiCommit(repo, aiProvider, model);
             return `✓ AI commit\n\n${msg}`;
         });
 
@@ -987,7 +1023,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     { keys: "space", label: "stage / unstage selected (or range)" },
                     { keys: "a", label: "toggle stage all" },
                     { keys: "c", label: "commit staged" },
-                    { keys: "C", label: "AI commit (hermes)" },
+                    { keys: "C", label: "AI commit with selected provider/model" },
                     { keys: "d", label: "discard menu" },
                     { keys: "s", label: "stash menu" },
                 ],
@@ -1323,6 +1359,48 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     <div className="git-panel-head">
                         <span className="git-panel-n">1</span>
                         <span className="git-panel-label">Commit</span>
+                        <div className="git-cp-head-actions">
+                            <select
+                                className="git-cp-select git-cp-provider"
+                                value={aiProvider}
+                                title="AI commit provider"
+                                onChange={(e) => {
+                                    const provider = isGitAiProvider(e.target.value) ? e.target.value : DEFAULT_AI_PROVIDER;
+                                    setAiProvider(provider);
+                                    setAiModel(defaultAiModel(provider));
+                                }}
+                                onKeyDown={(e) => e.stopPropagation()}>
+                                {Object.entries(AI_PROVIDER_LABEL).map(([value, label]) => (
+                                    <option value={value} key={value}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
+                            <input
+                                className="git-cp-select git-cp-model"
+                                list={`git-ai-models-${aiProvider}`}
+                                value={aiModel}
+                                title="AI commit model"
+                                placeholder="model"
+                                spellCheck={false}
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                                onChange={(e) => setAiModel(e.target.value)}
+                                onKeyDown={(e) => e.stopPropagation()}
+                            />
+                            <datalist id={`git-ai-models-${aiProvider}`}>
+                                {AI_MODELS[aiProvider].map((model) => (
+                                    <option value={model} key={model} />
+                                ))}
+                            </datalist>
+                            <button
+                                className="git-cp-ai"
+                                type="button"
+                                onClick={() => void aiCommit()}
+                                title={`AI commit with ${AI_PROVIDER_LABEL[aiProvider]} · ${aiModel || defaultAiModel(aiProvider)} (C)`}>
+                                <IconSparkle size={15} />
+                            </button>
+                        </div>
                     </div>
                     <div className="git-cp-body">
                         <textarea
@@ -1344,21 +1422,16 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                 e.stopPropagation();
                             }}
                         />
-                        <button
-                            className="git-cp-ai"
-                            type="button"
-                            onClick={() => void aiCommit()}
-                            title="AI commit — stages everything + writes the message (C)">
-                            <IconSparkle size={17} />
-                        </button>
-                        <button
-                            className="git-cp-commit"
-                            type="button"
-                            disabled={!commitText.trim()}
-                            onClick={() => doCommit(commitText)}
-                            title="Commit staged (⌘⏎)">
-                            <IconCommit size={13} />commit
-                        </button>
+                        <div className="git-cp-actions">
+                            <button
+                                className="git-cp-commit"
+                                type="button"
+                                disabled={!commitText.trim()}
+                                onClick={() => doCommit(commitText)}
+                                title="Commit staged (⌘⏎)">
+                                <IconCommit size={13} />commit
+                            </button>
+                        </div>
                     </div>
                 </div>
                 {branchInput && (
