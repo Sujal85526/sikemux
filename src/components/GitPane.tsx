@@ -1257,7 +1257,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const stagedCount = filteredFiles.filter(isStaged).length;
     const unstagedCount = filteredFiles.filter(hasUnstaged).length;
     const upstreamLabel = status?.upstream ?? "no upstream";
-    const trackLabel = status && (status.ahead > 0 || status.behind > 0) ? `↑${status.ahead} ↓${status.behind}` : "in sync";
 
     return (
         <div className="git-pane">
@@ -1267,7 +1266,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         <span className="git-tb-branch" title={`upstream: ${upstreamLabel}`}>
                             {currentBranch || status?.branch || "—"}
                         </span>
-                        <span className={`git-tb-sync${status && (status.ahead > 0 || status.behind > 0) ? " warn" : " ok"}`}>{trackLabel}</span>
                         <span className="git-tb-changed">
                             {files.length === 0 ? "clean" : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`}
                         </span>
@@ -1286,15 +1284,19 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         className="git-tbtn live"
                         type="button"
                         onClick={() => void run("pushing…", async () => `↑ ${await git.push(repo)}`)}
-                        title="Push (P)">
-                        <IconPush size={13} />push<kbd className="git-kbd">P</kbd>
+                        title={status && status.ahead > 0 ? `Push ${status.ahead} commit${status.ahead > 1 ? "s" : ""} (P)` : "Push (P)"}>
+                        <IconPush size={13} />
+                        {status && status.ahead > 0 && <span className="git-tbtn-count">{status.ahead}</span>}
+                        push<kbd className="git-kbd">P</kbd>
                     </button>
                     <button
                         className="git-tbtn"
                         type="button"
                         onClick={() => void run("pulling…", async () => `↓ ${await git.pull(repo)}`)}
-                        title="Pull (p)">
-                        <IconPull size={13} />pull<kbd className="git-kbd">p</kbd>
+                        title={status && status.behind > 0 ? `Pull ${status.behind} commit${status.behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
+                        <IconPull size={13} />
+                        {status && status.behind > 0 && <span className="git-tbtn-count">{status.behind}</span>}
+                        pull<kbd className="git-kbd">p</kbd>
                     </button>
                     <button className="git-tbtn" type="button" onClick={() => doFetch(null)} title="Fetch all remotes (F)">
                         <IconFetch size={13} />fetch<kbd className="git-kbd">F</kbd>

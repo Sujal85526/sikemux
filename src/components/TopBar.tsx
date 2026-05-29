@@ -331,7 +331,7 @@ export function TopBar() {
                         zoom
                     </span>
                 )}
-                {isProject && session.cwd && <GitChip repo={session.cwd} />}
+                {isProject && session.cwd && !(session.view === "windows" && win.role === "git") && <GitChip repo={session.cwd} />}
                 {envPicker && (
                     <div className="env-dd">
                         <button className="env-dd-btn" onClick={() => setEnvOpen((v) => !v)} title="Session environment">
