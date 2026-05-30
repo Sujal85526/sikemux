@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconAws, IconClose, IconCommand, IconFolder, IconPlus, IconRundeck, WindowIcon } from "./Icons";
+import { AgentIcon, IconAgent, IconAws, IconClose, IconCommand, IconFolder, IconPlus, IconRundeck, Logo, WindowIcon } from "./Icons";
+import { UpdateChip, VersionChip } from "./TopBar";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -272,6 +273,16 @@ export function SideRail() {
 
     return (
         <aside className="side-rail">
+            <header className="rail-brand">
+                <span className="rail-brand-mark">
+                    <Logo size={26} />
+                </span>
+                <span className="rail-brand-name">
+                    Sike<span className="rail-brand-dim">mux</span>
+                </span>
+                <VersionChip />
+                <UpdateChip />
+            </header>
             <div className="rail-scroll">
                 <Group
                     label="Projects"

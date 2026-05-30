@@ -21,11 +21,10 @@ import {
     IconPanelRight,
     IconRundeck,
     IconZoom,
-    Logo,
     WindowIcon,
 } from "./Icons";
 import { useMemo } from "react";
-import { branchKind, statusKind } from "./rundeck/branchStyle";
+import { branchKind } from "./rundeck/branchStyle";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -68,11 +67,11 @@ function AwsChip() {
         cmd.openAwsSession();
     };
 
+    const title = profile ? `AWS · ${profile}${status ? ` · ${status}` : ""}` : "AWS — sign in";
+
     return (
-        <button className="tb-aws-chip" onClick={onClick} title="AWS">
+        <button className={`tb-aws-chip ${dotClass}`} onClick={onClick} title={title}>
             <IconAws size={24} />
-            <span className="tb-aws-label">{profile ? profile.slice(0, 18) : "aws"}</span>
-            <span className={`tb-aws-dot ${dotClass}`} />
         </button>
     );
 }
@@ -90,7 +89,6 @@ function DeployChip({ service, envLabel, project }: { service: string; envLabel:
 
     const branch = cell?.branch ?? null;
     const k = branchKind(branch);
-    const sk = statusKind(cell?.status);
     const loading = res.status === "loading" && !res.data;
 
     const onClick = () => {
@@ -107,10 +105,7 @@ function DeployChip({ service, envLabel, project }: { service: string; envLabel:
             {loading ? (
                 <span className="tb-deploy-meta muted">…</span>
             ) : hasDeploy ? (
-                <>
-                    <span className={`tb-deploy-branch rnd-branch-${k}`}>{branch}</span>
-                    <span className={`tb-deploy-dot rnd-status-${sk}`} />
-                </>
+                <span className={`tb-deploy-branch rnd-branch-${k}`}>{branch}</span>
             ) : null}
         </button>
     );
@@ -131,17 +126,19 @@ function GitChip({ repo }: { repo: string }) {
     const title = `${st.branch}${st.upstream ? ` → ${st.upstream}` : ""}${dirty ? ` · ${st.files.length} changed` : " · clean"}${ahead ? ` · ahead ${ahead}` : ""}${behind ? ` · behind ${behind}` : ""}`;
 
     return (
-        <button className="tb-git-chip" onClick={cmd.openGitPane} title={title}>
-            <IconGit size={12} />
-            <span className="tb-git-branch">{st.branch}</span>
-            {(ahead > 0 || behind > 0) && (
-                <span className="tb-git-track">
-                    {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
-                    {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
-                </span>
-            )}
-            <span className={`tb-git-dot${dirty ? " dirty" : ""}`} />
-        </button>
+        <>
+            <button className="tb-git-chip" onClick={cmd.openGitPane} title={title}>
+                <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
+                <span className="tb-git-branch">{st.branch}</span>
+                {(ahead > 0 || behind > 0) && (
+                    <span className="tb-git-track">
+                        {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
+                        {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
+                    </span>
+                )}
+            </button>
+            <span className="tb-sep" />
+        </>
     );
 }
 
@@ -166,7 +163,7 @@ function CogIcon({ size = 15 }: { size?: number }) {
 // App version pill — read from the bundled Info.plist via Tauri's app API,
 // so it always reflects the actually-running binary (after an OTA update
 // completes + relaunches, this flips automatically to the new version).
-function VersionChip() {
+export function VersionChip() {
     const [version, setVersion] = useState<string | null>(null);
     useEffect(() => {
         getVersion().then(setVersion).catch(swallow("getVersion"));
@@ -182,7 +179,7 @@ function VersionChip() {
 // Update chip — surfaces store.pendingUpdate. Hidden when no update;
 // renders when one is available so the user can re-trigger install at
 // any time after the boot prompt. States: available | installing | error.
-function UpdateChip() {
+export function UpdateChip() {
     const pending = useStore((s) => s.pendingUpdate);
     if (!pending) return null;
 
@@ -291,16 +288,9 @@ export function TopBar() {
 
     return (
         <header className="top-bar" data-tauri-drag-region>
-            <div className="tb-left" data-tauri-drag-region>
-                <span className="brand-mark">
-                    <Logo size={17} />
-                </span>
-                <span className="brand-name">
-                    Sike<span className="brand-dim">mux</span>
-                </span>
-                <VersionChip />
-                <UpdateChip />
-            </div>
+            {/* Empty spacer that clears the macOS traffic lights; the brand
+                now lives in the side rail header. */}
+            <div className="tb-left" data-tauri-drag-region />
 
             <div className="tb-center" data-tauri-drag-region>
                 <div className="crumb">
@@ -311,11 +301,11 @@ export function TopBar() {
                             <IconChevron size={11} className="crumb-sep" />
                             <span className="crumb-win">
                                 {session.view === "agent" ? (
-                                    (agent?.title ?? "agent")
+                                    <span className="crumb-name">{agent?.title ?? "agent"}</span>
                                 ) : (
                                     <>
                                         <WindowIcon role={win.role} size={12} />
-                                        {win.name}
+                                        <span className="crumb-name">{win.name}</span>
                                     </>
                                 )}
                             </span>
@@ -362,6 +352,7 @@ export function TopBar() {
                     </div>
                 )}
                 {deployTarget && <DeployChip {...deployTarget} />}
+                <span className="tb-sep" />
                 <AwsChip />
                 <BatteryChip />
                 <span className="tb-clock">
