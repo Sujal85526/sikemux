@@ -15,8 +15,7 @@ import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
-
-const basenameOf = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+import { basename as basenameOf } from "../lib/paths";
 
 type RightView =
     | { mode: "merge"; file: GitFile }

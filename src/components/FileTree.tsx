@@ -9,8 +9,7 @@ import { reportError, swallow } from "../state/toast";
 import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
-
-const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+import { basename } from "../lib/paths";
 
 // VSCode-style decoration letter + class for a git-tracked file.
 function gitDecoration(f: GitFile): { letter: string; cls: string } {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../api/settings";
+import { prettyPath } from "../lib/paths";
 import { reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -36,7 +37,7 @@ export function SettingsPanel() {
         return () => window.removeEventListener("keydown", onKey);
     }, []);
 
-    const pretty = (p: string) => (home && p.startsWith(home) ? `~${p.slice(home.length)}` : p);
+    const pretty = (p: string) => prettyPath(p, home);
 
     return (
         <div className="settings-pane">

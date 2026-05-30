@@ -24,10 +24,9 @@ import { FileTree } from "./FileTree";
 import { IconClose, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { EditorFindBar } from "./EditorFindBar";
+import { basename } from "../lib/paths";
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null, treeWidth: 210 };
-
-const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 // Pull the active editor selection as a single-line string. Multi-line
 // selections collapse to their first non-empty line so the find input

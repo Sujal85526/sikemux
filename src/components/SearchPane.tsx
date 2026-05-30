@@ -12,6 +12,7 @@ import { useStore } from "../state/store";
 import { notify, errMessage } from "../state/toast";
 import { FileIcon } from "./FileIcon";
 import { IconSearch } from "./Icons";
+import { basename, dirname } from "../lib/paths";
 
 // Project-wide search rendered as the project's 4th window. Layout: a
 // flush glow palette + threaded match list on the left (virtualized), a
@@ -31,11 +32,6 @@ import { IconSearch } from "./Icons";
 //     across files via Compartment-based language reconfiguration; a tiny
 //     LRU caches recent windows so flipping between matches is instant.
 
-const basename = (p: string) => p.split("/").pop() || p;
-const dirname = (p: string) => {
-    const i = p.lastIndexOf("/");
-    return i < 0 ? "" : p.slice(0, i);
-};
 
 // 250ms is the sweet spot — visibly debounced but doesn't feel laggy for
 // the typical 10-50ms parallel-walker run.

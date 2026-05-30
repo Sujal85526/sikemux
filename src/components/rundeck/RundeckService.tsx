@@ -4,7 +4,6 @@ import { rundeckApi, type RundeckExecution } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { useResourceEnabled } from "../../state/resources";
 import { rndExecutionsR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
 import { IconFetch, IconGit, IconRefresh, IconRun } from "../Icons";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
@@ -23,23 +22,12 @@ interface Props {
 
 export function RundeckService({ paneId, level, active }: Props) {
     const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, 25);
-    const prodEnvs = useStore((s) => s.rundeck.prodEnvs);
     const [actionError, setActionError] = useState<string | null>(null);
     const [manualBranch, setManualBranch] = useState("");
-    const tone = envTone(level.env, prodEnvs);
 
     return (
         <div className="rnd-service">
             <div className="rnd-svc-bar">
-                <span className={`rnd-env rnd-env-${tone}`} title={`environment: ${level.env}`}>
-                    <span className="rnd-env-dot" />
-                    {level.env}
-                </span>
-                <ServicePath service={level.service} />
-                <span className="rnd-svc-proj">{level.project}</span>
-
-                <span className="rnd-svc-spacer" />
-
                 <form
                     className="rnd-composer"
                     onSubmit={(e) => {
@@ -107,33 +95,6 @@ export function RundeckService({ paneId, level, active }: Props) {
             </div>
         </div>
     );
-}
-
-/** Renders a service path with dimmed ancestors and a bright leaf, e.g.
- *  dev / backend / **content-service** — so the eye lands on the actual job. */
-function ServicePath({ service }: { service: string }) {
-    const parts = service
-        .split("/")
-        .map((p) => p.trim())
-        .filter(Boolean);
-    if (parts.length === 0) return <span className="rnd-svc-path">{service}</span>;
-    return (
-        <span className="rnd-svc-path" title={service}>
-            {parts.map((part, i) => (
-                <span key={`${i}-${part}`} className="rnd-svc-part">
-                    {i > 0 && <span className="rnd-svc-slash">/</span>}
-                    <span className={i === parts.length - 1 ? "rnd-svc-leaf" : "rnd-svc-seg"}>{part}</span>
-                </span>
-            ))}
-        </span>
-    );
-}
-
-/** Cosmetic env-pill tone: configured prod envs → danger, staging-ish → warn,
- *  everything else → live (mint). */
-function envTone(env: string, prodEnvs: string[]): "prod" | "stg" | "dev" {
-    if (prodEnvs.includes(env)) return "prod";
-    return /stag|stg|uat|qa|pre/.test(env.toLowerCase()) ? "stg" : "dev";
 }
 
 function ExecutionRow({

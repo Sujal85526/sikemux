@@ -139,6 +139,33 @@ export function IconGit({ size, className }: IconProps) {
     );
 }
 
+export function IconUser({ size, className }: IconProps) {
+    return (
+        <Svg size={size} className={className}>
+            <circle cx="8" cy="5.2" r="2.5" />
+            <path d="M3.6 13c0-2.5 2-4 4.4-4s4.4 1.5 4.4 4" />
+        </Svg>
+    );
+}
+
+export function IconClock({ size, className }: IconProps) {
+    return (
+        <Svg size={size} className={className}>
+            <circle cx="8" cy="8" r="5.3" />
+            <path d="M8 4.9V8l2.3 1.5" />
+        </Svg>
+    );
+}
+
+export function IconTimer({ size, className }: IconProps) {
+    return (
+        <Svg size={size} className={className}>
+            <circle cx="8" cy="9" r="4.5" />
+            <path d="M8 9V6.5M6.6 2.5h2.8M11.8 5.2l1-1" />
+        </Svg>
+    );
+}
+
 export function IconAgent({ size, className }: IconProps) {
     return (
         <Svg size={size} className={className}>

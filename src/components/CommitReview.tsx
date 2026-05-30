@@ -3,8 +3,7 @@ import { git } from "../api/git";
 import { DiffEditor } from "./DiffEditor";
 import { IconChevron } from "./Icons";
 import { FileIcon } from "./FileIcon";
-
-const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+import { basename } from "../lib/paths";
 
 // A commit (or branch tip) shown as a scrollable accordion of its changed
 // files. Each file collapses; clicking the filename opens it in the editor.

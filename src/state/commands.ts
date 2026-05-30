@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { awsApi } from "../api/aws";
 import { lsp } from "../api/lsp";
 import { rundeckApi } from "../api/rundeck";
+import { basename } from "../lib/paths";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
 import { fetchResource, invalidate, peekResource } from "./resources";
@@ -126,8 +127,6 @@ const withActiveWindow = (fn: (d: StoreState, win: Window, session: Session) => 
         if (!win) return;
         fn(d as unknown as StoreState, win as Window, session as Session);
     });
-
-const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
 
 // ---- Layout primitives -------------------------------------------------
 

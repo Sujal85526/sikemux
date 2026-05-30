@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentSession } from "../api/agents";
+import { rankBy } from "../lib/fuzzy";
 import { AGENT_TYPES, type AgentType } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -22,23 +23,6 @@ function ago(unixSecs: number): string {
     return `${Math.round(d / 86400)}d`;
 }
 
-// Subsequence fuzzy match. Returns a score (lower = better) or -1 for no match.
-function fuzzy(query: string, text: string): number {
-    if (!query) return 0;
-    const q = query.toLowerCase();
-    const t = text.toLowerCase();
-    let ti = 0;
-    let score = 0;
-    let prev = -2;
-    for (let qi = 0; qi < q.length; qi++) {
-        const found = t.indexOf(q[qi], ti);
-        if (found === -1) return -1;
-        score += found - prev === 1 ? 0 : found;
-        prev = found;
-        ti = found + 1;
-    }
-    return score;
-}
 
 // Cross-agent session search — claude, codex and hermes in one palette.
 // Stays imperative — three parallel scans per cwd is small enough that
@@ -74,21 +58,12 @@ export function AgentPalette() {
     }, [session?.cwd]);
 
     const items = useMemo(() => {
-        const q = query.trim();
         const fresh = AGENT_TYPES.map((type): AgentItem => ({ kind: "new", type }));
         const resumable = rows.map((row): AgentItem => ({ kind: "resume", row }));
         const all = [...fresh, ...resumable];
-        const ranked = all
-            .map((item) => ({
-                item,
-                score: fuzzy(
-                    q,
-                    item.kind === "new" ? `new ${labelForType(item.type)} ${item.type}` : `${item.row.title} ${item.row.type}`,
-                ),
-            }))
-            .filter((x) => x.score >= 0);
-        if (q) ranked.sort((a, b) => a.score - b.score);
-        return ranked.map((x) => x.item);
+        return rankBy(query, all, (item) =>
+            item.kind === "new" ? `new ${labelForType(item.type)} ${item.type}` : `${item.row.title} ${item.row.type}`,
+        );
     }, [rows, query]);
 
     useEffect(() => {

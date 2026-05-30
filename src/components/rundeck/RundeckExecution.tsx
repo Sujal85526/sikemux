@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rundeckApi, type LogEntry, type RundeckExecution as Execution, type RundeckStep, type RundeckWorkflowState } from "../../api/rundeck";
+import * as cmd from "../../state/commands";
 import { statusKind } from "./branchStyle";
 import { swallow } from "../../state/toast";
+import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../Icons";
 
 interface Props {
     paneId: string;
@@ -10,6 +12,9 @@ interface Props {
         executionId: number;
         project: string;
         service: string;
+        env?: string;
+        jobId?: string;
+        repoPath?: string;
     };
     active: boolean;
 }
@@ -25,7 +30,7 @@ const STEP_STATE: Record<string, { label: string; cls: "pending" | "running" | "
     NOT_ELIGIBLE: { label: "—", cls: "skip" },
 };
 
-export function RundeckExecution({ paneId: _paneId, level, active }: Props) {
+export function RundeckExecution({ paneId, level, active }: Props) {
     const [execution, setExecution] = useState<Execution | null>(null);
     const [state, setState] = useState<RundeckWorkflowState | null>(null);
     const [terminal, setTerminal] = useState(false);
@@ -143,32 +148,57 @@ export function RundeckExecution({ paneId: _paneId, level, active }: Props) {
         }
     };
 
+    // "Run again" re-deploys this execution's branch on the same job. Needs
+    // the env + jobId the execution was pushed with; older nav entries that
+    // lack them (or runs with no BRANCH option) can't be replayed.
+    const replayBranch = execution?.job?.options?.BRANCH ?? "";
+    const canRunAgain = !!level.jobId && !!level.env && !!replayBranch;
+    const runAgain = () => {
+        if (!level.jobId || !level.env || !replayBranch) return;
+        cmd.rundeckPush(paneId, {
+            kind: "deploy",
+            env: level.env,
+            project: level.project,
+            service: level.service,
+            jobId: level.jobId,
+            branch: replayBranch,
+            repoPath: level.repoPath,
+        });
+    };
+
     return (
         <div className="rnd-exec">
             <header className="rnd-exec-head">
                 <div className="rnd-exec-head-l">
                     <span className={`rnd-exec-pill rnd-status-${sk}`}>{status}</span>
-                    <span className="rnd-exec-id big">#{level.executionId}</span>
-                    <span className="rnd-exec-svc">{level.service}</span>
-                    <span className="rnd-exec-proj">{level.project}</span>
                 </div>
                 <div className="rnd-exec-head-r">
-                    <span className="rnd-exec-meta">
-                        <span className="rnd-meta-k">branch</span>
-                        <span className="rnd-meta-v">{branch}</span>
-                    </span>
-                    <span className="rnd-exec-meta">
-                        <span className="rnd-meta-k">user</span>
-                        <span className="rnd-meta-v">{execution?.user ?? "—"}</span>
-                    </span>
-                    <span className="rnd-exec-meta">
-                        <span className="rnd-meta-k">started</span>
-                        <span className="rnd-meta-v">{started ? formatTime(started) : "—"}</span>
-                    </span>
-                    <span className="rnd-exec-meta">
-                        <span className="rnd-meta-k">duration</span>
-                        <span className="rnd-meta-v">{dur}</span>
-                    </span>
+                    <div className="rnd-exec-meta-row">
+                        <span className="rnd-exec-meta" title="branch">
+                            <IconGit size={12} className="rnd-meta-ic branch" />
+                            <span className="rnd-meta-v">{branch}</span>
+                        </span>
+                        <span className="rnd-exec-meta" title="triggered by">
+                            <IconUser size={12} className="rnd-meta-ic" />
+                            <span className="rnd-meta-v">{execution?.user ?? "—"}</span>
+                        </span>
+                        <span className="rnd-exec-meta" title="started">
+                            <IconClock size={12} className="rnd-meta-ic" />
+                            <span className="rnd-meta-v">{started ? formatTime(started) : "—"}</span>
+                        </span>
+                        <span className="rnd-exec-meta" title="duration">
+                            <IconTimer size={12} className="rnd-meta-ic" />
+                            <span className="rnd-meta-v">{dur || "—"}</span>
+                        </span>
+                    </div>
+                    <button
+                        className="rnd-btn-sm rnd-btn-primary"
+                        disabled={!canRunAgain}
+                        onClick={runAgain}
+                        title={canRunAgain ? `Deploy ${replayBranch} again` : "Run again unavailable for this execution"}>
+                        <IconRun size={11} />
+                        run again
+                    </button>
                     {execution?.permalink && (
                         <a className="rnd-btn-sm" href={execution.permalink} target="_blank" rel="noreferrer" title="Open in Rundeck UI">
                             open ↗

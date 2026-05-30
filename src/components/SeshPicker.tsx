@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionKind } from "../state/types";
+import { fuzzyScore, isSubstringMatch } from "../lib/fuzzy";
+import { basename, expandHome, prettyPath } from "../lib/paths";
 import * as cmd from "../state/commands";
 import { useResourceEnabled } from "../state/resources";
 import { projectRootsScanR, sshHostsR } from "../state/resources.defs";
@@ -12,24 +14,6 @@ type Item =
     | { kind: "session"; id: string; name: string; sub: string; sk: SessionKind }
     | { kind: "dir"; path: string; name: string; sub: string }
     | { kind: "ssh"; alias: string; name: string; sub: string };
-
-// Subsequence fuzzy match. Returns a score (lower = better) or -1 for no match.
-function fuzzy(query: string, text: string): number {
-    if (!query) return 0;
-    const q = query.toLowerCase();
-    const t = text.toLowerCase();
-    let ti = 0;
-    let score = 0;
-    let prev = -2;
-    for (let qi = 0; qi < q.length; qi++) {
-        const found = t.indexOf(q[qi], ti);
-        if (found === -1) return -1;
-        score += found - prev === 1 ? 0 : found;
-        prev = found;
-        ti = found + 1;
-    }
-    return score;
-}
 
 function sshSubtitle(h: SshHost): string {
     const target = h.hostname ?? h.alias;
@@ -67,21 +51,17 @@ export function SeshPicker() {
     const projects = showProjects ? (scanned.data ?? []) : [];
     const hosts = showSsh ? (hostsR.data ?? []) : [];
 
-    const pretty = (p: string) => (home && p.startsWith(home) ? `~${p.slice(home.length)}` : p);
-    const expandRoot = (p: string) => {
-        if (!home) return p;
-        if (p === "~") return home;
-        if (p.startsWith("~/")) return `${home}${p.slice(1)}`;
-        return p;
-    };
+    const pretty = (p: string) => prettyPath(p, home);
     const projectLabel = (cwd: string, fallback: string) => {
         const roots = projectRoots
-            .map((r) => expandRoot(r.path).replace(/\/+$/, ""))
+            .map((r) => expandHome(r.path, home).replace(/\/+$/, ""))
             .filter(Boolean)
             .sort((a, b) => b.length - a.length);
         for (const root of roots) {
             if (cwd === root) return fallback;
-            if (cwd.startsWith(`${root}/`)) return cwd.slice(root.length + 1);
+            // Nested project session — show the folder itself, not the path
+            // under the root (the full path stays in the subtitle).
+            if (cwd.startsWith(`${root}/`)) return basename(cwd);
         }
         return fallback;
     };
@@ -105,7 +85,9 @@ export function SeshPicker() {
                   .map<Item>((p) => ({
                       kind: "dir",
                       path: p.path,
-                      name: p.name,
+                      // Show the folder itself, not its nested path under the
+                      // project root — the relative path stays in the subtitle.
+                      name: basename(p.path),
                       sub: pretty(p.path),
                   }))
             : [];
@@ -122,19 +104,19 @@ export function SeshPicker() {
                   }))
             : [];
 
-        const rank = (it: Item) => fuzzy(query, `${it.name} ${it.sub}`);
-        const keep = (it: Item) => rank(it) >= 0;
-        const order = (a: Item, b: Item) => rank(a) - rank(b);
-
-        const s = sessionItems.filter(keep);
-        const d = dirItems.filter(keep);
-        const h = sshItems.filter(keep);
-        if (query) {
-            s.sort(order);
-            d.sort(order);
-            h.sort(order);
-        }
-        return [...s, ...d, ...h];
+        // Score every group up front so the substring-vs-subsequence decision
+        // is global: if anything matches as a real substring, scattered
+        // subsequence-only matches are dropped across all three groups.
+        const score = (it: Item) => fuzzyScore(query, `${it.name} ${it.sub}`);
+        const scoreGroup = (arr: Item[]) => arr.map((it) => ({ it, s: score(it) })).filter((x) => x.s >= 0);
+        const groups = [scoreGroup(sessionItems), scoreGroup(dirItems), scoreGroup(sshItems)];
+        const hasSubstring = groups.some((g) => g.some((x) => isSubstringMatch(x.s)));
+        const finalize = (g: { it: Item; s: number }[]) => {
+            const kept = hasSubstring ? g.filter((x) => isSubstringMatch(x.s)) : g;
+            if (query.trim()) kept.sort((a, b) => a.s - b.s);
+            return kept.map((x) => x.it);
+        };
+        return groups.flatMap(finalize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessions, projects, hosts, query, home, mode, projectRoots]);
 
