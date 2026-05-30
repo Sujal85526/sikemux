@@ -1243,7 +1243,7 @@ button {
     color: var(--cmd);
 }
 .picker-name {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -1252,11 +1252,14 @@ button {
     color: var(--ink);
 }
 .picker-sub {
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    min-width: 0;
     text-align: right;
     font-size: 11px;
     color: var(--ink-faint);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .picker-empty {
     padding: 28px;

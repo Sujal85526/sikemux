@@ -153,8 +153,8 @@ export function RundeckJobPalette() {
                             <span className="picker-icon command">
                                 <IconCommand size={14} />
                             </span>
-                            <span className="picker-name">{cell.service}</span>
-                            <span className="picker-sub">{jobSubtitle(cell)}</span>
+                            <span className="picker-name">{cell.name || cell.service}</span>
+                            <span className="picker-sub">{jobPath(cell)}</span>
                         </button>
                     ))}
                 </div>
@@ -167,7 +167,6 @@ function jobSearchText(cell: MatrixCell): string {
     return [cell.name, cell.service, cell.group ?? "", cell.branch ?? "", cell.status ?? "", cell.user ?? ""].join(" ").toLowerCase();
 }
 
-function jobSubtitle(cell: MatrixCell): string {
-    const parts = [cell.branch ? `branch ${cell.branch}` : null, cell.status ?? null, cell.user ?? null].filter(Boolean);
-    return parts.length ? parts.join(" · ") : cell.group || "job";
+function jobPath(cell: MatrixCell): string {
+    return cell.group || cell.service;
 }
