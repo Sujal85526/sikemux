@@ -5,7 +5,9 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { currentTheme, registerTerminal } from "../themes/bus";
 
-const FONT = '"JetBrainsMono Nerd Font", monospace';
+const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
+const FONT_WEIGHT = 500;
+const FONT_WEIGHT_BOLD = 700;
 // Must match `PARSER_SCROLLBACK` in src-tauri/src/pty.rs so a fresh xterm
 // can repaint the full grid+scrollback returned by `pty_attach`.
 const SCROLLBACK = 10_000;
@@ -99,7 +101,12 @@ export function useXterm(opts: {
       const term = new Terminal({
         fontFamily: FONT,
         fontSize: 13,
-        lineHeight: 1.2,
+        fontWeight: FONT_WEIGHT,
+        fontWeightBold: FONT_WEIGHT_BOLD,
+        // 1.0 so cells tile with no vertical gap — matches Ghostty. Anything
+        // taller inserts dead space between rows and shears block/box-drawing
+        // glyphs (e.g. the neofetch Apple logo renders squished).
+        lineHeight: 1.0,
         theme: currentTheme().terminal,
         cursorBlink: true,
         allowProposedApi: true,
@@ -240,9 +247,10 @@ export function useXterm(opts: {
 
     const fontsThenBoot = () =>
       void Promise.all([
-        document.fonts.load('13px "JetBrainsMono Nerd Font"'),
-        document.fonts.load('italic 13px "JetBrainsMono Nerd Font"'),
-        document.fonts.load('bold 13px "JetBrainsMono Nerd Font"'),
+        document.fonts.load(`${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
+        document.fonts.load(`italic ${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
+        document.fonts.load(`${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
+        document.fonts.load(`italic ${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
       ]).then(boot, boot);
     bootRef.current = fontsThenBoot;
 
