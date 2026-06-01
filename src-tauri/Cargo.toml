@@ -1,6 +1,6 @@
 [package]
 name = "sikemux"
-version = "0.1.15"
+version = "0.1.16"
 description = "A GUI terminal multiplexer"
 authors = ["nodelike"]
 edition = "2021"
