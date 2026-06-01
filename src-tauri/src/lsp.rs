@@ -443,17 +443,19 @@ pub async fn lsp_open(
     language: String,
     path: String,
     content: String,
+    language_id: Option<String>,
 ) -> AppResult<()> {
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     task::spawn_blocking(move || {
+        let language_id = language_id.unwrap_or(language);
         notify(
             &server,
             "textDocument/didOpen",
             json!({
                 "textDocument": {
                     "uri": path_to_uri(&path),
-                    "languageId": language,
+                    "languageId": language_id,
                     "version": 1,
                     "text": content
                 }

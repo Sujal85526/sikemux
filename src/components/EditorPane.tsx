@@ -122,6 +122,22 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         openOther: (entry: NavEntry) => cmd.requestOpenFile(entry.path, entry.line, entry.character),
     });
 
+    const bindLspContext = (view: EditorView, path: string | null) => {
+        if (!path || !cwd) {
+            setLspContext(view, null);
+            setHoverLinkContext(view, null);
+            return;
+        }
+        setHoverLinkContext(view, { project: cwd, path });
+        setLspContext(view, {
+            project: cwd,
+            path,
+            navigate: (targetPath, line, character) => {
+                nav.push({ path: targetPath, line, character });
+            },
+        });
+    };
+
     // The CM keymap needs stable callbacks; bind to refs that always read the
     // latest hook closures.
     const navBackRef = useRef(() => {});
@@ -291,6 +307,8 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         // current theme so tab switching never restores stale colors.
         refreshViewTheme(view);
         currentRef.current = path;
+        bindLspContext(view, path);
+        void openDoc(path, view.state.doc.toString());
         cmd.setEditorView(paneId, { activePath: path });
         view.focus();
     };
@@ -319,7 +337,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             // CM transition happens after the store update lands; switchTo also
             // dispatches the active-path patch but it's idempotent.
             switchTo(path, st);
-            void openDoc(path, content);
         } catch {
             /* unreadable (binary, perms) — ignore */
         }
@@ -354,8 +371,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             const want = activePath && tabs.includes(activePath) ? activePath : tabs[0];
             if (want && states.current.has(want)) {
                 switchTo(want);
-                const content = states.current.get(want)?.doc.toString() ?? "";
-                void openDoc(want, content);
             }
             if (!cancelled) hydratedRef.current = true;
         })();
@@ -474,22 +489,17 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     // LSP nav + hover-link contexts.
     useEffect(() => {
+        const view = viewRef.current;
+        if (!view) return;
         if (!activePath || !cwd) {
-            setLspContext(null);
-            setHoverLinkContext(null);
+            setLspContext(view, null);
+            setHoverLinkContext(view, null);
             return;
         }
-        setHoverLinkContext({ project: cwd, path: activePath });
-        setLspContext({
-            project: cwd,
-            path: activePath,
-            navigate: (targetPath, line, character) => {
-                nav.push({ path: targetPath, line, character });
-            },
-        });
+        bindLspContext(view, activePath);
         return () => {
-            setLspContext(null);
-            setHoverLinkContext(null);
+            setLspContext(view, null);
+            setHoverLinkContext(view, null);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activePath, cwd]);

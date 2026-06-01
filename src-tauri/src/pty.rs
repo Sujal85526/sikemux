@@ -345,7 +345,7 @@ pub async fn pty_spawn(
                     let mut f = inner.get_ref();
                     f.read(&mut buf)
                 }) {
-                    Ok(Ok(0)) => break,            // EOF
+                    Ok(Ok(0)) => break, // EOF
                     Ok(Ok(n)) => n,
                     Ok(Err(_)) => break,           // I/O error
                     Err(_would_block) => continue, // spurious wake; loop
@@ -445,6 +445,12 @@ pub struct AttachResult {
     pub snapshot: Vec<u8>,
 }
 
+fn screen_scrollback_len(screen: &vt100::Screen) -> usize {
+    let mut s = screen.clone();
+    s.set_scrollback(usize::MAX);
+    s.scrollback()
+}
+
 fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
     let mut snapshot = Vec::new();
     if screen.alternate_screen() {
@@ -453,6 +459,41 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
         // screen before replaying alt-buffer contents so xterm's wheel
         // behavior matches the live PTY after a hidden-pane reattach.
         snapshot.extend_from_slice(b"\x1b[?1049h");
+    }
+    let history_rows = if screen.alternate_screen() {
+        0
+    } else {
+        screen_scrollback_len(screen)
+    };
+    if history_rows > 0 {
+        let (rows, cols) = screen.size();
+        let mut scrolled = screen.clone();
+        let mut current = screen.clone();
+        current.set_scrollback(0);
+
+        // Seed xterm's scrollback cheaply from vt100's formatted semantic
+        // rows, then let `state_formatted` below repaint the live viewport
+        // with cursor and input modes. Reset between rows because each
+        // formatted row is generated from default attrs.
+        let page_rows = usize::from(rows).max(1);
+        let mut start = 0usize;
+        while start < history_rows {
+            scrolled.set_scrollback(history_rows - start);
+            let take = (history_rows - start).min(page_rows);
+            for row in scrolled.rows_formatted(0, cols).take(take) {
+                snapshot.extend(row);
+                snapshot.extend_from_slice(b"\x1b[0m\r\n");
+            }
+            start += take;
+        }
+        for row_idx in 0..rows {
+            if let Some(row) = current.rows(0, cols).nth(row_idx.into()) {
+                snapshot.extend_from_slice(row.as_bytes());
+            }
+            if row_idx + 1 < rows {
+                snapshot.extend_from_slice(b"\r\n");
+            }
+        }
     }
     snapshot.extend(screen.state_formatted());
     snapshot
@@ -521,7 +562,13 @@ pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16)
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    let rc = unsafe { libc::ioctl(pty.io.get_ref().as_raw_fd(), libc::TIOCSWINSZ, &ws as *const _) };
+    let rc = unsafe {
+        libc::ioctl(
+            pty.io.get_ref().as_raw_fd(),
+            libc::TIOCSWINSZ,
+            &ws as *const _,
+        )
+    };
     if rc != 0 {
         return Err(pty_err(std::io::Error::last_os_error()));
     }
@@ -575,6 +622,62 @@ mod tests {
         assert_eq!(
             b.screen().mouse_protocol_encoding(),
             vt100::MouseProtocolEncoding::Sgr,
+        );
+    }
+
+    #[test]
+    fn attach_snapshot_restores_scrollback() {
+        let mut a = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        for i in 0..20 {
+            a.process(format!("line {i:02}\r\n").as_bytes());
+        }
+        let dump = attach_snapshot(a.screen());
+
+        let mut b = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        b.process(&dump);
+
+        assert_eq!(b.screen().contents(), a.screen().contents());
+
+        let screen = b.screen_mut();
+        screen.set_scrollback(usize::MAX);
+        assert!(
+            screen.scrollback() >= 10,
+            "reattach snapshot should seed xterm/vt100 scrollback; got {} rows",
+            screen.scrollback()
+        );
+        assert!(
+            screen.contents().contains("line 00"),
+            "oldest retained output should be reachable after scrolling"
+        );
+    }
+
+    #[test]
+    fn attach_snapshot_restores_scrollback_attrs() {
+        let mut a = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        for i in 0..20 {
+            let color = 31 + (i % 6);
+            a.process(format!("\x1b[{color}mline {i:02}\x1b[0m\r\n").as_bytes());
+        }
+        let dump = attach_snapshot(a.screen());
+
+        let mut b = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        b.process(&dump);
+
+        assert_eq!(b.screen().contents(), a.screen().contents());
+
+        let screen = b.screen_mut();
+        screen.set_scrollback(usize::MAX);
+        assert!(
+            screen.contents().contains("line 00"),
+            "oldest retained output should be reachable after scrolling"
+        );
+        assert_eq!(
+            screen
+                .cell(0, 0)
+                .expect("top-left scrollback cell")
+                .fgcolor(),
+            vt100::Color::Idx(1),
+            "reattach snapshot should preserve attrs for scrolled-out rows"
         );
     }
 

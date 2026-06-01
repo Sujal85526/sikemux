@@ -14,10 +14,12 @@ export interface LspContext {
     navigate: (path: string, line: number, character: number) => void;
 }
 
-let current: LspContext | null = null;
+const contexts = new WeakMap<EditorView, LspContext>();
 
-export function setLspContext(ctx: LspContext | null) {
-    current = ctx;
+export function setLspContext(view: EditorView | null, ctx: LspContext | null) {
+    if (!view) return;
+    if (ctx) contexts.set(view, ctx);
+    else contexts.delete(view);
 }
 
 // Cmd-click (Ctrl on Linux/Win) → definition. Cmd-Shift-click → references.
@@ -28,7 +30,7 @@ export function lspNav(): Extension {
         mousedown(event, view) {
             if (!(event.metaKey || event.ctrlKey)) return false;
             if (event.button !== 0) return false;
-            const ctx = current;
+            const ctx = contexts.get(view);
             if (!ctx) return false;
             const lang = languageFromPath(ctx.path);
             if (!lang) return false;

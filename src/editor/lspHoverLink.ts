@@ -25,11 +25,14 @@ const linkField = StateField.define<Range>({
         }),
 });
 
-// EditorPane sets this so the handler knows which project/file to query.
-let ctx: { project: string; path: string } | null = null;
+// EditorPane sets this so each mounted editor view knows which project/file
+// to query. Every hidden project stays mounted, so this cannot be global.
+const contexts = new WeakMap<EditorView, { project: string; path: string }>();
 
-export function setHoverLinkContext(c: typeof ctx) {
-    ctx = c;
+export function setHoverLinkContext(view: EditorView | null, c: { project: string; path: string } | null) {
+    if (!view) return;
+    if (c) contexts.set(view, c);
+    else contexts.delete(view);
 }
 
 let debounceTimer: number | undefined;
@@ -50,6 +53,7 @@ const hoverHandlers = EditorView.domEventHandlers({
             clear(view);
             return false;
         }
+        const ctx = contexts.get(view);
         if (!ctx) return false;
         const lang = languageFromPath(ctx.path);
         if (!lang) return false;
@@ -71,7 +75,8 @@ const hoverHandlers = EditorView.domEventHandlers({
         const character = word.from - line.from;
         const lineNo = line.number - 1;
         debounceTimer = window.setTimeout(() => {
-            if (!ctx) return;
+            const latest = contexts.get(view);
+            if (!latest || latest.project !== ctx.project || latest.path !== ctx.path) return;
             void lsp
                 .definition(ctx.project, lang, ctx.path, lineNo, character)
                 .then((locs) => {
