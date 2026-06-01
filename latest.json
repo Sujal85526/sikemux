@@ -1,11 +1,11 @@
 {
-  "version": "0.1.14",
-  "notes": "rundeck job search palette; fd-pressure fixes for heavy terminal/agent sessions (no more too-many-open-files); relative repo paths in projects",
-  "pub_date": "2026-05-30T00:03:25Z",
+  "version": "0.1.15",
+  "notes": "Fix terminal reattach scrollback rendering and editor navigation",
+  "pub_date": "2026-06-01T08:16:38Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVJjNUNjTmd1OCtqMVZSNTZkM0pSU0VtdHd3bDJTTXZVdiszY0pvYVJIRjdubUxBaktxaXBWSW1RMXZMcHB3QzcvbFIzUmloQlBabEN4eTNLek5PWXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMDk5NDA0CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6Ck1aTC9yMnoxazZXamlkc2dENUVleUdERmNhSkswb0hxUWZGc0MrR3JtZjV2TCtrbC9CRCtnUEY3ZWloNDZIbFdMWGhwNnBUcGNnalFYWEZaZmRnTURnPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.14/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWFwQWpDNFJ6eHZHcnRtNEVpVmUzZGloRE9pbkhWVGdKWjFtaDk4THRoOGpJWS9jbi9nUGVYdnFJSm5TOGdYaWNwMUpYa1N6dWZIbUJSWTEremo1N0F3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMzAxNzk3CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmdhNk5GY05uYlIvNkRISVhkUXI1Q0dHd01RVUh4bXJobnhzTDRJUlcwYkZiTUQ3Z3NMMVlrdFMrNkZrVTlkM2Y5cTlwZ0FERklMbTlYWDJ2ZUFrTkJ3PT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.15/Sikemux.app.tar.gz"
     }
   }
 }
