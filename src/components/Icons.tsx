@@ -323,6 +323,26 @@ export function IconCodex({ size, className }: IconProps) {
     );
 }
 
+export function IconPi({ size, className }: IconProps) {
+    return (
+        <svg width={size ?? 16} height={size ?? 16} viewBox="0 0 800 800" fill="currentColor" className={className} aria-hidden="true">
+            <path fillRule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z" />
+            <path d="M517.36 400H634.72V634.72H517.36Z" />
+        </svg>
+    );
+}
+
+export function IconOpenCode({ size, className }: IconProps) {
+    return (
+        <svg width={size ?? 16} height={size ?? 16} viewBox="0 0 300 300" fill="currentColor" className={className} aria-hidden="true">
+            <g transform="translate(30, 0)">
+                <path d="M180 240H60V120H180V240Z" opacity="0.45" />
+                <path fillRule="evenodd" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z" />
+            </g>
+        </svg>
+    );
+}
+
 // Hermes — the Nous Research mark.
 export function IconHermes({ size, className }: IconProps) {
     return (
@@ -342,6 +362,8 @@ export function IconHermes({ size, className }: IconProps) {
 export function AgentIcon({ type, size, className }: { type: AgentType; size?: number; className?: string }) {
     if (type === "codex") return <IconCodex size={size} className={className} />;
     if (type === "hermes") return <IconHermes size={size} className={className} />;
+    if (type === "pi") return <IconPi size={size} className={className} />;
+    if (type === "opencode") return <IconOpenCode size={size} className={className} />;
     return <IconClaude size={size} className={className} />;
 }
 

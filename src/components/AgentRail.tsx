@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { AgentInfo } from "../api/agents";
 import * as cmd from "../state/commands";
-import { useResourceEnabled } from "../state/resources";
-import { agentSessionsR } from "../state/resources.defs";
+import { useResource, useResourceEnabled } from "../state/resources";
+import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { AGENT_TYPES, type Agent, type AgentType } from "../state/types";
+import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconPin, IconPlus, IconSearch } from "./Icons";
 
 const RECENTS_CAP = 10;
@@ -27,22 +28,36 @@ export function AgentRail() {
     const agentsBySession = useStore((s) => s.agentsBySession);
     const agentsById = useStore((s) => s.agents);
     const agentBookmarks = useStore((s) => s.agentBookmarks);
+    const catalog = useResource(agentCatalogR);
+    const availableAgents = useMemo(() => catalog.data ?? [], [catalog.data]);
+    const availableTypes = useMemo(() => new Set(availableAgents.map((a) => a.type)), [availableAgents]);
 
-    const [type, setType] = useState<AgentType>("claude");
+    const [type, setType] = useState<AgentType | null>(null);
+    const selectedType = useMemo(() => {
+        if (type && availableAgents.some((a) => a.type === type)) return type;
+        return availableAgents[0]?.type ?? null;
+    }, [availableAgents, type]);
+
+    useEffect(() => {
+        if (selectedType !== type) setType(selectedType);
+    }, [selectedType, type]);
 
     const isProject = session?.kind === "project";
     const cwd = session?.cwd ?? "";
 
     // Disk-scanned recent agent sessions for this project + type. Hooks
     // mounted unconditionally; we just ignore the fetch when not project.
-    const recents = useResourceEnabled(isProject && !!cwd, agentSessionsR, type, isProject ? cwd : "");
+    const recents = useResourceEnabled(isProject && !!cwd && selectedType != null, agentSessionsR, selectedType ?? "claude", isProject ? cwd : "");
     const disk = isProject ? (recents.data ?? []) : [];
 
     if (!session) return null;
 
-    const opens = (agentsBySession[session.id] ?? []).map((id) => agentsById[id]).filter(Boolean) as Agent[];
+    const opens = ((agentsBySession[session.id] ?? []).map((id) => agentsById[id]).filter(Boolean) as Agent[]).filter((a) =>
+        availableTypes.has(a.type),
+    );
 
-    const pinnedKeys = new Set(agentBookmarks.map((b) => sessionKey(b.type, b.id)));
+    const pinnedDisplay = agentBookmarks.filter((b) => availableTypes.has(b.type));
+    const pinnedKeys = new Set(pinnedDisplay.map((b) => sessionKey(b.type, b.id)));
     const activeOpenKeys = new Set(opens.map((a) => sessionKey(a.type, bmIdOf(a))));
     // Cross-session lookup — a pinned bookmark gets a live dot if its session
     // is running in ANY project.
@@ -53,16 +68,16 @@ export function AgentRail() {
             const aids = agentsBySession[id] ?? [];
             for (const aid of aids) {
                 const a = agentsById[aid];
-                if (a) liveByKey.set(sessionKey(a.type, bmIdOf(a)), a.id);
+                if (a && availableTypes.has(a.type)) liveByKey.set(sessionKey(a.type, bmIdOf(a)), a.id);
             }
         }
     });
 
-    const pinnedDisplay = agentBookmarks;
     const openDisplay = opens.filter((a) => !pinnedKeys.has(sessionKey(a.type, bmIdOf(a))));
     const recentDisplay = disk
         .filter((d) => {
-            const k = sessionKey(type, d.id);
+            if (!selectedType) return false;
+            const k = sessionKey(selectedType, d.id);
             return !pinnedKeys.has(k) && !activeOpenKeys.has(k);
         })
         .slice(0, RECENTS_CAP);
@@ -70,7 +85,7 @@ export function AgentRail() {
     if (!isProject) {
         return (
             <aside className="agent-rail">
-                <AgentHeader type={type} setType={setType} />
+                <AgentHeader agents={availableAgents} type={selectedType} setType={setType} />
                 <div className="agent-empty">agents are project-scoped</div>
             </aside>
         );
@@ -80,9 +95,17 @@ export function AgentRail() {
 
     return (
         <aside className="agent-rail">
-            <AgentHeader type={type} setType={setType} />
+            <AgentHeader agents={availableAgents} type={selectedType} setType={setType} />
             <div className="rail-scroll">
-                {noContent && <div className="agent-empty">no agents yet — start one above</div>}
+                {noContent && (
+                    <div className="agent-empty">
+                        {catalog.status === "loading"
+                            ? "detecting agent CLIs..."
+                            : availableAgents.length === 0
+                              ? "no agent CLIs detected on PATH"
+                              : "no agents yet — start one above"}
+                    </div>
+                )}
 
                 {pinnedDisplay.length > 0 && (
                     <div className="agent-group">
@@ -170,13 +193,13 @@ export function AgentRail() {
                     </div>
                 )}
 
-                {recentDisplay.length > 0 && (
+                {selectedType && recentDisplay.length > 0 && (
                     <div className="agent-group">
                         <div className="rail-group-label">Recent</div>
                         {recentDisplay.map((s) => (
-                            <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(type, s.id, s.title)}>
-                                <span className={`agent-glyph ${type}`}>
-                                    <AgentIcon type={type} size={20} />
+                            <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(selectedType, s.id, s.title)}>
+                                <span className={`agent-glyph ${selectedType}`}>
+                                    <AgentIcon type={selectedType} size={20} />
                                 </span>
                                 <span className="agent-title">{s.title}</span>
                                 <span
@@ -185,7 +208,7 @@ export function AgentRail() {
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         cmd.toggleAgentBookmark({
-                                            type,
+                                            type: selectedType,
                                             id: s.id,
                                             title: s.title,
                                             cwd: session.cwd,
@@ -203,13 +226,22 @@ export function AgentRail() {
     );
 }
 
-function AgentHeader({ type, setType }: { type: AgentType; setType: (t: AgentType) => void }) {
+function AgentHeader({
+    agents,
+    type,
+    setType,
+}: {
+    agents: AgentInfo[];
+    type: AgentType | null;
+    setType: (t: AgentType) => void;
+}) {
+    const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
             <div className="agent-header-types">
-                {AGENT_TYPES.map((t) => (
-                    <button key={t} className={`agent-header-btn${type === t ? " active" : ""}`} title={t} onClick={() => setType(t)}>
-                        <AgentIcon type={t} size={18} />
+                {agents.map((a) => (
+                    <button key={a.type} className={`agent-header-btn${type === a.type ? " active" : ""}`} title={a.label} onClick={() => setType(a.type)}>
+                        <AgentIcon type={a.type} size={18} />
                     </button>
                 ))}
             </div>
@@ -217,7 +249,13 @@ function AgentHeader({ type, setType }: { type: AgentType; setType: (t: AgentTyp
                 <button className="agent-header-btn" title="Search agent sessions" onClick={cmd.openAgentPalette}>
                     <IconSearch size={15} />
                 </button>
-                <button className="agent-header-btn" title={`new ${type} agent`} onClick={() => cmd.addAgent(type)}>
+                <button
+                    className="agent-header-btn"
+                    disabled={!type}
+                    title={type ? `new ${label} agent` : "No agent CLI detected"}
+                    onClick={() => {
+                        if (type) cmd.addAgent(type);
+                    }}>
                     <IconPlus size={15} />
                 </button>
             </div>

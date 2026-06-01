@@ -89,6 +89,7 @@ pub fn run() {
             system::battery_status,
             state::state_load,
             state::state_save,
+            agents::available_agents,
             agents::agent_sessions,
             fs::read_dir,
             fs::read_file,

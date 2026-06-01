@@ -13,7 +13,7 @@ import { registerPtyDrop } from "../state/dropRegistry";
  *  Also installs a drag-drop handler on `hostRef` via the typed
  *  registry: paths dropped over the terminal element are wrapped in
  *  bracketed-paste markers (`\x1b[200~ … \x1b[201~`) so the running
- *  TUI (claude / codex / hermes) treats them as a single paste — that
+ *  agent TUI treats them as a single paste — that
  *  is how their @-file / image-attachment sniffers fire.
  *
  *  The returned ref carries a Promise that resolves to the PTY id once

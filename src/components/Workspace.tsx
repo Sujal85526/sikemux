@@ -140,25 +140,28 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
             {agents.map((a) => {
                 const active = a.id === session.activeAgentId;
                 const skip = a.skipPermissions ?? false;
+                const canSkip = cmd.agentSupportsSkipPermissions(a.type);
                 return (
                     <button key={a.id} className={`agent-tab${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
                         <span className={`agent-glyph ${a.type}`}>
                             <AgentIcon type={a.type} size={14} />
                         </span>
                         <span className="agent-tab-title">{a.title}</span>
-                        <span
-                            className={`agent-tab-skip${skip ? " on" : ""}`}
-                            title={
-                                skip
-                                    ? `Bypass mode ON (${a.type} runs without approvals). Click to restart safely.`
-                                    : `Bypass approvals — restarts ${a.type} with its skip-permissions flag.`
-                            }
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                cmd.toggleAgentSkipPermissions(a.id);
-                            }}>
-                            {skip ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
-                        </span>
+                        {canSkip && (
+                            <span
+                                className={`agent-tab-skip${skip ? " on" : ""}`}
+                                title={
+                                    skip
+                                        ? `Bypass mode ON (${a.type} runs without approvals). Click to restart safely.`
+                                        : `Bypass approvals — restarts ${a.type} with its skip-permissions flag.`
+                                }
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    cmd.toggleAgentSkipPermissions(a.id);
+                                }}>
+                                {skip ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
+                            </span>
+                        )}
                         <span
                             className="agent-tab-x"
                             title="Close agent"

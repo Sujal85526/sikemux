@@ -75,8 +75,7 @@ export function isTermRole(role: WindowRole): boolean {
   return role === "term";
 }
 
-export type AgentType = "claude" | "codex" | "hermes";
-export const AGENT_TYPES: AgentType[] = ["claude", "codex", "hermes"];
+export type AgentType = "claude" | "codex" | "hermes" | "pi" | "opencode";
 
 export interface Agent {
   id: string;
@@ -88,6 +87,7 @@ export interface Agent {
    *    claude → --dangerously-skip-permissions
    *    hermes → --yolo
    *    codex  → --dangerously-bypass-approvals-and-sandbox
+   *    unsupported agents ignore this flag
    *  Toggled at runtime via the shield chip in the agent tab; flipping
    *  the value remounts the PTY (the React key includes it) so the new
    *  startup line takes effect immediately. */

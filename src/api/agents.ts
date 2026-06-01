@@ -1,4 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AgentType } from "../state/types";
+
+export interface AgentInfo {
+    type: AgentType;
+    label: string;
+    command: string;
+}
 
 // An existing on-disk conversation that can be resumed.
 export interface AgentSession {
@@ -16,6 +23,10 @@ const TTL_MS = 2_000;
 
 function key(agent: string, cwd: string) {
     return `${agent}\0${cwd}`;
+}
+
+async function fetchAvailable(): Promise<AgentInfo[]> {
+    return invoke<AgentInfo[]>("available_agents");
 }
 
 async function fetchSessions(agent: string, cwd: string): Promise<AgentSession[]> {
@@ -38,6 +49,7 @@ async function fetchSessions(agent: string, cwd: string): Promise<AgentSession[]
 }
 
 export const agentApi = {
+    available: fetchAvailable,
     sessions: fetchSessions,
     invalidate: (agent?: string, cwd?: string) => {
         if (agent == null || cwd == null) {

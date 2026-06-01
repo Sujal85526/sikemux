@@ -977,6 +977,12 @@ button {
 .proj-pip-hermes {
     color: var(--brand-hermes);
 }
+.proj-pip-pi {
+    color: var(--brand-pi);
+}
+.proj-pip-opencode {
+    color: var(--brand-opencode);
+}
 
 /* Brand-tone palette shared by .proj-hint-n and .proj-child-n. */
 .badge-term {
@@ -992,6 +998,14 @@ button {
 }
 .badge-hermes {
     background: var(--brand-hermes);
+    color: white;
+}
+.badge-pi {
+    background: var(--brand-pi);
+    color: var(--void);
+}
+.badge-opencode {
+    background: var(--brand-opencode);
     color: white;
 }
 
@@ -3295,12 +3309,13 @@ button {
     background: var(--acc-soft);
     color: var(--ink);
 }
-/* Brand colors — match each vendor's primary, not the active theme accent.
-   Anthropic's clay/coral, OpenAI's green, Hermes (Nous Research) amber. */
+/* Brand colors — match each vendor's primary, not the active theme accent. */
 :root {
     --brand-claude: #d97757;
     --brand-codex: #10a37f;
     --brand-hermes: #e0a050;
+    --brand-pi: #7dd3fc;
+    --brand-opencode: #a78bfa;
 }
 .agent-glyph {
     display: flex;
@@ -3313,6 +3328,12 @@ button {
 }
 .agent-glyph.hermes {
     color: var(--brand-hermes);
+}
+.agent-glyph.pi {
+    color: var(--brand-pi);
+}
+.agent-glyph.opencode {
+    color: var(--brand-opencode);
 }
 .agent-title {
     flex: 1;
@@ -3575,6 +3596,14 @@ button {
 .agent-header-btn:hover {
     color: var(--ink);
     background: var(--rail-2);
+}
+.agent-header-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.agent-header-btn:disabled:hover {
+    color: var(--ink-faint);
+    background: transparent;
 }
 .agent-header-btn.active {
     color: var(--acc);

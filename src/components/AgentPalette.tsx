@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { agentApi, type AgentSession } from "../api/agents";
+import { agentApi, type AgentInfo, type AgentSession } from "../api/agents";
 import { rankBy } from "../lib/fuzzy";
-import { AGENT_TYPES, type AgentType } from "../state/types";
+import { useResource } from "../state/resources";
+import { agentCatalogR } from "../state/resources.defs";
+import { type AgentType } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { useMouseActive } from "../hooks/useMouseActive";
@@ -12,7 +14,9 @@ type NewAgentItem = { kind: "new"; type: AgentType };
 type ResumeAgentItem = { kind: "resume"; row: Row };
 type AgentItem = NewAgentItem | ResumeAgentItem;
 
-const labelForType = (type: AgentType): string => type;
+function labelForType(type: AgentType, agents: AgentInfo[]): string {
+    return agents.find((a) => a.type === type)?.label ?? type;
+}
 
 function ago(unixSecs: number): string {
     if (!unixSecs) return "";
@@ -24,11 +28,13 @@ function ago(unixSecs: number): string {
 }
 
 
-// Cross-agent session search — claude, codex and hermes in one palette.
-// Stays imperative — three parallel scans per cwd is small enough that
+// Cross-agent session search for whatever supported CLIs are present.
+// Stays imperative — parallel scans per cwd are small enough that
 // promoting it to a resource definition would just add ceremony.
 export function AgentPalette() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
+    const catalog = useResource(agentCatalogR);
+    const agents = useMemo(() => catalog.data ?? [], [catalog.data]);
 
     const [query, setQuery] = useState("");
     const [rows, setRows] = useState<Row[]>([]);
@@ -40,11 +46,17 @@ export function AgentPalette() {
         inputRef.current?.focus();
         const cwd = session?.cwd ?? "";
         let cancelled = false;
+        if (agents.length === 0) {
+            setRows([]);
+            return () => {
+                cancelled = true;
+            };
+        }
         Promise.all(
-            AGENT_TYPES.map((t) =>
+            agents.map((a) =>
                 agentApi
-                    .sessions(t, cwd)
-                    .then((ss) => ss.map((s): Row => ({ ...s, type: t })))
+                    .sessions(a.type, cwd)
+                    .then((ss) => ss.map((s): Row => ({ ...s, type: a.type })))
                     .catch(() => [] as Row[]),
             ),
         ).then((lists) => {
@@ -55,16 +67,18 @@ export function AgentPalette() {
         return () => {
             cancelled = true;
         };
-    }, [session?.cwd]);
+    }, [agents, session?.cwd]);
 
     const items = useMemo(() => {
-        const fresh = AGENT_TYPES.map((type): AgentItem => ({ kind: "new", type }));
+        const fresh = agents.map(({ type }): AgentItem => ({ kind: "new", type }));
         const resumable = rows.map((row): AgentItem => ({ kind: "resume", row }));
         const all = [...fresh, ...resumable];
         return rankBy(query, all, (item) =>
-            item.kind === "new" ? `new ${labelForType(item.type)} ${item.type}` : `${item.row.title} ${item.row.type}`,
+            item.kind === "new"
+                ? `new ${labelForType(item.type, agents)} ${item.type}`
+                : `${item.row.title} ${labelForType(item.row.type, agents)} ${item.row.type}`,
         );
-    }, [rows, query]);
+    }, [agents, rows, query]);
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));
@@ -103,7 +117,13 @@ export function AgentPalette() {
                     <input
                         ref={inputRef}
                         className="picker-input"
-                        placeholder="search agent sessions — claude · codex · hermes…"
+                        placeholder={
+                            agents.length
+                                ? `search agent sessions — ${agents.map((a) => a.label).join(" · ")}...`
+                                : catalog.status === "loading"
+                                  ? "detecting agent CLIs..."
+                                  : "no agent CLIs detected"
+                        }
                         value={query}
                         onChange={(e) => {
                             setQuery(e.target.value);
@@ -131,10 +151,10 @@ export function AgentPalette() {
                                     <AgentIcon type={type} size={14} />
                                 </span>
                                 <span className="picker-name">
-                                    {item.kind === "new" ? `new ${labelForType(type)}` : item.row.title}
+                                    {item.kind === "new" ? `new ${labelForType(type, agents)}` : item.row.title}
                                 </span>
                                 <span className="picker-sub">
-                                    {item.kind === "new" ? "start agent" : `${type} · ${ago(item.row.mtime)}`}
+                                    {item.kind === "new" ? "start agent" : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
                                 </span>
                             </button>
                         );

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -14,23 +15,119 @@ pub struct AgentSession {
     mtime: u64,
 }
 
+#[derive(Serialize)]
+pub struct AgentInfo {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    label: &'static str,
+    command: &'static str,
+}
+
+struct AgentDef {
+    kind: &'static str,
+    label: &'static str,
+    command: &'static str,
+}
+
+const AGENT_DEFS: &[AgentDef] = &[
+    AgentDef {
+        kind: "claude",
+        label: "Claude",
+        command: "claude",
+    },
+    AgentDef {
+        kind: "codex",
+        label: "Codex",
+        command: "codex",
+    },
+    AgentDef {
+        kind: "hermes",
+        label: "Hermes",
+        command: "hermes",
+    },
+    AgentDef {
+        kind: "pi",
+        label: "Pi",
+        command: "pi",
+    },
+    AgentDef {
+        kind: "opencode",
+        label: "OpenCode",
+        command: "opencode",
+    },
+];
+
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentKind {
     Claude,
     Codex,
     Hermes,
+    Pi,
+    Opencode,
 }
 
-/// Existing on-disk conversations for an agent. claude/codex are scoped to the
-/// project cwd; hermes isn't project-scoped, so it lists all sessions.
+/// Agent CLIs that are installed for the current user. The app's PATH is fixed
+/// from the login shell during boot, so this matches what spawned PTYs can run.
+#[tauri::command]
+pub fn available_agents() -> Vec<AgentInfo> {
+    AGENT_DEFS
+        .iter()
+        .filter(|def| executable_in_path(def.kind, def.command))
+        .map(|def| AgentInfo {
+            kind: def.kind,
+            label: def.label,
+            command: def.command,
+        })
+        .collect()
+}
+
+/// Existing on-disk conversations for an agent.
 #[tauri::command]
 pub fn agent_sessions(agent: AgentKind, cwd: String) -> Vec<AgentSession> {
     match agent {
         AgentKind::Claude => claude_sessions(&cwd),
         AgentKind::Codex => codex_sessions(&cwd),
         AgentKind::Hermes => hermes_sessions(),
+        AgentKind::Pi => pi_sessions(&cwd),
+        AgentKind::Opencode => opencode_sessions(&cwd),
     }
+}
+
+fn executable_in_path(agent: &str, bin: &str) -> bool {
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&paths).any(|dir| {
+        let candidate = dir.join(bin);
+        allowed_agent_path(agent, &candidate) && is_executable(&candidate)
+    })
+}
+
+fn allowed_agent_path(agent: &str, path: &Path) -> bool {
+    if agent != "opencode" {
+        return true;
+    }
+    let Ok(home) = std::env::var("HOME") else {
+        return true;
+    };
+    // OpenCode leaves a runnable self-contained binary under ~/.opencode/bin.
+    // Treat that as app data/cache rather than a user-visible system install;
+    // otherwise stale copies keep showing up in the agent rail after uninstall.
+    path != PathBuf::from(home).join(".opencode/bin/opencode")
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .map(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 fn mtime_of(path: &Path) -> u64 {
@@ -48,6 +145,19 @@ fn condense(text: &str) -> Option<String> {
         return None;
     }
     Some(c.chars().take(72).collect())
+}
+
+fn text_from_content(content: &Value) -> Option<String> {
+    if let Some(s) = content.as_str() {
+        return Some(s.to_string());
+    }
+    content.as_array()?.iter().find_map(|b| {
+        if b.get("type").and_then(|t| t.as_str()) == Some("text") {
+            b.get("text").and_then(|t| t.as_str()).map(String::from)
+        } else {
+            None
+        }
+    })
 }
 
 // ---- claude — ~/.claude/projects/<cwd-dashed>/<uuid>.jsonl --------------
@@ -90,22 +200,12 @@ fn claude_title(path: &Path) -> Option<String> {
         if v.get("type").and_then(|t| t.as_str()) != Some("user") {
             continue;
         }
-        let content = v.get("message").and_then(|m| m.get("content"));
-        let text = match content {
-            Some(c) if c.is_string() => c.as_str().unwrap_or("").to_string(),
-            Some(c) if c.is_array() => c
-                .as_array()
-                .unwrap()
-                .iter()
-                .find_map(|b| {
-                    if b.get("type").and_then(|t| t.as_str()) == Some("text") {
-                        b.get("text").and_then(|t| t.as_str()).map(String::from)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-            _ => continue,
+        let Some(text) = v
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(text_from_content)
+        else {
+            continue;
         };
         if let Some(t) = condense(&text) {
             return Some(t);
@@ -198,6 +298,100 @@ fn codex_title(path: &Path) -> Option<String> {
     None
 }
 
+// ---- pi — ~/.pi/agent/sessions/**/<session>.jsonl ----------------------
+fn pi_session_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("PI_CODING_AGENT_SESSION_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    if let Ok(dir) = std::env::var("PI_CODING_AGENT_DIR") {
+        return Some(PathBuf::from(dir).join("sessions"));
+    }
+    std::env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".pi/agent/sessions"))
+}
+
+fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
+    let Some(root) = pi_session_dir() else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    collect_jsonl(&root, &mut files, 0);
+
+    let mut out = Vec::new();
+    for path in files {
+        let Ok(file) = fs::File::open(&path) else {
+            continue;
+        };
+        let mut first = String::new();
+        if BufReader::new(file).read_line(&mut first).is_err() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(first.trim()) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("session") {
+            continue;
+        }
+        if v.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
+            continue;
+        }
+        let id = path.to_string_lossy().to_string();
+        let title = pi_title(&path)
+            .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("session")
+                    .chars()
+                    .take(13)
+                    .collect()
+            });
+        out.push(AgentSession {
+            id,
+            title,
+            mtime: mtime_of(&path),
+        });
+    }
+    out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    out
+}
+
+fn pi_title(path: &Path) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let mut first_user: Option<String> = None;
+    let mut named: Option<String> = None;
+    for line in BufReader::new(file).lines().take(220).map_while(Result::ok) {
+        let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        match v.get("type").and_then(|t| t.as_str()) {
+            Some("session_info") => {
+                if let Some(name) = v.get("name").and_then(|n| n.as_str()).and_then(condense) {
+                    named = Some(name);
+                }
+            }
+            Some("message") if first_user.is_none() => {
+                let Some(message) = v.get("message") else {
+                    continue;
+                };
+                if message.get("role").and_then(|r| r.as_str()) != Some("user") {
+                    continue;
+                }
+                if let Some(text) = message
+                    .get("content")
+                    .and_then(text_from_content)
+                    .and_then(|t| condense(&t))
+                {
+                    first_user = Some(text);
+                }
+            }
+            _ => {}
+        }
+    }
+    named.or(first_user)
+}
+
 // ---- hermes — `sessions` table in ~/.hermes/state.db (SQLite) -----------
 fn hermes_sessions() -> Vec<AgentSession> {
     let Ok(home) = std::env::var("HOME") else {
@@ -232,4 +426,118 @@ fn hermes_sessions() -> Vec<AgentSession> {
         Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
         Err(_) => Vec::new(),
     }
+}
+
+// ---- opencode — SQLite in the user's opencode data dir ------------------
+fn opencode_data_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(dir) = std::env::var("OPENCODE_DATA_DIR") {
+        dirs.push(PathBuf::from(dir));
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        dirs.push(PathBuf::from(&home).join(".local/share/opencode"));
+        dirs.push(PathBuf::from(&home).join("Library/Application Support/opencode"));
+        dirs.push(PathBuf::from(&home).join(".opencode/data"));
+    }
+    dirs
+}
+
+fn opencode_db_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for dir in opencode_data_dirs() {
+        let direct = dir.join("opencode.db");
+        if direct.exists() {
+            paths.push(direct);
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if name.starts_with("opencode")
+                && name.ends_with(".db")
+                && !paths.iter().any(|p| p == &path)
+            {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
+fn normalize_unix_secs(raw: u64) -> u64 {
+    if raw > 10_000_000_000 {
+        raw / 1000
+    } else {
+        raw
+    }
+}
+
+fn opencode_sessions(cwd: &str) -> Vec<AgentSession> {
+    let mut out = Vec::new();
+    for db in opencode_db_paths() {
+        let Ok(conn) = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
+            continue;
+        };
+        out.extend(opencode_sessions_from_conn(&conn, cwd));
+    }
+    out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    let mut seen = HashSet::new();
+    out.retain(|s| seen.insert(s.id.clone()));
+    out.truncate(400);
+    out
+}
+
+fn opencode_sessions_from_conn(conn: &Connection, cwd: &str) -> Vec<AgentSession> {
+    let with_project = "\
+        SELECT s.id, \
+               COALESCE(NULLIF(TRIM(s.title), ''), NULLIF(TRIM(s.slug), ''), substr(s.id, 1, 13)) AS title, \
+               CAST(COALESCE(s.time_updated, s.time_created, 0) AS INTEGER) AS mtime \
+        FROM session s \
+        LEFT JOIN project p ON p.id = s.project_id \
+        WHERE s.directory = ?1 OR s.path = ?1 OR p.worktree = ?1 \
+        ORDER BY COALESCE(s.time_updated, s.time_created, 0) DESC \
+        LIMIT 400";
+    if let Some(rows) = opencode_query(conn, with_project, cwd) {
+        return rows;
+    }
+
+    let session_only = "\
+        SELECT id, \
+               COALESCE(NULLIF(TRIM(title), ''), NULLIF(TRIM(slug), ''), substr(id, 1, 13)) AS title, \
+               CAST(COALESCE(time_updated, time_created, 0) AS INTEGER) AS mtime \
+        FROM session \
+        WHERE directory = ?1 OR path = ?1 \
+        ORDER BY COALESCE(time_updated, time_created, 0) DESC \
+        LIMIT 400";
+    if let Some(rows) = opencode_query(conn, session_only, cwd) {
+        return rows;
+    }
+
+    let minimal = "\
+        SELECT id, \
+               COALESCE(NULLIF(TRIM(title), ''), substr(id, 1, 13)) AS title, \
+               CAST(COALESCE(time_updated, time_created, 0) AS INTEGER) AS mtime \
+        FROM session \
+        WHERE directory = ?1 \
+        ORDER BY COALESCE(time_updated, time_created, 0) DESC \
+        LIMIT 400";
+    opencode_query(conn, minimal, cwd).unwrap_or_default()
+}
+
+fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSession>> {
+    let mut stmt = conn.prepare(sql).ok()?;
+    let rows = stmt
+        .query_map([cwd], |row| {
+            Ok(AgentSession {
+                id: row.get::<_, String>(0)?,
+                title: row.get::<_, String>(1)?,
+                mtime: normalize_unix_secs(row.get::<_, i64>(2).unwrap_or(0).max(0) as u64),
+            })
+        })
+        .ok()?;
+    Some(rows.filter_map(|r| r.ok()).collect())
 }

@@ -1,4 +1,4 @@
-import { agentApi, type AgentSession } from "../api/agents";
+import { agentApi, type AgentInfo, type AgentSession } from "../api/agents";
 import {
   awsApi,
   type AwsIdentity,
@@ -158,6 +158,12 @@ export const s3BucketsR = resource({
 });
 
 // ---- Agents (disk-scanned sessions) ----------------------------------
+
+export const agentCatalogR = resource({
+  kind: "agents.catalog",
+  fetch: (): Promise<AgentInfo[]> => agentApi.available(),
+  staleAfterMs: 60_000,
+});
 
 export const agentSessionsR = resource({
   kind: "agents.sessions",

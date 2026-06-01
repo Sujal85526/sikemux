@@ -886,23 +886,34 @@ export function selectWindowRelative(delta: number): void {
 
 // ---- Agents -----------------------------------------------------------
 
-// Skip-approval / yolo flags per agent. Mirrors `<cli> --help` (claude:
-// --dangerously-skip-permissions, hermes: --yolo, codex:
-// --dangerously-bypass-approvals-and-sandbox).
-const SKIP_PERMISSION_FLAG: Record<AgentType, string> = {
+// Skip-approval / yolo flags per agent. Mirrors each CLI's own help. Agents
+// without a known runtime-wide bypass flag simply hide the shield toggle.
+const SKIP_PERMISSION_FLAG: Partial<Record<AgentType, string>> = {
     claude: "--dangerously-skip-permissions",
     hermes: "--yolo",
     codex: "--dangerously-bypass-approvals-and-sandbox",
 };
 
+export function agentSupportsSkipPermissions(type: AgentType): boolean {
+    return SKIP_PERMISSION_FLAG[type] != null;
+}
+
+function shellQuote(value: string): string {
+    if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;
+    return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function agentStartup(type: AgentType, resumeId?: string, skipPermissions = false): string {
     let cmd: string;
     if (!resumeId) cmd = type;
-    else if (type === "claude") cmd = `claude --resume ${resumeId}`;
-    else if (type === "codex") cmd = `codex resume ${resumeId}`;
-    else if (type === "hermes") cmd = `hermes --resume ${resumeId}`;
+    else if (type === "claude") cmd = `claude --resume ${shellQuote(resumeId)}`;
+    else if (type === "codex") cmd = `codex resume ${shellQuote(resumeId)}`;
+    else if (type === "hermes") cmd = `hermes --resume ${shellQuote(resumeId)}`;
+    else if (type === "pi") cmd = `pi --session ${shellQuote(resumeId)}`;
+    else if (type === "opencode") cmd = `opencode --session ${shellQuote(resumeId)}`;
     else cmd = type;
-    return skipPermissions ? `${cmd} ${SKIP_PERMISSION_FLAG[type]}` : cmd;
+    const skipFlag = SKIP_PERMISSION_FLAG[type];
+    return skipPermissions && skipFlag ? `${cmd} ${skipFlag}` : cmd;
 }
 
 /** Toggle the agent's runtime skip-permissions flag and remount its PTY
@@ -913,6 +924,7 @@ export function toggleAgentSkipPermissions(id: string): void {
     mutate((d) => {
         const a = d.agents[id];
         if (!a) return;
+        if (!agentSupportsSkipPermissions(a.type)) return;
         const next = !a.skipPermissions;
         a.skipPermissions = next;
         a.startup = agentStartup(a.type, a.resumeId, next);
