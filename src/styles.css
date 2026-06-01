@@ -440,20 +440,26 @@ button {
     text-transform: lowercase;
 }
 
+/* Update banner — its own full-width row above the rail footer, so it
+   never competes with the wordmark for space in the brand header. Only
+   renders when an update is pending, so it costs nothing otherwise. */
 .tb-update {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 5px;
-    height: 22px;
-    padding: 0 8px;
-    background: transparent;
+    gap: 8px;
+    flex: 0 0 auto;
+    margin: 0 12px 8px;
+    height: 30px;
+    padding: 0 11px;
+    background: var(--acc-soft);
     border: 1px solid var(--acc-line);
     color: var(--acc);
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     text-transform: lowercase;
+    text-align: left;
     cursor: pointer;
     transition:
         background 0.12s,
@@ -488,6 +494,14 @@ button {
 }
 .tb-update-label {
     line-height: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.tb-update > svg {
+    flex: 0 0 auto;
 }
 
 .tb-batt {

@@ -201,8 +201,10 @@ export function UpdateChip() {
                       ? `Installing v${pending.version}…`
                       : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`
             }>
-            <UpdateArrow size={11} />
-            <span className="tb-update-label">{state === "installing" ? "installing" : state === "error" ? "retry" : `v${pending.version}`}</span>
+            <UpdateArrow size={12} />
+            <span className="tb-update-label">
+                {state === "installing" ? "installing…" : state === "error" ? "update failed — retry" : `update · v${pending.version}`}
+            </span>
         </button>
     );
 }

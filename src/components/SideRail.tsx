@@ -281,7 +281,6 @@ export function SideRail() {
                     Sike<span className="rail-brand-dim">mux</span>
                 </span>
                 <VersionChip />
-                <UpdateChip />
             </header>
             <div className="rail-scroll">
                 <Group
@@ -302,6 +301,8 @@ export function SideRail() {
                 />
                 <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
             </div>
+
+            <UpdateChip />
 
             <button className="rail-foot" onClick={() => cmd.openPicker("all")}>
                 <span className="kbd">M-s</span>
