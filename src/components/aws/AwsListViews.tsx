@@ -1,14 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useResourceEnabled, type ResourceHandle } from "../../state/resources";
 import { billingMonthsR, ec2InstancesR, lambdaFnsR, s3BucketsR, sqsQueuesR } from "../../state/resources.defs";
 import * as cmd from "../../state/commands";
 import { useStore } from "../../state/store";
 import type { Ec2Instance, LambdaFn, S3Bucket, SqsQueue } from "../../api/aws";
-import { type ReactNode } from "react";
 import { IconChevron } from "../Icons";
 import { AwsRefresh } from "./AwsRefresh";
 
-// Generic frame: loading / error / empty / data.
+type Column<T> = {
+    header: string;
+    className?: string;
+    cell: (row: T) => ReactNode;
+};
+
 function Frame<T>({
     handle,
     loading,
@@ -28,117 +32,104 @@ function Frame<T>({
     return <>{children(handle.data)}</>;
 }
 
-// ============================================================
-// EC2
-// ============================================================
+function AwsTable<T>({ data, columns, rowKey }: { data: T[]; columns: Column<T>[]; rowKey: (row: T) => string }) {
+    return (
+        <table className="aws-table">
+            <thead>
+                <tr>
+                    {columns.map((c) => (
+                        <th key={c.header} className={c.className}>
+                            {c.header}
+                        </th>
+                    ))}
+                </tr>
+            </thead>
+            <tbody>
+                {data.map((row) => (
+                    <tr key={rowKey(row)} className="aws-row">
+                        {columns.map((c) => (
+                            <td key={c.header} className={c.className}>
+                                {c.cell(row)}
+                            </td>
+                        ))}
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    );
+}
+
+function TableView<T>({
+    handle,
+    loading,
+    emptyText = "no results",
+    columns,
+    rowKey,
+}: {
+    handle: ResourceHandle<T[]>;
+    loading: string;
+    emptyText?: string;
+    columns: Column<T>[];
+    rowKey: (row: T) => string;
+}) {
+    return (
+        <div className="aws-view">
+            <AwsRefresh handle={handle} />
+            <Frame handle={handle} loading={loading} emptyText={emptyText}>
+                {(data) => <AwsTable data={data} columns={columns} rowKey={rowKey} />}
+            </Frame>
+        </div>
+    );
+}
+
+const EC2_COLUMNS: Column<Ec2Instance>[] = [
+    {
+        header: "Instance",
+        className: "aws-col-name",
+        cell: (i) => (
+            <>
+                {i.name ?? i.instance_id}
+                {i.name && <span className="aws-sub-id">{i.instance_id}</span>}
+            </>
+        ),
+    },
+    { header: "Type", cell: (i) => i.instance_type ?? "—" },
+    { header: "State", cell: (i) => <span className={`aws-status aws-status-${i.state === "running" ? "ok" : "off"}`}>{i.state ?? "—"}</span> },
+    { header: "Private IP", cell: (i) => i.private_ip ?? "—" },
+    { header: "Public IP", cell: (i) => i.public_ip ?? "—" },
+];
+
+const LAMBDA_COLUMNS: Column<LambdaFn>[] = [
+    { header: "Function", className: "aws-col-name", cell: (f) => f.name },
+    { header: "Runtime", cell: (f) => f.runtime ?? "—" },
+    { header: "Memory", cell: (f) => (f.memory_size ? `${f.memory_size} MB` : "—") },
+    { header: "Timeout", cell: (f) => (f.timeout ? `${f.timeout}s` : "—") },
+    { header: "Last Modified", cell: (f) => f.last_modified?.replace(/\..*$/, "") ?? "—" },
+];
+
+const SQS_COLUMNS: Column<SqsQueue>[] = [
+    { header: "Queue", className: "aws-col-name", cell: (q) => q.name },
+    { header: "URL", className: "aws-sub-id", cell: (q) => q.url },
+];
+
+const S3_COLUMNS: Column<S3Bucket>[] = [
+    { header: "Bucket", className: "aws-col-name", cell: (b) => b.name },
+    { header: "Created", cell: (b) => b.created_at?.replace(/\..*$/, "") ?? "—" },
+];
+
 export function AwsEc2View({ profile, active }: { profile: string; active: boolean }) {
     const handle = useResourceEnabled(active, ec2InstancesR, profile);
-    return (
-        <div className="aws-view">
-            <AwsRefresh handle={handle} />
-            <Frame handle={handle} loading="loading instances…" emptyText="no results">
-                {(data) => (
-                    <table className="aws-table">
-                        <thead>
-                            <tr>
-                                <th className="aws-col-name">Instance</th>
-                                <th>Type</th>
-                                <th>State</th>
-                                <th>Private IP</th>
-                                <th>Public IP</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {data.map((i: Ec2Instance) => (
-                                <tr key={i.instance_id} className="aws-row">
-                                    <td className="aws-col-name">
-                                        {i.name ?? i.instance_id}
-                                        {i.name && <span className="aws-sub-id">{i.instance_id}</span>}
-                                    </td>
-                                    <td>{i.instance_type ?? "—"}</td>
-                                    <td>
-                                        <span className={`aws-status aws-status-${i.state === "running" ? "ok" : "off"}`}>{i.state ?? "—"}</span>
-                                    </td>
-                                    <td>{i.private_ip ?? "—"}</td>
-                                    <td>{i.public_ip ?? "—"}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </Frame>
-        </div>
-    );
+    return <TableView handle={handle} loading="loading instances…" columns={EC2_COLUMNS} rowKey={(i) => i.instance_id} />;
 }
 
-// ============================================================
-// Lambda
-// ============================================================
 export function AwsLambdaView({ profile, active }: { profile: string; active: boolean }) {
     const handle = useResourceEnabled(active, lambdaFnsR, profile);
-    return (
-        <div className="aws-view">
-            <AwsRefresh handle={handle} />
-            <Frame handle={handle} loading="loading functions…" emptyText="no results">
-                {(data) => (
-                    <table className="aws-table">
-                        <thead>
-                            <tr>
-                                <th className="aws-col-name">Function</th>
-                                <th>Runtime</th>
-                                <th>Memory</th>
-                                <th>Timeout</th>
-                                <th>Last Modified</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {data.map((f: LambdaFn) => (
-                                <tr key={f.name} className="aws-row">
-                                    <td className="aws-col-name">{f.name}</td>
-                                    <td>{f.runtime ?? "—"}</td>
-                                    <td>{f.memory_size ? `${f.memory_size} MB` : "—"}</td>
-                                    <td>{f.timeout ? `${f.timeout}s` : "—"}</td>
-                                    <td>{f.last_modified?.replace(/\..*$/, "") ?? "—"}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </Frame>
-        </div>
-    );
+    return <TableView handle={handle} loading="loading functions…" columns={LAMBDA_COLUMNS} rowKey={(f) => f.name} />;
 }
 
-// ============================================================
-// SQS
-// ============================================================
 export function AwsSqsView({ profile, active }: { profile: string; active: boolean }) {
     const handle = useResourceEnabled(active, sqsQueuesR, profile);
-    return (
-        <div className="aws-view">
-            <AwsRefresh handle={handle} />
-            <Frame handle={handle} loading="loading queues…" emptyText="no results">
-                {(data) => (
-                    <table className="aws-table">
-                        <thead>
-                            <tr>
-                                <th className="aws-col-name">Queue</th>
-                                <th>URL</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {data.map((q: SqsQueue) => (
-                                <tr key={q.url} className="aws-row">
-                                    <td className="aws-col-name">{q.name}</td>
-                                    <td className="aws-sub-id">{q.url}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </Frame>
-        </div>
-    );
+    return <TableView handle={handle} loading="loading queues…" columns={SQS_COLUMNS} rowKey={(q) => q.url} />;
 }
 
 // ============================================================
@@ -359,34 +350,7 @@ export function AwsBillingView({ profile, active }: { profile: string; active: b
     );
 }
 
-// ============================================================
-// S3
-// ============================================================
 export function AwsS3View({ profile, active }: { profile: string; active: boolean }) {
     const handle = useResourceEnabled(active, s3BucketsR, profile);
-    return (
-        <div className="aws-view">
-            <AwsRefresh handle={handle} />
-            <Frame handle={handle} loading="loading buckets…" emptyText="no results">
-                {(data) => (
-                    <table className="aws-table">
-                        <thead>
-                            <tr>
-                                <th className="aws-col-name">Bucket</th>
-                                <th>Created</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {data.map((b: S3Bucket) => (
-                                <tr key={b.name} className="aws-row">
-                                    <td className="aws-col-name">{b.name}</td>
-                                    <td>{b.created_at?.replace(/\..*$/, "") ?? "—"}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </Frame>
-        </div>
-    );
+    return <TableView handle={handle} loading="loading buckets…" columns={S3_COLUMNS} rowKey={(b) => b.name} />;
 }

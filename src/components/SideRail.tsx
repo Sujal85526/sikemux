@@ -124,11 +124,16 @@ export function SideRail() {
         // Right-edge indicators on Term / Agents rows. We show the actual
         // brand-colored logos (one per item, capped at MAX_BADGE_ICONS) instead
         // of a numeric pill so the rail reads as "what's running" rather than
-        // "how many". Term tabs use a small filled pip in the live-green tone
-        // since terminal sessions don't have a per-instance identity. Agents
+        // "how many". Term tabs use the terminal icon in live-green; agents
         // render their AgentIcon at the brand color.
         const termIcons: React.ReactNode[] =
-            tabCount > 1 ? Array.from({ length: tabCount }, (_, i) => <span key={i} className="proj-pip proj-pip-term" />) : [];
+            tabCount > 1
+                ? Array.from({ length: tabCount }, (_, i) => (
+                      <span key={i} className="proj-pip proj-pip-term">
+                          <IconCommand size={14} />
+                      </span>
+                  ))
+                : [];
         const agentIcons: React.ReactNode[] = agents.map((a) => (
             <span key={a.id} className={`proj-pip proj-pip-${a.type}`}>
                 <AgentIcon type={a.type} size={20} />

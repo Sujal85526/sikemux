@@ -138,7 +138,6 @@ body {
    spots). Matches Ghostty's `rgba(0,0,0,opacity)` look. */
 html.is-transparent .top-bar,
 html.is-transparent .side-rail,
-html.is-transparent .context-rail,
 html.is-transparent .agent-rail,
 html.is-transparent .agent-tabs,
 html.is-transparent .crumb,
@@ -216,7 +215,6 @@ button {
 
 /* micro label — uppercase, tracked */
 .rail-group-label,
-.ctx-label,
 .picker-group {
     font-size: 9.5px;
     font-weight: 700;
@@ -557,8 +555,7 @@ button {
 /* ============================================================
    rails (shared)
    ============================================================ */
-.side-rail,
-.context-rail {
+.side-rail {
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
@@ -569,11 +566,6 @@ button {
     width: 238px;
     border-right: 1px solid var(--line);
     animation: slideL 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
-}
-.context-rail {
-    width: 252px;
-    border-left: 1px solid var(--line);
-    animation: slideR 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
 }
 
 .rail-scroll {
@@ -668,43 +660,10 @@ button {
 .sess-row.active {
     color: var(--live);
 }
-/* Project rows: the folder icon doubles as the expand/collapse toggle.
-   Hover-swap: folder fades out, chevron fades in. Rotates 90° when the
-   group is open so the same icon flips between ▸ (collapsed) and ▾ (open). */
-.sess-icon.toggle {
-    position: relative;
-    cursor: pointer;
-    width: 18px;
-    height: 18px;
-    margin: 0 -2px;
-    align-items: center;
-    justify-content: center;
-    color: var(--ink-dim);
-}
-.sess-icon-glyph,
-.sess-icon-chev {
+.sess-icon-glyph {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.12s;
-}
-.sess-icon-chev {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    color: var(--acc);
-    transition:
-        opacity 0.12s,
-        transform 0.15s ease;
-}
-.sess-icon.toggle.open .sess-icon-chev {
-    transform: rotate(90deg);
-}
-.sess-row:hover .sess-icon.toggle .sess-icon-glyph {
-    opacity: 0;
-}
-.sess-row:hover .sess-icon.toggle .sess-icon-chev {
-    opacity: 1;
 }
 
 .sess-icon {
@@ -730,73 +689,6 @@ button {
 }
 .sess-row.active .sess-name {
     font-weight: 600;
-}
-
-/* expanded windows under a project — single quiet guide line, no per-row ticks */
-.win-list {
-    margin: 1px 0 6px;
-    position: relative;
-}
-.win-list::before {
-    content: "";
-    position: absolute;
-    /* aligned with the folder-icon centre on the sess-row above
-     (8px padding-left + ~6.5px = ~14.5) */
-    left: 14px;
-    top: 0;
-    bottom: 4px;
-    width: 1px;
-    background: var(--line-soft);
-    pointer-events: none;
-}
-.win-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    height: 24px;
-    /* indent so the win-icon sits to the right of the parent guide line */
-    padding: 0 10px 0 28px;
-    border-radius: 0;
-    color: var(--ink-faint);
-    transition:
-        background 0.12s,
-        color 0.12s;
-}
-.win-row:hover {
-    color: var(--ink-dim);
-}
-.win-row.active {
-    color: var(--ink);
-}
-
-/* the per-row tick + rail slot are gone — handled by the single guide */
-.win-rail,
-.win-tick {
-    display: none;
-}
-
-.win-icon {
-    display: flex;
-    color: inherit;
-}
-.win-row.active .win-icon {
-    color: var(--live);
-}
-.win-name {
-    flex: 1;
-    text-align: left;
-}
-.win-index {
-    font-size: 10px;
-    color: var(--ink-faint);
-    font-variant-numeric: tabular-nums;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-.win-row:hover .win-index,
-.win-row.active .win-index {
-    opacity: 0.6;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -933,29 +825,15 @@ button {
     font-size: 12px;
     letter-spacing: 0.01em;
 }
-.proj-child-n {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 16px;
-    height: 14px;
-    padding: 0 5px;
-    border-radius: 999px;
-    font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--void);
-    flex-shrink: 0;
-}
-
 /* Right-edge stack of mini brand-colored logos. Replaces the old
    numeric badge — readable as "one per running thing", capped with a
-   "+N" overflow chip. */
+   "+N" overflow chip. The logos overlap into a horizontal deck (like
+   layered avatars) so a busy project reads compactly. */
 .proj-child-icons {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
+    padding-left: 4px;
 }
 .proj-child-icons-more {
     font-family: var(--mono);
@@ -963,7 +841,7 @@ button {
     font-weight: 700;
     color: var(--ink-faint);
     line-height: 1;
-    margin-left: 2px;
+    margin-left: 5px;
 }
 .proj-pip {
     display: inline-flex;
@@ -973,13 +851,19 @@ button {
     height: 20px;
     flex-shrink: 0;
 }
-/* Term: filled circle in live-green — terminal sessions don't have
-   per-instance identity so a brand mark would be misleading. */
-.proj-pip-term {
-    width: 10px;
-    height: 10px;
+/* overlap each logo onto the previous; the ring (same tone as the rail)
+   keeps the layered coins visually separated. */
+.proj-child-icons .proj-pip {
     border-radius: 999px;
-    background: var(--live);
+    background: var(--rail);
+    box-shadow: 0 0 0 1.5px var(--rail);
+    margin-left: -7px;
+}
+.proj-child-icons .proj-pip:first-child {
+    margin-left: 0;
+}
+.proj-pip-term {
+    color: var(--live);
 }
 /* Agents: AgentIcon SVG inherits color via currentColor. */
 .proj-pip-claude {
@@ -996,31 +880,6 @@ button {
 }
 .proj-pip-opencode {
     color: var(--brand-opencode);
-}
-
-/* Brand-tone palette shared by .proj-hint-n and .proj-child-n. */
-.badge-term {
-    background: var(--live);
-}
-.badge-claude {
-    background: var(--brand-claude);
-    color: white;
-}
-.badge-codex {
-    background: var(--brand-codex);
-    color: var(--void);
-}
-.badge-hermes {
-    background: var(--brand-hermes);
-    color: white;
-}
-.badge-pi {
-    background: var(--brand-pi);
-    color: var(--void);
-}
-.badge-opencode {
-    background: var(--brand-opencode);
-    color: white;
 }
 
 .rail-foot {
@@ -1040,104 +899,6 @@ button {
 /* ============================================================
    context rail
    ============================================================ */
-.ctx-section {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--line-soft);
-}
-.ctx-label {
-    margin-bottom: 11px;
-}
-
-.env-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-.env-pill {
-    font-size: 11px;
-    color: var(--ink-dim);
-    border: 1px solid var(--line);
-    border-radius: 0;
-    padding: 3px 9px;
-    transition: all 0.12s;
-}
-.env-pill:hover {
-    color: var(--ink);
-    border-color: var(--acc-line);
-}
-.env-pill.active {
-    background: var(--acc);
-    border-color: var(--acc);
-    color: var(--void);
-    font-weight: 600;
-}
-
-.ctx-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    padding: 3px 0;
-}
-.ctx-k {
-    color: var(--ink-faint);
-    font-size: 11px;
-}
-.ctx-v {
-    color: var(--ink);
-}
-.ctx-cwd {
-    margin-top: 9px;
-    font-size: 11px;
-    color: var(--live);
-    background: var(--void);
-    border: 1px solid var(--line-soft);
-    border-radius: 0;
-    padding: 6px 9px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.ctx-clock {
-    font-size: 31px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    display: flex;
-    align-items: baseline;
-}
-.ctx-colon {
-    color: var(--ink-faint);
-    animation: blink 2s steps(1) infinite;
-}
-.ctx-secs {
-    font-size: 13px;
-    color: var(--ink-faint);
-    margin-left: 6px;
-}
-.ctx-date {
-    margin-top: 7px;
-    font-size: 11px;
-    color: var(--ink-dim);
-}
-
-.keys-list {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-}
-.keys-row {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-}
-.keys-desc {
-    color: var(--ink-dim);
-    font-size: 11px;
-}
-
 /* ============================================================
    pane grid
    ============================================================ */
@@ -1718,31 +1479,6 @@ button {
     border-right: 1px solid var(--line);
 }
 
-.git-status-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    height: 28px;
-    flex: 0 0 auto;
-    padding: 0 4px;
-}
-.git-branch {
-    color: var(--acc);
-    font-weight: 700;
-}
-.git-track {
-    display: flex;
-    gap: 7px;
-    color: var(--live);
-    font-size: 11px;
-}
-.git-busy {
-    margin-left: auto;
-    color: var(--warn);
-    font-size: 11px;
-    font-style: italic;
-}
-
 .git-commit-bar {
     flex: 0 0 auto;
 }
@@ -2081,15 +1817,6 @@ button {
     padding: 0;
     justify-content: center;
 }
-.git-tbtn.pri {
-    color: var(--acc);
-    border-color: var(--acc-line);
-    background: var(--acc-soft);
-}
-.git-tbtn.ai {
-    color: var(--cmd);
-    border-color: rgba(255, 106, 193, 0.3);
-}
 .git-tbtn.live {
     color: var(--live);
     border-color: rgba(97, 255, 202, 0.3);
@@ -2146,12 +1873,6 @@ button {
 .git-hbtn.danger {
     color: var(--danger);
     border-color: color-mix(in srgb, var(--danger) 40%, transparent);
-}
-.git-hbtn.ai {
-    color: var(--cmd);
-}
-.git-hbtn.live {
-    color: var(--live);
 }
 .git-hbtn .git-kbd {
     font-size: 8px;
@@ -3131,105 +2852,6 @@ button {
     color: var(--acc);
 }
 
-/* Stacked circle badges showing the session's live resources (terminals,
-   agents). Tiny icons in -50% overlap circles — "n+1" badge appears when
-   the count exceeds STACK_MAX. */
-.sess-stack {
-    display: inline-flex;
-    flex: 0 0 auto;
-    margin-left: 6px;
-    align-items: center;
-}
-.sess-stack .stack-dot {
-    width: 26px;
-    height: 26px;
-    margin-left: -8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    /* Thin ring just enough to separate stacked circles — no inner padding. */
-    border: 1px solid var(--rail);
-    /* Match the active-tab tint (used in tabbed term/agent strips). */
-    background: var(--acc-soft);
-    color: var(--ink-dim);
-    position: relative;
-    overflow: hidden;
-}
-.sess-stack .stack-dot:first-child {
-    margin-left: 0;
-}
-.sess-stack.stack-term .stack-dot {
-    color: var(--live, var(--acc));
-}
-/* Per-agent color comes from the `.agent-glyph.<type>` class added on the
-   dot itself — the circle stays on the shared --acc-soft tint. */
-/* Overflow chip — replaces the would-be icon with the real "+N" hidden count.
-   Keeps the same circle, just swaps the contents and tints the bg darker so
-   the number reads cleanly against the rail. */
-.sess-stack .stack-dot.more {
-    background: var(--bg-raised, var(--rail-2));
-}
-.sess-stack .stack-more-num {
-    font-size: 10.5px;
-    font-weight: 700;
-    color: var(--acc);
-    letter-spacing: 0.02em;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-}
-.sess-row.active .sess-stack .stack-dot {
-    border-color: var(--bg, var(--rail));
-}
-
-.sess-pin {
-    display: flex;
-    align-items: center;
-    padding: 3px;
-    border-radius: 0;
-    color: var(--ink-faint);
-    opacity: 0;
-    transition:
-        opacity 0.12s,
-        color 0.12s;
-}
-.sess-row:hover .sess-pin {
-    opacity: 1;
-}
-.sess-pin:hover {
-    color: var(--ink);
-}
-.sess-pin.on {
-    opacity: 1;
-    color: var(--acc);
-}
-
-.recent-row {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    width: 100%;
-    height: 28px;
-    padding: 0 10px;
-    border-radius: 0;
-    color: var(--ink-faint);
-    transition:
-        background 0.12s,
-        color 0.12s;
-}
-.recent-row:hover {
-    background: var(--rail-2);
-    color: var(--ink-dim);
-}
-.recent-meta {
-    font-size: 10px;
-    color: var(--ink-faint);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 84px;
-}
-
 .sess-close {
     display: flex;
     align-items: center;
@@ -3269,38 +2891,6 @@ button {
     font-size: 11.5px;
     line-height: 1.6;
 }
-.agent-empty-add {
-    color: var(--acc);
-}
-.agent-empty-add:hover {
-    text-decoration: underline;
-}
-
-.agent-new {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 2px 0 8px;
-    border-bottom: 1px solid var(--line-soft);
-    margin-bottom: 6px;
-}
-.agent-new-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 30px;
-    padding: 0 10px;
-    border-radius: 0;
-    color: var(--ink-dim);
-    transition:
-        background 0.12s,
-        color 0.12s;
-}
-.agent-new-btn:hover {
-    background: var(--acc-soft);
-    color: var(--ink);
-}
-
 .agent-row {
     display: flex;
     align-items: center;
@@ -3356,24 +2946,6 @@ button {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.agent-close {
-    display: flex;
-    align-items: center;
-    padding: 3px;
-    border-radius: 0;
-    color: var(--ink-faint);
-    opacity: 0;
-    transition:
-        opacity 0.12s,
-        color 0.12s;
-}
-.agent-row:hover .agent-close {
-    opacity: 1;
-}
-.agent-close:hover {
-    color: var(--danger);
-}
-
 /* env dropdown */
 .env-dd {
     position: relative;
@@ -3451,73 +3023,6 @@ button {
 .env-dd-item.active {
     color: var(--ink);
 }
-.env-dd-empty {
-    padding: 8px 9px;
-    color: var(--ink-faint);
-    font-size: 11.5px;
-    font-style: italic;
-}
-
-/* agent rail — pill picker + search + session list */
-.agent-pills {
-    display: flex;
-    gap: 4px;
-    margin-top: 14px;
-    padding: 0 2px 10px;
-}
-.agent-pill {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    height: 30px;
-    border-radius: 0;
-    border: 1px solid var(--line);
-    background: var(--rail-2);
-    color: var(--ink-faint);
-    font-size: 11px;
-    transition:
-        color 0.12s,
-        background 0.12s,
-        border-color 0.12s;
-}
-.agent-pill:hover {
-    color: var(--ink-dim);
-}
-.agent-pill.active {
-    background: var(--acc);
-    border-color: var(--acc);
-    color: var(--void);
-    font-weight: 600;
-}
-.agent-search {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin: 0 12px 8px;
-    padding: 0 9px;
-    height: 28px;
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background: var(--void);
-}
-.agent-search-icon {
-    color: var(--ink-faint);
-}
-.agent-search-input {
-    flex: 1;
-    min-width: 0;
-    background: none;
-    border: none;
-    outline: none;
-    color: var(--ink);
-    font: inherit;
-    font-size: 12px;
-}
-.agent-search-input::placeholder {
-    color: var(--ink-faint);
-}
 /* keyboard cursor — a short inset accent bar (no corner-following border) */
 .agent-row.sel::before {
     content: "";
@@ -3564,19 +3069,6 @@ button {
 .agent-bm.on {
     opacity: 1;
     color: var(--acc);
-}
-
-/* sessions group header — label + inline new-agent button */
-.agent-sessions-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-right: 4px;
-}
-
-.agent-head-actions {
-    display: flex;
-    gap: 2px;
 }
 
 /* agent rail — footer strip (type picker + search + new) */
@@ -3773,16 +3265,6 @@ button {
     margin-left: 0;
 }
 
-/* side rail — sub-label for the agents row under a project */
-.win-sub-label {
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    padding: 10px 8px 4px 27px;
-}
-
 /* empty agent center pane — shown when project has 0 agents in agent view */
 .agent-empty-stage {
     position: absolute;
@@ -3925,26 +3407,6 @@ button {
     text-decoration-thickness: 1px;
     text-underline-offset: 2px;
     cursor: pointer;
-}
-
-/* LSP results popup — header */
-.lsp-results-title {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-dim);
-}
-.lsp-results-count {
-    font-size: 10px;
-    color: var(--ink-faint);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0;
-    text-transform: none;
 }
 
 /* ============================================================
@@ -4125,11 +3587,6 @@ button {
     }
 }
 
-/* status-bar busy text — subtle pulse so it's noticeable in the corner */
-.git-busy {
-    animation: gitBusyPulse 1.6s ease-in-out infinite;
-}
-
 /* ---- toasts -------------------------------------------------------------- */
 .toaster {
     position: fixed;
@@ -4210,24 +3667,6 @@ button {
     color: var(--warn);
 }
 
-/* inline busy badge in the FILES panel header — visible feedback during
-   commit / AI commit / push / pull etc. */
-.git-panel-busy {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 10px;
-    color: var(--acc);
-    text-transform: none;
-    letter-spacing: 0;
-    font-weight: 500;
-    max-width: 60%;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    animation: gitBusyPulse 1.6s ease-in-out infinite;
-}
 .git-panel-spinner {
     width: 10px;
     height: 10px;
@@ -4238,11 +3677,6 @@ button {
     flex: 0 0 auto;
 }
 
-/* error state for the busy indicators — persists 3.5s so the user sees it */
-.git-panel-busy.error {
-    color: var(--danger);
-    animation: none;
-}
 .git-busy-card.error {
     border-color: var(--danger);
     box-shadow: 0 12px 36px -16px rgba(255, 103, 103, 0.4);
@@ -6557,14 +5991,6 @@ button {
     letter-spacing: 0.1em;
     text-transform: uppercase;
     flex: 0 0 auto;
-}
-/* No bordered container around the matches — they sit as plain indented
-   rows under their file header. Hover-only feedback. */
-.sp-thread-msgs {
-    background: transparent;
-    border: 0;
-    border-radius: 0;
-    overflow: visible;
 }
 .sp-msg {
     display: grid;

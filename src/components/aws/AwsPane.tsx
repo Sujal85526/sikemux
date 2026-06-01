@@ -1,11 +1,24 @@
+import type { ComponentType } from "react";
 import { useResourceEnabled } from "../../state/resources";
 import { awsIdentityR } from "../../state/resources.defs";
 import { useStore } from "../../state/store";
+import type { AwsService } from "../../state/types";
 import { deriveAuthState, needsAuth } from "../../state/awsAuth";
 import { AwsServiceNav } from "./AwsServiceNav";
 import { AwsEcsView } from "./AwsEcsView";
 import { AwsBillingView, AwsEc2View, AwsLambdaView, AwsS3View, AwsSqsView } from "./AwsListViews";
 import { AwsAuthEmpty } from "./AwsAuthEmpty";
+
+type AwsViewProps = { profile: string; active: boolean };
+
+const AWS_VIEW: Record<AwsService, ComponentType<AwsViewProps>> = {
+    ecs: AwsEcsView,
+    ec2: AwsEc2View,
+    lambda: AwsLambdaView,
+    sqs: AwsSqsView,
+    billing: AwsBillingView,
+    s3: AwsS3View,
+};
 
 // The identity resource refreshes itself every 60s via staleAfterMs, so
 // this pane no longer needs its own polling interval — the TopBar chip
@@ -22,16 +35,12 @@ export function AwsPane({ active }: { active: boolean }) {
     }
     // authed (also checking — service views show their own loading)
     const p = auth.profile;
+    const ServiceView = AWS_VIEW[service];
     return (
         <div className="aws-pane">
             <AwsServiceNav />
             <div className="aws-main">
-                {service === "ecs" && <AwsEcsView profile={p} active={active} />}
-                {service === "ec2" && <AwsEc2View profile={p} active={active} />}
-                {service === "lambda" && <AwsLambdaView profile={p} active={active} />}
-                {service === "sqs" && <AwsSqsView profile={p} active={active} />}
-                {service === "billing" && <AwsBillingView profile={p} active={active} />}
-                {service === "s3" && <AwsS3View profile={p} active={active} />}
+                <ServiceView profile={p} active={active} />
             </div>
         </div>
     );

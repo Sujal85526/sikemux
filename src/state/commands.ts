@@ -10,6 +10,7 @@ import { awsIdentityR, projectRootsScanR, rndProjectsR } from "./resources.defs"
 import { inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { swallow } from "./toast";
+import { DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
     computeLayout,
@@ -27,10 +28,9 @@ import type {
     AgentType,
     AwsService,
     EcsLevel,
-    Env,
-    FocusDir,
-    GitPanel,
-    PickerMode,
+	    Env,
+	    FocusDir,
+	    PickerMode,
     ProjectRoot,
     RecentEntry,
     RundeckLevel,
@@ -1223,13 +1223,7 @@ export function setEditorView(paneId: string, patch: Partial<StoreState["editorV
 
 export function setGitView(paneId: string, patch: Partial<StoreState["gitViews"][string]>): void {
     mutate((d) => {
-        const cur: StoreState["gitViews"][string] = (d.gitViews[paneId] ??
-            ({
-                panel: "status" as GitPanel,
-                selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
-                remoteDrill: null,
-                remoteBranchSelected: {},
-            } as unknown as StoreState["gitViews"][string])) as StoreState["gitViews"][string];
+        const cur = (d.gitViews[paneId] ?? DEFAULT_GIT_VIEW) as StoreState["gitViews"][string];
         d.gitViews[paneId] = { ...cur, ...patch };
     });
 }
@@ -1248,24 +1242,9 @@ export function setBillingExpandedMonth(profile: string, month: string | null): 
 
 // ---- Global search (Cmd+Shift+F) -------------------------------------
 
-const DEFAULT_SEARCH_VIEW = {
-    query: "",
-    replace: "",
-    replaceOpen: false,
-    options: {
-        caseSensitive: false,
-        wholeWord: false,
-        isRegex: false,
-        include: "",
-        exclude: "",
-    },
-    collapsed: {} as Record<string, boolean>,
-    selected: null as { path: string; matchIndex: number } | null,
-};
-
 function searchViewFor(sessionId: string) {
     const st = getState();
-    return st.globalSearchBySession[sessionId] ?? DEFAULT_SEARCH_VIEW;
+    return st.globalSearchBySession[sessionId] ?? DEFAULT_GLOBAL_SEARCH_VIEW;
 }
 
 // Navigate the active project session to its search window AND signal the
@@ -1300,10 +1279,10 @@ export function setGlobalSearchQuery(sessionId: string, query: string): void {
     });
 }
 
-export function setGlobalSearchOption<K extends keyof typeof DEFAULT_SEARCH_VIEW.options>(
+export function setGlobalSearchOption<K extends keyof typeof DEFAULT_GLOBAL_SEARCH_VIEW.options>(
     sessionId: string,
     key: K,
-    value: (typeof DEFAULT_SEARCH_VIEW.options)[K],
+    value: (typeof DEFAULT_GLOBAL_SEARCH_VIEW.options)[K],
 ): void {
     const cur = searchViewFor(sessionId);
     mutate((d) => {

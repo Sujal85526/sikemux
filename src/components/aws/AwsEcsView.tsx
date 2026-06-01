@@ -1,6 +1,7 @@
+import type { ReactNode } from "react";
 import { useResourceEnabled } from "../../state/resources";
 import { ecsClustersR, ecsServiceLogConfigR, ecsServicesR, ecsTasksR } from "../../state/resources.defs";
-import { awsApi, type EcsService, type EcsTask } from "../../api/aws";
+import { awsApi, type EcsCluster, type EcsService, type EcsTask } from "../../api/aws";
 import { reportError } from "../../state/toast";
 import * as cmd from "../../state/commands";
 import { useStore } from "../../state/store";
@@ -36,9 +37,104 @@ function statusOf(s: EcsService): "ok" | "warn" | "fail" | "off" {
     return "fail";
 }
 
-// Drill-down state lives in the store, keyed by profile. Switching profile
-// → fresh "clusters" view. Re-mounting the pane preserves where you were.
 const DEFAULT_LEVEL: EcsLevel = { kind: "clusters" };
+
+type EcsColumn<T> = {
+    header: string;
+    className?: string;
+    render: (row: T) => ReactNode;
+};
+
+function EcsResourceTable<T>({
+    refresh,
+    data,
+    error,
+    status,
+    loading,
+    empty,
+    columns,
+    rowKey,
+    rowTitle,
+    onPick,
+}: {
+    refresh?: ReactNode;
+    data: T[] | undefined;
+    error?: string;
+    status: string;
+    loading: string;
+    empty: string;
+    columns: EcsColumn<T>[];
+    rowKey: (row: T) => string;
+    rowTitle?: (row: T) => string | undefined;
+    onPick: (row: T) => void;
+}) {
+    const message =
+        status === "error" && error ? (
+            <div className="aws-err">{error}</div>
+        ) : !data ? (
+            <div className="aws-loading">{loading}</div>
+        ) : data.length === 0 ? (
+            <div className="aws-empty">{empty}</div>
+        ) : null;
+    if (message) return <>{refresh}{message}</>;
+    const rows = data ?? [];
+    return (
+        <>
+            {refresh}
+            <table className="aws-table">
+                <thead>
+                    <tr>
+                        {columns.map((c) => (
+                            <th key={c.header} className={c.className}>
+                                {c.header}
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((row) => (
+                        <tr key={rowKey(row)} onClick={() => onPick(row)} className="aws-row" title={rowTitle?.(row)}>
+                            {columns.map((c) => (
+                                <td key={c.header} className={c.className}>
+                                    {c.render(row)}
+                                </td>
+                            ))}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </>
+    );
+}
+
+const CLUSTER_COLUMNS: EcsColumn<EcsCluster>[] = [
+    { header: "Cluster", className: "aws-col-name", render: (c) => c.name },
+    { header: "Services", render: (c) => c.services_count ?? "—" },
+    { header: "Running", render: (c) => c.tasks_running ?? "—" },
+    { header: "Pending", render: (c) => c.tasks_pending ?? "—" },
+    {
+        header: "Status",
+        render: (c) => <span className={`aws-status aws-status-${c.status === "ACTIVE" ? "ok" : "off"}`}>{c.status ?? "—"}</span>,
+    },
+];
+
+const SERVICE_COLUMNS: EcsColumn<EcsService>[] = [
+    { header: "Service", className: "aws-col-name", render: (s) => s.name },
+    { header: "Running", render: (s) => s.running ?? 0 },
+    { header: "Desired", render: (s) => s.desired ?? 0 },
+    { header: "Pending", render: (s) => s.pending ?? 0 },
+    { header: "Updated", render: (s) => relative(s.primary_updated_at ?? s.primary_created_at) },
+    { header: "Status", render: (s) => <span className={`aws-status aws-status-${statusOf(s)}`}>{statusOf(s)}</span> },
+];
+
+const TASK_COLUMNS: EcsColumn<EcsTask>[] = [
+    { header: "Task", className: "aws-col-name", render: (t) => t.task_id.slice(0, 12) },
+    { header: "Status", render: (t) => t.status ?? "—" },
+    { header: "Health", render: (t) => t.health_status ?? "—" },
+    { header: "CPU", render: (t) => t.cpu ?? "—" },
+    { header: "Mem", render: (t) => t.memory ?? "—" },
+    { header: "Started", render: (t) => relative(t.started_at) },
+];
 
 export function AwsEcsView({ profile, active }: ViewProps) {
     const level = useStore((s) => s.ecsViews[profile] ?? DEFAULT_LEVEL);
@@ -138,131 +234,43 @@ function Breadcrumb({ level, onJump }: { level: EcsLevel; onJump: (l: EcsLevel) 
     );
 }
 
-// ---------------------------------------------------------------------------
-// Clusters
-// ---------------------------------------------------------------------------
 function ClustersList({ profile, active, onPick }: { profile: string; active: boolean; onPick: (cluster: string) => void }) {
     const handle = useResourceEnabled(active, ecsClustersR, profile);
     const { data, error, status } = handle;
-    if (status === "error" && error)
-        return (
-            <>
-                <AwsRefresh handle={handle} />
-                <div className="aws-err">{error}</div>
-            </>
-        );
-    if (!data)
-        return (
-            <>
-                <AwsRefresh handle={handle} />
-                <div className="aws-loading">loading clusters…</div>
-            </>
-        );
-    if (data.length === 0)
-        return (
-            <>
-                <AwsRefresh handle={handle} />
-                <div className="aws-empty">no clusters</div>
-            </>
-        );
     return (
-        <>
-            <AwsRefresh handle={handle} />
-            <table className="aws-table">
-                <thead>
-                    <tr>
-                        <th className="aws-col-name">Cluster</th>
-                        <th>Services</th>
-                        <th>Running</th>
-                        <th>Pending</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map((c) => (
-                        <tr key={c.arn} onClick={() => onPick(c.name)} className="aws-row">
-                            <td className="aws-col-name">{c.name}</td>
-                            <td>{c.services_count ?? "—"}</td>
-                            <td>{c.tasks_running ?? "—"}</td>
-                            <td>{c.tasks_pending ?? "—"}</td>
-                            <td>
-                                <span className={`aws-status aws-status-${c.status === "ACTIVE" ? "ok" : "off"}`}>{c.status ?? "—"}</span>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </>
+        <EcsResourceTable
+            refresh={<AwsRefresh handle={handle} />}
+            data={data}
+            error={error}
+            status={status}
+            loading="loading clusters…"
+            empty="no clusters"
+            columns={CLUSTER_COLUMNS}
+            rowKey={(c) => c.arn}
+            onPick={(c) => onPick(c.name)}
+        />
     );
 }
 
-// ---------------------------------------------------------------------------
-// Services in a cluster
-// ---------------------------------------------------------------------------
 function ServicesList({ profile, active, cluster, onPick }: { profile: string; active: boolean; cluster: string; onPick: (service: string) => void }) {
     const handle = useResourceEnabled(active, ecsServicesR, profile, cluster);
     const { data, error, status } = handle;
-    const refresh = <AwsRefresh handle={handle} />;
-    if (status === "error" && error)
-        return (
-            <>
-                {refresh}
-                <div className="aws-err">{error}</div>
-            </>
-        );
-    if (!data)
-        return (
-            <>
-                {refresh}
-                <div className="aws-loading">loading services…</div>
-            </>
-        );
-    if (data.length === 0)
-        return (
-            <>
-                {refresh}
-                <div className="aws-empty">no services</div>
-            </>
-        );
     return (
-        <>
-            {refresh}
-            <table className="aws-table">
-                <thead>
-                    <tr>
-                        <th className="aws-col-name">Service</th>
-                        <th>Running</th>
-                        <th>Desired</th>
-                        <th>Pending</th>
-                        <th>Updated</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map((s) => {
-                        const st = statusOf(s);
-                        return (
-                            <tr key={s.arn} onClick={() => onPick(s.name)} className="aws-row" title="Click → service logs (live tail)">
-                                <td className="aws-col-name">{s.name}</td>
-                                <td>{s.running ?? 0}</td>
-                                <td>{s.desired ?? 0}</td>
-                                <td>{s.pending ?? 0}</td>
-                                <td>{relative(s.primary_updated_at ?? s.primary_created_at)}</td>
-                                <td>
-                                    <span className={`aws-status aws-status-${st}`}>{st}</span>
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        </>
+        <EcsResourceTable
+            refresh={<AwsRefresh handle={handle} />}
+            data={data}
+            error={error}
+            status={status}
+            loading="loading services…"
+            empty="no services"
+            columns={SERVICE_COLUMNS}
+            rowKey={(s) => s.arn}
+            rowTitle={() => "Click → service logs (live tail)"}
+            onPick={(s) => onPick(s.name)}
+        />
     );
 }
 
-// ---------------------------------------------------------------------------
-// Service detail — Logs tab (default) + Tasks tab
-// ---------------------------------------------------------------------------
 function ServiceView({
     profile,
     active,
@@ -341,38 +349,19 @@ function ServiceView({
     );
 }
 
-// ---------------------------------------------------------------------------
-// Tasks list
-// ---------------------------------------------------------------------------
 function TasksList({ profile, active, cluster, service, onPick }: { profile: string; active: boolean; cluster: string; service: string; onPick: (t: EcsTask) => void }) {
     const { data, error, status } = useResourceEnabled(active, ecsTasksR, profile, cluster, service);
-    if (status === "error" && error) return <div className="aws-err">{error}</div>;
-    if (!data) return <div className="aws-loading">loading tasks…</div>;
-    if (data.length === 0) return <div className="aws-empty">no tasks</div>;
     return (
-        <table className="aws-table">
-            <thead>
-                <tr>
-                    <th className="aws-col-name">Task</th>
-                    <th>Status</th>
-                    <th>Health</th>
-                    <th>CPU</th>
-                    <th>Mem</th>
-                    <th>Started</th>
-                </tr>
-            </thead>
-            <tbody>
-                {data.map((t) => (
-                    <tr key={t.arn} className="aws-row" onClick={() => onPick(t)} title="Click → filter logs to this task">
-                        <td className="aws-col-name">{t.task_id.slice(0, 12)}</td>
-                        <td>{t.status ?? "—"}</td>
-                        <td>{t.health_status ?? "—"}</td>
-                        <td>{t.cpu ?? "—"}</td>
-                        <td>{t.memory ?? "—"}</td>
-                        <td>{relative(t.started_at)}</td>
-                    </tr>
-                ))}
-            </tbody>
-        </table>
+        <EcsResourceTable
+            data={data}
+            error={error}
+            status={status}
+            loading="loading tasks…"
+            empty="no tasks"
+            columns={TASK_COLUMNS}
+            rowKey={(t) => t.arn}
+            rowTitle={() => "Click → filter logs to this task"}
+            onPick={onPick}
+        />
     );
 }

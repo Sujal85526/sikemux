@@ -1,6 +1,6 @@
 import { memo, useMemo, useRef } from "react";
-import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, Divider, Rect, Session, Window as WindowT } from "../state/types";
+import type { PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
+import type { Agent, Divider, PaneNode, Rect, Session, Window as WindowT } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
@@ -17,6 +17,27 @@ const TERM_TABS_H = 32;
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
+const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
+
+type PaneRendererProps = {
+    pane: PaneNode;
+    session: Session;
+    active: boolean;
+    visible: boolean;
+};
+
+const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => ReactNode> = {
+    editor: ({ pane, session, active, visible }) => <EditorPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />,
+    git: ({ pane, session, active }) => <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} />,
+    aws: ({ visible }) => <AwsPane active={visible} />,
+    rundeck: ({ pane, visible }) => <RundeckPane paneId={pane.id} active={visible} />,
+    search: ({ pane, session, active, visible }) => (
+        <SearchPane sessionId={session.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
+    ),
+    terminal: ({ pane, session, active, visible }) => (
+        <TerminalPane cwd={paneCwd(pane, session) || undefined} startup={pane.startup} active={active} visible={visible} />
+    ),
+};
 
 // The center stage. Every window and agent of every session stays mounted
 // (visibility-toggled) so detached sessions keep running.
@@ -257,24 +278,7 @@ const WindowLayer = memo(function WindowLayer({
                             zIndex: isZoomed ? 2 : 1,
                         }}>
                         <div className={`pane pane-${p.kind}`} onMouseDown={() => visible && cmd.focusPane(p.id)}>
-                            {p.kind === "editor" ? (
-                                <EditorPane paneId={p.id} cwd={p.cwd || session.cwd} active={paneActive} visible={paneVisible} />
-                            ) : p.kind === "git" ? (
-                                <GitPane paneId={p.id} cwd={p.cwd || session.cwd} active={paneActive} />
-                            ) : p.kind === "aws" ? (
-                                <AwsPane active={paneVisible} />
-                            ) : p.kind === "rundeck" ? (
-                                <RundeckPane paneId={p.id} active={paneVisible} />
-                            ) : p.kind === "search" ? (
-                                <SearchPane sessionId={session.id} cwd={p.cwd || session.cwd} active={paneActive} visible={paneVisible} />
-                            ) : (
-                                <TerminalPane
-                                    cwd={p.cwd || session.cwd || undefined}
-                                    startup={p.startup}
-                                    active={paneActive}
-                                    visible={paneVisible}
-                                />
-                            )}
+                            {PANE_RENDERER[p.kind]({ pane: p, session, active: paneActive, visible: paneVisible })}
                         </div>
                     </div>
                 );

@@ -9,6 +9,7 @@ import { subscribe } from "../state/bus";
 import { searchApi, type SearchFile, type SearchHit, type SearchResults, type ReplaceResults } from "../api/search";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
+import { DEFAULT_GLOBAL_SEARCH_VIEW } from "../state/types";
 import { notify, errMessage } from "../state/toast";
 import { FileIcon } from "./FileIcon";
 import { IconSearch } from "./Icons";
@@ -45,23 +46,6 @@ const PREVIEW_AFTER_LINES = 80;
 // few hits in a few files" without holding megabytes of source.
 const PREVIEW_LRU_CAP = 4;
 
-// Module-level stable fallback. Inline defaults inside a Zustand selector
-// would return a fresh object identity each call → re-render loop.
-const EMPTY_VIEW = {
-    query: "",
-    replace: "",
-    replaceOpen: false,
-    options: {
-        caseSensitive: false,
-        wholeWord: false,
-        isRegex: false,
-        include: "",
-        exclude: "",
-    },
-    collapsed: {} as Record<string, boolean>,
-    selected: null as { path: string; matchIndex: number } | null,
-};
-
 type Status = "idle" | "searching" | "ok" | "error";
 
 // =====================================================================
@@ -86,7 +70,7 @@ export function SearchPane({
     // `view` and fire identical searches in parallel against their own
     // cwds, cancelling each other on the Rust-side GENERATION counter.
     const entry = useStore((s) => s.globalSearchBySession[sessionId]);
-    const view = entry ?? EMPTY_VIEW;
+    const view = entry ?? DEFAULT_GLOBAL_SEARCH_VIEW;
 
     const findRef = useRef<HTMLInputElement>(null);
     const replaceRef = useRef<HTMLInputElement>(null);
@@ -108,6 +92,33 @@ export function SearchPane({
     const [stale, setStale] = useState(false);
 
     const requestIdRef = useRef(0);
+
+    const startSearch = useCallback(
+        (query: string, options: typeof DEFAULT_GLOBAL_SEARCH_VIEW.options) => {
+            const id = ++requestIdRef.current;
+            setStatus("searching");
+            setFiles([]);
+            searchApi
+                .project(cwd, query, options, (file) => {
+                    if (id !== requestIdRef.current) return;
+                    setFiles((prev) => prev.concat(file));
+                })
+                .then((final) => {
+                    if (id !== requestIdRef.current) return;
+                    setFiles(final.files);
+                    setSummary(final);
+                    setStatus("ok");
+                    setError(null);
+                    setStale(false);
+                })
+                .catch((e: unknown) => {
+                    if (id !== requestIdRef.current) return;
+                    setStatus("error");
+                    setError(String(e));
+                });
+        },
+        [cwd],
+    );
 
     // Focus the find input whenever the pane becomes active.
     useEffect(() => {
@@ -150,37 +161,14 @@ export function SearchPane({
         let started = false;
         const handle = window.setTimeout(() => {
             started = true;
-            const id = ++requestIdRef.current;
-            setFiles([]);
-            searchApi
-                .project(cwd, view.query, view.options, (file) => {
-                    if (id !== requestIdRef.current) return;
-                    // Append in walk order — keeps the first paint cheap. The final
-                    // promise resolves with the sorted list and we swap it in then.
-                    setFiles((prev) => prev.concat(file));
-                })
-                .then((final) => {
-                    if (id !== requestIdRef.current) return;
-                    // Replace with the path-sorted list from the final response so
-                    // the UI settles into a stable order.
-                    setFiles(final.files);
-                    setSummary(final);
-                    setStatus("ok");
-                    setError(null);
-                    setStale(false);
-                })
-                .catch((e: unknown) => {
-                    if (id !== requestIdRef.current) return;
-                    setStatus("error");
-                    setError(String(e));
-                });
+            startSearch(view.query, view.options);
         }, DEBOUNCE_MS);
         return () => {
             window.clearTimeout(handle);
             requestIdRef.current++;
             if (started) void searchApi.cancel(cwd).catch(() => {});
         };
-    }, [cwd, visible, view.query, view.options]);
+    }, [cwd, visible, view.query, view.options, startSearch]);
 
     // Auto-select the first match whenever the file list refreshes and the
     // previous selection is no longer present.
@@ -217,33 +205,9 @@ export function SearchPane({
     }, [cwd, visible, files.length]);
 
     const refresh = useCallback(() => {
-        // Rerun the same query by bumping a stamp via setStatus then
-        // re-firing the effect: simplest path is to just touch the query
-        // through the command (no-op same value still re-renders). We don't
-        // want to clear the user's text; instead, manually re-issue.
         if (!cwd || !view.query.trim()) return;
-        setStatus("searching");
-        const id = ++requestIdRef.current;
-        setFiles([]);
-        searchApi
-            .project(cwd, view.query, view.options, (file) => {
-                if (id !== requestIdRef.current) return;
-                setFiles((prev) => prev.concat(file));
-            })
-            .then((final) => {
-                if (id !== requestIdRef.current) return;
-                setFiles(final.files);
-                setSummary(final);
-                setStatus("ok");
-                setError(null);
-                setStale(false);
-            })
-            .catch((e: unknown) => {
-                if (id !== requestIdRef.current) return;
-                setStatus("error");
-                setError(String(e));
-            });
-    }, [cwd, view.query, view.options]);
+        startSearch(view.query, view.options);
+    }, [cwd, view.query, view.options, startSearch]);
 
     const runReplaceAll = useCallback(async () => {
         if (!cwd || !view.query.trim() || replacing) return;
@@ -357,7 +321,7 @@ function Header({
     onRefresh,
 }: {
     sessionId: string;
-    view: typeof EMPTY_VIEW;
+    view: typeof DEFAULT_GLOBAL_SEARCH_VIEW;
     findRef: React.RefObject<HTMLInputElement | null>;
     replaceRef: React.RefObject<HTMLInputElement | null>;
     status: Status;
@@ -579,7 +543,7 @@ function Threads({
     cwd: string;
     query: string;
     replace: string;
-    selected: typeof EMPTY_VIEW.selected;
+    selected: typeof DEFAULT_GLOBAL_SEARCH_VIEW.selected;
     collapsed: Record<string, boolean>;
     results: SearchResults | null;
     status: Status;
@@ -891,7 +855,7 @@ function PreviewArea({
     replace: string;
     results: SearchResults | null;
     status: Status;
-    selected: typeof EMPTY_VIEW.selected;
+    selected: typeof DEFAULT_GLOBAL_SEARCH_VIEW.selected;
 }) {
     if (!repo) {
         return (
@@ -937,7 +901,7 @@ function Preview({
 }: {
     repo: string;
     results: SearchResults;
-    selected: typeof EMPTY_VIEW.selected;
+    selected: typeof DEFAULT_GLOBAL_SEARCH_VIEW.selected;
     replace: string;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);

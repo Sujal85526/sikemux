@@ -28,6 +28,13 @@ export interface GitPaneView {
   remoteBranchSelected: Record<string, number>;
 }
 
+export const DEFAULT_GIT_VIEW: GitPaneView = {
+  panel: "files",
+  selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
+  remoteDrill: null,
+  remoteBranchSelected: {},
+};
+
 export interface GlobalSearchView {
   query: string;
   /** Replacement string for find-and-replace. Empty = find-only mode. */
@@ -53,6 +60,21 @@ export interface GlobalSearchView {
    *  by default). */
   selected: { path: string; matchIndex: number } | null;
 }
+
+export const DEFAULT_GLOBAL_SEARCH_VIEW: GlobalSearchView = {
+  query: "",
+  replace: "",
+  replaceOpen: false,
+  options: {
+    caseSensitive: false,
+    wholeWord: false,
+    isRegex: false,
+    include: "",
+    exclude: "",
+  },
+  collapsed: {},
+  selected: null,
+};
 
 export type EcsLevel =
   | { kind: "clusters" }

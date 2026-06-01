@@ -7,7 +7,7 @@ import { useResourceEnabled } from "../state/resources";
 import { gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { errMessage, reportError } from "../state/toast";
-import type { GitPanel } from "../state/types";
+import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { IconChevron, IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
@@ -21,13 +21,6 @@ type RightView =
     | { mode: "merge"; file: GitFile }
     | { mode: "commit"; rev: string; title: string; subtitle: string }
     | { mode: "output"; text: string };
-
-const DEFAULT_VIEW = {
-    panel: "files" as GitPanel,
-    selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
-    remoteDrill: null as string | null,
-    remoteBranchSelected: {} as Record<string, number>,
-};
 
 type GitAiProvider = "hermes" | "codex" | "claude";
 
@@ -67,11 +60,11 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const repo = cwd;
     const storedView = useStore((s) => s.gitViews[paneId]);
     const view = {
-        ...DEFAULT_VIEW,
+        ...DEFAULT_GIT_VIEW,
         ...(storedView ?? {}),
-        selected: { ...DEFAULT_VIEW.selected, ...(storedView?.selected ?? {}) },
-        remoteDrill: storedView?.remoteDrill ?? DEFAULT_VIEW.remoteDrill,
-        remoteBranchSelected: storedView?.remoteBranchSelected ?? DEFAULT_VIEW.remoteBranchSelected,
+        selected: { ...DEFAULT_GIT_VIEW.selected, ...(storedView?.selected ?? {}) },
+        remoteDrill: storedView?.remoteDrill ?? DEFAULT_GIT_VIEW.remoteDrill,
+        remoteBranchSelected: storedView?.remoteBranchSelected ?? DEFAULT_GIT_VIEW.remoteBranchSelected,
     };
     const sel = view.selected;
     // Status panel was removed (its info now lives in the git toolbar). Coerce
@@ -468,12 +461,19 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     const doCreateBranch = (name: string, startPoint: string) => {
         if (!name.trim()) return;
-        setBranchInput(null);
-        setBranchText("");
+        closeBranchInput();
         void run("creating branch…", async () => {
             await git.branchCreate(repo, name.trim(), startPoint || undefined);
             return `✓ created + checked out ${name.trim()}${startPoint ? `\n  from ${startPoint}` : ""}`;
         });
+    };
+    const openBranchInput = (startPoint = "") => {
+        setBranchInput({ startPoint });
+        setBranchText("");
+    };
+    const closeBranchInput = () => {
+        setBranchInput(null);
+        setBranchText("");
     };
 
     const doMerge = (branch: string) => {
@@ -508,6 +508,13 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             if (remoteDrill) void remoteBranchesRes.refresh().catch(reportError("remote branch refresh"));
         }
     };
+    const pushRepo = () => void run("pushing…", async () => `↑ ${await git.push(repo)}`);
+    const pullRepo = () => void run("pulling…", async () => `↓ ${await git.pull(repo)}`);
+    const openPullRequest = (compact = false) =>
+        void run("opening PR…", async () => {
+            const url = await git.prOpen(repo);
+            return compact ? `→ ${url}` : `→ opened pull-request page\n${url}`;
+        });
 
     // ---- per-panel menu builders (lazygit verbs surfaced as modals) ----
     const openFilesDiscardMenu = () => {
@@ -1133,10 +1140,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             if (e.ctrlKey) {
                 if (k === "p" || k === "P") {
                     e.preventDefault();
-                    void run("opening PR…", async () => {
-                        const url = await git.prOpen(repo);
-                        return `→ opened pull-request page\n${url}`;
-                    });
+                    openPullRequest();
                 }
                 return;
             }
@@ -1185,9 +1189,9 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 else if (panel === "remotes" && !remoteDrill) openRemoteRowMenu();
                 else refreshRepoState();
             } else if (k === "F") doFetch(null);
-            else if (k === "P") void run("pushing…", async () => `↑ ${await git.push(repo)}`);
+            else if (k === "P") pushRepo();
             else if (k === "p" && panel === "stashes") popSelectedStash();
-            else if (k === "p") void run("pulling…", async () => `↓ ${await git.pull(repo)}`);
+            else if (k === "p") pullRepo();
             // ----- files -----
             else if (panel === "files" && k === " ") toggleStage();
             else if (panel === "files" && k === "a") {
@@ -1204,11 +1208,9 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 if (b && !b.current) void run("", () => git.checkout(repo, b.name));
             } else if (panel === "branches" && k === "n") {
                 const b = filteredBranches[sel.branches];
-                setBranchInput({ startPoint: b?.name ?? "" });
-                setBranchText("");
+                openBranchInput(b?.name);
             } else if (panel === "branches" && k === "N") {
-                setBranchInput({ startPoint: "" });
-                setBranchText("");
+                openBranchInput();
             } else if (panel === "branches" && k === "M") {
                 openBranchVerbsMenu("merge");
             } else if (panel === "branches" && k === "d") {
@@ -1351,7 +1353,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     <button
                         className="git-tbtn live"
                         type="button"
-                        onClick={() => void run("pushing…", async () => `↑ ${await git.push(repo)}`)}
+                        onClick={pushRepo}
                         title={status && status.ahead > 0 ? `Push ${status.ahead} commit${status.ahead > 1 ? "s" : ""} (P)` : "Push (P)"}>
                         <IconPush size={13} />
                         {status && status.ahead > 0 && <span className="git-tbtn-count">{status.ahead}</span>}
@@ -1360,7 +1362,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     <button
                         className="git-tbtn"
                         type="button"
-                        onClick={() => void run("pulling…", async () => `↓ ${await git.pull(repo)}`)}
+                        onClick={pullRepo}
                         title={status && status.behind > 0 ? `Pull ${status.behind} commit${status.behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
                         <IconPull size={13} />
                         {status && status.behind > 0 && <span className="git-tbtn-count">{status.behind}</span>}
@@ -1372,12 +1374,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     <button
                         className="git-tbtn"
                         type="button"
-                        onClick={() =>
-                            void run("opening PR…", async () => {
-                                const url = await git.prOpen(repo);
-                                return `→ ${url}`;
-                            })
-                        }
+                        onClick={() => openPullRequest(true)}
                         title="Open pull request (⌃P)">
                         <IconPullRequest size={13} />PR
                     </button>
@@ -1468,10 +1465,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                             onChange={(e) => setBranchText(e.target.value)}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter") doCreateBranch(branchText, branchInput.startPoint);
-                                else if (e.key === "Escape") {
-                                    setBranchInput(null);
-                                    setBranchText("");
-                                }
+                                else if (e.key === "Escape") closeBranchInput();
                                 e.stopPropagation();
                             }}
                         />
@@ -1550,10 +1544,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         {
                             key: "n",
                             label: "new",
-                            onClick: () => {
-                                setBranchInput({ startPoint: "" });
-                                setBranchText("");
-                            },
+                            onClick: () => openBranchInput(),
                         },
                         { key: "M", label: "merge", onClick: () => openBranchVerbsMenu("merge") },
                     ]}
@@ -1843,7 +1834,7 @@ interface PanelAction {
     key?: string;
     label: string;
     onClick: () => void;
-    tone?: "ai" | "live" | "warn" | "danger";
+    tone?: "warn" | "danger";
 }
 
 function GitPanelBlock({
