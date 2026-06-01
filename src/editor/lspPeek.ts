@@ -45,7 +45,7 @@ class PeekWidget extends WidgetType {
         const close = document.createElement("button");
         close.className = "cm-peek-close";
         close.textContent = "✕";
-        close.title = "Close (Esc)";
+        close.title = "Close — esc";
         close.onclick = () => view.dispatch({ effects: setPeek.of(null) });
         head.appendChild(close);
         wrap.appendChild(head);

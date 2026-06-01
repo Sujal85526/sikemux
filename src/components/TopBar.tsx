@@ -341,7 +341,7 @@ export function TopBar() {
                     <button className={`tb-btn${rightOpen ? " on" : ""}`} onClick={cmd.toggleRightRail} title="Toggle agents rail">
                         <IconPanelRight size={15} />
                     </button>
-                    <button className="tb-btn" onClick={cmd.toggleSettings} title="Settings (⌘,)">
+                    <button className="tb-btn" onClick={cmd.toggleSettings} title="Settings — ⌘,">
                         <CogIcon size={15} />
                     </button>
                 </div>

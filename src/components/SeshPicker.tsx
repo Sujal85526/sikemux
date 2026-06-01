@@ -163,7 +163,11 @@ export function SeshPicker() {
                         onKeyDown={onKeyDown}
                         spellCheck={false}
                     />
-                    <span className="picker-hint">esc</span>
+                    <span className="picker-hints">
+                        <span className="picker-hint">↑↓ nav</span>
+                        <span className="picker-hint">⏎ open</span>
+                        <span className="picker-hint">esc</span>
+                    </span>
                 </div>
 
                 <div className="picker-list">

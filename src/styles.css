@@ -546,6 +546,20 @@ button {
     color: var(--acc);
     background: var(--acc-soft);
 }
+.rail-group-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.rail-group-kbd {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ink-faint);
+    border: 1px solid var(--line);
+    padding: 2px 4px;
+}
 .rail-group-empty {
     display: block;
     width: 100%;
@@ -735,6 +749,31 @@ button {
     color: var(--ink-faint);
     line-height: 1;
     margin-left: 5px;
+}
+.proj-child-kbd {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ink-faint);
+    border: 1px solid var(--line);
+    padding: 2px 4px;
+    opacity: 0.5;
+    transition:
+        opacity 0.12s,
+        color 0.12s,
+        border-color 0.12s;
+}
+.proj-child:hover .proj-child-kbd {
+    opacity: 1;
+    color: var(--ink);
+}
+.proj-child.active .proj-child-kbd {
+    opacity: 1;
+    color: var(--acc);
+    border-color: color-mix(in srgb, var(--acc) 40%, transparent);
 }
 .proj-pip {
     display: inline-flex;
@@ -927,6 +966,12 @@ button {
 }
 .picker-input::placeholder {
     color: var(--ink-faint);
+}
+.picker-hints {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
 }
 .picker-hint {
     font-size: 9.5px;

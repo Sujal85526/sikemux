@@ -153,29 +153,29 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
                             type="button"
                             className={`ed-findbar-toggle${caseSensitive ? " on" : ""}`}
                             onClick={() => setCaseSensitive((v) => !v)}
-                            title="Match case (Alt+C)">
+                            title="Match case — ⌥C">
                             Aa
                         </button>
                         <button
                             type="button"
                             className={`ed-findbar-toggle${wholeWord ? " on" : ""}`}
                             onClick={() => setWholeWord((v) => !v)}
-                            title="Whole word (Alt+W)">
+                            title="Whole word — ⌥W">
                             ab
                         </button>
                         <button
                             type="button"
                             className={`ed-findbar-toggle${regexp ? " on" : ""}`}
                             onClick={() => setRegexp((v) => !v)}
-                            title="Regex (Alt+R)">
+                            title="Regex — ⌥R">
                             .*
                         </button>
                     </div>
                     <span className="ed-findbar-status">{status}</span>
-                    <button type="button" className="ed-findbar-btn" onClick={() => run(findPrevious)} title="Previous (Shift+Enter)">
+                    <button type="button" className="ed-findbar-btn" onClick={() => run(findPrevious)} title="Previous — ⇧⏎">
                         ↑
                     </button>
-                    <button type="button" className="ed-findbar-btn" onClick={() => run(findNext)} title="Next (Enter)">
+                    <button type="button" className="ed-findbar-btn" onClick={() => run(findNext)} title="Next — ⏎">
                         ↓
                     </button>
                     <button
@@ -185,7 +185,7 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
                             onClose();
                             getView()?.focus();
                         }}
-                        title="Close (Esc)">
+                        title="Close — esc">
                         ×
                     </button>
                 </div>
@@ -205,14 +205,14 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
                             spellCheck={false}
                         />
                         <span className="ed-findbar-status" aria-hidden />
-                        <button type="button" className="ed-findbar-btn" onClick={() => run(replaceNext)} title="Replace (Enter)" disabled={!query}>
+                        <button type="button" className="ed-findbar-btn" onClick={() => run(replaceNext)} title="Replace — ⏎" disabled={!query}>
                             ↪
                         </button>
                         <button
                             type="button"
                             className="ed-findbar-btn"
                             onClick={() => run(replaceAll)}
-                            title="Replace all (Cmd/Ctrl+Enter)"
+                            title="Replace all — ⌘⏎"
                             disabled={!query}>
                             ⇶
                         </button>

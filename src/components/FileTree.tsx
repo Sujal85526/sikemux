@@ -363,11 +363,11 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 <div className="ed-tree-head">
                     <span className="ed-tree-name">{basename(cwd) || "files"}</span>
                     <span className="ed-tree-actions">
-                        <button type="button" className="ed-tree-act" title="New file (a)" onClick={() => startNew("file")}>
+                        <button type="button" className="ed-tree-act" title="New file — a" onClick={() => startNew("file")}>
                             <FileIcon name="" size={13} />
                             <IconPlus size={9} />
                         </button>
-                        <button type="button" className="ed-tree-act" title="New folder (A)" onClick={() => startNew("folder")}>
+                        <button type="button" className="ed-tree-act" title="New folder — ⇧A" onClick={() => startNew("folder")}>
                             <IconFolder size={13} />
                             <IconPlus size={9} />
                         </button>

@@ -3,6 +3,7 @@ import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { AgentIcon, IconAgent, IconAws, IconClose, IconCommand, IconFolder, IconPlus, IconRundeck, Logo, WindowIcon } from "./Icons";
+import { ALT, Kbd, SHIFT, hint } from "./Kbd";
 import { UpdateChip, VersionChip } from "./TopBar";
 
 function kindIcon(kind: SessionKind): ReactNode {
@@ -116,25 +117,28 @@ export function SideRail() {
         type SubRow = {
             role: WindowRole | "agents";
             label: string;
+            kbd: string;
             title: string;
             icons: React.ReactNode[];
         };
         const children: SubRow[] = [
-            { role: "files", label: "Files", title: "files (M-i)", icons: [] },
+            { role: "files", label: "Files", kbd: hint(ALT, "I"), title: `Files — ${hint(ALT, "I")}`, icons: [] },
             {
                 role: "term",
                 label: "Term",
-                title: `term${tabCount > 1 ? ` (${tabCount} tabs)` : ""} (M-r)`,
+                kbd: hint(ALT, "R"),
+                title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${hint(ALT, "R")}`,
                 icons: termIcons,
             },
-            { role: "git", label: "Git", title: "git (M-g)", icons: [] },
+            { role: "git", label: "Git", kbd: hint(ALT, "G"), title: `Git — ${hint(ALT, "G")}`, icons: [] },
             {
                 role: "agents",
                 label: "Agents",
-                title: `agents${agents.length ? ` (${agents.length})` : ""} (M-c)`,
+                kbd: hint(ALT, "C"),
+                title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${hint(ALT, "C")}`,
                 icons: agentIcons,
             },
-            { role: "search", label: "Search", title: "search (M-f)", icons: [] },
+            { role: "search", label: "Search", kbd: hint(ALT, "F"), title: `Search — ${hint(ALT, "F")}`, icons: [] },
         ];
 
         return (
@@ -179,6 +183,7 @@ export function SideRail() {
                                         {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                                     </span>
                                 )}
+                                <span className="proj-child-kbd">{c.kbd}</span>
                             </button>
                         );
                     })}
@@ -215,21 +220,26 @@ export function SideRail() {
         list,
         add,
         addTitle,
+        addKbd,
         emptyText,
     }: {
         label: string;
         list: Session[];
         add?: () => void;
         addTitle?: string;
+        addKbd?: string;
         emptyText: string;
     }) => (
         <div className="rail-group">
             <div className="rail-group-head">
                 <span className="rail-group-label">{label}</span>
                 {add && (
-                    <button className="rail-group-add" onClick={add} title={addTitle}>
-                        <IconPlus size={11} />
-                    </button>
+                    <span className="rail-group-actions">
+                        {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
+                        <button className="rail-group-add" onClick={add} title={addTitle}>
+                            <IconPlus size={11} />
+                        </button>
+                    </span>
                 )}
             </div>
             {list.length === 0 ? (
@@ -262,11 +272,26 @@ export function SideRail() {
                     label="Projects"
                     list={projects}
                     add={() => cmd.openPicker("projects")}
-                    addTitle="Open project — M-s"
+                    addTitle={`Open project — ${hint(ALT, "P")}`}
+                    addKbd={hint(ALT, "P")}
                     emptyText="no projects"
                 />
-                <Group label="SSH" list={sshs} add={() => cmd.openPicker("ssh")} addTitle="Connect to SSH host — M-S" emptyText="no ssh hosts" />
-                <Group label="Cloud" list={cloud} add={cmd.openAwsSession} addTitle="Open AWS" emptyText="no cloud sessions" />
+                <Group
+                    label="SSH"
+                    list={sshs}
+                    add={() => cmd.openPicker("ssh")}
+                    addTitle={`Connect to SSH host — ${hint(ALT, SHIFT, "S")}`}
+                    addKbd={hint(ALT, SHIFT, "S")}
+                    emptyText="no ssh hosts"
+                />
+                <Group
+                    label="Cloud"
+                    list={cloud}
+                    add={cmd.openAwsSession}
+                    addTitle={`Open AWS — ${hint(ALT, "A")}`}
+                    addKbd={hint(ALT, "A")}
+                    emptyText="no cloud sessions"
+                />
                 <Group
                     label="CI/CD"
                     list={cicd}
@@ -279,8 +304,8 @@ export function SideRail() {
 
             <UpdateChip />
 
-            <button className="rail-foot" onClick={() => cmd.openPicker("all")}>
-                <span className="kbd">M-s</span>
+            <button className="rail-foot" onClick={() => cmd.openPicker("all")} title={`Open or create a session — ${hint(ALT, "S")}`}>
+                <Kbd>{hint(ALT, "S")}</Kbd>
                 <span>open or create a session</span>
             </button>
         </aside>
