@@ -9,9 +9,6 @@ interface Props {
     onDone: () => void;
 }
 
-/** In-pane login. No modal — fills the center stage so it never feels like
- *  an interrupting overlay. Posts to rnd_login, which writes ~/.rd-config
- *  (chmod 600) so the bash CLI inherits the same credentials. */
 export function RundeckLogin({ initialUrl = "", initialUser = "", notice, onDone }: Props) {
     const [url, setUrl] = useState(initialUrl);
     const [user, setUser] = useState(initialUser);
@@ -36,7 +33,6 @@ export function RundeckLogin({ initialUrl = "", initialUser = "", notice, onDone
             setPassword("");
             onDone();
         } catch (e) {
-            // Server errors come back as { category, message } on the JS side.
             const msg = typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e);
             setError(msg);
         } finally {

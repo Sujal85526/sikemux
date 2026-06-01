@@ -2,10 +2,6 @@ import { useCallback, useRef } from "react";
 import { documentLanguageIdFromPath, languageFromPath, lsp } from "../api/lsp";
 import { swallow } from "../state/toast";
 
-// Owns per-file LSP versions and the debounced didChange pipe. Returns:
-//   - `openDoc(path, content)`: send didOpen + start the server.
-//   - `scheduleChange(path, content)`: debounced didChange.
-//   - `setVersion(path, n)`: explicit version override (after open).
 export function useLspBridge(cwd: string) {
     const versions = useRef<Map<string, number>>(new Map());
     const timers = useRef<Map<string, number>>(new Map());
@@ -44,9 +40,7 @@ export function useLspBridge(cwd: string) {
                 const v = (versions.current.get(path) ?? 1) + 1;
                 versions.current.set(path, v);
                 await lsp.change(cwd, lang, path, content, v);
-            } catch {
-                /* server binary missing / handshake failed — silent */
-            }
+            } catch {}
         },
         [cwd],
     );

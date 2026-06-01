@@ -11,7 +11,6 @@ let cached: SshHost[] | null = null;
 let inflight: Promise<SshHost[]> | null = null;
 
 export const sshApi = {
-    /** ~/.ssh/config hosts. Cached in-memory after the first call. */
     hosts: (): Promise<SshHost[]> => {
         if (cached) return Promise.resolve(cached);
         if (inflight) return inflight;

@@ -3,9 +3,6 @@ import { FileIcon } from "./FileIcon";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
 import { basename } from "../lib/paths";
 
-// VSCode-style review of a single working-tree file: an editable merge view
-// (diff vs HEAD inline, Cmd-S saves). The header opens the full file in the
-// editor window.
 export function MergeReview({
     repo,
     file,

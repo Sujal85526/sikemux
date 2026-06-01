@@ -10,7 +10,6 @@ export interface ProjectEntry {
 export const settingsApi = {
     scanProjectRoots: (roots: ProjectRoot[]) => invoke<ProjectEntry[]>("scan_project_roots", { roots }),
     expandPath: (path: string) => invoke<string>("expand_path", { path }),
-    /** Native folder picker. Returns absolute path or null on cancel. */
     pickFolder: async (defaultPath?: string): Promise<string | null> => {
         const picked = await open({
             directory: true,

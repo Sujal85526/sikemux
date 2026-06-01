@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { settingsApi } from "../api/settings";
 import { prettyPath } from "../lib/paths";
 import { reportError } from "../state/toast";
@@ -115,8 +116,6 @@ export function SettingsPanel() {
     );
 }
 
-// ---- general page ------------------------------------------------------
-
 interface GeneralPageProps {
     projectRoots: Array<{ path: string; depth: number }>;
     home: string;
@@ -155,32 +154,20 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
     };
 
     return (
-        <div className="settings-page">
-            <header className="settings-page-head">
-                <div className="settings-page-eyebrow">§ general</div>
-                <h1 className="settings-page-hd">
-                    general<em>.</em>
-                </h1>
-                <p className="settings-page-deck">the directories the sesh picker walks · root is always indexed.</p>
-            </header>
-
-            <section className="settings-section">
-                <div className="settings-section-head">
-                    <div className="settings-section-code">[01]</div>
-                    <div className="settings-section-title-wrap">
-                        <h2 className="settings-section-title">
-                            project <b>roots</b>
-                        </h2>
-                        <div className="settings-section-dots"></div>
-                    </div>
-                    <div className="settings-section-meta">
-                        {projectRoots.length} {projectRoots.length === 1 ? "entry" : "entries"}
-                    </div>
-                    <div className="settings-section-sub">
+        <SettingsPage name="general" deck="the directories the sesh picker walks · root is always indexed.">
+            <SettingsSection
+                code="[01]"
+                title={
+                    <>
+                        project <b>roots</b>
+                    </>
+                }
+                meta={`${projectRoots.length} ${projectRoots.length === 1 ? "entry" : "entries"}`}
+                sub={
+                    <>
                         root path is always walked · within <em>depth</em>, only git repos count
-                    </div>
-                </div>
-
+                    </>
+                }>
                 <div className="settings-row-input">
                     <input
                         ref={inputRef}
@@ -225,12 +212,10 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
                         ))}
                     </div>
                 )}
-            </section>
-        </div>
+            </SettingsSection>
+        </SettingsPage>
     );
 }
-
-// ---- appearance page ---------------------------------------------------
 
 interface AppearancePageProps {
     themeId: string;
@@ -240,30 +225,16 @@ interface AppearancePageProps {
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     return (
-        <div className="settings-page">
-            <header className="settings-page-head">
-                <div className="settings-page-eyebrow">§ appearance</div>
-                <h1 className="settings-page-hd">
-                    appearance<em>.</em>
-                </h1>
-                <p className="settings-page-deck">theme, window opacity &amp; background blur · changes apply instantly.</p>
-            </header>
-
-            <section className="settings-section">
-                <div className="settings-section-head">
-                    <div className="settings-section-code">[01]</div>
-                    <div className="settings-section-title-wrap">
-                        <h2 className="settings-section-title">
-                            <b>theme</b>
-                        </h2>
-                        <div className="settings-section-dots"></div>
-                    </div>
-                    <div className="settings-section-meta">{THEMES.length} installed · 1 active</div>
-                    <div className="settings-section-sub">
+        <SettingsPage name="appearance" deck="theme, window opacity & background blur · changes apply instantly.">
+            <SettingsSection
+                code="[01]"
+                title={<b>theme</b>}
+                meta={`${THEMES.length} installed · 1 active`}
+                sub={
+                    <>
                         applies <em>instantly</em> to chrome, editor, terminal · no reload
-                    </div>
-                </div>
-
+                    </>
+                }>
                 <div className="settings-theme-grid">
                     {THEMES.map((th) => {
                         const active = th.id === themeId;
@@ -287,23 +258,21 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         );
                     })}
                 </div>
-            </section>
+            </SettingsSection>
 
-            <section className="settings-section">
-                <div className="settings-section-head">
-                    <div className="settings-section-code">[02]</div>
-                    <div className="settings-section-title-wrap">
-                        <h2 className="settings-section-title">
-                            window · <b>opacity</b>
-                        </h2>
-                        <div className="settings-section-dots"></div>
-                    </div>
-                    <div className="settings-section-meta">no cap</div>
-                    <div className="settings-section-sub">
+            <SettingsSection
+                code="[02]"
+                title={
+                    <>
+                        window · <b>opacity</b>
+                    </>
+                }
+                meta="no cap"
+                sub={
+                    <>
                         <em>0.00</em> transparent · <em>1.00</em> opaque
-                    </div>
-                </div>
-
+                    </>
+                }>
                 <div className="settings-knob-row">
                     <input
                         type="range"
@@ -316,23 +285,21 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     />
                     <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
                 </div>
-            </section>
+            </SettingsSection>
 
-            <section className="settings-section">
-                <div className="settings-section-head">
-                    <div className="settings-section-code">[03]</div>
-                    <div className="settings-section-title-wrap">
-                        <h2 className="settings-section-title">
-                            background · <b>blur</b>
-                        </h2>
-                        <div className="settings-section-dots"></div>
-                    </div>
-                    <div className="settings-section-meta">CGS radius</div>
-                    <div className="settings-section-sub">
+            <SettingsSection
+                code="[03]"
+                title={
+                    <>
+                        background · <b>blur</b>
+                    </>
+                }
+                meta="CGS radius"
+                sub={
+                    <>
                         <em>0</em> none · <em>20–40</em> frosted · no cap
-                    </div>
-                </div>
-
+                    </>
+                }>
                 <div className="settings-knob-row">
                     <input
                         type="range"
@@ -350,12 +317,10 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         suffix="px"
                     />
                 </div>
-            </section>
-        </div>
+            </SettingsSection>
+        </SettingsPage>
     );
 }
-
-// ---- cloud page --------------------------------------------------------
 
 interface CloudPageProps {
     cloudBrowser: string;
@@ -364,27 +329,16 @@ interface CloudPageProps {
 
 function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
     return (
-        <div className="settings-page">
-            <header className="settings-page-head">
-                <div className="settings-page-eyebrow">§ cloud</div>
-                <h1 className="settings-page-hd">
-                    cloud<em>.</em>
-                </h1>
-                <p className="settings-page-deck">where AWS / GCP single-sign-on URLs open · which workspace to bounce to.</p>
-            </header>
-
-            <section className="settings-section">
-                <div className="settings-section-head">
-                    <div className="settings-section-code">[01]</div>
-                    <div className="settings-section-title-wrap">
-                        <h2 className="settings-section-title">
-                            sign-in <b>browser</b>
-                        </h2>
-                        <div className="settings-section-dots"></div>
-                    </div>
-                    <div className="settings-section-meta">aws · gcp · sso</div>
-                    <div className="settings-section-sub">where the SSO URL lands · pick the app you actually log in with</div>
-                </div>
+        <SettingsPage name="cloud" deck="where AWS / GCP single-sign-on URLs open · which workspace to bounce to.">
+            <SettingsSection
+                code="[01]"
+                title={
+                    <>
+                        sign-in <b>browser</b>
+                    </>
+                }
+                meta="aws · gcp · sso"
+                sub="where the SSO URL lands · pick the app you actually log in with">
                 <label className="settings-field-label">browser app</label>
                 <input
                     className="settings-input wide"
@@ -394,20 +348,17 @@ function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
                     spellCheck={false}
                 />
                 <div className="settings-field-help">must match a running app's name · trailing .app is fine</div>
-            </section>
+            </SettingsSection>
 
-            <section className="settings-section">
-                <div className="settings-section-head">
-                    <div className="settings-section-code">[02]</div>
-                    <div className="settings-section-title-wrap">
-                        <h2 className="settings-section-title">
-                            workspace <b>switch</b>
-                        </h2>
-                        <div className="settings-section-dots"></div>
-                    </div>
-                    <div className="settings-section-meta">post-open · optional</div>
-                    <div className="settings-section-sub">fired right after the link opens · point this at the desktop where the browser lives</div>
-                </div>
+            <SettingsSection
+                code="[02]"
+                title={
+                    <>
+                        workspace <b>switch</b>
+                    </>
+                }
+                meta="post-open · optional"
+                sub="fired right after the link opens · point this at the desktop where the browser lives">
                 <label className="settings-field-label">workspace shortcut</label>
                 <input
                     className="settings-input wide"
@@ -419,12 +370,55 @@ function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
                 <div className="settings-field-help">
                     format: <em>mod+key</em> · use system shortcuts from Mission Control
                 </div>
-            </section>
+            </SettingsSection>
+        </SettingsPage>
+    );
+}
+
+function SettingsPage({ name, deck, children }: { name: string; deck: ReactNode; children: ReactNode }) {
+    return (
+        <div className="settings-page">
+            <header className="settings-page-head">
+                <div className="settings-page-eyebrow">§ {name}</div>
+                <h1 className="settings-page-hd">
+                    {name}
+                    <em>.</em>
+                </h1>
+                <p className="settings-page-deck">{deck}</p>
+            </header>
+            {children}
         </div>
     );
 }
 
-// ---- NumberField -------------------------------------------------------
+function SettingsSection({
+    code,
+    title,
+    meta,
+    sub,
+    children,
+}: {
+    code: string;
+    title: ReactNode;
+    meta: ReactNode;
+    sub: ReactNode;
+    children: ReactNode;
+}) {
+    return (
+        <section className="settings-section">
+            <div className="settings-section-head">
+                <div className="settings-section-code">{code}</div>
+                <div className="settings-section-title-wrap">
+                    <h2 className="settings-section-title">{title}</h2>
+                    <div className="settings-section-dots"></div>
+                </div>
+                <div className="settings-section-meta">{meta}</div>
+                <div className="settings-section-sub">{sub}</div>
+            </div>
+            {children}
+        </section>
+    );
+}
 
 interface NumberFieldProps {
     value: number;
@@ -481,8 +475,6 @@ function NumberField({ value, onCommit, format, suffix }: NumberFieldProps) {
         </div>
     );
 }
-
-// ---- DepthStepper ------------------------------------------------------
 
 function DepthStepper({ value, onChange, title }: { value: number; onChange: (v: number) => void; title?: string }) {
     const [draft, setDraft] = useState<string>(() => String(value));

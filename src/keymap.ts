@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import * as cmd from "./state/commands";
 import { getState } from "./state/store";
 
-// Maps M-i/r/g/f to the named windows of a project session.
 const WINDOW_KEYS: Record<string, string> = {
     KeyI: "files",
     KeyR: "term",
@@ -10,10 +9,6 @@ const WINDOW_KEYS: Record<string, string> = {
     KeyF: "search",
 };
 
-// Alt-driven keybindings, mirroring the user's tmux setup. Keys off the
-// physical `event.code` so macOS option-as-alt remapping doesn't matter.
-// Cmd-P and Cmd-, ride on meta so they work from inside terminal panes
-// where alt-chords are too easy to fat-finger.
 export function useKeymap(): void {
     useEffect(() => {
         const meta = (e: KeyboardEvent): void => {
@@ -32,10 +27,6 @@ export function useKeymap(): void {
                     cmd.openFilePalette();
                 }
             } else if (e.code === "KeyF" && e.shiftKey) {
-                // Cmd/Ctrl+Shift+F → jump to the project's search window. Project
-                // sessions only (no-op elsewhere — see focusGlobalSearch).
-                // If the user has text highlighted (CodeMirror selection or
-                // anywhere in the chrome), seed the search box with it.
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 const sel = window.getSelection()?.toString() ?? "";
@@ -84,12 +75,6 @@ export function useKeymap(): void {
                     cmd.closeActiveFocusTarget();
                     break;
                 case "KeyN": {
-                    // Context-aware new:
-                    //   agents  → agent picker
-                    //   project → new terminal window
-                    //   command → fresh command session
-                    //   ssh     → opens the ssh picker
-                    //   cloud / ci-cd → focus their singleton surface
                     const active = st.sessions[st.activeSessionId];
                     if (active?.view === "agent") cmd.openAgentPalette();
                     else if (active?.kind === "project") cmd.newWindow();
@@ -119,9 +104,6 @@ export function useKeymap(): void {
                     cmd.closeActiveSession();
                     break;
                 case "Tab":
-                    // Shift+Tab → next session-kind group (Projects → SSH → Cloud →
-                    // CI/CD → Command). Plain Tab → next session within the current
-                    // group. Alt+Backquote stays as the reverse-within-group.
                     if (shift) cmd.cycleSessionGroup(1);
                     else cmd.cycleSession(1);
                     break;
@@ -140,10 +122,6 @@ export function useKeymap(): void {
                     break;
                 default:
                     if (/^Digit[1-9]$/.test(e.code)) {
-                        // Side-rail order: files=1, term=2, git=3, agents=4, search=5.
-                        // The windows array in state is still [files, term, git, search]
-                        // (don't reorder persisted state), so we map the digit through
-                        // the rail-visible order instead of straight to the array.
                         const n = Number(e.code.slice(5));
                         if (n === 4) cmd.focusAgents();
                         else if (n === 5) cmd.selectWindowByName("search");

@@ -1,10 +1,6 @@
 import { clearGitCmdLog, toggleGitCmdLog } from "../../state/git";
 import { useStore } from "../../state/store";
 
-/** Collapsible command log bar pinned to the bottom of the git pane.
- *  Closed = single-line "@ N cmds" footer. Open = scrollable list of
- *  every git operation triggered, with status + expandable detail.
- *  Toggled by `@`. */
 export function GitCmdLogBar() {
     const open = useStore((s) => s.gitCmdLogOpen);
     const log = useStore((s) => s.gitCmdLog);

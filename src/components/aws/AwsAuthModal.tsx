@@ -5,10 +5,6 @@ import { useStore } from "../../state/store";
 import { IconClose } from "../Icons";
 import { swallow } from "../../state/toast";
 
-// Sign-in flow that mirrors ~/.config/shell/bin/aws-auth:
-//   1. If a `cloudBrowser` is configured, activate it (and run the optional
-//      workspace shortcut) so the device-auth tab lands in the right space.
-//   2. Then `aws sso login --profile X` runs.
 export function AwsAuthModal() {
     const modal = useStore((s) => s.awsAuthModal);
     const cloudBrowser = useStore((s) => s.cloudBrowser);
@@ -16,19 +12,9 @@ export function AwsAuthModal() {
 
     const [phase, setPhase] = useState<"idle" | "running" | "ok" | "fail">("idle");
     const [errOut, setErrOut] = useState("");
-    // When the user clicks Cancel mid-sign-in we want to instantly dismiss
-    // the modal even though the `aws sso login` subprocess is still running
-    // (Tauri's aws_sso_login command has no abort handle today — the bash
-    // CLI is happy to finish in the background). This flag stops the
-    // resolved-after-cancel callback from trying to setState on an unmounted
-    // / re-opened modal.
     const cancelledRef = useRef(false);
 
     useEffect(() => {
-        // Reset phase every time the modal opens (any profile). Without this,
-        // closing during "running" then re-opening the SAME profile would
-        // re-display the stale "running" phase since the dep array only fires
-        // on profile change.
         if (modal) {
             cancelledRef.current = false;
             setPhase("idle");
@@ -46,8 +32,6 @@ export function AwsAuthModal() {
         }).catch(swallow("open_url"));
 
     const onCancel = () => {
-        // Mark the in-flight call as aborted so its eventual resolution
-        // doesn't fire setPhase on an unmounted component. Then dismiss.
         cancelledRef.current = true;
         cmd.closeAwsAuthModal();
     };
@@ -57,9 +41,6 @@ export function AwsAuthModal() {
         setPhase("running");
         setErrOut("");
         try {
-            // Switch to the configured browser workspace WITHOUT opening a URL —
-            // `aws sso login` opens its own device-auth URL via the system default
-            // browser. Pre-opening the SSO portal would land two tabs.
             if (cloudBrowser) {
                 await invoke("macos_focus_app", {
                     app: cloudBrowser,

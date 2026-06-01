@@ -8,8 +8,6 @@ export interface BatteryStatus {
     time_remaining: string | null;
 }
 
-// pmset is sub-millisecond on macOS; battery state changes are slow, so a
-// 30s poll is plenty (and matches the cadence of the user's tmux-battery).
 const POLL_MS = 30_000;
 
 export function useBattery(): BatteryStatus | null {

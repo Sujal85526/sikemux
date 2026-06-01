@@ -16,7 +16,6 @@ export interface SearchRange {
 export interface SearchHit {
     line: number; // 1-based
     text: string;
-    /** Match-line text was clipped to fit the IPC payload cap. */
     truncated_text?: boolean;
     ranges: SearchRange[];
 }
@@ -31,18 +30,9 @@ export interface SearchResults {
     file_count: number;
     match_count: number;
     truncated: boolean;
-    /** True when the search was cancelled mid-walk by a newer one. */
     cancelled?: boolean;
     elapsed_ms: number;
 }
-
-export const DEFAULT_OPTIONS: SearchOptions = {
-    caseSensitive: false,
-    wholeWord: false,
-    isRegex: false,
-    include: "",
-    exclude: "",
-};
 
 export interface ReplaceFile {
     path: string;
@@ -65,7 +55,6 @@ export interface ReplaceResults {
 
 export interface FileWindow {
     doc: string;
-    /** 1-based line number of the first line in `doc`. */
     start_line: number;
     total_lines: number;
     clipped_head: boolean;
@@ -73,14 +62,6 @@ export interface FileWindow {
 }
 
 export const searchApi = {
-    /**
-     * Run a project search. Matched files stream back via `onFile` as they
-     * appear (so the UI can paint before the walk completes). The promise
-     * resolves with the final summary plus the full file list. Subsequent
-     * calls implicitly cancel any in-flight search on the Rust side via the
-     * generation counter — old `onFile` chunks may still arrive briefly, so
-     * tag callers with their own request id and ignore stale callbacks.
-     */
     project: (repo: string, query: string, options: SearchOptions, onFile: (file: SearchFile) => void): Promise<SearchResults> => {
         const channel = new Channel<SearchFile>();
         channel.onmessage = onFile;
@@ -100,7 +81,6 @@ export const searchApi = {
             options,
             dryRun,
         }),
-    /** Read a `before` + `after` line window around `line` for fast preview. */
     readFileWindow: (path: string, line: number, before: number, after: number): Promise<FileWindow> =>
         invoke<FileWindow>("read_file_window", { path, line, before, after }),
 };

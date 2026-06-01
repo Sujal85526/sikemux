@@ -3,9 +3,6 @@ import { useResource, useResourceEnabled } from "../../state/resources";
 import { awsIdentityR, awsProfilesR } from "../../state/resources.defs";
 import { deriveAuthState } from "../../state/awsAuth";
 
-// Shown when:
-//   - no profile picked  → pick from ~/.aws/config or jump to settings
-//   - selected profile is unauthed → big sign-in card with SSO start URL
 export function AwsAuthEmpty({ mode, profile }: { mode: "no-profile" | "unauthed"; profile?: string }) {
     const profilesR = useResource(awsProfilesR);
     const identity = useResourceEnabled(!!profile, awsIdentityR, profile ?? "", false);
@@ -50,7 +47,6 @@ export function AwsAuthEmpty({ mode, profile }: { mode: "no-profile" | "unauthed
         );
     }
 
-    // unauthed
     const ssoUrl = profiles?.find((p) => p.name === profile)?.sso_start_url ?? null;
     const message =
         auth.kind === "error"

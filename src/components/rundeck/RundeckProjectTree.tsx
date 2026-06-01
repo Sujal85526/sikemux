@@ -6,14 +6,6 @@ import { envFolderOf } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
 import { IconChevron, IconFolder } from "../Icons";
 
-/** Tree sub-rail inside the Rundeck pane. Lists every project upstream
- *  returns from `rnd_projects`, in the order Rundeck reports them —
- *  no Legacy/Product split, no hardcoded names. Each project's children
- *  (env folders) are derived from its job groups; projects whose jobs
- *  are flat collapse into a leaf row.
- *
- *  Env-folder rows named `production` get a subtle tint so the user
- *  can't miss them when picking a deploy target. */
 export function RundeckProjectTree({ paneId, active }: { paneId: string; active: boolean }) {
     const projects = useResourceEnabled(active, rndProjectsR);
     const activeProject = useStore((s) => s.rundeck.activeProject);
@@ -59,9 +51,6 @@ function ProjectRow({
     activeEnvFolder: string | null;
     active: boolean;
 }) {
-    // Fetch jobs to determine whether this project has env folders. One
-    // call per project, cached. If any job's group has a slash, render
-    // expandable; otherwise it's a flat leaf.
     const jobs = useResourceEnabled(active, rndJobsR, project);
     const folders = useMemo(() => {
         const map = new Map<string, number>();

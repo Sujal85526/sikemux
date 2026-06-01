@@ -1,8 +1,5 @@
 import type { StreamParser } from "@codemirror/language";
 
-// Hand-rolled stream parsers for languages with no CodeMirror grammar —
-// HCL/Terraform and Makefile. Approximate but give real coloring.
-
 const HCL_KEYWORDS = new Set([
     "resource",
     "variable",
@@ -35,7 +32,6 @@ interface HclState {
     block: boolean;
 }
 
-// HCL / Terraform — comments, strings, heredocs, numbers, block keywords.
 export const hcl: StreamParser<HclState> = {
     startState: () => ({ block: false }),
     token(stream, state) {
@@ -65,7 +61,6 @@ export const hcl: StreamParser<HclState> = {
     },
 };
 
-// Makefile — comments, targets, variable assignments, $(VAR) refs.
 export const makefile: StreamParser<unknown> = {
     token(stream) {
         if (stream.sol()) {

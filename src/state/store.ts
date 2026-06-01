@@ -2,8 +2,6 @@ import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID } from "../themes";
 
-// We do not currently put Map / Set into the store, but enabling this
-// once is cheap and protects future code that does.
 enableMapSet();
 import { makePane, newId } from "./layout";
 import type { GitCmdEntry, GitModal } from "./gitTypes";
@@ -15,7 +13,6 @@ import type {
     EditorPaneView,
     GitPaneView,
     GlobalSearchView,
-    LspResults,
     PickerMode,
     ProjectRoot,
     RecentEntry,
@@ -25,37 +22,20 @@ import type {
     Window,
 } from "./types";
 
-// One store, three namespaces:
-//
-//   domain  — persisted truth (sessions, windows, agents, prefs)
-//   view    — ephemeral UI state, keyed by pane / session / profile
-//
-// Resources (remote-fetched data) live in state/resources.ts, not here.
-// Cross-component signals (open-file, fs-changed, …) live in state/bus.ts.
-//
-// Mutations go through state/commands.ts. Reads go through state/selectors.ts.
-// Components do not touch this file directly except for the `useStore` hook.
-
 export interface DomainState {
-    // Entities — flat maps keyed by id.
     sessions: Record<string, Session>;
     windows: Record<string, Window>;
     agents: Record<string, Agent>;
 
-    // Order + ownership.
     sessionOrder: string[];
     windowsBySession: Record<string, string[]>;
     agentsBySession: Record<string, string[]>;
 
-    // Top-level focus.
     activeSessionId: string;
 
-    // Persisted history.
     recent: RecentEntry[];
     agentBookmarks: AgentBookmark[];
 
-    // Persisted preferences (no separate "settings" namespace — they're just
-    // domain knobs that happen not to be tied to a particular entity).
     projectRoots: ProjectRoot[];
     themeId: string;
     windowOpacity: number;
@@ -66,17 +46,13 @@ export interface DomainState {
     awsService: AwsService;
     leftRailOpen: boolean;
     rightRailOpen: boolean;
-    // Zen / focus mode — hides both rails for distraction-free work without
-    // disturbing each rail's own open/closed preference (restored on exit).
     zenMode: boolean;
     rundeck: RundeckSettings;
 }
 
 export interface ViewState {
-    // Boot-time platform info.
     home: string;
 
-    // Modal / overlay flags (ephemeral).
     pickerOpen: boolean;
     pickerMode: PickerMode;
     agentPaletteOpen: boolean;
@@ -84,34 +60,20 @@ export interface ViewState {
     rundeckJobPaletteOpen: boolean;
     settingsOpen: boolean;
     awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
-    lspResults: LspResults | null;
     zoomedPaneId: string | null;
 
-    // Per-pane view state. Pruned when the pane is destroyed.
     editorViews: Record<string, EditorPaneView>;
     gitViews: Record<string, GitPaneView>;
     ecsViews: Record<string, EcsLevel>;
     rundeckViews: Record<string, RundeckView>;
     expandedBillingMonth: Record<string, string | null>;
 
-    // Git pane infrastructure: one modal at a time, app-wide. Imperative
-    // helpers in state/git.ts set this. The renderer mounted inside
-    // GitPane reads it and paints whichever variant is active.
     gitModal: GitModal | null;
-    /** Append-only command log entries (ring-buffered to LOG_LIMIT in
-     *  state/git.ts). Surfaced as a collapsible bar at the bottom of the
-     *  git pane and toggled with `@`. */
     gitCmdLog: GitCmdEntry[];
     gitCmdLogOpen: boolean;
 
-    // Per-project global search state — query + filters survive switching
-    // away from the search window and across projects. The search pane
-    // itself is just the project's 4th window (role: "search").
     globalSearchBySession: Record<string, GlobalSearchView>;
 
-    // OTA: populated by api/updater.ts when a newer version is found.
-    // Cleared on successful install (the new binary starts with `null`).
-    // The TopBar UpdateChip renders whenever this is non-null.
     pendingUpdate: {
         version: string;
         currentVersion: string;
@@ -123,8 +85,6 @@ export interface ViewState {
 }
 
 export type StoreState = DomainState & ViewState;
-
-// ---- Defaults / initial -------------------------------------------------
 
 function initialSession(): {
     session: Session;
@@ -156,7 +116,6 @@ function initialSession(): {
 export const useStore = create<StoreState>(() => {
     const { session, window } = initialSession();
     return {
-        // domain
         sessions: { [session.id]: session },
         windows: { [window.id]: window },
         agents: {},
@@ -178,17 +137,11 @@ export const useStore = create<StoreState>(() => {
         rightRailOpen: true,
         zenMode: false,
         rundeck: {
-            // No hardcoded default. On first launch the pane shows whatever
-            // upstream returns and the user picks; selection persists.
-            // `prodEnvs` stays as a sensible default for the type-to-confirm
-            // gating on the deploy view — it's a user-overridable safety
-            // setting, not a project list.
             activeProject: "",
             activeEnvFolder: null,
             prodEnvs: ["prod", "production"],
         },
 
-        // view
         home: "",
         pickerOpen: false,
         pickerMode: "all",
@@ -197,7 +150,6 @@ export const useStore = create<StoreState>(() => {
         rundeckJobPaletteOpen: false,
         settingsOpen: false,
         awsAuthModal: null,
-        lspResults: null,
         zoomedPaneId: null,
         editorViews: {},
         gitViews: {},
@@ -212,20 +164,9 @@ export const useStore = create<StoreState>(() => {
     };
 });
 
-// Convenience for non-React code (commands, persist, event handlers).
 export const getState = useStore.getState;
 export const setState = useStore.setState;
 
-// Immer-backed mutator. Lets command code write nested updates as if
-// they were mutable (`d.sessions[id].name = x`) and immer hands the
-// store back a properly-immutable, structurally-shared next state.
-// Unchanged subtrees keep their identity so the persist short-circuit
-// (which compares slice references) keeps working, and React selectors
-// only re-render where they actually need to.
-//
-// Use this in place of the deeply-spread `setState((st) => ({ a: { ...st.a,
-// [id]: { ...st.a[id], k: v } } }))` patterns. Plain top-level patches
-// (`setState({ pickerOpen: true })`) stay as-is — no need to convert.
 export function mutate(fn: (draft: Draft<StoreState>) => void): void {
     setState((st) => produce(st, fn));
 }

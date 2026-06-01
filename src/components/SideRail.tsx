@@ -12,9 +12,6 @@ function kindIcon(kind: SessionKind): ReactNode {
     return <IconCommand size={13} />;
 }
 
-/** Right-edge logo stack cap shared by the collapsed name-row and the
- *  expanded Agents/Term sub-rows. Anything beyond this collapses to a
- *  "+N more" chip so the row never overflows on busy projects. */
 const MAX_BADGE_ICONS = 3;
 
 export function SideRail() {
@@ -26,14 +23,9 @@ export function SideRail() {
     const agentsById = useStore((s) => s.agents);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
-    // When settings is open it owns the stage — no session should appear
-    // "active" in the rail, same way other modal-ish panes behave.
     const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
     const sessions = sessionOrder.map((id) => sessionsById[id]);
 
-    // No Superpin group + no per-session pin button in the rail — pinning
-    // is a bookmark-only concept that lives in the agent rail. Sessions
-    // remain grouped purely by kind, in the order they were opened.
     const projects = sessions.filter((s) => s.kind === "project");
     const sshs = sessions.filter((s) => s.kind === "ssh");
     const cloud = sessions.filter((s) => s.kind === "aws");
@@ -49,16 +41,6 @@ export function SideRail() {
         cmd.focusAgents();
     };
 
-    /** Project rows: collapsible tree.
-     *
-     *  Inactive project = single name row prefixed by a ▸ chevron, with an
-     *  optional right-aligned hint chip (agent count badge) so the user can
-     *  spot background activity without expanding.
-     *
-     *  Active project = ▾ header row + an indented child block listing the
-     *  5 pane types as `icon  Label  [n]` rows. The currently-focused pane
-     *  gets the accent color + active dot. Children are click targets that
-     *  hop directly to that pane within this project. */
     const ProjectBlock = ({ s }: { s: Session }) => {
         const active = s.id === activeSessionId;
         const winIds = windowsBySession[s.id] ?? [];
@@ -68,9 +50,6 @@ export function SideRail() {
         const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
         if (!active) {
-            // Collapsed: name + stacked agent brand logos on the right. Mirrors
-            // the expanded view's right-edge stack so the rail reads consistently
-            // whether a project is open or not.
             const visible = agents.slice(0, MAX_BADGE_ICONS);
             const overflow = agents.length - visible.length;
             return (
@@ -102,7 +81,6 @@ export function SideRail() {
             );
         }
 
-        // Expanded.
         const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
         const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
         const inAgentView = s.view === "agent";
@@ -121,11 +99,6 @@ export function SideRail() {
             if (w) jumpToWindow(s.id, w.id);
         };
 
-        // Right-edge indicators on Term / Agents rows. We show the actual
-        // brand-colored logos (one per item, capped at MAX_BADGE_ICONS) instead
-        // of a numeric pill so the rail reads as "what's running" rather than
-        // "how many". Term tabs use the terminal icon in live-green; agents
-        // render their AgentIcon at the brand color.
         const termIcons: React.ReactNode[] =
             tabCount > 1
                 ? Array.from({ length: tabCount }, (_, i) => (
@@ -197,7 +170,7 @@ export function SideRail() {
                                     e.stopPropagation();
                                     onSubClick(c.role);
                                 }}>
-                                <span className="proj-child-tick"/>
+                                <span className="proj-child-tick" />
                                 <span className="proj-child-ic">{node}</span>
                                 <span className="proj-child-label">{c.label}</span>
                                 {visibleIcons.length > 0 && (
@@ -214,9 +187,6 @@ export function SideRail() {
         );
     };
 
-    /** Non-project sessions (ssh / command / aws / rundeck): keep the
-     *  existing single-row layout. They don't have the files/term/git
-     *  sub-area split — one session ≡ one main pane. */
     const SimpleRow = ({ s }: { s: Session }) => {
         const active = s.id === activeSessionId;
         return (

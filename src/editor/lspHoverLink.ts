@@ -3,10 +3,6 @@ import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import { languageFromPath, lsp } from "../api/lsp";
 import { swallow } from "../state/toast";
 
-// VSCode/Zed-style Cmd-hover underline. Tracks the mouse while Meta/Ctrl is
-// held, debounces a `textDocument/definition` query, and underlines the
-// symbol when there's a navigable target.
-
 type Range = { from: number; to: number } | null;
 
 const setLink = StateEffect.define<Range>();
@@ -25,8 +21,6 @@ const linkField = StateField.define<Range>({
         }),
 });
 
-// EditorPane sets this so each mounted editor view knows which project/file
-// to query. Every hidden project stays mounted, so this cannot be global.
 const contexts = new WeakMap<EditorView, { project: string; path: string }>();
 
 export function setHoverLinkContext(view: EditorView | null, c: { project: string; path: string } | null) {
@@ -97,7 +91,6 @@ const hoverHandlers = EditorView.domEventHandlers({
     },
 });
 
-// Clear the underline as soon as Meta/Ctrl is released anywhere in the app.
 const keyReleasePlugin = ViewPlugin.fromClass(
     class {
         constructor(public view: EditorView) {

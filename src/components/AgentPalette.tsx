@@ -27,10 +27,6 @@ function ago(unixSecs: number): string {
     return `${Math.round(d / 86400)}d`;
 }
 
-
-// Cross-agent session search for whatever supported CLIs are present.
-// Stays imperative — parallel scans per cwd are small enough that
-// promoting it to a resource definition would just add ceremony.
 export function AgentPalette() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const catalog = useResource(agentCatalogR);
@@ -150,9 +146,7 @@ export function AgentPalette() {
                                 <span className={`picker-icon agent-glyph ${type}`}>
                                     <AgentIcon type={type} size={14} />
                                 </span>
-                                <span className="picker-name">
-                                    {item.kind === "new" ? `new ${labelForType(type, agents)}` : item.row.title}
-                                </span>
+                                <span className="picker-name">{item.kind === "new" ? `new ${labelForType(type, agents)}` : item.row.title}</span>
                                 <span className="picker-sub">
                                     {item.kind === "new" ? "start agent" : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
                                 </span>

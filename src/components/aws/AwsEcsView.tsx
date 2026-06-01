@@ -76,7 +76,13 @@ function EcsResourceTable<T>({
         ) : data.length === 0 ? (
             <div className="aws-empty">{empty}</div>
         ) : null;
-    if (message) return <>{refresh}{message}</>;
+    if (message)
+        return (
+            <>
+                {refresh}
+                {message}
+            </>
+        );
     const rows = data ?? [];
     return (
         <>
@@ -143,7 +149,9 @@ export function AwsEcsView({ profile, active }: ViewProps) {
     return (
         <div className="aws-view">
             <Breadcrumb level={level} onJump={setLevel} />
-            {level.kind === "clusters" && <ClustersList profile={profile} active={active} onPick={(c) => setLevel({ kind: "services", cluster: c })} />}
+            {level.kind === "clusters" && (
+                <ClustersList profile={profile} active={active} onPick={(c) => setLevel({ kind: "services", cluster: c })} />
+            )}
             {level.kind === "services" && (
                 <ServicesList
                     profile={profile}
@@ -252,7 +260,17 @@ function ClustersList({ profile, active, onPick }: { profile: string; active: bo
     );
 }
 
-function ServicesList({ profile, active, cluster, onPick }: { profile: string; active: boolean; cluster: string; onPick: (service: string) => void }) {
+function ServicesList({
+    profile,
+    active,
+    cluster,
+    onPick,
+}: {
+    profile: string;
+    active: boolean;
+    cluster: string;
+    onPick: (service: string) => void;
+}) {
     const handle = useResourceEnabled(active, ecsServicesR, profile, cluster);
     const { data, error, status } = handle;
     return (
@@ -349,7 +367,19 @@ function ServiceView({
     );
 }
 
-function TasksList({ profile, active, cluster, service, onPick }: { profile: string; active: boolean; cluster: string; service: string; onPick: (t: EcsTask) => void }) {
+function TasksList({
+    profile,
+    active,
+    cluster,
+    service,
+    onPick,
+}: {
+    profile: string;
+    active: boolean;
+    cluster: string;
+    service: string;
+    onPick: (t: EcsTask) => void;
+}) {
     const { data, error, status } = useResourceEnabled(active, ecsTasksR, profile, cluster, service);
     return (
         <EcsResourceTable

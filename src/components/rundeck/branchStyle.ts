@@ -1,6 +1,3 @@
-// Branch → semantic kind used for color + glyph. Mirrors the nvim dashboard
-// taxonomy so the user's mental model carries over.
-
 export type BranchKind = "main" | "feature" | "fix" | "release" | "other" | "na";
 
 export function branchKind(branch: string | null | undefined): BranchKind {

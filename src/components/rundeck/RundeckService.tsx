@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { git } from "../../api/git";
 import { rundeckApi, type RundeckExecution } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
@@ -67,11 +67,7 @@ export function RundeckService({ paneId, level, active }: Props) {
                     <IconFetch size={13} />
                     redeploy last
                 </button>
-                <button
-                    className="rnd-icon-btn"
-                    onClick={() => execs.refresh()}
-                    disabled={execs.status === "loading"}
-                    title="Refresh executions">
+                <button className="rnd-icon-btn" onClick={() => execs.refresh()} disabled={execs.status === "loading"} title="Refresh executions">
                     <IconRefresh size={13} />
                 </button>
             </div>
@@ -244,10 +240,4 @@ function duration(start: string | null, end: string | null): string {
     const m = Math.floor(s / 60);
     const rest = s % 60;
     return rest ? `${m}m ${rest}s` : `${m}m`;
-}
-
-// Tiny effect-pass to silence unused warnings if jobId changes — would let us
-// prefetch the plan in the background later.
-export function _useTouch(_: unknown) {
-    useEffect(() => {}, [_]);
 }

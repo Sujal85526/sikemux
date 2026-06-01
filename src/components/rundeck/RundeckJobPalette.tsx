@@ -11,8 +11,6 @@ import { IconCommand, IconSearch } from "../Icons";
 
 const MAX_RESULTS = 400;
 
-/** A flattened job row, tagged with the project it came from so search and
- *  activation work across every project — not just the active one. */
 interface JobRow {
     cell: MatrixCell;
     project: string;
@@ -31,8 +29,6 @@ export function RundeckJobPalette() {
     const listRef = useRef<HTMLDivElement>(null);
     const mouseActive = useMouseActive();
 
-    // Index every project, not just the active one — one matrix spec per
-    // project, fetched in a single backend call.
     const projectsRes = useResource(rndProjectsR);
     const projects = projectsRes.data;
     const specs = useMemo<RundeckEnvSpec[]>(
@@ -146,8 +142,6 @@ function jobSearchText(row: JobRow): string {
     return [project, cell.name, cell.service, cell.group ?? "", cell.branch ?? "", cell.status ?? "", cell.user ?? ""].join(" ").toLowerCase();
 }
 
-/** The group path nests as `<env>/<type>/...` — first segment is the
- *  environment, second is the type (frontend / backend / etc). */
 function jobParts(cell: MatrixCell): { env: string | null; type: string | null } {
     const segs = cell.group ? cell.group.split("/").filter(Boolean) : [];
     return { env: segs[0] ?? null, type: segs[1] ?? null };

@@ -1,7 +1,3 @@
-// Theme-derived CodeMirror extensions. Rebuilt every time the active theme
-// changes (via themeCompartment.reconfigure), so the editor restyles
-// without remounting per-tab EditorStates.
-
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";

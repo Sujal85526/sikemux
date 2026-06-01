@@ -132,9 +132,6 @@ export function AwsSqsView({ profile, active }: { profile: string; active: boole
     return <TableView handle={handle} loading="loading queues…" columns={SQS_COLUMNS} rowKey={(q) => q.url} />;
 }
 
-// ============================================================
-// Billing — 6-month timeline with expandable rows
-// ============================================================
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function formatMonth(periodStart: string): string {
@@ -147,8 +144,6 @@ function formatMonth(periodStart: string): string {
 function formatAmount(amount: string | number, unit: string): string {
     const raw = typeof amount === "number" ? amount : Number(amount);
     if (!Number.isFinite(raw)) return `${unit} ${amount}`;
-    // Collapse the rounded-to-zero negative weirdness ($-0.00) — CE returns
-    // tiny floating-point residuals from credit math.
     const n = Math.abs(raw) < 0.005 ? 0 : raw;
     const symbol = unit === "USD" ? "$" : `${unit} `;
     const sign = n < 0 ? "-" : "";
@@ -159,10 +154,6 @@ function formatAmount(amount: string | number, unit: string): string {
     return `${sign}${symbol}${body}`;
 }
 
-// Split a service-cost list into positive charges and negative credits.
-// CE returns credits (refunds, RI rebates, savings plan amortization) as
-// negative entries; netting them silently into the total is what made the
-// big number show $-0.00 even though real charges were ~$43.
 function splitCharges(by_service: { amount: string }[]): {
     gross: number;
     credits: number;
@@ -184,7 +175,6 @@ export function AwsBillingView({ profile, active }: { profile: string; active: b
     const expanded = useStore((s) => s.expandedBillingMonth[profile] ?? null);
     const data = handle.data;
 
-    // Auto-expand the current month on first load.
     useEffect(() => {
         if (!data || expanded !== null) return;
         const cur = data.find((m) => m.is_current);
@@ -215,7 +205,6 @@ export function AwsBillingView({ profile, active }: { profile: string; active: b
         );
 
     const months = data;
-    // Use GROSS for the chart + headline. Credits shown separately.
     const splits = months.map((m) => splitCharges(m.by_service));
     const grosses = splits.map((s) => s.gross);
     const maxGross = Math.max(...grosses, 1);
@@ -287,7 +276,6 @@ export function AwsBillingView({ profile, active }: { profile: string; active: b
                             </button>
                             {isOpen && (
                                 <div className={`aws-bill-services${hasCredits ? " split" : ""}`}>
-                                    {/* Left column — positive charges */}
                                     <div className="aws-bill-col">
                                         <div className="aws-bill-col-head">Charges</div>
                                         {m.by_service
@@ -309,7 +297,6 @@ export function AwsBillingView({ profile, active }: { profile: string; active: b
                                         {m.by_service.length === 0 && <div className="aws-bill-empty">no charges this month</div>}
                                     </div>
 
-                                    {/* Right column — credits & refunds (only when present) */}
                                     {hasCredits && (
                                         <div className="aws-bill-col">
                                             <div className="aws-bill-col-head">Credits &amp; refunds</div>

@@ -1,319 +1,249 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
-import {
-  SearchQuery,
-  findNext,
-  findPrevious,
-  getSearchQuery,
-  replaceAll,
-  replaceNext,
-  setSearchQuery,
-} from "@codemirror/search";
+import { SearchQuery, findNext, findPrevious, getSearchQuery, replaceAll, replaceNext, setSearchQuery } from "@codemirror/search";
 import { IconSearch } from "./Icons";
 
-// In-editor find/replace overlay. Drives CodeMirror's search commands
-// directly (no @codemirror/search panel — see EditorPane). We own the DOM
-// so layout, theming, and the replace-toggle chevron all live in React
-// instead of in CSS hacks against a built-in panel.
-
 interface Props {
-  /** Get the active CodeMirror view to issue commands against. Lookup is
-   *  lazy so a stale ref from a re-rendered EditorPane doesn't break us. */
-  getView: () => EditorView | null;
-  /** Imperative open/close — EditorPane toggles this in response to the
-   *  Mod-F / Mod-H keymap entries. */
-  open: boolean;
-  /** Open with the replace row pre-expanded. */
-  replaceOpenOnMount: boolean;
-  /** Editor selection at the moment the bar was opened; replaces the
-   *  query if present. Null means "leave whatever's in the input". */
-  seed: string | null;
-  /** Bumped by the host on every Mod-F press so the bar can re-focus and
-   *  re-seed even when it's already open. */
-  signal: number;
-  onClose: () => void;
+    getView: () => EditorView | null;
+    open: boolean;
+    replaceOpenOnMount: boolean;
+    seed: string | null;
+    signal: number;
+    onClose: () => void;
 }
 
-export function EditorFindBar({
-  getView,
-  open,
-  replaceOpenOnMount,
-  seed,
-  signal,
-  onClose,
-}: Props) {
-  const [query, setQuery] = useState("");
-  const [replace, setReplace] = useState("");
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [wholeWord, setWholeWord] = useState(false);
-  const [regexp, setRegexp] = useState(false);
-  const [replaceOpen, setReplaceOpen] = useState(replaceOpenOnMount);
-  const [counts, setCounts] = useState<{ total: number; current: number }>({
-    total: 0,
-    current: 0,
-  });
-
-  const findInputRef = useRef<HTMLInputElement | null>(null);
-  const replaceInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Track replaceOpen on every open() so re-opening with Mod-H expands.
-  useEffect(() => {
-    if (open && replaceOpenOnMount) setReplaceOpen(true);
-  }, [open, replaceOpenOnMount]);
-
-  // Push the current SearchQuery into CM whenever any input changes. This
-  // is also what drives the highlighter — the `search()` extension reads
-  // the SearchQuery effect to know what to match.
-  useEffect(() => {
-    const view = getView();
-    if (!view) return;
-    const q = new SearchQuery({
-      search: query,
-      replace,
-      caseSensitive,
-      regexp,
-      wholeWord,
+export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal, onClose }: Props) {
+    const [query, setQuery] = useState("");
+    const [replace, setReplace] = useState("");
+    const [caseSensitive, setCaseSensitive] = useState(false);
+    const [wholeWord, setWholeWord] = useState(false);
+    const [regexp, setRegexp] = useState(false);
+    const [replaceOpen, setReplaceOpen] = useState(replaceOpenOnMount);
+    const [counts, setCounts] = useState<{ total: number; current: number }>({
+        total: 0,
+        current: 0,
     });
-    view.dispatch({ effects: setSearchQuery.of(q) });
-    setCounts(computeCounts(view, q));
-  }, [getView, query, replace, caseSensitive, regexp, wholeWord]);
 
-  // Recompute the N-of-M counter when the doc or selection changes (the
-  // user might type, move the cursor, or accept an external edit).
-  useEffect(() => {
-    const view = getView();
-    if (!view) return;
-    if (!query) {
-      setCounts({ total: 0, current: 0 });
-      return;
-    }
-    let raf = 0;
-    const tick = () => {
-      const q = getSearchQuery(view.state);
-      if (q.search) setCounts(computeCounts(view, q));
+    const findInputRef = useRef<HTMLInputElement | null>(null);
+    const replaceInputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        if (open && replaceOpenOnMount) setReplaceOpen(true);
+    }, [open, replaceOpenOnMount]);
+
+    useEffect(() => {
+        const view = getView();
+        if (!view) return;
+        const q = new SearchQuery({
+            search: query,
+            replace,
+            caseSensitive,
+            regexp,
+            wholeWord,
+        });
+        view.dispatch({ effects: setSearchQuery.of(q) });
+        setCounts(computeCounts(view, q));
+    }, [getView, query, replace, caseSensitive, regexp, wholeWord]);
+
+    useEffect(() => {
+        const view = getView();
+        if (!view) return;
+        if (!query) {
+            setCounts({ total: 0, current: 0 });
+            return;
+        }
+        let raf = 0;
+        const tick = () => {
+            const q = getSearchQuery(view.state);
+            if (q.search) setCounts(computeCounts(view, q));
+        };
+        raf = window.requestAnimationFrame(tick);
+        return () => window.cancelAnimationFrame(raf);
+    }, [getView, query, replaceOpen]);
+
+    useEffect(() => {
+        if (!open) return;
+        if (seed && seed.length > 0) setQuery(seed);
+        const t = window.setTimeout(() => {
+            findInputRef.current?.focus();
+            findInputRef.current?.select();
+        }, 0);
+        return () => window.clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, signal]);
+
+    const run = (fn: (view: EditorView) => boolean, center = true) => {
+        const view = getView();
+        if (!view) return;
+        fn(view);
+        if (center) {
+            const sel = view.state.selection.main;
+            view.dispatch({
+                effects: EditorView.scrollIntoView(sel.from, { y: "center" }),
+            });
+        }
+        const q = getSearchQuery(view.state);
+        if (q.search) setCounts(computeCounts(view, q));
+        view.focus();
     };
-    raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
-  }, [getView, query, replaceOpen]);
 
-  // Re-focus + re-seed on every Mod-F press. Depends on `signal` (which
-  // bumps each press) so this fires even when the bar is already open —
-  // matches VSCode: clicking back into the editor and hitting Cmd-F
-  // pulls focus back to the find input.
-  useEffect(() => {
-    if (!open) return;
-    if (seed && seed.length > 0) setQuery(seed);
-    const t = window.setTimeout(() => {
-      findInputRef.current?.focus();
-      findInputRef.current?.select();
-    }, 0);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, signal]);
+    const onFindKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            run(e.shiftKey ? findPrevious : findNext);
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+            getView()?.focus();
+        }
+    };
 
-  const run = (fn: (view: EditorView) => boolean, center = true) => {
-    const view = getView();
-    if (!view) return;
-    fn(view);
-    if (center) {
-      // CodeMirror's findNext/findPrevious only ensure the match is
-      // somewhere in the viewport — often the bottom edge after a long
-      // jump. Re-scroll to center on the new selection so the user
-      // doesn't have to track where the highlight landed.
-      const sel = view.state.selection.main;
-      view.dispatch({
-        effects: EditorView.scrollIntoView(sel.from, { y: "center" }),
-      });
-    }
-    // After navigating, refresh counter.
-    const q = getSearchQuery(view.state);
-    if (q.search) setCounts(computeCounts(view, q));
-    view.focus();
-  };
+    const onReplaceKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            run(e.metaKey || e.ctrlKey ? replaceAll : replaceNext);
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+            getView()?.focus();
+        }
+    };
 
-  const onFindKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      run(e.shiftKey ? findPrevious : findNext);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
-      getView()?.focus();
-    }
-  };
+    const status = useMemo(() => {
+        if (!query) return "";
+        if (counts.total === 0) return "No results";
+        return `${counts.current} of ${counts.total}`;
+    }, [query, counts]);
 
-  const onReplaceKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      run(e.metaKey || e.ctrlKey ? replaceAll : replaceNext);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
-      getView()?.focus();
-    }
-  };
+    if (!open) return null;
 
-  const status = useMemo(() => {
-    if (!query) return "";
-    if (counts.total === 0) return "No results";
-    return `${counts.current} of ${counts.total}`;
-  }, [query, counts]);
-
-  if (!open) return null;
-
-  return (
-    <div className={`ed-findbar${replaceOpen ? " replace" : ""}`}>
-      <button
-        type="button"
-        className="ed-findbar-chev"
-        onClick={() => {
-          const next = !replaceOpen;
-          setReplaceOpen(next);
-          if (next) {
-            window.setTimeout(() => replaceInputRef.current?.focus(), 0);
-          }
-        }}
-        title={replaceOpen ? "Hide replace" : "Show replace"}
-        aria-expanded={replaceOpen}
-      >
-        {replaceOpen ? "▾" : "▸"}
-      </button>
-
-      <div className="ed-findbar-rows">
-        <div className="ed-findbar-row">
-          <span className="ed-findbar-av find" aria-hidden>
-            <IconSearch size={11} />
-          </span>
-          <input
-            ref={findInputRef}
-            className="ed-findbar-input"
-            placeholder="Find"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onFindKeyDown}
-            spellCheck={false}
-          />
-          <div className="ed-findbar-toggles">
+    return (
+        <div className={`ed-findbar${replaceOpen ? " replace" : ""}`}>
             <button
-              type="button"
-              className={`ed-findbar-toggle${caseSensitive ? " on" : ""}`}
-              onClick={() => setCaseSensitive((v) => !v)}
-              title="Match case (Alt+C)"
-            >
-              Aa
+                type="button"
+                className="ed-findbar-chev"
+                onClick={() => {
+                    const next = !replaceOpen;
+                    setReplaceOpen(next);
+                    if (next) {
+                        window.setTimeout(() => replaceInputRef.current?.focus(), 0);
+                    }
+                }}
+                title={replaceOpen ? "Hide replace" : "Show replace"}
+                aria-expanded={replaceOpen}>
+                {replaceOpen ? "▾" : "▸"}
             </button>
-            <button
-              type="button"
-              className={`ed-findbar-toggle${wholeWord ? " on" : ""}`}
-              onClick={() => setWholeWord((v) => !v)}
-              title="Whole word (Alt+W)"
-            >
-              ab
-            </button>
-            <button
-              type="button"
-              className={`ed-findbar-toggle${regexp ? " on" : ""}`}
-              onClick={() => setRegexp((v) => !v)}
-              title="Regex (Alt+R)"
-            >
-              .*
-            </button>
-          </div>
-          <span className="ed-findbar-status">{status}</span>
-          <button
-            type="button"
-            className="ed-findbar-btn"
-            onClick={() => run(findPrevious)}
-            title="Previous (Shift+Enter)"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            className="ed-findbar-btn"
-            onClick={() => run(findNext)}
-            title="Next (Enter)"
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            className="ed-findbar-btn close"
-            onClick={() => {
-              onClose();
-              getView()?.focus();
-            }}
-            title="Close (Esc)"
-          >
-            ×
-          </button>
+
+            <div className="ed-findbar-rows">
+                <div className="ed-findbar-row">
+                    <span className="ed-findbar-av find" aria-hidden>
+                        <IconSearch size={11} />
+                    </span>
+                    <input
+                        ref={findInputRef}
+                        className="ed-findbar-input"
+                        placeholder="Find"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={onFindKeyDown}
+                        spellCheck={false}
+                    />
+                    <div className="ed-findbar-toggles">
+                        <button
+                            type="button"
+                            className={`ed-findbar-toggle${caseSensitive ? " on" : ""}`}
+                            onClick={() => setCaseSensitive((v) => !v)}
+                            title="Match case (Alt+C)">
+                            Aa
+                        </button>
+                        <button
+                            type="button"
+                            className={`ed-findbar-toggle${wholeWord ? " on" : ""}`}
+                            onClick={() => setWholeWord((v) => !v)}
+                            title="Whole word (Alt+W)">
+                            ab
+                        </button>
+                        <button
+                            type="button"
+                            className={`ed-findbar-toggle${regexp ? " on" : ""}`}
+                            onClick={() => setRegexp((v) => !v)}
+                            title="Regex (Alt+R)">
+                            .*
+                        </button>
+                    </div>
+                    <span className="ed-findbar-status">{status}</span>
+                    <button type="button" className="ed-findbar-btn" onClick={() => run(findPrevious)} title="Previous (Shift+Enter)">
+                        ↑
+                    </button>
+                    <button type="button" className="ed-findbar-btn" onClick={() => run(findNext)} title="Next (Enter)">
+                        ↓
+                    </button>
+                    <button
+                        type="button"
+                        className="ed-findbar-btn close"
+                        onClick={() => {
+                            onClose();
+                            getView()?.focus();
+                        }}
+                        title="Close (Esc)">
+                        ×
+                    </button>
+                </div>
+
+                {replaceOpen && (
+                    <div className="ed-findbar-row">
+                        <span className="ed-findbar-av repl" aria-hidden>
+                            ↻
+                        </span>
+                        <input
+                            ref={replaceInputRef}
+                            className="ed-findbar-input"
+                            placeholder="Replace"
+                            value={replace}
+                            onChange={(e) => setReplace(e.target.value)}
+                            onKeyDown={onReplaceKeyDown}
+                            spellCheck={false}
+                        />
+                        <span className="ed-findbar-status" aria-hidden />
+                        <button type="button" className="ed-findbar-btn" onClick={() => run(replaceNext)} title="Replace (Enter)" disabled={!query}>
+                            ↪
+                        </button>
+                        <button
+                            type="button"
+                            className="ed-findbar-btn"
+                            onClick={() => run(replaceAll)}
+                            title="Replace all (Cmd/Ctrl+Enter)"
+                            disabled={!query}>
+                            ⇶
+                        </button>
+                        <span className="ed-findbar-btn-spacer" aria-hidden />
+                    </div>
+                )}
+            </div>
         </div>
-
-        {replaceOpen && (
-          <div className="ed-findbar-row">
-            <span className="ed-findbar-av repl" aria-hidden>
-              ↻
-            </span>
-            <input
-              ref={replaceInputRef}
-              className="ed-findbar-input"
-              placeholder="Replace"
-              value={replace}
-              onChange={(e) => setReplace(e.target.value)}
-              onKeyDown={onReplaceKeyDown}
-              spellCheck={false}
-            />
-            <span className="ed-findbar-status" aria-hidden />
-            <button
-              type="button"
-              className="ed-findbar-btn"
-              onClick={() => run(replaceNext)}
-              title="Replace (Enter)"
-              disabled={!query}
-            >
-              ↪
-            </button>
-            <button
-              type="button"
-              className="ed-findbar-btn"
-              onClick={() => run(replaceAll)}
-              title="Replace all (Cmd/Ctrl+Enter)"
-              disabled={!query}
-            >
-              ⇶
-            </button>
-            <span className="ed-findbar-btn-spacer" aria-hidden />
-          </div>
-        )}
-      </div>
-    </div>
-  );
+    );
 }
-
-// ---- helpers ----------------------------------------------------------
 
 function computeCounts(view: EditorView, q: SearchQuery): { total: number; current: number } {
-  if (!q.valid || !q.search) return { total: 0, current: 0 };
-  let total = 0;
-  let current = 0;
-  const sel = view.state.selection.main;
-  try {
-    // CM's getCursor returns an Iterator (not Iterable). Step via .next()
-    // ourselves to count matches and find the one enclosing the caret.
-    const cursor = q.getCursor(view.state) as {
-      next(): IteratorResult<{ from: number; to: number }>;
-    };
-    for (;;) {
-      const r = cursor.next();
-      if (r.done) break;
-      total++;
-      if (current === 0 && r.value.from <= sel.from && sel.from <= r.value.to) {
-        current = total;
-      }
+    if (!q.valid || !q.search) return { total: 0, current: 0 };
+    let total = 0;
+    let current = 0;
+    const sel = view.state.selection.main;
+    try {
+        const cursor = q.getCursor(view.state) as {
+            next(): IteratorResult<{ from: number; to: number }>;
+        };
+        for (;;) {
+            const r = cursor.next();
+            if (r.done) break;
+            total++;
+            if (current === 0 && r.value.from <= sel.from && sel.from <= r.value.to) {
+                current = total;
+            }
+        }
+    } catch {
+        return { total: 0, current: 0 };
     }
-  } catch {
-    return { total: 0, current: 0 };
-  }
-  if (current === 0 && total > 0) current = 1;
-  return { total, current };
+    if (current === 0 && total > 0) current = 1;
+    return { total, current };
 }

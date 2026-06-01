@@ -20,9 +20,6 @@ const AWS_VIEW: Record<AwsService, ComponentType<AwsViewProps>> = {
     s3: AwsS3View,
 };
 
-// The identity resource refreshes itself every 60s via staleAfterMs, so
-// this pane no longer needs its own polling interval — the TopBar chip
-// subscribes to the same cache key and stays in sync for free.
 export function AwsPane({ active }: { active: boolean }) {
     const profile = useStore((s) => s.awsProfile);
     const service = useStore((s) => s.awsService);
@@ -33,7 +30,6 @@ export function AwsPane({ active }: { active: boolean }) {
     if (needsAuth(auth)) {
         return <AwsAuthEmpty mode="unauthed" profile={auth.profile} />;
     }
-    // authed (also checking — service views show their own loading)
     const p = auth.profile;
     const ServiceView = AWS_VIEW[service];
     return (

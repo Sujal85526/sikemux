@@ -62,9 +62,6 @@ export interface GitRemoteBranch {
     subject: string | null;
 }
 
-// Frontend cache for `git_file_at` keyed on immutable revs (sha-shaped). The
-// backend already caches; this saves the IPC round-trip altogether for repeat
-// reads of the same baseline (e.g. mounting many diff editors).
 const fileAtCache = new Map<string, string>();
 const FILE_AT_LIMIT = 200;
 const SHA_RE = /^[0-9a-f]{7,}([~^][0-9]*)*$/i;
@@ -116,16 +113,13 @@ export const git = {
     push: (repo: string) => invoke<string>("git_push", { repo }),
     pull: (repo: string) => invoke<string>("git_pull", { repo }),
     aiCommit: (repo: string, provider: string, model: string) => invoke<string>("git_ai_commit", { repo, provider, model }),
-    // Generate a commit message from the diff without staging or committing.
     aiMessage: (repo: string, provider: string, model: string) => invoke<string>("git_ai_message", { repo, provider, model }),
     prOpen: (repo: string) => invoke<string>("pr_open", { repo }),
     watchStart: (repo: string) => invoke<void>("repo_watch_start", { repo }),
     watchStop: (repo: string) => invoke<void>("repo_watch_stop", { repo }),
 
-    // ---- discard ----
     discardFile: (repo: string, path: string, mode: DiscardMode) => invoke<void>("git_discard_file", { repo, path, mode }),
 
-    // ---- stash ----
     stashList: (repo: string) => invoke<GitStash[]>("git_stash_list", { repo }),
     stashPush: (repo: string, mode: StashMode, message?: string | null) =>
         invoke<void>("git_stash_push", {
@@ -137,9 +131,9 @@ export const git = {
     stashPop: (repo: string, refname: string, sha: string) => invoke<void>("git_stash_pop", { repo, refname, sha }),
     stashDrop: (repo: string, refname: string, sha: string) => invoke<void>("git_stash_drop", { repo, refname, sha }),
     stashBranch: (repo: string, refname: string, sha: string, name: string) => invoke<void>("git_stash_branch", { repo, refname, sha, name }),
-    stashRename: (repo: string, refname: string, sha: string, newMessage: string) => invoke<void>("git_stash_rename", { repo, refname, sha, newMessage }),
+    stashRename: (repo: string, refname: string, sha: string, newMessage: string) =>
+        invoke<void>("git_stash_rename", { repo, refname, sha, newMessage }),
 
-    // ---- remotes ----
     remotes: (repo: string) => invoke<GitRemote[]>("git_remotes", { repo }),
     remoteAdd: (repo: string, name: string, url: string) => invoke<void>("git_remote_add", { repo, name, url }),
     remoteRemove: (repo: string, name: string) => invoke<void>("git_remote_remove", { repo, name }),
@@ -147,7 +141,6 @@ export const git = {
     remoteSetUrl: (repo: string, name: string, url: string) => invoke<void>("git_remote_set_url", { repo, name, url }),
     fetch: (repo: string, remote?: string | null) => invoke<string>("git_fetch", { repo, remote: remote ?? null }),
 
-    // ---- remote branches ----
     remoteBranches: (repo: string, remote: string) => invoke<GitRemoteBranch[]>("git_remote_branches", { repo, remote }),
     checkoutRemoteBranch: (repo: string, remote: string, branch: string, localName?: string | null) =>
         invoke<void>("git_checkout_remote_branch", {

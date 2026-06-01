@@ -3,12 +3,6 @@ import { EditorView, gutter, GutterMarker, ViewPlugin, type ViewUpdate } from "@
 import { diffApi, type DiffHunk } from "../api/diff";
 import { swallow } from "../state/toast";
 
-// VSCode-style git diff gutter: green bar for added lines, blue for modified,
-// red triangle at the boundary where lines were deleted. Baseline (HEAD
-// content) is supplied per-file by EditorPane via `setGitBaseline`. Hunks
-// are computed in Rust via `diff_hunks` so per-keystroke diffing stays off
-// the main JS thread.
-
 const setBaseline = StateEffect.define<string>();
 const setHunks = StateEffect.define<DiffHunk[]>();
 
@@ -46,15 +40,6 @@ function markersFromHunks(view: EditorView, hunks: DiffHunk[]): RangeSet<GitMark
     if (hunks.length === 0) return RangeSet.empty;
     const doc = view.state.doc;
     const docLines = doc.lines;
-    // Collect (pos, marker) tuples first and sort them before feeding the
-    // builder. The hunks come in document order from Rust, but if the doc has
-    // shrunk since the diff was computed (user deleted lines, etc.) we used to
-    // clamp later hunks back into range — which produced positions that were
-    // smaller than the previous hunk's last marker and crashed
-    // RangeSetBuilder. A crash here takes down the whole gutter column
-    // (line numbers + fold chevrons + git markers) because CodeMirror tears
-    // the gutter view down on render errors. Skip out-of-range hunks instead
-    // and sort defensively as a belt-and-braces guard.
     const tuples: Array<[number, GitMarker]> = [];
     for (const h of hunks) {
         if (h.kind === "del") {
@@ -77,8 +62,6 @@ function markersFromHunks(view: EditorView, hunks: DiffHunk[]): RangeSet<GitMark
     return builder.finish();
 }
 
-// Debounce + cancel Rust diff calls. The text from `current` is captured at
-// schedule time; a new edit cancels the prior request.
 function scheduleHunks(view: EditorView): { cancel: () => void } {
     let timer: number | undefined;
     let token = 0;
@@ -110,17 +93,11 @@ function scheduleHunks(view: EditorView): { cancel: () => void } {
     };
 }
 
-// Schedule-only plugin — its sole job is to debounce a Rust diff call
-// whenever the doc or baseline changes. Markers themselves live in the
-// hunksField (a StateField), which the gutter reads directly. Going through
-// the StateField avoids a race where the plugin's mutated `this.markers`
-// is read before its update() finishes for the current view update cycle.
 const gitPlugin = ViewPlugin.fromClass(
     class {
         sched: { cancel: () => void };
         constructor(view: EditorView) {
             this.sched = scheduleHunks(view);
-            // First run after mount so we don't wait for the first keystroke.
             this.sched.cancel();
         }
         update(u: ViewUpdate) {
@@ -132,13 +109,9 @@ const gitPlugin = ViewPlugin.fromClass(
 
 const gitGutterExt = gutter({
     class: "cm-git-gutter",
-    // Read hunks straight from the StateField on every render — guaranteed
-    // to be the value that exists at this point in the update pipeline.
     markers: (view) => markersFromHunks(view, view.state.field(hunksField)),
 });
 
-// Overview ruler — a vertical strip on the right edge summarising every diff
-// chunk in the file. Driven from the same hunks the gutter consumes.
 const overviewRuler = ViewPlugin.fromClass(
     class {
         dom: HTMLDivElement;
@@ -198,7 +171,6 @@ export function gitDiffGutter(): Extension {
     return [baselineField, hunksField, gitPlugin, gitGutterExt, overviewRuler];
 }
 
-// Push a new baseline (e.g. the file's HEAD content) into a live view.
 export function setGitBaseline(view: EditorView, baseline: string) {
     view.dispatch({ effects: setBaseline.of(baseline) });
 }

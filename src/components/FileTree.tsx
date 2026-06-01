@@ -11,7 +11,6 @@ import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { basename } from "../lib/paths";
 
-// VSCode-style decoration letter + class for a git-tracked file.
 function gitDecoration(f: GitFile): { letter: string; cls: string } {
     if (f.index === "?" || f.worktree === "?") return { letter: "U", cls: "u" };
     if (f.worktree === "D" || f.index === "D") return { letter: "D", cls: "d" };
@@ -28,12 +27,10 @@ interface FileTreeProps {
     width: number;
     onResize: (w: number) => void;
     active: boolean;
-    /** When the file tree should auto-reveal a path (e.g. tab switched). */
     revealPath?: string | null;
 }
 
 interface NewEntryRequest {
-    /** Parent directory the new entry will be created in. */
     parent: string;
     kind: "file" | "folder";
 }
@@ -41,18 +38,13 @@ interface NewEntryRequest {
 export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active, revealPath }: FileTreeProps) {
     const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
-    // Row the user clicked last — folder selections decide where "new file"
-    // / "new folder" lands. null = root cwd.
     const [selectedDir, setSelectedDir] = useState<string | null>(null);
-    // Inline-input render state for "+ new file" / "+ new folder".
     const [newRequest, setNewRequest] = useState<NewEntryRequest | null>(null);
     const [newName, setNewName] = useState("");
     const newInputRef = useRef<HTMLInputElement>(null);
-    // Rename-in-place state — { path: original abs path, name: current input }.
     const [renaming, setRenaming] = useState<string | null>(null);
     const [renameName, setRenameName] = useState("");
     const renameInputRef = useRef<HTMLInputElement>(null);
-    // Highlight folder row currently being drag-hovered.
     const [dragOver, setDragOver] = useState<string | null>(null);
 
     const expandedRef = useRef(expanded);
@@ -76,17 +68,11 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
             .catch(swallow("readDir"));
     }, []);
 
-    // Load root.
     useEffect(() => {
         if (!cwd || !active) return;
         void loadDir(cwd);
     }, [cwd, active, loadDir]);
 
-    // Live watcher: when the backend reports a filesystem change in this
-    // repo, re-fetch every open dir (root + every expanded). Cheap — a few
-    // readDir calls, indexed off the existing fs-watch we already started
-    // for git overview. Same recipe Zed uses: never trust a cached listing
-    // once the watcher fires.
     useEffect(() => {
         if (!cwd || !active) return;
         const unsubscribe = subscribe("fs-changed", (e) => {
@@ -97,7 +83,6 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         return unsubscribe;
     }, [cwd, active, loadDir]);
 
-    // Reveal the active file by expanding every ancestor.
     useEffect(() => {
         const path = revealPath ?? activePath;
         if (!active || !path || !cwd || !path.startsWith(`${cwd}/`)) return;
@@ -130,8 +115,6 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
             const el = renameInputRef.current;
             if (el) {
                 el.focus();
-                // Pre-select the basename (without extension) so a quick rename
-                // doesn't blow away the file's extension — VSCode/Finder behavior.
                 const dot = el.value.lastIndexOf(".");
                 if (dot > 0) el.setSelectionRange(0, dot);
                 else el.select();
@@ -158,14 +141,9 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         const dest = `${renaming.slice(0, lastSlash)}/${trimmed}`;
         try {
             await fsapi.rename(renaming, dest);
-            // Refresh the parent dir so the renamed entry shows up. fs-watcher
-            // will also re-fire shortly, but that lags 200ms (debounce).
             const parent = renaming.slice(0, lastSlash);
             await loadDir(parent);
             cancelRename();
-            // If a file was the active tab, the editor still holds the old path.
-            // The fs-changed event will trigger its live-reload effect; the user
-            // can re-open via the file tree.
         } catch (err) {
             reportError("rename")(err);
         }
@@ -182,10 +160,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         if (!open && !dirs[entry.path]) await loadDir(entry.path);
     };
 
-    // ---- new file / folder ----
-
     const startNew = (kind: "file" | "folder") => {
-        // Determine parent: selected dir, or parent dir of active file, or root.
         let parent = selectedDir;
         if (!parent && activePath && activePath.startsWith(`${cwd}/`)) {
             const last = activePath.lastIndexOf("/");
@@ -216,7 +191,6 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
             else await fsapi.createDir(target);
             await loadDir(newRequest.parent);
             cancelNew();
-            // If a file was created, open it in the editor.
             if (newRequest.kind === "file") {
                 onOpenFile({
                     name,
@@ -229,18 +203,9 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         }
     };
 
-    // ---- drag-drop into a folder ----
-
-    // Attach the App.tsx-routed drop handler to each folder row via the
-    // dropRegistry WeakMap. The global listener in App.tsx hit-tests
-    // elementFromPoint and walks up to a `.tree-row.is-folder` ancestor.
-    // Per-row refs come+go as the tree expands/collapses; registerFolderDrop
-    // returns an unregister fn, and WeakMap cleanup picks up the slack if a
-    // node is removed from the DOM without us being notified.
     const folderUnregRef = useRef<Map<HTMLElement, () => void>>(new Map());
     const attachFolderDrop = (el: HTMLButtonElement | null, dir: string) => {
         if (!el) return;
-        // Replace any prior registration on this exact node.
         folderUnregRef.current.get(el)?.();
         const unreg = registerFolderDrop(el, async (paths) => {
             try {
@@ -370,7 +335,6 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         window.addEventListener("pointerup", up);
     };
 
-    // Root-level drop target: drops outside any folder land in cwd.
     const rootScrollRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         const el = rootScrollRef.current;
@@ -386,8 +350,6 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     }, [cwd, active, loadDir]);
 
     const handleDragOver = (e: React.DragEvent) => {
-        // Prevent the webview's default navigate-to-file://. Tauri's drop
-        // event hands us absolute paths via the listener in App.tsx.
         e.preventDefault();
         const t = (e.target as HTMLElement | null)?.closest(".tree-row.is-folder") as HTMLElement | null;
         setDragOver(t?.dataset.folderPath ?? null);
@@ -489,11 +451,9 @@ function RenameRow({
     onCancel: () => void;
     inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
-    // Folders sit at `pad`; files at `pad + 13` (chevron space). Match either
-    // so the rename row lines up perfectly with the row it's replacing.
     const pad = 10 + depth * 13;
     return (
-        <div className="tree-row tree-new" style={{ paddingLeft: kind === "folder" ? pad : pad }}>
+        <div className="tree-row tree-new" style={{ paddingLeft: pad }}>
             {kind === "folder" ? (
                 <>
                     <span className="tree-chev" style={{ visibility: "hidden" }}>

@@ -22,10 +22,6 @@ function sshSubtitle(h: SshHost): string {
     return `${user}${target}${port}`;
 }
 
-// One picker, three modes. Driven by pickerMode:
-//   all      sessions + project roots + ssh hosts  (M-s)
-//   projects existing project sessions + project roots  (M-p)
-//   ssh      existing ssh sessions + ssh hosts  (M-S)
 export function SeshPicker() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
@@ -59,8 +55,6 @@ export function SeshPicker() {
             .sort((a, b) => b.length - a.length);
         for (const root of roots) {
             if (cwd === root) return fallback;
-            // Nested project session — show the folder itself, not the path
-            // under the root (the full path stays in the subtitle).
             if (cwd.startsWith(`${root}/`)) return basename(cwd);
         }
         return fallback;
@@ -85,8 +79,6 @@ export function SeshPicker() {
                   .map<Item>((p) => ({
                       kind: "dir",
                       path: p.path,
-                      // Show the folder itself, not its nested path under the
-                      // project root — the relative path stays in the subtitle.
                       name: basename(p.path),
                       sub: pretty(p.path),
                   }))
@@ -104,9 +96,6 @@ export function SeshPicker() {
                   }))
             : [];
 
-        // Score every group up front so the substring-vs-subsequence decision
-        // is global: if anything matches as a real substring, scattered
-        // subsequence-only matches are dropped across all three groups.
         const score = (it: Item) => fuzzyScore(query, `${it.name} ${it.sub}`);
         const scoreGroup = (arr: Item[]) => arr.map((it) => ({ it, s: score(it) })).filter((x) => x.s >= 0);
         const groups = [scoreGroup(sessionItems), scoreGroup(dirItems), scoreGroup(sshItems)];

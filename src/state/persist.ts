@@ -3,8 +3,6 @@ import { ensureSearchWindow, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import type { Agent, EditorPaneView, PersistedPrefs, PersistedSnapshot, Session, Window, WindowRole } from "./types";
 
-// Backfill role for windows persisted before WindowRole existed. Inferred
-// from name + structural cues so legacy snapshots open without state loss.
 function deriveRole(w: Window): WindowRole {
     if (w.role) return w.role;
     if (w.name === "files") return "files";
@@ -15,22 +13,9 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-// Boot/save round-trip. The wire format is described by PersistedSnapshot.
-// Versioned — bump VERSION when the shape changes; older blobs are ignored
-// and the user gets fresh defaults.
-
 const VERSION = 4;
 let lastSaved = "";
 
-// Single source of truth for "which store keys go to disk". Adding a new
-// persisted field is one edit here + the corresponding type in
-// `types/persisted.ts` + (if the format breaks) a VERSION bump above.
-//
-// Zustand uses structural sharing — when nothing in a slice changed, the
-// array/object identity is preserved — so reference equality is a
-// sufficient "did this slice change?" check. We short-circuit the
-// (expensive) JSON.stringify when every persisted slice is reference-
-// equal to what we last sent to disk.
 const PERSISTED_KEYS = [
     "sessions",
     "windows",
@@ -55,11 +40,8 @@ const PERSISTED_KEYS = [
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
 
-// Compile-time check that PERSISTED_KEYS covers exactly the fields we
-// pack into the snapshot. Each entry is `Pick<StoreState, K>`.
 type SliceShot = { [K in PersistedKey]: StoreState[K] };
 
-// `null` until the first save, which forces a stringify on boot.
 let lastSlices: SliceShot | null = null;
 
 function takeSlices(s: StoreState): SliceShot {
@@ -106,9 +88,6 @@ function snapshot(): string {
     const agentsBySession: Record<string, Agent[]> = {};
     for (const sess of sessions) {
         windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).map((id) => s.windows[id]).filter(Boolean);
-        // Live agents are runtime processes, not restart state. Persisting them
-        // relaunches every old CLI on app boot, which is expensive and can burn
-        // tokens unexpectedly. Bookmarks remain persisted separately.
         agentsBySession[sess.id] = [];
     }
     const snap: PersistedSnapshot = {
@@ -126,7 +105,6 @@ function snapshot(): string {
     return JSON.stringify(snap);
 }
 
-/** Hydrate the store from a raw JSON string (e.g. boot_init's return). */
 export function applyHydrate(raw: string): void {
     if (!raw) return;
     let data: PersistedSnapshot;
@@ -155,7 +133,6 @@ export function applyHydrate(raw: string): void {
     for (const sid of Object.keys(windowsBySession)) {
         agentsBySession[sid] = [];
     }
-    // Drop editor-view entries for panes that no longer exist.
     const validPaneIds = new Set<string>();
     for (const w of Object.values(windows)) {
         const walk = (n: Window["root"]): void => {
@@ -185,7 +162,6 @@ export function applyHydrate(raw: string): void {
         recent: data.recent ?? [],
         agentBookmarks: data.agentBookmarks ?? [],
         editorViews,
-        // Prefs — fall back to current defaults if a field is missing.
         projectRoots: data.prefs?.projectRoots ? normaliseProjectRoots(data.prefs.projectRoots) : cur.projectRoots,
         themeId: data.prefs?.themeId ?? cur.themeId,
         windowOpacity: data.prefs?.windowOpacity ?? cur.windowOpacity,
@@ -197,11 +173,6 @@ export function applyHydrate(raw: string): void {
         leftRailOpen: data.prefs?.leftRailOpen ?? cur.leftRailOpen,
         rightRailOpen: data.prefs?.rightRailOpen ?? cur.rightRailOpen,
         zenMode: data.prefs?.zenMode ?? cur.zenMode,
-        // Persisted rundeck slice. Older snapshots may have stored an
-        // `activeEnv` (legacy alias-based shape) — we just drop it and let
-        // the user re-pick a project from the live upstream list. No name
-        // table here; the only thing we do preserve is the user's prodEnvs
-        // safety setting if they customised it.
         rundeck: (() => {
             const raw = data.prefs?.rundeck as
                 | {
@@ -218,23 +189,16 @@ export function applyHydrate(raw: string): void {
             };
         })(),
     });
-    // Snapshots from before the search pane existed lack a search window
-    // for project sessions — add one in place so the user doesn't have to
-    // close + reopen every project to get it.
     ensureSearchWindow();
     lastSaved = snapshot();
     lastSlices = takeSlices(getState());
 }
 
-/** Debounced save on every store change. Returns an unsubscribe function. */
 export function subscribePersist(): () => void {
     let timer: number | undefined;
     return useStore.subscribe(() => {
         if (timer) window.clearTimeout(timer);
         timer = window.setTimeout(() => {
-            // Cheap ref-equality check across the persisted slices. View-only
-            // state changing (modals, hover, focus) hits this path and exits
-            // before we ever build the snapshot string.
             const slices = takeSlices(getState());
             if (lastSlices && slicesEqual(lastSlices, slices)) return;
             lastSlices = slices;

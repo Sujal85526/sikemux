@@ -10,7 +10,6 @@ import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import { yaml } from "@codemirror/lang-yaml";
 import { c, cpp, java } from "@codemirror/legacy-modes/mode/clike";
-import { diff as diffMode } from "@codemirror/legacy-modes/mode/diff";
 import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { lua } from "@codemirror/legacy-modes/mode/lua";
 import { nginx } from "@codemirror/legacy-modes/mode/nginx";
@@ -19,11 +18,8 @@ import { ruby } from "@codemirror/legacy-modes/mode/ruby";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { hcl, makefile } from "./langs";
-import { EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import type { Extension } from "@codemirror/state";
 
-// Picks CodeMirror language support from a file name. Filename-based languages
-// (Makefile, Dockerfile) are matched first, then by extension.
 export function languageFor(path: string): Extension[] {
     const file = path.split("/").pop()?.toLowerCase() ?? "";
     if (file === "makefile" || file === "gnumakefile" || file.endsWith(".mk")) return [StreamLanguage.define(makefile)];
@@ -99,69 +95,4 @@ export function languageFor(path: string): Extension[] {
     }
 }
 
-// Theme-driven extensions are pulled from the theme bus so the active theme
-// can be reconfigured at runtime. The bus owns the compartment and the live
-// set of EditorViews.
 export const auraExtensions: Extension = themeCompartmentExtension();
-
-// ---- diff viewer ----------------------------------------------------------
-
-const diffAdd = Decoration.line({ class: "cm-diff-add" });
-const diffDel = Decoration.line({ class: "cm-diff-del" });
-const diffHunk = Decoration.line({ class: "cm-diff-hunk" });
-const diffMeta = Decoration.line({ class: "cm-diff-meta" });
-
-// Tints whole lines by their diff role (added / removed / hunk / file header).
-function buildDiffDecorations(view: EditorView): DecorationSet {
-    const builder = new RangeSetBuilder<Decoration>();
-    const { doc } = view.state;
-    for (let i = 1; i <= doc.lines; i++) {
-        const line = doc.line(i);
-        const tx = line.text;
-        let deco: Decoration | null = null;
-        if (tx.startsWith("@@")) deco = diffHunk;
-        else if (
-            tx.startsWith("+++") ||
-            tx.startsWith("---") ||
-            tx.startsWith("diff ") ||
-            tx.startsWith("index ") ||
-            tx.startsWith("new file") ||
-            tx.startsWith("deleted file") ||
-            tx.startsWith("similarity ") ||
-            tx.startsWith("rename ")
-        )
-            deco = diffMeta;
-        else if (tx.startsWith("+")) deco = diffAdd;
-        else if (tx.startsWith("-")) deco = diffDel;
-        if (deco) builder.add(line.from, line.from, deco);
-    }
-    return builder.finish();
-}
-
-const diffLineDecorations = ViewPlugin.fromClass(
-    class {
-        decorations: DecorationSet;
-        constructor(view: EditorView) {
-            this.decorations = buildDiffDecorations(view);
-        }
-        update(u: ViewUpdate) {
-            if (u.docChanged) this.decorations = buildDiffDecorations(u.view);
-        }
-    },
-    { decorations: (v) => v.decorations },
-);
-
-// Read-only extensions for the git diff viewer: diff syntax + line tinting.
-// Theme also comes from the bus so diff views restyle when the user changes
-// theme just like normal editors.
-export const diffExtensions: Extension = [
-    StreamLanguage.define(diffMode),
-    themeCompartmentExtension(),
-    diffLineDecorations,
-    EditorView.editable.of(false),
-    EditorState.readOnly.of(true),
-    EditorView.theme({
-        ".cm-content": { fontSize: "11.5px" },
-        ".cm-scroller": { lineHeight: "1.5" },
-    }),
-];

@@ -1,6 +1,3 @@
-// Per-filetype glyphs from the bundled JetBrains Mono Nerd Font.
-// Colors follow the Material Icon Theme palette.
-
 interface GlyphInfo {
     char: string;
     color: string;

@@ -13,30 +13,16 @@ interface Props {
     active: boolean;
 }
 
-/** Job list for the currently-selected Rundeck project.
- *
- *  Layout is derived from the jobs themselves: when any job's group has
- *  a slash, we group cells by the first segment (env folder). Flat
- *  projects fall into a single `_ungrouped` bucket and render flat.
- *  No project-name table, no synthesis — exactly what the API returns. */
 export function RundeckMatrix({ paneId, active }: Props) {
     const project = useStore((s) => s.rundeck.activeProject);
     const envFolder = useStore((s) => s.rundeck.activeEnvFolder);
 
-    const specs = useMemo<RundeckEnvSpec[]>(
-        // We reuse the matrix endpoint with a single spec — the label is just
-        // a display tag, the real key is the project.
-        () => (project ? [{ label: project, project, only_succeeded: true }] : []),
-        [project],
-    );
+    const specs = useMemo<RundeckEnvSpec[]>(() => (project ? [{ label: project, project, only_succeeded: true }] : []), [project]);
 
     const res = useResourceEnabled(active && specs.length > 0, rndMatrixR, specs);
 
     const data = res.data;
     const env = data?.envs[0] ?? null;
-    // Apply the tree-driven env-folder filter BEFORE sorting/grouping so
-    // totals + group headers reflect the visible scope. Filter is a no-op
-    // for projects whose jobs aren't nested under env folders.
     const cells = useMemo(() => {
         const list = (env?.cells ?? []).filter((c) => {
             if (!envFolder) return true;
@@ -47,10 +33,6 @@ export function RundeckMatrix({ paneId, active }: Props) {
     }, [env, envFolder]);
     const loading = res.status === "loading" && !data;
 
-    // Group cells by env folder. When a folder filter is active we render
-    // flat (the folder header would be redundant). When no folder filter
-    // is set, projects whose jobs are flat collapse into one `_ungrouped`
-    // bucket — visually equivalent to a flat list, no special case needed.
     const groups = useMemo(() => {
         if (envFolder) return [{ env: null, cells }];
         const map = new Map<string, MatrixCell[]>();
@@ -60,11 +42,9 @@ export function RundeckMatrix({ paneId, active }: Props) {
             arr.push(c);
             map.set(folder, arr);
         }
-        // If every cell landed in `_ungrouped`, render flat (no header).
         if (map.size === 1 && map.has("_ungrouped")) {
             return [{ env: null, cells }];
         }
-        // Stable order: alphabetical, with `_ungrouped` last.
         return [...map.entries()]
             .sort(([a], [b]) => {
                 if (a === "_ungrouped") return 1;

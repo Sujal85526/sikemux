@@ -1,12 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "../state/bus";
 
-// AWS-aware invoke. AWS subprocess errors come back tagged with one of
-// these category strings (see src-tauri/src/error.rs); any of them means
-// the user's token / creds are no good and the TopBar chip + AWS pane
-// need to flip to "needs sign-in" state. We emit a bus event so App.tsx
-// can invalidate the cached identity → re-fetch → status flips to
-// expired → chip turns red → pane renders the auth modal.
 async function awsInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
     try {
         return await invoke<T>(cmd, args);
@@ -14,8 +8,6 @@ async function awsInvoke<T>(cmd: string, args: Record<string, unknown>): Promise
         const err = e as { category?: string; message?: string };
         const cat = err?.category ?? "";
         if (cat === "aws-token-expired" || cat === "aws-no-credentials" || cat === "aws-cli-missing") {
-            // Most aws_* commands take a `profile` arg; grab it so listeners
-            // know whose identity cache to drop.
             const profile = (args["profile"] as string) ?? "";
             emit({
                 type: "aws-auth-expired",
@@ -34,7 +26,6 @@ export interface AwsProfile {
     sso_region: string | null;
     sso_account_id: string | null;
     sso_role_name: string | null;
-    /** "sso" | "credentials" | "role" | "credential_process" */
     kind: string;
 }
 
@@ -53,8 +44,6 @@ export interface AwsLoginResult {
     stdout: string;
     stderr: string;
 }
-
-// ---- ECS -----------------------------------------------------------------
 
 export interface EcsCluster {
     name: string;
@@ -87,8 +76,6 @@ export interface EcsTask {
     started_at: string | null;
     last_status_change: string | null;
 }
-
-// ---- EC2/Lambda/SQS/CW/Billing/S3 ---------------------------------------
 
 export interface Ec2Instance {
     instance_id: string;
@@ -151,9 +138,6 @@ export interface S3Bucket {
 }
 
 export const awsApi = {
-    // Profile list + identity check don't go through the auth wrapper —
-    // they're how we *detect* auth state, looping them into the
-    // invalidation event would be self-referential.
     profiles: () => invoke<AwsProfile[]>("aws_profiles"),
     identity: (profile: string, force = false) => invoke<AwsIdentity>("aws_caller_identity", { profile, force }),
     ssoLogin: (profile: string) => invoke<AwsLoginResult>("aws_sso_login", { profile }),

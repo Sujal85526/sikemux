@@ -15,80 +15,38 @@ import { FileIcon } from "./FileIcon";
 import { IconSearch } from "./Icons";
 import { basename, dirname } from "../lib/paths";
 
-// Project-wide search rendered as the project's 4th window. Layout: a
-// flush glow palette + threaded match list on the left (virtualized), a
-// windowed CodeMirror preview on the right that tracks the selected hit.
-//
-// Performance characteristics:
-//   - Walker runs in parallel on the Rust side and STREAMS matched files
-//     back over a Tauri Channel. The component appends them as they arrive
-//     so the first results paint within tens of milliseconds even on big
-//     repos.
-//   - Every new search bumps a request id; late callbacks from cancelled
-//     searches drop on the floor.
-//   - The list of (file header + match rows) is virtualized — only the
-//     visible window mounts to the DOM.
-//   - Preview reads a windowed slice of the file (±N lines around the
-//     hit) instead of the whole file. One CodeMirror instance is reused
-//     across files via Compartment-based language reconfiguration; a tiny
-//     LRU caches recent windows so flipping between matches is instant.
-
-
-// 250ms is the sweet spot — visibly debounced but doesn't feel laggy for
-// the typical 10-50ms parallel-walker run.
 const DEBOUNCE_MS = 250;
-// Preview window: lines fetched around each hit for the syntax-highlighted
-// preview. Wider than what the user sees so they can scroll a bit either
-// direction without re-querying.
 const PREVIEW_BEFORE_LINES = 40;
 const PREVIEW_AFTER_LINES = 80;
-// LRU bound for cached preview windows. 4 is enough for "click around a
-// few hits in a few files" without holding megabytes of source.
 const PREVIEW_LRU_CAP = 4;
 
 type Status = "idle" | "searching" | "ok" | "error";
+type SearchBooleanOption = "caseSensitive" | "wholeWord" | "isRegex";
 
-// =====================================================================
-// Top-level pane
-// =====================================================================
+const SEARCH_OPTION_TOGGLES: { key: SearchBooleanOption; label: string; title: string }[] = [
+    { key: "caseSensitive", label: "Aa", title: "Match case" },
+    { key: "wholeWord", label: "ab", title: "Whole word" },
+    { key: "isRegex", label: ".*", title: "Regex" },
+];
 
-export function SearchPane({
-    sessionId,
-    cwd,
-    active,
-    visible,
-}: {
-    sessionId: string;
-    cwd: string;
-    active: boolean;
-    visible: boolean;
-}) {
-    // Use the per-pane session id (passed from Workspace) instead of the
-    // global activeSessionId. Workspace keeps inactive sessions mounted
-    // for state preservation, so each project's SearchPane stays alive —
-    // if they all read the GLOBAL active session, they'd share the same
-    // `view` and fire identical searches in parallel against their own
-    // cwds, cancelling each other on the Rust-side GENERATION counter.
+const SEARCH_SCOPE_FIELDS = [
+    { key: "include", label: "in", placeholder: "src/**/*.ts" },
+    { key: "exclude", label: "not", placeholder: "**/*.test.ts" },
+] as const;
+
+export function SearchPane({ sessionId, cwd, active, visible }: { sessionId: string; cwd: string; active: boolean; visible: boolean }) {
     const entry = useStore((s) => s.globalSearchBySession[sessionId]);
     const view = entry ?? DEFAULT_GLOBAL_SEARCH_VIEW;
 
     const findRef = useRef<HTMLInputElement>(null);
     const replaceRef = useRef<HTMLInputElement>(null);
 
-    // Streaming state: `files` grows as the Rust walker emits chunks;
-    // `summary` lands when the walk finishes. Both are reset on every new
-    // query. `requestIdRef` lets us drop chunks from cancelled requests.
     const [files, setFiles] = useState<SearchFile[]>([]);
     const [summary, setSummary] = useState<SearchResults | null>(null);
     const [status, setStatus] = useState<Status>("idle");
     const [error, setError] = useState<string | null>(null);
     const [replacing, setReplacing] = useState(false);
-    // Two-stage replace: first click runs dry_run → button reads "commit N";
-    // second click actually writes. Cleared whenever the query/replace text
-    // or options change.
     const [replacePreview, setReplacePreview] = useState<ReplaceResults | null>(null);
-    // fs-changed fired while we have results → mark stale so the user knows
-    // a re-run might be needed. Auto-clears on the next successful search.
     const [stale, setStale] = useState(false);
 
     const requestIdRef = useRef(0);
@@ -120,7 +78,6 @@ export function SearchPane({
         [cwd],
     );
 
-    // Focus the find input whenever the pane becomes active.
     useEffect(() => {
         if (active) {
             findRef.current?.focus();
@@ -128,7 +85,6 @@ export function SearchPane({
         }
     }, [active]);
 
-    // Cmd+Shift+F refocus signal (works even when already in the pane).
     useEffect(() => {
         if (!sessionId) return;
         return subscribe("search-focus", (e) => {
@@ -138,11 +94,6 @@ export function SearchPane({
         });
     }, [sessionId]);
 
-    // Debounced streaming search. Each invocation bumps requestIdRef; late
-    // chunks/responses from prior runs are filtered out by id check.
-    //
-    // Gated on `visible` so hidden mounted panes do not spend CPU walking
-    // repositories just because their query state is persisted.
     useEffect(() => {
         if (!cwd || !visible) {
             requestIdRef.current++;
@@ -170,8 +121,6 @@ export function SearchPane({
         };
     }, [cwd, visible, view.query, view.options, startSearch]);
 
-    // Auto-select the first match whenever the file list refreshes and the
-    // previous selection is no longer present.
     useEffect(() => {
         if (files.length === 0) return;
         const sel = view.selected;
@@ -185,17 +134,10 @@ export function SearchPane({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [files, sessionId]);
 
-    // Reset the dry-run preview whenever the user touches the parameters —
-    // the previewed counts only make sense for the exact (query, replace,
-    // options) combination they were computed against.
     useEffect(() => {
         setReplacePreview(null);
     }, [view.query, view.replace, view.options]);
 
-    // External file changes invalidate the preview cache (held inside
-    // Preview) and mark results as stale. We don't auto-rerun because the
-    // user might be in the middle of skimming results; a one-click refresh
-    // is more polite.
     useEffect(() => {
         if (!cwd || !visible) return;
         return subscribe("fs-changed", (e) => {
@@ -213,14 +155,11 @@ export function SearchPane({
         if (!cwd || !view.query.trim() || replacing) return;
         setReplacing(true);
         try {
-            // Stage 1: dry-run preview if we don't already have one for this
-            // exact (query, replace, options) combo.
             if (!replacePreview) {
                 const preview = await searchApi.replace(cwd, view.query, view.replace, view.options, true);
                 setReplacePreview(preview);
                 return;
             }
-            // Stage 2: actually commit.
             const r = await searchApi.replace(cwd, view.query, view.replace, view.options, false);
             const verb = r.match_count === 1 ? "match" : "matches";
             const fileWord = r.file_count === 1 ? "file" : "files";
@@ -228,9 +167,6 @@ export function SearchPane({
                 r.errors.length ? "info" : "success",
                 `replaced ${r.match_count} ${verb} in ${r.file_count} ${fileWord}` + (r.errors.length ? ` · ${r.errors.length} skipped` : ""),
             );
-            // Surgical splice: the files we just rewrote no longer match the
-            // original query, so drop them from local state. Saves a full
-            // re-walk for the common "replace then keep skimming" flow.
             const changed = new Set(r.files.map((f) => f.path));
             setFiles((prev) => prev.filter((f) => !changed.has(f.path)));
             setSummary((prev) =>
@@ -252,9 +188,6 @@ export function SearchPane({
         }
     }, [cwd, view.query, view.replace, view.options, replacing, replacePreview]);
 
-    // Synthesize a "live" SearchResults for downstream consumers that want a
-    // single summary object. The streaming files take precedence over the
-    // final summary's file list (which may lag during stream).
     const results: SearchResults | null = useMemo(() => {
         if (!summary && files.length === 0) return null;
         return {
@@ -303,10 +236,6 @@ export function SearchPane({
     );
 }
 
-// =====================================================================
-// Header — flush bar (no container), accordion replace row, VSCode-style
-// =====================================================================
-
 function Header({
     sessionId,
     view,
@@ -339,12 +268,7 @@ function Header({
         if (!replaceOpen) cmd.toggleGlobalSearchReplaceOpen(sessionId);
         window.setTimeout(() => replaceRef.current?.focus(), 0);
     };
-    // Show files-to-include / files-to-exclude inputs only when the user
-    // expands the "···" toggle — VSCode-style. We pre-open if there's
-    // already a value (so reopening the pane doesn't hide what they typed).
-    const [scopeOpen, setScopeOpen] = useState(
-        !!options.include || !!options.exclude,
-    );
+    const [scopeOpen, setScopeOpen] = useState(!!options.include || !!options.exclude);
 
     return (
         <div className="sp-head">
@@ -376,24 +300,15 @@ function Header({
                 />
                 {status === "searching" && <span className="sp-spinner" aria-hidden />}
                 <div className="sp-row-toggles">
-                    <Toggle
-                        label="Aa"
-                        title="Match case"
-                        active={options.caseSensitive}
-                        onClick={() => cmd.setGlobalSearchOption(sessionId, "caseSensitive", !options.caseSensitive)}
-                    />
-                    <Toggle
-                        label="ab"
-                        title="Whole word"
-                        active={options.wholeWord}
-                        onClick={() => cmd.setGlobalSearchOption(sessionId, "wholeWord", !options.wholeWord)}
-                    />
-                    <Toggle
-                        label=".*"
-                        title="Regex"
-                        active={options.isRegex}
-                        onClick={() => cmd.setGlobalSearchOption(sessionId, "isRegex", !options.isRegex)}
-                    />
+                    {SEARCH_OPTION_TOGGLES.map((t) => (
+                        <Toggle
+                            key={t.key}
+                            label={t.label}
+                            title={t.title}
+                            active={options[t.key]}
+                            onClick={() => cmd.setGlobalSearchOption(sessionId, t.key, !options[t.key])}
+                        />
+                    ))}
                 </div>
             </div>
 
@@ -422,22 +337,16 @@ function Header({
 
             {scopeOpen && (
                 <>
-                    <div className="sp-row scope">
-                        <FilterField
-                            label="in"
-                            placeholder="src/**/*.ts"
-                            value={options.include}
-                            onChange={(v) => cmd.setGlobalSearchOption(sessionId, "include", v)}
-                        />
-                    </div>
-                    <div className="sp-row scope">
-                        <FilterField
-                            label="not"
-                            placeholder="**/*.test.ts"
-                            value={options.exclude}
-                            onChange={(v) => cmd.setGlobalSearchOption(sessionId, "exclude", v)}
-                        />
-                    </div>
+                    {SEARCH_SCOPE_FIELDS.map((f) => (
+                        <div key={f.key} className="sp-row scope">
+                            <FilterField
+                                label={f.label}
+                                placeholder={f.placeholder}
+                                value={options[f.key]}
+                                onChange={(v) => cmd.setGlobalSearchOption(sessionId, f.key, v)}
+                            />
+                        </div>
+                    ))}
                 </>
             )}
 
@@ -517,16 +426,20 @@ function FilterField({ label, placeholder, value, onChange }: { label: string; p
     );
 }
 
-// =====================================================================
-// Threads — virtualized flat list of (file header + match rows)
-// =====================================================================
-
 type Row =
     | { kind: "header"; file: SearchFile; index: number; collapsed: boolean }
     | { kind: "msg"; file: SearchFile; hit: SearchHit; hitIndex: number; index: number };
 
 const HEADER_ROW_HEIGHT = 24;
 const MSG_ROW_HEIGHT = 20;
+
+function ThreadNotice({ className, children }: { className: string; children: React.ReactNode }) {
+    return (
+        <div className="sp-threads-wrap">
+            <div className={className}>{children}</div>
+        </div>
+    );
+}
 
 function Threads({
     sessionId,
@@ -551,8 +464,6 @@ function Threads({
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Flatten files+matches into a virtualizer-friendly row list. Collapsed
-    // files contribute only their header.
     const rows: Row[] = useMemo(() => {
         if (!results) return [];
         const out: Row[] = [];
@@ -561,15 +472,7 @@ function Threads({
             const isCollapsed = !!collapsed[file.path];
             out.push({ kind: "header", file, collapsed: isCollapsed, index: i++ });
             if (isCollapsed) continue;
-            for (let hi = 0; hi < file.matches.length; hi++) {
-                out.push({
-                    kind: "msg",
-                    file,
-                    hit: file.matches[hi],
-                    hitIndex: hi,
-                    index: i++,
-                });
-            }
+            for (let hi = 0; hi < file.matches.length; hi++) out.push({ kind: "msg", file, hit: file.matches[hi], hitIndex: hi, index: i++ });
         }
         return out;
     }, [results, collapsed]);
@@ -586,8 +489,6 @@ function Threads({
         },
     });
 
-    // Auto-scroll the selected match into view whenever selection changes
-    // and the row exists in the current flat list.
     useEffect(() => {
         if (!selected || rows.length === 0) return;
         const idx = rows.findIndex((r) => r.kind === "msg" && r.file.path === selected.path && r.hitIndex === selected.matchIndex);
@@ -595,44 +496,20 @@ function Threads({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selected]);
 
-    if (!cwd) {
-        return (
-            <div className="sp-threads-wrap">
-                <div className="sp-empty">open a project session</div>
-            </div>
-        );
-    }
+    if (!cwd) return <ThreadNotice className="sp-empty">open a project session</ThreadNotice>;
     if (status === "error") {
-        return (
-            <div className="sp-threads-wrap">
-                <div className="sp-err">{error?.includes("invalid") ? `invalid regex: ${error}` : (error ?? "search failed")}</div>
-            </div>
-        );
+        return <ThreadNotice className="sp-err">{error?.includes("invalid") ? `invalid regex: ${error}` : (error ?? "search failed")}</ThreadNotice>;
     }
     if (!query.trim()) {
         return (
-            <div className="sp-threads-wrap">
-                <div className="sp-empty">
-                    start typing to search
-                    <span className="sp-empty-sub">tab → replace · ⌘↵ replace all</span>
-                </div>
-            </div>
+            <ThreadNotice className="sp-empty">
+                start typing to search
+                <span className="sp-empty-sub">tab → replace · ⌘↵ replace all</span>
+            </ThreadNotice>
         );
     }
-    if (status === "searching" && rows.length === 0) {
-        return (
-            <div className="sp-threads-wrap">
-                <div className="sp-loading">searching…</div>
-            </div>
-        );
-    }
-    if (rows.length === 0) {
-        return (
-            <div className="sp-threads-wrap">
-                <div className="sp-empty">no matches</div>
-            </div>
-        );
-    }
+    if (status === "searching" && rows.length === 0) return <ThreadNotice className="sp-loading">searching…</ThreadNotice>;
+    if (rows.length === 0) return <ThreadNotice className="sp-empty">no matches</ThreadNotice>;
 
     const items = virtualizer.getVirtualItems();
     return (
@@ -670,8 +547,6 @@ function Threads({
     );
 }
 
-// File-header row (accordion toggle). Memoized so re-renders triggered
-// by selection changes downstream don't repaint every header.
 const FileHeader = memo(function FileHeader({
     style,
     sessionId,
@@ -702,9 +577,6 @@ const FileHeader = memo(function FileHeader({
     );
 });
 
-// Single match row. Memo so unrelated selection changes don't re-render
-// every visible message — the virtualizer mounts hundreds of these at
-// peak scroll velocity.
 const MessageRow = memo(function MessageRow({
     style,
     sessionId,
@@ -729,12 +601,7 @@ const MessageRow = memo(function MessageRow({
             type="button"
             className={`sp-msg${isSelected ? " sel" : ""}`}
             style={style}
-            onClick={() =>
-                cmd.setGlobalSearchSelected(sessionId, {
-                    path: file.path,
-                    matchIndex: hitIndex,
-                })
-            }
+            onClick={() => cmd.setGlobalSearchSelected(sessionId, { path: file.path, matchIndex: hitIndex })}
             onDoubleClick={() => cmd.requestOpenFile(`${repo}/${file.path}`, hit.line - 1, hit.ranges[0]?.start ?? 0)}
             title={replace ? `${hit.text}  →  (with replace)` : hit.text}>
             <span className="sp-msg-ln">{hit.line}</span>
@@ -745,9 +612,6 @@ const MessageRow = memo(function MessageRow({
     );
 });
 
-/** Render the matched line with the matched ranges marked, and (if a
- *  replacement string is present) a green inline indicator showing the
- *  new value next to the first match span. */
 const HighlightedLine = memo(function HighlightedLine({ hit, replace }: { hit: SearchHit; replace: string }) {
     const ranges = hit.ranges;
     if (ranges.length === 0) return <>{hit.text}</>;
@@ -770,12 +634,7 @@ const HighlightedLine = memo(function HighlightedLine({ hit, replace }: { hit: S
     return <>{parts}</>;
 });
 
-// =====================================================================
-// Preview pane — single CodeMirror, windowed reads, Compartment language
-// =====================================================================
-
 const setSelectedLineEffect = StateEffect.define<{
-    /** Line number INSIDE THE WINDOW (1-based). */
     line: number;
     ranges: { start: number; end: number }[];
 }>();
@@ -842,6 +701,14 @@ function previewKeymap(onOpenRef: React.RefObject<() => void>) {
     ]);
 }
 
+function PreviewNotice({ className, children }: { className: string; children: React.ReactNode }) {
+    return (
+        <div className="sp-preview">
+            <div className={className}>{children}</div>
+        </div>
+    );
+}
+
 function PreviewArea({
     repo,
     query,
@@ -857,34 +724,11 @@ function PreviewArea({
     status: Status;
     selected: typeof DEFAULT_GLOBAL_SEARCH_VIEW.selected;
 }) {
-    if (!repo) {
-        return (
-            <div className="sp-preview">
-                <div className="sp-preview-empty">no project open</div>
-            </div>
-        );
-    }
-    if (!query.trim()) {
-        return (
-            <div className="sp-preview">
-                <div className="sp-preview-empty">preview will appear here</div>
-            </div>
-        );
-    }
-    if (status === "searching" && (!results || results.files.length === 0)) {
-        return (
-            <div className="sp-preview">
-                <div className="sp-preview-loading">searching…</div>
-            </div>
-        );
-    }
-    if (!results || results.files.length === 0) {
-        return (
-            <div className="sp-preview">
-                <div className="sp-preview-empty">nothing to preview</div>
-            </div>
-        );
-    }
+    if (!repo) return <PreviewNotice className="sp-preview-empty">no project open</PreviewNotice>;
+    if (!query.trim()) return <PreviewNotice className="sp-preview-empty">preview will appear here</PreviewNotice>;
+    if (status === "searching" && (!results || results.files.length === 0))
+        return <PreviewNotice className="sp-preview-loading">searching…</PreviewNotice>;
+    if (!results || results.files.length === 0) return <PreviewNotice className="sp-preview-empty">nothing to preview</PreviewNotice>;
     return <Preview repo={repo} results={results} selected={selected} replace={replace} />;
 }
 
@@ -908,9 +752,6 @@ function Preview({
     const viewRef = useRef<EditorView | null>(null);
     const languageCompRef = useRef<Compartment>(new Compartment());
     const lineNumberCompRef = useRef<Compartment>(new Compartment());
-    // LRU keyed by `path|line`. We re-fetch when the hit moves between
-    // windows; the window is wide enough that flipping between nearby hits
-    // hits the cache most of the time.
     const cacheRef = useRef<Map<string, WindowEntry>>(new Map());
     const [active, setActive] = useState<{
         path: string;
@@ -931,9 +772,6 @@ function Preview({
         return { file: first, hit: first.matches[0] };
     }, [results, selected]);
 
-    // Open-in-editor callback updated through a ref so the CodeMirror
-    // extensions (which are built once per file) can always call the latest
-    // version without us tearing down the editor.
     useEffect(() => {
         onOpenRef.current = () => {
             if (!resolved) return;
@@ -942,9 +780,6 @@ function Preview({
         };
     }, [repo, resolved]);
 
-    // Fetch (or hit cache for) the file window whenever the selected hit
-    // moves. We key by path so within-file hops reuse the cached window
-    // when the new hit lands inside its bounds.
     useEffect(() => {
         if (!resolved) return;
         const wantedPath = `${repo}/${resolved.file.path}`;
@@ -980,7 +815,6 @@ function Preview({
         };
     }, [repo, resolved]);
 
-    // Mount the EditorView once. All file/window swaps go through dispatch.
     useEffect(() => {
         if (!hostRef.current) return;
         const exts = [
@@ -1036,9 +870,6 @@ function Preview({
         };
     }, []);
 
-    // When the active window changes, swap doc + reconfigure language +
-    // reconfigure line numbers (so the gutter shows real file line numbers,
-    // not window-relative ones). All in one transaction.
     useEffect(() => {
         const view = viewRef.current;
         if (!view || !active || !resolved) return;
@@ -1064,8 +895,6 @@ function Preview({
                 }),
             ],
         });
-        // Scroll the hit into view as a second dispatch so the doc swap above
-        // settles its line offsets first.
         requestAnimationFrame(() => {
             const v = viewRef.current;
             if (!v) return;
@@ -1101,10 +930,6 @@ function Preview({
                     ↗
                 </span>
             </button>
-            {/* The host div mounts unconditionally so the EditorView's mount
-          effect can attach on first render — gating it behind `active`
-          deferred the ref past the one-shot mount effect and the editor
-          was never created. Loading/err read as overlays on top. */}
             <div className="sp-preview-body">
                 <div className="sp-preview-host" ref={hostRef} />
                 {err && (
@@ -1139,10 +964,6 @@ function putLru(m: Map<string, WindowEntry>, key: string, v: WindowEntry): void 
         m.delete(first);
     }
 }
-
-// =====================================================================
-// Footer — keyboard hints
-// =====================================================================
 
 function Footer() {
     return (

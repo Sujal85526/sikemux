@@ -1,6 +1,5 @@
 import type { AgentType } from "../state/types";
 
-// Crisp inline SVG icons — stroke-based, currentColor, 16px grid.
 interface IconProps {
     size?: number;
     className?: string;
@@ -34,10 +33,15 @@ function Svg({
     );
 }
 
-// Wordmark — two play triangles flanking a symmetric ribbon. Source design
-// is 420×360; we centre it inside a 420×420 square viewBox so it scales
-// cleanly without distortion at any size. Fill is currentColor so it
-// inherits the TopBar text color.
+const makeSvgIcon = (children: React.ReactNode, opts?: { fill?: string; viewBox?: string }) =>
+    function Icon({ size, className }: IconProps) {
+        return (
+            <Svg size={size} className={className} {...opts}>
+                {children}
+            </Svg>
+        );
+    };
+
 export function Logo({ size = 16, className }: IconProps) {
     return (
         <svg width={size} height={size} viewBox="0 -30 420 420" fill="currentColor" className={className} aria-hidden="true">
@@ -64,144 +68,59 @@ export function Logo({ size = 16, className }: IconProps) {
     );
 }
 
-export function IconPlus({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M8 3v10M3 8h10" />
-        </Svg>
-    );
-}
+export const IconPlus = makeSvgIcon(<path d="M8 3v10M3 8h10" />);
+export const IconRefresh = makeSvgIcon(
+    <>
+        <path d="M3 8a5 5 0 0 1 8.7-3.4M13 8a5 5 0 0 1-8.7 3.4" />
+        <path d="M11.7 2.6v2H9.7M4.3 13.4v-2h2" />
+    </>,
+);
+export const IconShield = makeSvgIcon(<path d="M8 1.5 2.6 3.4v4.2c0 3 2.2 5.5 5.4 6.9 3.2-1.4 5.4-3.9 5.4-6.9V3.4L8 1.5Z" />);
+export const IconShieldBolt = makeSvgIcon(
+    <>
+        <path d="M8 1.5 2.6 3.4v4.2c0 3 2.2 5.5 5.4 6.9 3.2-1.4 5.4-3.9 5.4-6.9V3.4L8 1.5Z" />
+        <path d="M8.6 5.4 6.1 8.4h2L7.4 11l2.6-3.2H8L8.6 5.4Z" fill="currentColor" stroke="none" />
+    </>,
+);
+export const IconSearch = makeSvgIcon(
+    <>
+        <circle cx="7" cy="7" r="4.4" />
+        <path d="M10.4 10.4 14 14" />
+    </>,
+);
+export const IconEditor = makeSvgIcon(<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3M9.3 3.4 6.7 12.6" />);
+export const IconRun = makeSvgIcon(<path d="M4.7 3.4 12.4 8l-7.7 4.6z" stroke="none" />, { fill: "currentColor" });
+export const IconGit = makeSvgIcon(
+    <>
+        <circle cx="4.6" cy="3.6" r="1.7" />
+        <circle cx="4.6" cy="12.4" r="1.7" />
+        <circle cx="11.4" cy="3.6" r="1.7" />
+        <path d="M4.6 5.3v5.4M4.6 6.6c0 3 6.8 1.2 6.8-1.3" />
+    </>,
+);
+export const IconUser = makeSvgIcon(
+    <>
+        <circle cx="8" cy="5.2" r="2.5" />
+        <path d="M3.6 13c0-2.5 2-4 4.4-4s4.4 1.5 4.4 4" />
+    </>,
+);
+export const IconClock = makeSvgIcon(
+    <>
+        <circle cx="8" cy="8" r="5.3" />
+        <path d="M8 4.9V8l2.3 1.5" />
+    </>,
+);
+export const IconTimer = makeSvgIcon(
+    <>
+        <circle cx="8" cy="9" r="4.5" />
+        <path d="M8 9V6.5M6.6 2.5h2.8M11.8 5.2l1-1" />
+    </>,
+);
+export const IconAgent = makeSvgIcon(<path d="M8 1.8c.5 3.3 2.9 5.7 6.2 6.2-3.3.5-5.7 2.9-6.2 6.2-.5-3.3-2.9-5.7-6.2-6.2C5.1 7.5 7.5 5.1 8 1.8Z" />);
+export const IconWindow = makeSvgIcon(<rect x="2.2" y="2.8" width="11.6" height="10.4" rx="0" />);
+export const IconCommand = makeSvgIcon(<path d="M3 4.6 6 8l-3 3.4M7.6 11.4H13" />);
+export const IconFolder = makeSvgIcon(<path d="M2 4.4h4l1.6 2H14v7.2H2z" />);
 
-export function IconRefresh({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M3 8a5 5 0 0 1 8.7-3.4M13 8a5 5 0 0 1-8.7 3.4" />
-            <path d="M11.7 2.6v2H9.7M4.3 13.4v-2h2" />
-        </Svg>
-    );
-}
-
-// Shield — closed/intact form. Used as the "permissions on" indicator
-// in the agent tab toggle.
-export function IconShield({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M8 1.5 2.6 3.4v4.2c0 3 2.2 5.5 5.4 6.9 3.2-1.4 5.4-3.9 5.4-6.9V3.4L8 1.5Z" />
-        </Svg>
-    );
-}
-
-// Shield with a bolt — "bypass / yolo" indicator. Same outline so the
-// toggle reads as the same affordance changing state, just with the
-// lightning slashed through it for danger.
-export function IconShieldBolt({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M8 1.5 2.6 3.4v4.2c0 3 2.2 5.5 5.4 6.9 3.2-1.4 5.4-3.9 5.4-6.9V3.4L8 1.5Z" />
-            <path d="M8.6 5.4 6.1 8.4h2L7.4 11l2.6-3.2H8L8.6 5.4Z" fill="currentColor" stroke="none" />
-        </Svg>
-    );
-}
-
-export function IconSearch({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <circle cx="7" cy="7" r="4.4" />
-            <path d="M10.4 10.4 14 14" />
-        </Svg>
-    );
-}
-
-export function IconEditor({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3M9.3 3.4 6.7 12.6" />
-        </Svg>
-    );
-}
-
-export function IconRun({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className} fill="currentColor">
-            <path d="M4.7 3.4 12.4 8l-7.7 4.6z" stroke="none" />
-        </Svg>
-    );
-}
-
-export function IconGit({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <circle cx="4.6" cy="3.6" r="1.7" />
-            <circle cx="4.6" cy="12.4" r="1.7" />
-            <circle cx="11.4" cy="3.6" r="1.7" />
-            <path d="M4.6 5.3v5.4M4.6 6.6c0 3 6.8 1.2 6.8-1.3" />
-        </Svg>
-    );
-}
-
-export function IconUser({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <circle cx="8" cy="5.2" r="2.5" />
-            <path d="M3.6 13c0-2.5 2-4 4.4-4s4.4 1.5 4.4 4" />
-        </Svg>
-    );
-}
-
-export function IconClock({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <circle cx="8" cy="8" r="5.3" />
-            <path d="M8 4.9V8l2.3 1.5" />
-        </Svg>
-    );
-}
-
-export function IconTimer({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <circle cx="8" cy="9" r="4.5" />
-            <path d="M8 9V6.5M6.6 2.5h2.8M11.8 5.2l1-1" />
-        </Svg>
-    );
-}
-
-export function IconAgent({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M8 1.8c.5 3.3 2.9 5.7 6.2 6.2-3.3.5-5.7 2.9-6.2 6.2-.5-3.3-2.9-5.7-6.2-6.2C5.1 7.5 7.5 5.1 8 1.8Z" />
-        </Svg>
-    );
-}
-
-export function IconWindow({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <rect x="2.2" y="2.8" width="11.6" height="10.4" rx="0" />
-        </Svg>
-    );
-}
-
-export function IconCommand({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M3 4.6 6 8l-3 3.4M7.6 11.4H13" />
-        </Svg>
-    );
-}
-
-export function IconFolder({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M2 4.4h4l1.6 2H14v7.2H2z" />
-        </Svg>
-    );
-}
-
-// AWS brand mark — renders the bundled Nerd Font glyph (Devicons "amazon
-// web services", U+E7AD) so the actual wordmark shows up instead of a
-// generic stroke icon. Different render path from the other SVG icons but
-// the only way to ship the real brand logo at icon scale.
 export function IconAws({ size = 16, className }: IconProps) {
     return (
         <span
@@ -222,74 +141,28 @@ export function IconAws({ size = 16, className }: IconProps) {
     );
 }
 
-// Focus / zen mode — four corner brackets framing the center, evoking a
-// "collapse chrome, focus the stage" intent. Toggles the rails off/on.
-export function IconFocus({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M2 5.5V2.5h3M14 5.5V2.5h-3M2 10.5v3h3M14 10.5v3h-3" />
-        </Svg>
-    );
-}
-
-export function IconChevron({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M6 4l4 4-4 4" />
-        </Svg>
-    );
-}
-
-export function IconPanelLeft({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <rect x="1.8" y="2.6" width="12.4" height="10.8" rx="0" />
-            <path d="M5.8 2.6v10.8" />
-        </Svg>
-    );
-}
-
-export function IconPanelRight({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <rect x="1.8" y="2.6" width="12.4" height="10.8" rx="0" />
-            <path d="M10.2 2.6v10.8" />
-        </Svg>
-    );
-}
-
-export function IconZoom({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M2.6 6.2V2.6h3.6M13.4 9.8v3.6H9.8M9.8 2.6h3.6v3.6M6.2 13.4H2.6V9.8" />
-        </Svg>
-    );
-}
-
-export function IconBolt({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className} fill="currentColor">
-            <path d="M9 1.5 3.6 9H7.3l-.8 5.5L12.4 6.9H8.5z" stroke="none" />
-        </Svg>
-    );
-}
-
-export function IconFile({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M4 1.9h5l3.1 3.1V14H4z" />
-            <path d="M8.8 1.9v3.3h3.3" />
-        </Svg>
-    );
-}
-
-export function IconClose({ size, className }: IconProps) {
-    return (
-        <Svg size={size} className={className}>
-            <path d="M4 4l8 8M12 4l-8 8" />
-        </Svg>
-    );
-}
+export const IconFocus = makeSvgIcon(<path d="M2 5.5V2.5h3M14 5.5V2.5h-3M2 10.5v3h3M14 10.5v3h-3" />);
+export const IconChevron = makeSvgIcon(<path d="M6 4l4 4-4 4" />);
+export const IconPanelLeft = makeSvgIcon(
+    <>
+        <rect x="1.8" y="2.6" width="12.4" height="10.8" rx="0" />
+        <path d="M5.8 2.6v10.8" />
+    </>,
+);
+export const IconPanelRight = makeSvgIcon(
+    <>
+        <rect x="1.8" y="2.6" width="12.4" height="10.8" rx="0" />
+        <path d="M10.2 2.6v10.8" />
+    </>,
+);
+export const IconZoom = makeSvgIcon(<path d="M2.6 6.2V2.6h3.6M13.4 9.8v3.6H9.8M9.8 2.6h3.6v3.6M6.2 13.4H2.6V9.8" />);
+export const IconFile = makeSvgIcon(
+    <>
+        <path d="M4 1.9h5l3.1 3.1V14H4z" />
+        <path d="M8.8 1.9v3.3h3.3" />
+    </>,
+);
+export const IconClose = makeSvgIcon(<path d="M4 4l8 8M12 4l-8 8" />);
 
 export function IconPin({ size, className, filled }: IconProps & { filled?: boolean }) {
     return (
@@ -299,7 +172,6 @@ export function IconPin({ size, className, filled }: IconProps & { filled?: bool
     );
 }
 
-// Brand marks — Claude (Simple Icons) and OpenAI/Codex (Bootstrap Icons).
 export function IconClaude({ size, className }: IconProps) {
     return (
         <Svg size={size} className={className} viewBox="-4 -4 32 32" fill="currentColor">
@@ -343,7 +215,6 @@ export function IconOpenCode({ size, className }: IconProps) {
     );
 }
 
-// Hermes — the Nous Research mark.
 export function IconHermes({ size, className }: IconProps) {
     return (
         <Svg size={size} className={className} viewBox="-4 -4 32 32" fill="currentColor">
@@ -367,9 +238,6 @@ export function AgentIcon({ type, size, className }: { type: AgentType; size?: n
     return <IconClaude size={size} className={className} />;
 }
 
-// Picks the glyph for a window by its structural role. The "agent" case
-// has no real Window — the rail synthesises that row from the session's
-// agent list — so it's a special-case string sibling rather than a role.
 import type { WindowRole } from "../state/types";
 export function WindowIcon({ role, size }: { role: WindowRole | "agent"; size?: number }) {
     if (role === "files") return <IconEditor size={size} />;
@@ -382,21 +250,15 @@ export function WindowIcon({ role, size }: { role: WindowRole | "agent"; size?: 
     return <IconWindow size={size} />;
 }
 
-// Horizontal battery glyph. Outline in currentColor, inner fill scaled to
-// `percent` (0..100). Charging adds a small bolt inside.
 export function IconBattery({ size = 14, percent, charging, className }: IconProps & { percent: number; charging?: boolean }) {
-    // Geometry on a 24×16 viewBox.
     const padding = 2.2;
     const inner = 24 - 4 - 2 - padding * 2; // body width minus borders + cap + pads
     const fillW = Math.max(0, Math.min(inner, (inner * percent) / 100));
     const fillX = 2 + padding;
     return (
         <svg width={size * (24 / 16)} height={size} viewBox="0 0 24 16" fill="none" className={className} aria-hidden="true">
-            {/* body */}
             <rect x="1" y="2.5" width="19" height="11" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-            {/* cap */}
             <rect x="20.6" y="5.5" width="2" height="5" rx="0.6" fill="currentColor" />
-            {/* fill */}
             <rect x={fillX} y={2.5 + padding} width={fillW} height={11 - padding * 2} rx="0.4" fill="currentColor" />
             {charging && <path d="M11 5 L8 9 H10.5 L9.6 12 L13 7.6 H10.6 L11 5 Z" fill="var(--void, #0c0b10)" />}
         </svg>
@@ -404,8 +266,6 @@ export function IconBattery({ size = 14, percent, charging, className }: IconPro
 }
 
 export function IconRundeck({ size = 14, className }: IconProps) {
-    // Official Rundeck mark — keep the brand red so the glyph reads as Rundeck
-    // at sidebar / chip size (like IconAws keeps its native form).
     return (
         <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -422,7 +282,6 @@ export function IconRundeck({ size = 14, className }: IconProps) {
     );
 }
 
-// ── git toolbar / action icons — lucide-style on a 24-grid ──
 function Svg24({ size = 14, children }: { size?: number; children: React.ReactNode }) {
     return (
         <svg
@@ -440,7 +299,6 @@ function Svg24({ size = 14, children }: { size?: number; children: React.ReactNo
     );
 }
 
-// arrow up to a line — push
 export function IconPush({ size = 14 }: { size?: number }) {
     return (
         <Svg24 size={size}>
@@ -451,7 +309,6 @@ export function IconPush({ size = 14 }: { size?: number }) {
     );
 }
 
-// arrow down to a line — pull
 export function IconPull({ size = 14 }: { size?: number }) {
     return (
         <Svg24 size={size}>
@@ -462,7 +319,6 @@ export function IconPull({ size = 14 }: { size?: number }) {
     );
 }
 
-// circular arrows — fetch
 export function IconFetch({ size = 14 }: { size?: number }) {
     return (
         <Svg24 size={size}>
@@ -472,7 +328,6 @@ export function IconFetch({ size = 14 }: { size?: number }) {
     );
 }
 
-// git pull-request glyph — two nodes + branch arm
 export function IconPullRequest({ size = 14 }: { size?: number }) {
     return (
         <Svg24 size={size}>
@@ -485,7 +340,6 @@ export function IconPullRequest({ size = 14 }: { size?: number }) {
     );
 }
 
-// git commit — node on a line
 export function IconCommit({ size = 14 }: { size?: number }) {
     return (
         <Svg24 size={size}>
@@ -495,7 +349,6 @@ export function IconCommit({ size = 14 }: { size?: number }) {
     );
 }
 
-// four-point sparkle — AI (filled)
 export function IconSparkle({ size = 16 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

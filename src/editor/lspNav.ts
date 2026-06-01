@@ -4,10 +4,6 @@ import { languageFromPath, lsp, uriToPath } from "../api/lsp";
 import { openLspPeek } from "./lspPeek";
 import { swallow } from "../state/toast";
 
-// Per-file context (project, path, navigation callback) needed by the
-// Cmd-click handler. Held in a module ref so we don't have to reconfigure
-// the CM state on every file switch.
-
 export interface LspContext {
     project: string;
     path: string;
@@ -22,9 +18,6 @@ export function setLspContext(view: EditorView | null, ctx: LspContext | null) {
     else contexts.delete(view);
 }
 
-// Cmd-click (Ctrl on Linux/Win) → definition. Cmd-Shift-click → references.
-// Cmd-Alt-click → implementations. Single-result definitions/implementations
-// jump immediately; multi-result and all references open a popup picker.
 export function lspNav(): Extension {
     return EditorView.domEventHandlers({
         mousedown(event, view) {
@@ -51,13 +44,11 @@ export function lspNav(): Extension {
             void fn(ctx.project, lang, ctx.path, line.number - 1, character)
                 .then((locs) => {
                     if (locs.length === 0) return;
-                    // For definition / implementation with one hit, jump directly.
                     if (kind !== "references" && locs.length === 1) {
                         const t = locs[0];
                         ctx.navigate(uriToPath(t.uri), t.range.start.line, t.range.start.character);
                         return;
                     }
-                    // Multi-result or references → inline peek panel below the click.
                     openLspPeek(view, {
                         atLine: line.number - 1,
                         title,

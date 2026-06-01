@@ -4,18 +4,11 @@ import { awsApi } from "../../api/aws";
 import { reportError } from "../../state/toast";
 import { highlightLog } from "./logHighlight";
 
-// Live CloudWatch log tail for either:
-//   - a whole log group (service-level — all tasks mixed), or
-//   - a specific stream within a group (single task)
-// `aws logs tail <group> [--log-stream-names <stream>] --follow` streams
-// stdout indefinitely; we pipe each line through a Tauri Channel.
-
 const MAX_LINES = 5000;
 
 interface Props {
     profile: string;
     logGroup: string;
-    /** Omit to tail the whole group (recommended for service-level). */
     logStream?: string | null;
     active: boolean;
 }
@@ -76,10 +69,6 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
 
     useEffect(() => {
         if (!pinned) return;
-        // Don't auto-scroll while the user has an active selection inside our
-        // log body — the scroll-to-bottom would collapse their selection on
-        // every new line. They lose their copy intent the moment any line
-        // arrives. Pause until the selection is gone.
         const sel = window.getSelection();
         if (sel && sel.toString() && containerRef.current?.contains(sel.anchorNode)) {
             return;

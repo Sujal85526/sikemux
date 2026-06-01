@@ -5,10 +5,6 @@ import { basename } from "../lib/paths";
 import { requestOpenFile } from "../state/commands";
 import { swallow } from "../state/toast";
 
-// VSCode/Zed-style inline peek panel: a CM block widget anchored under the
-// clicked line, listing references / implementations / definitions with a
-// preview of the target line text. Click a row → navigate + close.
-
 export interface PeekItem {
     uri: string;
     line: number;
@@ -58,7 +54,6 @@ class PeekWidget extends WidgetType {
         list.className = "cm-peek-list";
         wrap.appendChild(list);
 
-        // Group items by file so each file has one header.
         const byPath = new Map<string, PeekItem[]>();
         for (const it of this.state.items) {
             const p = uriToPath(it.uri);
@@ -106,7 +101,6 @@ class PeekWidget extends WidgetType {
 
             list.appendChild(group);
 
-            // Best-effort preview: read the file once, fill each row's line text.
             void fsapi
                 .readFile(path)
                 .then((content) => {
@@ -149,7 +143,6 @@ const peekField = StateField.define<PeekState | null>({
         }),
 });
 
-// Esc closes the peek if it's open.
 const escHandler = EditorView.domEventHandlers({
     keydown(e, view) {
         if (e.key === "Escape" && view.state.field(peekField, false)) {

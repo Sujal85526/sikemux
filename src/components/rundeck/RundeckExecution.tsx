@@ -44,14 +44,6 @@ export function RundeckExecution({ paneId, level, active }: Props) {
 
     const logRef = useRef<HTMLDivElement>(null);
 
-    // ---- subscribe to watcher + log tail on mount; clean up on unmount ----
-    //
-    // The watcher polls every 1.5s; running multiple execution panes burns
-    // ~6 req/s per visible exec, even when the user has tabbed away. We
-    // pause both subscriptions whenever the document is hidden and restart
-    // them on visibility return — the next tick re-fetches the latest
-    // execution+state so the UI catches up to whatever happened while
-    // hidden.
     useEffect(() => {
         if (!active) return;
         let watchId: number | undefined;
@@ -75,11 +67,6 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                 })
                 .catch((e) => setWatchErr(String(e)));
 
-            // Pass null backlog → fetch from offset 0. For RUNNING executions
-            // that means we get everything since start (typically KB); for OLD
-            // completed runs that's what makes step 1 / step 2 log entries
-            // visible (they happened long before the last 200 lines a tail-only
-            // fetch would have given us).
             rundeckApi
                 .logsStart(level.executionId, null, (tick) => {
                     if (!alive) return;
@@ -119,7 +106,6 @@ export function RundeckExecution({ paneId, level, active }: Props) {
         };
     }, [level.executionId, active]);
 
-    // ---- auto-scroll log when followTail is on ----
     useEffect(() => {
         if (!followTail) return;
         const el = logRef.current;
@@ -148,9 +134,6 @@ export function RundeckExecution({ paneId, level, active }: Props) {
         }
     };
 
-    // "Run again" re-deploys this execution's branch on the same job. Needs
-    // the env + jobId the execution was pushed with; older nav entries that
-    // lack them (or runs with no BRANCH option) can't be replayed.
     const replayBranch = execution?.job?.options?.BRANCH ?? "";
     const canRunAgain = !!level.jobId && !!level.env && !!replayBranch;
     const runAgain = () => {
@@ -268,8 +251,6 @@ function stepFilterKey(step: RundeckStep, idx: number): string {
 }
 
 function StepRow({ idx, step, selected, onClick }: { idx: number; step: RundeckStep; selected: boolean; onClick: () => void }) {
-    // Rundeck's /state returns these flat (no stepState wrapper) — see
-    // executions.rs for the API shape note.
     const stateName = step.executionState ?? "NOT_STARTED";
     const ui = STEP_STATE[stateName] ?? { label: "?", cls: "pending" as const };
     const dur = duration(step.startTime, step.endTime);

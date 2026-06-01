@@ -55,10 +55,6 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
     const settings = useStore((s) => s.rundeck);
     const isProd = settings.prodEnvs.includes(level.env);
 
-    // Source project cwd → repo path used by the plan endpoint for local
-    // inspection. Empty string → "no repo" semantics. Deploy views opened
-    // from a project session carry this explicitly because the active session
-    // becomes the Rundeck session after navigation.
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const repoPath = level.repoPath ?? session?.cwd ?? "";
 
@@ -92,8 +88,6 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
                 await git.push(repoPath);
             }
             const res = await rundeckApi.run(level.project, level.service, branchValue);
-            // Replace deploy view with the live execution view — single forward
-            // navigation, no popups.
             cmd.rundeckReplace(paneId, {
                 kind: "execution",
                 executionId: res.id,

@@ -39,8 +39,6 @@ const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => Reac
     ),
 };
 
-// The center stage. Every window and agent of every session stays mounted
-// (visibility-toggled) so detached sessions keep running.
 export function Workspace() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
@@ -60,9 +58,6 @@ export function Workspace() {
     const showAgentTabs = inAgentView && activeAgents.length >= 1;
     const showAgentEmpty = inAgentView && activeAgents.length === 0;
 
-    // Term tabs only render when (a) we're in windows view, (b) the active
-    // window IS a term tab, and (c) there's at least one — a single tab is
-    // visual noise without value (but we still keep the bar for layout sync).
     const activeWindowList = activeSession ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id]) : [];
     const termTabs = activeSession?.view === "windows" && activeWindow?.role === "term" ? activeWindowList.filter((w) => w.role === "term") : [];
     const showTermTabs = termTabs.length >= 1;
@@ -102,12 +97,6 @@ export function Workspace() {
                 const agentLayers = aIds.map((aid) => {
                     const agent = agentsById[aid];
                     if (!agent) return null;
-                    // Include skipPermissions in the React key so toggling it
-                    // forces React to unmount + remount the AgentLayer (and the
-                    // TerminalPane inside it). The new PTY then spawns with the
-                    // updated startup string (with or without the bypass flag).
-                    // Without this, TerminalPane would keep the old PTY since it
-                    // captures `startup` at mount time and never re-reads it.
                     const key = `${aid}:${agent.skipPermissions ? "skip" : "safe"}`;
                     return (
                         <AgentLayer
@@ -199,10 +188,6 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
     );
 }
 
-// An agent's terminal — a single full-stage PTY running the agent CLI.
-// Memo'd so an unrelated store update doesn't re-render every agent of
-// every project. All props are shallow-equal friendly (stable refs from
-// the store + primitives).
 const AgentLayer = memo(function AgentLayer({
     session,
     agent,
@@ -232,12 +217,6 @@ const AgentLayer = memo(function AgentLayer({
     );
 });
 
-// Memo'd at the layer boundary — the largest single perf win for users
-// with many projects open. Without this, every store update (fs events,
-// AWS chip refreshes, anything) re-runs WindowLayer for every window of
-// every session — O(projects × windows) work per mutation. With memo,
-// only the two layers whose `visible` actually flipped re-render on a
-// window switch.
 const WindowLayer = memo(function WindowLayer({
     session,
     win,

@@ -28,17 +28,12 @@ import { branchKind } from "./rundeck/branchStyle";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
-// 12-hour parts: (12h-hour, minute, ampm). 0 → 12am, 12 → 12pm, 13 → 1pm…
 function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
     const h24 = d.getHours();
     const h = h24 % 12 || 12;
     return { h, m: d.getMinutes(), ap: h24 >= 12 ? "pm" : "am" };
 }
 
-// Always-visible AWS status chip. Click → opens (or focuses) the AWS
-// session; if the profile is expired, opens the sign-in modal instead.
-// The shared awsIdentityR resource refetches every 60s — both this chip
-// and the AwsPane subscribe to the same cache entry.
 function AwsChip() {
     const profile = useStore((s) => s.awsProfile);
     const identity = useResourceEnabled(!!profile, awsIdentityR, profile ?? "", false);
@@ -76,13 +71,7 @@ function AwsChip() {
     );
 }
 
-// Project-session deploy chip. Subscribes to rndMatrixR for the active env
-// and surfaces the matching service row (basename(cwd)). Click → opens
-// (or focuses) the Rundeck pane and pre-navigates to the deploy view for
-// this service in this env. Same auto-detection model as `rnd deploy`
-// without args in the bash CLI.
 function DeployChip({ service, envLabel, project }: { service: string; envLabel: string; project: string }) {
-    // Same cache entry the Rundeck pane uses → no extra fetch when both are open.
     const spec = useMemo(() => [{ label: envLabel, project, only_succeeded: true }], [envLabel, project]);
     const res = useResource(rndMatrixR, spec);
     const cell = res.data?.envs[0]?.cells.find((c) => c.name === service || c.service === service || c.service.endsWith(`/${service}`));
@@ -111,10 +100,6 @@ function DeployChip({ service, envLabel, project }: { service: string; envLabel:
     );
 }
 
-// Active-project Git chip — branch name, ahead/behind, and a dirty dot.
-// Subscribes to gitStatusR for the session's cwd (same cache entry the Git
-// pane uses, refreshed by the `git_changed` watcher), so it stays live
-// without a dedicated poll. Click → focuses the session's Git window.
 function GitChip({ repo }: { repo: string }) {
     const res = useResource(gitStatusR, repo);
     const st = res.data;
@@ -160,9 +145,6 @@ function CogIcon({ size = 15 }: { size?: number }) {
     );
 }
 
-// App version pill — read from the bundled Info.plist via Tauri's app API,
-// so it always reflects the actually-running binary (after an OTA update
-// completes + relaunches, this flips automatically to the new version).
 export function VersionChip() {
     const [version, setVersion] = useState<string | null>(null);
     useEffect(() => {
@@ -176,9 +158,6 @@ export function VersionChip() {
     );
 }
 
-// Update chip — surfaces store.pendingUpdate. Hidden when no update;
-// renders when one is available so the user can re-trigger install at
-// any time after the boot prompt. States: available | installing | error.
 export function UpdateChip() {
     const pending = useStore((s) => s.pendingUpdate);
     if (!pending) return null;
@@ -227,8 +206,6 @@ function UpdateArrow({ size = 12 }: { size?: number }) {
     );
 }
 
-// macOS battery glyph + percentage — no chrome. Color uses --acc by default,
-// shifting to warn at ≤20% and danger at ≤10%. Hidden on desktops (no batt).
 function BatteryChip() {
     const batt = useBattery();
     if (!batt || batt.percent == null) return null;
@@ -259,9 +236,6 @@ export function TopBar() {
     if (!session || !win) return null;
     const isProject = session.kind === "project";
 
-    // Env picker is project-session only — the Rundeck pane has its own
-    // tree sub-rail for project + env-folder selection, so we don't
-    // duplicate it up here.
     const envPicker = isProject
         ? {
               kind: "project" as const,
@@ -271,10 +245,6 @@ export function TopBar() {
           }
         : null;
 
-    // Project-session deploy chip: look up a Rundeck project whose name
-    // matches `session.env` (case-insensitive) against the live upstream
-    // list. No alias table — if there's no matching project upstream, the
-    // chip just doesn't show.
     const rndProjects = useResourceEnabled(isProject, rndProjectsR);
     const deployTarget =
         isProject && session.cwd
@@ -290,8 +260,6 @@ export function TopBar() {
 
     return (
         <header className="top-bar" data-tauri-drag-region>
-            {/* Empty spacer that clears the macOS traffic lights; the brand
-                now lives in the side rail header. */}
             <div className="tb-left" data-tauri-drag-region />
 
             <div className="tb-center" data-tauri-drag-region>

@@ -2,11 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "@tauri-apps/api/core";
 import { emit } from "../state/bus";
 
-// Auth-aware wrapper. Any auth-class error (`rundeck-auth`,
-// `rundeck-unconfigured`, or HTTP 401/403 from `rundeck-http`) means the
-// stored token is dead and the user needs to re-login. Emit on the bus so
-// App.tsx can invalidate the rundeck cache and force the pane back to the
-// login view — no manual "logout" button required.
 async function rndInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
     try {
         return await invoke<T>(cmd, args);
@@ -24,8 +19,6 @@ async function rndInvoke<T>(cmd: string, args?: Record<string, unknown>): Promis
         throw e;
     }
 }
-
-// ---- Auth ---------------------------------------------------------------
 
 export interface RundeckStatus {
     configured: boolean;
@@ -51,8 +44,6 @@ export interface RundeckLoginResult {
     rundeck_version: string | null;
 }
 
-// ---- Projects / jobs / matrix ------------------------------------------
-
 export interface RundeckProject {
     name: string;
     description: string | null;
@@ -75,13 +66,9 @@ export interface RundeckEnvSpec {
 }
 
 export interface MatrixCell {
-    /** Full qualified path (`group/name`). Kept for back-compat; new UI
-     *  reaches for `name` + `group` directly. */
     service: string;
-    /** Leaf service name only (no group prefix). */
     name: string;
     job_id: string;
-    /** Slash-separated group path. Empty for ungrouped jobs. */
     group: string | null;
     branch: string | null;
     status: string | null;
@@ -104,8 +91,6 @@ export interface MatrixResult {
     envs: MatrixEnv[];
     elapsed_ms: number;
 }
-
-// ---- Executions --------------------------------------------------------
 
 export interface RundeckExecution {
     id: number;
@@ -136,11 +121,6 @@ export interface AbortResult {
     execution: RundeckExecution | null;
 }
 
-// ---- Watch / Steps -----------------------------------------------------
-
-// Rundeck /state flattens step lifecycle onto the step itself (no
-// stepState wrapper). `stepString` isn't returned; stepctx is the
-// stable identifier we use as label + log filter key.
 export interface RundeckStep {
     id: string | null;
     stepctx: string | null;
@@ -164,8 +144,6 @@ export interface WatchUpdate {
     terminal: boolean;
 }
 
-// ---- Logs --------------------------------------------------------------
-
 export interface LogEntry {
     time: string | null;
     level: string | null;
@@ -181,8 +159,6 @@ export interface LogTick {
     error: string | null;
 }
 
-// ---- Plan --------------------------------------------------------------
-
 export type BranchRelation =
     | "same"
     | "target-contains-deployed"
@@ -197,11 +173,9 @@ export interface PlanResult {
     project: string;
     service: string;
     target_branch: string;
-
     deployed_branch: string | null;
     branch_relation: BranchRelation;
     branch_relation_detail: string | null;
-
     git_root: string | null;
     current_branch: string | null;
     head_sha: string | null;
@@ -212,8 +186,6 @@ export interface PlanResult {
     remote_target_exists: boolean;
     push_action: PushAction;
 }
-
-// ---- API bridge --------------------------------------------------------
 
 export const rundeckApi = {
     status: () => invoke<RundeckStatus>("rnd_status"),
@@ -242,7 +214,6 @@ export const rundeckApi = {
         }),
     abort: (executionId: number) => rndInvoke<AbortResult>("rnd_abort", { executionId }),
 
-    /** Start a watcher; returns the watcher id (pass to watchStop on unmount). */
     watchStart: (executionId: number, onUpdate: (u: WatchUpdate) => void) => {
         const channel = new Channel<WatchUpdate>();
         channel.onmessage = onUpdate;

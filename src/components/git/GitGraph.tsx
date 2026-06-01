@@ -1,9 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GitCommit } from "../../api/git";
 
-// ---- geometry ----
-// Row height is constant whether the panel is focused or not (lazygit keeps
-// rows fixed and just shows more of them) so the canvas math stays simple.
 const ROW_H = 30;
 const LANE_W = 14; // horizontal gap between lanes
 const X0 = 14; // x of lane 0's centre
@@ -13,11 +10,6 @@ const GUTTER_PAD = 18; // breathing room between the deepest lane and the text
 const gutterWidth = (maxLanes: number) => X0 + Math.max(0, maxLanes - 1) * LANE_W + GUTTER_PAD;
 const laneX = (lane: number) => X0 + lane * LANE_W;
 
-// ---- lane layout ----
-// Classic git-graph lane assignment. We never shuffle a live lane sideways,
-// so pass-through lanes stay at a constant x (clean vertical lines) and only
-// branch/merge points curve. Colour is keyed on lane index — the same trick
-// gitk/lazygit use — so a branch keeps its colour for its whole life.
 interface Edge {
     lane: number;
     color: number;
@@ -36,9 +28,6 @@ interface RowLayout {
 function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: number } {
     const visible = new Set(commits.map((c) => c.full_hash));
     const lanes: (string | null)[] = []; // lanes[i] = full hash that lane i is currently waiting for
-    // Per-lane "is this segment unpushed?" — set by whichever commit routed
-    // its parent into the lane, so the flag rides the line down between rows
-    // (a contiguous run of unpushed commits stays one colour to the upstream).
     const laneUp: boolean[] = [];
     const rows: RowLayout[] = [];
     let maxLanes = 0;
@@ -59,15 +48,12 @@ function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: numb
 
     for (const c of commits) {
         const cUn = c.unpushed;
-        // Lanes already waiting for this commit = its children merging in.
         const expecting: number[] = [];
         for (let j = 0; j < lanes.length; j++) if (lanes[j] === c.full_hash) expecting.push(j);
 
         const commitLane = expecting.length > 0 ? expecting[0] : firstFree();
         pad(commitLane);
 
-        // A fresh tip has no children above it, so no top-half line. The
-        // colour of an incoming line is whatever the child that drew it set.
         const merges = expecting.map((j) => ({ fromLane: j, lane: j, color: j, unpushed: laneUp[j] }));
 
         const through: Edge[] = [];
@@ -76,7 +62,6 @@ function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: numb
             through.push({ lane: j, color: j, unpushed: laneUp[j] });
         }
 
-        // Every lane that landed on this commit is now consumed.
         for (const j of expecting) {
             lanes[j] = null;
             laneUp[j] = false;
@@ -90,8 +75,6 @@ function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: numb
             const p0 = parents[0];
             const existing0 = lanes.indexOf(p0);
             if (existing0 !== -1) {
-                // First parent already has a lane → this commit's lane ends and
-                // curves into it (a merge that closes a branch).
                 branches.push({ toLane: existing0, lane: existing0, color: existing0, unpushed: cUn });
             } else {
                 lanes[commitLane] = p0;
@@ -130,7 +113,6 @@ function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: numb
     return { rows, maxLanes: Math.max(1, maxLanes) };
 }
 
-// ---- author chip ----
 function initials(name: string): string {
     const parts = name.trim().split(/\s+/).filter(Boolean);
     if (parts.length === 0) return "?";
@@ -144,7 +126,6 @@ function authorColor(key: string): string {
     return `hsl(${h % 360} 62% 64%)`;
 }
 
-// ---- palette (read live off the canvas so it tracks the active theme) ----
 function readVar(el: HTMLElement, name: string): string {
     return getComputedStyle(el).getPropertyValue(name).trim();
 }
@@ -152,16 +133,11 @@ const FALLBACK_PALETTE = ["#a277ff", "#61ffca", "#ff6ac1", "#ffca85", "#7cc5ff",
 const FALLBACK_WARN = "#ffca85";
 
 function readPalette(el: HTMLElement): string[] {
-    // Lane 0 (the main line) takes the accent; the rest cycle through the
-    // theme's signal colours. `--blue` isn't a theme token here, so it's a
-    // literal — keeps branch lanes distinct without overloading one hue.
     const themed = ["--acc", "--live", "--cmd", "--warn", "--danger"].map((n) => readVar(el, n)).filter(Boolean);
     const all = [...themed, "#7cc5ff", "#ffd166", "#9b8cff"];
     return all.length ? all : FALLBACK_PALETTE;
 }
 
-// Resolve a row's node/hash colour off an element so the JSX text can match
-// the lane the canvas paints. Mirrors `draw`'s colour logic exactly.
 function rowColor(el: HTMLElement | null, colorIdx: number, unpushed: boolean): string {
     if (unpushed) return (el && readVar(el, "--warn")) || FALLBACK_WARN;
     const palette = el ? readPalette(el) : FALLBACK_PALETTE;
@@ -185,16 +161,11 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, se
 
     const palette = readPalette(canvas);
     const voidColor = readVar(canvas, "--void") || "#0c0b10";
-    // Unpushed (local-only) segments are drawn amber so they read as
-    // "pending sync" regardless of their lane's normal colour.
     const unpushedColor = readVar(canvas, "--warn") || "#ffca85";
     const col = (i: number) => palette[i % palette.length];
     const edgeColor = (e: { color: number; unpushed: boolean }) => (e.unpushed ? unpushedColor : col(e.color));
-    // Control-point offset for the cubic — a soft S that reads as a clean
-    // branch/merge without overshooting into neighbouring lanes.
     const cp = ROW_H * 0.42;
 
-    // Pass 1 — edges (so nodes always sit on top of the lines).
     ctx.lineWidth = 1.8;
     rows.forEach((r, i) => {
         const yTop = i * ROW_H;
@@ -229,21 +200,17 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, se
         }
     });
 
-    // Pass 2 — nodes.
     rows.forEach((r, i) => {
         const yMid = i * ROW_H + ROW_H / 2;
         const nodeX = laneX(r.lane);
         const c = r.unpushed ? unpushedColor : col(r.colorIdx);
 
-        // Void halo carves the node out of the lines behind it.
         ctx.fillStyle = voidColor;
         ctx.beginPath();
         ctx.arc(nodeX, yMid, NODE_R + 1.6, 0, Math.PI * 2);
         ctx.fill();
 
         if (r.isHead) {
-            // HEAD = hollow ring with a filled core. No glow — keep it flat
-            // to match the rest of the UI.
             ctx.lineWidth = 2.2;
             ctx.strokeStyle = c;
             ctx.beginPath();
@@ -303,8 +270,6 @@ export function GitGraph({
     const wrapRef = useRef<HTMLDivElement>(null);
     const { rows, maxLanes } = useMemo(() => computeGraph(commits), [commits]);
     const gutter = gutterWidth(maxLanes);
-    // Bump after first paint so row hash colours resolve against live CSS vars
-    // (getComputedStyle needs the node mounted). One extra render, then stable.
     const [, setMounted] = useState(0);
 
     useLayoutEffect(() => {
@@ -313,7 +278,6 @@ export function GitGraph({
         setMounted((n) => (n === 0 ? 1 : n));
     }, [rows, maxLanes, selectedIndex]);
 
-    // Keep the cursor row in view as the user moves through history.
     useLayoutEffect(() => {
         if (focused) selRef.current?.scrollIntoView({ block: "nearest" });
     }, [selectedIndex, focused]);

@@ -7,16 +7,12 @@ export interface AgentInfo {
     command: string;
 }
 
-// An existing on-disk conversation that can be resumed.
 export interface AgentSession {
     id: string;
     title: string;
     mtime: number; // unix seconds
 }
 
-// Coalesce concurrent fetches of the same (agent, cwd) — the AgentRail,
-// AgentPalette and SeshPicker can all ask at once, but only one IPC trip
-// should actually fire. Bounded TTL also collapses fast-fire refetches.
 const inflight = new Map<string, Promise<AgentSession[]>>();
 const cache = new Map<string, { at: number; data: AgentSession[] }>();
 const TTL_MS = 2_000;

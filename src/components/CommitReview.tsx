@@ -5,8 +5,6 @@ import { IconChevron } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { basename } from "../lib/paths";
 
-// A commit (or branch tip) shown as a scrollable accordion of its changed
-// files. Each file collapses; clicking the filename opens it in the editor.
 export function CommitReview({
     repo,
     rev,
@@ -27,8 +25,6 @@ export function CommitReview({
         git.commitFiles(repo, rev)
             .then((fs) => {
                 setFiles(fs);
-                // Start with every file collapsed — diff editors are heavy to mount,
-                // so we let the user open the ones they actually care about.
                 setCollapsed(new Set(fs));
             })
             .catch(() => {

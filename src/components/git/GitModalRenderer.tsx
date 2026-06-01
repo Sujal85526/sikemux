@@ -2,9 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { closeGitModal, dispatchGitMenuKey } from "../../state/git";
 import { useStore } from "../../state/store";
 
-/** Single mounted modal renderer. Reads `store.gitModal` and paints
- *  whichever variant is active. Captures keys at the window level while
- *  open so panel keybindings don't fire underneath. */
 export function GitModalRenderer({ paneId, active }: { paneId: string; active: boolean }) {
     const modal = useStore((s) => s.gitModal);
     const ownsModal = !!modal && modal.ownerPaneId === paneId;
@@ -22,8 +19,6 @@ export function GitModalRenderer({ paneId, active }: { paneId: string; active: b
                 closeGitModal();
                 return;
             }
-            // Menu items have hot-keys; route the keypress before letting it
-            // escape into the underlying pane.
             if (modal.kind === "menu" && dispatchGitMenuKey(e.key)) {
                 e.preventDefault();
                 e.stopPropagation();

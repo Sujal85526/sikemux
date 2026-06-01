@@ -8,17 +8,12 @@ export interface NavEntry {
 }
 
 interface NavOptions {
-    /** Resolve the editor view that currently owns the caret. */
     getView: () => EditorView | null;
-    /** Path of the currently-open document, if any. */
     getCurrentPath: () => string | null;
-    /** Scroll the live editor to the entry (same file). */
     scrollLiveTo: (line: number, character: number) => void;
-    /** Open another file at line/char (cross-file landings). */
     openOther: (entry: NavEntry) => void;
 }
 
-// Cmd-click pushes (origin, target); Cmd-[/Cmd-] walk the stack.
 export function useNavHistory(opts: NavOptions) {
     const historyRef = useRef<NavEntry[]>([]);
     const idxRef = useRef(-1);

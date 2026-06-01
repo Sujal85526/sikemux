@@ -28,15 +28,14 @@ import { basename } from "../lib/paths";
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null, treeWidth: 210 };
 
-// Pull the active editor selection as a single-line string. Multi-line
-// selections collapse to their first non-empty line so the find input
-// doesn't get filled with a giant blob. Returns null if nothing's
-// selected (so the bar leaves whatever the user previously typed in).
 function readSelection(view: EditorView): string | null {
     const sel = view.state.selection.main;
     if (sel.empty) return null;
     const raw = view.state.sliceDoc(sel.from, sel.to);
-    const trimmed = raw.split(/\r?\n/).find((l) => l.trim().length > 0)?.trim();
+    const trimmed = raw
+        .split(/\r?\n/)
+        .find((l) => l.trim().length > 0)
+        ?.trim();
     return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
@@ -52,11 +51,6 @@ function scrollToLine(view: EditorView, line: number, character: number) {
     view.focus();
 }
 
-// Native code editor: file tree + tabs + CodeMirror 6. Tabs + activePath
-// + treeWidth live in store.editorViews[paneId] so layouts that re-mount
-// the pane preserve them, and they persist across reloads. The CM view is
-// imperative — its per-tab states live in a useRef so switching tabs
-// preserves content, undo and cursor.
 export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; cwd: string; active: boolean; visible: boolean }) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
@@ -65,37 +59,19 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     const hydratedRef = useRef(false);
     const saveRef = useRef<() => boolean>(() => false);
 
-    // Dirty state is CM-derived and changes every keystroke — kept local
-    // rather than round-tripping through the store.
     const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
     const dirtyRef = useRef(dirty);
     dirtyRef.current = dirty;
 
-    // Per-path snapshot of the on-disk content (set on open + on save).
-    // Used in the updateListener below to compare every keystroke's doc
-    // against the saved baseline — if the user undoes back to disk we
-    // clear the dirty mark, instead of leaving the dot lit forever.
     const savedRef = useRef<Map<string, string>>(new Map());
 
-    // Find/Replace bar — Mod-F opens find-only, Mod-H opens with replace
-    // pre-expanded. We render our own React bar (see EditorFindBar) and
-    // drive CodeMirror's search commands directly; CM's built-in panel
-    // is never opened.
-    //
-    // `findSignal` bumps on every Mod-F/Mod-H so the bar re-focuses its
-    // input (and re-seeds from selection) even when it's already open —
-    // mirrors VSCode where Cmd-F on a focused editor always pulls focus
-    // back to the find input and replaces its content with the current
-    // selection if there is one.
     const [findState, setFindState] = useState<{
         open: boolean;
         replaceOpen: boolean;
         seed: string | null;
         signal: number;
     }>({ open: false, replaceOpen: false, seed: null, signal: 0 });
-    const openFindRef = useRef<
-        (withReplace: boolean, seed: string | null) => void
-    >(() => {});
+    const openFindRef = useRef<(withReplace: boolean, seed: string | null) => void>(() => {});
     openFindRef.current = (withReplace, seed) => {
         setFindState((prev) => ({
             open: true,
@@ -114,7 +90,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     const { openDoc, scheduleChange } = useLspBridge(cwd);
 
-    // Nav history — Cmd-[ / Cmd-] traversal across files.
     const nav = useNavHistory({
         getView: () => viewRef.current,
         getCurrentPath: () => currentRef.current,
@@ -138,8 +113,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         });
     };
 
-    // The CM keymap needs stable callbacks; bind to refs that always read the
-    // latest hook closures.
     const navBackRef = useRef(() => {});
     const navFwdRef = useRef(() => {});
     navBackRef.current = nav.back;
@@ -153,8 +126,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         void fsapi
             .writeFile(path, text)
             .then(() => {
-                // Saved content IS the new baseline — future undos
-                // back to here should keep the tab clean.
                 savedRef.current.set(path, text);
                 setDirty((d) => {
                     if (!d.has(path)) return d;
@@ -162,14 +133,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     next.delete(path);
                     return next;
                 });
-                // Don't wait for the fs watcher — invalidate locally so the
-                // diff gutter / git pane / file tree status decorations
-                // update now. We deliberately do NOT also `emit("fs-changed")`
-                // here: that would make every other open tab re-read from
-                // disk through the fs-changed subscriber below, including the
-                // file we just wrote. The Rust fs watcher emits a real
-                // git_changed ~200ms later and that one IS scoped to actual
-                // external observers.
                 if (cwd) {
                     invalidate((kind, args) => (kind.startsWith("git.") || kind === "files.list") && args[0] === cwd);
                 }
@@ -185,9 +148,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 doc: content,
                 extensions: [
                     basicSetup,
-                    // search panel pinned to the TOP of the editor so the in-pane CSS
-                    // (top-right floating bar, compact pills) actually applies. Default
-                    // is bottom, full-width, which clashes with the project's look.
                     search({ top: true }),
                     auraExtensions,
                     ...languageFor(path),
@@ -195,23 +155,9 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     lspNav(),
                     lspHoverLink(),
                     lspPeek(),
-                    // Tab indents instead of moving focus out of the editor —
-                    // CodeMirror 6 leaves Tab unbound by default for a11y
-                    // (Tab = focus next element); for a code editor we want
-                    // the "insert indent" behavior.
                     keymap.of([indentWithTab]),
-                    // Prec.highest so our Mod-F / Mod-H beat the searchKeymap
-                    // that ships with the search() extension — otherwise CM's
-                    // built-in openSearchPanel wins the keypress and the panel
-                    // mounts (then sits invisible under .cm-panels { display:
-                    // none }) while our React bar never opens.
                     Prec.highest(
                         keymap.of([
-                            // VSCode-style line duplication. basicSetup's
-                            // defaultKeymap binds these to "add cursor above /
-                            // below" at default precedence — Prec.highest here
-                            // overrides that so the lines are duplicated
-                            // instead of spawning a multi-cursor.
                             { key: "Mod-Alt-ArrowUp", run: copyLineUp, preventDefault: true },
                             { key: "Mod-Alt-ArrowDown", run: copyLineDown, preventDefault: true },
                             { key: "Mod-s", preventDefault: true, run: () => saveRef.current() },
@@ -254,13 +200,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                             const p = currentRef.current;
                             const text = u.state.doc.toString();
                             const baseline = savedRef.current.get(p);
-                            // Dirty iff the buffer no longer matches the
-                            // on-disk snapshot. Re-checked on every change
-                            // so undoing back to the saved content clears
-                            // the tab's dot.
-                            const isDirty = baseline === undefined
-                                ? true
-                                : text !== baseline;
+                            const isDirty = baseline === undefined ? true : text !== baseline;
                             const has = dirtyRef.current.has(p);
                             if (isDirty && !has) {
                                 setDirty((d) => new Set(d).add(p));
@@ -280,8 +220,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         [scheduleChange],
     );
 
-    // Mount CM once. Register with the theme bus so it reconfigures on
-    // theme change.
     useEffect(() => {
         const view = new EditorView({ parent: hostRef.current!, state: makeState("", "") });
         viewRef.current = view;
@@ -303,8 +241,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         const st = fresh ?? states.current.get(path);
         if (!st) return;
         view.setState(st);
-        // Per-tab states carry the theme that was active at save-time; push the
-        // current theme so tab switching never restores stale colors.
         refreshViewTheme(view);
         currentRef.current = path;
         bindLspContext(view, path);
@@ -314,13 +250,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     };
 
     const openPath = async (path: string) => {
-        // Read tabs fresh from the store on every call. The `open-file`
-        // subscriber below captures this function once (its useEffect only
-        // depends on cwd), so closing over the rendered `tabs` would make
-        // every cmd-P open after the first see an empty list and clobber
-        // the previously-opened tabs.
-        const liveTabs =
-            useStore.getState().editorViews[paneId]?.openTabs ?? [];
+        const liveTabs = useStore.getState().editorViews[paneId]?.openTabs ?? [];
         if (liveTabs.includes(path)) {
             switchTo(path);
             return;
@@ -334,17 +264,10 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 openTabs: [...liveTabs, path],
                 activePath: path,
             });
-            // CM transition happens after the store update lands; switchTo also
-            // dispatches the active-path patch but it's idempotent.
             switchTo(path, st);
-        } catch {
-            /* unreadable (binary, perms) — ignore */
-        }
+        } catch {}
     };
 
-    // Hydrate CM with tabs persisted across reloads. Hidden project panes are
-    // mounted for state preservation, so defer the file reads until the editor
-    // is actually visible.
     useEffect(() => {
         if (!visible || hydratedRef.current) return;
         if (!viewRef.current) return;
@@ -361,13 +284,11 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     states.current.set(path, st);
                     savedRef.current.set(path, content);
                 } catch {
-                    /* file gone — drop it */
                     cmd.setEditorView(paneId, {
                         openTabs: useStore.getState().editorViews[paneId]?.openTabs.filter((t) => t !== path) ?? [],
                     });
                 }
             }
-            // Restore the previously-active tab.
             const want = activePath && tabs.includes(activePath) ? activePath : tabs[0];
             if (want && states.current.has(want)) {
                 switchTo(want);
@@ -377,19 +298,9 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         return () => {
             cancelled = true;
         };
-        // Only fire once at mount; tabs/activePath churn afterwards is normal.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible]);
 
-    // On activation, catch up clean tabs with disk. This covers background
-    // agent writes that happened while the project watcher/editor subscriber
-    // was intentionally inactive.
-    //
-    // `tabs.length` was previously in the deps, which caused this effect to
-    // re-fire (and read every tab from disk) whenever the user opened or
-    // closed a tab. openPath already does the read for new tabs, and the
-    // visible-pane fs-changed subscriber below keeps existing tabs in sync —
-    // so resync is only needed at the visibility transition.
     useEffect(() => {
         if (!visible || !cwd) return;
         let cancelled = false;
@@ -427,11 +338,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         };
     }, [visible, cwd, paneId, makeState]);
 
-    // Live external-edit reload. When fs_watch fires for our repo (agent
-    // wrote a file, git checkout swapped contents, etc.), re-read every
-    // open tab and push fresh content into its EditorState. Dirty tabs are
-    // skipped — never clobber the user's in-flight edits. Zed-style: the
-    // editor always matches disk unless the user has unsaved changes.
     useEffect(() => {
         if (!cwd || !visible) return;
         return subscribe("fs-changed", async (e) => {
@@ -450,7 +356,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 if (isActive && view) {
                     const current = view.state.doc.toString();
                     if (current === fresh) continue;
-                    // Preserve cursor offset where possible (clamp to new length).
                     const head = Math.min(view.state.selection.main.head, fresh.length);
                     view.dispatch({
                         changes: { from: 0, to: view.state.doc.length, insert: fresh },
@@ -459,23 +364,16 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 } else {
                     const cached = states.current.get(path);
                     if (cached && cached.doc.toString() === fresh) continue;
-                    // Cold tab: rebuild its EditorState so the next switchTo lands
-                    // on the new content. Cursor falls back to start since the
-                    // stored selection may no longer be meaningful.
                     states.current.set(path, makeState(path, fresh));
                 }
-                // External write became the new on-disk baseline — future
-                // edits compare against this so dirty stays accurate.
                 savedRef.current.set(path, fresh);
             }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cwd, paneId, visible]);
 
-    // Open-file events from the bus (Cmd-P palette, git review jump, LSP nav).
     useEffect(() => {
         return subscribe("open-file", (e) => {
-            // Only the pane whose cwd contains the file should react.
             if (cwd && !e.path.startsWith(`${cwd}/`) && e.path !== cwd) return;
             void (async () => {
                 await openPath(e.path);
@@ -487,7 +385,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cwd]);
 
-    // LSP nav + hover-link contexts.
     useEffect(() => {
         const view = viewRef.current;
         if (!view) return;
@@ -504,7 +401,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activePath, cwd]);
 
-    // Git baseline for the diff gutter.
     useGitBaseline(() => viewRef.current, cwd, activePath);
 
     const closeTab = (path: string, e: ReactMouseEvent) => {
@@ -564,9 +460,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                         replaceOpenOnMount={findState.replaceOpen}
                         seed={findState.seed}
                         signal={findState.signal}
-                        onClose={() =>
-                            setFindState((prev) => ({ ...prev, open: false }))
-                        }
+                        onClose={() => setFindState((prev) => ({ ...prev, open: false }))}
                     />
                 </div>
                 {tabs.length === 0 && (

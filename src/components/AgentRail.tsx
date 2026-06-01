@@ -45,8 +45,6 @@ export function AgentRail() {
     const isProject = session?.kind === "project";
     const cwd = session?.cwd ?? "";
 
-    // Disk-scanned recent agent sessions for this project + type. Hooks
-    // mounted unconditionally; we just ignore the fetch when not project.
     const recents = useResourceEnabled(isProject && !!cwd && selectedType != null, agentSessionsR, selectedType ?? "claude", isProject ? cwd : "");
     const disk = isProject ? (recents.data ?? []) : [];
 
@@ -59,8 +57,6 @@ export function AgentRail() {
     const pinnedDisplay = agentBookmarks.filter((b) => availableTypes.has(b.type));
     const pinnedKeys = new Set(pinnedDisplay.map((b) => sessionKey(b.type, b.id)));
     const activeOpenKeys = new Set(opens.map((a) => sessionKey(a.type, bmIdOf(a))));
-    // Cross-session lookup — a pinned bookmark gets a live dot if its session
-    // is running in ANY project.
     const liveByKey = new Map<string, string>();
     sessionOrder.forEach((id) => {
         const s = sessionsById[id];
@@ -226,21 +222,17 @@ export function AgentRail() {
     );
 }
 
-function AgentHeader({
-    agents,
-    type,
-    setType,
-}: {
-    agents: AgentInfo[];
-    type: AgentType | null;
-    setType: (t: AgentType) => void;
-}) {
+function AgentHeader({ agents, type, setType }: { agents: AgentInfo[]; type: AgentType | null; setType: (t: AgentType) => void }) {
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
             <div className="agent-header-types">
                 {agents.map((a) => (
-                    <button key={a.type} className={`agent-header-btn${type === a.type ? " active" : ""}`} title={a.label} onClick={() => setType(a.type)}>
+                    <button
+                        key={a.type}
+                        className={`agent-header-btn${type === a.type ? " active" : ""}`}
+                        title={a.label}
+                        onClick={() => setType(a.type)}>
                         <AgentIcon type={a.type} size={18} />
                     </button>
                 ))}

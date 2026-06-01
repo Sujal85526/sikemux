@@ -1,9 +1,3 @@
-/* ============================================================
-   sikemux — precision instrument. Aura palette, all-monospace.
-   ============================================================ */
-
-/* Bundled — WKWebView can't see fonts in ~/Library/Fonts, so the Nerd Font
-   ships with the app and is loaded here (icons would be tofu otherwise). */
 @font-face {
     font-family: "JetBrainsMono Nerd Font";
     src: url("/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype");
@@ -32,8 +26,6 @@
     font-style: italic;
     font-display: block;
 }
-/* Terminal face: mirrors Ghostty's `font-family = "JetBrainsMono NF"`.
-   The UI keeps the Mono variant above for tight chrome/icon metrics. */
 @font-face {
     font-family: "JetBrainsMono NF";
     src: url("/fonts/JetBrainsMonoNerdFont-Regular.ttf") format("truetype");
@@ -84,11 +76,9 @@
     --pane: #15141b;
     --line: #242130;
     --line-soft: #1c1a26;
-
     --ink: #e7e5ef;
     --ink-dim: #8b8898;
     --ink-faint: #565461;
-
     --acc: #a277ff;
     --acc-soft: rgba(162, 119, 255, 0.13);
     --acc-line: rgba(162, 119, 255, 0.32);
@@ -96,7 +86,6 @@
     --warn: #ffca85;
     --cmd: #ff6ac1;
     --danger: #ff6767;
-
     --mono: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
@@ -114,11 +103,6 @@ body,
 }
 
 body {
-    /* color-mix lets us blend the theme bg with `transparent` purely from CSS
-     variables. Needs `transparent: true` on the Tauri window. When the bus
-     toggles `html.is-transparent` we strip every overlay surface (chrome,
-     pane, terminal) so this body wash is the single tinted layer — see the
-     `html.is-transparent` rules below. */
     background: color-mix(in srgb, var(--bg, var(--void)) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
     font-family: var(--mono);
@@ -130,12 +114,6 @@ body {
     cursor: default;
 }
 
-/* Single-layer transparency mode. When opacity < 1 the bus adds this class
-   on <html>; body keeps its color-mix wash and everything that sits on top
-   (chrome strips, panes, terminal cells) becomes fully transparent. That way
-   the whole window shows ONE uniform dark layer instead of body + chrome +
-   pane + terminal compounding (0.7 each → ~0.97 effective in the worst
-   spots). Matches Ghostty's `rgba(0,0,0,opacity)` look. */
 html.is-transparent .top-bar,
 html.is-transparent .side-rail,
 html.is-transparent .agent-rail,
@@ -160,9 +138,6 @@ html.is-transparent .settings-knob-num,
 html.is-transparent .rnd-tree {
     background: transparent;
 }
-/* Floating menus (env dropdown, autocompletes, tooltips) must stay solid —
-   they sit over arbitrary content and become unreadable if see-through. */
-
 button {
     font: inherit;
     color: inherit;
@@ -175,7 +150,6 @@ button {
     background: var(--acc-soft);
 }
 
-/* thin scrollbars */
 .rail-scroll::-webkit-scrollbar,
 .picker-list::-webkit-scrollbar {
     width: 8px;
@@ -188,11 +162,6 @@ button {
     background-clip: padding-box;
 }
 
-/* CodeMirror scroller — visible thumb (--ink-faint) so users can actually
-   see the position indicator. Brightens on hover for a clearer drag cue.
-   `appearance: none` forces classic (always-visible) scrollbars on macOS
-   WKWebView — otherwise the OS hides overlay scrollbars whenever the user
-   isn't actively scrolling, and any styling here goes unseen. */
 .cm-scroller::-webkit-scrollbar {
     -webkit-appearance: none;
     width: 12px;
@@ -213,7 +182,6 @@ button {
     background-clip: padding-box;
 }
 
-/* micro label — uppercase, tracked */
 .rail-group-label,
 .picker-group {
     font-size: 9.5px;
@@ -223,7 +191,6 @@ button {
     color: var(--ink-faint);
 }
 
-/* key cap */
 .kbd {
     font-size: 10px;
     font-weight: 600;
@@ -235,16 +202,11 @@ button {
     white-space: nowrap;
 }
 
-/* ============================================================
-   shell
-   ============================================================ */
 .shell {
     display: flex;
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    /* Transparent so the body's color-mix (--window-opacity) actually paints
-     the canvas. The chrome (rails, top bar) keeps its own opaque bg. */
     background: transparent;
 }
 
@@ -260,12 +222,6 @@ button {
     min-width: 0;
     background: transparent;
 }
-/* When settings is open, hide Workspace contents in place (PTYs and
-   scroll state stay alive, just visually replaced by the settings pane
-   overlay — same pattern as session switching).
-   `.window-layer.visible` explicitly sets visibility:visible, which
-   would defeat a parent's hidden via the cascade — override it with a
-   higher-specificity rule. */
 .stage--settings > .window-area {
     visibility: hidden;
 }
@@ -273,16 +229,11 @@ button {
     visibility: hidden;
 }
 
-/* ============================================================
-   top bar
-   ============================================================ */
 .top-bar {
     display: flex;
     align-items: center;
     height: 40px;
     flex: 0 0 auto;
-    /* All chrome surfaces respect --window-opacity so the whole window dims
-     uniformly when the user pulls the opacity slider. */
     background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
     border-bottom: 1px solid var(--line);
     position: relative;
@@ -294,13 +245,10 @@ button {
     display: flex;
     align-items: center;
     gap: 9px;
-    padding-left: 80px; /* clear the macOS traffic lights */
+    padding-left: 80px;
     flex: 0 0 auto;
-    /* No fixed width — version/update chips live here, so the strip grows
-     with content. .tb-center uses flex:1 to centre regardless. */
 }
 
-/* Brand header — lives in the side rail now (big), not the top bar. */
 .rail-brand {
     display: flex;
     align-items: center;
@@ -325,7 +273,6 @@ button {
 .rail-brand-dim {
     color: var(--ink-faint);
 }
-/* The version pill trails the wordmark, pushed to the right edge. */
 .rail-brand .tb-version {
     margin-left: auto;
 }
@@ -335,7 +282,7 @@ button {
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    min-width: 0; /* let the crumb truncate instead of pushing the layout */
+    min-width: 0;
     padding-left: 16px;
 }
 
@@ -438,9 +385,6 @@ button {
     text-transform: lowercase;
 }
 
-/* Update banner — its own full-width row above the rail footer, so it
-   never competes with the wordmark for space in the brand header. Only
-   renders when an update is pending, so it costs nothing otherwise. */
 .tb-update {
     display: flex;
     align-items: center;
@@ -552,9 +496,6 @@ button {
     color: var(--acc);
 }
 
-/* ============================================================
-   rails (shared)
-   ============================================================ */
 .side-rail {
     display: flex;
     flex-direction: column;
@@ -574,18 +515,12 @@ button {
     padding: 14px 8px 12px;
 }
 
-/* ============================================================
-   side rail — sessions + windows
-   ============================================================ */
 .rail-group {
     margin-top: 14px;
 }
 .rail-group:first-child {
     margin-top: 0;
 }
-/* Header row pairs the group label with an inline + button. The label
-   handles the visual hierarchy; the + opens the right add-flow for that
-   kind of session (picker, AWS, command, …). */
 .rail-group-head {
     display: flex;
     align-items: center;
@@ -611,8 +546,6 @@ button {
     color: var(--acc);
     background: var(--acc-soft);
 }
-/* Empty-state line. Plain div by default; gains hover affordance when the
-   group has an add action (interactive variant doubles as a CTA). */
 .rail-group-empty {
     display: block;
     width: 100%;
@@ -691,16 +624,6 @@ button {
     font-weight: 600;
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   Project tree — collapsed name-row + expanded indented children
-   --------------------------------------------------------------------
-   Inactive projects show as one row: ▸ chevron + folder + name (+ optional
-   agent hint chip on the right). The active project expands into a ▾
-   header followed by 5 indented child rows (icon + label + count), with
-   the currently-focused pane spotlit by the accent color and a small dot.
-   Density scales to 10+ projects without the per-project icon row
-   repetition that the previous design forced on every entry.
-   ──────────────────────────────────────────────────────────────────── */
 .proj-row {
     display: flex;
     align-items: center;
@@ -745,32 +668,6 @@ button {
     letter-spacing: 0.01em;
 }
 
-/* Hint chip on collapsed rows — flags background activity (e.g. agents
-   still running) without expanding the project. Uses the same brand-tone
-   palette as child counts so colour stays consistent across the rail. */
-.proj-hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    flex-shrink: 0;
-    color: var(--ink-faint);
-}
-.proj-hint-n {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 14px;
-    height: 14px;
-    padding: 0 4px;
-    border-radius: 999px;
-    font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--void);
-}
-
-/* Indented child rows under the expanded project. */
 .proj-tree.active {
     padding-bottom: 4px;
 }
@@ -778,7 +675,7 @@ button {
     display: flex;
     flex-direction: column;
     padding: 4px 6px 2px 0;
-    margin-left: 20px; /* aligns child icons under the folder glyph */
+    margin-left: 20px;
     border-left: 1px solid color-mix(in srgb, var(--acc) 20%, transparent);
 }
 
@@ -825,10 +722,6 @@ button {
     font-size: 12px;
     letter-spacing: 0.01em;
 }
-/* Right-edge stack of mini brand-colored logos. Replaces the old
-   numeric badge — readable as "one per running thing", capped with a
-   "+N" overflow chip. The logos overlap into a horizontal deck (like
-   layered avatars) so a busy project reads compactly. */
 .proj-child-icons {
     display: inline-flex;
     align-items: center;
@@ -851,8 +744,6 @@ button {
     height: 20px;
     flex-shrink: 0;
 }
-/* overlap each logo onto the previous; the ring (same tone as the rail)
-   keeps the layered coins visually separated. */
 .proj-child-icons .proj-pip {
     border-radius: 999px;
     background: var(--rail);
@@ -865,7 +756,6 @@ button {
 .proj-pip-term {
     color: var(--live);
 }
-/* Agents: AgentIcon SVG inherits color via currentColor. */
 .proj-pip-claude {
     color: var(--brand-claude);
 }
@@ -896,19 +786,11 @@ button {
     color: var(--ink-dim);
 }
 
-/* ============================================================
-   context rail
-   ============================================================ */
-/* ============================================================
-   pane grid
-   ============================================================ */
 .window-area {
     position: absolute;
     inset: 0;
     z-index: 1;
 }
-/* Inactive windows stay laid out and composited (visibility, not display) —
-   flipping `display` on a WebGL subtree mis-paints the whole WKWebView. */
 .window-layer {
     position: absolute;
     inset: 0;
@@ -922,22 +804,13 @@ button {
     position: absolute;
 }
 
-/* Pane owns no edge borders. Outer frame is drawn by the adjacent chrome
-   (top-bar's border-bottom, side-rail's border-right, context-/agent-rail
-   border-left). Between-pane separators are drawn by the always-on hairline
-   on .divider-row / .divider-column below — that way the edge between two
-   panes is a single 1px line instead of (pane border-right) + (rail
-   border-left) stacking to 2px and creating a "+" artifact at corners. */
 .pane {
     position: absolute;
     inset: 0;
     border-radius: 0;
-    /* color-mix so the active --window-opacity actually shows the desktop
-     through the pane background (terminal cells stay opaque per xterm bg). */
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
     overflow: hidden;
 }
-/* terminals get slight breathing room; editor/git stay flush */
 .pane-terminal {
     padding: 6px;
 }
@@ -949,10 +822,6 @@ button {
 .terminal-host .xterm {
     height: 100%;
 }
-/* Hide xterm's viewport scrollbar. WKWebView paints it as an opaque
-   white strip on the right of every terminal pane; the canvas/WebGL
-   layer doesn't need a real scrollbar to scroll (mouse wheel + j/k still
-   work via xterm's own handler). */
 .terminal-host .xterm-viewport {
     scrollbar-width: none;
 }
@@ -976,9 +845,6 @@ button {
     transform: translateY(-50%);
     cursor: row-resize;
 }
-/* Always-on 1px hairline (--line); on hover the line thickens and tints
-   --acc for resize affordance. Replaces the pane's old border-right /
-   border-bottom for between-pane separation. */
 .divider::after {
     content: "";
     position: absolute;
@@ -1011,9 +877,6 @@ button {
     background: var(--acc);
 }
 
-/* ============================================================
-   sesh picker
-   ============================================================ */
 .picker-backdrop {
     position: fixed;
     inset: 0;
@@ -1186,9 +1049,6 @@ button {
     color: var(--ink-faint);
 }
 
-/* ============================================================
-   motion
-   ============================================================ */
 @keyframes fadeDown {
     from {
         opacity: 0;
@@ -1236,9 +1096,6 @@ button {
     }
 }
 
-/* ============================================================
-   code editor
-   ============================================================ */
 .editor-pane {
     display: flex;
     height: 100%;
@@ -1451,9 +1308,6 @@ button {
     color: var(--line);
 }
 
-/* ============================================================
-   git ui
-   ============================================================ */
 .git-pane {
     display: flex;
     flex-direction: column;
@@ -1461,8 +1315,6 @@ button {
     width: 100%;
 }
 
-/* body row sits under the full-width toolbar and holds the left column +
-   right diff/commit view */
 .git-body {
     display: flex;
     flex: 1;
@@ -1483,20 +1335,13 @@ button {
     flex: 0 0 auto;
 }
 
-/* Persistent commit panel — sits directly under the git toolbar: a tall
-   textarea with the AI sparkle floated top-right and the commit button
-   bottom-right. Backgrounds stay translucent so window opacity shows. */
 .git-commit-panel {
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
-    /* single frame: the panel's bottom border is the only divider; the
-       textarea is flush + borderless so there's no second inset box */
     border-bottom: 1px solid var(--line);
     background: transparent;
 }
-/* clickable "1 Commit" cluster in the panel header — focuses the textarea.
-   Resets button chrome so it reads as the plain numbered label. */
 .git-cp-headfocus {
     display: inline-flex;
     align-items: center;
@@ -1507,8 +1352,6 @@ button {
     cursor: text;
     font: inherit;
 }
-/* body wraps the textarea + the two floating buttons; it owns the
-   positioning context so the sparkle/commit anchor below the header. */
 .git-cp-body {
     position: relative;
     flex: 0 0 auto;
@@ -1525,7 +1368,6 @@ button {
     font: inherit;
     font-size: 12px;
     line-height: 1.55;
-    /* room for the floating commit button at the bottom */
     padding: 10px 12px 36px 12px;
     outline: none;
 }
@@ -1539,7 +1381,6 @@ button {
     gap: 5px;
     min-width: 0;
 }
-/* AI sparkle in commit header */
 .git-cp-ai {
     width: 22px;
     height: 22px;
@@ -1561,7 +1402,6 @@ button {
     color: var(--acc);
     transform: scale(1.12);
 }
-/* provider/model + commit action row — bottom-right corner */
 .git-cp-actions {
     position: absolute;
     bottom: 10px;
@@ -1571,7 +1411,6 @@ button {
     gap: 6px;
     max-width: calc(100% - 24px);
 }
-/* custom AI provider/model dropdown (replaces native <select>) */
 .git-dd {
     position: relative;
     flex: 0 1 auto;
@@ -1708,21 +1547,15 @@ button {
     outline: none;
 }
 
-/* ── git toolbar — quick actions + compact repo status (replaces the old
-   Status panel) ── */
 .git-toolbar {
     display: flex;
     align-items: center;
     gap: 6px;
     flex: 0 0 auto;
     width: 100%;
-    /* match the agents rail header (.agent-header, 40px) so the two top
-       rows divide at the same line */
     height: 41px;
     padding: 0 10px;
     border-bottom: 1px solid var(--line);
-    /* opacity-aware fill so window translucency shows through (matches the
-       app top bar) instead of a solid rail strip */
     background: linear-gradient(180deg, color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent), transparent);
     overflow: hidden;
 }
@@ -1804,14 +1637,11 @@ button {
     flex: none;
     opacity: 0.85;
 }
-/* ahead/behind count on push/pull — bare coloured number, no box. Inherits
-   the button's tone so push is live-green, pull is default ink. */
 .git-tbtn-count {
     font-size: 11px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
-/* icon-only toolbar button (refresh) — square */
 .git-tbtn.icon {
     width: 26px;
     padding: 0;
@@ -1822,8 +1652,6 @@ button {
     border-color: rgba(97, 255, 202, 0.3);
 }
 
-/* keybind hint — plain monospace glyph, no box. Faint by default so it
-   sits behind the label, brightens with the button on hover. */
 .git-kbd {
     font-family: var(--mono);
     font-size: 10px;
@@ -1836,8 +1664,6 @@ button {
     color: var(--ink-dim);
 }
 
-/* per-panel header action buttons — revealed when the panel is focused or
-   hovered (lazygit-style). */
 .git-head-actions {
     display: none;
     align-items: center;
@@ -1894,8 +1720,6 @@ button {
     display: flex;
     align-items: center;
     gap: 7px;
-    /* match the right pane's .merge-header (29px) so the left commit-panel
-       header and the right diff header divide at the same line */
     height: 29px;
     flex: 0 0 auto;
     padding: 0 9px;
@@ -1932,9 +1756,6 @@ button {
     padding: 3px 0;
 }
 
-/* Filter / range pills on the panel head. Filter is a normal accent tint;
-   range borrows the warn yellow so multi-select operations are visually
-   pre-flagged before the user triggers them. */
 .git-panel-pill {
     font-family: var(--mono);
     font-size: 9.5px;
@@ -1951,9 +1772,6 @@ button {
     border-color: color-mix(in srgb, var(--warn) 36%, transparent);
 }
 
-/* Range-highlighted rows in any of the three list panels. Selected row
-   keeps its full accent; ranged rows get a thinner accent wash so the
-   anchor + cursor stand out. */
 .git-row.ranged {
     background: color-mix(in srgb, var(--warn) 10%, transparent);
 }
@@ -1961,7 +1779,6 @@ button {
     background: var(--acc-soft);
 }
 
-/* ── git modal (menu / confirm / prompt / cheatsheet) ── */
 .git-modal-scrim {
     position: absolute;
     inset: 0;
@@ -2022,8 +1839,6 @@ button {
     margin-right: 4px;
 }
 
-/* Menu items — single hot-key, label, optional hint. Destructive rows
-   tinted red so users can't miss them. */
 .git-menu-item {
     display: flex;
     align-items: center;
@@ -2078,7 +1893,6 @@ button {
     flex-shrink: 0;
 }
 
-/* Confirm / prompt buttons */
 .git-modal-btn {
     background: transparent;
     border: 1px solid var(--line);
@@ -2107,7 +1921,6 @@ button {
     color: var(--void);
 }
 
-/* Prompt input + suggestions */
 .git-modal-input {
     width: 100%;
     background: var(--rail);
@@ -2153,7 +1966,6 @@ button {
     font-size: 10.5px;
 }
 
-/* Cheatsheet — multi-section keybinding reference behind `?` */
 .git-modal-cheatsheet {
     padding: 4px 0;
 }
@@ -2184,7 +1996,6 @@ button {
     font-weight: 600;
 }
 
-/* ── git command log bar ── */
 .git-log-bar {
     flex: 0 0 auto;
     background: var(--rail);
@@ -2357,8 +2168,6 @@ button {
     box-shadow: 0 0 5px color-mix(in srgb, var(--acc) 60%, transparent);
 }
 
-/* Remote URL trailing column on the remotes-list rows. Truncates from
-   the left when long so the ".git" suffix stays readable. */
 .git-remote-url {
     color: var(--ink-faint);
     font-size: 10.5px;
@@ -2371,8 +2180,6 @@ button {
     text-align: right;
 }
 
-/* Tracking-branch annotation on a remote-branch row — e.g. ↻ feat/foo
-   means the local `feat/foo` branch is tracking this ref. */
 .git-tracked {
     color: var(--live);
     font-size: 10.5px;
@@ -2380,8 +2187,6 @@ button {
     flex-shrink: 0;
 }
 
-/* "Back" pseudo-row shown at the top of a drilled remote-branches view.
-   Subtle, clickable, mirrors lazygit's chevron-back affordance. */
 .git-row.git-row-back {
     background: transparent;
     border: none;
@@ -2409,8 +2214,6 @@ button {
     flex-shrink: 0;
 }
 
-/* Muted variant — used for `origin/HEAD` and similar non-clickable rows
-   inside a drilled remote. */
 .git-row.muted {
     color: var(--ink-faint);
     cursor: default;
@@ -2422,10 +2225,6 @@ button {
     color: var(--warn);
     font-size: 11px;
 }
-.gc-date {
-    color: var(--ink-faint);
-    font-size: 10px;
-}
 .git-empty {
     padding: 10px 12px;
     color: var(--ink-faint);
@@ -2435,16 +2234,10 @@ button {
     color: var(--danger);
 }
 
-/* ============================================================
-   COMMIT GRAPH (panel 5) — lazygit-style lanes + author chips
-   ============================================================ */
 .git-graph {
     position: relative;
     min-height: 0;
 }
-/* Canvas paints only the lane gutter (lanes, bezier branch/merge curves,
-   nodes). Rows render their own text on top with a matching left pad.
-   pointer-events:none so clicks fall through to the rows. */
 .git-graph-canvas {
     position: absolute;
     top: 0;
@@ -2498,14 +2291,12 @@ button {
     flex: none;
     font-variant-numeric: tabular-nums;
 }
-/* author initials — coloured text (no chip), colour hashed from the email */
 .gg-author {
     flex: none;
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
 }
-/* ref decoration badges (HEAD / branch / remote / tag) */
 .gg-refs {
     display: inline-flex;
     align-items: center;
@@ -2589,30 +2380,6 @@ button {
     line-height: 1.6;
 }
 
-/* git diff — rendered in a read-only CodeMirror */
-.diff-cm {
-    flex: 1;
-    min-height: 0;
-}
-.diff-cm .cm-editor {
-    height: 100%;
-}
-.cm-diff-add {
-    background: rgba(97, 255, 202, 0.09);
-}
-.cm-diff-del {
-    background: rgba(255, 103, 103, 0.09);
-}
-.cm-diff-hunk {
-    background: var(--acc-soft);
-}
-.cm-diff-meta {
-    opacity: 0.65;
-}
-
-/* ============================================================
-   git merge review — editable diff (CodeMirror unified merge)
-   ============================================================ */
 .merge-review {
     display: flex;
     flex-direction: column;
@@ -2698,7 +2465,6 @@ button {
     height: auto;
 }
 
-/* unified-merge chunk tinting, Aura */
 .cm-deletedChunk {
     background: rgba(255, 103, 103, 0.08);
 }
@@ -2709,9 +2475,6 @@ button {
 .cm-changedLine {
     background: rgba(97, 255, 202, 0.07);
 }
-/* @codemirror/merge draws changes as a 2px gradient strip at the line bottom
-   (reads as an underline) — flatten it to a plain tint. !important is needed
-   to beat the package's compound theme selector. */
 .cm-changedText {
     background: rgba(97, 255, 202, 0.16) !important;
 }
@@ -2725,10 +2488,6 @@ button {
     background: rgba(255, 103, 103, 0.12);
 }
 
-/* @codemirror/merge ships an Accept/Reject button per chunk (rounded
-   green/red blocks by default). Reskin to match the TUI: sharp corners,
-   mono uppercase tracked labels, hairline border tinted with --live for
-   accept / --danger for reject, soft fill on hover. */
 .cm-deletedChunk .cm-chunkButtons {
     position: absolute;
     inset-inline-end: 8px;
@@ -2769,7 +2528,6 @@ button {
     border-color: var(--danger);
 }
 
-/* ----- commit / branch review (file accordion) ----- */
 .commit-review {
     display: flex;
     flex-direction: column;
@@ -2844,7 +2602,6 @@ button {
     color: var(--acc);
 }
 
-/* ----- session pinning + recent ----- */
 .sess-icon.agent {
     color: var(--acc);
 }
@@ -2871,9 +2628,6 @@ button {
     color: var(--danger);
 }
 
-/* ============================================================
-   agent rail (right) + env dropdown
-   ============================================================ */
 .agent-rail {
     display: flex;
     flex-direction: column;
@@ -2913,7 +2667,6 @@ button {
     background: var(--acc-soft);
     color: var(--ink);
 }
-/* Brand colors — match each vendor's primary, not the active theme accent. */
 :root {
     --brand-claude: #d97757;
     --brand-codex: #10a37f;
@@ -2946,7 +2699,6 @@ button {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-/* env dropdown */
 .env-dd {
     position: relative;
 }
@@ -3023,7 +2775,6 @@ button {
 .env-dd-item.active {
     color: var(--ink);
 }
-/* keyboard cursor — a short inset accent bar (no corner-following border) */
 .agent-row.sel::before {
     content: "";
     position: absolute;
@@ -3049,7 +2800,6 @@ button {
     font-variant-numeric: tabular-nums;
 }
 
-/* bookmark toggle on agent session rows */
 .agent-bm {
     display: flex;
     align-items: center;
@@ -3071,7 +2821,6 @@ button {
     color: var(--acc);
 }
 
-/* agent rail — footer strip (type picker + search + new) */
 .agent-header {
     display: flex;
     align-items: center;
@@ -3116,12 +2865,10 @@ button {
     background: var(--acc-soft);
 }
 
-/* groups spacing — subtle, no labels */
 .agent-group + .agent-group {
     margin-top: 10px;
 }
 
-/* active open agent — left accent bar (Zen-style tab indicator) */
 .agent-row.active::before {
     content: "";
     position: absolute;
@@ -3132,7 +2879,6 @@ button {
     background: var(--acc);
 }
 
-/* small live dot — shown on pinned rows when the session is also running */
 .live-dot {
     width: 6px;
     height: 6px;
@@ -3141,7 +2887,6 @@ button {
     flex: 0 0 auto;
 }
 
-/* hover-swap close — the agent glyph becomes an X on hover for closable rows */
 .agent-glyph {
     position: relative;
 }
@@ -3166,9 +2911,6 @@ button {
     opacity: 1;
 }
 
-/* ============================================================
-   agent tabs — shown above the stage when a project has 2+ agents
-   ============================================================ */
 .agent-tabs {
     position: absolute;
     top: 0;
@@ -3229,10 +2971,6 @@ button {
     color: var(--danger);
 }
 
-/* Skip-permissions / "bypass" chip in each agent tab. Hidden by default;
-   fades in on tab hover OR stays solid + colored when bypass is ON, so
-   the user always knows when an agent is running with --dangerously-skip
-   permissions (no surprise yolo mode). */
 .agent-tab-skip {
     display: flex;
     align-items: center;
@@ -3258,14 +2996,10 @@ button {
 .agent-tab-skip.on:hover {
     color: var(--ink);
 }
-/* When the skip chip is visible we also want the close X visible, but
-   the auto-margin only applies to the first .agent-tab-x. Reset so they
-   both sit on the right edge cleanly. */
 .agent-tab-skip + .agent-tab-x {
     margin-left: 0;
 }
 
-/* empty agent center pane — shown when project has 0 agents in agent view */
 .agent-empty-stage {
     position: absolute;
     inset: 0;
@@ -3284,7 +3018,6 @@ button {
     opacity: 0.7;
 }
 
-/* per-filetype Nerd Font glyphs in the editor file tree */
 .file-glyph {
     display: inline-flex;
     align-items: center;
@@ -3296,7 +3029,6 @@ button {
     flex: 0 0 auto;
 }
 
-/* VSCode-style git decorations on file tree rows */
 .tree-row.git-m {
     color: #e2c08d;
 }
@@ -3320,12 +3052,10 @@ button {
     opacity: 0.8;
 }
 
-/* I-beam cursor over the editor text — body sets default cursor */
 .cm-content {
     cursor: text;
 }
 
-/* git diff bars in the editor gutter — VSCode-style */
 .cm-git-gutter {
     width: 3px;
     padding: 0;
@@ -3357,7 +3087,6 @@ button {
     border-right: 4px solid transparent;
 }
 
-/* git diff overview ruler — right-edge strip mapping changes to scroll position */
 .cm-editor {
     position: relative;
 }
@@ -3369,9 +3098,6 @@ button {
     height: 100%;
     z-index: 4;
 }
-/* Clickable: jumps the viewport to the corresponding diff hunk. Buttons
-   reset their default chrome (cursor, padding, border) so they read as the
-   plain coloured strip the user expects. */
 .cm-git-ruler-bar {
     position: absolute;
     left: 0;
@@ -3400,7 +3126,6 @@ button {
     height: 4px !important;
 }
 
-/* Cmd-hover symbol underline — VSCode / Zed style "go to definition" cue */
 .cm-lsp-link {
     text-decoration: underline;
     text-decoration-color: var(--acc);
@@ -3409,9 +3134,6 @@ button {
     cursor: pointer;
 }
 
-/* ============================================================
-   LSP inline peek — VSCode-style references / implementations panel
-   ============================================================ */
 .cm-peek {
     background: var(--rail-2);
     border: 1px solid var(--line);
@@ -3512,7 +3234,6 @@ button {
     white-space: nowrap;
 }
 
-/* editor file-tree resize handle — sits over the tree's right border */
 .ed-tree-resizer {
     width: 6px;
     margin-left: -3px;
@@ -3528,7 +3249,6 @@ button {
     background: var(--acc-line);
 }
 
-/* git busy overlay — visible feedback for AI commit / push / pull etc. */
 .git-busy-overlay {
     position: absolute;
     inset: 0;
@@ -3587,7 +3307,6 @@ button {
     }
 }
 
-/* ---- toasts -------------------------------------------------------------- */
 .toaster {
     position: fixed;
     bottom: 18px;
@@ -3651,7 +3370,6 @@ button {
     }
 }
 
-/* ahead/behind chips next to the current branch row */
 .branch-track {
     margin-left: auto;
     display: flex;
@@ -3686,9 +3404,6 @@ button {
     animation: none;
 }
 
-/* ============================================================
-   shared modal chrome (used by AwsAuthModal, future modals)
-   ============================================================ */
 .settings-backdrop {
     position: fixed;
     inset: 0;
@@ -3743,12 +3458,7 @@ button {
     background: var(--void);
 }
 
-/* ============================================================
-   settings — full-pane Atlas layout, three pages, theme-aware
-   ============================================================ */
 .settings-pane {
-    /* Stage is position:relative — fill it. Keeps side rails visible.
-       Sits on top of the Workspace so PTYs/scroll state survive opening. */
     position: absolute;
     inset: 0;
     z-index: 50;
@@ -3757,18 +3467,12 @@ button {
     color: var(--ink);
     font-family: var(--mono);
     animation: fade 0.18s ease;
-
-    /* Surface tokens that honor --window-opacity (set on :root by the
-       slider). Every panel/input/list bg below derives from these, so the
-       settings pane fades with the rest of the app. */
     --s-bg: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     --s-bg-dim: color-mix(in srgb, var(--bg-dim) calc(var(--window-opacity, 1) * 100%), transparent);
     --s-bg-raised: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
-
     background: var(--s-bg);
 }
 
-/* ---- left rail --------------------------------------------------------- */
 .settings-rail {
     background: var(--s-bg);
     border-right: 1px solid var(--line);
@@ -3907,7 +3611,6 @@ button {
     background: transparent;
 }
 
-/* ---- main pane --------------------------------------------------------- */
 .settings-main {
     background: var(--s-bg);
     overflow-y: auto;
@@ -3967,7 +3670,6 @@ button {
     font-weight: 500;
 }
 
-/* ---- pages ------------------------------------------------------------- */
 .settings-page {
     animation: settingsFadeIn 0.22s ease-out;
     padding-bottom: 24px;
@@ -4016,7 +3718,6 @@ button {
     line-height: 1.55;
 }
 
-/* ---- sections ---------------------------------------------------------- */
 .settings-section {
     padding: 28px 36px;
     border-bottom: 1px dashed var(--line-soft);
@@ -4081,7 +3782,6 @@ button {
     font-weight: 500;
 }
 
-/* ---- input + buttons row (add project root) --------------------------- */
 .settings-row-input {
     display: grid;
     grid-template-columns: 1fr auto auto auto;
@@ -4148,7 +3848,6 @@ button {
     filter: none;
 }
 
-/* ---- field labels + helpers (cloud page) ------------------------------ */
 .settings-field-label {
     display: block;
     font-size: 10px;
@@ -4172,7 +3871,6 @@ button {
     font-size: 10.5px;
 }
 
-/* ---- project root list ------------------------------------------------ */
 .settings-list {
     display: flex;
     flex-direction: column;
@@ -4241,7 +3939,6 @@ button {
     color: var(--danger);
 }
 
-/* ---- theme grid ------------------------------------------------------- */
 .settings-theme-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -4295,7 +3992,6 @@ button {
     display: block;
 }
 
-/* ---- knob row (opacity, blur) ----------------------------------------- */
 .settings-knob-row {
     display: grid;
     grid-template-columns: 1fr 200px;
@@ -4386,7 +4082,6 @@ button {
     color: var(--ink-muted);
 }
 
-/* ---- depth stepper (used inline in root list) ------------------------- */
 .settings-depth {
     display: inline-flex;
     align-items: stretch;
@@ -4452,7 +4147,6 @@ button {
     color: var(--acc);
 }
 
-/* ---- statusline ------------------------------------------------------- */
 .settings-statusline {
     position: sticky;
     bottom: 0;
@@ -4498,11 +4192,6 @@ button {
     padding: 0;
 }
 
-/* ============================================================
-   AWS module — top bar chip, pane, sidebar nav, views, modal
-   ============================================================ */
-
-/* ---- top bar chip ----------------------------------------------------- */
 .tb-aws-chip {
     display: inline-flex;
     align-items: center;
@@ -4511,8 +4200,6 @@ button {
     height: 24px;
     border: 0;
     background: transparent;
-    /* Icon color carries the auth state (the dot/label are gone) — default
-       to faint, then state classes below tint the glyph. */
     color: var(--ink-faint);
     cursor: pointer;
     transition:
@@ -4553,18 +4240,15 @@ button {
     }
 }
 
-/* ---- pane shell ------------------------------------------------------- */
 .aws-pane {
     display: flex;
     width: 100%;
     height: 100%;
-    /* Transparent so the parent .pane's window-opacity blend shows through. */
     background: transparent;
     color: var(--ink);
     font-family: var(--mono);
 }
 
-/* ---- left sidebar nav ------------------------------------------------- */
 .aws-nav {
     width: 192px;
     flex: 0 0 auto;
@@ -4626,7 +4310,6 @@ button {
     flex: 1;
 }
 
-/* ---- main panel ------------------------------------------------------- */
 .aws-main {
     flex: 1 1 auto;
     display: flex;
@@ -4638,11 +4321,9 @@ button {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    position: relative; /* anchors .aws-refresh */
+    position: relative;
 }
 
-/* Refresh chip — floats top-right of an AWS view, above the table head.
-   Same flat-square look as our other chips; spins when busy. */
 .aws-refresh {
     position: absolute;
     top: 10px;
@@ -4680,11 +4361,6 @@ button {
     }
 }
 
-/* ---- breadcrumb ---------------------------------------------------------
-   Flat row of clickable segments with a centered chevron divider. Each
-   segment is its own `.aws-breadcrumb-seg` so the chevron lines up with
-   the text baseline (was misaligned before because chev was inline-svg
-   inside a `<span>` with default vertical-align). */
 .aws-breadcrumb {
     display: flex;
     align-items: center;
@@ -4729,7 +4405,6 @@ button {
     font-weight: 600;
 }
 
-/* tables */
 .aws-table {
     flex: 1 1 auto;
     width: 100%;
@@ -4786,7 +4461,6 @@ button {
     margin-top: 2px;
 }
 
-/* status pills */
 .aws-status {
     display: inline-block;
     padding: 1px 8px;
@@ -4823,7 +4497,6 @@ button {
     white-space: pre-wrap;
 }
 
-/* ---- billing — multi-month timeline ------------------------------------ */
 .aws-billing {
     overflow-y: auto;
 }
@@ -5040,7 +4713,6 @@ button {
     text-align: right;
 }
 
-/* ---- empty / unauthed cards ------------------------------------------ */
 .aws-empty-stage {
     flex: 1 1 auto;
     display: flex;
@@ -5173,7 +4845,6 @@ button {
     color: var(--ink-dim);
 }
 
-/* ---- auth modal ------------------------------------------------------- */
 .aws-auth-modal {
     width: min(520px, calc(100vw - 80px));
     background: color-mix(in srgb, var(--chrome-bg, var(--rail-2)) calc(var(--window-opacity, 1) * 100%), transparent);
@@ -5266,7 +4937,6 @@ button {
     border-top: 1px solid var(--line);
 }
 
-/* ---- AWS log tail ------------------------------------------------------ */
 .aws-logs {
     flex: 1 1 auto;
     display: flex;
@@ -5369,7 +5039,6 @@ button {
     background: color-mix(in srgb, var(--chrome-bg, var(--bg-dim)) calc(var(--window-opacity, 1) * 100%), transparent);
     font-size: 11.5px;
     line-height: 1.55;
-    /* Opt back into text selection — body sets user-select:none globally. */
     user-select: text;
     -webkit-user-select: text;
     cursor: text;
@@ -5395,10 +5064,6 @@ button {
     color: var(--ink-dim);
 }
 
-/* ── log-line syntax tokens (CloudWatch tail, Rundeck output, anything
-   else that renders raw log text). Token classes are emitted by
-   src/components/aws/logHighlight.tsx; matched groups light up against
-   the existing palette so nothing new bleeds into the design tokens. */
 .lt {
     font-variant-numeric: tabular-nums;
 }
@@ -5464,7 +5129,6 @@ button {
     color: var(--ink-dim);
 }
 
-/* ---- AWS billing: credits / net columns + sub-sections --------------- */
 .aws-billing-stat.credit .aws-billing-stat-value {
     color: #61ffca;
 }
@@ -5487,7 +5151,6 @@ button {
     font-weight: 600;
 }
 
-/* ---- ECS service detail sub-tabs --------------------------------------- */
 .aws-subtabs {
     display: flex;
     align-items: center;
@@ -5550,25 +5213,6 @@ button {
     border-color: var(--danger);
 }
 
-/* ============================================================
- * Project search pane (Cmd+Shift+F · 4th project window)
- * ============================================================
- * Fills its pane (height: 100%) and uses the same column structure as
- * the git pane: head bar at top, scrollable body, kbd hint footer. The
- * embedded CodeMirror snippets render with real syntax highlighting via
- * the theme bus — see SearchPane.tsx.
- */
-
-/* Project-wide search pane (Cmd+Shift+F) — left column holds a compact
- * glow palette + threaded match list; right column is a live syntax-
- * highlighted preview tracking the selected match.
- *
- * Surface backgrounds use rgba washes (not solid theme tokens) so the
- * window's --window-opacity carries through cleanly: the parent .pane
- * is already color-mixed against --window-opacity, and everything
- * inside it composes on top of that wash. Solid tokens here would
- * paint over the transparency and look ugly at <100% opacity. */
-
 .search-pane {
     display: flex;
     flex-direction: column;
@@ -5583,11 +5227,9 @@ button {
     min-height: 0;
     overflow: hidden;
     display: grid;
-    /* narrower left col, wider preview */
     grid-template-columns: minmax(300px, 40%) 1fr;
 }
 
-/* ----- left column: bar + threads -------------------------- */
 .sp-left {
     display: grid;
     grid-template-rows: auto 1fr;
@@ -5602,8 +5244,6 @@ button {
     background: transparent;
 }
 
-/* All rows now flex so the chevron + avatar + input flow naturally and
-   the action row's pills/button can sit on the same baseline. */
 .sp-row {
     display: flex;
     align-items: center;
@@ -5628,8 +5268,6 @@ button {
     border-top: 1px solid var(--line-soft);
 }
 
-/* VSCode-style chevron toggle for the replace accordion. Default state
-   points right; open state rotates to point down. */
 .sp-chev {
     flex: 0 0 14px;
     width: 14px;
@@ -5653,14 +5291,10 @@ button {
     transform: rotate(90deg);
     color: var(--acc);
 }
-/* Empty 14px column under the chevron so the replace row's avatar
-   lines up with the find row's avatar instead of jumping leftward. */
 .sp-chev-spacer {
     flex: 0 0 14px;
 }
 
-/* Glyph-only — no surrounding pill. The colored icon sits inline with the
-   input so the row reads as a single thought. */
 .sp-av {
     flex: 0 0 16px;
     width: 16px;
@@ -5714,7 +5348,6 @@ button {
     }
 }
 
-/* No bordered cell — just a faint micro-cap label and a naked input. */
 .sp-filter {
     display: flex;
     align-items: center;
@@ -5751,8 +5384,6 @@ button {
     color: var(--ink);
 }
 
-/* Inline toggle group living at the right end of the find input row —
-   same chrome as the editor find bar so the two read consistently. */
 .sp-row-toggles {
     flex: 0 0 auto;
     display: flex;
@@ -5760,8 +5391,6 @@ button {
     margin-left: 4px;
 }
 
-/* Toggles read as inline text — colored when on, faint when off. The
-   underline on the active state is the only visual chrome. */
 .sp-toggles {
     display: flex;
     gap: 8px;
@@ -5823,8 +5452,6 @@ button {
     margin-left: 4px;
 }
 
-/* Replace action reads as an underlined accent word, not a button slab.
-   Two stages: preview (accent purple) → commit (live green). */
 .sp-replace-btn {
     background: transparent;
     color: var(--acc);
@@ -5860,8 +5487,6 @@ button {
     border-bottom-color: var(--ink);
 }
 
-/* "stale" indicator surfaces when fs events fire while results are shown.
-   One-click rerun to refresh. */
 .sp-stale {
     background: transparent;
     border: 0;
@@ -5880,17 +5505,12 @@ button {
     border-bottom-color: var(--ink);
 }
 
-/* threaded list area */
 .sp-threads-wrap {
     overflow: auto;
     display: grid;
     place-items: center;
     padding: 24px 14px;
 }
-/* Virtualizer-driven: the scrollable container sets the viewport, the
-   inner spacer reserves total height, and absolute rows position via
-   translateY. Padding/gap moved onto the rows themselves so layout stays
-   correct even when rows are absolute-positioned. */
 .sp-threads {
     overflow-y: auto;
     overflow-x: hidden;
@@ -5923,8 +5543,6 @@ button {
     color: var(--danger);
 }
 
-/* Legacy non-virtualized wrapper, no longer rendered but left in CSS to
-   avoid accidental regressions if SearchPane is reverted. */
 .sp-thread {
     display: flex;
     flex-direction: column;
@@ -6047,7 +5665,6 @@ button {
     padding-left: 4px;
 }
 
-/* preview pane (right column) */
 .sp-preview {
     display: flex;
     flex-direction: column;
@@ -6110,8 +5727,6 @@ button {
         transform 0.12s;
     display: inline-block;
 }
-/* Preview body wraps the always-mounted host so we can overlay
-   loading/err messages on top of it without unmounting the editor. */
 .sp-preview-body {
     flex: 1;
     position: relative;
@@ -6157,7 +5772,6 @@ button {
     color: var(--danger);
 }
 
-/* CodeMirror decorations inside the preview */
 .cm-sp-hit-line {
     background: var(--acc-soft);
     box-shadow: inset 2px 0 0 var(--acc);
@@ -6169,7 +5783,6 @@ button {
     box-shadow: inset 0 -1px 0 rgba(255, 220, 90, 0.6);
 }
 
-/* footer */
 .sp-foot {
     display: flex;
     align-items: center;
@@ -6193,17 +5806,6 @@ button {
     font-weight: 700;
 }
 
-/* ============================================================
- * In-editor find / replace bar (.ed-findbar)
- * ============================================================
- *
- * Our own React component that drives CodeMirror's search commands
- * (findNext / findPrevious / replaceNext / replaceAll) — CodeMirror's
- * built-in panel is suppressed (we never call openSearchPanel).
- * Pinned top-right of the editor pane, theme-aware via the same
- * color-mix + html.is-transparent pattern as the rest of the chrome.
- */
-
 .ed-host {
     position: relative;
 }
@@ -6219,11 +5821,6 @@ button {
     width: 460px;
     max-width: calc(100% - 16px);
     padding: 4px 6px 4px 4px;
-    /* Same color-mix formula as the editor pane, so the find bar's bg
-       and the pane's bg stack with --window-opacity for natural depth —
-       at lower opacity the panel reads as a third translucent layer on
-       top of (pane on top of body), each compounding instead of all
-       collapsing to one tinted wash. */
     background: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
     border: 1px solid var(--line);
     box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.55);
@@ -6273,9 +5870,6 @@ button {
     border-top: 1px solid var(--line-soft);
 }
 
-/* Colored glyph avatar inline with the input — yellow for find, green
-   for replace, matching the global SearchPane's .sp-av style. No box,
-   no padding chrome — just the colored icon. */
 .ed-findbar-av {
     flex: 0 0 16px;
     width: 16px;
@@ -6296,8 +5890,6 @@ button {
     color: var(--live);
 }
 
-/* Bare input — no border, no background. Reads as plain text on the
-   panel surface. */
 .ed-findbar-input {
     flex: 1 1 auto;
     min-width: 0;
@@ -6314,8 +5906,6 @@ button {
     color: var(--ink-faint);
 }
 
-/* Inline toggle group at the right end of the input row — underline-on-
-   active chrome only, matching the global search toggles. */
 .ed-findbar-toggles {
     flex: 0 0 auto;
     display: flex;
@@ -6396,8 +5986,6 @@ button {
     width: 22px;
 }
 
-/* Match-highlight decorations the editor sets on hits — give them the
- * same warm bg as the global-search match for visual continuity. */
 .cm-searchMatch {
     background: rgba(255, 220, 90, 0.18);
     outline: none;
@@ -6406,20 +5994,9 @@ button {
     background: rgba(255, 220, 90, 0.42);
 }
 
-/* Suppress CodeMirror's built-in search panel — we render our own React
- * bar instead. Keeps any orphan panel DOM invisible if something tries
- * to call openSearchPanel. */
 .ed-host .cm-panels {
     display: none;
 }
-
-/* ============================================================
-   Rundeck pane — deploy center.
-   Same chrome rules as .aws-pane / .git-pane: transparent body
-   so the window-opacity wash shows through; flat squares with
-   border separators, never rounded cards; accents only for
-   focused / interactive bits.
-   ============================================================ */
 
 .rnd-pane {
     display: flex;
@@ -6431,8 +6008,6 @@ button {
     font-family: var(--mono);
     font-size: 12px;
     min-height: 0;
-    /* Opt back into text selection — body sets user-select:none globally —
-       so branch names, step logs, exec IDs etc. can be selected and copied. */
     user-select: text;
     -webkit-user-select: text;
 }
@@ -6449,11 +6024,6 @@ button {
     position: relative;
 }
 
-/* ── tree sub-rail ──
-   Sits to the left of the rundeck body. Two sections: Legacy projects
-   are flat rows; product projects expand to show their env folders as
-   indented children (`dev/`, `production/`) with job counts. Selecting
-   an env folder scopes the matrix to that subtree. */
 .rnd-tree {
     width: 196px;
     flex-shrink: 0;
@@ -6464,13 +6034,6 @@ button {
 }
 .rnd-tree-section + .rnd-tree-section {
     margin-top: 10px;
-}
-.rnd-tree-section-h {
-    color: var(--ink-faint);
-    font-size: 10px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    padding: 6px 14px 6px;
 }
 .rnd-tree-hint {
     padding: 4px 14px;
@@ -6629,7 +6192,6 @@ button {
     color: var(--danger);
 }
 
-/* ---- branch palette ---- */
 .rnd-branch-main {
     color: var(--live);
 }
@@ -6649,7 +6211,6 @@ button {
     color: var(--ink-faint);
 }
 
-/* ---- status palette ---- */
 .rnd-status-succeeded {
     color: var(--live);
 }
@@ -6666,7 +6227,6 @@ button {
     color: var(--ink-dim);
 }
 
-/* ---- top bar: back / breadcrumb / env picker ---- */
 .rnd-bar {
     display: flex;
     align-items: center;
@@ -6755,7 +6315,6 @@ button {
     letter-spacing: 0.04em;
 }
 
-/* ---- loading / spinner ---- */
 .rnd-loading {
     display: flex;
     align-items: center;
@@ -6784,7 +6343,6 @@ button {
     }
 }
 
-/* ---- buttons (shared) — flat squares, no fills by default ---- */
 .rnd-btn,
 .rnd-btn-sm {
     background: transparent;
@@ -6836,7 +6394,6 @@ button {
     background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
-/* ---- banners ---- */
 .rnd-banner {
     padding: 7px 14px;
     font-size: 11px;
@@ -6863,7 +6420,6 @@ button {
     background: transparent;
 }
 
-/* ---- empty ---- */
 .rnd-empty {
     display: flex;
     flex-direction: column;
@@ -6881,17 +6437,9 @@ button {
 .rnd-empty.compact {
     padding: 18px;
 }
-.rnd-empty-title {
-    font-size: 12px;
-    color: var(--ink);
-}
 .rnd-empty-msg {
     font-size: 11px;
 }
-
-/* ============================================================
-   Login view — full-pane form, no card, no rounded chrome.
-   ============================================================ */
 
 .rnd-login {
     display: flex;
@@ -6985,10 +6533,6 @@ button {
     color: var(--acc);
 }
 
-/* ============================================================
-   Deployments list — single env, vertical rows.
-   ============================================================ */
-
 .rnd-list {
     display: flex;
     flex-direction: column;
@@ -7038,9 +6582,6 @@ button {
     overflow: auto;
 }
 
-/* Group header — sits above each env folder block in product projects
-   (contractiq / marketingiq / channeliq). Legacy projects render with
-   no headers since `g.env` is null and the header element is skipped. */
 .rnd-group + .rnd-group {
     margin-top: 12px;
 }
@@ -7150,10 +6691,6 @@ button {
     background: var(--acc-soft);
 }
 
-/* ============================================================
-   Service detail + execution history rows.
-   ============================================================ */
-
 .rnd-service,
 .rnd-deploy,
 .rnd-exec {
@@ -7194,9 +6731,6 @@ button {
     color: var(--ink-faint);
     letter-spacing: 0.04em;
 }
-/* ---- service header: inline command bar ----
-   One row: env pill · service path · project | deploy composer | secondary
-   actions. Replaces the old title-stack + four equal buttons. */
 .rnd-svc-bar {
     display: flex;
     align-items: center;
@@ -7206,83 +6740,6 @@ button {
     border-bottom: 1px solid var(--line);
     flex: 0 0 auto;
 }
-/* env pill — colour-coded by tone, with a glowing status dot */
-.rnd-env {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex: 0 0 auto;
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    padding: 3px 8px;
-    line-height: 1;
-    border: 1px solid;
-}
-.rnd-env-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: currentColor;
-    box-shadow: 0 0 8px currentColor;
-}
-.rnd-env-dev {
-    color: var(--live);
-    border-color: color-mix(in srgb, var(--live) 32%, transparent);
-    background: color-mix(in srgb, var(--live) 9%, transparent);
-}
-.rnd-env-stg {
-    color: var(--warn);
-    border-color: color-mix(in srgb, var(--warn) 32%, transparent);
-    background: color-mix(in srgb, var(--warn) 9%, transparent);
-}
-.rnd-env-prod {
-    color: var(--danger);
-    border-color: color-mix(in srgb, var(--danger) 38%, transparent);
-    background: color-mix(in srgb, var(--danger) 9%, transparent);
-}
-/* service path — dim ancestors, bright leaf */
-.rnd-svc-path {
-    font-size: 13.5px;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-}
-.rnd-svc-part {
-    display: inline;
-}
-.rnd-svc-seg {
-    color: var(--ink-dim);
-}
-.rnd-svc-slash {
-    color: var(--ink-faint);
-    opacity: 0.7;
-    margin: 0 2px;
-}
-.rnd-svc-leaf {
-    color: var(--ink);
-    font-weight: 600;
-}
-.rnd-svc-proj {
-    font-size: 10.5px;
-    color: var(--ink-faint);
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-    flex: 0 0 auto;
-}
-.rnd-svc-proj::before {
-    content: "·";
-    margin: 0 7px 0 1px;
-    color: var(--ink-faint);
-    opacity: 0.6;
-}
-.rnd-svc-spacer {
-    flex: 1 1 24px;
-    min-width: 0;
-}
 .rnd-svc-div {
     width: 1px;
     height: 18px;
@@ -7290,7 +6747,6 @@ button {
     flex: 0 0 auto;
 }
 
-/* fused deploy composer: branch input + solid primary button */
 .rnd-composer {
     display: inline-flex;
     align-items: stretch;
@@ -7339,7 +6795,6 @@ button {
     cursor: not-allowed;
 }
 
-/* ghost text buttons — secondary deploy variants */
 .rnd-ghost-btn {
     display: inline-flex;
     align-items: center;
@@ -7370,7 +6825,6 @@ button {
     cursor: not-allowed;
 }
 
-/* utility icon button — refresh */
 .rnd-icon-btn {
     display: inline-flex;
     align-items: center;
@@ -7465,10 +6919,6 @@ button {
     text-align: right;
     color: var(--ink-faint);
 }
-
-/* ============================================================
-   Deploy view (inline plan + inline prod gate).
-   ============================================================ */
 
 .rnd-deploy-form {
     padding: 18px 16px 6px;
@@ -7573,10 +7023,6 @@ button {
     background: transparent;
 }
 
-/* ============================================================
-   Execution live view — steps aside + log stream main.
-   ============================================================ */
-
 .rnd-exec-head {
     display: flex;
     align-items: center;
@@ -7607,18 +7053,6 @@ button {
     color: var(--ink);
     font-weight: 600;
 }
-.rnd-exec-svc {
-    color: var(--ink);
-    font-weight: 500;
-    font-size: 12px;
-}
-.rnd-exec-proj {
-    color: var(--ink-faint);
-    font-size: 10.5px;
-    letter-spacing: 0.04em;
-}
-/* Meta strip — icon-led chips (branch / user / started / duration), hairline
-   separators between them, the branch tinted so it reads as the key fact. */
 .rnd-exec-meta-row {
     display: inline-flex;
     align-items: stretch;
@@ -7646,7 +7080,6 @@ button {
 .rnd-meta-v {
     color: var(--ink);
     font-family: var(--mono);
-    /* Branch / user / timestamps are the things people copy out of here. */
     user-select: text;
     -webkit-user-select: text;
     cursor: text;
@@ -7846,9 +7279,6 @@ button {
     color: var(--ink-faint);
 }
 
-/* ============================================================
-   Top-bar deploy chip — sibling to .tb-aws-chip in TopBar.
-   ============================================================ */
 .tb-deploy-chip {
     display: inline-flex;
     align-items: center;
@@ -7868,27 +7298,11 @@ button {
 .tb-deploy-chip > * {
     flex: 0 0 auto;
 }
-.tb-deploy-chip > .tb-deploy-svc,
 .tb-deploy-chip > .tb-deploy-branch {
     flex: 0 1 auto;
 }
 .tb-deploy-chip:hover {
     color: var(--ink);
-}
-.tb-deploy-svc {
-    color: var(--ink);
-    display: inline-block;
-    min-width: 0;
-    max-width: 140px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    vertical-align: middle;
-}
-.tb-deploy-sep {
-    color: var(--ink-faint);
-    opacity: 0.6;
-    flex: 0 0 auto;
 }
 .tb-deploy-branch {
     font-size: 10.5px;
@@ -7907,11 +7321,6 @@ button {
     color: var(--ink-faint);
 }
 
-/* ============================================================
-   Top-bar Git chip — active-project branch + dirty state.
-   Transparent surface so it inherits the window opacity wash,
-   matching .tb-deploy-chip / .tb-aws-chip.
-   ============================================================ */
 .tb-git-chip {
     display: inline-flex;
     align-items: center;
@@ -7954,8 +7363,6 @@ button {
 .tb-git-behind {
     color: var(--warn);
 }
-/* Git icon carries the working-tree state (the trailing dot is gone):
-   green when clean, warn-amber when there are uncommitted changes. */
 .tb-git-ico.clean {
     color: var(--live);
 }
@@ -7963,8 +7370,6 @@ button {
     color: var(--warn);
 }
 
-/* Hairline divider between top-bar status zones (icon-forward layout):
-   one after the git chip, one to the right of the AWS glyph. */
 .tb-sep {
     width: 1px;
     height: 16px;

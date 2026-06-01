@@ -11,9 +11,6 @@ import { FileIcon } from "./FileIcon";
 
 const MAX_RESULTS = 200;
 
-// Cmd-P file picker, Telescope-style. Walks the project respecting
-// .gitignore on the Rust side, fuzzy-matches in JS, dispatches open-file
-// through the bus.
 export function FilePalette() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const cwd = session?.cwd ?? "";
@@ -31,12 +28,7 @@ export function FilePalette() {
         inputRef.current?.focus();
     }, []);
 
-    // Ranked + filtered results, capped at MAX_RESULTS. Basename is scored
-    // first so matches on the file name beat matches deep in the path.
-    const items = useMemo(
-        () => rankBy(query, all, (path) => [basename(path), path]).slice(0, MAX_RESULTS),
-        [all, query],
-    );
+    const items = useMemo(() => rankBy(query, all, (path) => [basename(path), path]).slice(0, MAX_RESULTS), [all, query]);
 
     useEffect(() => {
         setSel(0);

@@ -28,11 +28,11 @@ import type {
     AgentType,
     AwsService,
     EcsLevel,
-	    Env,
-	    FocusDir,
-	    PickerMode,
+    Env,
+    FocusDir,
+    PickerMode,
+    PaneKind,
     ProjectRoot,
-    RecentEntry,
     RundeckLevel,
     RundeckView,
     Session,
@@ -42,58 +42,6 @@ import type {
     WindowRole,
 } from "./types";
 
-// All write operations on the store. Components do not call setState
-// directly; they call cmd.X(). Each command does exactly what it says
-// and emits at most one bus event for cross-component coordination.
-//
-// Convention: small functions, kept in feature groups for navigation.
-// Closures over getState/setState — no slice ceremony.
-//
-// TODO(C4 split): this file is ~1300 lines and 79 exports. Planned split,
-// keeping this file as the barrel for back-compat:
-//
-//   commands/_shared.ts   — patchSession, patchWindow, withActiveSession,
-//                           withActiveWindow, basename, makeWindow,
-//                           projectWindows, attachSession (private helpers)
-//   commands/session.ts   — createX session, selectSession, closeSession,
-//                           cycleSession{,Group}, togglePin, reopenRecent,
-//                           setEnv
-//   commands/pane.ts      — splitActivePane, closeActivePane, focusPane,
-//                           moveFocus, resizeActivePane, toggleZoom,
-//                           setSplitSizes
-//   commands/window.ts    — newWindow, closeActiveWindow, selectWindowId,
-//                           selectWindowByIndex, selectWindowByName,
-//                           selectWindowRelative, ensureSearchWindow
-//   commands/agent.ts     — addAgent, selectAgent, closeAgent,
-//                           toggleAgentSkipPermissions, focusAgents,
-//                           toggle/openAgentBookmark
-//   commands/rundeck.ts   — openRundeckSession, rundeckPush/Pop/Replace/
-//                           Home, setRundeckProject, openRundeckServiceFor
-//   commands/aws.ts       — setAwsProfile, setAwsService, runAwsSsoLogin,
-//                           openAwsAuthModal, closeAwsAuthModal
-//   commands/prefs.ts     — setThemeId, setWindowOpacity, setWindowBlur,
-//                           setCloudBrowser{,Shortcut}, addProjectRoot,
-//                           removeProjectRoot, setProjectRootDepth,
-//                           normaliseProjectRoots
-//   commands/view.ts      — setEditorView, setGitView, setEcsLevel,
-//                           setBillingExpandedMonth
-//   commands/search.ts    — focusGlobalSearch, setGlobalSearchQuery,
-//                           setGlobalSearchOption,
-//                           toggle/expand/collapseAllGlobalSearchFiles
-//   commands/ui.ts        — setHome, open/close{Picker,AgentPalette,
-//                           FilePalette,Settings}, toggleSettings,
-//                           toggleLeft/RightRail, openLspResults,
-//                           closeLspResults, requestOpenFile
-//
-// Do not start the split alongside other in-flight work — it touches
-// every component that does `import * as cmd from "../state/commands"`.
-
-// `patchSession`/`patchWindow` used to spread-rebuild the entity map on
-// every call. Now they hand the entity to an immer draft and let the
-// draft handle structural sharing. Callers still write a pure
-// transformation (`s => ({ ...s, name: x })`) because that's the local
-// vocabulary used 50+ times in this file — the immer benefit lives at
-// the parent-map level where most allocations happened.
 const patchSession = (id: string, fn: (s: Session) => Session): void =>
     mutate((d) => {
         const cur = d.sessions[id];
@@ -108,10 +56,6 @@ const patchWindow = (id: string, fn: (w: Window) => Window): void =>
         d.windows[id] = fn(cur as Window);
     });
 
-// Most mutations want "with the active session, if there is one, do X" or
-// "with the active window, if there is one, do X". The immer draft form
-// lets the body just mutate the draft in place — no patch return, no
-// shallow-spread ceremony at the call site.
 const withActiveSession = (fn: (d: StoreState, session: Session) => void): void =>
     mutate((d) => {
         const session = d.sessions[d.activeSessionId];
@@ -128,13 +72,11 @@ const withActiveWindow = (fn: (d: StoreState, win: Window, session: Session) => 
         fn(d as unknown as StoreState, win as Window, session as Session);
     });
 
-// ---- Layout primitives -------------------------------------------------
-
 function makeWindow(
     cwd: string,
     name: string,
     opts: {
-        kind?: "terminal" | "editor" | "git" | "search";
+        kind?: PaneKind;
         startup?: string;
         fixed?: boolean;
         role?: WindowRole;
@@ -152,6 +94,20 @@ function makeWindow(
     return win;
 }
 
+function makeSession(kind: SessionKind, name: string, cwd: string, activeWindowId: string): Session {
+    return {
+        id: newId("sess"),
+        name,
+        kind,
+        cwd,
+        env: "dev",
+        pinned: false,
+        activeWindowId,
+        activeAgentId: null,
+        view: "windows",
+    };
+}
+
 function projectWindows(cwd: string): Window[] {
     return [
         makeWindow(cwd, "files", { kind: "editor", fixed: true, role: "files" }),
@@ -161,9 +117,6 @@ function projectWindows(cwd: string): Window[] {
     ];
 }
 
-/** Append a search window to a project session that doesn't have one yet.
- *  Used by persist.applyHydrate to migrate snapshots created before the
- *  search-pane was introduced. */
 export function ensureSearchWindow(): void {
     mutate((d) => {
         for (const sid of d.sessionOrder) {
@@ -194,8 +147,6 @@ function attachSession(d: StoreState, session: Session, windows: Window[], agent
     d.pickerOpen = false;
 }
 
-// ---- Sessions ---------------------------------------------------------
-
 export function createProjectSession(cwd: string): void {
     mutate((d) => {
         const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
@@ -206,18 +157,7 @@ export function createProjectSession(cwd: string): void {
             return;
         }
         const windows = projectWindows(cwd);
-        const session: Session = {
-            id: newId("sess"),
-            name: basename(cwd),
-            kind: "project",
-            cwd,
-            env: "dev",
-            pinned: false,
-            activeWindowId: windows[0].id,
-            activeAgentId: null,
-            view: "windows",
-        };
-        attachSession(d as unknown as StoreState, session, windows);
+        attachSession(d as unknown as StoreState, makeSession("project", basename(cwd), cwd, windows[0].id), windows);
     });
 }
 
@@ -234,18 +174,7 @@ export function createCommandSession(): void {
         let n = 1;
         while (used.has(n)) n += 1;
         const win = makeWindow("", String(n));
-        const session: Session = {
-            id: newId("sess"),
-            name: String(n),
-            kind: "command",
-            cwd: "",
-            env: "dev",
-            pinned: false,
-            activeWindowId: win.id,
-            activeAgentId: null,
-            view: "windows",
-        };
-        attachSession(d as unknown as StoreState, session, [win]);
+        attachSession(d as unknown as StoreState, makeSession("command", String(n), "", win.id), [win]);
     });
 }
 
@@ -259,86 +188,25 @@ export function createSshSession(alias: string): void {
             return;
         }
         const win = makeWindow("", alias, { startup: `ssh ${alias}`, role: "named" });
-        const session: Session = {
-            id: newId("sess"),
-            name: alias,
-            kind: "ssh",
-            cwd: "",
-            env: "dev",
-            pinned: false,
-            activeWindowId: win.id,
-            activeAgentId: null,
-            view: "windows",
-        };
-        attachSession(d as unknown as StoreState, session, [win]);
+        attachSession(d as unknown as StoreState, makeSession("ssh", alias, "", win.id), [win]);
     });
 }
 
-export function openAwsSession(): void {
+function openSingletonPaneSession(kind: "aws" | "rundeck"): void {
     mutate((d) => {
-        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === "aws");
+        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === kind);
         if (existing) {
             d.activeSessionId = existing.id;
             d.zoomedPaneId = null;
             return;
         }
-        const pane = makePane("", { kind: "aws" });
-        const win: Window = {
-            id: newId("win"),
-            name: "aws",
-            role: "aws",
-            root: pane,
-            activePaneId: pane.id,
-            fixed: true,
-        };
-        const session: Session = {
-            id: newId("sess"),
-            name: "aws",
-            kind: "aws",
-            cwd: "",
-            env: "dev",
-            pinned: false,
-            activeWindowId: win.id,
-            activeAgentId: null,
-            view: "windows",
-        };
-        attachSession(d as unknown as StoreState, session, [win]);
+        const win = makeWindow("", kind, { kind, role: kind, fixed: true });
+        attachSession(d as unknown as StoreState, makeSession(kind, kind, "", win.id), [win]);
     });
 }
 
-export function openRundeckSession(): void {
-    mutate((d) => {
-        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === "rundeck");
-        if (existing) {
-            d.activeSessionId = existing.id;
-            d.zoomedPaneId = null;
-            return;
-        }
-        const pane = makePane("", { kind: "rundeck" });
-        const win: Window = {
-            id: newId("win"),
-            name: "rundeck",
-            role: "rundeck",
-            root: pane,
-            activePaneId: pane.id,
-            fixed: true,
-        };
-        const session: Session = {
-            id: newId("sess"),
-            name: "rundeck",
-            kind: "rundeck",
-            cwd: "",
-            env: "dev",
-            pinned: false,
-            activeWindowId: win.id,
-            activeAgentId: null,
-            view: "windows",
-        };
-        attachSession(d as unknown as StoreState, session, [win]);
-    });
-}
-
-// ---- Rundeck per-pane navigation -----------------------------------------
+export const openAwsSession = (): void => openSingletonPaneSession("aws");
+export const openRundeckSession = (): void => openSingletonPaneSession("rundeck");
 
 const rundeckView = (st: StoreState, paneId: string): RundeckView => st.rundeckViews[paneId] ?? { stack: [{ kind: "matrix" }] };
 
@@ -380,37 +248,22 @@ export function rundeckHome(paneId: string): void {
     });
 }
 
-/** Pane-level project selector (Rundeck pane only). The picker offers
- *  every project Rundeck returns — legacy + product — no aliasing.
- *  `envFolder` narrows a product project to a specific env subtree
- *  (`dev/backend/...`); pass `null` to show every env folder grouped.
- *  Legacy projects ignore the env-folder filter regardless. */
-export function setRundeckProject(project: string, envFolder: string | null = null): void {
+function setRundeckProject(project: string, envFolder: string | null = null): void {
     mutate((d) => {
         d.rundeck.activeProject = project;
         d.rundeck.activeEnvFolder = envFolder;
     });
 }
 
-/** Tree-click selector: switch the active project AND pop the per-pane
- *  nav stack back to the matrix. Without the reset, switching projects
- *  while inside a deploy/execution detail would leave you on a detail
- *  page that no longer matches the project label in the breadcrumb. */
 export function selectRundeckProject(paneId: string, project: string, envFolder: string | null = null): void {
     setRundeckProject(project, envFolder);
     rundeckHome(paneId);
 }
 
-/** From a project session: jump to the Rundeck service detail (execution
- *  history) for (basename(cwd), session.env). Resolves env → Rundeck
- *  project by matching name against the live upstream project list —
- *  no alias table. If the user has e.g. a `staging` project upstream,
- *  envLabel "staging" finds it; if not, the chip just doesn't fire. */
 export async function openRundeckServiceFor(service: string, envLabel: string): Promise<void> {
     const before = getState();
     const sourceSession = before.sessions[before.activeSessionId];
     const sourceRepoPath = sourceSession?.kind === "project" ? sourceSession.cwd : "";
-    // Ensure the projects list is in cache (cheap if already loaded).
     const projects = (await fetchResource(rndProjectsR).catch(() => null)) ?? peekResource(rndProjectsR) ?? [];
     const envLower = envLabel.toLowerCase();
     const project = projects.find((p) => p.name.toLowerCase() === envLower)?.name;
@@ -422,7 +275,6 @@ export async function openRundeckServiceFor(service: string, envLabel: string): 
     const win = after.windows[sess.activeWindowId];
     if (!win || win.root.type !== "pane") return;
     const paneId = win.root.id;
-    // Sync the pane's project so the picker reflects where we landed.
     setRundeckProject(project);
     try {
         const job = await rundeckApi.resolveJob(project, service);
@@ -438,7 +290,6 @@ export async function openRundeckServiceFor(service: string, envLabel: string): 
             },
         ]);
     } catch {
-        // Service doesn't exist in this project — drop them at the matrix.
         rundeckReplaceStack(paneId, [{ kind: "matrix" }]);
     }
 }
@@ -455,17 +306,11 @@ export function selectSession(id: string): void {
         d.activeSessionId = id;
         d.zoomedPaneId = null;
         d.pickerOpen = false;
-        // Clicking a session always returns you to the workspace — settings
-        // is modal in spirit even though it lives in the stage. Closing here
-        // matches every other session-switch.
         d.settingsOpen = false;
     });
 }
 
 export function closeSession(id: string): void {
-    // Capture cwd before mutate so we can shut down the project's LSP
-    // servers after the store update — LSP servers are per (project,
-    // language) keyed by cwd, and they live forever otherwise.
     const closingCwd = getState().sessions[id]?.cwd;
     mutate((d) => {
         if (d.sessionOrder.length <= 1) return;
@@ -500,9 +345,6 @@ export function closeSession(id: string): void {
         }
         d.zoomedPaneId = null;
     });
-    // Reap LSP servers owned by this project — only if no other still-open
-    // session shares the same cwd. rust-analyzer / pyright are heavy; left
-    // running, they add up to GBs across a busy session.
     if (closingCwd) {
         const stillOpen = Object.values(getState().sessions).some((s) => s.cwd === closingCwd);
         if (!stillOpen) {
@@ -527,20 +369,12 @@ export function cycleSession(delta: number): void {
     });
 }
 
-// Order matching the SideRail group blocks. Pinned isn't a group of its
-// own — pinned sessions still belong to their original kind, they just
-// also surface in the Superpin block. Cycling jumps from one kind to the
-// next, landing on the first session of that kind.
 const GROUP_ORDER: SessionKind[] = ["project", "ssh", "aws", "rundeck", "command"];
 
-/** Jump to the first session of the next/previous SessionKind group
- *  (Projects → SSH → Cloud → CI/CD → Command → wrap). Skips empty groups. */
 export function cycleSessionGroup(delta: number): void {
     mutate((d) => {
         const cur = d.sessions[d.activeSessionId];
         if (!cur) return;
-        // Find non-empty groups in the canonical order, preserving the
-        // SessionKind sequence the user sees on the rail.
         const populated = GROUP_ORDER.filter((kind) => d.sessionOrder.some((id) => d.sessions[id]?.kind === kind));
         if (populated.length < 2) return;
         const curIdx = populated.indexOf(cur.kind);
@@ -553,25 +387,9 @@ export function cycleSessionGroup(delta: number): void {
     });
 }
 
-export function togglePin(id: string): void {
-    mutate((d) => {
-        const s = d.sessions[id];
-        if (s) s.pinned = !s.pinned;
-    });
-}
-
-export function reopenRecent(entry: RecentEntry): void {
-    createProjectSession(entry.cwd);
-    mutate((d) => {
-        d.recent = d.recent.filter((r) => r.cwd !== entry.cwd);
-    });
-}
-
 export function setEnv(env: Env): void {
     patchSession(getState().activeSessionId, (s) => ({ ...s, env }));
 }
-
-// ---- Layout / panes ---------------------------------------------------
 
 export function splitActivePane(dir: SplitDir): void {
     withActiveWindow((d, w, session) => {
@@ -584,7 +402,7 @@ export function splitActivePane(dir: SplitDir): void {
     });
 }
 
-export function closeActivePane(): void {
+function closeActivePane(): void {
     withActiveWindow((d, w, session) => {
         const root = removePane(w.root, w.activePaneId);
         if (root === null && w.fixed) return;
@@ -592,7 +410,6 @@ export function closeActivePane(): void {
         if (root === null) {
             const winIds = d.windowsBySession[session.id] ?? [];
             if (winIds.length <= 1) {
-                // Last window — reset to a fresh terminal in place.
                 const fresh = makeWindow(session.cwd, w.name);
                 delete d.windows[w.id];
                 d.windows[fresh.id] = fresh;
@@ -641,7 +458,7 @@ function replaceWithFreshTerminalTab(d: StoreState, session: Session, closing: W
     d.zoomedPaneId = null;
 }
 
-export function closeActiveTerminalTab(): void {
+function closeActiveTerminalTab(): void {
     withActiveSession((d, session) => {
         if (session.view !== "windows") return;
         const closing = d.windows[session.activeWindowId];
@@ -650,9 +467,6 @@ export function closeActiveTerminalTab(): void {
         const winIds = d.windowsBySession[session.id] ?? [];
         const termIds = winIds.filter((id) => d.windows[id]?.role === "term");
         if (termIds.length <= 1) {
-            // Keep every session with one usable terminal target. This mirrors
-            // closing the last tab in terminal apps that immediately leave a
-            // fresh shell behind instead of removing the whole terminal surface.
             replaceWithFreshTerminalTab(d, session, closing);
             return;
         }
@@ -746,8 +560,6 @@ export function setSplitSizes(windowId: string, splitId: string, sizes: number[]
     }));
 }
 
-// ---- Windows / tabs ---------------------------------------------------
-
 export function newWindow(): void {
     withActiveSession((d, session) => {
         const winIds = d.windowsBySession[session.id] ?? [];
@@ -769,8 +581,6 @@ export function closeActiveWindow(): void {
         if (winIds.length <= 1) return;
         const idx = winIds.indexOf(closing.id);
         const remaining = winIds.filter((id) => id !== closing.id);
-        // When closing a term tab, prefer to land on another term tab so the
-        // user's attention stays inside the terminal stack.
         let nextId = remaining[Math.min(idx, remaining.length - 1)];
         if (closing.role === "term") {
             const isTerm = (id: string) => d.windows[id]?.role === "term";
@@ -778,7 +588,6 @@ export function closeActiveWindow(): void {
             const after = remaining.slice(idx).find(isTerm);
             nextId = before ?? after ?? nextId;
         }
-        // Prune pane views that lived in the closing window.
         pruneWindowViews(d, closing);
         delete d.windows[closing.id];
         d.windowsBySession[session.id] = remaining;
@@ -792,9 +601,6 @@ export function selectWindowId(id: string): void {
         const winIds = d.windowsBySession[session.id] ?? [];
         if (!winIds.includes(id)) return;
         const sess = d.sessions[session.id];
-        // No-op when we're already exactly here. Skipping the writes avoids
-        // an unnecessary store notification, which fans out to every Workspace
-        // subscriber on the hot Alt+]/[ cycling path.
         if (sess.activeWindowId === id && sess.view === "windows" && d.zoomedPaneId === null) {
             return;
         }
@@ -820,18 +626,8 @@ export function selectWindowByName(name: string): void {
     if (id) selectWindowId(id);
 }
 
-/** Display order of the project's pane "slots" for Alt+./Alt+, cycling.
- *  Mirrors the SideRail's expanded child list so the rail and the cycle
- *  agree on what "next pane" means. `agents` isn't a window role — it's
- *  the synthetic agent-view slot, present when the project has any
- *  running agents. */
 const PROJECT_SLOT_ORDER: (WindowRole | "agents")[] = ["files", "term", "git", "agents", "search"];
 
-/** Cycle to the next/previous pane in the active project. Visits each
- *  role exactly once (so multi-tab term sessions don't make `term` show
- *  up N times) and includes the synthetic Agents slot when agents are
- *  running. For non-project sessions falls back to a plain windowsBySession
- *  walk. */
 export function selectWindowRelative(delta: number): void {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
@@ -839,8 +635,6 @@ export function selectWindowRelative(delta: number): void {
     const winIds = st.windowsBySession[session.id] ?? [];
     const agentIds = st.agentsBySession[session.id] ?? [];
 
-    // Non-project sessions don't carry the fixed role layout; cycle their
-    // raw window list as before.
     if (session.kind !== "project") {
         if (winIds.length < 2) return;
         const idx = winIds.indexOf(session.activeWindowId);
@@ -849,9 +643,6 @@ export function selectWindowRelative(delta: number): void {
         return;
     }
 
-    // Pick the representative window id for each role slot. For term we
-    // honor the currently-active term tab so cycling away and back returns
-    // to the same tab instead of snapping to tab #1.
     const activeWin = st.windows[session.activeWindowId];
     const winForRole = (role: WindowRole): string | undefined => {
         if (activeWin?.role === role) return activeWin.id;
@@ -870,8 +661,6 @@ export function selectWindowRelative(delta: number): void {
     }
     if (slots.length < 2) return;
 
-    // Locate the current cursor: either an agents slot (view==agent) or
-    // the slot whose role matches the active window.
     let idx: number;
     if (session.view === "agent") {
         idx = slots.findIndex((s) => s.kind === "agents");
@@ -889,14 +678,18 @@ export function selectWindowRelative(delta: number): void {
     }
 }
 
-// ---- Agents -----------------------------------------------------------
-
-// Skip-approval / yolo flags per agent. Mirrors each CLI's own help. Agents
-// without a known runtime-wide bypass flag simply hide the shield toggle.
 const SKIP_PERMISSION_FLAG: Partial<Record<AgentType, string>> = {
     claude: "--dangerously-skip-permissions",
     hermes: "--yolo",
     codex: "--dangerously-bypass-approvals-and-sandbox",
+};
+
+const AGENT_RESUME_CMD: Partial<Record<AgentType, (id: string) => string>> = {
+    claude: (id) => `claude --resume ${id}`,
+    codex: (id) => `codex resume ${id}`,
+    hermes: (id) => `hermes --resume ${id}`,
+    pi: (id) => `pi --session ${id}`,
+    opencode: (id) => `opencode --session ${id}`,
 };
 
 export function agentSupportsSkipPermissions(type: AgentType): boolean {
@@ -909,22 +702,11 @@ function shellQuote(value: string): string {
 }
 
 function agentStartup(type: AgentType, resumeId?: string, skipPermissions = false): string {
-    let cmd: string;
-    if (!resumeId) cmd = type;
-    else if (type === "claude") cmd = `claude --resume ${shellQuote(resumeId)}`;
-    else if (type === "codex") cmd = `codex resume ${shellQuote(resumeId)}`;
-    else if (type === "hermes") cmd = `hermes --resume ${shellQuote(resumeId)}`;
-    else if (type === "pi") cmd = `pi --session ${shellQuote(resumeId)}`;
-    else if (type === "opencode") cmd = `opencode --session ${shellQuote(resumeId)}`;
-    else cmd = type;
+    const cmd = resumeId ? (AGENT_RESUME_CMD[type]?.(shellQuote(resumeId)) ?? type) : type;
     const skipFlag = SKIP_PERMISSION_FLAG[type];
     return skipPermissions && skipFlag ? `${cmd} ${skipFlag}` : cmd;
 }
 
-/** Toggle the agent's runtime skip-permissions flag and remount its PTY
- *  so the new startup line takes effect. The React key in Workspace's
- *  AgentLayer includes `skipPermissions`, so a state flip naturally
- *  triggers unmount → fresh spawn. Persists across reloads. */
 export function toggleAgentSkipPermissions(id: string): void {
     mutate((d) => {
         const a = d.agents[id];
@@ -1010,7 +792,6 @@ export function toggleAgentBookmark(b: AgentBookmark): void {
 
 export function openAgentBookmark(b: AgentBookmark): void {
     const st = getState();
-    // 1. Already running? Jump to its owner.
     for (const id of st.sessionOrder) {
         const sess = st.sessions[id];
         if (sess.kind !== "project") continue;
@@ -1028,7 +809,6 @@ export function openAgentBookmark(b: AgentBookmark): void {
         }
     }
 
-    // 2. Switch to bookmark's project (existing or new).
     if (b.cwd) {
         const cur = getState();
         const existing = cur.sessionOrder.map((id) => cur.sessions[id]).find((s) => s.kind === "project" && s.cwd === b.cwd);
@@ -1041,7 +821,6 @@ export function openAgentBookmark(b: AgentBookmark): void {
         }
     }
 
-    // 3. Link to a fresh agent of the same type if exactly one exists.
     const isFreshBookmark = b.id.startsWith("agent-");
     if (!isFreshBookmark) {
         const cur = getState();
@@ -1068,12 +847,9 @@ export function openAgentBookmark(b: AgentBookmark): void {
         }
     }
 
-    // 4. Spawn.
     if (isFreshBookmark) addAgent(b.type);
     else addAgent(b.type, b.id, b.title);
 }
-
-// ---- UI flags ---------------------------------------------------------
 
 export const setHome = (home: string): void => setState({ home });
 export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, rundeckJobPaletteOpen: false });
@@ -1090,48 +866,28 @@ export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));
 export const toggleLeftRail = (): void => setState((s) => ({ leftRailOpen: !s.leftRailOpen }));
 export const toggleRightRail = (): void => setState((s) => ({ rightRailOpen: !s.rightRailOpen }));
-// Zen / focus mode — collapses both rails without mutating their own
-// open/closed prefs, so exiting zen restores the prior layout exactly.
 export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));
-export const openLspResults = (title: string, project: string, results: { uri: string; line: number; character: number }[]): void =>
-    setState({ lspResults: { title, project, results } });
-export const closeLspResults = (): void => setState({ lspResults: null });
 
-// "Open file X" — emits an event. App.tsx subscribes and routes to the
-// right session's editor pane; the EditorPane in that pane subscribes
-// directly to apply the open + scroll.
-export function requestOpenFile(path: string, line?: number, character?: number): void {
-    // Navigate the active session to its files window if needed, so the
-    // editor pane is mounted before the event fires.
+function focusSessionWindowRole(role: WindowRole): void {
     withActiveSession((d, session) => {
-        const winIds = d.windowsBySession[session.id] ?? [];
-        const filesId = winIds.find((id) => d.windows[id]?.role === "files");
-        if (!filesId) return;
+        const target = (d.windowsBySession[session.id] ?? []).find((id) => d.windows[id]?.role === role);
+        if (!target) return;
+        if (session.activeWindowId === target && session.view === "windows" && d.zoomedPaneId === null) return;
         d.zoomedPaneId = null;
-        if (session.activeWindowId === filesId && session.view === "windows") return;
         const sess = d.sessions[session.id];
-        sess.activeWindowId = filesId;
+        sess.activeWindowId = target;
         sess.view = "windows";
     });
+}
+
+export function requestOpenFile(path: string, line?: number, character?: number): void {
+    focusSessionWindowRole("files");
     emit({ type: "open-file", path, line, character });
 }
 
-// "Open Git" — navigate the active project session to its (fixed) git
-// window. No-op for non-project sessions, which have no git window. Used
-// by the top-bar branch chip.
 export function openGitPane(): void {
-    withActiveSession((d, session) => {
-        const winIds = d.windowsBySession[session.id] ?? [];
-        const gitId = winIds.find((id) => d.windows[id]?.role === "git");
-        if (!gitId) return;
-        d.zoomedPaneId = null;
-        const sess = d.sessions[session.id];
-        sess.activeWindowId = gitId;
-        sess.view = "windows";
-    });
+    focusSessionWindowRole("git");
 }
-
-// ---- Settings / prefs -------------------------------------------------
 
 export function setThemeId(id: string): void {
     applyTheme(id);
@@ -1173,8 +929,6 @@ export function setProjectRootDepth(path: string, depth: number): void {
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
-// Persist may hand us a legacy array of plain strings — normalise to the
-// new shape with the default depth.
 export function normaliseProjectRoots(raw: unknown): ProjectRoot[] {
     if (!Array.isArray(raw)) return [];
     return raw
@@ -1192,8 +946,6 @@ export function normaliseProjectRoots(raw: unknown): ProjectRoot[] {
         .filter((x): x is ProjectRoot => x !== null);
 }
 
-// ---- AWS --------------------------------------------------------------
-
 export const setAwsProfile = (name: string | null): void => setState({ awsProfile: name });
 export const setAwsService = (s: AwsService): void => setState({ awsService: s });
 export const openAwsAuthModal = (profile: string, ssoStartUrl: string | null): void => setState({ awsAuthModal: { profile, ssoStartUrl } });
@@ -1207,8 +959,6 @@ export async function runAwsSsoLogin(profile: string): Promise<boolean> {
     }
     return result.success;
 }
-
-// ---- View state (per-pane) -------------------------------------------
 
 export function setEditorView(paneId: string, patch: Partial<StoreState["editorViews"][string]>): void {
     mutate((d) => {
@@ -1240,29 +990,16 @@ export function setBillingExpandedMonth(profile: string, month: string | null): 
     });
 }
 
-// ---- Global search (Cmd+Shift+F) -------------------------------------
-
 function searchViewFor(sessionId: string) {
     const st = getState();
     return st.globalSearchBySession[sessionId] ?? DEFAULT_GLOBAL_SEARCH_VIEW;
 }
 
-// Navigate the active project session to its search window AND signal the
-// pane to focus its find input. The event fires on every invocation — so
-// pressing Cmd/Ctrl+Shift+F while already in the search window still
-// pulls focus back to the input. No-op for non-project sessions.
-//
-// If `seed` is non-empty, write it into the per-session global-search
-// query before the focus event fires — that's how we forward the active
-// editor's selection (gathered in the keymap) into the search box.
 export function focusGlobalSearch(seed?: string): void {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     if (!session || session.kind !== "project") return;
     if (seed && seed.trim().length > 0) {
-        // Single-line trim — multi-line selections in the editor would make
-        // the search input wrap weirdly, and the project search matches per
-        // line anyway. First non-empty line is the most useful.
         const oneLine = seed.split(/\r?\n/).find((l) => l.trim().length > 0) ?? seed.trim();
         setGlobalSearchQuery(session.id, oneLine);
     }
@@ -1299,22 +1036,6 @@ export function toggleGlobalSearchFileCollapsed(sessionId: string, path: string)
     const next = { ...cur.collapsed };
     if (wasCollapsed) delete next[path];
     else next[path] = true;
-    mutate((d) => {
-        d.globalSearchBySession[sessionId] = { ...cur, collapsed: next };
-    });
-}
-
-export function expandAllGlobalSearchFiles(sessionId: string): void {
-    const cur = searchViewFor(sessionId);
-    mutate((d) => {
-        d.globalSearchBySession[sessionId] = { ...cur, collapsed: {} };
-    });
-}
-
-export function collapseAllGlobalSearchFiles(sessionId: string, paths: string[]): void {
-    const cur = searchViewFor(sessionId);
-    const next: Record<string, boolean> = {};
-    for (const p of paths) next[p] = true;
     mutate((d) => {
         d.globalSearchBySession[sessionId] = { ...cur, collapsed: next };
     });

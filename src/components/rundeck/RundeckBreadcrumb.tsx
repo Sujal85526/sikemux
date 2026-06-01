@@ -9,8 +9,6 @@ interface Props {
     status: RundeckStatus | null;
 }
 
-/** Top bar: chevron breadcrumb of the nav stack + env picker on the right.
- *  No logout — invalid tokens auto-redirect via the rnd-auth-expired bus. */
 export function RundeckBreadcrumb({ paneId, status }: Props) {
     const view = useStore((s) => s.rundeckViews[paneId]);
     const activeProject = useStore((s) => s.rundeck.activeProject);
@@ -61,12 +59,7 @@ interface Crumb {
     disabled?: boolean;
 }
 
-function breadcrumbLabels(
-    paneId: string,
-    stack: RundeckLevel[],
-    activeProject: string,
-    activeEnvFolder: string | null,
-): Crumb[] {
+function breadcrumbLabels(paneId: string, stack: RundeckLevel[], activeProject: string, activeEnvFolder: string | null): Crumb[] {
     const top = stack[stack.length - 1];
     if (!top || top.kind === "matrix") {
         return projectCrumbs(paneId, activeProject, activeEnvFolder);
@@ -86,17 +79,18 @@ function breadcrumbLabels(
         return [
             ...projectCrumbs(paneId, top.project, top.env),
             ...serviceCrumbs(paneId, top.service, top.env, {
-                onClick: serviceIndex >= 0
-                    ? () => cmd.rundeckPopTo(paneId, serviceIndex)
-                    : () =>
-                          cmd.rundeckReplace(paneId, {
-                              kind: "service",
-                              env: top.env,
-                              project: top.project,
-                              service: top.service,
-                              jobId: top.jobId,
-                              repoPath: top.repoPath,
-                          }),
+                onClick:
+                    serviceIndex >= 0
+                        ? () => cmd.rundeckPopTo(paneId, serviceIndex)
+                        : () =>
+                              cmd.rundeckReplace(paneId, {
+                                  kind: "service",
+                                  env: top.env,
+                                  project: top.project,
+                                  service: top.service,
+                                  jobId: top.jobId,
+                                  repoPath: top.repoPath,
+                              }),
             }),
             {
                 key: `deploy-${top.project}-${top.service}-${top.branch}`,
@@ -129,18 +123,11 @@ function projectCrumbs(paneId: string, project: string, env: string | null | und
     const envFolder = env && env.toLowerCase() !== project.toLowerCase() ? env : null;
     return [
         { key: `project-${project}`, label: project, onClick: () => cmd.selectRundeckProject(paneId, project, null) },
-        ...(envFolder
-            ? [{ key: `env-${envFolder}`, label: envFolder, onClick: () => cmd.selectRundeckProject(paneId, project, envFolder) }]
-            : []),
+        ...(envFolder ? [{ key: `env-${envFolder}`, label: envFolder, onClick: () => cmd.selectRundeckProject(paneId, project, envFolder) }] : []),
     ];
 }
 
-function serviceCrumbs(
-    paneId: string,
-    service: string,
-    env: string | null | undefined,
-    opts: { onClick?: () => void; disabled?: boolean },
-): Crumb[] {
+function serviceCrumbs(paneId: string, service: string, env: string | null | undefined, opts: { onClick?: () => void; disabled?: boolean }): Crumb[] {
     const parts = service
         .split("/")
         .map((p) => p.trim())
