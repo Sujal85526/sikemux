@@ -684,12 +684,17 @@ export function closeActiveFocusTarget(): void {
         return;
     }
 
+    const win = st.windows[session.activeWindowId];
+    if (win && collectPanes(win.root).length > 1) {
+        closeActivePane();
+        return;
+    }
+
     if (session.kind === "command") {
         closeSession(session.id);
         return;
     }
 
-    const win = st.windows[session.activeWindowId];
     if (win?.role === "term") {
         closeActiveTerminalTab();
         return;
