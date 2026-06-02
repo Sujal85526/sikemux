@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AgentSession } from "../api/agents";
 import { awsApi } from "../api/aws";
 import { lsp } from "../api/lsp";
 import { rundeckApi } from "../api/rundeck";
@@ -692,6 +693,9 @@ const AGENT_RESUME_CMD: Partial<Record<AgentType, (id: string) => string>> = {
     opencode: (id) => `opencode --session ${id}`,
 };
 
+const AGENT_SESSION_ATTACH_GRACE_MS = 10_000;
+const FALLBACK_AGENT_TITLE_MAX = 13;
+
 export function agentSupportsSkipPermissions(type: AgentType): boolean {
     return SKIP_PERMISSION_FLAG[type] != null;
 }
@@ -705,6 +709,20 @@ function agentStartup(type: AgentType, resumeId?: string, skipPermissions = fals
     const cmd = resumeId ? (AGENT_RESUME_CMD[type]?.(shellQuote(resumeId)) ?? type) : type;
     const skipFlag = SKIP_PERMISSION_FLAG[type];
     return skipPermissions && skipFlag ? `${cmd} ${skipFlag}` : cmd;
+}
+
+function usableAgentSessionTitle(row: AgentSession, current: string): string {
+    const title = row.title.trim();
+    if (!title) return current;
+    if (title.length <= FALLBACK_AGENT_TITLE_MAX && row.id.startsWith(title)) return current;
+    return title;
+}
+
+function refreshAgentBookmarkTitle(d: { agentBookmarks: AgentBookmark[] }, type: AgentType, oldId: string, newId: string, title: string): void {
+    const bookmark = d.agentBookmarks.find((b) => b.type === type && b.id === oldId);
+    if (!bookmark) return;
+    bookmark.id = newId;
+    bookmark.title = title;
 }
 
 export function toggleAgentSkipPermissions(id: string): void {
@@ -736,11 +754,63 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string): vo
             title: title ?? type,
             startup: agentStartup(type, resumeId),
             resumeId,
+            createdAt: Date.now(),
         };
         d.agents[agent.id] = agent;
         d.agentsBySession[session.id] = [...ownedIds, agent.id];
         sess.activeAgentId = agent.id;
         sess.view = "agent";
+    });
+}
+
+export function reconcileAgentSessions(type: AgentType, cwd: string, rows: AgentSession[]): void {
+    if (rows.length === 0) return;
+    mutate((d) => {
+        const rowById = new Map(rows.map((row) => [row.id, row]));
+        const matchingAgents: Agent[] = [];
+        for (const sessionId of d.sessionOrder) {
+            const session = d.sessions[sessionId];
+            if (session?.kind !== "project" || session.cwd !== cwd) continue;
+            for (const agentId of d.agentsBySession[sessionId] ?? []) {
+                const agent = d.agents[agentId];
+                if (agent?.type === type) matchingAgents.push(agent);
+            }
+        }
+        if (matchingAgents.length === 0) return;
+
+        const claimed = new Set<string>();
+        for (const agent of matchingAgents) {
+            if (!agent.resumeId) continue;
+            claimed.add(agent.resumeId);
+            const row = rowById.get(agent.resumeId);
+            if (!row) continue;
+            const nextTitle = usableAgentSessionTitle(row, agent.title);
+            if (nextTitle !== agent.title) {
+                agent.title = nextTitle;
+                refreshAgentBookmarkTitle(d, type, agent.resumeId, agent.resumeId, nextTitle);
+            }
+        }
+
+        const candidates = rows
+            .filter((row) => !claimed.has(row.id))
+            .sort((a, b) => b.mtime - a.mtime);
+        if (candidates.length === 0) return;
+
+        const freshAgents = matchingAgents
+            .filter((agent) => !agent.resumeId)
+            .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+        for (const agent of freshAgents) {
+            const minMtime = Math.floor(((agent.createdAt ?? Date.now()) - AGENT_SESSION_ATTACH_GRACE_MS) / 1000);
+            const idx = candidates.findIndex((row) => row.mtime >= minMtime);
+            if (idx < 0) continue;
+            const [row] = candidates.splice(idx, 1);
+            const oldBookmarkId = agent.id;
+            agent.resumeId = row.id;
+            agent.title = usableAgentSessionTitle(row, agent.title);
+            agent.startup = agentStartup(agent.type, agent.resumeId, agent.skipPermissions ?? false);
+            claimed.add(row.id);
+            refreshAgentBookmarkTitle(d, type, oldBookmarkId, row.id, agent.title);
+        }
     });
 }
 

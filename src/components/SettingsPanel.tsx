@@ -10,10 +10,10 @@ import { IconClose, IconFolder, IconPlus } from "./Icons";
 
 type Page = "general" | "appearance" | "cloud";
 
-const PAGES: { id: Page; num: string; name: string }[] = [
-    { id: "general", num: "[01]", name: "general" },
-    { id: "appearance", num: "[02]", name: "appearance" },
-    { id: "cloud", num: "[03]", name: "cloud" },
+const PAGES: { id: Page; name: string }[] = [
+    { id: "general", name: "general" },
+    { id: "appearance", name: "appearance" },
+    { id: "cloud", name: "cloud" },
 ];
 
 export function SettingsPanel() {
@@ -42,73 +42,53 @@ export function SettingsPanel() {
 
     return (
         <div className="settings-pane">
-            <aside className="settings-rail">
-                <div className="settings-rail-head">
-                    <div className="settings-logo">
-                        <span className="settings-logo-mark">▶</span> sikemux · cfg
+            <div className="settings-frame">
+                <aside className="settings-rail">
+                    <div className="settings-rail-head">
+                        <span className="settings-logo-mark">▶</span>
+                        <span className="settings-logo-text">sikemux</span>
+                        <span className="settings-logo-tag">settings</span>
                     </div>
-                    <div className="settings-screen-name">
-                        <b>·</b>settings
-                    </div>
-                    <div className="settings-kbd-line">
-                        <kbd>⌘,</kbd> open · <kbd>esc</kbd> close
-                    </div>
-                </div>
 
-                <div className="settings-rail-list">
-                    {PAGES.map((p) => (
-                        <button
-                            key={p.id}
-                            className={`settings-rail-item${page === p.id ? " active" : ""}`}
-                            onClick={() => setPage(p.id)}
-                            type="button">
-                            <span className="settings-rail-num">{p.num}</span>
-                            <span className="settings-rail-name">{p.name}</span>
+                    <nav className="settings-rail-list">
+                        {PAGES.map((p, i) => (
+                            <button
+                                key={p.id}
+                                className={`settings-rail-item${page === p.id ? " active" : ""}`}
+                                onClick={() => setPage(p.id)}
+                                type="button">
+                                <span className="settings-rail-num">{String(i + 1).padStart(2, "0")}</span>
+                                <span className="settings-rail-name">{p.name}</span>
+                            </button>
+                        ))}
+                    </nav>
+
+                    <div className="settings-rail-foot">
+                        <span className="settings-rail-path">~/.config/sikemux</span>
+                        <button className="settings-close" onClick={cmd.closeSettings} title="Close (Esc / ⌘,)" type="button">
+                            <IconClose size={11} /> close
                         </button>
-                    ))}
-                </div>
-
-                <div className="settings-rail-foot">
-                    <span>
-                        <b>cfg</b> · ~/.config/sikemux
-                    </span>
-                </div>
-
-                <button className="settings-close" onClick={cmd.closeSettings} title="Close (Esc / ⌘,)" type="button">
-                    <IconClose size={11} /> close
-                </button>
-            </aside>
-
-            <div className="settings-main">
-                <div className="settings-crumb">
-                    <div className="settings-crumb-path">
-                        <span className="crumb-tag">CFG</span>
-                        <span>settings</span>
-                        <span className="crumb-sep">›</span>
-                        <span className="crumb-group">{page}</span>
                     </div>
-                    <div className="settings-crumb-meta">
-                        <span>
-                            <b>autosave</b> · on
-                        </span>
+                </aside>
+
+                <div className="settings-main">
+                    <div className="settings-crumb">
+                        <div className="settings-crumb-path">
+                            <span>settings</span>
+                            <span className="crumb-sep">/</span>
+                            <span className="crumb-group">{page}</span>
+                        </div>
+                        <div className="settings-crumb-meta">
+                            autosave on · <kbd>⌘,</kbd> close
+                        </div>
                     </div>
-                </div>
 
-                {page === "general" && <GeneralPage projectRoots={projectRoots} home={home} pretty={pretty} />}
+                    <div className="settings-scroll">
+                        {page === "general" && <GeneralPage projectRoots={projectRoots} home={home} pretty={pretty} />}
 
-                {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
+                        {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
 
-                {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
-
-                <div className="settings-statusline">
-                    <div className="left">
-                        <span className="mode">CFG</span> &nbsp; settings :: {page}
-                    </div>
-                    <div className="right">
-                        <span>
-                            <kbd>⌘,</kbd> close
-                        </span>
-                        <span>·on autosave</span>
+                        {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
                     </div>
                 </div>
             </div>
@@ -154,20 +134,11 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
     };
 
     return (
-        <SettingsPage name="general" deck="the directories the sesh picker walks · root is always indexed.">
+        <SettingsPage name="general" deck="Directories the session picker walks. The root path is always indexed.">
             <SettingsSection
-                code="[01]"
-                title={
-                    <>
-                        project <b>roots</b>
-                    </>
-                }
+                title="Project roots"
                 meta={`${projectRoots.length} ${projectRoots.length === 1 ? "entry" : "entries"}`}
-                sub={
-                    <>
-                        root path is always walked · within <em>depth</em>, only git repos count
-                    </>
-                }>
+                sub="The root path is always walked; within depth, only git repos count.">
                 <div className="settings-row-input">
                     <input
                         ref={inputRef}
@@ -225,16 +196,8 @@ interface AppearancePageProps {
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     return (
-        <SettingsPage name="appearance" deck="theme, window opacity & background blur · changes apply instantly.">
-            <SettingsSection
-                code="[01]"
-                title={<b>theme</b>}
-                meta={`${THEMES.length} installed · 1 active`}
-                sub={
-                    <>
-                        applies <em>instantly</em> to chrome, editor, terminal · no reload
-                    </>
-                }>
+        <SettingsPage name="appearance" deck="Theme, window opacity and background blur. Changes apply instantly.">
+            <SettingsSection title="Theme" meta={`${THEMES.length} installed`} sub="Applies instantly to chrome, editor and terminal — no reload.">
                 <div className="settings-theme-grid">
                     {THEMES.map((th) => {
                         const active = th.id === themeId;
@@ -260,19 +223,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 </div>
             </SettingsSection>
 
-            <SettingsSection
-                code="[02]"
-                title={
-                    <>
-                        window · <b>opacity</b>
-                    </>
-                }
-                meta="no cap"
-                sub={
-                    <>
-                        <em>0.00</em> transparent · <em>1.00</em> opaque
-                    </>
-                }>
+            <SettingsSection title="Window opacity" sub="0.00 transparent · 1.00 opaque.">
                 <div className="settings-knob-row">
                     <input
                         type="range"
@@ -287,19 +238,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 </div>
             </SettingsSection>
 
-            <SettingsSection
-                code="[03]"
-                title={
-                    <>
-                        background · <b>blur</b>
-                    </>
-                }
-                meta="CGS radius"
-                sub={
-                    <>
-                        <em>0</em> none · <em>20–40</em> frosted · no cap
-                    </>
-                }>
+            <SettingsSection title="Background blur" meta="px radius" sub="0 none · 20–40 frosted.">
                 <div className="settings-knob-row">
                     <input
                         type="range"
@@ -329,16 +268,8 @@ interface CloudPageProps {
 
 function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
     return (
-        <SettingsPage name="cloud" deck="where AWS / GCP single-sign-on URLs open · which workspace to bounce to.">
-            <SettingsSection
-                code="[01]"
-                title={
-                    <>
-                        sign-in <b>browser</b>
-                    </>
-                }
-                meta="aws · gcp · sso"
-                sub="where the SSO URL lands · pick the app you actually log in with">
+        <SettingsPage name="cloud" deck="Where AWS / GCP single sign-on URLs open, and which workspace to bounce to.">
+            <SettingsSection title="Sign-in browser" meta="aws · gcp · sso" sub="Where the SSO URL lands. Pick the app you actually log in with.">
                 <label className="settings-field-label">browser app</label>
                 <input
                     className="settings-input wide"
@@ -350,15 +281,7 @@ function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
                 <div className="settings-field-help">must match a running app's name · trailing .app is fine</div>
             </SettingsSection>
 
-            <SettingsSection
-                code="[02]"
-                title={
-                    <>
-                        workspace <b>switch</b>
-                    </>
-                }
-                meta="post-open · optional"
-                sub="fired right after the link opens · point this at the desktop where the browser lives">
+            <SettingsSection title="Workspace switch" meta="optional" sub="Fired right after the link opens — point it at the desktop where the browser lives.">
                 <label className="settings-field-label">workspace shortcut</label>
                 <input
                     className="settings-input wide"
@@ -379,11 +302,7 @@ function SettingsPage({ name, deck, children }: { name: string; deck: ReactNode;
     return (
         <div className="settings-page">
             <header className="settings-page-head">
-                <div className="settings-page-eyebrow">§ {name}</div>
-                <h1 className="settings-page-hd">
-                    {name}
-                    <em>.</em>
-                </h1>
+                <h1 className="settings-page-hd">{name}</h1>
                 <p className="settings-page-deck">{deck}</p>
             </header>
             {children}
@@ -392,29 +311,23 @@ function SettingsPage({ name, deck, children }: { name: string; deck: ReactNode;
 }
 
 function SettingsSection({
-    code,
     title,
     meta,
     sub,
     children,
 }: {
-    code: string;
     title: ReactNode;
-    meta: ReactNode;
-    sub: ReactNode;
+    meta?: ReactNode;
+    sub?: ReactNode;
     children: ReactNode;
 }) {
     return (
         <section className="settings-section">
             <div className="settings-section-head">
-                <div className="settings-section-code">{code}</div>
-                <div className="settings-section-title-wrap">
-                    <h2 className="settings-section-title">{title}</h2>
-                    <div className="settings-section-dots"></div>
-                </div>
-                <div className="settings-section-meta">{meta}</div>
-                <div className="settings-section-sub">{sub}</div>
+                <h2 className="settings-section-title">{title}</h2>
+                {meta && <span className="settings-section-meta">{meta}</span>}
             </div>
+            {sub && <p className="settings-section-sub">{sub}</p>}
             {children}
         </section>
     );

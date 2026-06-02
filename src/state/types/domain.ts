@@ -41,6 +41,7 @@ export interface Agent {
     title: string;
     startup: string;
     resumeId?: string;
+    createdAt?: number;
     skipPermissions?: boolean;
 }
 

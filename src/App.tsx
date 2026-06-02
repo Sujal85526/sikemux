@@ -6,6 +6,7 @@ import { checkForUpdate } from "./api/updater";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
+import { AgentSessionSync } from "./components/AgentSessionSync";
 import { AgentPalette } from "./components/AgentPalette";
 import { FilePalette } from "./components/FilePalette";
 import { SeshPicker } from "./components/SeshPicker";
@@ -143,6 +144,7 @@ export default function App() {
 
     return (
         <div className="shell">
+            <AgentSessionSync />
             <TopBar />
             <div className="body">
                 {leftOpen && <SideRail />}
