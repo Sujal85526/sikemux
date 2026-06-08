@@ -1,11 +1,11 @@
 {
-  "version": "0.1.16",
-  "notes": "Detect installed agent CLIs and add Pi/OpenCode support",
-  "pub_date": "2026-06-01T09:55:54Z",
+  "version": "0.1.17",
+  "notes": "Agent session sync, compact settings UI, macOS shortcut hints, and pane/update-chip fixes.",
+  "pub_date": "2026-06-08T14:10:09Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWRJZ0p1VlI0MFJUdzd2OXM1Y0RmZzB1SXlNOGNsVmcvenR6QlFOUXJUZHE0NHkrZnBOL3ZxUUpqcjVDYWhONVhEVm16U0ZRK09yY1dMeHJ4Uld3RndrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMzA3NzUzCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CnFOVFUraFBCakpWRFBPWVlhR2drVHVmUXdqWjJFRGpEZm5TaUdKaGs3SDVCUlVRSSsxYndjcTdudkNMWnc1OURrZ21FdTc1WEJLVkFKUmJhTlVDTkRBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.16/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWJleU82Zk1UV2REbHhZTnlWQnRPS0NTR0txZmp0L043S3FFODFHM2w1ZnA5bGRrUG9JMnc5MWljbTkvcHNEbmFEL1hYRmVvRmNBeFFOZ2VhV0t2SEFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTI3ODA4CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CnpUQzZvZWFBcmZreDVkU2tlRERycDFtM3A4bFJ4Z2pSRTl1RlpNdlhXb3BQeWRibkdDOERRWHFOUk9maU1kMlBGanFKbEpaUDJoVStoUVlhZDVoYUFRPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.17/Sikemux.app.tar.gz"
     }
   }
 }
