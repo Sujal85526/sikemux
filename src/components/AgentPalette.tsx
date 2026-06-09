@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentInfo, type AgentSession } from "../api/agents";
 import { rankBy } from "../lib/fuzzy";
 import { useResource } from "../state/resources";
@@ -66,15 +66,16 @@ export function AgentPalette() {
     }, [agents, session?.cwd]);
 
     const items = useMemo(() => {
-        const fresh = agents.map(({ type }): AgentItem => ({ kind: "new", type }));
-        const resumable = rows.map((row): AgentItem => ({ kind: "resume", row }));
-        const all = [...fresh, ...resumable];
-        return rankBy(query, all, (item) =>
-            item.kind === "new"
-                ? `new ${labelForType(item.type, agents)} ${item.type}`
-                : `${item.row.title} ${labelForType(item.row.type, agents)} ${item.row.type}`,
+        const fresh = agents.map(({ type }): NewAgentItem => ({ kind: "new", type }));
+        const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
+        const rankedFresh = rankBy(query, fresh, (item) => `+ new ${labelForType(item.type, agents)} ${item.type}`);
+        const rankedResumable = rankBy(query, resumable, (item) =>
+            `${item.row.title} ${labelForType(item.row.type, agents)} ${item.row.type}`,
         );
+        return [...rankedFresh, ...rankedResumable];
     }, [agents, rows, query]);
+
+    const firstResumeIndex = items.findIndex((item) => item.kind === "resume");
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));
@@ -107,7 +108,7 @@ export function AgentPalette() {
 
     return (
         <div className="picker-backdrop" onMouseDown={cmd.closeAgentPalette}>
-            <div className="picker" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="picker agent-palette" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="picker-input-wrap">
                     <IconSearch size={15} className="picker-search-icon" />
                     <input
@@ -139,22 +140,25 @@ export function AgentPalette() {
                     {items.length === 0 && <div className="picker-empty">no agent matches</div>}
                     {items.map((item, i) => {
                         const type = item.kind === "new" ? item.type : item.row.type;
+                        const key = item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`;
                         return (
-                            <button
-                                key={item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`}
-                                className={`picker-item${i === sel ? " sel" : ""}`}
-                                onMouseEnter={() => {
-                                    if (mouseActive.current) setSel(i);
-                                }}
-                                onClick={() => activate(item)}>
-                                <span className={`picker-icon agent-glyph ${type}`}>
-                                    <AgentIcon type={type} size={14} />
-                                </span>
-                                <span className="picker-name">{item.kind === "new" ? `new ${labelForType(type, agents)}` : item.row.title}</span>
-                                <span className="picker-sub">
-                                    {item.kind === "new" ? "start agent" : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
-                                </span>
-                            </button>
+                            <Fragment key={key}>
+                                {i === firstResumeIndex && firstResumeIndex > 0 && <div className="agent-palette-divider" />}
+                                <button
+                                    className={`picker-item${i === sel ? " sel" : ""}`}
+                                    onMouseEnter={() => {
+                                        if (mouseActive.current) setSel(i);
+                                    }}
+                                    onClick={() => activate(item)}>
+                                    <span className={`picker-icon agent-glyph ${type}`}>
+                                        <AgentIcon type={type} size={14} />
+                                    </span>
+                                    <span className="picker-name">{item.kind === "new" ? `+ new ${labelForType(type, agents)}` : item.row.title}</span>
+                                    <span className="picker-sub">
+                                        {item.kind === "new" ? "start agent" : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
+                                    </span>
+                                </button>
+                            </Fragment>
                         );
                     })}
                 </div>

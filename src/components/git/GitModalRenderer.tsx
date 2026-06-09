@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { closeGitModal, dispatchGitMenuKey } from "../../state/git";
-import { useStore } from "../../state/store";
+import { getState, useStore } from "../../state/store";
 
 export function GitModalRenderer({ paneId, active }: { paneId: string; active: boolean }) {
     const modal = useStore((s) => s.gitModal);
     const ownsModal = !!modal && modal.ownerPaneId === paneId;
+
+    useEffect(() => {
+        return () => {
+            if (getState().gitModal?.ownerPaneId === paneId) closeGitModal();
+        };
+    }, [paneId]);
 
     useEffect(() => {
         if (!modal || !ownsModal) return;

@@ -160,6 +160,15 @@ export function SearchPane({ sessionId, cwd, active, visible }: { sessionId: str
                 setReplacePreview(preview);
                 return;
             }
+            const dirty = Object.values(useStore.getState().dirtyEditorPaths).flat();
+            const dirtySet = new Set(dirty);
+            const conflicts = replacePreview.files.map((f) => `${cwd}/${f.path}`).filter((path) => dirtySet.has(path));
+            if (conflicts.length > 0) {
+                const shown = conflicts.slice(0, 3).map(basename).join(", ");
+                const more = conflicts.length > 3 ? ` and ${conflicts.length - 3} more` : "";
+                notify("error", `save or close unsaved files before replace: ${shown}${more}`);
+                return;
+            }
             const r = await searchApi.replace(cwd, view.query, view.replace, view.options, false);
             const verb = r.match_count === 1 ? "match" : "matches";
             const fileWord = r.file_count === 1 ? "file" : "files";

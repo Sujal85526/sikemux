@@ -15,7 +15,7 @@ import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { invalidate } from "../state/resources";
 import { useStore } from "../state/store";
-import { reportError } from "../state/toast";
+import { notify, reportError } from "../state/toast";
 import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
@@ -88,6 +88,14 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     const setTreeWidth = (w: number) => cmd.setEditorView(paneId, { treeWidth: w });
 
+    useEffect(() => {
+        cmd.setEditorDirtyPaths(paneId, [...dirty]);
+    }, [paneId, dirty]);
+
+    useEffect(() => {
+        return () => cmd.setEditorDirtyPaths(paneId, []);
+    }, [paneId]);
+
     const { openDoc, scheduleChange } = useLspBridge(cwd);
 
     const nav = useNavHistory({
@@ -127,6 +135,9 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             .writeFile(path, text)
             .then(() => {
                 savedRef.current.set(path, text);
+                const latest =
+                    currentRef.current === path && viewRef.current ? viewRef.current.state.doc.toString() : states.current.get(path)?.doc.toString();
+                if (latest !== text) return;
                 setDirty((d) => {
                     if (!d.has(path)) return d;
                     const next = new Set(d);
@@ -320,6 +331,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 if (isActive && view) {
                     const current = view.state.doc.toString();
                     if (current === fresh) continue;
+                    savedRef.current.set(path, fresh);
                     const head = Math.min(view.state.selection.main.head, fresh.length);
                     view.dispatch({
                         changes: { from: 0, to: view.state.doc.length, insert: fresh },
@@ -328,9 +340,9 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 } else {
                     const cached = states.current.get(path);
                     if (cached && cached.doc.toString() === fresh) continue;
+                    savedRef.current.set(path, fresh);
                     states.current.set(path, makeState(path, fresh));
                 }
-                savedRef.current.set(path, fresh);
             }
         })();
         return () => {
@@ -356,6 +368,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 if (isActive && view) {
                     const current = view.state.doc.toString();
                     if (current === fresh) continue;
+                    savedRef.current.set(path, fresh);
                     const head = Math.min(view.state.selection.main.head, fresh.length);
                     view.dispatch({
                         changes: { from: 0, to: view.state.doc.length, insert: fresh },
@@ -364,9 +377,9 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 } else {
                     const cached = states.current.get(path);
                     if (cached && cached.doc.toString() === fresh) continue;
+                    savedRef.current.set(path, fresh);
                     states.current.set(path, makeState(path, fresh));
                 }
-                savedRef.current.set(path, fresh);
             }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -405,6 +418,10 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     const closeTab = (path: string, e: ReactMouseEvent) => {
         e.stopPropagation();
+        if (dirtyRef.current.has(path) && !window.confirm(`Discard unsaved changes in ${basename(path)}?`)) {
+            notify("info", "close tab cancelled — unsaved changes remain");
+            return;
+        }
         states.current.delete(path);
         setDirty((d) => {
             if (!d.has(path)) return d;

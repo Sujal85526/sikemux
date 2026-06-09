@@ -1001,6 +1001,11 @@ button {
     color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--acc-line);
 }
+.agent-palette-divider {
+    height: 1px;
+    margin: 8px 12px;
+    background: var(--line);
+}
 .picker-icon {
     display: flex;
 }

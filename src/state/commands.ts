@@ -10,7 +10,7 @@ import { fetchResource, invalidate, peekResource } from "./resources";
 import { awsIdentityR, projectRootsScanR, rndProjectsR } from "./resources.defs";
 import { inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
-import { swallow } from "./toast";
+import { notify, swallow } from "./toast";
 import { DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
@@ -146,6 +146,29 @@ function attachSession(d: StoreState, session: Session, windows: Window[], agent
     d.activeSessionId = session.id;
     d.zoomedPaneId = null;
     d.pickerOpen = false;
+}
+
+function dirtyPathsForWindow(st: StoreState, win: Window | undefined): string[] {
+    if (!win) return [];
+    return collectPanes(win.root).flatMap((p) => st.dirtyEditorPaths[p.id] ?? []);
+}
+
+function dirtyPathsForPane(st: StoreState, paneId: string): string[] {
+    return st.dirtyEditorPaths[paneId] ?? [];
+}
+
+function dirtyPathsForSession(st: StoreState, sessionId: string): string[] {
+    const winIds = st.windowsBySession[sessionId] ?? [];
+    return winIds.flatMap((id) => dirtyPathsForWindow(st, st.windows[id]));
+}
+
+function confirmDiscardDirty(paths: string[], action: string): boolean {
+    if (paths.length === 0) return true;
+    const shown = paths.slice(0, 3).map(basename).join(", ");
+    const more = paths.length > 3 ? ` and ${paths.length - 3} more` : "";
+    const ok = window.confirm(`Discard unsaved changes in ${shown}${more}?`);
+    if (!ok) notify("info", `${action} cancelled — unsaved changes remain`);
+    return ok;
 }
 
 export function createProjectSession(cwd: string): void {
@@ -312,6 +335,7 @@ export function selectSession(id: string): void {
 }
 
 export function closeSession(id: string): void {
+    if (!confirmDiscardDirty(dirtyPathsForSession(getState(), id), "close session")) return;
     const closingCwd = getState().sessions[id]?.cwd;
     mutate((d) => {
         if (d.sessionOrder.length <= 1) return;
@@ -325,7 +349,9 @@ export function closeSession(id: string): void {
             const w = d.windows[wid];
             if (w) {
                 for (const p of collectPanes(w.root as unknown as Window["root"])) {
+                    if (d.gitModal?.ownerPaneId === p.id) d.gitModal = null;
                     delete d.editorViews[p.id];
+                    delete d.dirtyEditorPaths[p.id];
                     delete d.gitViews[p.id];
                     delete d.ecsViews[p.id];
                 }
@@ -405,9 +431,16 @@ export function splitActivePane(dir: SplitDir): void {
 
 function closeActivePane(): void {
     withActiveWindow((d, w, session) => {
-        const root = removePane(w.root, w.activePaneId);
+        const closingPaneId = w.activePaneId;
+        if (d.gitModal?.ownerPaneId === closingPaneId) d.gitModal = null;
+        const root = removePane(w.root, closingPaneId);
         if (root === null && w.fixed) return;
         d.zoomedPaneId = null;
+        delete d.editorViews[closingPaneId];
+        delete d.dirtyEditorPaths[closingPaneId];
+        delete d.gitViews[closingPaneId];
+        delete d.ecsViews[closingPaneId];
+        delete d.rundeckViews[closingPaneId];
         if (root === null) {
             const winIds = d.windowsBySession[session.id] ?? [];
             if (winIds.length <= 1) {
@@ -436,7 +469,9 @@ function closeActivePane(): void {
 
 function pruneWindowViews(d: StoreState, win: Window): void {
     for (const p of collectPanes(win.root)) {
+        if (d.gitModal?.ownerPaneId === p.id) d.gitModal = null;
         delete d.editorViews[p.id];
+        delete d.dirtyEditorPaths[p.id];
         delete d.gitViews[p.id];
         delete d.ecsViews[p.id];
         delete d.rundeckViews[p.id];
@@ -501,6 +536,7 @@ export function closeActiveFocusTarget(): void {
 
     const win = st.windows[session.activeWindowId];
     if (win && collectPanes(win.root).length > 1) {
+        if (!confirmDiscardDirty(dirtyPathsForPane(st, win.activePaneId), "close pane")) return;
         closeActivePane();
         return;
     }
@@ -575,6 +611,9 @@ export function newWindow(): void {
 }
 
 export function closeActiveWindow(): void {
+    const st = getState();
+    const session = st.sessions[st.activeSessionId];
+    if (!confirmDiscardDirty(dirtyPathsForWindow(st, session ? st.windows[session.activeWindowId] : undefined), "close window")) return;
     withActiveSession((d, session) => {
         const closing = d.windows[session.activeWindowId];
         if (!closing || closing.fixed) return;
@@ -1038,6 +1077,13 @@ export function setEditorView(paneId: string, patch: Partial<StoreState["editorV
             treeWidth: 210,
         };
         d.editorViews[paneId] = { ...cur, ...patch };
+    });
+}
+
+export function setEditorDirtyPaths(paneId: string, paths: string[]): void {
+    mutate((d) => {
+        if (paths.length === 0) delete d.dirtyEditorPaths[paneId];
+        else d.dirtyEditorPaths[paneId] = paths;
     });
 }
 

@@ -5,7 +5,7 @@ import { type GitFile } from "../api/git";
 import { subscribe } from "../state/bus";
 import { useResourceEnabled } from "../state/resources";
 import { gitStatusR } from "../state/resources.defs";
-import { reportError, swallow } from "../state/toast";
+import { notify, reportError, swallow } from "../state/toast";
 import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
@@ -33,6 +33,13 @@ interface FileTreeProps {
 interface NewEntryRequest {
     parent: string;
     kind: "file" | "folder";
+}
+
+function validEntryName(raw: string): string | null {
+    const name = raw.trim();
+    if (!name) return null;
+    if (name === "." || name === ".." || name.includes("/") || name.includes("\\") || name.includes("\0")) return null;
+    return name;
 }
 
 export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active, revealPath }: FileTreeProps) {
@@ -132,8 +139,12 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     };
     const submitRename = async () => {
         if (!renaming) return;
-        const trimmed = renameName.trim();
-        if (!trimmed || trimmed === basename(renaming)) {
+        const trimmed = validEntryName(renameName);
+        if (!trimmed) {
+            notify("error", "name must be a single file or folder name");
+            return;
+        }
+        if (trimmed === basename(renaming)) {
             cancelRename();
             return;
         }
@@ -180,9 +191,9 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
 
     const submitNew = async () => {
         if (!newRequest) return;
-        const name = newName.trim();
+        const name = validEntryName(newName);
         if (!name) {
-            cancelNew();
+            notify("error", "name must be a single file or folder name");
             return;
         }
         const target = `${newRequest.parent}/${name}`;

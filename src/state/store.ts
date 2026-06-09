@@ -63,6 +63,7 @@ export interface ViewState {
     zoomedPaneId: string | null;
 
     editorViews: Record<string, EditorPaneView>;
+    dirtyEditorPaths: Record<string, string[]>;
     gitViews: Record<string, GitPaneView>;
     ecsViews: Record<string, EcsLevel>;
     rundeckViews: Record<string, RundeckView>;
@@ -152,6 +153,7 @@ export const useStore = create<StoreState>(() => {
         awsAuthModal: null,
         zoomedPaneId: null,
         editorViews: {},
+        dirtyEditorPaths: {},
         gitViews: {},
         ecsViews: {},
         rundeckViews: {},
