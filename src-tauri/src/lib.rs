@@ -55,6 +55,17 @@ pub fn run() {
                 }
             }
         })
+        .on_page_load(|webview, payload| {
+            // Context-menu reload starts a new page without closing the
+            // native window, so React cleanup is not a reliable place to
+            // kill PTYs. Initial startup has no PTYs yet; reload does.
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                use tauri::Manager;
+                if let Some(mgr) = webview.try_state::<PtyManager>() {
+                    mgr.drain();
+                }
+            }
+        })
         .setup(|app| {
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
             // CGS background blur via private API). No NSVisualEffectView
