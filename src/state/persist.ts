@@ -19,8 +19,10 @@ let lastSaved = "";
 const PERSISTED_KEYS = [
     "sessions",
     "windows",
+    "agents",
     "sessionOrder",
     "windowsBySession",
+    "agentsBySession",
     "activeSessionId",
     "recent",
     "agentBookmarks",
@@ -77,20 +79,37 @@ function packPrefs(s: StoreState): PersistedPrefs {
     };
 }
 
+const AGENT_TYPES = new Set<Agent["type"]>(["claude", "codex", "hermes", "pi", "opencode"]);
+
+function isAgentType(value: unknown): value is Agent["type"] {
+    return typeof value === "string" && AGENT_TYPES.has(value as Agent["type"]);
+}
+
+function isPersistedAgent(value: unknown): value is Agent {
+    if (!value || typeof value !== "object") return false;
+    const agent = value as Partial<Agent>;
+    return typeof agent.id === "string" && isAgentType(agent.type) && typeof agent.title === "string" && typeof agent.startup === "string";
+}
+
 function snapshot(): string {
     const s = getState();
+    const sessionAgentIds = new Map<string, string[]>();
     const sessions = s.sessionOrder
         .map((id) => s.sessions[id])
         .filter(Boolean)
         .map((sess) => {
-            if (sess.activeAgentId == null && sess.view !== "agent") return sess;
-            return { ...sess, activeAgentId: null, view: "windows" as const };
+            const agentIds = (s.agentsBySession[sess.id] ?? []).filter((id) => s.agents[id]);
+            sessionAgentIds.set(sess.id, agentIds);
+            const savedActiveAgentId = sess.activeAgentId && agentIds.includes(sess.activeAgentId) ? sess.activeAgentId : null;
+            const activeAgentId = savedActiveAgentId ?? (sess.view === "agent" ? (agentIds[0] ?? null) : null);
+            const view: Session["view"] = sess.view === "agent" && activeAgentId ? "agent" : "windows";
+            return { ...sess, activeAgentId, view };
         });
     const windowsBySession: Record<string, Window[]> = {};
     const agentsBySession: Record<string, Agent[]> = {};
     for (const sess of sessions) {
         windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).map((id) => s.windows[id]).filter(Boolean);
-        agentsBySession[sess.id] = [];
+        agentsBySession[sess.id] = (sessionAgentIds.get(sess.id) ?? []).map((id) => s.agents[id]).filter(Boolean);
     }
     const snap: PersistedSnapshot = {
         version: VERSION,
@@ -124,7 +143,7 @@ export function applyHydrate(raw: string): void {
     const windowsBySession: Record<string, string[]> = {};
     const agentsBySession: Record<string, string[]> = {};
     for (const s of data.sessions) {
-        sessions[s.id] = { ...s, activeAgentId: null, view: s.view === "agent" ? "windows" : s.view };
+        sessions[s.id] = { ...s };
     }
     for (const [sid, ws] of Object.entries(data.windowsBySession ?? {})) {
         windowsBySession[sid] = ws.map((w) => {
@@ -132,8 +151,29 @@ export function applyHydrate(raw: string): void {
             return w.id;
         });
     }
-    for (const sid of Object.keys(windowsBySession)) {
+    for (const sid of Object.keys(sessions)) {
         agentsBySession[sid] = [];
+    }
+    for (const [sid, rows] of Object.entries(data.agentsBySession ?? {})) {
+        if (!sessions[sid] || !Array.isArray(rows)) continue;
+        const ids: string[] = [];
+        for (const row of rows) {
+            if (!isPersistedAgent(row) || agents[row.id]) continue;
+            agents[row.id] = row;
+            ids.push(row.id);
+        }
+        agentsBySession[sid] = ids;
+    }
+    for (const sid of Object.keys(sessions)) {
+        const session = sessions[sid];
+        const agentIds = agentsBySession[sid] ?? [];
+        const savedActiveAgentId = session.activeAgentId && agentIds.includes(session.activeAgentId) ? session.activeAgentId : null;
+        const activeAgentId = savedActiveAgentId ?? (session.view === "agent" ? (agentIds[0] ?? null) : null);
+        sessions[sid] = {
+            ...session,
+            activeAgentId,
+            view: session.view === "agent" && activeAgentId ? "agent" : "windows",
+        };
     }
     const validPaneIds = new Set<string>();
     for (const w of Object.values(windows)) {
