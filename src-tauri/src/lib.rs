@@ -164,6 +164,7 @@ pub fn run() {
             files::list_project_files,
             settings::scan_project_roots,
             settings::expand_path,
+            settings::is_directory,
             search::project_search,
             search::project_search_cancel,
             search::project_search_replace,

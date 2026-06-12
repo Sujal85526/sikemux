@@ -33,6 +33,7 @@ import type {
     FocusDir,
     PickerMode,
     PaneKind,
+    PinnedProject,
     ProjectRoot,
     RundeckLevel,
     RundeckView,
@@ -1023,6 +1024,18 @@ export function addProjectRoot(path: string, depth = 1): void {
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
+export function addPinnedProject(path: string): void {
+    setState((s) => (s.pinnedProjects.some((p) => p.path === path) ? {} : { pinnedProjects: [...s.pinnedProjects, { path }] }));
+    invalidate((kind) => kind === projectRootsScanR.kind);
+}
+
+export function removePinnedProject(path: string): void {
+    setState((s) => ({
+        pinnedProjects: s.pinnedProjects.filter((p) => p.path !== path),
+    }));
+    invalidate((kind) => kind === projectRootsScanR.kind);
+}
+
 export function removeProjectRoot(path: string): void {
     setState((s) => ({
         projectRoots: s.projectRoots.filter((r) => r.path !== path),
@@ -1053,6 +1066,19 @@ export function normaliseProjectRoots(raw: unknown): ProjectRoot[] {
             return null;
         })
         .filter((x): x is ProjectRoot => x !== null);
+}
+
+export function normalisePinnedProjects(raw: unknown): PinnedProject[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((p): PinnedProject | null => {
+            if (typeof p === "string") return { path: p };
+            if (p && typeof p === "object" && typeof (p as PinnedProject).path === "string") {
+                return { path: (p as PinnedProject).path };
+            }
+            return null;
+        })
+        .filter((x): x is PinnedProject => x !== null);
 }
 
 export const setAwsProfile = (name: string | null): void => setState({ awsProfile: name });

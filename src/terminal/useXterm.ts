@@ -140,6 +140,12 @@ export function useXterm(opts: {
 
             term.attachCustomKeyEventHandler((e) => {
                 if (e.type !== "keydown") return true;
+                if (e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                    void invoke("pty_write", { id: pid, data: "\x1b[13;2u" });
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
                 const keyParts: string[] = [];
                 if (e.metaKey) keyParts.push("Meta");
                 if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Backspace")) {

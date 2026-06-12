@@ -1,10 +1,10 @@
 // Backend bits for the settings page:
-//   - scan_project_roots: each configured root is always emitted as a
-//     candidate (a brand-new project before `git init` should still be
-//     reachable). Subdirectories within the configured `depth` are
-//     emitted ONLY if they are git repos — and the walk does not descend
-//     INTO a git repo (its inner src/, vendor/, etc. shouldn't pollute
-//     the picker). Dotfile dirs are skipped at every level.
+//   - scan_project_roots: exact pinned projects are always emitted when
+//     they exist. Discovery roots emit the root itself only when it is a
+//     git repo; subdirectories within the configured `depth` are emitted
+//     ONLY if they are git repos — and the walk does not descend INTO a
+//     git repo (its inner src/, vendor/, etc. shouldn't pollute the
+//     picker). Dotfile dirs are skipped at every level.
 //   - expand_path: resolves `~` against $HOME on the Rust side.
 
 use std::fs;
@@ -23,6 +23,11 @@ pub struct ProjectRoot {
     path: String,
     #[serde(default = "default_depth")]
     depth: i64,
+}
+
+#[derive(Deserialize)]
+pub struct PinnedProject {
+    path: String,
 }
 
 fn default_depth() -> i64 {
@@ -75,9 +80,14 @@ pub fn expand_path(path: String) -> String {
     expand(&path).to_string_lossy().into_owned()
 }
 
-// DFS within `root` up to `remaining` levels deep. The root is always
-// emitted by the caller. Within the walk, only git repos are emitted;
-// repos are also terminal — we never descend into one.
+#[tauri::command]
+pub fn is_directory(path: String) -> bool {
+    expand(&path).is_dir()
+}
+
+// DFS within `root` up to `remaining` levels deep. Within the walk, only
+// git repos are emitted; repos are also terminal — we never descend into
+// one.
 fn walk(
     root: &Path,
     dir: &Path,
@@ -116,28 +126,42 @@ fn walk(
 }
 
 #[tauri::command]
-pub async fn scan_project_roots(roots: Vec<ProjectRoot>) -> Vec<ProjectEntry> {
+pub async fn scan_project_roots(
+    pinned_projects: Vec<PinnedProject>,
+    roots: Vec<ProjectRoot>,
+) -> Vec<ProjectEntry> {
     let mut out: Vec<ProjectEntry> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for p in pinned_projects {
+        let project = expand(&p.path);
+        if !project.is_dir() {
+            continue;
+        }
+        let path = project.to_string_lossy().into_owned();
+        if seen.insert(path.clone()) {
+            out.push(ProjectEntry {
+                name: name_of(&project),
+                path,
+            });
+        }
+    }
 
     for r in roots {
         let root = expand(&r.path);
         if !root.is_dir() {
             continue;
         }
-        // Always include the root itself — even non-repo directories the
-        // user has explicitly configured as roots are valid project
-        // candidates (pre-init projects, scratch dirs, etc.).
-        let root_path = root.to_string_lossy().into_owned();
-        if seen.insert(root_path.clone()) {
-            out.push(ProjectEntry {
-                name: name_of(&root),
-                path: root_path,
-            });
-        }
-        // If the root itself is a git repo, don't enumerate its insides
-        // — it's already the project.
         if is_repo(&root) {
+            let root_path = root.to_string_lossy().into_owned();
+            if seen.insert(root_path.clone()) {
+                out.push(ProjectEntry {
+                    name: name_of(&root),
+                    path: root_path,
+                });
+            }
+            // If the root itself is a git repo, don't enumerate its
+            // insides — it's already the project.
             continue;
         }
         walk(&root, &root, r.depth.max(0), &mut out, &mut seen);

@@ -9,6 +9,11 @@ const WINDOW_KEYS: Record<string, string> = {
     KeyF: "search",
 };
 
+function isTerminalKeyTarget(e: KeyboardEvent): boolean {
+    const target = e.target instanceof Element ? e.target : document.activeElement;
+    return !!target?.closest?.(".xterm");
+}
+
 export function useKeymap(): void {
     useEffect(() => {
         const meta = (e: KeyboardEvent): void => {
@@ -60,7 +65,11 @@ export function useKeymap(): void {
                     shift ? cmd.resizeActivePane("left") : cmd.moveFocus("left");
                     break;
                 case "KeyJ":
-                    shift ? cmd.resizeActivePane("down") : cmd.moveFocus("down");
+                    // Let terminal apps (pi, shells, editors) receive Alt+J. Pi uses it
+                    // as a reliable multiline prompt fallback when Shift+Enter is not
+                    // available. Alt+Shift+J still resizes panes.
+                    if (!shift && isTerminalKeyTarget(e)) handled = false;
+                    else shift ? cmd.resizeActivePane("down") : cmd.moveFocus("down");
                     break;
                 case "KeyK":
                     shift ? cmd.resizeActivePane("up") : cmd.moveFocus("up");

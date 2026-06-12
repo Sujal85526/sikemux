@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { settingsApi } from "../api/settings";
 import { prettyPath } from "../lib/paths";
-import { reportError } from "../state/toast";
+import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { THEMES } from "../themes";
@@ -17,6 +17,7 @@ const PAGES: { id: Page; name: string }[] = [
 ];
 
 export function SettingsPanel() {
+    const pinnedProjects = useStore((s) => s.pinnedProjects);
     const projectRoots = useStore((s) => s.projectRoots);
     const themeId = useStore((s) => s.themeId);
     const windowOpacity = useStore((s) => s.windowOpacity);
@@ -84,7 +85,9 @@ export function SettingsPanel() {
                     </div>
 
                     <div className="settings-scroll">
-                        {page === "general" && <GeneralPage projectRoots={projectRoots} home={home} pretty={pretty} />}
+                        {page === "general" && (
+                            <GeneralPage pinnedProjects={pinnedProjects} projectRoots={projectRoots} home={home} pretty={pretty} />
+                        )}
 
                         {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
 
@@ -97,77 +100,159 @@ export function SettingsPanel() {
 }
 
 interface GeneralPageProps {
+    pinnedProjects: Array<{ path: string }>;
     projectRoots: Array<{ path: string; depth: number }>;
     home: string;
     pretty: (p: string) => string;
 }
 
-function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
-    const [draftPath, setDraftPath] = useState("");
-    const [draftDepth, setDraftDepth] = useState(1);
+function GeneralPage({ pinnedProjects, projectRoots, home, pretty }: GeneralPageProps) {
+    const [pinnedDraftPath, setPinnedDraftPath] = useState("");
+    const [rootDraftPath, setRootDraftPath] = useState("");
+    const [rootDraftDepth, setRootDraftDepth] = useState(1);
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         inputRef.current?.focus();
     }, []);
 
-    const commitDraft = async () => {
-        const raw = draftPath.trim();
+    const resolveDirectory = async (raw: string) => {
+        const expanded = await settingsApi.expandPath(raw);
+        const ok = await settingsApi.isDirectory(expanded);
+        if (!ok) {
+            notify("error", `settings: not a directory: ${pretty(expanded)}`);
+            return null;
+        }
+        return expanded;
+    };
+
+    const commitPinnedDraft = async () => {
+        const raw = pinnedDraftPath.trim();
         if (!raw) return;
         try {
-            const expanded = await settingsApi.expandPath(raw);
-            cmd.addProjectRoot(expanded, draftDepth);
-            setDraftPath("");
-            setDraftDepth(1);
+            const expanded = await resolveDirectory(raw);
+            if (!expanded) return;
+            cmd.addPinnedProject(expanded);
+            setPinnedDraftPath("");
         } catch (err) {
             reportError("settings")(err);
         }
     };
 
-    const onPickFolder = async () => {
+    const commitRootDraft = async () => {
+        const raw = rootDraftPath.trim();
+        if (!raw) return;
+        try {
+            const expanded = await resolveDirectory(raw);
+            if (!expanded) return;
+            cmd.addProjectRoot(expanded, rootDraftDepth);
+            setRootDraftPath("");
+            setRootDraftDepth(1);
+        } catch (err) {
+            reportError("settings")(err);
+        }
+    };
+
+    const onPickPinned = async () => {
         try {
             const picked = await settingsApi.pickFolder(home || undefined);
-            if (picked) cmd.addProjectRoot(picked, draftDepth);
+            if (picked) cmd.addPinnedProject(picked);
+        } catch (err) {
+            reportError("folder picker")(err);
+        }
+    };
+
+    const onPickRoot = async () => {
+        try {
+            const picked = await settingsApi.pickFolder(home || undefined);
+            if (picked) cmd.addProjectRoot(picked, rootDraftDepth);
         } catch (err) {
             reportError("folder picker")(err);
         }
     };
 
     return (
-        <SettingsPage name="general" deck="Directories the session picker walks. The root path is always indexed.">
+        <SettingsPage name="general" deck="Exact project folders and git repo discovery for the session picker.">
             <SettingsSection
-                title="Project roots"
-                meta={`${projectRoots.length} ${projectRoots.length === 1 ? "entry" : "entries"}`}
-                sub="The root path is always walked; within depth, only git repos count.">
-                <div className="settings-row-input">
+                title="Pinned projects"
+                meta={`${pinnedProjects.length} ${pinnedProjects.length === 1 ? "entry" : "entries"}`}
+                sub="Exact folders that always appear in the sesh picker, git repo or not.">
+                <div className="settings-row-input compact">
                     <input
                         ref={inputRef}
                         className="settings-input"
-                        placeholder="~/proj    or    /Users/me/work"
-                        value={draftPath}
-                        onChange={(e) => setDraftPath(e.target.value)}
+                        placeholder="~/    or    /Users/me/scratch"
+                        value={pinnedDraftPath}
+                        onChange={(e) => setPinnedDraftPath(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === "Enter") {
                                 e.preventDefault();
-                                void commitDraft();
+                                void commitPinnedDraft();
                             } else if (e.key === "Escape") {
                                 cmd.closeSettings();
                             }
                         }}
                         spellCheck={false}
                     />
-                    <DepthStepper value={draftDepth} onChange={setDraftDepth} title="Walk depth for this root" />
-                    <button className="settings-btn" onClick={onPickFolder} type="button" title="Browse…">
+                    <button className="settings-btn" onClick={onPickPinned} type="button" title="Browse…">
                         <IconFolder size={11} /> browse
                     </button>
-                    <button className="settings-btn primary" onClick={() => void commitDraft()} disabled={!draftPath.trim()} type="button">
+                    <button className="settings-btn primary" onClick={() => void commitPinnedDraft()} disabled={!pinnedDraftPath.trim()} type="button">
+                        <IconPlus size={11} /> add
+                    </button>
+                </div>
+
+                {pinnedProjects.length === 0 ? (
+                    <div className="settings-empty">
+                        no pinned projects — use the folder button in the sesh picker, or add <code>~/</code> here
+                    </div>
+                ) : (
+                    <div className="settings-list">
+                        {pinnedProjects.map((project, i) => (
+                            <div className="settings-list-row" key={project.path}>
+                                <span className="settings-list-idx">{String(i + 1).padStart(2, "0")}</span>
+                                <span className="settings-list-path">{pretty(project.path)}</span>
+                                <button className="settings-row-x" onClick={() => cmd.removePinnedProject(project.path)} title="Remove" type="button">
+                                    <IconClose size={11} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </SettingsSection>
+
+            <SettingsSection
+                title="Discovery roots"
+                meta={`${projectRoots.length} ${projectRoots.length === 1 ? "entry" : "entries"}`}
+                sub="Scans for git repos only. The root itself appears only when it is a git repo.">
+                <div className="settings-row-input">
+                    <input
+                        className="settings-input"
+                        placeholder="~/proj    or    /Users/me/work"
+                        value={rootDraftPath}
+                        onChange={(e) => setRootDraftPath(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                void commitRootDraft();
+                            } else if (e.key === "Escape") {
+                                cmd.closeSettings();
+                            }
+                        }}
+                        spellCheck={false}
+                    />
+                    <DepthStepper value={rootDraftDepth} onChange={setRootDraftDepth} title="Walk depth for this root" />
+                    <button className="settings-btn" onClick={onPickRoot} type="button" title="Browse…">
+                        <IconFolder size={11} /> browse
+                    </button>
+                    <button className="settings-btn primary" onClick={() => void commitRootDraft()} disabled={!rootDraftPath.trim()} type="button">
                         <IconPlus size={11} /> add
                     </button>
                 </div>
 
                 {projectRoots.length === 0 ? (
                     <div className="settings-empty">
-                        no roots — add <code>~/proj</code> (or wherever you keep code) to populate the sesh picker
+                        no discovery roots — add <code>~/proj</code> (or wherever you keep code) to find git repos
                     </div>
                 ) : (
                     <div className="settings-list">

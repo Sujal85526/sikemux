@@ -14,6 +14,7 @@ import type {
     GitPaneView,
     GlobalSearchView,
     PickerMode,
+    PinnedProject,
     ProjectRoot,
     RecentEntry,
     RundeckSettings,
@@ -36,6 +37,7 @@ export interface DomainState {
     recent: RecentEntry[];
     agentBookmarks: AgentBookmark[];
 
+    pinnedProjects: PinnedProject[];
     projectRoots: ProjectRoot[];
     themeId: string;
     windowOpacity: number;
@@ -126,6 +128,7 @@ export const useStore = create<StoreState>(() => {
         activeSessionId: session.id,
         recent: [],
         agentBookmarks: [],
+        pinnedProjects: [],
         projectRoots: [],
         themeId: DEFAULT_THEME_ID,
         windowOpacity: 1,

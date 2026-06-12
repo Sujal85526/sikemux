@@ -239,6 +239,7 @@ button {
     animation: fadeDown 0.4s ease backwards;
 }
 
+
 .tb-left {
     display: flex;
     align-items: center;
@@ -960,6 +961,27 @@ button {
 }
 .picker-input::placeholder {
     color: var(--ink-faint);
+}
+.picker-folder-btn {
+    width: 27px;
+    height: 27px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    cursor: pointer;
+    transition:
+        color 0.1s,
+        border-color 0.1s,
+        background 0.1s;
+}
+.picker-folder-btn:hover {
+    color: var(--ink);
+    border-color: var(--ink-dim);
+    background: var(--hl);
 }
 .picker-hints {
     display: flex;
@@ -3778,6 +3800,9 @@ button {
     gap: 6px;
     margin-bottom: 10px;
     align-items: stretch;
+}
+.settings-row-input.compact {
+    grid-template-columns: 1fr auto auto;
 }
 .settings-input {
     background: var(--s-bg-dim);

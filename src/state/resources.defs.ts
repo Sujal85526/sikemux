@@ -27,7 +27,7 @@ import {
 } from "../api/rundeck";
 import { settingsApi, type ProjectEntry } from "../api/settings";
 import { sshApi, type SshHost } from "../api/ssh";
-import type { AgentType, ProjectRoot } from "./types";
+import type { AgentType, PinnedProject, ProjectRoot } from "./types";
 import { resource } from "./resources";
 
 export const gitOverviewR = resource({
@@ -144,7 +144,7 @@ export const filesListR = resource({
 
 export const projectRootsScanR = resource({
     kind: "settings.projectRootsScan",
-    fetch: (roots: ProjectRoot[]): Promise<ProjectEntry[]> => settingsApi.scanProjectRoots(roots),
+    fetch: (pinnedProjects: PinnedProject[], roots: ProjectRoot[]): Promise<ProjectEntry[]> => settingsApi.scanProjectRoots(pinnedProjects, roots),
     staleAfterMs: 60_000,
 });
 

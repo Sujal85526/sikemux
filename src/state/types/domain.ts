@@ -87,6 +87,10 @@ export interface ProjectRoot {
     depth: number;
 }
 
+export interface PinnedProject {
+    path: string;
+}
+
 export interface Rect {
     x: number;
     y: number;

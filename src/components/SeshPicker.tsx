@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionKind } from "../state/types";
 import { fuzzyScore, isSubstringMatch } from "../lib/fuzzy";
 import { basename, expandHome, prettyPath } from "../lib/paths";
+import { settingsApi } from "../api/settings";
 import * as cmd from "../state/commands";
 import { useResourceEnabled } from "../state/resources";
 import { projectRootsScanR, sshHostsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
+import { reportError } from "../state/toast";
 import type { SshHost } from "../api/ssh";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { IconCommand, IconFolder, IconSearch } from "./Icons";
@@ -27,6 +29,7 @@ export function SeshPicker() {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const home = useStore((s) => s.home);
+    const pinnedProjects = useStore((s) => s.pinnedProjects);
     const projectRoots = useStore((s) => s.projectRoots);
     const mode = useStore((s) => s.pickerMode);
 
@@ -42,7 +45,13 @@ export function SeshPicker() {
         inputRef.current?.focus();
     }, []);
 
-    const scanned = useResourceEnabled(showProjects && projectRoots.length > 0, projectRootsScanR, showProjects ? projectRoots : []);
+    const hasConfiguredProjects = pinnedProjects.length > 0 || projectRoots.length > 0;
+    const scanned = useResourceEnabled(
+        showProjects && hasConfiguredProjects,
+        projectRootsScanR,
+        showProjects ? pinnedProjects : [],
+        showProjects ? projectRoots : [],
+    );
     const hostsR = useResourceEnabled(showSsh, sshHostsR);
     const projects = showProjects ? (scanned.data ?? []) : [];
     const hosts = showSsh ? (hostsR.data ?? []) : [];
@@ -107,7 +116,7 @@ export function SeshPicker() {
         };
         return groups.flatMap(finalize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessions, projects, hosts, query, home, mode, projectRoots]);
+    }, [sessions, projects, hosts, query, home, mode, projectRoots, pinnedProjects]);
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));
@@ -118,6 +127,17 @@ export function SeshPicker() {
         if (it.kind === "session") cmd.selectSession(it.id);
         else if (it.kind === "dir") cmd.createProjectSession(it.path);
         else cmd.createSshSession(it.alias);
+    };
+
+    const openFolder = async () => {
+        try {
+            const picked = await settingsApi.pickFolder(home || undefined);
+            if (!picked) return;
+            cmd.addPinnedProject(picked);
+            cmd.createProjectSession(picked);
+        } catch (err) {
+            reportError("open folder")(err);
+        }
     };
 
     const onKeyDown = (e: React.KeyboardEvent) => {
@@ -163,6 +183,11 @@ export function SeshPicker() {
                         onKeyDown={onKeyDown}
                         spellCheck={false}
                     />
+                    {showProjects && (
+                        <button className="picker-folder-btn" onClick={() => void openFolder()} title="Open folder" type="button">
+                            <IconFolder size={14} />
+                        </button>
+                    )}
                     <span className="picker-hints">
                         <span className="picker-hint">↑↓ nav</span>
                         <span className="picker-hint">⏎ open</span>
@@ -173,9 +198,9 @@ export function SeshPicker() {
                 <div className="picker-list">
                     {items.length === 0 && (
                         <div className="picker-empty">
-                            {showProjects && projectRoots.length === 0 ? (
+                            {showProjects && !hasConfiguredProjects ? (
                                 <>
-                                    no project roots configured —{" "}
+                                    no projects configured —{" "}
                                     <button
                                         className="picker-link"
                                         onClick={() => {

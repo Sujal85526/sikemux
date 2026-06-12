@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ensureSearchWindow, normaliseProjectRoots } from "./commands";
+import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import type { Agent, EditorPaneView, PersistedPrefs, PersistedSnapshot, Session, Window, WindowRole } from "./types";
 
@@ -25,6 +25,7 @@ const PERSISTED_KEYS = [
     "recent",
     "agentBookmarks",
     "editorViews",
+    "pinnedProjects",
     "projectRoots",
     "themeId",
     "windowOpacity",
@@ -62,6 +63,7 @@ function slicesEqual(a: SliceShot, b: SliceShot): boolean {
 function packPrefs(s: StoreState): PersistedPrefs {
     return {
         projectRoots: s.projectRoots,
+        pinnedProjects: s.pinnedProjects,
         themeId: s.themeId,
         windowOpacity: s.windowOpacity,
         windowBlur: s.windowBlur,
@@ -162,6 +164,7 @@ export function applyHydrate(raw: string): void {
         recent: data.recent ?? [],
         agentBookmarks: data.agentBookmarks ?? [],
         editorViews,
+        pinnedProjects: normalisePinnedProjects(data.prefs?.pinnedProjects),
         projectRoots: data.prefs?.projectRoots ? normaliseProjectRoots(data.prefs.projectRoots) : cur.projectRoots,
         themeId: data.prefs?.themeId ?? cur.themeId,
         windowOpacity: data.prefs?.windowOpacity ?? cur.windowOpacity,

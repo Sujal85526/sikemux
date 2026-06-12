@@ -1,4 +1,4 @@
-import type { Agent, AgentBookmark, AwsService, ProjectRoot, RecentEntry, RundeckSettings, Session, Window } from "./domain";
+import type { Agent, AgentBookmark, AwsService, PinnedProject, ProjectRoot, RecentEntry, RundeckSettings, Session, Window } from "./domain";
 import type { EditorPaneView } from "./view";
 
 export interface PersistedSnapshot {
@@ -15,6 +15,7 @@ export interface PersistedSnapshot {
 }
 
 export interface PersistedPrefs {
+    pinnedProjects: PinnedProject[];
     projectRoots: ProjectRoot[];
     themeId: string;
     windowOpacity: number;
