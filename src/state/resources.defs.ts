@@ -26,6 +26,8 @@ import {
     type RundeckStatus,
 } from "../api/rundeck";
 import { settingsApi, type ProjectEntry } from "../api/settings";
+import { loadCollection } from "../bruno/collection";
+import type { BruCollection } from "../bruno/types";
 import { sshApi, type SshHost } from "../api/ssh";
 import type { AgentType, PinnedProject, ProjectRoot } from "./types";
 import { resource } from "./resources";
@@ -189,4 +191,10 @@ export const rndPlanR = resource({
     fetch: (project: string, service: string, branch: string, repoPath: string): Promise<PlanResult> =>
         rundeckApi.plan(project, service, branch, repoPath),
     staleAfterMs: 10_000,
+});
+
+export const brunoCollectionR = resource({
+    kind: "bruno.collection",
+    fetch: (rootPath: string): Promise<BruCollection> => loadCollection(rootPath),
+    staleAfterMs: 5 * 60_000,
 });

@@ -1,5 +1,6 @@
 mod agents;
 mod aws;
+mod bruno;
 mod diff;
 mod error;
 mod external;
@@ -207,6 +208,7 @@ pub fn run() {
             external::open_url,
             external::macos_focus_app,
             transparency::set_window_blur,
+            bruno::bru_send,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")

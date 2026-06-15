@@ -12,6 +12,7 @@ import type {
     EcsLevel,
     EditorPaneView,
     GitPaneView,
+    BrunoView,
     GlobalSearchView,
     PickerMode,
     PinnedProject,
@@ -69,6 +70,7 @@ export interface ViewState {
     gitViews: Record<string, GitPaneView>;
     ecsViews: Record<string, EcsLevel>;
     rundeckViews: Record<string, RundeckView>;
+    brunoViews: Record<string, BrunoView>;
     expandedBillingMonth: Record<string, string | null>;
 
     gitModal: GitModal | null;
@@ -160,6 +162,7 @@ export const useStore = create<StoreState>(() => {
         gitViews: {},
         ecsViews: {},
         rundeckViews: {},
+        brunoViews: {},
         expandedBillingMonth: {},
         gitModal: null,
         gitCmdLog: [],

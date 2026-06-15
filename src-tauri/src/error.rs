@@ -48,6 +48,9 @@ pub enum AppError {
     #[error("rundeck: http {status}: {message}")]
     RundeckHttp { status: u16, message: String },
 
+    #[error("http: {0}")]
+    Http(String),
+
     #[error("invalid argument: {0}")]
     BadArg(&'static str),
 
@@ -137,6 +140,7 @@ impl AppError {
             AppError::RundeckUnconfigured => "rundeck-unconfigured",
             AppError::RundeckAuth(_) => "rundeck-auth",
             AppError::RundeckHttp { .. } => "rundeck-http",
+            AppError::Http(_) => "http",
             AppError::BadArg(_) => "bad-arg",
             AppError::Pty(_) => "pty",
             AppError::Search(_) => "search",

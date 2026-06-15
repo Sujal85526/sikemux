@@ -39,7 +39,7 @@ thiserror = "1"
 futures = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "net", "io-util"] }
 libc = "0.2"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "stream", "cookies"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "stream", "cookies", "multipart"] }
 objc2 = "0.6"
 objc2-foundation = "0.3"
 

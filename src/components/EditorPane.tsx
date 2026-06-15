@@ -286,6 +286,32 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         } catch {}
     };
 
+    // The active tab was changed from outside this pane (⌥./⌥, cycling, or any
+    // programmatic setEditorView): swap the live document to match. Tab clicks call
+    // switchTo() directly, so they leave currentRef === activePath and no-op here.
+    useEffect(() => {
+        if (!hydratedRef.current || !activePath || currentRef.current === activePath) return;
+        if (states.current.has(activePath)) {
+            switchTo(activePath);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const content = await fsapi.readFile(activePath);
+                if (cancelled) return;
+                const st = makeState(activePath, content);
+                states.current.set(activePath, st);
+                savedRef.current.set(activePath, content);
+                switchTo(activePath, st);
+            } catch {}
+        })();
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activePath]);
+
     useEffect(() => {
         if (!visible || hydratedRef.current) return;
         if (!viewRef.current) return;

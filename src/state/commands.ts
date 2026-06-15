@@ -1,16 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { AgentSession } from "../api/agents";
 import { awsApi } from "../api/aws";
+import { fsapi } from "../api/fs";
 import { lsp } from "../api/lsp";
-import { basename } from "../lib/paths";
+import { emptyRequest } from "../bruno/types";
+import { parseRequest } from "../bruno/parse";
+import { serializeRequest } from "../bruno/serialize";
+import { basename, dirname } from "../lib/paths";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
 import { fetchResource, invalidate, peekResource } from "./resources";
 import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.defs";
 import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
-import { notify, swallow } from "./toast";
-import { DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
+import { notify, reportError, swallow } from "./toast";
+import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
     computeLayout,
@@ -27,6 +32,9 @@ import type {
     AgentBookmark,
     AgentType,
     AwsService,
+    BrunoReqTab,
+    BrunoResTab,
+    BrunoView,
     DeployRef,
     EcsLevel,
     FocusDir,
@@ -232,6 +240,206 @@ function openSingletonPaneSession(kind: "aws" | "rundeck"): void {
 export const openAwsSession = (): void => openSingletonPaneSession("aws");
 export const openRundeckSession = (): void => openSingletonPaneSession("rundeck");
 
+/** Prompt for a collection directory, then open it as a Bruno API workspace. */
+export async function openBrunoFolder(): Promise<void> {
+    try {
+        const dir = await openDialog({ directory: true, multiple: false, title: "Open Bruno workspace" });
+        if (typeof dir === "string") openBrunoSession(dir);
+    } catch (e) {
+        reportError("open bruno workspace")(e);
+    }
+}
+
+/** Open (or focus) a Bruno API workspace for a collection directory. */
+export function openBrunoSession(collectionPath: string): void {
+    mutate((d) => {
+        const existing = d.sessionOrder
+            .map((id) => d.sessions[id])
+            .find((s) => s.kind === "bruno" && s.bruno?.collectionPath === collectionPath);
+        if (existing) {
+            d.activeSessionId = existing.id;
+            d.zoomedPaneId = null;
+            d.pickerOpen = false;
+            return;
+        }
+        const name = basename(collectionPath);
+        const win = makeWindow(collectionPath, name, { kind: "bruno", role: "bruno", fixed: true });
+        const session = makeSession("bruno", name, collectionPath, win.id);
+        session.bruno = { collectionPath, selectedEnvs: {}, secretVars: {}, drafts: {} };
+        attachSession(d as unknown as StoreState, session, [win]);
+    });
+}
+
+function patchBrunoView(sessionId: string, patch: Partial<BrunoView>): void {
+    mutate((d) => {
+        const cur = d.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW;
+        d.brunoViews[sessionId] = { ...cur, ...patch };
+    });
+}
+
+/** Open a request in a tab (adding it if not already open) and activate it. */
+export function brunoSelectRequest(sessionId: string, path: string | null): void {
+    mutate((d) => {
+        const cur = d.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW;
+        if (path == null) {
+            d.brunoViews[sessionId] = { ...cur, activeRequestPath: null };
+            return;
+        }
+        const openPaths = cur.openPaths.includes(path) ? cur.openPaths : [...cur.openPaths, path];
+        d.brunoViews[sessionId] = { ...cur, openPaths, activeRequestPath: path };
+    });
+}
+
+/** Close an open request tab; if it was active, activate a neighbour. Unsaved drafts are kept. */
+export function brunoCloseTab(sessionId: string, path: string): void {
+    mutate((d) => {
+        const cur = d.brunoViews[sessionId];
+        if (!cur) return;
+        const idx = cur.openPaths.indexOf(path);
+        if (idx === -1) return;
+        const openPaths = cur.openPaths.filter((p) => p !== path);
+        let activeRequestPath = cur.activeRequestPath;
+        if (activeRequestPath === path) activeRequestPath = openPaths[Math.min(idx, openPaths.length - 1)] ?? null;
+        d.brunoViews[sessionId] = { ...cur, openPaths, activeRequestPath };
+    });
+}
+export function brunoSetReqTab(sessionId: string, tab: BrunoReqTab): void {
+    patchBrunoView(sessionId, { reqTab: tab });
+}
+export function brunoSetResTab(sessionId: string, tab: BrunoResTab): void {
+    patchBrunoView(sessionId, { resTab: tab });
+}
+export function brunoToggleSecrets(sessionId: string, open?: boolean): void {
+    mutate((d) => {
+        const cur = d.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW;
+        d.brunoViews[sessionId] = { ...cur, secretsOpen: open ?? !cur.secretsOpen };
+    });
+}
+export function brunoSelectEnv(sessionId: string, collectionPath: string, envId: string | null): void {
+    mutate((d) => {
+        const s = d.sessions[sessionId];
+        if (s?.kind !== "bruno" || !s.bruno) return;
+        if (!s.bruno.selectedEnvs) s.bruno.selectedEnvs = {};
+        if (envId) s.bruno.selectedEnvs[collectionPath] = envId;
+        else delete s.bruno.selectedEnvs[collectionPath];
+    });
+}
+export function brunoSetSecret(sessionId: string, name: string, value: string): void {
+    mutate((d) => {
+        const s = d.sessions[sessionId];
+        if (s?.kind === "bruno" && s.bruno) s.bruno.secretVars[name] = value;
+    });
+}
+/** Stash edited (unsaved) request text by file path; pass null to clear the draft. */
+export function brunoSetDraft(sessionId: string, path: string, text: string | null): void {
+    mutate((d) => {
+        const s = d.sessions[sessionId];
+        if (s?.kind !== "bruno" || !s.bruno) return;
+        if (text == null) delete s.bruno.drafts[path];
+        else s.bruno.drafts[path] = text;
+    });
+}
+
+/** Write the draft for a request back to its .bru file, then clear the draft. */
+export async function brunoSaveRequest(sessionId: string, path: string): Promise<void> {
+    const s = getState().sessions[sessionId];
+    if (s?.kind !== "bruno" || !s.bruno) return;
+    const draft = s.bruno.drafts[path];
+    if (draft == null) return;
+    const collectionPath = s.bruno.collectionPath;
+    try {
+        await fsapi.writeFile(path, draft);
+        brunoSetDraft(sessionId, path, null);
+        invalidate((kind, args) => kind === "bruno.collection" && args[0] === collectionPath);
+        notify("success", `Saved ${basename(path)}`);
+    } catch (e) {
+        reportError("save request")(e);
+    }
+}
+
+/** Save the active request of the active Bruno session (⌘S). */
+export function brunoSaveActive(): void {
+    const st = getState();
+    const s = st.sessions[st.activeSessionId];
+    if (s?.kind !== "bruno") return;
+    const path = st.brunoViews[s.id]?.activeRequestPath;
+    if (path) void brunoSaveRequest(s.id, path);
+}
+
+const reloadBruno = (collectionPath: string): void => invalidate((kind, args) => kind === "bruno.collection" && args[0] === collectionPath);
+const safeFileName = (name: string): string => name.trim().replace(/[\\/:*?"<>|]/g, "_");
+
+/** Create a new .bru request under a directory and select it. */
+export async function brunoNewRequest(sessionId: string, dirPath: string, name: string): Promise<void> {
+    const s = getState().sessions[sessionId];
+    if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
+    const file = `${dirPath}/${safeFileName(name)}.bru`;
+    try {
+        await fsapi.writeFile(file, serializeRequest(emptyRequest(name.trim())));
+        reloadBruno(s.bruno.collectionPath);
+        brunoSelectRequest(sessionId, file);
+        notify("success", `Created ${name.trim()}`);
+    } catch (e) {
+        reportError("create request")(e);
+    }
+}
+
+/** Create a new subfolder (with a folder.bru) under a directory. */
+export async function brunoNewFolder(sessionId: string, parentPath: string, name: string): Promise<void> {
+    const s = getState().sessions[sessionId];
+    if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
+    const folder = `${parentPath}/${safeFileName(name)}`;
+    try {
+        await fsapi.createDir(folder);
+        await fsapi.writeFile(`${folder}/folder.bru`, `meta {\n  name: ${name.trim()}\n}\n`);
+        reloadBruno(s.bruno.collectionPath);
+        notify("success", `Created folder ${name.trim()}`);
+    } catch (e) {
+        reportError("create folder")(e);
+    }
+}
+
+/** Rename a request: update its meta.name and move the file to match. */
+export async function brunoRenameRequest(sessionId: string, path: string, name: string): Promise<void> {
+    const s = getState().sessions[sessionId];
+    if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
+    const newPath = `${dirname(path)}/${safeFileName(name)}.bru`;
+    try {
+        const text = s.bruno.drafts[path] ?? (await fsapi.readFile(path));
+        const req = parseRequest(text);
+        req.meta.name = name.trim();
+        await fsapi.writeFile(newPath, serializeRequest(req));
+        if (newPath !== path) await fsapi.deletePath(path);
+        brunoSetDraft(sessionId, path, null);
+        reloadBruno(s.bruno.collectionPath);
+        // keep the tab pointing at the renamed file
+        mutate((d) => {
+            const v = d.brunoViews[sessionId];
+            if (!v) return;
+            v.openPaths = v.openPaths.map((p) => (p === path ? newPath : p));
+            if (v.activeRequestPath === path) v.activeRequestPath = newPath;
+        });
+        notify("success", `Renamed to ${name.trim()}`);
+    } catch (e) {
+        reportError("rename request")(e);
+    }
+}
+
+/** Delete a request file from disk. */
+export async function brunoDeleteRequest(sessionId: string, path: string): Promise<void> {
+    const s = getState().sessions[sessionId];
+    if (s?.kind !== "bruno" || !s.bruno) return;
+    try {
+        await fsapi.deletePath(path);
+        brunoSetDraft(sessionId, path, null);
+        reloadBruno(s.bruno.collectionPath);
+        brunoCloseTab(sessionId, path);
+        notify("success", `Deleted ${basename(path)}`);
+    } catch (e) {
+        reportError("delete request")(e);
+    }
+}
+
 const rundeckView = (st: StoreState, paneId: string): RundeckView => st.rundeckViews[paneId] ?? { stack: [{ kind: "matrix" }] };
 
 export function rundeckPush(paneId: string, level: RundeckLevel): void {
@@ -353,6 +561,7 @@ export function closeSession(id: string): void {
         for (const aid of agentIds) delete d.agents[aid];
         delete d.windowsBySession[id];
         delete d.agentsBySession[id];
+        delete d.brunoViews[id];
         delete d.sessions[id];
         d.sessionOrder = d.sessionOrder.filter((x) => x !== id);
 
@@ -388,7 +597,7 @@ export function cycleSession(delta: number): void {
     });
 }
 
-const GROUP_ORDER: SessionKind[] = ["project", "ssh", "aws", "rundeck", "command"];
+const GROUP_ORDER: SessionKind[] = ["project", "ssh", "aws", "rundeck", "bruno", "command"];
 
 export function cycleSessionGroup(delta: number): void {
     mutate((d) => {
@@ -708,6 +917,54 @@ export function selectWindowRelative(delta: number): void {
     } else {
         selectWindowId(next.id);
     }
+}
+
+export function cycleAgent(delta: number): void {
+    mutate((d) => {
+        const session = d.sessions[d.activeSessionId];
+        if (!session) return;
+        const ids = d.agentsBySession[session.id] ?? [];
+        if (ids.length < 2) return;
+        const idx = session.activeAgentId ? ids.indexOf(session.activeAgentId) : -1;
+        const base = idx < 0 ? 0 : idx;
+        const sess = d.sessions[session.id];
+        sess.activeAgentId = ids[(base + delta + ids.length) % ids.length];
+        sess.view = "agent";
+        d.zoomedPaneId = null;
+    });
+}
+
+/** ⌥./⌥, — cycle whichever tab strip is currently on screen: agent tabs, terminal
+ *  tabs, or the focused editor pane's open file tabs. */
+export function cycleTabs(delta: number): void {
+    const st = getState();
+    const session = st.sessions[st.activeSessionId];
+    if (!session) return;
+
+    if (session.view === "agent") {
+        cycleAgent(delta);
+        return;
+    }
+
+    const win = st.windows[session.activeWindowId];
+    if (!win) return;
+
+    if (win.role === "term") {
+        const termIds = (st.windowsBySession[session.id] ?? []).filter((id) => st.windows[id]?.role === "term");
+        if (termIds.length < 2) return;
+        const idx = termIds.indexOf(win.id);
+        selectWindowId(termIds[(idx + delta + termIds.length) % termIds.length]);
+        return;
+    }
+
+    const pane = collectPanes(win.root).find((p) => p.id === win.activePaneId);
+    if (pane?.kind !== "editor") return;
+    const tabs = st.editorViews[pane.id]?.openTabs ?? [];
+    if (tabs.length < 2) return;
+    const active = st.editorViews[pane.id]?.activePath;
+    const idx = active ? tabs.indexOf(active) : -1;
+    const base = idx < 0 ? 0 : idx;
+    setEditorView(pane.id, { activePath: tabs[(base + delta + tabs.length) % tabs.length] });
 }
 
 const SKIP_PERMISSION_FLAG: Partial<Record<AgentType, string>> = {

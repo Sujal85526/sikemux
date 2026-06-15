@@ -9,6 +9,7 @@ import { EditorPane } from "./EditorPane";
 import { GitPane } from "./GitPane";
 import { AwsPane } from "./aws/AwsPane";
 import { RundeckPane } from "./rundeck/RundeckPane";
+import { BrunoPane } from "./bruno/BrunoPane";
 import { SearchPane } from "./SearchPane";
 import { AgentIcon, IconClose, IconCommand, IconShield, IconShieldBolt } from "./Icons";
 
@@ -31,6 +32,7 @@ const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => Reac
     git: ({ pane, session, active }) => <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} />,
     aws: ({ visible }) => <AwsPane active={visible} />,
     rundeck: ({ pane, visible }) => <RundeckPane paneId={pane.id} active={visible} />,
+    bruno: ({ pane, session, visible }) => <BrunoPane paneId={pane.id} sessionId={session.id} active={visible} />,
     search: ({ pane, session, active, visible }) => (
         <SearchPane sessionId={session.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
     ),

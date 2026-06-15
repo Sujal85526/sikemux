@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconAws, IconClose, IconCommand, IconFolder, IconPlus, IconRundeck, Logo, WindowIcon } from "./Icons";
+import { AgentIcon, IconAgent, IconAws, IconBruno, IconClose, IconCommand, IconFolder, IconPlus, IconRundeck, Logo, WindowIcon } from "./Icons";
 import { ALT, Kbd, SHIFT, hint } from "./Kbd";
 import { UpdateChip, VersionChip } from "./TopBar";
 
@@ -10,6 +10,7 @@ function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
     if (kind === "aws") return <IconAws size={26} />;
     if (kind === "rundeck") return <IconRundeck size={14} />;
+    if (kind === "bruno") return <IconBruno size={14} />;
     return <IconCommand size={13} />;
 }
 
@@ -31,6 +32,7 @@ export function SideRail() {
     const sshs = sessions.filter((s) => s.kind === "ssh");
     const cloud = sessions.filter((s) => s.kind === "aws");
     const cicd = sessions.filter((s) => s.kind === "rundeck");
+    const apis = sessions.filter((s) => s.kind === "bruno");
     const commands = sessions.filter((s) => s.kind === "command");
 
     const jumpToWindow = (sessionId: string, winId: string) => {
@@ -298,6 +300,14 @@ export function SideRail() {
                     add={cmd.openRundeckSession}
                     addTitle="Open Rundeck deploy center"
                     emptyText="open rundeck deploy center"
+                />
+                <Group
+                    label="API"
+                    list={apis}
+                    add={() => void cmd.openBrunoFolder()}
+                    addTitle={`Open Bruno workspace — ${hint(ALT, "B")}`}
+                    addKbd={hint(ALT, "B")}
+                    emptyText="open a bruno workspace"
                 />
                 <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
             </div>

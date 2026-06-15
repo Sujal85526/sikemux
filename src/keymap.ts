@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import * as cmd from "./state/commands";
+import { emit } from "./state/bus";
 import { getState } from "./state/store";
 
 const WINDOW_KEYS: Record<string, string> = {
@@ -30,6 +31,22 @@ export function useKeymap(): void {
                     cmd.closeFilePalette();
                 } else {
                     cmd.openFilePalette();
+                }
+            } else if (e.code === "KeyS" && !e.shiftKey) {
+                // ⌘S saves the active Bruno request; elsewhere it's left alone.
+                if (getState().sessions[getState().activeSessionId]?.kind === "bruno") {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    cmd.brunoSaveActive();
+                }
+            } else if (e.code === "Enter" || e.code === "NumpadEnter") {
+                // ⌘↵ sends the active Bruno request.
+                const st = getState();
+                const s = st.sessions[st.activeSessionId];
+                if (s?.kind === "bruno") {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    emit({ type: "bruno-run", sessionId: s.id });
                 }
             } else if (e.code === "KeyF" && e.shiftKey) {
                 e.preventDefault();
@@ -91,6 +108,7 @@ export function useKeymap(): void {
                     else if (active?.kind === "ssh") cmd.openPicker("ssh");
                     else if (active?.kind === "aws") cmd.openAwsSession();
                     else if (active?.kind === "rundeck") cmd.openRundeckSession();
+                    else if (active?.kind === "bruno") void cmd.openBrunoFolder();
                     else handled = false;
                     break;
                 }
@@ -100,6 +118,12 @@ export function useKeymap(): void {
                 case "BracketLeft":
                     cmd.selectWindowRelative(-1);
                     break;
+                case "Period":
+                    cmd.cycleTabs(1);
+                    break;
+                case "Comma":
+                    cmd.cycleTabs(-1);
+                    break;
                 case "KeyP":
                     cmd.openPicker("projects");
                     break;
@@ -108,6 +132,9 @@ export function useKeymap(): void {
                     break;
                 case "KeyA":
                     cmd.openAwsSession();
+                    break;
+                case "KeyB":
+                    void cmd.openBrunoFolder();
                     break;
                 case "KeyQ":
                     cmd.closeActiveSession();

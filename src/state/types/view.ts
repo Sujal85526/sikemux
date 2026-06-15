@@ -78,3 +78,24 @@ export type RundeckLevel =
 export interface RundeckView {
     stack: RundeckLevel[];
 }
+
+export type BrunoReqTab = "params" | "body" | "headers" | "auth" | "vars" | "script" | "docs";
+export type BrunoResTab = "body" | "headers" | "timeline" | "tests";
+
+/** Ephemeral (non-persisted) per-session Bruno UI state, keyed by session id. */
+export interface BrunoView {
+    /** ordered list of open request tabs (file paths) */
+    openPaths: string[];
+    activeRequestPath: string | null;
+    reqTab: BrunoReqTab;
+    resTab: BrunoResTab;
+    secretsOpen: boolean;
+}
+
+export const DEFAULT_BRUNO_VIEW: BrunoView = {
+    openPaths: [],
+    activeRequestPath: null,
+    reqTab: "params",
+    resTab: "body",
+    secretsOpen: false,
+};

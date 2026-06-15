@@ -163,6 +163,33 @@ export const IconFile = makeSvgIcon(
     </>,
 );
 export const IconClose = makeSvgIcon(<path d="M4 4l8 8M12 4l-8 8" />);
+export const IconCheck = makeSvgIcon(<path d="M3.5 8.4 6.6 11.5 12.5 4.5" />);
+export const IconPencil = makeSvgIcon(
+    <>
+        <path d="M9.6 3.4 12.6 6.4" />
+        <path d="M3 13h3l7-7-3-3-7 7v3Z" />
+    </>,
+);
+export const IconTrash = makeSvgIcon(
+    <>
+        <path d="M3.2 4.4h9.6" />
+        <path d="M6.4 4.4V3h3.2v1.4" />
+        <path d="M4.6 4.4 5.1 13h5.8l.5-8.6" />
+    </>,
+);
+export const IconSave = makeSvgIcon(
+    <>
+        <path d="M3 3h8l2 2v8H3z" />
+        <path d="M5.4 3v3.4h4.2V3" />
+        <rect x="5.4" y="8.6" width="5.2" height="4.4" rx="0" />
+    </>,
+);
+export const IconFolderPlus = makeSvgIcon(
+    <>
+        <path d="M2 4.4h4l1.6 2H14v7.2H2z" />
+        <path d="M8 8.4v3.4M6.3 10.1h3.4" />
+    </>,
+);
 
 export function IconPin({ size, className, filled }: IconProps & { filled?: boolean }) {
     return (
@@ -278,6 +305,27 @@ export function IconRundeck({ size = 14, className }: IconProps) {
                 d="M46.83 113.864l7.608 12.01H92.5l-7.543-12.01zm15.26 23.98l3.684 5.754-3.968 6.32h38.4l3.815-6.017-3.815-5.907h-38.04zm-7.826 24.13l-7.455 11.77v.24h38.148l7.564-12.012z"
                 fill="#f91629"
             />
+        </svg>
+    );
+}
+
+export function IconBruno({ size = 14, className }: IconProps) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true">
+            <path d="M3.5 11h17a8.5 8.5 0 0 1-17 0Z" />
+            <path d="M2.5 11h19" />
+            <path d="M9 3.2c-.9 1.1.9 2.1 0 3.2M14.5 2.8c-.9 1.1.9 2.1 0 3.2" />
         </svg>
     );
 }

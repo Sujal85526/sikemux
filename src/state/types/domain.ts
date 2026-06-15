@@ -1,5 +1,5 @@
 export type SplitDir = "row" | "column";
-export type PaneKind = "terminal" | "editor" | "git" | "aws" | "search" | "rundeck";
+export type PaneKind = "terminal" | "editor" | "git" | "aws" | "search" | "rundeck" | "bruno";
 
 export interface PaneNode {
     type: "pane";
@@ -20,9 +20,9 @@ export interface SplitNode {
 
 export type LayoutNode = PaneNode | SplitNode;
 
-export type SessionKind = "project" | "command" | "ssh" | "aws" | "rundeck";
+export type SessionKind = "project" | "command" | "ssh" | "aws" | "rundeck" | "bruno";
 
-export type WindowRole = "term" | "files" | "git" | "search" | "aws" | "rundeck" | "named";
+export type WindowRole = "term" | "files" | "git" | "search" | "aws" | "rundeck" | "bruno" | "named";
 
 export interface Window {
     id: string;
@@ -58,6 +58,20 @@ export interface DeployRef {
     folder: string | null;
 }
 
+/**
+ * Durable per-session state for a Bruno (API) workspace. Lives on the Session so
+ * it persists with the existing `sessions` slice — no persist version bump.
+ * Secret var values are entered in-app (not stored in .bru files); `drafts` holds
+ * edited-but-unsaved request text keyed by file path.
+ */
+export interface BrunoSessionState {
+    collectionPath: string;
+    /** selected environment id per collection root (workspaces hold many collections) */
+    selectedEnvs: Record<string, string>;
+    secretVars: Record<string, string>;
+    drafts: Record<string, string>;
+}
+
 export interface Session {
     id: string;
     name: string;
@@ -65,6 +79,8 @@ export interface Session {
     cwd: string;
     /** Selected Rundeck deploy location for this session's service, when picked. */
     deploy?: DeployRef | null;
+    /** Bruno (API) workspace state — present only when kind === "bruno". */
+    bruno?: BrunoSessionState | null;
     pinned: boolean;
     activeWindowId: string;
     activeAgentId: string | null;

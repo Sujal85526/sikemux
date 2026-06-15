@@ -9,6 +9,7 @@ function deriveRole(w: Window): WindowRole {
     if (w.name === "git") return "git";
     if (w.name === "aws") return "aws";
     if (w.name === "rundeck") return "rundeck";
+    if (w.name === "bruno") return "bruno";
     if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
     return "named";
 }
