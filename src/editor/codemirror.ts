@@ -24,6 +24,8 @@ export function languageFor(path: string): Extension[] {
     const file = path.split("/").pop()?.toLowerCase() ?? "";
     if (file === "makefile" || file === "gnumakefile" || file.endsWith(".mk")) return [StreamLanguage.define(makefile)];
     if (file === "dockerfile" || file.startsWith("dockerfile.")) return [StreamLanguage.define(dockerFile)];
+    // dotenv: .env, .env.local, .env.production, .env.example, etc.
+    if (file === ".env" || file.startsWith(".env.")) return [StreamLanguage.define(properties)];
 
     const ext = file.includes(".") ? file.split(".").pop()! : "";
     switch (ext) {
