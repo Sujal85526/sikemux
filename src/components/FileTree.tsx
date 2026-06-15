@@ -71,7 +71,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     const [dragOver, setDragOver] = useState<string | null>(null);
     const [rootDragOver, setRootDragOver] = useState(false);
     const [draggingPath, setDraggingPath] = useState<string | null>(null);
-    const draggedPathRef = useRef<string | null>(null);
+    const [dragGhost, setDragGhost] = useState<{ name: string; x: number; y: number } | null>(null);
     const [menu, setMenu] = useState<MenuState | null>(null);
 
     const expandedRef = useRef(expanded);
@@ -267,16 +267,6 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         return true;
     };
 
-    // Resolve where a drop lands: a folder row → that folder; a file row → its
-    // parent dir; empty space → the tree root.
-    const dropTargetDir = (target: HTMLElement | null): string => {
-        const folderEl = target?.closest(".tree-row.is-folder") as HTMLElement | null;
-        if (folderEl?.dataset.folderPath) return folderEl.dataset.folderPath;
-        const fileEl = target?.closest(".tree-row.file") as HTMLElement | null;
-        if (fileEl?.dataset.filePath) return dirname(fileEl.dataset.filePath);
-        return cwd;
-    };
-
     const moveEntry = async (src: string, destDir: string) => {
         if (!canDropInto(src, destDir)) return;
         const dest = `${destDir}/${basename(src)}`;
@@ -289,18 +279,94 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         }
     };
 
-    const onRowDragStart = (e: React.DragEvent, path: string) => {
-        draggedPathRef.current = path;
-        setDraggingPath(path);
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", path);
+    // Internal drag uses pointer events, NOT the HTML5 DnD API: Tauri's native OS
+    // drag-drop handler (required for Finder→app drops) swallows dragover/drop on
+    // macOS WKWebView, so in-app HTML5 dragging never fires its events. Pointer
+    // events are fully under our control and immune to that.
+    const dragSession = useRef<{ path: string; startX: number; startY: number; active: boolean } | null>(null);
+    const moveHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+    const suppressClickRef = useRef(false);
+
+    // What sits under (x, y): the destination dir + the folder/root to highlight.
+    const resolveDrop = (x: number, y: number): { destDir: string | null; highlightPath: string | null } => {
+        const at = document.elementFromPoint(x, y) as HTMLElement | null;
+        if (!at?.closest(".ed-tree-scroll")) return { destDir: null, highlightPath: null };
+        const rowEl = at.closest(".tree-row.is-folder, .tree-row.file") as HTMLElement | null;
+        if (rowEl?.dataset.folderPath) {
+            return { destDir: rowEl.dataset.folderPath, highlightPath: rowEl.dataset.folderPath };
+        }
+        if (rowEl?.dataset.filePath) {
+            const destDir = dirname(rowEl.dataset.filePath);
+            return { destDir, highlightPath: destDir === cwd ? null : destDir };
+        }
+        return { destDir: cwd, highlightPath: null };
     };
-    const onRowDragEnd = () => {
-        draggedPathRef.current = null;
+
+    const onDragMove = (e: PointerEvent) => {
+        const s = dragSession.current;
+        if (!s) return;
+        if (!s.active) {
+            if (Math.hypot(e.clientX - s.startX, e.clientY - s.startY) < 5) return; // click vs drag threshold
+            s.active = true;
+            setDraggingPath(s.path);
+        }
+        const { destDir, highlightPath } = resolveDrop(e.clientX, e.clientY);
+        const ok = destDir != null && canDropInto(s.path, destDir);
+        setDragOver(ok ? highlightPath : null);
+        setRootDragOver(ok && !highlightPath);
+        setDragGhost({ name: basename(s.path), x: e.clientX, y: e.clientY });
+    };
+
+    const endDrag = () => {
+        if (moveHandlerRef.current) window.removeEventListener("pointermove", moveHandlerRef.current);
+        moveHandlerRef.current = null;
+        dragSession.current = null;
         setDraggingPath(null);
         setDragOver(null);
         setRootDragOver(false);
+        setDragGhost(null);
     };
+
+    const onDragUp = (e: PointerEvent) => {
+        const s = dragSession.current;
+        const active = !!s?.active;
+        if (s && active) {
+            const { destDir } = resolveDrop(e.clientX, e.clientY);
+            if (destDir) void moveEntry(s.path, destDir);
+        }
+        endDrag();
+        // Swallow the click that fires after a real drag. A click only fires when
+        // pointer up/down share an element (drag back onto the source); dropping
+        // elsewhere fires no click, so reset on the next tick to avoid eating a
+        // later legit click.
+        suppressClickRef.current = active;
+        if (active) setTimeout(() => (suppressClickRef.current = false), 0);
+    };
+
+    const onRowPointerDown = (e: ReactPointerEvent, path: string) => {
+        if (e.button !== 0) return; // left button only
+        dragSession.current = { path, startX: e.clientX, startY: e.clientY, active: false };
+        moveHandlerRef.current = onDragMove;
+        window.addEventListener("pointermove", onDragMove);
+        window.addEventListener("pointerup", onDragUp, { once: true });
+    };
+
+    // Defensive: drop the move listener if we unmount mid-drag.
+    useEffect(() => () => endDrag(), []);
+
+    useEffect(() => {
+        if (!active || !cwd) return;
+        return subscribe("tree-native-drag-hover", (e) => {
+            if (dragSession.current?.active) return;
+            if (e.cwd !== cwd || !e.targetDir) {
+                setDragOver(null);
+                setRootDragOver(false);
+                return;
+            }
+            setDragOver(e.highlightPath);
+            setRootDragOver(!e.highlightPath);
+        });
+    }, [active, cwd]);
 
     // ---- right-click context menu -------------------------------------
     const relativePath = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : basename(p));
@@ -403,10 +469,15 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                                 ref={(el) => attachFolderDrop(el, e.path)}
                                 className={`tree-row is-folder${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                                 style={{ paddingLeft: pad }}
-                                draggable
-                                onDragStart={(ev) => onRowDragStart(ev, e.path)}
-                                onDragEnd={onRowDragEnd}
-                                onClick={() => toggleDir(e)}
+                                onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
+                                onDragStart={(ev) => ev.preventDefault()}
+                                onClick={() => {
+                                    if (suppressClickRef.current) {
+                                        suppressClickRef.current = false;
+                                        return;
+                                    }
+                                    void toggleDir(e);
+                                }}
                                 onDoubleClick={() => startRename(e)}
                                 onContextMenu={(ev) => openMenu(ev, e)}
                                 data-folder-path={e.path}>
@@ -456,16 +527,20 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                             key={e.path}
                             className={`tree-row file${activePath === e.path ? " active" : ""}${gd ? ` git-${gd.cls}` : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                             style={{ paddingLeft: pad + 13 }}
-                            draggable
-                            onDragStart={(ev) => onRowDragStart(ev, e.path)}
-                            onDragEnd={onRowDragEnd}
+                            onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
+                            onDragStart={(ev) => ev.preventDefault()}
                             onClick={() => {
+                                if (suppressClickRef.current) {
+                                    suppressClickRef.current = false;
+                                    return;
+                                }
                                 setSelectedDir(null);
                                 onOpenFile(e);
                             }}
                             onDoubleClick={() => startRename(e)}
                             onContextMenu={(ev) => openMenu(ev, e)}
-                            data-file-path={e.path}>
+                            data-file-path={e.path}
+                            data-drop-dir={dirname(e.path)}>
                             <span className="tree-file">
                                 <FileIcon name={e.name} size={20} />
                             </span>
@@ -510,35 +585,6 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         });
     }, [cwd, active, loadDir]);
 
-    const handleDragOver = (e: React.DragEvent) => {
-        const src = draggedPathRef.current;
-        if (!src) return; // external/OS drags are handled via onDragDropEvent
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        const target = e.target as HTMLElement | null;
-        const ok = canDropInto(src, dropTargetDir(target));
-        // Box the row directly under the cursor (VSCode-style); empty space → root.
-        const rowEl = ok ? (target?.closest(".tree-row.is-folder, .tree-row.file") as HTMLElement | null) : null;
-        const rowPath = rowEl?.dataset.folderPath ?? rowEl?.dataset.filePath ?? null;
-        setDragOver(rowPath);
-        setRootDragOver(ok && !rowPath);
-    };
-    const handleDragLeave = (e: React.DragEvent) => {
-        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setDragOver(null);
-        setRootDragOver(false);
-    };
-    const handleDrop = (e: React.DragEvent) => {
-        const src = draggedPathRef.current;
-        draggedPathRef.current = null;
-        setDraggingPath(null);
-        setDragOver(null);
-        setRootDragOver(false);
-        if (!src) return;
-        e.preventDefault();
-        void moveEntry(src, dropTargetDir(e.target as HTMLElement | null));
-    };
-
     return (
         <>
             <div className="ed-tree" style={{ width }}>
@@ -558,9 +604,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 <div
                     ref={rootScrollRef}
                     className={`ed-tree-scroll${rootDragOver ? " drag-over-root" : ""}`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
+                    data-root-path={cwd}
                     onContextMenu={(ev) => openMenu(ev, null)}>
                     {renderTree(cwd, 0)}
                     {newRequest?.parent === cwd && (
@@ -578,6 +622,13 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
             </div>
             <div className="ed-tree-resizer" onPointerDown={onResizeDrag} title="Drag to resize" />
             {menu && <TreeContextMenu x={menu.x} y={menu.y} items={buildMenuItems(menu.entry)} onClose={() => setMenu(null)} />}
+            {dragGhost &&
+                createPortal(
+                    <div className="tree-drag-ghost" style={{ left: dragGhost.x + 12, top: dragGhost.y + 10 }}>
+                        {dragGhost.name}
+                    </div>,
+                    document.body,
+                )}
         </>
     );
 }

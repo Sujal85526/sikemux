@@ -26,11 +26,68 @@ import { reportError, swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity } from "./themes/bus";
+import { dirname } from "./lib/paths";
 
 interface BootInfo {
     home: string;
     state: string;
     recent: string[];
+}
+
+interface TreeDropTarget {
+    rootPath: string;
+    targetDir: string;
+    highlightPath: string | null;
+    dropEl: HTMLElement;
+}
+
+function elementAtPhysicalPosition(pos: { x: number; y: number }): HTMLElement | null {
+    const dpr = window.devicePixelRatio || 1;
+    return document.elementFromPoint(pos.x / dpr, pos.y / dpr) as HTMLElement | null;
+}
+
+function folderDropElement(treeRoot: HTMLElement, rootPath: string, dir: string): HTMLElement | null {
+    if (dir === rootPath) return treeRoot;
+    for (const row of treeRoot.querySelectorAll<HTMLElement>(".tree-row.is-folder")) {
+        if (row.dataset.folderPath === dir) return row;
+    }
+    return null;
+}
+
+function resolveTreeDropTarget(at: HTMLElement | null): TreeDropTarget | null {
+    const treeRoot = at?.closest(".ed-tree-scroll") as HTMLElement | null;
+    const rootPath = treeRoot?.dataset.rootPath;
+    if (!treeRoot || !rootPath) return null;
+
+    const folder = at?.closest(".tree-row.is-folder") as HTMLElement | null;
+    if (folder && treeRoot.contains(folder) && folder.dataset.folderPath) {
+        return {
+            rootPath,
+            targetDir: folder.dataset.folderPath,
+            highlightPath: folder.dataset.folderPath,
+            dropEl: folder,
+        };
+    }
+
+    const file = at?.closest(".tree-row.file") as HTMLElement | null;
+    if (file && treeRoot.contains(file) && file.dataset.filePath) {
+        const targetDir = file.dataset.dropDir || dirname(file.dataset.filePath);
+        const dropEl = folderDropElement(treeRoot, rootPath, targetDir);
+        if (!dropEl) return null;
+        return {
+            rootPath,
+            targetDir,
+            highlightPath: targetDir === rootPath ? null : targetDir,
+            dropEl,
+        };
+    }
+
+    return {
+        rootPath,
+        targetDir: rootPath,
+        highlightPath: null,
+        dropEl: treeRoot,
+    };
 }
 
 export default function App() {
@@ -123,19 +180,47 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        const clearTreeHover = () => {
+            emit({ type: "tree-native-drag-hover", cwd: null, targetDir: null, highlightPath: null });
+        };
+
+        const emitTreeHover = (at: HTMLElement | null) => {
+            const target = resolveTreeDropTarget(at);
+            emit({
+                type: "tree-native-drag-hover",
+                cwd: target?.rootPath ?? null,
+                targetDir: target?.targetDir ?? null,
+                highlightPath: target?.highlightPath ?? null,
+            });
+        };
+
         const unlistenP = getCurrentWebview().onDragDropEvent((e) => {
-            if (e.payload.type !== "drop") return;
+            if (e.payload.type === "leave") {
+                clearTreeHover();
+                return;
+            }
+
+            const at = elementAtPhysicalPosition(e.payload.position);
+
+            if (e.payload.type === "enter" || e.payload.type === "over") {
+                if (at?.closest(".terminal-host")) clearTreeHover();
+                else emitTreeHover(at);
+                return;
+            }
+
             const paths = e.payload.paths;
-            if (!paths || paths.length === 0) return;
-            const pos = e.payload.position;
-            const dpr = window.devicePixelRatio || 1;
-            const at = document.elementFromPoint(pos.x / dpr, pos.y / dpr);
+            if (!paths || paths.length === 0) {
+                clearTreeHover();
+                return;
+            }
             const term = at?.closest(".terminal-host") as HTMLElement | null;
-            if (term && dispatchPty(term, paths)) return;
-            const folder = at?.closest(".tree-row.is-folder") as HTMLElement | null;
-            if (folder && dispatchFolder(folder, paths)) return;
-            const treeRoot = at?.closest(".ed-tree-scroll") as HTMLElement | null;
-            if (treeRoot) dispatchFolder(treeRoot, paths);
+            if (term && dispatchPty(term, paths)) {
+                clearTreeHover();
+                return;
+            }
+            const target = resolveTreeDropTarget(at);
+            if (target) dispatchFolder(target.dropEl, paths);
+            clearTreeHover();
         });
         return () => {
             void unlistenP.then((u) => u());

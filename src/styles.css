@@ -1232,6 +1232,20 @@ button {
 .tree-row.dragging {
     opacity: 0.45;
 }
+.tree-drag-ghost {
+    position: fixed;
+    z-index: 70;
+    pointer-events: none;
+    padding: 2px 9px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--rail-2);
+    border: 1px solid var(--acc);
+    border-radius: 5px;
+    box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.6);
+    white-space: nowrap;
+}
 .ed-tree-scroll.drag-over-root {
     background: var(--acc-soft);
     outline: 1px solid var(--acc);
@@ -1270,6 +1284,8 @@ button {
     padding-right: 8px;
     color: var(--ink-dim);
     font-size: 12px;
+    user-select: none;
+    -webkit-user-select: none;
     transition:
         background 0.1s,
         color 0.1s;

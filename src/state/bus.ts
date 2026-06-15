@@ -1,6 +1,7 @@
 export type Event =
     | { type: "open-file"; path: string; line?: number; character?: number }
     | { type: "fs-changed"; repo: string }
+    | { type: "tree-native-drag-hover"; cwd: string | null; targetDir: string | null; highlightPath: string | null }
     | { type: "git-refresh"; repo: string }
     | { type: "agent-focus"; sessionId: string }
     | { type: "search-focus"; sessionId: string }
