@@ -32,11 +32,15 @@ export function setHoverLinkContext(view: EditorView | null, c: { project: strin
 let debounceTimer: number | undefined;
 let lastView: EditorView | null = null;
 let lastRangeKey = "";
+// Cheap guard so the common mousemove path (no modifier held — e.g. drag-select
+// or plain scrolling) does no EditorState field reads or dispatches.
+let linkShown = false;
 
 function clear(view: EditorView) {
-    if (view.state.field(linkField, false)) {
+    if (linkShown && view.state.field(linkField, false)) {
         view.dispatch({ effects: setLink.of(null) });
     }
+    linkShown = false;
     lastRangeKey = "";
 }
 
@@ -75,11 +79,8 @@ const hoverHandlers = EditorView.domEventHandlers({
                 .definition(ctx.project, lang, ctx.path, lineNo, character)
                 .then((locs) => {
                     if (locs.length === 0 || lastRangeKey !== key) return;
-                    if (!view.state.field(linkField, false)) {
-                        view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
-                    } else {
-                        view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
-                    }
+                    view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
+                    linkShown = true;
                 })
                 .catch(swallow("lsp hover"));
         }, 120);

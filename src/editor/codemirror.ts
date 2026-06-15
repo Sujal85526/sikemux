@@ -96,3 +96,15 @@ export function languageFor(path: string): Extension[] {
 }
 
 export const auraExtensions: Extension = themeCompartmentExtension();
+
+/**
+ * Docs larger than this skip the per-change / high-frequency extensions
+ * (git diff gutter, LSP hover-link mousemove). CodeMirror itself virtualizes
+ * the viewport fine; these are the extensions that do work proportional to the
+ * whole document or fire on every mouse move.
+ */
+export const LARGE_DOC_BYTES = 256 * 1024;
+
+export function isLargeDoc(content: string): boolean {
+    return content.length > LARGE_DOC_BYTES;
+}

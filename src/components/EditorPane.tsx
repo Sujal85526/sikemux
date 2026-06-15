@@ -5,7 +5,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
-import { auraExtensions, languageFor } from "../editor/codemirror";
+import { auraExtensions, isLargeDoc, languageFor } from "../editor/codemirror";
 import { gitDiffGutter } from "../editor/gitGutter";
 import { lspNav, setLspContext } from "../editor/lspNav";
 import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
@@ -155,6 +155,9 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     const makeState = useCallback(
         (path: string, content: string) => {
+            // Large files: skip the per-change (git diff) and per-mousemove (hover link)
+            // extensions — they're the ones whose cost scales with the document.
+            const heavy = isLargeDoc(content);
             return EditorState.create({
                 doc: content,
                 extensions: [
@@ -162,9 +165,8 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     search({ top: true }),
                     auraExtensions,
                     ...languageFor(path),
-                    gitDiffGutter(),
+                    ...(heavy ? [] : [gitDiffGutter(), lspHoverLink()]),
                     lspNav(),
-                    lspHoverLink(),
                     lspPeek(),
                     keymap.of([indentWithTab]),
                     Prec.highest(
@@ -207,23 +209,26 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                         ]),
                     ),
                     EditorView.updateListener.of((u) => {
-                        if (u.docChanged && currentRef.current) {
-                            const p = currentRef.current;
-                            const text = u.state.doc.toString();
-                            const baseline = savedRef.current.get(p);
-                            const isDirty = baseline === undefined ? true : text !== baseline;
-                            const has = dirtyRef.current.has(p);
-                            if (isDirty && !has) {
-                                setDirty((d) => new Set(d).add(p));
-                            } else if (!isDirty && has) {
-                                setDirty((d) => {
-                                    const next = new Set(d);
-                                    next.delete(p);
-                                    return next;
-                                });
-                            }
-                            scheduleChange(p, text);
+                        if (!u.docChanged || !currentRef.current) return;
+                        const p = currentRef.current;
+                        const doc = u.state.doc;
+                        const baseline = savedRef.current.get(p);
+                        // Avoid serializing the whole doc on every keystroke: a length
+                        // mismatch already proves it's dirty; only stringify when the
+                        // lengths happen to match (e.g. an edit that reverts to saved).
+                        const isDirty = baseline === undefined ? true : doc.length !== baseline.length ? true : doc.toString() !== baseline;
+                        const has = dirtyRef.current.has(p);
+                        if (isDirty && !has) {
+                            setDirty((d) => new Set(d).add(p));
+                        } else if (!isDirty && has) {
+                            setDirty((d) => {
+                                const next = new Set(d);
+                                next.delete(p);
+                                return next;
+                            });
                         }
+                        // Defer serialization into the LSP debounce.
+                        scheduleChange(p, () => u.state.doc.toString());
                     }),
                 ],
             });

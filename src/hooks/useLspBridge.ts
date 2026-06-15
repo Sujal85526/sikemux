@@ -8,7 +8,7 @@ export function useLspBridge(cwd: string) {
     const opened = useRef<Set<string>>(new Set());
 
     const scheduleChange = useCallback(
-        (path: string, content: string) => {
+        (path: string, getContent: () => string) => {
             if (!cwd) return;
             const lang = languageFromPath(path);
             if (!lang) return;
@@ -17,7 +17,8 @@ export function useLspBridge(cwd: string) {
             const id = window.setTimeout(() => {
                 const v = (versions.current.get(path) ?? 1) + 1;
                 versions.current.set(path, v);
-                lsp.change(cwd, lang, path, content, v).catch(swallow("lsp didChange"));
+                // Serialize the doc once here, in the debounce — not on every keystroke.
+                lsp.change(cwd, lang, path, getContent(), v).catch(swallow("lsp didChange"));
             }, 300);
             timers.current.set(path, id);
         },
