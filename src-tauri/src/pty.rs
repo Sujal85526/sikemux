@@ -94,18 +94,62 @@ pub struct PtyManager {
 }
 
 impl PtyManager {
-    /// Kill every live PTY. Called from the window-close hook so a
-    /// force-quit or last-window-close doesn't leave orphan shell
-    /// processes around until the OS reaps them.
+    /// Tear down every live PTY: SIGTERM each child's process group, allow a
+    /// brief grace window for well-behaved programs (editors, agents, builds)
+    /// to catch the signal and clean up, then SIGKILL whatever's left and reap
+    /// it. Called from the window-close hook, the reload hook, AND the
+    /// `RunEvent::Exit` hook — so no exit path (quit, `exit()`, or the
+    /// updater's `relaunch()` → `app.restart()`) abandons orphan shells/agents
+    /// to burn resources or AI tokens until the OS reaps them.
+    ///
+    /// SIGTERM rather than a bare SIGKILL is deliberate: it's catchable, and —
+    /// unlike the kernel's SIGHUP-on-master-close we'd otherwise rely on — it
+    /// also terminates `nohup`'d processes (they ignore SIGHUP, not SIGTERM).
+    /// The negative pid targets the child's whole process group (it's a
+    /// session/group leader via `setsid` in `pty_spawn`), so a foreground job
+    /// dies with its shell. SIGKILL is the guaranteed backstop for holdouts.
     pub fn drain(&self) {
-        // collect ids first so we don't hold a DashMap shard while
-        // touching child.kill() (which can do FS work on macOS).
+        // Phase 1: pull every entry out of the map — releasing the DashMap
+        // shards before we sleep — and politely ask each to terminate. The
+        // child lock is held only long enough to read the pid.
         let ids: Vec<u32> = self.ptys.iter().map(|e| *e.key()).collect();
+        let mut draining: Vec<Arc<Pty>> = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some((_, pty)) = self.ptys.remove(&id) {
-                if let Ok(mut child) = pty.child.lock() {
-                    let _ = child.kill();
+                if let Ok(child) = pty.child.lock() {
+                    if let Some(pid) = child.process_id() {
+                        // Negative pid → signal the whole process group.
+                        unsafe {
+                            libc::kill(-(pid as i32), libc::SIGTERM);
+                        }
+                    }
                 }
+                draining.push(pty);
+            }
+        }
+        if draining.is_empty() {
+            return;
+        }
+        // Phase 2: a single shared grace window (not per-PTY) keeps quit /
+        // relaunch latency bounded no matter how many shells are open.
+        std::thread::sleep(DRAIN_GRACE);
+        // Phase 3: SIGKILL the holdouts and reap them, so the reload path
+        // (where the app keeps running) doesn't accumulate zombies. Dropping
+        // each `pty` afterwards closes the retained master fd, which HUPs any
+        // job-control children that landed in their own process groups.
+        for pty in draining {
+            if let Ok(mut child) = pty.child.lock() {
+                if let Ok(Some(_)) = child.try_wait() {
+                    continue; // already exited cleanly on SIGTERM
+                }
+                let pid = child.process_id();
+                let _ = child.kill(); // SIGKILL the group leader
+                if let Some(pid) = pid {
+                    unsafe {
+                        libc::kill(-(pid as i32), libc::SIGKILL);
+                    }
+                }
+                let _ = child.wait(); // reap the zombie
             }
         }
     }
@@ -124,6 +168,12 @@ pub const PARSER_SCROLLBACK: usize = 10_000;
 const IDLE_SCROLLBACK: usize = 2_000;
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+
+// Grace window between the SIGTERM and the SIGKILL backstop in `drain`.
+// Long enough for a foreground program (editor, agent, build) to catch
+// SIGTERM and flush; short enough that app quit / update-relaunch doesn't
+// feel laggy. One shared window, not per-PTY — see `drain`.
+const DRAIN_GRACE: Duration = Duration::from_millis(250);
 
 // Process-start anchor so all `last_activity_ms` values are monotonic
 // deltas in ms — immune to wall-clock jumps (NTP, sleep/resume).

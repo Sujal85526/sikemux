@@ -208,6 +208,23 @@ pub fn run() {
             external::macos_focus_app,
             transparency::set_window_blur,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running sikemux");
+        .build(tauri::generate_context!())
+        .expect("error while building sikemux")
+        .run(|app_handle, event| {
+            // The window-close and reload hooks above only fire on their
+            // specific events. An in-app update relaunches via the process
+            // plugin's `relaunch()` → `app.restart()`, which raises
+            // RunEvent::ExitRequested then RunEvent::Exit but NO window
+            // CloseRequested — so without this hook an update would restart
+            // the process while every live shell/agent is abandoned to the
+            // kernel's PTY hangup (and anything ignoring SIGHUP would leak).
+            // RunEvent::Exit fires on EVERY teardown route — quit, `exit()`,
+            // and restart — and runs before the process is actually replaced.
+            if let tauri::RunEvent::Exit = event {
+                use tauri::Manager;
+                if let Some(mgr) = app_handle.try_state::<PtyManager>() {
+                    mgr.drain();
+                }
+            }
+        });
 }
