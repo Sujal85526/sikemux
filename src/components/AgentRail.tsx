@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo } from "../api/agents";
 import * as cmd from "../state/commands";
 import { useResource, useResourceEnabled } from "../state/resources";
@@ -7,7 +7,7 @@ import { useStore } from "../state/store";
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconPin, IconPlus, IconSearch } from "./Icons";
 
-const RECENTS_CAP = 10;
+const RECENTS_PAGE = 12;
 
 function ago(unixSecs: number): string {
     if (!unixSecs) return "";
@@ -33,6 +33,8 @@ export function AgentRail() {
     const availableTypes = useMemo(() => new Set(availableAgents.map((a) => a.type)), [availableAgents]);
 
     const [type, setType] = useState<AgentType | null>(null);
+    const [visibleRecents, setVisibleRecents] = useState(RECENTS_PAGE);
+    const scrollRef = useRef<HTMLDivElement>(null);
     const selectedType = useMemo(() => {
         if (type && availableAgents.some((a) => a.type === type)) return type;
         return availableAgents[0]?.type ?? null;
@@ -47,6 +49,29 @@ export function AgentRail() {
 
     const recents = useResourceEnabled(isProject && !!cwd && selectedType != null, agentSessionsR, selectedType ?? "claude", isProject ? cwd : "");
     const disk = isProject ? (recents.data ?? []) : [];
+
+    // Reset the reveal window when the recents list switches out from under us.
+    useEffect(() => {
+        setVisibleRecents(RECENTS_PAGE);
+    }, [selectedType, cwd]);
+
+    // onRailScroll only reveals more once the list overflows. If the first page
+    // doesn't reach the bottom there's no scrollbar, so the rest would never load
+    // and the rail sits half-empty. Reveal more until it fills — and re-check when
+    // the rail is resized taller.
+    useLayoutEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const fill = () => {
+            if (el.scrollHeight <= el.clientHeight && visibleRecents < disk.length) {
+                setVisibleRecents((v) => Math.min(v + RECENTS_PAGE, disk.length));
+            }
+        };
+        fill();
+        const ro = new ResizeObserver(fill);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [visibleRecents, disk.length, cwd, selectedType]);
 
     if (!session) return null;
 
@@ -70,13 +95,22 @@ export function AgentRail() {
     });
 
     const openDisplay = opens.filter((a) => !pinnedKeys.has(sessionKey(a.type, bmIdOf(a))));
-    const recentDisplay = disk
-        .filter((d) => {
-            if (!selectedType) return false;
-            const k = sessionKey(selectedType, d.id);
-            return !pinnedKeys.has(k) && !activeOpenKeys.has(k);
-        })
-        .slice(0, RECENTS_CAP);
+    const recentAll = disk.filter((d) => {
+        if (!selectedType) return false;
+        const k = sessionKey(selectedType, d.id);
+        return !pinnedKeys.has(k) && !activeOpenKeys.has(k);
+    });
+    const recentDisplay = recentAll.slice(0, visibleRecents);
+    const hasMoreRecents = recentDisplay.length < recentAll.length;
+
+    const onRailScroll = () => {
+        if (!hasMoreRecents) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+            setVisibleRecents((v) => Math.min(v + RECENTS_PAGE, recentAll.length));
+        }
+    };
 
     if (!isProject) {
         return (
@@ -92,7 +126,7 @@ export function AgentRail() {
     return (
         <aside className="agent-rail">
             <AgentHeader agents={availableAgents} type={selectedType} setType={setType} />
-            <div className="rail-scroll">
+            <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 {noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"

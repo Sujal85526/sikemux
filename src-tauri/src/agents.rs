@@ -193,25 +193,33 @@ fn claude_sessions(cwd: &str) -> Vec<AgentSession> {
 
 fn claude_title(path: &Path) -> Option<String> {
     let file = fs::File::open(path).ok()?;
-    for line in BufReader::new(file).lines().take(120).map_while(Result::ok) {
-        let Ok(v) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if v.get("type").and_then(|t| t.as_str()) != Some("user") {
-            continue;
-        }
-        let Some(text) = v
-            .get("message")
-            .and_then(|m| m.get("content"))
-            .and_then(text_from_content)
-        else {
-            continue;
-        };
-        if let Some(t) = condense(&text) {
-            return Some(t);
+    // Claude writes the human-readable title (auto-generated, then overwritten by
+    // `/rename`) as `{"type":"ai-title","aiTitle":...}` entries appended as the
+    // session grows — last one wins. This is what Claude's own /resume picker
+    // shows. Prefer it; fall back to the first user prompt for sessions that have
+    // no title yet. Cheap substring guards keep us from JSON-parsing every line.
+    let mut ai_title: Option<String> = None;
+    let mut first_user: Option<String> = None;
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        if line.contains("\"type\":\"ai-title\"") {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense) {
+                    ai_title = Some(t);
+                }
+            }
+        } else if first_user.is_none() && line.contains("\"type\":\"user\"") {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                if v.get("type").and_then(|t| t.as_str()) == Some("user") {
+                    first_user = v
+                        .get("message")
+                        .and_then(|m| m.get("content"))
+                        .and_then(text_from_content)
+                        .and_then(|text| condense(&text));
+                }
+            }
         }
     }
-    None
+    ai_title.or(first_user)
 }
 
 // ---- codex — ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl ----------------

@@ -42,10 +42,11 @@ interface MenuState {
     entry: DirEntry | null;
 }
 
-interface CtxItem {
+export interface CtxItem {
     label?: string;
     hint?: string;
     danger?: boolean;
+    disabled?: boolean;
     sep?: boolean;
     run?: () => void;
 }
@@ -581,7 +582,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     );
 }
 
-function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number; items: CtxItem[]; onClose: () => void }) {
+export function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number; items: CtxItem[]; onClose: () => void }) {
     const ref = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState({ left: x, top: y });
 
@@ -621,8 +622,10 @@ function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number; items
                         <button
                             key={i}
                             type="button"
-                            className={`tree-ctx-item${it.danger ? " danger" : ""}`}
+                            disabled={it.disabled}
+                            className={`tree-ctx-item${it.danger ? " danger" : ""}${it.disabled ? " disabled" : ""}`}
                             onClick={() => {
+                                if (it.disabled) return;
                                 onClose();
                                 it.run?.();
                             }}>

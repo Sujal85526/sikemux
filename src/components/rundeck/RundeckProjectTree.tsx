@@ -85,12 +85,11 @@ function ProjectRow({
                 <div className="rnd-tree-children">
                     {folders.map(([folder, count]) => {
                         const isLeafActive = isActiveProject && activeEnvFolder === folder;
-                        const isProd = folder.toLowerCase() === "production";
                         return (
                             <button
                                 type="button"
                                 key={folder}
-                                className={`rnd-tree-leaf${isLeafActive ? " active" : ""}${isProd ? " prod" : ""}`}
+                                className={`rnd-tree-leaf${isLeafActive ? " active" : ""}`}
                                 onClick={() => cmd.selectRundeckProject(paneId, project, folder)}
                                 title={`${project} · ${folder}/`}>
                                 <span className="rnd-tree-leaf-name">{folder}/</span>

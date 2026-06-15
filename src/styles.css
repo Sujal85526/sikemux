@@ -128,7 +128,7 @@ html.is-transparent .settings-rail,
 html.is-transparent .settings-main,
 html.is-transparent .settings-crumb,
 html.is-transparent .settings-input,
-html.is-transparent .settings-btn,
+html.is-transparent .settings-btn:not(.primary),
 html.is-transparent .settings-list,
 html.is-transparent .settings-list-row,
 html.is-transparent .settings-empty,
@@ -1342,6 +1342,14 @@ button {
 .tree-ctx-item:hover {
     background: var(--acc-soft);
     color: var(--ink);
+}
+.tree-ctx-item.disabled {
+    color: var(--ink-faint);
+    cursor: default;
+}
+.tree-ctx-item.disabled:hover {
+    background: transparent;
+    color: var(--ink-faint);
 }
 .tree-ctx-item.danger {
     color: color-mix(in srgb, var(--danger) 85%, var(--ink-dim));
@@ -3899,7 +3907,7 @@ button {
     border: 1px solid var(--line);
     color: var(--ink-dim);
     font: 500 10px/1 var(--mono);
-    padding: 0 11px;
+    padding: 8px 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     cursor: pointer;
@@ -6130,17 +6138,6 @@ button {
     border-left-color: var(--acc);
     font-weight: 600;
 }
-.rnd-tree-row.prod {
-    color: var(--danger);
-}
-.rnd-tree-row.prod:hover {
-    color: color-mix(in srgb, var(--danger) 80%, white);
-}
-.rnd-tree-row.prod.active {
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-    border-left-color: var(--danger);
-}
-
 .rnd-tree-chev {
     display: inline-flex;
     align-items: center;
@@ -6158,17 +6155,11 @@ button {
 .rnd-tree-row.active .rnd-tree-chev {
     color: var(--acc);
 }
-.rnd-tree-row.prod.active .rnd-tree-chev {
-    color: var(--danger);
-}
 
 .rnd-tree-ic {
     display: inline-flex;
     color: var(--live);
     flex-shrink: 0;
-}
-.rnd-tree-row.prod .rnd-tree-ic {
-    color: var(--danger);
 }
 
 .rnd-tree-name {
@@ -6207,16 +6198,6 @@ button {
     background: var(--acc-soft);
     font-weight: 600;
 }
-.rnd-tree-leaf.prod {
-    color: color-mix(in srgb, var(--danger) 75%, var(--ink-faint));
-}
-.rnd-tree-leaf.prod:hover {
-    color: var(--danger);
-}
-.rnd-tree-leaf.prod.active {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-}
 .rnd-tree-leaf-name {
     flex: 1 1 auto;
     overflow: hidden;
@@ -6231,9 +6212,6 @@ button {
 }
 .rnd-tree-leaf.active .rnd-tree-leaf-n {
     color: var(--acc);
-}
-.rnd-tree-leaf.prod.active .rnd-tree-leaf-n {
-    color: var(--danger);
 }
 
 .rnd-branch-main {

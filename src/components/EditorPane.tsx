@@ -20,7 +20,7 @@ import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
-import { FileTree } from "./FileTree";
+import { FileTree, TreeContextMenu, type CtxItem } from "./FileTree";
 import { IconClose, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { EditorFindBar } from "./EditorFindBar";
@@ -62,6 +62,8 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
     const dirtyRef = useRef(dirty);
     dirtyRef.current = dirty;
+
+    const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
 
     const savedRef = useRef<Map<string, string>>(new Map());
 
@@ -421,23 +423,37 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     useGitBaseline(() => viewRef.current, cwd, activePath);
 
-    const closeTab = (path: string, e: ReactMouseEvent) => {
-        e.stopPropagation();
-        if (dirtyRef.current.has(path) && !window.confirm(`Discard unsaved changes in ${basename(path)}?`)) {
-            notify("info", "close tab cancelled — unsaved changes remain");
-            return;
+    // Close an arbitrary set of tabs in one shot (used by the close button and the
+    // tab context menu). Confirms once if any of them have unsaved changes, then
+    // re-homes the active tab to the nearest survivor (VSCode-style).
+    const closeTabs = (toClose: string[]) => {
+        const closing = new Set(toClose.filter((p) => tabs.includes(p)));
+        if (closing.size === 0) return;
+        const dirtyClosing = [...closing].filter((p) => dirtyRef.current.has(p));
+        if (dirtyClosing.length > 0) {
+            const msg =
+                dirtyClosing.length === 1
+                    ? `Discard unsaved changes in ${basename(dirtyClosing[0])}?`
+                    : `Discard unsaved changes in ${dirtyClosing.length} files?`;
+            if (!window.confirm(msg)) {
+                notify("info", "close cancelled — unsaved changes remain");
+                return;
+            }
         }
-        states.current.delete(path);
+        for (const p of closing) states.current.delete(p);
         setDirty((d) => {
-            if (!d.has(path)) return d;
+            let changed = false;
             const next = new Set(d);
-            next.delete(path);
-            return next;
+            for (const p of closing) if (next.delete(p)) changed = true;
+            return changed ? next : d;
         });
-        const next = tabs.filter((t) => t !== path);
+        const next = tabs.filter((t) => !closing.has(t));
         let nextActive = activePath;
-        if (activePath === path) {
-            const fallback = next[next.length - 1] ?? null;
+        if (activePath && closing.has(activePath)) {
+            const oldIdx = tabs.indexOf(activePath);
+            let fallback: string | null = null;
+            for (let i = oldIdx + 1; i < tabs.length && !fallback; i++) if (!closing.has(tabs[i])) fallback = tabs[i];
+            for (let i = oldIdx - 1; i >= 0 && !fallback; i--) if (!closing.has(tabs[i])) fallback = tabs[i];
             nextActive = fallback;
             if (fallback) {
                 switchTo(fallback);
@@ -447,6 +463,41 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             }
         }
         cmd.setEditorView(paneId, { openTabs: next, activePath: nextActive });
+    };
+
+    const closeTab = (path: string, e: ReactMouseEvent) => {
+        e.stopPropagation();
+        closeTabs([path]);
+    };
+
+    // ---- tab context menu ---------------------------------------------
+    const relativePath = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : basename(p));
+
+    const copyText = (text: string, label: string) =>
+        navigator.clipboard.writeText(text).then(
+            () => notify("success", `copied ${label}`),
+            reportError("copy"),
+        );
+
+    const buildTabMenu = (path: string): CtxItem[] => {
+        const idx = tabs.indexOf(path);
+        const others = tabs.filter((t) => t !== path);
+        const toLeft = tabs.slice(0, idx);
+        const toRight = tabs.slice(idx + 1);
+        const saved = tabs.filter((t) => !dirty.has(t));
+        return [
+            { label: "Close", hint: "⌘W", run: () => closeTabs([path]) },
+            { label: "Close Others", disabled: others.length === 0, run: () => closeTabs(others) },
+            { label: "Close to the Left", disabled: toLeft.length === 0, run: () => closeTabs(toLeft) },
+            { label: "Close to the Right", disabled: toRight.length === 0, run: () => closeTabs(toRight) },
+            { label: "Close Saved", disabled: saved.length === 0, run: () => closeTabs(saved) },
+            { label: "Close All", run: () => closeTabs(tabs) },
+            { sep: true },
+            { label: "Copy Path", run: () => void copyText(path, "path") },
+            { label: "Copy Relative Path", run: () => void copyText(relativePath(path), "relative path") },
+            { sep: true },
+            { label: "Reveal in Finder", run: () => void fsapi.revealInFinder(path).catch(reportError("reveal")) },
+        ];
     };
 
     return (
@@ -464,7 +515,14 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     {tabs.map((path) => {
                         const name = basename(path);
                         return (
-                            <button key={path} className={`ed-tab${activePath === path ? " active" : ""}`} onClick={() => switchTo(path)}>
+                            <button
+                                key={path}
+                                className={`ed-tab${activePath === path ? " active" : ""}`}
+                                onClick={() => switchTo(path)}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    setTabMenu({ x: e.clientX, y: e.clientY, path });
+                                }}>
                                 <FileIcon name={name} size={18} />
                                 <span className="ed-tab-name">{name}</span>
                                 {dirty.has(path) && <span className="ed-tab-dot" />}
@@ -493,6 +551,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     </div>
                 )}
             </div>
+            {tabMenu && <TreeContextMenu x={tabMenu.x} y={tabMenu.y} items={buildTabMenu(tabMenu.path)} onClose={() => setTabMenu(null)} />}
         </div>
     );
 }
