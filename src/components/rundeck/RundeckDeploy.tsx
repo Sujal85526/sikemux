@@ -59,7 +59,6 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
     const repoPath = level.repoPath ?? session?.cwd ?? "";
 
     const [branch, setBranch] = useState(level.branch);
-    const [prodInput, setProdInput] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -75,9 +74,8 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
         return RELATION_BANNER[plan.data.branch_relation];
     }, [plan.data]);
 
-    const prodOk = !isProd || prodInput.trim() === level.env;
     const planReady = plan.status === "ok" && plan.data?.target_branch === branchValue;
-    const canDeploy = !!branchValue && !busy && prodOk && planReady;
+    const canDeploy = !!branchValue && !busy && planReady;
 
     const deploy = async () => {
         if (!canDeploy) return;
@@ -112,6 +110,17 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
                     <span className="rnd-section-eyebrow">deploy → {level.env}</span>
                     <span className="rnd-section-name">{level.service}</span>
                     <span className="rnd-section-proj">{level.project}</span>
+                </div>
+                <div className="rnd-deploy-actions">
+                    <button className="rnd-btn" onClick={() => cmd.rundeckPop(paneId)} disabled={busy}>
+                        cancel
+                    </button>
+                    <button className={`rnd-btn rnd-btn-primary${isProd ? " rnd-btn-danger" : ""}`} disabled={!canDeploy} onClick={deploy}>
+                        <svg className="rnd-btn-icon" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+                            <path d="M4 2.5v11l9-5.5z" fill="currentColor" />
+                        </svg>
+                        {busy ? "triggering…" : isProd ? "deploy to production" : "deploy"}
+                    </button>
                 </div>
             </div>
 
@@ -148,34 +157,7 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
                 {plan.error && <div className="rnd-banner danger">{plan.error}</div>}
             </div>
 
-            {isProd && (
-                <div className="rnd-prod-gate">
-                    <div className="rnd-prod-gate-title">⚠ Production deploy</div>
-                    <div className="rnd-prod-gate-msg">
-                        Type <code>{level.env}</code> below to enable the deploy button.
-                    </div>
-                    <input
-                        type="text"
-                        placeholder={level.env}
-                        value={prodInput}
-                        onChange={(e) => setProdInput(e.target.value)}
-                        spellCheck={false}
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                    />
-                </div>
-            )}
-
             {error && <div className="rnd-banner danger">{error}</div>}
-
-            <div className="rnd-deploy-actions">
-                <button className="rnd-btn" onClick={() => cmd.rundeckPop(paneId)} disabled={busy}>
-                    cancel
-                </button>
-                <button className={`rnd-btn rnd-btn-primary${isProd ? " rnd-btn-danger" : ""}`} disabled={!canDeploy} onClick={deploy}>
-                    {busy ? "triggering…" : isProd ? "deploy to production" : "deploy"}
-                </button>
-            </div>
         </div>
     );
 }
@@ -199,7 +181,7 @@ function PlanTable({ plan, isProd }: { plan: PlanResult; isProd: boolean }) {
                 tone={plan.remote_target_exists ? "ok" : "warn"}
             />
             <PlanRow label="push behavior" value={PUSH_LABEL[plan.push_action]} />
-            {isProd && <PlanRow label="env" value="production — type-to-confirm required below" tone="danger" />}
+            {isProd && <PlanRow label="env" value="production" tone="danger" />}
         </div>
     );
 }
