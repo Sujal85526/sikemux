@@ -2,13 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AgentSession } from "../api/agents";
 import { awsApi } from "../api/aws";
 import { lsp } from "../api/lsp";
-import { rundeckApi } from "../api/rundeck";
 import { basename } from "../lib/paths";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
-import { fetchResource, invalidate, peekResource } from "./resources";
-import { awsIdentityR, projectRootsScanR, rndProjectsR } from "./resources.defs";
-import { inferEnv } from "./rundeckShape";
+import { fetchResource, invalidate } from "./resources";
+import { awsIdentityR, projectRootsScanR } from "./resources.defs";
+import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, swallow } from "./toast";
 import { DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
@@ -28,8 +27,8 @@ import type {
     AgentBookmark,
     AgentType,
     AwsService,
+    DeployRef,
     EcsLevel,
-    Env,
     FocusDir,
     PickerMode,
     PaneKind,
@@ -102,7 +101,7 @@ function makeSession(kind: SessionKind, name: string, cwd: string, activeWindowI
         name,
         kind,
         cwd,
-        env: "dev",
+        deploy: null,
         pinned: false,
         activeWindowId,
         activeAgentId: null,
@@ -285,14 +284,11 @@ export function selectRundeckProject(paneId: string, project: string, envFolder:
     rundeckHome(paneId);
 }
 
-export async function openRundeckServiceFor(service: string, envLabel: string): Promise<void> {
+/** Open the Rundeck session straight to a known service deploy (project + env folder). */
+export function openRundeckService(target: { project: string; service: string; jobId: string; group: string | null }): void {
     const before = getState();
     const sourceSession = before.sessions[before.activeSessionId];
     const sourceRepoPath = sourceSession?.kind === "project" ? sourceSession.cwd : "";
-    const projects = (await fetchResource(rndProjectsR).catch(() => null)) ?? peekResource(rndProjectsR) ?? [];
-    const envLower = envLabel.toLowerCase();
-    const project = projects.find((p) => p.name.toLowerCase() === envLower)?.name;
-    if (!project) return;
     openRundeckSession();
     const after = getState();
     const sess = Object.values(after.sessions).find((s) => s.kind === "rundeck");
@@ -300,23 +296,18 @@ export async function openRundeckServiceFor(service: string, envLabel: string): 
     const win = after.windows[sess.activeWindowId];
     if (!win || win.root.type !== "pane") return;
     const paneId = win.root.id;
-    setRundeckProject(project);
-    try {
-        const job = await rundeckApi.resolveJob(project, service);
-        rundeckReplaceStack(paneId, [
-            { kind: "matrix" },
-            {
-                kind: "service",
-                env: inferEnv(project, job.group),
-                project,
-                service,
-                jobId: job.id,
-                repoPath: sourceRepoPath,
-            },
-        ]);
-    } catch {
-        rundeckReplaceStack(paneId, [{ kind: "matrix" }]);
-    }
+    setRundeckProject(target.project, envFolderOf(target.group));
+    rundeckReplaceStack(paneId, [
+        { kind: "matrix" },
+        {
+            kind: "service",
+            env: inferEnv(target.project, target.group),
+            project: target.project,
+            service: target.service,
+            jobId: target.jobId,
+            repoPath: sourceRepoPath,
+        },
+    ]);
 }
 
 function rundeckReplaceStack(paneId: string, stack: RundeckLevel[]): void {
@@ -415,8 +406,8 @@ export function cycleSessionGroup(delta: number): void {
     });
 }
 
-export function setEnv(env: Env): void {
-    patchSession(getState().activeSessionId, (s) => ({ ...s, env }));
+export function setDeployTarget(target: DeployRef | null): void {
+    patchSession(getState().activeSessionId, (s) => ({ ...s, deploy: target }));
 }
 
 export function splitActivePane(dir: SplitDir): void {

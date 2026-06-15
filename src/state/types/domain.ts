@@ -45,15 +45,19 @@ export interface Agent {
     skipPermissions?: boolean;
 }
 
-export type Env = "dev" | "staging" | "preprod" | "production";
-export const ENVS: Env[] = ["dev", "staging", "preprod", "production"];
+/** A resolved Rundeck deploy location for a service: a project plus an env subfolder. */
+export interface DeployRef {
+    project: string;
+    folder: string | null;
+}
 
 export interface Session {
     id: string;
     name: string;
     kind: SessionKind;
     cwd: string;
-    env: Env;
+    /** Selected Rundeck deploy location for this session's service, when picked. */
+    deploy?: DeployRef | null;
     pinned: boolean;
     activeWindowId: string;
     activeAgentId: string | null;

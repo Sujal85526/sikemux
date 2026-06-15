@@ -107,7 +107,7 @@ function initialSession(): {
         name: "main",
         kind: "command",
         cwd: "",
-        env: "dev",
+        deploy: null,
         pinned: false,
         activeWindowId: win.id,
         activeAgentId: null,

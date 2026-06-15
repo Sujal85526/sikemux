@@ -3,11 +3,12 @@ import { getVersion } from "@tauri-apps/api/app";
 import { installPendingUpdate } from "../api/updater";
 import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
-import { ENVS } from "../state/types";
+import type { RundeckEnvSpec } from "../api/rundeck";
 import * as cmd from "../state/commands";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { swallow } from "../state/toast";
 import { awsIdentityR, gitStatusR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
+import { envFolderOf } from "../state/rundeckShape";
 import { useStore } from "../state/store";
 import {
     IconAws,
@@ -71,31 +72,43 @@ function AwsChip() {
     );
 }
 
-function DeployChip({ service, envLabel, project }: { service: string; envLabel: string; project: string }) {
-    const spec = useMemo(() => [{ label: envLabel, project, only_succeeded: true }], [envLabel, project]);
-    const res = useResource(rndMatrixR, spec);
-    const cell = res.data?.envs[0]?.cells.find((c) => c.name === service || c.service === service || c.service.endsWith(`/${service}`));
+/** A Rundeck deploy location for the current service: where it lives + its last deploy. */
+interface DeployLoc {
+    project: string;
+    folder: string | null;
+    label: string;
+    service: string;
+    jobId: string;
+    branch: string | null;
+    status: string | null;
+    group: string | null;
+}
 
-    const branch = cell?.branch ?? null;
-    const k = branchKind(branch);
-    const loading = res.status === "loading" && !res.data;
+function envDotKind(name: string | null): string {
+    const e = (name ?? "").toLowerCase();
+    if (e.startsWith("prod")) return "production";
+    if (e.startsWith("stag")) return "staging";
+    if (e.startsWith("pre")) return "preprod";
+    if (e.startsWith("dev")) return "dev";
+    return "other";
+}
 
+function DeployChip({ loc }: { loc: DeployLoc }) {
+    const k = branchKind(loc.branch);
     const onClick = () => {
-        void cmd.openRundeckServiceFor(service, envLabel);
+        cmd.openRundeckService({ project: loc.project, service: loc.service, jobId: loc.jobId, group: loc.group });
     };
-
-    const hasDeploy = !!cell && !!branch;
     return (
         <button
             className="tb-deploy-chip"
             onClick={onClick}
-            title={hasDeploy ? `Last deploy: ${cell!.status ?? "?"} · ${branch}` : `No deploy history for ${service} on ${envLabel}`}>
+            title={
+                loc.branch
+                    ? `Last deploy: ${loc.status ?? "?"} · ${loc.branch} · ${loc.label}`
+                    : `No deploy history for ${loc.service} on ${loc.label}`
+            }>
             <IconRundeck size={12} />
-            {loading ? (
-                <span className="tb-deploy-meta muted">…</span>
-            ) : hasDeploy ? (
-                <span className={`tb-deploy-branch rnd-branch-${k}`}>{branch}</span>
-            ) : null}
+            {loc.branch && <span className={`tb-deploy-branch rnd-branch-${k}`}>{loc.branch}</span>}
         </button>
     );
 }
@@ -233,30 +246,48 @@ export function TopBar() {
     const zen = useStore((s) => s.zenMode);
     const [envOpen, setEnvOpen] = useState(false);
 
+    const isProject = !!session && session.kind === "project";
+    const svc = isProject && session!.cwd ? (session!.cwd.replace(/\/+$/, "").split("/").pop() ?? null) : null;
+
+    // Find every Rundeck project/sub-folder where this service is deployed, so the
+    // picker can offer e.g. "channeliq/production" instead of a static env list.
+    const rndProjects = useResourceEnabled(!!svc, rndProjectsR);
+    const specs = useMemo<RundeckEnvSpec[]>(
+        () => (rndProjects.data ?? []).map((p) => ({ label: p.name, project: p.name, only_succeeded: true })),
+        [rndProjects.data],
+    );
+    const matrix = useResourceEnabled(!!svc && specs.length > 0, rndMatrixR, specs);
+    const locations = useMemo<DeployLoc[]>(() => {
+        if (!svc) return [];
+        const out: DeployLoc[] = [];
+        const seen = new Set<string>();
+        for (const env of matrix.data?.envs ?? []) {
+            for (const cell of env.cells) {
+                if (cell.name !== svc && cell.service !== svc && !cell.service.endsWith(`/${svc}`)) continue;
+                const folder = envFolderOf(cell.group);
+                const key = `${env.project}/${folder ?? ""}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                out.push({
+                    project: env.project,
+                    folder,
+                    label: folder ? `${env.project}/${folder}` : env.project,
+                    service: cell.service,
+                    jobId: cell.job_id,
+                    branch: cell.branch,
+                    status: cell.status,
+                    group: cell.group,
+                });
+            }
+        }
+        out.sort((a, b) => a.label.localeCompare(b.label));
+        return out;
+    }, [matrix.data, svc]);
+
+    const picked = session?.deploy;
+    const activeLoc = locations.find((l) => picked && l.project === picked.project && l.folder === picked.folder) ?? locations[0] ?? null;
+
     if (!session || !win) return null;
-    const isProject = session.kind === "project";
-
-    const envPicker = isProject
-        ? {
-              kind: "project" as const,
-              active: session.env,
-              options: ENVS.map((e) => ({ label: e, hint: null as string | null })),
-              setActive: (label: string) => cmd.setEnv(label as (typeof ENVS)[number]),
-          }
-        : null;
-
-    const rndProjects = useResourceEnabled(isProject, rndProjectsR);
-    const deployTarget =
-        isProject && session.cwd
-            ? (() => {
-                  const svc = session.cwd.replace(/\/+$/, "").split("/").pop();
-                  if (!svc) return null;
-                  const envLower = session.env.toLowerCase();
-                  const project = (rndProjects.data ?? []).find((p) => p.name.toLowerCase() === envLower)?.name;
-                  if (!project) return null;
-                  return { service: svc, envLabel: session.env, project };
-              })()
-            : null;
 
     return (
         <header className="top-bar" data-tauri-drag-region>
@@ -292,28 +323,30 @@ export function TopBar() {
                     </span>
                 )}
                 {isProject && session.cwd && !(session.view === "windows" && win.role === "git") && <GitChip repo={session.cwd} />}
-                {envPicker && (
+                {activeLoc && (
                     <div className="env-dd">
-                        <button className="env-dd-btn" onClick={() => setEnvOpen((v) => !v)} title="Session environment">
-                            <span className={`env-dot ${envPicker.active}`} />
-                            {envPicker.active}
-                            <IconChevron size={10} className="env-dd-chev" />
+                        <button
+                            className="env-dd-btn"
+                            onClick={() => locations.length > 1 && setEnvOpen((v) => !v)}
+                            title={locations.length > 1 ? "Switch deploy location" : activeLoc.label}>
+                            <span className={`env-dot ${envDotKind(activeLoc.folder)}`} />
+                            {activeLoc.label}
+                            {locations.length > 1 && <IconChevron size={10} className="env-dd-chev" />}
                         </button>
-                        {envOpen && (
+                        {envOpen && locations.length > 1 && (
                             <>
                                 <div className="env-dd-scrim" onClick={() => setEnvOpen(false)} />
                                 <div className="env-dd-menu">
-                                    {envPicker.options.map((opt) => (
+                                    {locations.map((loc) => (
                                         <button
-                                            key={opt.label}
-                                            className={`env-dd-item${envPicker.active === opt.label ? " active" : ""}`}
+                                            key={loc.label}
+                                            className={`env-dd-item${activeLoc.label === loc.label ? " active" : ""}`}
                                             onClick={() => {
-                                                envPicker.setActive(opt.label);
+                                                cmd.setDeployTarget({ project: loc.project, folder: loc.folder });
                                                 setEnvOpen(false);
                                             }}>
-                                            <span className={`env-dot ${opt.label}`} />
-                                            <span>{opt.label}</span>
-                                            {opt.hint && <span className="env-dd-item-proj">{opt.hint}</span>}
+                                            <span className={`env-dot ${envDotKind(loc.folder)}`} />
+                                            <span>{loc.label}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -321,7 +354,7 @@ export function TopBar() {
                         )}
                     </div>
                 )}
-                {deployTarget && <DeployChip {...deployTarget} />}
+                {activeLoc && <DeployChip loc={activeLoc} />}
                 <span className="tb-sep" />
                 <AwsChip />
                 <BatteryChip />

@@ -2898,6 +2898,9 @@ button {
 .env-dot.prod {
     background: var(--danger);
 }
+.env-dot.other {
+    background: var(--ink-faint);
+}
 .env-dd-scrim {
     position: fixed;
     inset: 0;
@@ -2908,7 +2911,7 @@ button {
     top: 30px;
     right: 0;
     z-index: 41;
-    min-width: 138px;
+    min-width: 168px;
     padding: 4px;
     background: var(--rail-2);
     border: 1px solid var(--line);
@@ -6346,13 +6349,6 @@ button {
     color: var(--ink-faint);
     letter-spacing: 0.04em;
 }
-.env-dd-item-proj {
-    margin-left: auto;
-    color: var(--ink-faint);
-    font-size: 10.5px;
-    letter-spacing: 0.04em;
-}
-
 .rnd-loading {
     display: flex;
     align-items: center;
