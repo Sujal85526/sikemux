@@ -61,6 +61,8 @@ export interface ViewState {
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     rundeckJobPaletteOpen: boolean;
+    brunoReqPaletteOpen: boolean;
+    brunoEnvPaletteOpen: boolean;
     settingsOpen: boolean;
     awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
     zoomedPaneId: string | null;
@@ -154,6 +156,8 @@ export const useStore = create<StoreState>(() => {
         agentPaletteOpen: false,
         filePaletteOpen: false,
         rundeckJobPaletteOpen: false,
+        brunoReqPaletteOpen: false,
+        brunoEnvPaletteOpen: false,
         settingsOpen: false,
         awsAuthModal: null,
         zoomedPaneId: null,

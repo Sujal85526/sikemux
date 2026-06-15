@@ -1236,6 +1236,12 @@ export const closeFilePalette = (): void => setState({ filePaletteOpen: false })
 export const openRundeckJobPalette = (): void =>
     setState({ rundeckJobPaletteOpen: true, pickerOpen: false, filePaletteOpen: false, agentPaletteOpen: false });
 export const closeRundeckJobPalette = (): void => setState({ rundeckJobPaletteOpen: false });
+export const openBrunoReqPalette = (): void =>
+    setState({ brunoReqPaletteOpen: true, brunoEnvPaletteOpen: false, filePaletteOpen: false, agentPaletteOpen: false, pickerOpen: false });
+export const closeBrunoReqPalette = (): void => setState({ brunoReqPaletteOpen: false });
+export const openBrunoEnvPalette = (): void =>
+    setState({ brunoEnvPaletteOpen: true, brunoReqPaletteOpen: false, filePaletteOpen: false, agentPaletteOpen: false, pickerOpen: false });
+export const closeBrunoEnvPalette = (): void => setState({ brunoEnvPaletteOpen: false });
 export const openSettings = (): void => setState({ settingsOpen: true });
 export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));

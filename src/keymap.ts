@@ -27,6 +27,9 @@ export function useKeymap(): void {
                 if (active?.kind === "rundeck") {
                     if (st.rundeckJobPaletteOpen) cmd.closeRundeckJobPalette();
                     else cmd.openRundeckJobPalette();
+                } else if (active?.kind === "bruno") {
+                    if (st.brunoReqPaletteOpen) cmd.closeBrunoReqPalette();
+                    else cmd.openBrunoReqPalette();
                 } else if (st.filePaletteOpen) {
                     cmd.closeFilePalette();
                 } else {
@@ -67,7 +70,8 @@ export function useKeymap(): void {
         const handler = (e: KeyboardEvent): void => {
             if (!e.altKey || e.metaKey || e.ctrlKey) return;
             const st = getState();
-            if (st.pickerOpen || st.filePaletteOpen || st.agentPaletteOpen || st.rundeckJobPaletteOpen || st.settingsOpen) return; // modals own the keyboard
+            if (st.pickerOpen || st.filePaletteOpen || st.agentPaletteOpen || st.rundeckJobPaletteOpen || st.brunoReqPaletteOpen || st.brunoEnvPaletteOpen || st.settingsOpen)
+                return; // modals own the keyboard
             const shift = e.shiftKey;
             let handled = true;
 
@@ -135,6 +139,11 @@ export function useKeymap(): void {
                     break;
                 case "KeyB":
                     void cmd.openBrunoFolder();
+                    break;
+                case "KeyE":
+                    // Alt+E opens the environment picker for the active Bruno collection.
+                    if (st.sessions[st.activeSessionId]?.kind === "bruno") cmd.openBrunoEnvPalette();
+                    else handled = false;
                     break;
                 case "KeyQ":
                     cmd.closeActiveSession();

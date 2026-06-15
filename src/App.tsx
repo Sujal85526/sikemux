@@ -13,6 +13,8 @@ import { SeshPicker } from "./components/SeshPicker";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AwsAuthModal } from "./components/aws/AwsAuthModal";
 import { RundeckJobPalette } from "./components/rundeck/RundeckJobPalette";
+import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
+import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { git } from "./api/git";
@@ -100,6 +102,8 @@ export default function App() {
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const rundeckJobPaletteOpen = useStore((s) => s.rundeckJobPaletteOpen);
+    const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
+    const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const awsAuthModal = useStore((s) => s.awsAuthModal);
     const projectRepoKey = useStore((s) =>
@@ -243,6 +247,8 @@ export default function App() {
             {agentPaletteOpen && <AgentPalette />}
             {filePaletteOpen && <FilePalette />}
             {rundeckJobPaletteOpen && <RundeckJobPalette />}
+            {brunoReqPaletteOpen && <BrunoRequestPalette />}
+            {brunoEnvPaletteOpen && <BrunoEnvPalette />}
             {awsAuthModal && <AwsAuthModal />}
             <Toaster />
         </div>

@@ -145,7 +145,6 @@ export function BrunoPane({ sessionId, active }: Props) {
                 </span>
                 <BrunoEnvSelect
                     sessionId={sessionId}
-                    collectionPath={reqCollPath}
                     envs={visibleEnvs}
                     showCollection={showEnvCollection}
                     selected={selectedEnvId}

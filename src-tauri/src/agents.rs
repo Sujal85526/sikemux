@@ -1,12 +1,16 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, UNIX_EPOCH};
 
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tauri::{AppHandle, Emitter};
 
 #[derive(Serialize, Deserialize)]
 pub struct AgentSession {
@@ -21,6 +25,12 @@ pub struct AgentInfo {
     kind: &'static str,
     label: &'static str,
     command: &'static str,
+}
+
+#[derive(Serialize, Clone)]
+struct AgentSessionsChanged {
+    agent: &'static str,
+    cwd: String,
 }
 
 struct AgentDef {
@@ -66,6 +76,29 @@ pub enum AgentKind {
     Pi,
     Opencode,
 }
+
+impl AgentKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            AgentKind::Claude => "claude",
+            AgentKind::Codex => "codex",
+            AgentKind::Hermes => "hermes",
+            AgentKind::Pi => "pi",
+            AgentKind::Opencode => "opencode",
+        }
+    }
+}
+
+struct AgentWatchHandle {
+    _watchers: Vec<RecommendedWatcher>,
+}
+
+fn watch_registry() -> &'static Mutex<HashMap<u32, Arc<AgentWatchHandle>>> {
+    static R: OnceLock<Mutex<HashMap<u32, Arc<AgentWatchHandle>>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+static NEXT_WATCH_ID: AtomicU32 = AtomicU32::new(1);
 
 /// Agent CLIs that are installed for the current user. The app's PATH is fixed
 /// from the login shell during boot, so this matches what spawned PTYs can run.

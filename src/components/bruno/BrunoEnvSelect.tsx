@@ -1,11 +1,9 @@
 import * as cmd from "../../state/commands";
 import type { BruEnv } from "../../bruno/types";
-import { IconShield } from "../Icons";
-import { BrunoSelect, type BrunoOption } from "./BrunoControls";
+import { IconChevron, IconShield } from "../Icons";
 
 interface Props {
     sessionId: string;
-    collectionPath: string;
     envs: BruEnv[];
     showCollection: boolean;
     selected: string | null;
@@ -14,25 +12,16 @@ interface Props {
     secretsOpen: boolean;
 }
 
-const NO_ENV = "__none__";
-
-export function BrunoEnvSelect({ sessionId, collectionPath, envs, showCollection, selected, secretNames, secretVars, secretsOpen }: Props) {
-    const options: BrunoOption[] = [
-        { value: NO_ENV, label: "No environment" },
-        ...envs.map((env) => ({ value: env.id, label: showCollection ? `${env.collectionName}/${env.name}` : env.name })),
-    ];
+export function BrunoEnvSelect({ sessionId, envs, showCollection, selected, secretNames, secretVars, secretsOpen }: Props) {
+    const active = selected ? envs.find((e) => e.id === selected) : undefined;
+    const label = active ? (showCollection ? `${active.collectionName}/${active.name}` : active.name) : "No environment";
 
     return (
         <div className="bruno-env">
-            <BrunoSelect
-                value={selected ?? NO_ENV}
-                options={options}
-                onChange={(v) => cmd.brunoSelectEnv(sessionId, collectionPath, v === NO_ENV ? null : v)}
-                className="bruno-env-dd"
-                title="Environment"
-                align="right"
-                menuWidth={200}
-            />
+            <button type="button" className="bruno-dd-btn bruno-env-dd" title="Environment (⌥E)" onClick={() => cmd.openBrunoEnvPalette()}>
+                <span className="bruno-dd-val">{label}</span>
+                <IconChevron size={9} className="bruno-dd-chev" />
+            </button>
             {secretNames.length > 0 && (
                 <button className={`bruno-secrets-btn${secretsOpen ? " active" : ""}`} title="Secret variables" onClick={() => cmd.brunoToggleSecrets(sessionId)}>
                     <IconShield size={12} />

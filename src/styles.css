@@ -1114,6 +1114,21 @@ button {
     text-align: center;
     color: var(--ink-faint);
 }
+.picker-check {
+    flex: 0 0 auto;
+    color: var(--acc);
+}
+.bruno-env-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--acc);
+}
+.bruno-env-dot.none {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--ink-faint);
+}
 
 @keyframes fadeDown {
     from {
@@ -7719,16 +7734,21 @@ button {
     transition: background 0.12s;
 }
 .bruno-send-kbd {
-    margin-left: 3px;
-    padding: 1px 4px 2px;
-    border-radius: 4px;
-    background: rgba(12, 11, 16, 0.18);
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    margin-left: 4px;
     font-family: var(--mono);
-    font-size: 10px;
     font-weight: 700;
-    line-height: 1;
-    letter-spacing: 0;
-    opacity: 0.62;
+    opacity: 0.8;
+}
+.bruno-send-kbd .bruno-kbd-cmd {
+    font-size: 14px;
+}
+.bruno-send-kbd .bruno-kbd-ret {
+    font-size: 16px;
+    /* the ↵ glyph sits low; nudge it up to optically center with ⌘ */
+    transform: translateY(-2px);
 }
 .bruno-send:hover:not(:disabled) {
     background: color-mix(in srgb, var(--acc) 88%, white);
