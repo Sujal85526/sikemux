@@ -14,4 +14,6 @@ export const fsapi = {
     createDir: (path: string) => invoke<void>("create_dir", { path }),
     copyIntoDir: (src: string, dir: string) => invoke<string>("copy_into_dir", { src, dir }),
     rename: (src: string, dest: string) => invoke<void>("rename_path", { src, dest }),
+    revealInFinder: (path: string) => invoke<void>("reveal_in_finder", { path }),
+    deletePath: (path: string) => invoke<void>("delete_path", { path }),
 };

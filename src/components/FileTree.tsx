@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
 import { subscribe } from "../state/bus";
@@ -9,7 +10,7 @@ import { notify, reportError, swallow } from "../state/toast";
 import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
-import { basename } from "../lib/paths";
+import { basename, dirname } from "../lib/paths";
 
 function gitDecoration(f: GitFile): { letter: string; cls: string } {
     if (f.index === "?" || f.worktree === "?") return { letter: "U", cls: "u" };
@@ -35,6 +36,20 @@ interface NewEntryRequest {
     kind: "file" | "folder";
 }
 
+interface MenuState {
+    x: number;
+    y: number;
+    entry: DirEntry | null;
+}
+
+interface CtxItem {
+    label?: string;
+    hint?: string;
+    danger?: boolean;
+    sep?: boolean;
+    run?: () => void;
+}
+
 function validEntryName(raw: string): string | null {
     const name = raw.trim();
     if (!name) return null;
@@ -53,6 +68,10 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     const [renameName, setRenameName] = useState("");
     const renameInputRef = useRef<HTMLInputElement>(null);
     const [dragOver, setDragOver] = useState<string | null>(null);
+    const [rootDragOver, setRootDragOver] = useState(false);
+    const [draggingPath, setDraggingPath] = useState<string | null>(null);
+    const draggedPathRef = useRef<string | null>(null);
+    const [menu, setMenu] = useState<MenuState | null>(null);
 
     const expandedRef = useRef(expanded);
     expandedRef.current = expanded;
@@ -171,8 +190,8 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         if (!open && !dirs[entry.path]) await loadDir(entry.path);
     };
 
-    const startNew = (kind: "file" | "folder") => {
-        let parent = selectedDir;
+    const startNew = (kind: "file" | "folder", parentOverride?: string) => {
+        let parent = parentOverride ?? selectedDir;
         if (!parent && activePath && activePath.startsWith(`${cwd}/`)) {
             const last = activePath.lastIndexOf("/");
             if (last > cwd.length) parent = activePath.slice(0, last);
@@ -237,6 +256,127 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         };
     }, []);
 
+    // Internal drag-and-drop: move a file/folder within the tree (VSCode-style).
+    // External Finder drops are handled separately via registerFolderDrop above.
+    const canDropInto = (src: string, destDir: string): boolean => {
+        if (!src) return false;
+        if (destDir === src) return false; // into itself
+        if (destDir.startsWith(`${src}/`)) return false; // into its own descendant
+        if (dirname(src) === destDir) return false; // already lives there
+        return true;
+    };
+
+    // Resolve where a drop lands: a folder row → that folder; a file row → its
+    // parent dir; empty space → the tree root.
+    const dropTargetDir = (target: HTMLElement | null): string => {
+        const folderEl = target?.closest(".tree-row.is-folder") as HTMLElement | null;
+        if (folderEl?.dataset.folderPath) return folderEl.dataset.folderPath;
+        const fileEl = target?.closest(".tree-row.file") as HTMLElement | null;
+        if (fileEl?.dataset.filePath) return dirname(fileEl.dataset.filePath);
+        return cwd;
+    };
+
+    const moveEntry = async (src: string, destDir: string) => {
+        if (!canDropInto(src, destDir)) return;
+        const dest = `${destDir}/${basename(src)}`;
+        try {
+            await fsapi.rename(src, dest);
+            await Promise.all([loadDir(dirname(src)), loadDir(destDir)]);
+            setExpanded((s) => new Set(s).add(destDir));
+        } catch (err) {
+            reportError("move")(err);
+        }
+    };
+
+    const onRowDragStart = (e: React.DragEvent, path: string) => {
+        draggedPathRef.current = path;
+        setDraggingPath(path);
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", path);
+    };
+    const onRowDragEnd = () => {
+        draggedPathRef.current = null;
+        setDraggingPath(null);
+        setDragOver(null);
+        setRootDragOver(false);
+    };
+
+    // ---- right-click context menu -------------------------------------
+    const relativePath = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : basename(p));
+
+    const copyText = async (text: string, label: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            notify("success", `copied ${label}`);
+        } catch (err) {
+            reportError("copy")(err);
+        }
+    };
+
+    const revealInFinder = (p: string) => void fsapi.revealInFinder(p).catch(reportError("reveal"));
+
+    const deleteEntry = async (entry: DirEntry) => {
+        if (!window.confirm(`Move "${entry.name}" to the Trash?`)) return;
+        try {
+            await fsapi.deletePath(entry.path);
+            await loadDir(dirname(entry.path) || cwd);
+            if (renaming === entry.path) cancelRename();
+            if (selectedDir === entry.path) setSelectedDir(null);
+            if (newRequest?.parent === entry.path) cancelNew();
+        } catch (err) {
+            reportError("delete")(err);
+        }
+    };
+
+    const openMenu = (e: ReactMouseEvent, entry: DirEntry | null) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (entry?.is_dir) setSelectedDir(entry.path);
+        setMenu({ x: e.clientX, y: e.clientY, entry });
+    };
+
+    const buildMenuItems = (entry: DirEntry | null): CtxItem[] => {
+        if (!entry) {
+            return [
+                { label: "New File", run: () => startNew("file", cwd) },
+                { label: "New Folder", run: () => startNew("folder", cwd) },
+                { sep: true },
+                { label: "Reveal in Finder", run: () => revealInFinder(cwd) },
+                { label: "Copy Path", run: () => void copyText(cwd, "path") },
+            ];
+        }
+        const tail: CtxItem[] = [
+            { label: "Reveal in Finder", run: () => revealInFinder(entry.path) },
+            { label: "Copy Path", run: () => void copyText(entry.path, "path") },
+            { label: "Copy Relative Path", run: () => void copyText(relativePath(entry.path), "relative path") },
+        ];
+        if (entry.is_dir) {
+            return [
+                { label: "New File", run: () => startNew("file", entry.path) },
+                { label: "New Folder", run: () => startNew("folder", entry.path) },
+                { sep: true },
+                { label: "Rename…", run: () => startRename(entry) },
+                { label: "Delete", danger: true, run: () => void deleteEntry(entry) },
+                { sep: true },
+                ...tail,
+            ];
+        }
+        return [
+            {
+                label: "Open",
+                run: () => {
+                    setSelectedDir(null);
+                    onOpenFile(entry);
+                },
+            },
+            { sep: true },
+            { label: "Rename…", run: () => startRename(entry) },
+            { label: "Delete", danger: true, run: () => void deleteEntry(entry) },
+            { sep: true },
+            ...tail,
+        ];
+    };
+
     const renderTree = (path: string, depth: number): ReactNode => {
         const entries = dirs[path] ?? [];
         const items: ReactNode[] = [];
@@ -260,10 +400,14 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                         ) : (
                             <button
                                 ref={(el) => attachFolderDrop(el, e.path)}
-                                className={`tree-row is-folder${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}`}
+                                className={`tree-row is-folder${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                                 style={{ paddingLeft: pad }}
+                                draggable
+                                onDragStart={(ev) => onRowDragStart(ev, e.path)}
+                                onDragEnd={onRowDragEnd}
                                 onClick={() => toggleDir(e)}
                                 onDoubleClick={() => startRename(e)}
+                                onContextMenu={(ev) => openMenu(ev, e)}
                                 data-folder-path={e.path}>
                                 <span className={`tree-chev${open ? " open" : ""}`}>
                                     <IconChevron size={11} />
@@ -309,13 +453,18 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                     items.push(
                         <button
                             key={e.path}
-                            className={`tree-row file${activePath === e.path ? " active" : ""}${gd ? ` git-${gd.cls}` : ""}`}
+                            className={`tree-row file${activePath === e.path ? " active" : ""}${gd ? ` git-${gd.cls}` : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                             style={{ paddingLeft: pad + 13 }}
+                            draggable
+                            onDragStart={(ev) => onRowDragStart(ev, e.path)}
+                            onDragEnd={onRowDragEnd}
                             onClick={() => {
                                 setSelectedDir(null);
                                 onOpenFile(e);
                             }}
-                            onDoubleClick={() => startRename(e)}>
+                            onDoubleClick={() => startRename(e)}
+                            onContextMenu={(ev) => openMenu(ev, e)}
+                            data-file-path={e.path}>
                             <span className="tree-file">
                                 <FileIcon name={e.name} size={20} />
                             </span>
@@ -361,12 +510,33 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     }, [cwd, active, loadDir]);
 
     const handleDragOver = (e: React.DragEvent) => {
+        const src = draggedPathRef.current;
+        if (!src) return; // external/OS drags are handled via onDragDropEvent
         e.preventDefault();
-        const t = (e.target as HTMLElement | null)?.closest(".tree-row.is-folder") as HTMLElement | null;
-        setDragOver(t?.dataset.folderPath ?? null);
+        e.dataTransfer.dropEffect = "move";
+        const target = e.target as HTMLElement | null;
+        const ok = canDropInto(src, dropTargetDir(target));
+        // Box the row directly under the cursor (VSCode-style); empty space → root.
+        const rowEl = ok ? (target?.closest(".tree-row.is-folder, .tree-row.file") as HTMLElement | null) : null;
+        const rowPath = rowEl?.dataset.folderPath ?? rowEl?.dataset.filePath ?? null;
+        setDragOver(rowPath);
+        setRootDragOver(ok && !rowPath);
     };
-    const handleDragLeave = () => setDragOver(null);
-    const handleDrop = () => setDragOver(null);
+    const handleDragLeave = (e: React.DragEvent) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDragOver(null);
+        setRootDragOver(false);
+    };
+    const handleDrop = (e: React.DragEvent) => {
+        const src = draggedPathRef.current;
+        draggedPathRef.current = null;
+        setDraggingPath(null);
+        setDragOver(null);
+        setRootDragOver(false);
+        if (!src) return;
+        e.preventDefault();
+        void moveEntry(src, dropTargetDir(e.target as HTMLElement | null));
+    };
 
     return (
         <>
@@ -384,7 +554,13 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                         </button>
                     </span>
                 </div>
-                <div ref={rootScrollRef} className="ed-tree-scroll" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+                <div
+                    ref={rootScrollRef}
+                    className={`ed-tree-scroll${rootDragOver ? " drag-over-root" : ""}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onContextMenu={(ev) => openMenu(ev, null)}>
                     {renderTree(cwd, 0)}
                     {newRequest?.parent === cwd && (
                         <NewEntryRow
@@ -400,7 +576,64 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 </div>
             </div>
             <div className="ed-tree-resizer" onPointerDown={onResizeDrag} title="Drag to resize" />
+            {menu && <TreeContextMenu x={menu.x} y={menu.y} items={buildMenuItems(menu.entry)} onClose={() => setMenu(null)} />}
         </>
+    );
+}
+
+function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number; items: CtxItem[]; onClose: () => void }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState({ left: x, top: y });
+
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const pad = 6;
+        let left = x;
+        let top = y;
+        if (left + r.width > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - r.width - pad);
+        if (top + r.height > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - r.height - pad);
+        setPos({ left, top });
+    }, [x, y]);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, [onClose]);
+
+    return createPortal(
+        <div
+            className="tree-ctx-scrim"
+            onClick={onClose}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                onClose();
+            }}>
+            <div ref={ref} className="tree-ctx-menu" style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()}>
+                {items.map((it, i) =>
+                    it.sep ? (
+                        <div key={i} className="tree-ctx-sep" />
+                    ) : (
+                        <button
+                            key={i}
+                            type="button"
+                            className={`tree-ctx-item${it.danger ? " danger" : ""}`}
+                            onClick={() => {
+                                onClose();
+                                it.run?.();
+                            }}>
+                            <span className="tree-ctx-label">{it.label}</span>
+                            {it.hint && <span className="tree-ctx-hint">{it.hint}</span>}
+                        </button>
+                    ),
+                )}
+            </div>
+        </div>,
+        document.body,
     );
 }
 

@@ -1,4 +1,5 @@
 use std::fs;
+use std::process::Command;
 
 use serde::Serialize;
 use tauri::async_runtime::spawn_blocking;
@@ -158,4 +159,104 @@ fn copy_into_dir_sync(src: String, dir: String) -> AppResult<String> {
     }
     fs::copy(&src_path, &candidate)?;
     Ok(candidate.to_string_lossy().into_owned())
+}
+
+/// Reveal a path in the OS file manager, selecting the entry itself.
+/// macOS: `open -R` highlights the file inside its folder in Finder. Other
+/// platforms open the containing directory (no portable "select" exists).
+#[tauri::command]
+pub async fn reveal_in_finder(path: String) -> AppResult<()> {
+    spawn_blocking(move || reveal_in_finder_sync(path))
+        .await
+        .map_err(|e| AppError::Other(format!("reveal_in_finder join: {e}")))?
+}
+
+fn reveal_in_finder_sync(path: String) -> AppResult<()> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.exists() {
+        return Err(AppError::Fs(format!("path missing: {}", path)));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg("-R").arg(&p).status()?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let dir = if p.is_dir() {
+            p.clone()
+        } else {
+            p.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| p.clone())
+        };
+        Command::new("xdg-open").arg(&dir).status()?;
+    }
+    Ok(())
+}
+
+/// Move a file or directory to the system Trash (recoverable), matching what
+/// a manual delete does. macOS uses `NSFileManager trashItemAtURL:` natively —
+/// no Finder-automation prompt, the item lands in the Trash. Other platforms
+/// fall back to a permanent remove (no portable trash API).
+#[tauri::command]
+pub async fn delete_path(path: String) -> AppResult<()> {
+    spawn_blocking(move || delete_path_sync(path))
+        .await
+        .map_err(|e| AppError::Other(format!("delete_path join: {e}")))?
+}
+
+fn delete_path_sync(path: String) -> AppResult<()> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.exists() {
+        return Err(AppError::Fs(format!("path missing: {}", path)));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        trash_macos(&path)?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if p.is_dir() {
+            fs::remove_dir_all(&p)?;
+        } else {
+            fs::remove_file(&p)?;
+        }
+    }
+    Ok(())
+}
+
+/// `[[NSFileManager defaultManager] trashItemAtURL:[NSURL fileURLWithPath:…]
+/// resultingItemURL:nil error:&err]`. Raw msg_send (same style as
+/// transparency.rs) so we don't need objc2-foundation class features.
+#[cfg(target_os = "macos")]
+fn trash_macos(path: &str) -> AppResult<()> {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+
+    let c = std::ffi::CString::new(path)
+        .map_err(|_| AppError::Fs("path contains NUL byte".into()))?;
+    unsafe {
+        let s: *mut AnyObject = msg_send![objc2::class!(NSString), stringWithUTF8String: c.as_ptr()];
+        let url: *mut AnyObject = msg_send![objc2::class!(NSURL), fileURLWithPath: s];
+        let fm: *mut AnyObject = msg_send![objc2::class!(NSFileManager), defaultManager];
+        let mut err: *mut AnyObject = std::ptr::null_mut();
+        let ok: bool = msg_send![
+            fm,
+            trashItemAtURL: url,
+            resultingItemURL: std::ptr::null_mut::<*mut AnyObject>(),
+            error: &mut err
+        ];
+        if !ok {
+            let mut msg = String::from("trash failed");
+            if !err.is_null() {
+                let desc: *mut AnyObject = msg_send![err, localizedDescription];
+                if !desc.is_null() {
+                    let utf8: *const std::os::raw::c_char = msg_send![desc, UTF8String];
+                    if !utf8.is_null() {
+                        msg = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    }
+                }
+            }
+            return Err(AppError::Fs(msg));
+        }
+    }
+    Ok(())
 }

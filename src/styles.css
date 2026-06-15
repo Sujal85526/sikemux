@@ -1222,11 +1222,21 @@ button {
     background: color-mix(in srgb, var(--acc) 14%, transparent);
     color: var(--ink);
 }
-.tree-row.is-folder.drag-over {
+.tree-row.drag-over {
     background: var(--acc-soft);
     color: var(--ink);
-    outline: 1px dashed var(--acc-line);
+    outline: 1px solid var(--acc);
     outline-offset: -1px;
+    border-radius: 4px;
+}
+.tree-row.dragging {
+    opacity: 0.45;
+}
+.ed-tree-scroll.drag-over-root {
+    background: var(--acc-soft);
+    outline: 1px solid var(--acc);
+    outline-offset: -2px;
+    border-radius: 4px;
 }
 .tree-row.tree-new {
     cursor: default;
@@ -1292,6 +1302,66 @@ button {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* file-tree right-click context menu */
+.tree-ctx-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+}
+.tree-ctx-menu {
+    position: fixed;
+    z-index: 61;
+    min-width: 196px;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: var(--rail-2);
+    border: 1px solid var(--line);
+    box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.7);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-family: var(--mono);
+}
+.tree-ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 5px 10px;
+    background: transparent;
+    border: none;
+    color: var(--ink-dim);
+    font-size: 12px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tree-ctx-item:hover {
+    background: var(--acc-soft);
+    color: var(--ink);
+}
+.tree-ctx-item.danger {
+    color: color-mix(in srgb, var(--danger) 85%, var(--ink-dim));
+}
+.tree-ctx-item.danger:hover {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+}
+.tree-ctx-label {
+    flex: 1 1 auto;
+}
+.tree-ctx-hint {
+    flex-shrink: 0;
+    color: var(--ink-faint);
+    font-size: 10.5px;
+}
+.tree-ctx-sep {
+    height: 1px;
+    background: var(--line-soft);
+    margin: 4px 2px;
 }
 
 .ed-main {
