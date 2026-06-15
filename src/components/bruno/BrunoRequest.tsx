@@ -2,9 +2,9 @@ import type { BrunoReqTab } from "../../state/types";
 import { interpolate, type Scope } from "../../bruno/interpolate";
 import { HTTP_METHODS, type AuthMode, type BodyMode, type BruRequest, type KeyVal } from "../../bruno/types";
 import { IconRun, IconSave, IconTrash, IconPlus } from "../Icons";
-import { VarArea, VarInput } from "./VarText";
+import { VarInput } from "./VarText";
 import { BrunoSelect, BrunoCheck, type BrunoOption } from "./BrunoControls";
-import { BrunoCode } from "./BrunoCode";
+import { BrunoCode, type BrunoLang } from "./BrunoCode";
 
 interface Props {
     request: BruRequest;
@@ -22,6 +22,7 @@ const REQ_TABS: BrunoReqTab[] = ["params", "body", "headers", "auth", "vars", "s
 const BODY_MODES: BodyMode[] = ["none", "json", "text", "xml", "graphql", "sparql", "form-urlencoded", "multipart-form", "file"];
 const AUTH_MODES: AuthMode[] = ["inherit", "none", "bearer", "basic", "apikey"];
 const TEXT_MODES = new Set<BodyMode>(["json", "text", "xml", "graphql", "sparql"]);
+const bodyLang = (mode: BodyMode): BrunoLang => (mode === "json" || mode === "graphql" ? "json" : mode === "xml" ? "xml" : "text");
 
 const METHOD_OPTS: BrunoOption[] = HTTP_METHODS.map((m) => ({ value: m, label: m.toUpperCase(), className: `m-${m}` }));
 const BODY_OPTS: BrunoOption[] = BODY_MODES.map((m) => ({ value: m, label: m }));
@@ -152,7 +153,14 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                         </div>
                         {request.body.mode === "none" && <div className="bruno-muted">This request has no body.</div>}
                         {TEXT_MODES.has(request.body.mode) && (
-                            <VarArea value={request.body.text} scope={scope} placeholder="request body" onChange={(v) => setBody({ text: v })} />
+                            <BrunoCode
+                                value={request.body.text}
+                                lang={bodyLang(request.body.mode)}
+                                vars={scope}
+                                placeholder="request body"
+                                onChange={(v) => setBody({ text: v })}
+                                className="bruno-cm-fill"
+                            />
                         )}
                         {(request.body.mode === "form-urlencoded" || request.body.mode === "multipart-form" || request.body.mode === "file") && (
                             <KeyValTable

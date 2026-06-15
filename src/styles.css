@@ -7718,6 +7718,18 @@ button {
     cursor: pointer;
     transition: background 0.12s;
 }
+.bruno-send-kbd {
+    margin-left: 3px;
+    padding: 1px 4px 2px;
+    border-radius: 4px;
+    background: rgba(12, 11, 16, 0.18);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0;
+    opacity: 0.62;
+}
 .bruno-send:hover:not(:disabled) {
     background: color-mix(in srgb, var(--acc) 88%, white);
 }
@@ -8376,6 +8388,16 @@ button {
 }
 .bruno-resp-body .bruno-cm {
     border: 0;
+}
+/* {{variable}} chips inside CodeMirror (request body) */
+.cm-bruno-var {
+    background: rgba(97, 255, 202, 0.13);
+    border-radius: 3px;
+    color: var(--live);
+}
+.cm-bruno-var.missing {
+    background: rgba(255, 103, 103, 0.15);
+    color: var(--danger);
 }
 /* body editor (VarArea) fills its tab when it's the sole content */
 .bruno-section-fill > .bruno-varwrap.area {
