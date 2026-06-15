@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type BruBodyWire =
     | { kind: "none" }
     | { kind: "raw"; content_type: string | null; data: string }
+    | { kind: "file"; path: string; content_type: string | null }
     | { kind: "form"; fields: [string, string][] }
     | { kind: "multipart"; fields: { name: string; value: string; is_file: boolean }[] };
 

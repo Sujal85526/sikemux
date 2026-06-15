@@ -3,7 +3,7 @@
 // used for {{interpolation}}.
 
 import { mergeScope, type Scope } from "./interpolate";
-import type { BruCollection, BruEnv, BruRequest, BruScope, BruTreeNode } from "./types";
+import type { BruCollection, BruEnv, BruRequest, BruScope, BruTreeNode, KeyVal } from "./types";
 
 export interface LocatedRequest {
     request: BruRequest;
@@ -31,6 +31,12 @@ function varsOf(scope: BruScope | null): Scope {
     return m;
 }
 
+function varsOfRows(rows: KeyVal[]): Scope {
+    const m: Scope = {};
+    for (const v of rows) if (v.enabled && v.name) m[v.name] = v.value;
+    return m;
+}
+
 function envVars(env: BruEnv | undefined): Scope {
     const m: Scope = {};
     if (env) for (const v of env.vars) if (v.enabled && v.name) m[v.name] = v.value;
@@ -46,6 +52,10 @@ export function buildScope(opts: {
 }): Scope {
     const folderLayers = [...opts.folderScopes].reverse().map(varsOf);
     return mergeScope(opts.secretVars, envVars(opts.env), ...folderLayers, varsOf(opts.collection.config));
+}
+
+export function requestVars(request: BruRequest | null | undefined): Scope {
+    return request ? varsOfRows(request.vars.req) : {};
 }
 
 export function selectedEnvOf(collection: BruCollection, id: string | null): BruEnv | undefined {

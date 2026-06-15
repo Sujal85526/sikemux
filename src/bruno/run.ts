@@ -5,7 +5,7 @@
 
 import { brunoApi, type BruBodyWire, type BruSendResponse } from "../api/bruno";
 import { interpolate, type Scope } from "./interpolate";
-import { evaluateAssertions, runScript, type ReqView, type ResView, type ScriptLog, type TestResult } from "./sandbox";
+import { evaluateAssertions, evaluateExpression, runScript, type ReqView, type ResView, type ScriptLog, type TestResult } from "./sandbox";
 import type { BruAuth, BruRequest, BruScope, KeyVal } from "./types";
 
 export interface RunInput {
@@ -86,7 +86,12 @@ const CONTENT_TYPE: Record<string, string> = {
 
 function bodyWire(request: BruRequest, reqView: ReqView, scope: Scope): BruBodyWire {
     const mode = request.body.mode;
-    if (mode === "none" || mode === "file") return { kind: "none" };
+    if (mode === "none") return { kind: "none" };
+    if (mode === "file") {
+        const row = enabled(request.body.form)[0];
+        const path = row ? interpolate(row.value || row.name, scope) : "";
+        return path ? { kind: "file", path, content_type: null } : { kind: "none" };
+    }
     if (mode === "form-urlencoded") {
         return { kind: "form", fields: enabled(request.body.form).map((f) => [interpolate(f.name, scope), interpolate(f.value, scope)] as [string, string]) };
     }
@@ -107,11 +112,63 @@ function bodyWire(request: BruRequest, reqView: ReqView, scope: Scope): BruBodyW
     return { kind: "raw", content_type: CONTENT_TYPE[mode] ?? "text/plain", data };
 }
 
+function enc(v: string, encode: boolean): string {
+    return encode ? encodeURIComponent(v) : v;
+}
+
+function escapeRegExp(v: string): string {
+    return v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function applyPathParams(url: string, params: [string, string][], encode: boolean): string {
+    let out = url;
+    for (const [k, v] of params) {
+        if (!k) continue;
+        const val = enc(v, encode);
+        const key = escapeRegExp(k);
+        out = out.replace(new RegExp(`:${key}(?=/|$|[?#])`, "g"), val);
+        out = out.replace(new RegExp(`\\{${key}\\}`, "g"), val);
+    }
+    return out;
+}
+
 function applyQuery(url: string, query: [string, string][], encode: boolean): string {
     if (!query.length) return url;
-    const base = url.split("?")[0];
-    const qs = query.map(([k, v]) => (encode ? `${encodeURIComponent(k)}=${encodeURIComponent(v)}` : `${k}=${v}`)).join("&");
-    return qs ? `${base}?${qs}` : base;
+    const hashAt = url.indexOf("#");
+    const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
+    const hash = hashAt === -1 ? "" : url.slice(hashAt);
+    const qs = query.map(([k, v]) => `${enc(k, encode)}=${enc(v, encode)}`).join("&");
+    if (!qs) return url;
+    const sep = beforeHash.includes("?") ? (beforeHash.endsWith("?") || beforeHash.endsWith("&") ? "" : "&") : "?";
+    return `${beforeHash}${sep}${qs}${hash}`;
+}
+
+function exprValue(v: unknown): string {
+    if (v == null) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    try {
+        return JSON.stringify(v);
+    } catch {
+        return String(v);
+    }
+}
+
+function applyResponseVars(rows: KeyVal[], env: { res: ResView; req: ReqView; bru: Record<string, unknown> }, scope: Scope, logs: ScriptLog[]): void {
+    for (const row of enabled(rows)) {
+        if (!row.value.trim()) {
+            scope[row.name] = "";
+            continue;
+        }
+        try {
+            const value = exprValue(evaluateExpression(row.value, env));
+            scope[row.name] = value;
+            env.bru[row.name] = value;
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            logs.push({ level: "error", text: `post-response var ${row.name}: ${msg}` });
+        }
+    }
 }
 
 export async function runRequest(input: RunInput): Promise<RunResult> {
@@ -146,10 +203,12 @@ export async function runRequest(input: RunInput): Promise<RunResult> {
     // Final build using the (possibly script-mutated) reqView + post-script scope.
     const finalScope = scope;
     const headers: [string, string][] = Object.entries(reqView.headers).map(([k, v]) => [k, interpolate(v, finalScope)]);
+    const encodeUrl = request.settings.encodeUrl !== false;
+    const pathParams: [string, string][] = enabled(request.params.path).map((p) => [interpolate(p.name, finalScope), interpolate(p.value, finalScope)]);
     const query: [string, string][] = enabled(request.params.query).map((p) => [interpolate(p.name, finalScope), interpolate(p.value, finalScope)]);
     const auth = effectiveAuth(request, scopes);
     applyAuth(auth, headers, query, finalScope);
-    const url = applyQuery(interpolate(reqView.url, finalScope), query, request.settings.encodeUrl !== false);
+    const url = applyQuery(applyPathParams(interpolate(reqView.url, finalScope), pathParams, encodeUrl), query, encodeUrl);
     const wire = {
         method: reqView.method,
         url,
@@ -189,6 +248,9 @@ export async function runRequest(input: RunInput): Promise<RunResult> {
         };
         for (const s of scopes) await runScript(s.scripts.post, { vars: scope, req: reqView, res: resView, logs, tests });
         await runScript(request.scripts.post, { vars: scope, req: reqView, res: resView, logs, tests });
+        const varEnv = { res: resView, req: reqView, bru: { ...scope } };
+        for (const s of scopes) applyResponseVars(s.vars.res, varEnv, scope, logs);
+        applyResponseVars(request.vars.res, { ...varEnv, bru: { ...scope } }, scope, logs);
         if (request.assertions.length) {
             evaluateAssertions(request.assertions, { res: resView, req: reqView, bru: { ...finalScope } }, tests);
         }

@@ -375,7 +375,7 @@ export async function brunoNewRequest(sessionId: string, dirPath: string, name: 
     if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
     const file = `${dirPath}/${safeFileName(name)}.bru`;
     try {
-        await fsapi.writeFile(file, serializeRequest(emptyRequest(name.trim())));
+        await fsapi.writeFileNew(file, serializeRequest(emptyRequest(name.trim())));
         reloadBruno(s.bruno.collectionPath);
         brunoSelectRequest(sessionId, file);
         notify("success", `Created ${name.trim()}`);
@@ -391,7 +391,7 @@ export async function brunoNewFolder(sessionId: string, parentPath: string, name
     const folder = `${parentPath}/${safeFileName(name)}`;
     try {
         await fsapi.createDir(folder);
-        await fsapi.writeFile(`${folder}/folder.bru`, `meta {\n  name: ${name.trim()}\n}\n`);
+        await fsapi.writeFileNew(`${folder}/folder.bru`, `meta {\n  name: ${name.trim()}\n}\n`);
         reloadBruno(s.bruno.collectionPath);
         notify("success", `Created folder ${name.trim()}`);
     } catch (e) {
@@ -408,8 +408,11 @@ export async function brunoRenameRequest(sessionId: string, path: string, name: 
         const text = s.bruno.drafts[path] ?? (await fsapi.readFile(path));
         const req = parseRequest(text);
         req.meta.name = name.trim();
-        await fsapi.writeFile(newPath, serializeRequest(req));
-        if (newPath !== path) await fsapi.deletePath(path);
+        if (newPath === path) await fsapi.writeFile(path, serializeRequest(req));
+        else {
+            await fsapi.writeFileNew(newPath, serializeRequest(req));
+            await fsapi.deletePath(path);
+        }
         brunoSetDraft(sessionId, path, null);
         reloadBruno(s.bruno.collectionPath);
         // keep the tab pointing at the renamed file

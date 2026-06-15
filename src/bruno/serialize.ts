@@ -104,7 +104,7 @@ export function serializeRequest(req: BruRequest): string {
 export function serializeScope(scope: BruScope): string {
     const parts: (string | null)[] = [];
     if (scope.meta.name || scope.meta.seq != null) parts.push(metaBlock(scope.meta));
-    if (scope.auth.mode !== "none") parts.push(`auth {\n  mode: ${scope.auth.mode}\n}`);
+    if (scope.auth.mode !== "inherit") parts.push(`auth {\n  mode: ${scope.auth.mode}\n}`);
     parts.push(authDetailBlock(scope.auth));
     parts.push(dictBlock("headers", scope.headers));
     parts.push(dictBlock("vars", scope.vars.req));

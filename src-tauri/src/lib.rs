@@ -106,6 +106,7 @@ pub fn run() {
             fs::read_dir,
             fs::read_file,
             fs::write_file,
+            fs::write_file_new,
             fs::create_file,
             fs::create_dir,
             fs::copy_into_dir,

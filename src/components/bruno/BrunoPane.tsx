@@ -7,7 +7,7 @@ import { useStore } from "../../state/store";
 import { DEFAULT_BRUNO_VIEW } from "../../state/types";
 import { parseRequest } from "../../bruno/parse";
 import { serializeRequest } from "../../bruno/serialize";
-import { buildScope, findRequest, selectedEnvOf } from "../../bruno/resolve";
+import { buildScope, findRequest, requestVars, selectedEnvOf } from "../../bruno/resolve";
 import { mergeScope, type Scope } from "../../bruno/interpolate";
 import { runRequest, type RunResult } from "../../bruno/run";
 import type { BruRequest, BruScope } from "../../bruno/types";
@@ -70,10 +70,11 @@ export function BrunoPane({ sessionId, active }: Props) {
     const selectedEnvId = selectedEnvs[reqCollPath] ?? null;
     const env = collection ? selectedEnvOf(collection, selectedEnvId) : undefined;
     const secretNames = env?.secretNames ?? [];
-    const scope = useMemo(() => {
+    const inheritedScope = useMemo(() => {
         if (!collection) return {} as Scope;
-        return mergeScope(runtime, buildScope({ collection, env, secretVars, folderScopes: located?.folderScopes ?? [] }));
-    }, [collection, env, secretVars, located, runtime]);
+        return buildScope({ collection, env, secretVars, folderScopes: located?.folderScopes ?? [] });
+    }, [collection, env, secretVars, located]);
+    const scope = useMemo(() => mergeScope(runtime, requestVars(effectiveRequest), inheritedScope), [runtime, effectiveRequest, inheritedScope]);
 
     const openTabs = useMemo(
         () =>

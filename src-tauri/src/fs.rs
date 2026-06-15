@@ -59,6 +59,29 @@ pub async fn write_file(path: String, content: String) -> AppResult<()> {
         .map_err(|e| AppError::Other(format!("write_file join: {e}")))?
 }
 
+/// Write a new file, refusing to overwrite an existing path.
+#[tauri::command]
+pub async fn write_file_new(path: String, content: String) -> AppResult<()> {
+    spawn_blocking(move || write_file_new_sync(path, content))
+        .await
+        .map_err(|e| AppError::Other(format!("write_file_new join: {e}")))?
+}
+
+fn write_file_new_sync(path: String, content: String) -> AppResult<()> {
+    use std::io::Write;
+
+    let p = std::path::PathBuf::from(&path);
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&p)
+        .map_err(AppError::from)?;
+    file.write_all(content.as_bytes()).map_err(AppError::from)
+}
+
 /// Create an empty file. Fails if it already exists so we never blow away
 /// an existing file with a "new file" action. Parent dirs are auto-created
 /// so the caller can pass nested paths in one go.

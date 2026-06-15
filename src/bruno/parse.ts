@@ -161,7 +161,7 @@ export function parseRequest(src: string): BruRequest {
         params: { query: [], path: [] },
         headers: [],
         body: emptyBody(),
-        auth: emptyAuth("none"),
+        auth: emptyAuth("inherit"),
         vars: { req: [], res: [] },
         scripts: { pre: "", post: "" },
         assertions: [],
@@ -241,14 +241,14 @@ export function parseRequest(src: string): BruRequest {
             req.extra.push(block);
         }
     }
-    req.auth.mode = authModeFromMethod ?? "none";
+    req.auth.mode = authModeFromMethod ?? "inherit";
     return req;
 }
 
 export function parseScope(src: string, name = ""): BruScope {
     const scope: BruScope = {
         meta: { name, type: "" },
-        auth: emptyAuth("none"),
+        auth: emptyAuth("inherit"),
         headers: [],
         vars: { req: [], res: [] },
         scripts: { pre: "", post: "" },

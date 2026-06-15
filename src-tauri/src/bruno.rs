@@ -41,6 +41,11 @@ pub enum BruBodyWire {
         content_type: Option<String>,
         data: String,
     },
+    /// Send a local file as the entire request body.
+    File {
+        path: String,
+        content_type: Option<String>,
+    },
     /// application/x-www-form-urlencoded
     Form {
         fields: Vec<(String, String)>,
@@ -119,6 +124,19 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
                 }
             }
             builder = builder.body(data);
+        }
+        BruBodyWire::File { path, content_type } => {
+            if let Some(ct) = content_type {
+                if !headers.contains_key(CONTENT_TYPE) {
+                    if let Ok(val) = HeaderValue::from_str(&ct) {
+                        headers.insert(CONTENT_TYPE, val);
+                    }
+                }
+            }
+            let bytes = tokio::fs::read(&path)
+                .await
+                .map_err(|e| AppError::Http(format!("read file {}: {e}", path)))?;
+            builder = builder.body(bytes);
         }
         BruBodyWire::Form { fields } => {
             builder = builder.form(&fields);

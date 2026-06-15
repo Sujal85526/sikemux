@@ -19,7 +19,7 @@ export type BodyMode = "none" | "json" | "text" | "xml" | "sparql" | "graphql" |
 
 export interface BruBody {
     mode: BodyMode;
-    /** raw text for json / text / xml / sparql */
+    /** raw text for json / text / xml / sparql / graphql */
     text: string;
     /** graphql query + variables (json text) */
     graphql: { query: string; variables: string };
@@ -159,7 +159,7 @@ export function emptyRequest(name = "request"): BruRequest {
 export function emptyScope(name: string): BruScope {
     return {
         meta: { name, type: "" },
-        auth: emptyAuth("none"),
+        auth: emptyAuth("inherit"),
         headers: [],
         vars: { req: [], res: [] },
         scripts: { pre: "", post: "" },

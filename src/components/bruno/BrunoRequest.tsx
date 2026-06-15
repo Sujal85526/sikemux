@@ -102,9 +102,10 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                         if (e.key === "Enter") onSend();
                     }}
                 />
-                <button className="bruno-send" onClick={onSend} disabled={running} title="Send (Enter)">
+                <button className="bruno-send" onClick={onSend} disabled={running} title="Send (⌘↵)">
                     {running ? <span className="bruno-row-spin" /> : <IconRun size={12} />}
                     <span>{running ? "Sending" : "Send"}</span>
+                    {!running && <kbd className="bruno-send-kbd">⌘↵</kbd>}
                 </button>
                 <button className={`bruno-save${dirty ? " dirty" : ""}`} onClick={onSave} disabled={!dirty} title="Save to .bru (⌘S)">
                     <IconSave size={13} />
