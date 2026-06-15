@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { rundeckApi, type LogEntry, type RundeckExecution as Execution, type RundeckStep, type RundeckWorkflowState } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { statusKind } from "./branchStyle";
 import { swallow } from "../../state/toast";
 import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../Icons";
+import { VirtualLogList } from "../VirtualLogList";
 
 interface Props {
     paneId: string;
@@ -30,6 +31,8 @@ const STEP_STATE: Record<string, { label: string; cls: "pending" | "running" | "
     NOT_ELIGIBLE: { label: "—", cls: "skip" },
 };
 
+const MAX_LOG_ENTRIES = 10000;
+
 export function RundeckExecution({ paneId, level, active }: Props) {
     const [execution, setExecution] = useState<Execution | null>(null);
     const [state, setState] = useState<RundeckWorkflowState | null>(null);
@@ -41,8 +44,6 @@ export function RundeckExecution({ paneId, level, active }: Props) {
     const [followTail, setFollowTail] = useState(true);
     const [stepFilter, setStepFilter] = useState<string | null>(null);
     const [aborting, setAborting] = useState(false);
-
-    const logRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!active) return;
@@ -71,7 +72,10 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                 .logsStart(level.executionId, null, (tick) => {
                     if (!alive) return;
                     if (tick.entries.length) {
-                        setEntries((prev) => prev.concat(tick.entries));
+                        setEntries((prev) => {
+                            const next = prev.concat(tick.entries);
+                            return next.length > MAX_LOG_ENTRIES ? next.slice(-MAX_LOG_ENTRIES) : next;
+                        });
                     }
                     if (tick.completed) setLogsCompleted(true);
                 })
@@ -105,13 +109,6 @@ export function RundeckExecution({ paneId, level, active }: Props) {
             stop();
         };
     }, [level.executionId, active]);
-
-    useEffect(() => {
-        if (!followTail) return;
-        const el = logRef.current;
-        if (!el) return;
-        el.scrollTop = el.scrollHeight;
-    }, [entries, followTail]);
 
     const filteredEntries = useMemo(() => {
         if (!stepFilter) return entries;
@@ -229,17 +226,21 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                         </label>
                         <span className="rnd-logs-count">{filteredEntries.length} lines</span>
                     </div>
-                    <div ref={logRef} className="rnd-logs-stream">
-                        {filteredEntries.length === 0 && (
-                            <div className="rnd-empty muted compact">no output{stepFilter ? " for this step" : ""} yet</div>
+                    <VirtualLogList
+                        items={filteredEntries}
+                        className="rnd-logs-stream"
+                        rowClassName={(entry) => `rnd-log-line${entry.level ? ` lvl-${entry.level.toLowerCase()}` : ""}`}
+                        estimateSize={20}
+                        follow={followTail}
+                        empty={<div className="rnd-empty muted compact">no output{stepFilter ? " for this step" : ""} yet</div>}
+                        getItemKey={(entry, index) => `${entry.time ?? ""}:${entry.stepctx ?? ""}:${index}`}
+                        renderRow={(entry) => (
+                            <>
+                                <span className="rnd-log-step">{entry.stepctx ? `[${entry.stepctx}]` : ""}</span>
+                                <span className="rnd-log-text">{entry.log}</span>
+                            </>
                         )}
-                        {filteredEntries.map((e, i) => (
-                            <div key={i} className={`rnd-log-line${e.level ? ` lvl-${e.level.toLowerCase()}` : ""}`}>
-                                <span className="rnd-log-step">{e.stepctx ? `[${e.stepctx}]` : ""}</span>
-                                <span className="rnd-log-text">{e.log}</span>
-                            </div>
-                        ))}
-                    </div>
+                    />
                 </section>
             </div>
         </div>

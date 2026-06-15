@@ -1,16 +1,11 @@
-import { memo, useMemo, useRef } from "react";
+import { lazy, memo, Suspense, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
 import type { Agent, Divider, PaneNode, Rect, Session, Window as WindowT } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { EditorPane } from "./EditorPane";
 import { GitPane } from "./GitPane";
-import { AwsPane } from "./aws/AwsPane";
-import { RundeckPane } from "./rundeck/RundeckPane";
-import { BrunoPane } from "./bruno/BrunoPane";
-import { SearchPane } from "./SearchPane";
 import { AgentIcon, IconClose, IconCommand, IconShield, IconShieldBolt } from "./Icons";
 
 const AGENT_TABS_H = 32;
@@ -27,14 +22,42 @@ type PaneRendererProps = {
     visible: boolean;
 };
 
+const EditorPane = lazy(() => import("./EditorPane").then((mod) => ({ default: mod.EditorPane })));
+const AwsPane = lazy(() => import("./aws/AwsPane").then((mod) => ({ default: mod.AwsPane })));
+const RundeckPane = lazy(() => import("./rundeck/RundeckPane").then((mod) => ({ default: mod.RundeckPane })));
+const BrunoPane = lazy(() => import("./bruno/BrunoPane").then((mod) => ({ default: mod.BrunoPane })));
+const SearchPane = lazy(() => import("./SearchPane").then((mod) => ({ default: mod.SearchPane })));
+
+function PaneFallback() {
+    return <div style={{ width: "100%", height: "100%" }} />;
+}
+
 const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => ReactNode> = {
-    editor: ({ pane, session, active, visible }) => <EditorPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />,
+    editor: ({ pane, session, active, visible }) => (
+        <Suspense fallback={<PaneFallback />}>
+            <EditorPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
+        </Suspense>
+    ),
     git: ({ pane, session, active }) => <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} />,
-    aws: ({ visible }) => <AwsPane active={visible} />,
-    rundeck: ({ pane, visible }) => <RundeckPane paneId={pane.id} active={visible} />,
-    bruno: ({ pane, session, visible }) => <BrunoPane paneId={pane.id} sessionId={session.id} active={visible} />,
+    aws: ({ visible }) => (
+        <Suspense fallback={<PaneFallback />}>
+            <AwsPane active={visible} />
+        </Suspense>
+    ),
+    rundeck: ({ pane, visible }) => (
+        <Suspense fallback={<PaneFallback />}>
+            <RundeckPane paneId={pane.id} active={visible} />
+        </Suspense>
+    ),
+    bruno: ({ pane, session, visible }) => (
+        <Suspense fallback={<PaneFallback />}>
+            <BrunoPane paneId={pane.id} sessionId={session.id} active={visible} />
+        </Suspense>
+    ),
     search: ({ pane, session, active, visible }) => (
-        <SearchPane sessionId={session.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
+        <Suspense fallback={<PaneFallback />}>
+            <SearchPane sessionId={session.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
+        </Suspense>
     ),
     terminal: ({ pane, session, active, visible }) => (
         <TerminalPane cwd={paneCwd(pane, session) || undefined} startup={pane.startup} active={active} visible={visible} />

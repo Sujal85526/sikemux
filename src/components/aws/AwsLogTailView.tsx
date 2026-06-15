@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { awsApi } from "../../api/aws";
 import { reportError } from "../../state/toast";
+import { VirtualLogList } from "../VirtualLogList";
 import { highlightLog } from "./logHighlight";
 
 const MAX_LINES = 5000;
+const FLUSH_MS = 50;
 
 interface Props {
     profile: string;
@@ -19,25 +21,34 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
     const [tailId, setTailId] = useState<number | null>(null);
     const [live, setLive] = useState(false);
     const [pinned, setPinned] = useState(true);
-    const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!active) return;
         let cancelled = false;
+        let flushTimer: number | undefined;
+        const pending: string[] = [];
         const ch = new Channel<string>();
         setLines([]);
         setErr(null);
         setLive(true);
+        const flushPending = () => {
+            flushTimer = undefined;
+            if (cancelled || pending.length === 0) return;
+            const batch = pending.splice(0);
+            setLines((prev) => {
+                const next = prev.concat(batch);
+                return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
+            });
+        };
         ch.onmessage = (line) => {
             if (cancelled) return;
             if (line === "") {
+                flushPending();
                 setLive(false);
                 return;
             }
-            setLines((prev) => {
-                const next = prev.length >= MAX_LINES ? prev.slice(-MAX_LINES + 1) : prev;
-                return [...next, line];
-            });
+            pending.push(line);
+            if (flushTimer === undefined) flushTimer = window.setTimeout(flushPending, FLUSH_MS);
         };
         let id: number | null = null;
         invoke<number>("aws_logs_tail_start", {
@@ -61,25 +72,14 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
             });
         return () => {
             cancelled = true;
+            if (flushTimer !== undefined) window.clearTimeout(flushTimer);
             if (id !== null) void awsApi.logsTailStop(id);
             setLive(false);
             setTailId(null);
         };
     }, [profile, logGroup, logStream, active]);
 
-    useEffect(() => {
-        if (!pinned) return;
-        const sel = window.getSelection();
-        if (sel && sel.toString() && containerRef.current?.contains(sel.anchorNode)) {
-            return;
-        }
-        const el = containerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-    }, [lines, pinned]);
-
-    const onScroll = () => {
-        const el = containerRef.current;
-        if (!el) return;
+    const onScroll = (el: HTMLDivElement) => {
         const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20;
         setPinned(atBottom);
     };
@@ -108,22 +108,26 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
                         className="aws-logs-jump"
                         onClick={() => {
                             setPinned(true);
-                            const el = containerRef.current;
-                            if (el) el.scrollTop = el.scrollHeight;
                         }}>
                         ↓ jump to live
                     </button>
                 )}
             </div>
 
-            <div className="aws-logs-body" ref={containerRef} onScroll={onScroll}>
-                {lines.length === 0 && <div className="aws-logs-waiting">no events in the last 5 minutes — waiting for new ones…</div>}
-                {lines.map((l, i) => (
-                    <div className="aws-logs-line" key={i}>
-                        {highlightLog(l)}
-                    </div>
-                ))}
-            </div>
+            <VirtualLogList
+                items={lines}
+                className="aws-logs-body"
+                rowClassName="aws-logs-line"
+                estimateSize={19}
+                follow={pinned}
+                onScroll={onScroll}
+                allowFollow={(el) => {
+                    const sel = window.getSelection();
+                    return !(sel && sel.toString() && el.contains(sel.anchorNode));
+                }}
+                empty={<div className="aws-logs-waiting">no events in the last 5 minutes — waiting for new ones…</div>}
+                renderRow={(line) => highlightLog(line)}
+            />
         </div>
     );
 }

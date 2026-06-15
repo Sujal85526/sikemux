@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { agentApi } from "../api/agents";
 import { fetchResource } from "../state/resources";
 import { agentSessionsR } from "../state/resources.defs";
 import { getState, useStore } from "../state/store";
@@ -6,19 +8,22 @@ import type { AgentType } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
 
-const FAST_SYNC_MS = 2_500;
-const SLOW_SYNC_MS = 15_000;
-const FAST_SYNC_WINDOW_MS = 5 * 60_000;
-
 interface AgentSyncGroup {
     type: AgentType;
     cwd: string;
-    fast: boolean;
+}
+
+interface AgentSessionsChanged {
+    agent: AgentType;
+    cwd: string;
+}
+
+function groupKey(type: AgentType, cwd: string): string {
+    return `${type}\0${cwd}`;
 }
 
 function collectAgentSyncGroups(): AgentSyncGroup[] {
     const st = getState();
-    const now = Date.now();
     const groups = new Map<string, AgentSyncGroup>();
 
     for (const sessionId of st.sessionOrder) {
@@ -27,11 +32,7 @@ function collectAgentSyncGroups(): AgentSyncGroup[] {
         for (const agentId of st.agentsBySession[sessionId] ?? []) {
             const agent = st.agents[agentId];
             if (!agent) continue;
-            const key = `${agent.type}\0${session.cwd}`;
-            const group = groups.get(key) ?? { type: agent.type, cwd: session.cwd, fast: false };
-            const freshEnough = agent.createdAt == null || now - agent.createdAt < FAST_SYNC_WINDOW_MS;
-            if (freshEnough && (!agent.resumeId || agent.title === agent.type)) group.fast = true;
-            groups.set(key, group);
+            groups.set(groupKey(agent.type, session.cwd), { type: agent.type, cwd: session.cwd });
         }
     }
 
@@ -58,32 +59,45 @@ export function AgentSessionSync() {
     const syncKey = useAgentSyncKey();
 
     useEffect(() => {
-        let cancelled = false;
-        let timer: number | undefined;
+        if (!syncKey) return;
 
-        const sync = async () => {
-            const groups = collectAgentSyncGroups();
-            await Promise.all(
-                groups.map((group) =>
-                    fetchResource(agentSessionsR, group.type, group.cwd)
-                        .then((rows) => cmd.reconcileAgentSessions(group.type, group.cwd, rows))
-                        .catch(swallow("agent sessions")),
-                ),
-            );
-            if (cancelled) return;
-            const nextGroups = collectAgentSyncGroups();
-            if (nextGroups.length === 0) return;
-            const delay = nextGroups.some((group) => group.fast) ? FAST_SYNC_MS : SLOW_SYNC_MS;
-            timer = window.setTimeout(sync, delay);
+        let cancelled = false;
+        const watchIds: number[] = [];
+        const groups = collectAgentSyncGroups();
+        const activeGroups = new Set(groups.map((group) => groupKey(group.type, group.cwd)));
+
+        const syncGroup = (type: AgentType, cwd: string) => {
+            void fetchResource(agentSessionsR, type, cwd)
+                .then((rows) => cmd.reconcileAgentSessions(type, cwd, rows))
+                .catch(swallow("agent sessions"));
         };
 
-        if (syncKey) {
-            timer = window.setTimeout(sync, FAST_SYNC_MS);
+        for (const group of groups) {
+            syncGroup(group.type, group.cwd);
+            void agentApi
+                .watchStart(group.type, group.cwd)
+                .then((id) => {
+                    if (cancelled) {
+                        void agentApi.watchStop(id).catch(swallow("agent sessions watch stop"));
+                    } else {
+                        watchIds.push(id);
+                    }
+                })
+                .catch(swallow("agent sessions watch"));
         }
+
+        const unlisten = listen<AgentSessionsChanged>("agent_sessions_changed", (event) => {
+            const { agent, cwd } = event.payload;
+            if (!activeGroups.has(groupKey(agent, cwd))) return;
+            syncGroup(agent, cwd);
+        });
 
         return () => {
             cancelled = true;
-            if (timer !== undefined) window.clearTimeout(timer);
+            void unlisten.then((off) => off());
+            for (const id of watchIds) {
+                void agentApi.watchStop(id).catch(swallow("agent sessions watch stop"));
+            }
         };
     }, [syncKey]);
 

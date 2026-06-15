@@ -14,8 +14,6 @@ export interface AgentSession {
 }
 
 const inflight = new Map<string, Promise<AgentSession[]>>();
-const cache = new Map<string, { at: number; data: AgentSession[] }>();
-const TTL_MS = 2_000;
 
 function key(agent: string, cwd: string) {
     return `${agent}\0${cwd}`;
@@ -27,16 +25,9 @@ async function fetchAvailable(): Promise<AgentInfo[]> {
 
 async function fetchSessions(agent: string, cwd: string): Promise<AgentSession[]> {
     const k = key(agent, cwd);
-    const now = Date.now();
-    const cached = cache.get(k);
-    if (cached && now - cached.at < TTL_MS) return cached.data;
     const existing = inflight.get(k);
     if (existing) return existing;
     const p = invoke<AgentSession[]>("agent_sessions", { agent, cwd })
-        .then((data) => {
-            cache.set(k, { at: Date.now(), data });
-            return data;
-        })
         .finally(() => {
             inflight.delete(k);
         });
@@ -47,11 +38,6 @@ async function fetchSessions(agent: string, cwd: string): Promise<AgentSession[]
 export const agentApi = {
     available: fetchAvailable,
     sessions: fetchSessions,
-    invalidate: (agent?: string, cwd?: string) => {
-        if (agent == null || cwd == null) {
-            cache.clear();
-            return;
-        }
-        cache.delete(key(agent, cwd));
-    },
+    watchStart: (agent: AgentType, cwd: string): Promise<number> => invoke<number>("agent_sessions_watch_start", { agent, cwd }),
+    watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),
 };

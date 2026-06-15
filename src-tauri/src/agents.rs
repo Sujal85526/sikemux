@@ -89,6 +89,11 @@ impl AgentKind {
     }
 }
 
+struct AgentWatchTarget {
+    dir: PathBuf,
+    mode: RecursiveMode,
+}
+
 struct AgentWatchHandle {
     _watchers: Vec<RecommendedWatcher>,
 }
@@ -125,6 +130,170 @@ pub fn agent_sessions(agent: AgentKind, cwd: String) -> Vec<AgentSession> {
         AgentKind::Pi => pi_sessions(&cwd),
         AgentKind::Opencode => opencode_sessions(&cwd),
     }
+}
+
+const AGENT_DEBOUNCE_MS: u64 = 200;
+
+fn home_path() -> Option<PathBuf> {
+    std::env::var("HOME").ok().map(PathBuf::from)
+}
+
+fn push_watch_target(out: &mut Vec<AgentWatchTarget>, dir: PathBuf, mode: RecursiveMode) {
+    if !dir.is_dir() {
+        return;
+    }
+    if let Some(existing) = out.iter_mut().find(|target| target.dir == dir) {
+        if matches!(mode, RecursiveMode::Recursive) {
+            existing.mode = RecursiveMode::Recursive;
+        }
+        return;
+    }
+    out.push(AgentWatchTarget { dir, mode });
+}
+
+fn push_existing_or_parent(
+    out: &mut Vec<AgentWatchTarget>,
+    path: PathBuf,
+    existing_mode: RecursiveMode,
+) {
+    if path.is_dir() {
+        push_watch_target(out, path, existing_mode);
+    } else if let Some(parent) = path.parent() {
+        push_watch_target(out, parent.to_path_buf(), RecursiveMode::NonRecursive);
+    }
+}
+
+fn agent_watch_dirs(agent: AgentKind, cwd: &str) -> Vec<AgentWatchTarget> {
+    let mut out = Vec::new();
+    match agent {
+        AgentKind::Claude => {
+            if let Some(home) = home_path() {
+                let projects = home.join(".claude/projects");
+                let project = projects.join(cwd.replace('/', "-"));
+                if project.is_dir() {
+                    push_watch_target(&mut out, project, RecursiveMode::Recursive);
+                } else {
+                    push_watch_target(&mut out, projects, RecursiveMode::NonRecursive);
+                }
+            }
+        }
+        AgentKind::Codex => {
+            if let Some(home) = home_path() {
+                let codex = home.join(".codex");
+                let sessions = codex.join("sessions");
+                if sessions.is_dir() {
+                    push_watch_target(&mut out, sessions, RecursiveMode::Recursive);
+                } else {
+                    push_watch_target(&mut out, codex, RecursiveMode::NonRecursive);
+                }
+            }
+        }
+        AgentKind::Hermes => {
+            if let Some(home) = home_path() {
+                push_watch_target(&mut out, home.join(".hermes"), RecursiveMode::NonRecursive);
+            }
+        }
+        AgentKind::Pi => {
+            if let Some(root) = pi_session_dir() {
+                push_existing_or_parent(&mut out, root, RecursiveMode::Recursive);
+            }
+        }
+        AgentKind::Opencode => {
+            for dir in opencode_data_dirs() {
+                push_existing_or_parent(&mut out, dir, RecursiveMode::NonRecursive);
+            }
+        }
+    }
+    out
+}
+
+fn agent_event_interesting(event: &Event) -> bool {
+    matches!(
+        event.kind,
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+    )
+}
+
+fn spawn_agent_debouncer(
+    app: AppHandle,
+    agent: &'static str,
+    cwd: String,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<()>,
+) {
+    tauri::async_runtime::spawn(async move {
+        while rx.recv().await.is_some() {
+            loop {
+                let sleep = tokio::time::sleep(Duration::from_millis(AGENT_DEBOUNCE_MS));
+                tokio::pin!(sleep);
+                let mut closed = false;
+                loop {
+                    tokio::select! {
+                        _ = &mut sleep => break,
+                        msg = rx.recv() => {
+                            if msg.is_none() {
+                                closed = true;
+                                break;
+                            }
+                            sleep
+                                .as_mut()
+                                .reset(tokio::time::Instant::now() + Duration::from_millis(AGENT_DEBOUNCE_MS));
+                        }
+                    }
+                }
+                if closed {
+                    return;
+                }
+                let _ = app.emit(
+                    "agent_sessions_changed",
+                    AgentSessionsChanged {
+                        agent,
+                        cwd: cwd.clone(),
+                    },
+                );
+                break;
+            }
+        }
+    });
+}
+
+#[tauri::command]
+pub fn agent_sessions_watch_start(
+    app: AppHandle,
+    agent: AgentKind,
+    cwd: String,
+) -> Result<u32, String> {
+    let dirs = agent_watch_dirs(agent, &cwd);
+    let id = NEXT_WATCH_ID.fetch_add(1, Ordering::Relaxed);
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    spawn_agent_debouncer(app, agent.as_str(), cwd, rx);
+
+    let mut watchers = Vec::new();
+    for target in dirs {
+        let tx_events = tx.clone();
+        let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
+            let Ok(event) = res else { return };
+            if !agent_event_interesting(&event) {
+                return;
+            }
+            let _ = tx_events.send(());
+        })
+        .map_err(|e| e.to_string())?;
+        if watcher.watch(&target.dir, target.mode).is_ok() {
+            watchers.push(watcher);
+        }
+    }
+
+    watch_registry()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(id, Arc::new(AgentWatchHandle { _watchers: watchers }));
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
+    watch_registry().lock().map_err(|e| e.to_string())?.remove(&id);
+    Ok(())
 }
 
 fn executable_in_path(agent: &str, bin: &str) -> bool {

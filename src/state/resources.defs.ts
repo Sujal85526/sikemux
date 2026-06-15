@@ -135,7 +135,7 @@ export const agentCatalogR = resource({
 export const agentSessionsR = resource({
     kind: "agents.sessions",
     fetch: (type: AgentType, cwd: string): Promise<AgentSession[]> => agentApi.sessions(type, cwd),
-    staleAfterMs: 30_000,
+    staleAfterMs: 0,
 });
 
 export const filesListR = resource({

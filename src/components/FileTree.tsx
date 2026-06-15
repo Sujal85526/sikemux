@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
@@ -78,13 +78,13 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     expandedRef.current = expanded;
 
     const status = useResourceEnabled(active && !!cwd, gitStatusR, cwd || "");
-    const gitMap = (() => {
+    const gitMap = useMemo(() => {
         const m = new Map<string, GitFile>();
         if (cwd && status.data) {
             status.data.files.forEach((f) => m.set(`${cwd}/${f.path}`, f));
         }
         return m;
-    })();
+    }, [cwd, status.data]);
 
     const loadDir = useCallback((path: string) => {
         return fsapi
@@ -234,10 +234,12 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         }
     };
 
-    const folderUnregRef = useRef<Map<HTMLElement, () => void>>(new Map());
+    const folderUnregRef = useRef<Map<HTMLElement, { dir: string; unreg: () => void }>>(new Map());
     const attachFolderDrop = (el: HTMLButtonElement | null, dir: string) => {
         if (!el) return;
-        folderUnregRef.current.get(el)?.();
+        const existing = folderUnregRef.current.get(el);
+        if (existing?.dir === dir) return;
+        existing?.unreg();
         const unreg = registerFolderDrop(el, async (paths) => {
             try {
                 for (const p of paths) await fsapi.copyIntoDir(p, dir);
@@ -247,12 +249,12 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 reportError("drop")(err);
             }
         });
-        folderUnregRef.current.set(el, unreg);
+        folderUnregRef.current.set(el, { dir, unreg });
     };
     useEffect(() => {
         const map = folderUnregRef.current;
         return () => {
-            for (const u of map.values()) u();
+            for (const entry of map.values()) entry.unreg();
             map.clear();
         };
     }, []);
@@ -285,7 +287,17 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     // events are fully under our control and immune to that.
     const dragSession = useRef<{ path: string; startX: number; startY: number; active: boolean } | null>(null);
     const moveHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+    const dragFrameRef = useRef<number | null>(null);
+    const dragPointRef = useRef<{ x: number; y: number } | null>(null);
     const suppressClickRef = useRef(false);
+
+    const updateDragOver = (next: string | null) => {
+        setDragOver((prev) => (prev === next ? prev : next));
+    };
+
+    const updateRootDragOver = (next: boolean) => {
+        setRootDragOver((prev) => (prev === next ? prev : next));
+    };
 
     // What sits under (x, y): the destination dir + the folder/root to highlight.
     const resolveDrop = (x: number, y: number): { destDir: string | null; highlightPath: string | null } => {
@@ -302,28 +314,43 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         return { destDir: cwd, highlightPath: null };
     };
 
-    const onDragMove = (e: PointerEvent) => {
+    const applyDragMove = () => {
+        dragFrameRef.current = null;
+        const point = dragPointRef.current;
         const s = dragSession.current;
-        if (!s) return;
+        if (!s || !point) return;
         if (!s.active) {
-            if (Math.hypot(e.clientX - s.startX, e.clientY - s.startY) < 5) return; // click vs drag threshold
+            if (Math.hypot(point.x - s.startX, point.y - s.startY) < 5) return; // click vs drag threshold
             s.active = true;
             setDraggingPath(s.path);
         }
-        const { destDir, highlightPath } = resolveDrop(e.clientX, e.clientY);
+        const { destDir, highlightPath } = resolveDrop(point.x, point.y);
         const ok = destDir != null && canDropInto(s.path, destDir);
-        setDragOver(ok ? highlightPath : null);
-        setRootDragOver(ok && !highlightPath);
-        setDragGhost({ name: basename(s.path), x: e.clientX, y: e.clientY });
+        updateDragOver(ok ? highlightPath : null);
+        updateRootDragOver(ok && !highlightPath);
+        const nextGhost = { name: basename(s.path), x: point.x, y: point.y };
+        setDragGhost((prev) =>
+            prev && prev.name === nextGhost.name && prev.x === nextGhost.x && prev.y === nextGhost.y ? prev : nextGhost,
+        );
+    };
+
+    const onDragMove = (e: PointerEvent) => {
+        dragPointRef.current = { x: e.clientX, y: e.clientY };
+        if (dragFrameRef.current == null) {
+            dragFrameRef.current = window.requestAnimationFrame(applyDragMove);
+        }
     };
 
     const endDrag = () => {
         if (moveHandlerRef.current) window.removeEventListener("pointermove", moveHandlerRef.current);
+        if (dragFrameRef.current != null) window.cancelAnimationFrame(dragFrameRef.current);
         moveHandlerRef.current = null;
+        dragFrameRef.current = null;
+        dragPointRef.current = null;
         dragSession.current = null;
         setDraggingPath(null);
-        setDragOver(null);
-        setRootDragOver(false);
+        updateDragOver(null);
+        updateRootDragOver(false);
         setDragGhost(null);
     };
 
@@ -359,12 +386,12 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         return subscribe("tree-native-drag-hover", (e) => {
             if (dragSession.current?.active) return;
             if (e.cwd !== cwd || !e.targetDir) {
-                setDragOver(null);
-                setRootDragOver(false);
+                updateDragOver(null);
+                updateRootDragOver(false);
                 return;
             }
-            setDragOver(e.highlightPath);
-            setRootDragOver(!e.highlightPath);
+            updateDragOver(e.highlightPath);
+            updateRootDragOver(!e.highlightPath);
         });
     }, [active, cwd]);
 
@@ -559,11 +586,22 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         const startX = e.clientX;
         const startW = width;
         let latest = startW;
+        let frame: number | null = null;
         const move = (ev: PointerEvent) => {
             latest = Math.min(600, Math.max(160, startW + ev.clientX - startX));
-            onResize(latest);
+            if (frame == null) {
+                frame = window.requestAnimationFrame(() => {
+                    frame = null;
+                    onResize(latest);
+                });
+            }
         };
         const up = () => {
+            if (frame != null) {
+                window.cancelAnimationFrame(frame);
+                frame = null;
+            }
+            onResize(latest);
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", up);
         };

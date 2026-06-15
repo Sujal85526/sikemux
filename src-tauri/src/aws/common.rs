@@ -14,6 +14,8 @@ use tokio::task;
 
 use crate::error::{AppError, AppResult};
 
+const DESCRIBE_CHUNK_CONCURRENCY: usize = 4;
+
 pub(super) fn run_aws_cli(
     args: &[&str],
     profile: Option<&str>,
@@ -147,24 +149,28 @@ pub(super) async fn describe_in_chunks<R: DeserializeOwned + Send + 'static>(
     let chunk_size = chunk_size.max(1);
     let chunks: Vec<Vec<String>> = arns.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-    let futs = chunks.into_iter().map(|chunk| {
-        let profile = profile.clone();
-        let base = base_args.clone();
-        let tail = tail_args.clone();
-        task::spawn_blocking(move || {
-            let mut args: Vec<String> = base;
-            args.push(arns_flag.to_string());
-            args.extend(chunk);
-            args.extend(tail);
-            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            aws_json::<R>(&profile, &refs)
-        })
-    });
+    let mut out = Vec::with_capacity(chunks.len());
+    for batch in chunks.chunks(DESCRIBE_CHUNK_CONCURRENCY) {
+        let futs = batch.iter().cloned().map(|chunk| {
+            let profile = profile.clone();
+            let base = base_args.clone();
+            let tail = tail_args.clone();
+            task::spawn_blocking(move || {
+                let mut args: Vec<String> = base;
+                args.push(arns_flag.to_string());
+                args.extend(chunk);
+                args.extend(tail);
+                let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                aws_json::<R>(&profile, &refs)
+            })
+        });
 
-    let results = try_join_all(futs)
-        .await
-        .map_err(|e| AppError::Other(format!("join error: {e}")))?;
-    results.into_iter().collect()
+        let results = try_join_all(futs)
+            .await
+            .map_err(|e| AppError::Other(format!("join error: {e}")))?;
+        out.extend(results.into_iter().collect::<AppResult<Vec<R>>>()?);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -103,6 +103,8 @@ pub fn run() {
             state::state_save,
             agents::available_agents,
             agents::agent_sessions,
+            agents::agent_sessions_watch_start,
+            agents::agent_sessions_watch_stop,
             fs::read_dir,
             fs::read_file,
             fs::write_file,
