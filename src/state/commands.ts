@@ -5,8 +5,8 @@ import { lsp } from "../api/lsp";
 import { basename } from "../lib/paths";
 import { applyTheme, applyWindowOpacity } from "../themes/bus";
 import { emit } from "./bus";
-import { fetchResource, invalidate } from "./resources";
-import { awsIdentityR, projectRootsScanR } from "./resources.defs";
+import { fetchResource, invalidate, peekResource } from "./resources";
+import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.defs";
 import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, swallow } from "./toast";
@@ -724,7 +724,6 @@ const AGENT_RESUME_CMD: Partial<Record<AgentType, (id: string) => string>> = {
     opencode: (id) => `opencode --session ${id}`,
 };
 
-const AGENT_SESSION_ATTACH_GRACE_MS = 10_000;
 const FALLBACK_AGENT_TITLE_MAX = 13;
 
 export function agentSupportsSkipPermissions(type: AgentType): boolean {
@@ -787,6 +786,13 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string): vo
             resumeId,
             createdAt: Date.now(),
         };
+        // Fresh agents (no resumeId) record the sessions that already exist so
+        // reconciliation never adopts the session you were just in. The rail
+        // keeps this list warm; on a cold cache we fall back to an mtime check.
+        if (!resumeId) {
+            const known = peekResource(agentSessionsR, type, session.cwd);
+            if (known) agent.baselineSessionIds = known.map((row) => row.id);
+        }
         d.agents[agent.id] = agent;
         d.agentsBySession[session.id] = [...ownedIds, agent.id];
         sess.activeAgentId = agent.id;
@@ -831,14 +837,22 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             .filter((agent) => !agent.resumeId)
             .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
         for (const agent of freshAgents) {
-            const minMtime = Math.floor(((agent.createdAt ?? Date.now()) - AGENT_SESSION_ATTACH_GRACE_MS) / 1000);
-            const idx = candidates.findIndex((row) => row.mtime >= minMtime);
+            // Only adopt a session that didn't exist when this agent launched,
+            // otherwise it grabs the session you were just in and renames its
+            // tab. `baselineSessionIds` is the snapshot taken at creation; when
+            // it's missing (legacy agent / cold cache) fall back to "written at
+            // or after launch", since a genuinely new session file appears
+            // post-launch — never before.
+            const baseline = agent.baselineSessionIds;
+            const launchedAt = Math.floor((agent.createdAt ?? Date.now()) / 1000);
+            const idx = candidates.findIndex((row) => (baseline ? !baseline.includes(row.id) : row.mtime >= launchedAt));
             if (idx < 0) continue;
             const [row] = candidates.splice(idx, 1);
             const oldBookmarkId = agent.id;
             agent.resumeId = row.id;
             agent.title = usableAgentSessionTitle(row, agent.title);
             agent.startup = agentStartup(agent.type, agent.resumeId, agent.skipPermissions ?? false);
+            delete agent.baselineSessionIds;
             claimed.add(row.id);
             refreshAgentBookmarkTitle(d, type, oldBookmarkId, row.id, agent.title);
         }

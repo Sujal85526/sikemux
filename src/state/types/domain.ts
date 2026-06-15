@@ -43,6 +43,13 @@ export interface Agent {
     resumeId?: string;
     createdAt?: number;
     skipPermissions?: boolean;
+    /**
+     * Session ids that already existed when this fresh agent launched. Used to
+     * keep it from adopting a pre-existing session during reconciliation —
+     * it may only attach to a session file that appeared after launch. Cleared
+     * once attached.
+     */
+    baselineSessionIds?: string[];
 }
 
 /** A resolved Rundeck deploy location for a service: a project plus an env subfolder. */
