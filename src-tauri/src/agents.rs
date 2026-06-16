@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, UNIX_EPOCH};
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use rayon::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -362,6 +363,55 @@ fn text_from_content(content: &Value) -> Option<String> {
     })
 }
 
+/// Cached title per transcript: `path -> (mtime, title)`.
+type TitleCache = HashMap<PathBuf, (u64, Option<String>)>;
+
+/// Per-file title cache keyed by mtime. Titles are derived from transcript
+/// content that only ever grows, so an unchanged mtime means an unchanged title.
+/// This turns the palette's cold scan of every session into a one-time cost:
+/// reopening it re-reads only the sessions that have actually changed.
+fn title_cache() -> &'static Mutex<TitleCache> {
+    static CACHE: OnceLock<Mutex<TitleCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Return the cached title for `path` when its mtime matches, otherwise run
+/// `compute`, store the result (including `None`, so title-less files are not
+/// re-scanned), and return it.
+fn cached_title<F>(path: &Path, mtime: u64, compute: F) -> Option<String>
+where
+    F: FnOnce() -> Option<String>,
+{
+    if let Ok(cache) = title_cache().lock() {
+        if let Some((cached_mtime, title)) = cache.get(path) {
+            if *cached_mtime == mtime {
+                return title.clone();
+            }
+        }
+    }
+    let title = compute();
+    if let Ok(mut cache) = title_cache().lock() {
+        cache.insert(path.to_path_buf(), (mtime, title.clone()));
+    }
+    title
+}
+
+/// Read up to `n` bytes from the start of `file` as lossy UTF-8.
+fn read_prefix(file: &mut fs::File, n: u64) -> Option<String> {
+    file.seek(SeekFrom::Start(0)).ok()?;
+    let mut buf = Vec::new();
+    file.by_ref().take(n).read_to_end(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// Read from `start` to the end of `file` as lossy UTF-8.
+fn read_suffix(file: &mut fs::File, start: u64) -> Option<String> {
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
 // ---- claude — ~/.claude/projects/<cwd-dashed>/<uuid>.jsonl --------------
 fn claude_sessions(cwd: &str) -> Vec<AgentSession> {
     let Ok(home) = std::env::var("HOME") else {
@@ -373,54 +423,94 @@ fn claude_sessions(cwd: &str) -> Vec<AgentSession> {
     let Ok(entries) = fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-            continue;
-        }
-        let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let title = claude_title(&path).unwrap_or_else(|| id.chars().take(8).collect());
-        out.push(AgentSession {
-            id: id.to_string(),
-            title,
-            mtime: mtime_of(&path),
-        });
-    }
+    let paths: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("jsonl"))
+        .collect();
+    // Titles come from reading each transcript, so fan the per-file work out
+    // across rayon's pool instead of scanning sessions one at a time.
+    let mut out: Vec<AgentSession> = paths
+        .par_iter()
+        .filter_map(|path| {
+            let id = path.file_stem().and_then(|s| s.to_str())?;
+            let mtime = mtime_of(path);
+            let title =
+                cached_title(path, mtime, || claude_title(path)).unwrap_or_else(|| id.chars().take(8).collect());
+            Some(AgentSession {
+                id: id.to_string(),
+                title,
+                mtime,
+            })
+        })
+        .collect();
     out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
     out
 }
 
+/// Pull a title out of one Claude transcript line, updating the running
+/// `ai_title` (last write wins) and `first_user` (first write wins).
+fn scan_claude_line(line: &str, ai_title: &mut Option<String>, first_user: &mut Option<String>) {
+    if line.contains("\"type\":\"ai-title\"") {
+        if let Ok(v) = serde_json::from_str::<Value>(line) {
+            if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense) {
+                *ai_title = Some(t);
+            }
+        }
+    } else if first_user.is_none() && line.contains("\"type\":\"user\"") {
+        if let Ok(v) = serde_json::from_str::<Value>(line) {
+            if v.get("type").and_then(|t| t.as_str()) == Some("user") {
+                *first_user = v
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(text_from_content)
+                    .and_then(|text| condense(&text));
+            }
+        }
+    }
+}
+
+// Bound the per-file read: the first user prompt sits near the top and Claude
+// emits `ai-title` entries continuously (so the freshest title sits at the end),
+// which lets us skip the middle of multi-MB transcripts.
+const CLAUDE_HEAD_BYTES: u64 = 128 * 1024;
+const CLAUDE_TAIL_BYTES: u64 = 128 * 1024;
+
 fn claude_title(path: &Path) -> Option<String> {
-    let file = fs::File::open(path).ok()?;
     // Claude writes the human-readable title (auto-generated, then overwritten by
     // `/rename`) as `{"type":"ai-title","aiTitle":...}` entries appended as the
     // session grows — last one wins. This is what Claude's own /resume picker
     // shows. Prefer it; fall back to the first user prompt for sessions that have
     // no title yet. Cheap substring guards keep us from JSON-parsing every line.
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+
     let mut ai_title: Option<String> = None;
     let mut first_user: Option<String> = None;
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        if line.contains("\"type\":\"ai-title\"") {
-            if let Ok(v) = serde_json::from_str::<Value>(&line) {
-                if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense) {
-                    ai_title = Some(t);
-                }
-            }
-        } else if first_user.is_none() && line.contains("\"type\":\"user\"") {
-            if let Ok(v) = serde_json::from_str::<Value>(&line) {
-                if v.get("type").and_then(|t| t.as_str()) == Some("user") {
-                    first_user = v
-                        .get("message")
-                        .and_then(|m| m.get("content"))
-                        .and_then(text_from_content)
-                        .and_then(|text| condense(&text));
+
+    // Head: captures the first user prompt and any early ai-title. For small
+    // transcripts this covers the whole file, keeping the result exact.
+    let head = read_prefix(&mut file, CLAUDE_HEAD_BYTES.min(len))?;
+    for line in head.lines() {
+        scan_claude_line(line, &mut ai_title, &mut first_user);
+    }
+
+    // Tail: the most recent ai-title lives at the end of large transcripts. Skip
+    // the first (likely partial) line, then take the last ai-title we can parse.
+    if len > CLAUDE_HEAD_BYTES {
+        if let Some(tail) = read_suffix(&mut file, len.saturating_sub(CLAUDE_TAIL_BYTES)) {
+            for line in tail.lines().skip(1) {
+                if line.contains("\"type\":\"ai-title\"") {
+                    if let Ok(v) = serde_json::from_str::<Value>(line) {
+                        if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense) {
+                            ai_title = Some(t);
+                        }
+                    }
                 }
             }
         }
     }
+
     ai_title.or(first_user)
 }
 
@@ -449,37 +539,31 @@ fn codex_sessions(cwd: &str) -> Vec<AgentSession> {
     let mut files = Vec::new();
     collect_jsonl(&PathBuf::from(&home).join(".codex/sessions"), &mut files, 0);
 
-    let mut out = Vec::new();
-    for path in files {
-        let Ok(file) = fs::File::open(&path) else {
-            continue;
-        };
-        let mut first = String::new();
-        if BufReader::new(file).read_line(&mut first).is_err() {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<Value>(first.trim()) else {
-            continue;
-        };
-        if v.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
-            continue;
-        }
-        let Some(payload) = v.get("payload") else {
-            continue;
-        };
-        if payload.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
-            continue;
-        }
-        let Some(id) = payload.get("id").and_then(|i| i.as_str()) else {
-            continue;
-        };
-        let title = codex_title(&path).unwrap_or_else(|| id.chars().take(8).collect());
-        out.push(AgentSession {
-            id: id.to_string(),
-            title,
-            mtime: mtime_of(&path),
-        });
-    }
+    let mut out: Vec<AgentSession> = files
+        .par_iter()
+        .filter_map(|path| {
+            let file = fs::File::open(path).ok()?;
+            let mut first = String::new();
+            BufReader::new(file).read_line(&mut first).ok()?;
+            let v = serde_json::from_str::<Value>(first.trim()).ok()?;
+            if v.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
+                return None;
+            }
+            let payload = v.get("payload")?;
+            if payload.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
+                return None;
+            }
+            let id = payload.get("id").and_then(|i| i.as_str())?;
+            let mtime = mtime_of(path);
+            let title =
+                cached_title(path, mtime, || codex_title(path)).unwrap_or_else(|| id.chars().take(8).collect());
+            Some(AgentSession {
+                id: id.to_string(),
+                title,
+                mtime,
+            })
+        })
+        .collect();
     out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
     out
 }
@@ -528,41 +612,34 @@ fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
     let mut files = Vec::new();
     collect_jsonl(&root, &mut files, 0);
 
-    let mut out = Vec::new();
-    for path in files {
-        let Ok(file) = fs::File::open(&path) else {
-            continue;
-        };
-        let mut first = String::new();
-        if BufReader::new(file).read_line(&mut first).is_err() {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<Value>(first.trim()) else {
-            continue;
-        };
-        if v.get("type").and_then(|t| t.as_str()) != Some("session") {
-            continue;
-        }
-        if v.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
-            continue;
-        }
-        let id = path.to_string_lossy().to_string();
-        let title = pi_title(&path)
-            .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
-            .unwrap_or_else(|| {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("session")
-                    .chars()
-                    .take(13)
-                    .collect()
-            });
-        out.push(AgentSession {
-            id,
-            title,
-            mtime: mtime_of(&path),
-        });
-    }
+    let mut out: Vec<AgentSession> = files
+        .par_iter()
+        .filter_map(|path| {
+            let file = fs::File::open(path).ok()?;
+            let mut first = String::new();
+            BufReader::new(file).read_line(&mut first).ok()?;
+            let v = serde_json::from_str::<Value>(first.trim()).ok()?;
+            if v.get("type").and_then(|t| t.as_str()) != Some("session") {
+                return None;
+            }
+            if v.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
+                return None;
+            }
+            let id = path.to_string_lossy().to_string();
+            let mtime = mtime_of(path);
+            let title = cached_title(path, mtime, || pi_title(path))
+                .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
+                .unwrap_or_else(|| {
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("session")
+                        .chars()
+                        .take(13)
+                        .collect()
+                });
+            Some(AgentSession { id, title, mtime })
+        })
+        .collect();
     out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
     out
 }
