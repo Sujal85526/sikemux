@@ -112,7 +112,7 @@ export function useKeymap(): void {
                     else if (active?.kind === "ssh") cmd.openPicker("ssh");
                     else if (active?.kind === "aws") cmd.openAwsSession();
                     else if (active?.kind === "rundeck") cmd.openRundeckSession();
-                    else if (active?.kind === "bruno") void cmd.openBrunoFolder();
+                    else if (active?.kind === "bruno") cmd.openPicker("bruno");
                     else handled = false;
                     break;
                 }
@@ -138,7 +138,7 @@ export function useKeymap(): void {
                     cmd.openAwsSession();
                     break;
                 case "KeyB":
-                    void cmd.openBrunoFolder();
+                    cmd.openPicker("bruno");
                     break;
                 case "KeyE":
                     // Alt+E opens the environment picker for the active Bruno collection.
@@ -165,6 +165,12 @@ export function useKeymap(): void {
                 case "Slash":
                     cmd.focusAgents();
                     break;
+                case "KeyY": {
+                    const active = st.sessions[st.activeSessionId];
+                    if (active?.kind === "project" && active.view === "agent") cmd.toggleActiveAgentSkipPermissions();
+                    else handled = false;
+                    break;
+                }
                 default:
                     if (/^Digit[1-9]$/.test(e.code)) {
                         const n = Number(e.code.slice(5));

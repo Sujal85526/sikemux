@@ -135,4 +135,4 @@ export interface Divider {
 
 export type FocusDir = "left" | "right" | "up" | "down";
 
-export type PickerMode = "all" | "projects" | "ssh";
+export type PickerMode = "all" | "projects" | "ssh" | "bruno";

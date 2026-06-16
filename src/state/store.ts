@@ -40,6 +40,8 @@ export interface DomainState {
 
     pinnedProjects: PinnedProject[];
     projectRoots: ProjectRoot[];
+    /** Imported Bruno (API) workspace collection paths, most-recent-first. Survive session close so they stay reopenable. */
+    brunoWorkspaces: string[];
     themeId: string;
     windowOpacity: number;
     windowBlur: number;
@@ -134,6 +136,7 @@ export const useStore = create<StoreState>(() => {
         agentBookmarks: [],
         pinnedProjects: [],
         projectRoots: [],
+        brunoWorkspaces: [],
         themeId: DEFAULT_THEME_ID,
         windowOpacity: 1,
         windowBlur: 0,

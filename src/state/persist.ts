@@ -30,6 +30,7 @@ const PERSISTED_KEYS = [
     "editorViews",
     "pinnedProjects",
     "projectRoots",
+    "brunoWorkspaces",
     "themeId",
     "windowOpacity",
     "windowBlur",
@@ -67,6 +68,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
     return {
         projectRoots: s.projectRoots,
         pinnedProjects: s.pinnedProjects,
+        brunoWorkspaces: s.brunoWorkspaces,
         themeId: s.themeId,
         windowOpacity: s.windowOpacity,
         windowBlur: s.windowBlur,
@@ -78,6 +80,16 @@ function packPrefs(s: StoreState): PersistedPrefs {
         rightRailOpen: s.rightRailOpen,
         zenMode: s.zenMode,
     };
+}
+
+/** Union of the persisted registry with any currently-open Bruno collection paths, deduped, most-recent-first. */
+function mergeBrunoWorkspaces(saved: string[] | undefined, sessions: Session[]): string[] {
+    const open = sessions.filter((s) => s.kind === "bruno").map((s) => s.bruno?.collectionPath);
+    const out: string[] = [];
+    for (const p of [...(saved ?? []), ...open]) {
+        if (typeof p === "string" && p && !out.includes(p)) out.push(p);
+    }
+    return out;
 }
 
 const AGENT_TYPES = new Set<Agent["type"]>(["claude", "codex", "hermes", "pi", "opencode"]);
@@ -207,6 +219,7 @@ export function applyHydrate(raw: string): void {
         editorViews,
         pinnedProjects: normalisePinnedProjects(data.prefs?.pinnedProjects),
         projectRoots: data.prefs?.projectRoots ? normaliseProjectRoots(data.prefs.projectRoots) : cur.projectRoots,
+        brunoWorkspaces: mergeBrunoWorkspaces(data.prefs?.brunoWorkspaces, Object.values(sessions)),
         themeId: data.prefs?.themeId ?? cur.themeId,
         windowOpacity: data.prefs?.windowOpacity ?? cur.windowOpacity,
         windowBlur: data.prefs?.windowBlur ?? cur.windowBlur,

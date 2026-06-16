@@ -305,7 +305,7 @@ export function SideRail() {
                 <Group
                     label="API"
                     list={apis}
-                    add={() => void cmd.openBrunoFolder()}
+                    add={() => cmd.openPicker("bruno")}
                     addTitle={`Open Bruno workspace — ${hint(ALT, "B")}`}
                     addKbd={hint(ALT, "B")}
                     emptyText="open a bruno workspace"

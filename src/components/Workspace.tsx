@@ -202,7 +202,7 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
             const skip = a.skipPermissions ?? false;
             items.push(
                 { sep: true },
-                { label: skip ? "Disable Bypass Mode" : "Enable Bypass Mode", run: () => cmd.toggleAgentSkipPermissions(id) },
+                { label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode", hint: "⌥Y", run: () => cmd.toggleAgentSkipPermissions(id) },
             );
         }
         return items;
@@ -212,36 +212,17 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
         <TabBar
             variant="agent"
             style={{ height: AGENT_TABS_H }}
-            tabs={agents.map((a) => {
-                const skip = a.skipPermissions ?? false;
-                const canSkip = cmd.agentSupportsSkipPermissions(a.type);
-                return {
-                    id: a.id,
-                    label: a.title,
-                    title: a.title,
-                    active: a.id === session.activeAgentId,
-                    icon: (
-                        <span className={`agent-glyph ${a.type}`}>
-                            <AgentIcon type={a.type} size={14} />
-                        </span>
-                    ),
-                    accessory: canSkip ? (
-                        <span
-                            className={`agent-tab-skip${skip ? " on" : ""}`}
-                            title={
-                                skip
-                                    ? `Bypass mode ON (${a.type} runs without approvals). Click to restart safely.`
-                                    : `Bypass approvals — restarts ${a.type} with its skip-permissions flag.`
-                            }
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                cmd.toggleAgentSkipPermissions(a.id);
-                            }}>
-                            {skip ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
-                        </span>
-                    ) : undefined,
-                };
-            })}
+            tabs={agents.map((a) => ({
+                id: a.id,
+                label: a.title,
+                title: a.title,
+                active: a.id === session.activeAgentId,
+                icon: (
+                    <span className={`agent-glyph ${a.type}`}>
+                        <AgentIcon type={a.type} size={14} />
+                    </span>
+                ),
+            }))}
             onSelect={cmd.selectAgent}
             onClose={cmd.closeAgent}
             buildMenu={buildMenu}
@@ -249,6 +230,31 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
             addIcon={<IconPlus size={13} />}
             addTitle="New agent — ⌥N"
         />
+    );
+}
+
+function YoloToggle({ agent }: { agent: Agent }) {
+    const on = agent.skipPermissions ?? false;
+    return (
+        <button
+            type="button"
+            className={`yolo-toggle${on ? " on" : ""}`}
+            aria-pressed={on}
+            title={
+                on
+                    ? `YOLO mode ON — ${agent.type} runs without approvals. Toggle with ⌥Y.`
+                    : `Guarded — ${agent.type} asks before acting. Go YOLO (skip-permissions) with ⌥Y.`
+            }
+            onClick={(e) => {
+                e.stopPropagation();
+                cmd.toggleAgentSkipPermissions(agent.id);
+            }}>
+            <span className="yolo-glyph" aria-hidden="true">
+                {on ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
+            </span>
+            <span className="yolo-label">{on ? "yolo" : "safe"}</span>
+            <kbd className="yolo-hint">⌥Y</kbd>
+        </button>
     );
 }
 
@@ -275,6 +281,7 @@ const AgentLayer = memo(function AgentLayer({
                 }}>
                 <div className="pane pane-terminal">
                     <TerminalPane cwd={session.cwd || undefined} startup={agent.startup} active={visible} visible={visible} />
+                    {cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} />}
                 </div>
             </div>
         </div>

@@ -17,6 +17,7 @@ export interface PersistedSnapshot {
 export interface PersistedPrefs {
     pinnedProjects: PinnedProject[];
     projectRoots: ProjectRoot[];
+    brunoWorkspaces?: string[];
     themeId: string;
     windowOpacity: number;
     windowBlur: number;

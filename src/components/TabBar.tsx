@@ -21,7 +21,7 @@ export interface TabDescriptor {
     /** Defaults to whether `onClose` is provided; set false to pin a tab open. */
     closable?: boolean;
     title?: string;
-    /** Extra control rendered just before the close button (e.g. an agent's bypass toggle). */
+    /** Extra control rendered just before the close button (e.g. a per-tab status badge). */
     accessory?: ReactNode;
 }
 

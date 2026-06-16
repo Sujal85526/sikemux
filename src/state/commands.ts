@@ -252,6 +252,7 @@ export async function openBrunoFolder(): Promise<void> {
 
 /** Open (or focus) a Bruno API workspace for a collection directory. */
 export function openBrunoSession(collectionPath: string): void {
+    registerBrunoWorkspace(collectionPath);
     mutate((d) => {
         const existing = d.sessionOrder
             .map((id) => d.sessions[id])
@@ -1056,6 +1057,15 @@ export function toggleAgentSkipPermissions(id: string): void {
     });
 }
 
+/** ⌥Y — toggle YOLO (skip-permissions) for the active agent, when one is on screen. */
+export function toggleActiveAgentSkipPermissions(): void {
+    const st = getState();
+    const session = st.sessions[st.activeSessionId];
+    if (!session || !inAgentView(session)) return;
+    const id = session.activeAgentId;
+    if (id) toggleAgentSkipPermissions(id);
+}
+
 export function addAgent(type: AgentType, resumeId?: string, title?: string): void {
     withActiveSession((d, session) => {
         if (session.kind !== "project") return;
@@ -1332,6 +1342,16 @@ export function addProjectRoot(path: string, depth = 1): void {
 export function addPinnedProject(path: string): void {
     setState((s) => (s.pinnedProjects.some((p) => p.path === path) ? {} : { pinnedProjects: [...s.pinnedProjects, { path }] }));
     invalidate((kind) => kind === projectRootsScanR.kind);
+}
+
+/** Remember a Bruno workspace so it stays reopenable after its session is closed. Most-recent-first. */
+export function registerBrunoWorkspace(path: string): void {
+    setState((s) => ({ brunoWorkspaces: [path, ...s.brunoWorkspaces.filter((p) => p !== path)] }));
+}
+
+/** Forget an imported Bruno workspace entirely (removes it from the picker). */
+export function removeBrunoWorkspace(path: string): void {
+    setState((s) => ({ brunoWorkspaces: s.brunoWorkspaces.filter((p) => p !== path) }));
 }
 
 export function removePinnedProject(path: string): void {
