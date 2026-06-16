@@ -1,11 +1,11 @@
 {
-  "version": "0.1.19",
-  "notes": "Latest Sikemux fixes and polish.",
-  "pub_date": "2026-06-15T18:56:46Z",
+  "version": "0.1.20",
+  "notes": "Bruno sidebar styling: folder icon and title now match the side rail; tighter spacing between HTTP method and request name.",
+  "pub_date": "2026-06-16T12:46:53Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVRLbmtJaWtPRHNaZzVhd1NpWlpsY2ZmNTlrUUVHcmd5ZGltZEFYRVQ1RTRtZThjRnl1YUZxL1QxOExOakZvTkc2M1dpdnM1ZGl3Q1lKeGdUVUVzWFFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNTQ5ODA1CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmI5RW55d1JXWjBBZDkyN3p5aC96Y0FycHRpUVN2dTJVaytBZGF1bHczRnptemhodHlnQmhTWDJ3SXFqcDQxN0tsMGxoc2MydmY3WHpBMHh5Rkd6WkNBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.19/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVZVWmtFeXhadjRjNlc1aHhYN1g0VjRDc21ZdWJvUmhPZ1lMc3N3YzA0RHJzT1lsSDlwWElSbEI3dDZwVk1BWkZDUFNmcCtWdlJiUkhDOXFmR0JSZ2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNjE0MDEyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjBoNHkvbVRlWjkrc0c1aURxV0NXWTRiNHI0L3VxWDg2YVhUNG4zcHY2WTZ0OEY1bjdqYVNaNmtmSk5sT1NNdVJMUERxcURaclllMSs2UWxVZ2t5WkNRPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.20/Sikemux.app.tar.gz"
     }
   }
 }
