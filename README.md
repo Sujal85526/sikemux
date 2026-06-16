@@ -130,6 +130,14 @@ pnpm build:mac:universal   # universal Apple Silicon + Intel
 
 Handy checks: `make tsc` (typecheck frontend) · `make check` (cargo check) · `make run` (run the built release binary).
 
+## Contributing
+
+PRs and issues are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, project layout, and the checks to run before opening a PR.
+
+## License
+
+[MIT](LICENSE) © nodelike
+
 ---
 
 <div align="center">
