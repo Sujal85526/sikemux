@@ -1,3 +1,4 @@
+import type { Theme } from "../../themes";
 import type { Agent, AgentBookmark, AwsService, PinnedProject, ProjectRoot, RecentEntry, RundeckSettings, Session, Window } from "./domain";
 import type { EditorPaneView } from "./view";
 
@@ -19,6 +20,7 @@ export interface PersistedPrefs {
     projectRoots: ProjectRoot[];
     brunoWorkspaces?: string[];
     themeId: string;
+    customThemes?: Theme[];
     windowOpacity: number;
     windowBlur: number;
     cloudBrowser: string;

@@ -27,7 +27,7 @@ import { dispatchFolder, dispatchPty } from "./state/dropRegistry";
 import { reportError, swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
-import { applyTheme, applyWindowOpacity } from "./themes/bus";
+import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
 import { dirname } from "./lib/paths";
 
 interface BootInfo {
@@ -123,6 +123,7 @@ export default function App() {
                 cmd.setHome(boot.home);
                 applyHydrate(boot.state);
                 const st = getState();
+                registerCustomThemes(st.customThemes);
                 applyTheme(st.themeId);
                 applyWindowOpacity(st.windowOpacity);
                 cmd.setWindowBlur(st.windowBlur);

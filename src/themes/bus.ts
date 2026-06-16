@@ -11,6 +11,18 @@ const themeCompartment = new Compartment();
 const views = new Set<EditorView>();
 const terms = new Set<Terminal>();
 
+const customRegistry = new Map<string, Theme>();
+
+/** Keep the bus aware of user-defined themes so {@link applyTheme} can resolve their ids. */
+export function registerCustomThemes(list: readonly Theme[]): void {
+    customRegistry.clear();
+    for (const t of list) customRegistry.set(t.id, t);
+}
+
+function resolveTheme(id: string): Theme {
+    return customRegistry.get(id) ?? themeById(id);
+}
+
 function applyTransparentState() {
     document.documentElement.classList.toggle("is-transparent", currentOpacity < 1);
 }
@@ -88,8 +100,7 @@ function applyChrome(theme: Theme) {
     applyTransparentState();
 }
 
-export function applyTheme(id: string): void {
-    const next = themeById(id);
+function applyThemeObject(next: Theme): void {
     current = next;
     applyChrome(next);
     const ext = buildEditorExtensions(next);
@@ -97,6 +108,15 @@ export function applyTheme(id: string): void {
         view.dispatch({ effects: themeCompartment.reconfigure(ext) });
     });
     applyTerminalThemes();
+}
+
+export function applyTheme(id: string): void {
+    applyThemeObject(resolveTheme(id));
+}
+
+/** Apply a theme object directly without touching the persisted selection — used for live editing previews. */
+export function previewTheme(theme: Theme): void {
+    applyThemeObject(theme);
 }
 
 export function applyWindowOpacity(opacity: number): void {

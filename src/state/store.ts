@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
-import { DEFAULT_THEME_ID } from "../themes";
+import { DEFAULT_THEME_ID, type Theme } from "../themes";
 
 enableMapSet();
 import { makePane, newId } from "./layout";
@@ -43,6 +43,8 @@ export interface DomainState {
     /** Imported Bruno (API) workspace collection paths, most-recent-first. Survive session close so they stay reopenable. */
     brunoWorkspaces: string[];
     themeId: string;
+    /** User-defined themes, derived from a built-in or another custom theme via the theme editor. */
+    customThemes: Theme[];
     windowOpacity: number;
     windowBlur: number;
     cloudBrowser: string;
@@ -138,6 +140,7 @@ export const useStore = create<StoreState>(() => {
         projectRoots: [],
         brunoWorkspaces: [],
         themeId: DEFAULT_THEME_ID,
+        customThemes: [],
         windowOpacity: 1,
         windowBlur: 0,
         cloudBrowser: "",

@@ -8,7 +8,8 @@ import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname } from "../lib/paths";
-import { applyTheme, applyWindowOpacity } from "../themes/bus";
+import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
+import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
 import { emit } from "./bus";
 import { fetchResource, invalidate, peekResource } from "./resources";
 import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.defs";
@@ -1317,6 +1318,39 @@ export function openGitPane(): void {
 export function setThemeId(id: string): void {
     applyTheme(id);
     setState({ themeId: id });
+}
+
+/** Live-apply a draft theme to the whole UI without persisting it — drives the theme editor preview. */
+export function previewThemeDraft(theme: Theme): void {
+    previewTheme(theme);
+}
+
+/** Discard any active preview and re-apply the persisted theme selection. */
+export function cancelThemePreview(): void {
+    applyTheme(getState().themeId);
+}
+
+/** Insert or overwrite a custom theme (matched by id), register it, and make it the active theme. */
+export function saveCustomTheme(theme: Theme): void {
+    setState((s) => {
+        const idx = s.customThemes.findIndex((t) => t.id === theme.id);
+        const customThemes = idx >= 0 ? s.customThemes.map((t, i) => (i === idx ? theme : t)) : [...s.customThemes, theme];
+        return { customThemes };
+    });
+    registerCustomThemes(getState().customThemes);
+    setThemeId(theme.id);
+}
+
+export function deleteCustomTheme(id: string): void {
+    setState((s) => ({ customThemes: s.customThemes.filter((t) => t.id !== id) }));
+    registerCustomThemes(getState().customThemes);
+    if (getState().themeId === id) setThemeId(DEFAULT_THEME_ID);
+}
+
+export function duplicateCustomTheme(id: string): void {
+    const src = getState().customThemes.find((t) => t.id === id);
+    if (!src) return;
+    saveCustomTheme(cloneTheme(src, { id: `custom-${Date.now().toString(36)}`, name: `${src.name} copy` }));
 }
 
 export function setWindowOpacity(v: number): void {

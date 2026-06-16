@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isTheme } from "../themes";
+import { registerCustomThemes } from "../themes/bus";
 import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import type { Agent, EditorPaneView, PersistedPrefs, PersistedSnapshot, Session, Window, WindowRole } from "./types";
@@ -32,6 +34,7 @@ const PERSISTED_KEYS = [
     "projectRoots",
     "brunoWorkspaces",
     "themeId",
+    "customThemes",
     "windowOpacity",
     "windowBlur",
     "cloudBrowser",
@@ -70,6 +73,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         pinnedProjects: s.pinnedProjects,
         brunoWorkspaces: s.brunoWorkspaces,
         themeId: s.themeId,
+        customThemes: s.customThemes,
         windowOpacity: s.windowOpacity,
         windowBlur: s.windowBlur,
         cloudBrowser: s.cloudBrowser,
@@ -221,6 +225,7 @@ export function applyHydrate(raw: string): void {
         projectRoots: data.prefs?.projectRoots ? normaliseProjectRoots(data.prefs.projectRoots) : cur.projectRoots,
         brunoWorkspaces: mergeBrunoWorkspaces(data.prefs?.brunoWorkspaces, Object.values(sessions)),
         themeId: data.prefs?.themeId ?? cur.themeId,
+        customThemes: Array.isArray(data.prefs?.customThemes) ? data.prefs.customThemes.filter(isTheme) : cur.customThemes,
         windowOpacity: data.prefs?.windowOpacity ?? cur.windowOpacity,
         windowBlur: data.prefs?.windowBlur ?? cur.windowBlur,
         cloudBrowser: data.prefs?.cloudBrowser ?? cur.cloudBrowser,
@@ -247,6 +252,7 @@ export function applyHydrate(raw: string): void {
         })(),
     });
     ensureSearchWindow();
+    registerCustomThemes(getState().customThemes);
     lastSaved = snapshot();
     lastSlices = takeSlices(getState());
 }

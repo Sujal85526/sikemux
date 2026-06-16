@@ -5,8 +5,8 @@ import { prettyPath } from "../lib/paths";
 import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { THEMES } from "../themes";
-import { IconClose, IconFolder, IconPlus } from "./Icons";
+import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
+import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconSave, IconTrash } from "./Icons";
 
 type Page = "general" | "appearance" | "cloud";
 
@@ -279,34 +279,141 @@ interface AppearancePageProps {
     windowBlur: number;
 }
 
+interface ThemeEdit {
+    theme: Theme;
+    /** Pristine source the draft was forked from — used by "reset". */
+    original: Theme;
+    /** true ⇒ save inserts a new custom theme · false ⇒ overwrites an existing one. */
+    isNew: boolean;
+    baseName: string;
+}
+
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
+    const customThemes = useStore((s) => s.customThemes);
+    const [edit, setEdit] = useState<ThemeEdit | null>(null);
+    const editorRef = useRef<HTMLDivElement>(null);
+
+    // Drive the whole-app live preview off the working draft; restore on close/unmount.
+    useEffect(() => {
+        if (edit) cmd.previewThemeDraft(edit.theme);
+    }, [edit]);
+    useEffect(() => () => cmd.cancelThemePreview(), []);
+
+    const openEditor = (next: ThemeEdit) => {
+        setEdit(next);
+        requestAnimationFrame(() => editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    };
+
+    const customizeFrom = (src: Theme) =>
+        openEditor({
+            theme: cloneTheme(src, { id: newCustomThemeId(), name: `${src.name} custom` }),
+            original: cloneTheme(src),
+            isNew: true,
+            baseName: src.name,
+        });
+
+    const editCustom = (src: Theme) =>
+        openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
+
+    const newFromActive = () => customizeFrom(THEMES_BY_ID[themeId] ?? customThemes.find((t) => t.id === themeId) ?? THEMES[0]);
+
+    const closeEditor = () => {
+        setEdit(null);
+        cmd.cancelThemePreview();
+    };
+
+    const saveEditor = () => {
+        if (!edit) return;
+        cmd.saveCustomTheme({ ...edit.theme, name: edit.theme.name.trim() || "custom theme" });
+        setEdit(null);
+    };
+
+    const renderCard = (th: Theme, custom: boolean) => {
+        const active = th.id === themeId;
+        const editing = edit?.theme.id === th.id;
+        return (
+            <div key={th.id} className={`settings-theme${active ? " active" : ""}${editing ? " editing" : ""}`}>
+                <button className="settings-theme-hit" onClick={() => cmd.setThemeId(th.id)} title={`Apply ${th.name}`} type="button">
+                    <div className="settings-theme-name">{th.name}</div>
+                    <div className="settings-swatches">
+                        <span style={{ background: th.terminal.red }} />
+                        <span style={{ background: th.terminal.green }} />
+                        <span style={{ background: th.terminal.yellow }} />
+                        <span style={{ background: th.terminal.blue }} />
+                        <span style={{ background: th.terminal.magenta }} />
+                        <span style={{ background: th.terminal.cyan }} />
+                    </div>
+                </button>
+                <div className="settings-theme-actions">
+                    {custom ? (
+                        <>
+                            <button className="settings-theme-act" onClick={() => editCustom(th)} title="Edit theme" type="button">
+                                <IconPencil size={11} />
+                            </button>
+                            <button
+                                className="settings-theme-act danger"
+                                onClick={() => cmd.deleteCustomTheme(th.id)}
+                                title="Delete theme"
+                                type="button">
+                                <IconTrash size={11} />
+                            </button>
+                        </>
+                    ) : (
+                        <button className="settings-theme-act" onClick={() => customizeFrom(th)} title="Customize a copy" type="button">
+                            <IconPencil size={11} />
+                        </button>
+                    )}
+                </div>
+                {custom && <span className="settings-theme-badge">custom</span>}
+            </div>
+        );
+    };
+
     return (
         <SettingsPage name="appearance" deck="Theme, window opacity and background blur. Changes apply instantly.">
-            <SettingsSection title="Theme" meta={`${THEMES.length} installed`} sub="Applies instantly to chrome, editor and terminal — no reload.">
-                <div className="settings-theme-grid">
-                    {THEMES.map((th) => {
-                        const active = th.id === themeId;
-                        return (
-                            <button
-                                key={th.id}
-                                className={`settings-theme${active ? " active" : ""}`}
-                                onClick={() => cmd.setThemeId(th.id)}
-                                title={th.name}
-                                type="button">
-                                <div className="settings-theme-name">{th.name}</div>
-                                <div className="settings-swatches">
-                                    <span style={{ background: th.terminal.red }} />
-                                    <span style={{ background: th.terminal.green }} />
-                                    <span style={{ background: th.terminal.yellow }} />
-                                    <span style={{ background: th.terminal.blue }} />
-                                    <span style={{ background: th.terminal.magenta }} />
-                                    <span style={{ background: th.terminal.cyan }} />
-                                </div>
-                            </button>
-                        );
-                    })}
+            <SettingsSection
+                title="Theme"
+                meta={`${THEMES.length} built-in · ${customThemes.length} custom`}
+                sub="Applies instantly to chrome, editor and terminal — no reload. Hover a swatch to customize or delete.">
+                <div className="settings-theme-grid">{THEMES.map((th) => renderCard(th, false))}</div>
+
+                {customThemes.length > 0 && (
+                    <>
+                        <div className="settings-theme-divider">your themes</div>
+                        <div className="settings-theme-grid">{customThemes.map((th) => renderCard(th, true))}</div>
+                    </>
+                )}
+
+                <div className="settings-theme-newrow">
+                    <button className="settings-btn" onClick={newFromActive} type="button" title="Fork the active theme into a new editable copy">
+                        <IconPlus size={11} /> new from current
+                    </button>
                 </div>
             </SettingsSection>
+
+            {edit && (
+                <div ref={editorRef}>
+                    <ThemeEditor
+                        edit={edit}
+                        onColor={(group, key, value) =>
+                            setEdit((e) =>
+                                e
+                                    ? { ...e, theme: { ...e.theme, [group]: { ...(e.theme[group] as unknown as Record<string, string>), [key]: value } } }
+                                    : e,
+                            )
+                        }
+                        onName={(name) => setEdit((e) => (e ? { ...e, theme: { ...e.theme, name } } : e))}
+                        onDark={(dark) => setEdit((e) => (e ? { ...e, theme: { ...e.theme, dark } } : e))}
+                        onReset={() =>
+                            setEdit((e) =>
+                                e ? { ...e, theme: { ...cloneTheme(e.original), id: e.theme.id, name: e.theme.name } } : e,
+                            )
+                        }
+                        onSave={saveEditor}
+                        onCancel={closeEditor}
+                    />
+                </div>
+            )}
 
             <SettingsSection title="Window opacity" sub="0.00 transparent · 1.00 opaque.">
                 <div className="settings-knob-row">
@@ -343,6 +450,164 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 </div>
             </SettingsSection>
         </SettingsPage>
+    );
+}
+
+interface ThemeEditorProps {
+    edit: ThemeEdit;
+    onColor: (group: ThemeGroupKey, key: string, value: string) => void;
+    onName: (name: string) => void;
+    onDark: (dark: boolean) => void;
+    onReset: () => void;
+    onSave: () => void;
+    onCancel: () => void;
+}
+
+function ThemeEditor({ edit, onColor, onName, onDark, onReset, onSave, onCancel }: ThemeEditorProps) {
+    const { theme, isNew, baseName } = edit;
+    return (
+        <section className="theme-editor">
+            <header className="theme-editor-head">
+                <div className="theme-editor-title">
+                    <span className="theme-editor-kicker">{isNew ? "new theme" : "editing"}</span>
+                    <input
+                        className="theme-editor-name"
+                        value={theme.name}
+                        spellCheck={false}
+                        placeholder="theme name"
+                        onChange={(e) => onName(e.target.value)}
+                        autoFocus
+                    />
+                    <span className="theme-editor-base">based on {baseName}</span>
+                </div>
+                <div className="theme-editor-tools">
+                    <button
+                        className={`theme-mode-toggle${theme.dark ? " dark" : " light"}`}
+                        onClick={() => onDark(!theme.dark)}
+                        type="button"
+                        title="Editor light/dark hint — affects CodeMirror defaults">
+                        {theme.dark ? "dark" : "light"}
+                    </button>
+                    <button className="settings-btn" onClick={onReset} type="button" title="Revert all colours to the source theme">
+                        reset
+                    </button>
+                    <button className="settings-btn" onClick={onCancel} type="button">
+                        <IconClose size={11} /> cancel
+                    </button>
+                    <button className="settings-btn primary" onClick={onSave} type="button">
+                        {isNew ? <IconSave size={11} /> : <IconCheck size={11} />} {isNew ? "save theme" : "update"}
+                    </button>
+                </div>
+            </header>
+
+            <ThemePreview theme={theme} />
+
+            <div className="theme-editor-groups">
+                {THEME_GROUPS.map((group) => (
+                    <div className="theme-group" key={group.key}>
+                        <div className="theme-group-head">
+                            <h3 className="theme-group-title">{group.label}</h3>
+                            <span className="theme-group-hint">{group.hint}</span>
+                        </div>
+                        <div className="theme-group-grid">
+                            {group.fields.map((field) => (
+                                <ColorField
+                                    key={field.key}
+                                    label={field.label}
+                                    value={(theme[group.key] as unknown as Record<string, string>)[field.key]}
+                                    onChange={(v) => onColor(group.key, field.key, v)}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <p className="theme-editor-foot">
+                Hex or any CSS colour works in the text box — use <em>rgba(…)</em> for translucent washes. The picker only sets hex.
+            </p>
+        </section>
+    );
+}
+
+const HEX6 = /^#([0-9a-fA-F]{6})$/;
+const HEX3 = /^#([0-9a-fA-F]{3})$/;
+const RGB = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i;
+
+/** Best-effort projection of any CSS colour string onto a #rrggbb value for the native colour input. */
+function toHex(value: string): string {
+    const v = value.trim();
+    const m6 = HEX6.exec(v);
+    if (m6) return `#${m6[1].toLowerCase()}`;
+    const m3 = HEX3.exec(v);
+    if (m3) {
+        const [r, g, b] = m3[1].split("");
+        return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+    }
+    const rgb = RGB.exec(v);
+    if (rgb) {
+        const h = (n: string) =>
+            Math.max(0, Math.min(255, Math.round(parseFloat(n))))
+                .toString(16)
+                .padStart(2, "0");
+        return `#${h(rgb[1])}${h(rgb[2])}${h(rgb[3])}`;
+    }
+    return "#000000";
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+    return (
+        <div className="theme-field">
+            <label className="theme-field-swatch" style={{ background: value }} title={`${label}: ${value}`}>
+                <input type="color" value={toHex(value)} onChange={(e) => onChange(e.target.value)} />
+            </label>
+            <div className="theme-field-body">
+                <span className="theme-field-label">{label}</span>
+                <input className="theme-field-hex" value={value} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+            </div>
+        </div>
+    );
+}
+
+function ThemePreview({ theme }: { theme: Theme }) {
+    const h = theme.highlight;
+    const ansi = [
+        theme.terminal.black,
+        theme.terminal.red,
+        theme.terminal.green,
+        theme.terminal.yellow,
+        theme.terminal.blue,
+        theme.terminal.magenta,
+        theme.terminal.cyan,
+        theme.terminal.white,
+        theme.terminal.brightBlack,
+        theme.terminal.brightRed,
+        theme.terminal.brightGreen,
+        theme.terminal.brightYellow,
+        theme.terminal.brightBlue,
+        theme.terminal.brightMagenta,
+        theme.terminal.brightCyan,
+        theme.terminal.brightWhite,
+    ];
+    return (
+        <div className="theme-preview">
+            <pre className="theme-preview-code" style={{ background: theme.editor.bg, color: theme.editor.fg }}>
+                <span style={{ color: h.comment, fontStyle: "italic" }}>{"// fork a base, tweak, save"}</span>
+                {"\n"}
+                <span style={{ color: h.keyword }}>const</span> <span style={{ color: h.variable }}>swatch</span>
+                <span style={{ color: h.operator }}> = </span>
+                <span style={{ color: h.function }}>paint</span>
+                <span style={{ color: h.operator }}>(</span>
+                <span style={{ color: h.string }}>"#a277ff"</span>
+                <span style={{ color: h.operator }}>, </span>
+                <span style={{ color: h.number }}>0.3</span>
+                <span style={{ color: h.operator }}>);</span>
+            </pre>
+            <div className="theme-preview-term" style={{ background: theme.terminal.background }}>
+                {ansi.map((c, i) => (
+                    <span key={i} style={{ background: c }} />
+                ))}
+            </div>
+        </div>
     );
 }
 
