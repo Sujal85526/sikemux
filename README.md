@@ -4,7 +4,7 @@
 
 **A GUI terminal multiplexer for people who live in the terminal — but want their editor, git, cloud, CI/CD and API tooling in the same window.**
 
-One keyboard-driven workspace that multiplexes *projects, SSH hosts, AWS, Rundeck and Bruno* into named, splittable, tab-able sessions — with AI coding agents wired in alongside.
+One keyboard-driven workspace that multiplexes *projects, SSH hosts, AWS, Rundeck and Bruno* into named, splittable, tab-able sessions — with AI coding agents wired in alongside. A native macOS app — **Tauri 2** + a **Rust** core (PTY, git, LSP, filesystem watchers, AWS & Rundeck clients) behind a **React 19** UI with a **CodeMirror 6** editor and an **xterm.js** (WebGL) terminal — that behaves like `tmux` for your *whole* developer surface: the left rail groups everything into sessions you can fuzzy-jump between, the stage hosts an editor, terminals, git, cloud consoles or an API client, and it's themeable down to the ANSI palette.
 
 ![Sikemux editor](public/screenshots/project-editor-view.png)
 
@@ -17,10 +17,6 @@ One keyboard-driven workspace that multiplexes *projects, SSH hosts, AWS, Rundec
 </div>
 
 ---
-
-## What is it?
-
-Sikemux is a native macOS app (Tauri + Rust core, React UI) that behaves like `tmux` for your *whole* developer surface. The left rail groups everything into sessions you can fuzzy-jump between; the stage hosts an editor, terminals, git, cloud consoles or an API client — whatever that session is. Everything is reachable from the keyboard, splits like a tiling WM, and is themeable down to the ANSI palette.
 
 ## Features
 
@@ -135,10 +131,6 @@ pnpm build:mac:universal   # universal Apple Silicon + Intel
 ```
 
 Handy checks: `make tsc` (typecheck frontend) · `make check` (cargo check) · `make run` (run the built release binary).
-
-## Tech stack
-
-**Tauri 2** + **Rust** core (PTY, git, LSP, filesystem watchers, AWS & Rundeck clients) · **React 19** + **Zustand** + **Vite** UI · **CodeMirror 6** editor · **xterm.js** (WebGL) terminal.
 
 ---
 
