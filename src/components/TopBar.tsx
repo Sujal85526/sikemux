@@ -355,7 +355,7 @@ export function TopBar() {
                     </div>
                 )}
                 {activeLoc && <DeployChip loc={activeLoc} />}
-                <span className="tb-sep" />
+                {activeLoc && <span className="tb-sep" />}
                 <AwsChip />
                 <BatteryChip />
                 <span className="tb-clock">

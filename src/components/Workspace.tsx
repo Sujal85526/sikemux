@@ -6,7 +6,7 @@ import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { GitPane } from "./GitPane";
-import { AgentIcon, IconClose, IconCommand, IconShield, IconShieldBolt } from "./Icons";
+import { AgentIcon, IconClose, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
 
 const AGENT_TABS_H = 32;
 const TERM_TABS_H = 32;
@@ -165,6 +165,9 @@ function TerminalTabsBar({ session, tabs }: { session: Session; tabs: WindowT[] 
                     </button>
                 );
             })}
+            <button className="agent-tab-add" title="New terminal — ⌥N" onClick={() => cmd.newWindow()}>
+                <IconPlus size={13} />
+            </button>
         </div>
     );
 }
@@ -209,6 +212,9 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
                     </button>
                 );
             })}
+            <button className="agent-tab-add" title="New agent — ⌥N" onClick={() => cmd.openAgentPalette()}>
+                <IconPlus size={13} />
+            </button>
         </div>
     );
 }

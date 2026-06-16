@@ -235,6 +235,7 @@ export function SideRail() {
         <div className="rail-group">
             <div className="rail-group-head">
                 <span className="rail-group-label">{label}</span>
+                <span className="rail-group-rule" />
                 {add && (
                     <span className="rail-group-actions">
                         {addKbd && <span className="rail-group-kbd">{addKbd}</span>}

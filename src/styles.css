@@ -523,8 +523,13 @@ button {
 .rail-group-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     padding: 4px 6px 6px 10px;
+}
+.rail-group-rule {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--line);
 }
 .rail-group-label {
     font-size: 9.5px;
@@ -3181,6 +3186,21 @@ button {
 }
 .agent-tab-skip + .agent-tab-x {
     margin-left: 0;
+}
+
+.agent-tab-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 0 12px;
+    flex: 0 0 auto;
+    background: transparent;
+    color: var(--ink-faint);
+    transition: color 0.1s;
+}
+.agent-tab-add:hover {
+    color: var(--ink);
 }
 
 .agent-empty-stage {
