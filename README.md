@@ -2,9 +2,7 @@
 
 # Sikemux
 
-**A GUI terminal multiplexer for people who live in the terminal — but want their editor, git, cloud, CI/CD and API tooling in the same window.**
-
-One keyboard-driven workspace that multiplexes *projects, SSH hosts, AWS, Rundeck and Bruno* into named, splittable, tab-able sessions — with AI coding agents wired in alongside. A native macOS app — **Tauri 2** + a **Rust** core (PTY, git, LSP, filesystem watchers, AWS & Rundeck clients) behind a **React 19** UI with a **CodeMirror 6** editor and an **xterm.js** (WebGL) terminal — that behaves like `tmux` for your *whole* developer surface: the left rail groups everything into sessions you can fuzzy-jump between, the stage hosts an editor, terminals, git, cloud consoles or an API client, and it's themeable down to the ANSI palette.
+**A GUI terminal multiplexer for people who live in the terminal — but want their editor, git, cloud, CI/CD and API tooling in the same window. Built with Tauri + Rust + React.**
 
 ![Sikemux editor](public/screenshots/project-editor-view.png)
 
