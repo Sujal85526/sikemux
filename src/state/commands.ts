@@ -728,12 +728,16 @@ function closeActiveTerminalTab(): void {
     });
 }
 
+// Agent view only ever applies to project sessions; other groups may carry a
+// stale `view: "agent"` but must be treated as windowed everywhere.
+const inAgentView = (s: Session): boolean => s.kind === "project" && s.view === "agent";
+
 export function closeActiveFocusTarget(): void {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     if (!session) return;
 
-    if (session.view === "agent") {
+    if (inAgentView(session)) {
         if (session.activeAgentId) closeAgent(session.activeAgentId);
         return;
     }
@@ -960,7 +964,7 @@ export function cycleTabs(delta: number): void {
     const session = st.sessions[st.activeSessionId];
     if (!session) return;
 
-    if (session.view === "agent") {
+    if (inAgentView(session)) {
         cycleAgent(delta);
         return;
     }
@@ -1170,6 +1174,10 @@ export function closeAgent(id: string): void {
 }
 
 export function focusAgents(): void {
+    // Agents only exist in project sessions. Other groups (bruno, aws, rundeck,
+    // ssh, command) have no agents and no way back out of "agent" view, so the
+    // agent shortcuts (⌥/, ⌥C, ⌥4) are a no-op there.
+    if (getState().sessions[getState().activeSessionId]?.kind !== "project") return;
     withActiveSession((d, session) => {
         const ids = d.agentsBySession[session.id] ?? [];
         const sess = d.sessions[session.id];

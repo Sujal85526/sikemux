@@ -17,6 +17,10 @@ const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
 const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
 
+// Agents only exist in project sessions; every other group is always in
+// "windows" view, so stale agent state can never strand a non-project session.
+const sessionView = (s: Session): "windows" | "agent" => (s.kind === "project" ? s.view : "windows");
+
 type PaneRendererProps = {
     pane: PaneNode;
     session: Session;
@@ -81,12 +85,15 @@ export function Workspace() {
     const activeWindow = activeSession ? windowsById[activeSession.activeWindowId] : undefined;
     const activeAgents = activeSession ? (agentsBySession[activeSession.id] ?? []).map((id) => agentsById[id]) : [];
 
-    const inAgentView = !!activeSession && activeSession.view === "agent";
+    const inAgentView = !!activeSession && sessionView(activeSession) === "agent";
     const showAgentTabs = inAgentView && activeAgents.length >= 1;
     const showAgentEmpty = inAgentView && activeAgents.length === 0;
 
     const activeWindowList = activeSession ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id]) : [];
-    const termTabs = activeSession?.view === "windows" && activeWindow?.role === "term" ? activeWindowList.filter((w) => w.role === "term") : [];
+    const termTabs =
+        activeSession && sessionView(activeSession) === "windows" && activeWindow?.role === "term"
+            ? activeWindowList.filter((w) => w.role === "term")
+            : [];
     const showTermTabs = termTabs.length >= 1;
 
     return (
@@ -101,15 +108,16 @@ export function Workspace() {
             )}
             {sessions.flatMap((session) => {
                 const isActive = session.id === activeSessionId;
+                const view = sessionView(session);
                 const winIds = windowsBySession[session.id] ?? [];
                 const aIds = agentsBySession[session.id] ?? [];
-                const sessTabs = session.view === "agent" && aIds.length >= 1;
+                const sessTabs = view === "agent" && aIds.length >= 1;
                 const sessHasTermTabs = winIds.some((id) => windowsById[id]?.role === "term");
                 const windowLayers = winIds.map((wid) => {
                     const win = windowsById[wid];
                     if (!win) return null;
                     const layerTermTab = win.role === "term";
-                    const inset = isActive && session.view === "windows" && wid === session.activeWindowId && layerTermTab && sessHasTermTabs;
+                    const inset = isActive && view === "windows" && wid === session.activeWindowId && layerTermTab && sessHasTermTabs;
                     return (
                         <WindowLayer
                             key={wid}
@@ -117,7 +125,7 @@ export function Workspace() {
                             win={win}
                             areaRef={areaRef}
                             topInset={inset ? TERM_TABS_H : 0}
-                            visible={isActive && session.view === "windows" && wid === session.activeWindowId}
+                            visible={isActive && view === "windows" && wid === session.activeWindowId}
                         />
                     );
                 });
@@ -131,7 +139,7 @@ export function Workspace() {
                             session={session}
                             agent={agent}
                             tabsShown={sessTabs}
-                            visible={isActive && session.view === "agent" && aid === session.activeAgentId}
+                            visible={isActive && view === "agent" && aid === session.activeAgentId}
                         />
                     );
                 });

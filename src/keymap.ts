@@ -106,7 +106,7 @@ export function useKeymap(): void {
                     break;
                 case "KeyN": {
                     const active = st.sessions[st.activeSessionId];
-                    if (active?.view === "agent") cmd.openAgentPalette();
+                    if (active?.kind === "project" && active.view === "agent") cmd.openAgentPalette();
                     else if (active?.kind === "project") cmd.newWindow();
                     else if (active?.kind === "command") cmd.createCommandSession();
                     else if (active?.kind === "ssh") cmd.openPicker("ssh");
