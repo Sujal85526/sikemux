@@ -6,7 +6,9 @@ import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { GitPane } from "./GitPane";
-import { AgentIcon, IconClose, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
+import { type CtxItem } from "./FileTree";
+import { TabBar } from "./TabBar";
+import { AgentIcon, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
 
 const AGENT_TABS_H = 32;
 const TERM_TABS_H = 32;
@@ -140,82 +142,105 @@ export function Workspace() {
 }
 
 function TerminalTabsBar({ session, tabs }: { session: Session; tabs: WindowT[] }) {
+    const buildMenu = (id: string): CtxItem[] => {
+        const w = tabs.find((t) => t.id === id);
+        if (!w) return [];
+        const others = tabs.filter((t) => t.id !== id && !t.fixed);
+        const all = tabs.filter((t) => !t.fixed);
+        return [
+            { label: "Close", hint: "⌥W", disabled: w.fixed, run: () => cmd.closeWindowById(id) },
+            { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((t) => cmd.closeWindowById(t.id)) },
+            { label: "Close All", disabled: all.length === 0, run: () => all.forEach((t) => cmd.closeWindowById(t.id)) },
+        ];
+    };
+
     return (
-        <div className="agent-tabs" style={{ height: TERM_TABS_H }}>
-            {tabs.map((w) => {
-                const active = w.id === session.activeWindowId;
-                return (
-                    <button key={w.id} className={`agent-tab${active ? " active" : ""}`} onClick={() => cmd.selectWindowId(w.id)}>
-                        <span className="agent-glyph">
-                            <IconCommand size={13} />
-                        </span>
-                        <span className="agent-tab-title">{w.name}</span>
-                        {!w.fixed && (
-                            <span
-                                className="agent-tab-x"
-                                title="Close terminal"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    cmd.selectWindowId(w.id);
-                                    cmd.closeActiveWindow();
-                                }}>
-                                <IconClose size={11} />
-                            </span>
-                        )}
-                    </button>
-                );
-            })}
-            <button className="agent-tab-add" title="New terminal — ⌥N" onClick={() => cmd.newWindow()}>
-                <IconPlus size={13} />
-            </button>
-        </div>
+        <TabBar
+            variant="agent"
+            style={{ height: TERM_TABS_H }}
+            tabs={tabs.map((w) => ({
+                id: w.id,
+                label: w.name,
+                title: w.name,
+                active: w.id === session.activeWindowId,
+                closable: !w.fixed,
+                icon: (
+                    <span className="agent-glyph">
+                        <IconCommand size={13} />
+                    </span>
+                ),
+            }))}
+            onSelect={cmd.selectWindowId}
+            onClose={cmd.closeWindowById}
+            buildMenu={buildMenu}
+            onAdd={() => cmd.newWindow()}
+            addIcon={<IconPlus size={13} />}
+            addTitle="New terminal — ⌥N"
+        />
     );
 }
 
 function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }) {
+    const buildMenu = (id: string): CtxItem[] => {
+        const a = agents.find((x) => x.id === id);
+        if (!a) return [];
+        const others = agents.filter((x) => x.id !== id);
+        const items: CtxItem[] = [
+            { label: "Close", hint: "⌥W", run: () => cmd.closeAgent(id) },
+            { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((x) => cmd.closeAgent(x.id)) },
+            { label: "Close All", run: () => agents.forEach((x) => cmd.closeAgent(x.id)) },
+        ];
+        if (cmd.agentSupportsSkipPermissions(a.type)) {
+            const skip = a.skipPermissions ?? false;
+            items.push(
+                { sep: true },
+                { label: skip ? "Disable Bypass Mode" : "Enable Bypass Mode", run: () => cmd.toggleAgentSkipPermissions(id) },
+            );
+        }
+        return items;
+    };
+
     return (
-        <div className="agent-tabs" style={{ height: AGENT_TABS_H }}>
-            {agents.map((a) => {
-                const active = a.id === session.activeAgentId;
+        <TabBar
+            variant="agent"
+            style={{ height: AGENT_TABS_H }}
+            tabs={agents.map((a) => {
                 const skip = a.skipPermissions ?? false;
                 const canSkip = cmd.agentSupportsSkipPermissions(a.type);
-                return (
-                    <button key={a.id} className={`agent-tab${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
+                return {
+                    id: a.id,
+                    label: a.title,
+                    title: a.title,
+                    active: a.id === session.activeAgentId,
+                    icon: (
                         <span className={`agent-glyph ${a.type}`}>
                             <AgentIcon type={a.type} size={14} />
                         </span>
-                        <span className="agent-tab-title">{a.title}</span>
-                        {canSkip && (
-                            <span
-                                className={`agent-tab-skip${skip ? " on" : ""}`}
-                                title={
-                                    skip
-                                        ? `Bypass mode ON (${a.type} runs without approvals). Click to restart safely.`
-                                        : `Bypass approvals — restarts ${a.type} with its skip-permissions flag.`
-                                }
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    cmd.toggleAgentSkipPermissions(a.id);
-                                }}>
-                                {skip ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
-                            </span>
-                        )}
+                    ),
+                    accessory: canSkip ? (
                         <span
-                            className="agent-tab-x"
-                            title="Close agent"
+                            className={`agent-tab-skip${skip ? " on" : ""}`}
+                            title={
+                                skip
+                                    ? `Bypass mode ON (${a.type} runs without approvals). Click to restart safely.`
+                                    : `Bypass approvals — restarts ${a.type} with its skip-permissions flag.`
+                            }
                             onClick={(e) => {
                                 e.stopPropagation();
-                                cmd.closeAgent(a.id);
+                                cmd.toggleAgentSkipPermissions(a.id);
                             }}>
-                            <IconClose size={11} />
+                            {skip ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
                         </span>
-                    </button>
-                );
+                    ) : undefined,
+                };
             })}
-            <button className="agent-tab-add" title="New agent — ⌥N" onClick={() => cmd.openAgentPalette()}>
-                <IconPlus size={13} />
-            </button>
-        </div>
+            onSelect={cmd.selectAgent}
+            onClose={cmd.closeAgent}
+            buildMenu={buildMenu}
+            onAdd={() => cmd.openAgentPalette()}
+            addIcon={<IconPlus size={13} />}
+            addTitle="New agent — ⌥N"
+        />
     );
 }
 

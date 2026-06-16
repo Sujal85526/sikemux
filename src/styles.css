@@ -118,7 +118,7 @@ body {
 html.is-transparent .top-bar,
 html.is-transparent .side-rail,
 html.is-transparent .agent-rail,
-html.is-transparent .agent-tabs,
+html.is-transparent .tabbar.v-agent,
 html.is-transparent .crumb,
 html.is-transparent .acc-header,
 html.is-transparent .env-dd-btn,
@@ -1415,58 +1415,146 @@ button {
     flex-direction: column;
     position: relative;
 }
-.ed-tabs {
+/* ---- unified tab strip (editor files, agents, terminals, Bruno requests) ---- */
+.tabbar {
     display: flex;
-    height: 32px;
-    min-height: 32px;
     flex: 0 0 auto;
-    border-bottom: 1px solid var(--line-soft);
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
 }
-.ed-tabs::-webkit-scrollbar {
+.tabbar::-webkit-scrollbar {
     height: 0;
     display: none;
 }
-.ed-tab {
+.tab {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 0 10px;
     flex: 0 0 auto;
+    background: transparent;
     color: var(--ink-faint);
+    white-space: nowrap;
     border-right: 1px solid var(--line-soft);
     transition:
         color 0.1s,
         background 0.1s;
 }
-.ed-tab:hover {
+.tab:hover {
     color: var(--ink-dim);
 }
-.ed-tab.active {
+.tab.active {
     color: var(--ink);
     background: var(--acc-soft);
     box-shadow: inset 0 -2px 0 var(--acc);
 }
-.ed-tab-name {
+.tab-label {
     font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-.ed-tab-dot {
+.tab-dot {
+    flex: 0 0 auto;
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: var(--warn);
 }
-.ed-tab-x {
+.tab-x {
     display: flex;
-    color: var(--ink-faint);
-    border-radius: 0;
+    align-items: center;
+    flex: 0 0 auto;
     padding: 2px;
+    color: var(--ink-faint);
 }
-.ed-tab-x:hover {
+.tab-x:hover {
     color: var(--danger);
+}
+.tab-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    background: transparent;
+    color: var(--ink-faint);
+    transition: color 0.1s;
+}
+.tab-add:hover {
+    color: var(--ink);
+}
+
+/* variant: editor file tabs */
+.tabbar.v-editor {
+    height: 32px;
+    min-height: 32px;
+    border-bottom: 1px solid var(--line-soft);
+}
+.tabbar.v-editor .tab {
+    padding: 0 10px;
+}
+.tabbar.v-editor .tab-x {
+    border-radius: 0;
+}
+.tabbar.v-editor .tab-x:hover {
     background: var(--rail-2);
+}
+
+/* variant: agent + terminal tabs (overlaid at the top of the window area) */
+.tabbar.v-agent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    background: var(--rail);
+    border-bottom: 1px solid var(--line);
+}
+.tabbar.v-agent .tab {
+    height: 100%;
+    padding: 0 14px;
+    min-width: 120px;
+}
+.tabbar.v-agent .tab-label {
+    flex: 1 1 auto;
+    max-width: 160px;
+    text-align: left;
+}
+.tabbar.v-agent .tab-x {
+    margin-left: auto;
+    padding: 3px;
+    opacity: 0;
+    transition:
+        opacity 0.12s,
+        color 0.12s;
+}
+.tabbar.v-agent .tab:hover .tab-x {
+    opacity: 1;
+}
+.tabbar.v-agent .tab-add {
+    height: 100%;
+    padding: 0 12px;
+}
+
+/* variant: Bruno request tabs */
+.tabbar.v-bruno {
+    gap: 1px;
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
+    border-bottom: 1px solid var(--line);
+}
+.tabbar.v-bruno .tab {
+    padding: 6px 8px 6px 10px;
+    max-width: 200px;
+    color: var(--ink-dim);
+}
+.tabbar.v-bruno .tab:hover {
+    background: var(--rail-2);
+}
+.tabbar.v-bruno .tab-x {
+    padding: 0 1px;
+}
+.tabbar.v-bruno .bruno-method {
+    width: auto;
+    flex: 0 0 auto;
 }
 .ed-host {
     flex: 1;
@@ -3099,66 +3187,7 @@ button {
     opacity: 1;
 }
 
-.agent-tabs {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    background: var(--rail);
-    border-bottom: 1px solid var(--line);
-    z-index: 3;
-    overflow-x: auto;
-}
-.agent-tab {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 100%;
-    padding: 0 14px;
-    min-width: 120px;
-    flex: 0 0 auto;
-    border-right: 1px solid var(--line-soft);
-    background: transparent;
-    color: var(--ink-faint);
-    white-space: nowrap;
-    transition:
-        color 0.1s,
-        background 0.1s;
-}
-.agent-tab:hover {
-    color: var(--ink-dim);
-}
-.agent-tab.active {
-    background: var(--acc-soft);
-    color: var(--ink);
-    box-shadow: inset 0 -2px 0 var(--acc);
-}
-.agent-tab-title {
-    flex: 1 1 auto;
-    max-width: 160px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: left;
-}
-.agent-tab-x {
-    display: flex;
-    align-items: center;
-    padding: 3px;
-    margin-left: auto;
-    color: var(--ink-faint);
-    opacity: 0;
-    transition:
-        opacity 0.12s,
-        color 0.12s;
-}
-.agent-tab:hover .agent-tab-x {
-    opacity: 1;
-}
-.agent-tab-x:hover {
-    color: var(--danger);
-}
-
+/* agent bypass-mode toggle — rendered as a tab accessory in the v-agent strip */
 .agent-tab-skip {
     display: flex;
     align-items: center;
@@ -3171,7 +3200,7 @@ button {
         color 0.12s;
     cursor: pointer;
 }
-.agent-tab:hover .agent-tab-skip {
+.tab:hover .agent-tab-skip {
     opacity: 1;
 }
 .agent-tab-skip:hover {
@@ -3184,23 +3213,8 @@ button {
 .agent-tab-skip.on:hover {
     color: var(--ink);
 }
-.agent-tab-skip + .agent-tab-x {
+.agent-tab-skip + .tab-x {
     margin-left: 0;
-}
-
-.agent-tab-add {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    padding: 0 12px;
-    flex: 0 0 auto;
-    background: transparent;
-    color: var(--ink-faint);
-    transition: color 0.1s;
-}
-.agent-tab-add:hover {
-    color: var(--ink);
 }
 
 .agent-empty-stage {
@@ -7577,62 +7591,6 @@ button {
     flex: 1 1 auto;
 }
 
-/* open-request tabs */
-.bruno-reqtabs {
-    display: flex;
-    align-items: stretch;
-    gap: 1px;
-    flex: 0 0 auto;
-    overflow-x: auto;
-    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
-    border-bottom: 1px solid var(--line);
-}
-.bruno-reqtab {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 8px 6px 10px;
-    max-width: 200px;
-    border: 0;
-    border-right: 1px solid var(--line-soft);
-    background: transparent;
-    color: var(--ink-dim);
-    cursor: pointer;
-    font-size: 12px;
-    white-space: nowrap;
-}
-.bruno-reqtab:hover {
-    background: var(--rail-2);
-}
-.bruno-reqtab.active {
-    background: var(--acc-soft);
-    color: var(--ink);
-    box-shadow: inset 0 -2px 0 var(--acc);
-}
-.bruno-reqtab .bruno-method {
-    width: auto;
-    flex: 0 0 auto;
-}
-.bruno-reqtab-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.bruno-reqtab-x {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    background: none;
-    border: 0;
-    color: var(--ink-faint);
-    cursor: pointer;
-    line-height: 1;
-    padding: 0 1px;
-}
-.bruno-reqtab-x:hover {
-    color: var(--danger);
-}
-
 /* request */
 .bruno-request {
     flex: 1 1 52%;
@@ -8496,7 +8454,7 @@ button {
 /* ── window-opacity passthrough ──────────────────────── */
 html.is-transparent .bruno-head,
 html.is-transparent .bruno-tree,
-html.is-transparent .bruno-reqtabs,
+html.is-transparent .tabbar.v-bruno,
 html.is-transparent .bruno-dd-btn,
 html.is-transparent .bruno-save,
 html.is-transparent .bruno-icon-btn,

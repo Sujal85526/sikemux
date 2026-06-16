@@ -12,7 +12,11 @@ import { mergeScope, type Scope } from "../../bruno/interpolate";
 import { runRequest, type RunResult } from "../../bruno/run";
 import type { BruRequest, BruScope } from "../../bruno/types";
 import { basename } from "../../lib/paths";
-import { IconBruno, IconClose } from "../Icons";
+import { fsapi } from "../../api/fs";
+import { notify, reportError } from "../../state/toast";
+import { type CtxItem } from "../FileTree";
+import { TabBar } from "../TabBar";
+import { IconBruno } from "../Icons";
 import { BrunoEnvSelect } from "./BrunoEnvSelect";
 import { BrunoTree } from "./BrunoTree";
 import { BrunoRequestView } from "./BrunoRequest";
@@ -132,6 +136,31 @@ export function BrunoPane({ sessionId, active }: Props) {
         });
     }, [sessionId, onSend]);
 
+    const relativePath = (p: string) =>
+        collectionPath && p.startsWith(`${collectionPath}/`) ? p.slice(collectionPath.length + 1) : basename(p);
+    const copyText = (text: string, label: string) =>
+        navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
+
+    const buildTabMenu = (tabPath: string): CtxItem[] => {
+        const open = view.openPaths;
+        const idx = open.indexOf(tabPath);
+        const others = open.filter((p) => p !== tabPath);
+        const toLeft = open.slice(0, idx);
+        const toRight = open.slice(idx + 1);
+        return [
+            { label: "Close", hint: "⌥W", run: () => cmd.brunoCloseTab(sessionId, tabPath) },
+            { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
+            { label: "Close to the Left", disabled: toLeft.length === 0, run: () => toLeft.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
+            { label: "Close to the Right", disabled: toRight.length === 0, run: () => toRight.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
+            { label: "Close All", run: () => open.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
+            { sep: true },
+            { label: "Copy Path", run: () => void copyText(tabPath, "path") },
+            { label: "Copy Relative Path", run: () => void copyText(relativePath(tabPath), "relative path") },
+            { sep: true },
+            { label: "Reveal in Finder", run: () => void fsapi.revealInFinder(tabPath).catch(reportError("reveal")) },
+        ];
+    };
+
     if (!bruno) return <div className="bruno-pane bruno-empty">not a Bruno workspace</div>;
 
     return (
@@ -168,30 +197,20 @@ export function BrunoPane({ sessionId, active }: Props) {
                 />
                 <div className="bruno-main">
                     {openTabs.length > 0 && (
-                        <div className="bruno-reqtabs">
-                            {openTabs.map((t) => (
-                                <div
-                                    key={t.path}
-                                    className={`bruno-reqtab${t.path === path ? " active" : ""}`}
-                                    role="button"
-                                    tabIndex={0}
-                                    title={t.path}
-                                    onClick={() => cmd.brunoSelectRequest(sessionId, t.path)}>
-                                    <span className={`bruno-method m-${t.method}`}>{t.method.toUpperCase()}</span>
-                                    <span className="bruno-reqtab-name">{t.name}</span>
-                                    {t.dirty && <span className="bruno-row-dirty" title="unsaved changes" />}
-                                    <button
-                                        className="bruno-reqtab-x"
-                                        title="Close tab"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            cmd.brunoCloseTab(sessionId, t.path);
-                                        }}>
-                                        <IconClose size={10} />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
+                        <TabBar
+                            variant="bruno"
+                            tabs={openTabs.map((t) => ({
+                                id: t.path,
+                                label: t.name,
+                                title: t.path,
+                                active: t.path === path,
+                                dirty: t.dirty,
+                                icon: <span className={`bruno-method m-${t.method}`}>{t.method.toUpperCase()}</span>,
+                            }))}
+                            onSelect={(p) => cmd.brunoSelectRequest(sessionId, p)}
+                            onClose={(p) => cmd.brunoCloseTab(sessionId, p)}
+                            buildMenu={buildTabMenu}
+                        />
                     )}
                     {effectiveRequest && path ? (
                         <>

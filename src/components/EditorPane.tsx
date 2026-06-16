@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
 import { EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
@@ -20,9 +19,10 @@ import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
-import { FileTree, TreeContextMenu, type CtxItem } from "./FileTree";
-import { IconClose, IconFile } from "./Icons";
+import { FileTree, type CtxItem } from "./FileTree";
+import { IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
+import { TabBar } from "./TabBar";
 import { EditorFindBar } from "./EditorFindBar";
 import { basename } from "../lib/paths";
 
@@ -62,8 +62,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
     const dirtyRef = useRef(dirty);
     dirtyRef.current = dirty;
-
-    const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
 
     const savedRef = useRef<Map<string, string>>(new Map());
 
@@ -491,11 +489,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         cmd.setEditorView(paneId, { openTabs: next, activePath: nextActive });
     };
 
-    const closeTab = (path: string, e: ReactMouseEvent) => {
-        e.stopPropagation();
-        closeTabs([path]);
-    };
-
     // ---- tab context menu ---------------------------------------------
     const relativePath = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : basename(p));
 
@@ -537,28 +530,22 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 active={visible}
             />
             <div className="ed-main">
-                <div className="ed-tabs">
-                    {tabs.map((path) => {
+                <TabBar
+                    variant="editor"
+                    tabs={tabs.map((path) => {
                         const name = basename(path);
-                        return (
-                            <button
-                                key={path}
-                                className={`ed-tab${activePath === path ? " active" : ""}`}
-                                onClick={() => switchTo(path)}
-                                onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setTabMenu({ x: e.clientX, y: e.clientY, path });
-                                }}>
-                                <FileIcon name={name} size={18} />
-                                <span className="ed-tab-name">{name}</span>
-                                {dirty.has(path) && <span className="ed-tab-dot" />}
-                                <span className="ed-tab-x" onClick={(e) => closeTab(path, e)}>
-                                    <IconClose size={10} />
-                                </span>
-                            </button>
-                        );
+                        return {
+                            id: path,
+                            label: name,
+                            icon: <FileIcon name={name} size={18} />,
+                            dirty: dirty.has(path),
+                            active: activePath === path,
+                        };
                     })}
-                </div>
+                    onSelect={(path) => switchTo(path)}
+                    onClose={(path) => closeTabs([path])}
+                    buildMenu={buildTabMenu}
+                />
                 <div className="ed-host" ref={hostRef}>
                     <EditorFindBar
                         getView={() => viewRef.current}
@@ -577,7 +564,6 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     </div>
                 )}
             </div>
-            {tabMenu && <TreeContextMenu x={tabMenu.x} y={tabMenu.y} items={buildTabMenu(tabMenu.path)} onClose={() => setTabMenu(null)} />}
         </div>
     );
 }

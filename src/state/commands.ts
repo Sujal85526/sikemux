@@ -738,6 +738,13 @@ export function closeActiveFocusTarget(): void {
         return;
     }
 
+    if (session.kind === "bruno") {
+        // ⌥W closes the active request tab, not the whole Bruno workspace.
+        const path = st.brunoViews[session.id]?.activeRequestPath;
+        if (path) brunoCloseTab(session.id, path);
+        return;
+    }
+
     const win = st.windows[session.activeWindowId];
     if (win && collectPanes(win.root).length > 1) {
         if (!confirmDiscardDirty(dirtyPathsForPane(st, win.activePaneId), "close pane")) return;
@@ -814,30 +821,39 @@ export function newWindow(): void {
     });
 }
 
-export function closeActiveWindow(): void {
+export function closeWindowById(id: string): void {
     const st = getState();
-    const session = st.sessions[st.activeSessionId];
-    if (!confirmDiscardDirty(dirtyPathsForWindow(st, session ? st.windows[session.activeWindowId] : undefined), "close window")) return;
+    const closing = st.windows[id];
+    if (!closing || closing.fixed) return;
+    if (!confirmDiscardDirty(dirtyPathsForWindow(st, closing), "close window")) return;
     withActiveSession((d, session) => {
-        const closing = d.windows[session.activeWindowId];
-        if (!closing || closing.fixed) return;
         const winIds = d.windowsBySession[session.id] ?? [];
-        if (winIds.length <= 1) return;
-        const idx = winIds.indexOf(closing.id);
-        const remaining = winIds.filter((id) => id !== closing.id);
-        let nextId = remaining[Math.min(idx, remaining.length - 1)];
-        if (closing.role === "term") {
-            const isTerm = (id: string) => d.windows[id]?.role === "term";
-            const before = remaining.slice(0, idx).reverse().find(isTerm);
-            const after = remaining.slice(idx).find(isTerm);
-            nextId = before ?? after ?? nextId;
+        if (!winIds.includes(id) || winIds.length <= 1) return;
+        const closing = d.windows[id];
+        if (!closing || closing.fixed) return;
+        const idx = winIds.indexOf(id);
+        const remaining = winIds.filter((wid) => wid !== id);
+        const sess = d.sessions[session.id];
+        if (sess.activeWindowId === id) {
+            let nextId = remaining[Math.min(idx, remaining.length - 1)];
+            if (closing.role === "term") {
+                const isTerm = (wid: string) => d.windows[wid]?.role === "term";
+                const before = remaining.slice(0, idx).reverse().find(isTerm);
+                const after = remaining.slice(idx).find(isTerm);
+                nextId = before ?? after ?? nextId;
+            }
+            sess.activeWindowId = nextId;
         }
         pruneWindowViews(d, closing);
-        delete d.windows[closing.id];
+        delete d.windows[id];
         d.windowsBySession[session.id] = remaining;
-        d.sessions[session.id].activeWindowId = nextId;
         d.zoomedPaneId = null;
     });
+}
+
+export function closeActiveWindow(): void {
+    const session = getState().sessions[getState().activeSessionId];
+    if (session) closeWindowById(session.activeWindowId);
 }
 
 export function selectWindowId(id: string): void {
@@ -946,6 +962,16 @@ export function cycleTabs(delta: number): void {
 
     if (session.view === "agent") {
         cycleAgent(delta);
+        return;
+    }
+
+    if (session.kind === "bruno") {
+        const open = st.brunoViews[session.id]?.openPaths ?? [];
+        if (open.length < 2) return;
+        const active = st.brunoViews[session.id]?.activeRequestPath;
+        const idx = active ? open.indexOf(active) : -1;
+        const base = idx < 0 ? 0 : idx;
+        brunoSelectRequest(session.id, open[(base + delta + open.length) % open.length]);
         return;
     }
 
