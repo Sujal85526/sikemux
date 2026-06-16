@@ -7946,7 +7946,7 @@ button {
 }
 .bruno-folder-ic {
     display: inline-flex;
-    color: var(--ink-faint);
+    color: var(--live);
 }
 .bruno-row-name {
     flex: 1 1 auto;
@@ -7954,9 +7954,12 @@ button {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.bruno-folder-row .bruno-row-name {
+    color: var(--ink);
+}
 .bruno-method {
     flex: 0 0 auto;
-    width: 38px;
+    width: 30px;
     font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.03em;
