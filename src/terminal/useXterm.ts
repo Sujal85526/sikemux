@@ -1,7 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { currentTheme, registerTerminal } from "../themes/bus";
 
@@ -76,9 +75,11 @@ export function useXterm(opts: {
             const fit = new FitAddon();
             term.loadAddon(fit);
             term.open(host);
-            try {
-                term.loadAddon(new WebglAddon());
-            } catch {}
+            // Keep xterm on its default DOM renderer. The WebGL renderer is fast,
+            // but in WKWebView it can leave stale atlas cells during high-churn
+            // prompt redraws (notably zsh-autosuggestions/right-prompt repaint),
+            // which looks like duplicated words while typing. Correctness beats
+            // GPU acceleration for terminal input rendering.
             fit.fit();
 
             await invoke("pty_resize", {

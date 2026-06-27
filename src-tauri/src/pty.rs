@@ -518,13 +518,14 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
     if history_rows > 0 {
         let (rows, cols) = screen.size();
         let mut scrolled = screen.clone();
-        let mut current = screen.clone();
-        current.set_scrollback(0);
 
         // Seed xterm's scrollback cheaply from vt100's formatted semantic
-        // rows, then let `state_formatted` below repaint the live viewport
-        // with cursor and input modes. Reset between rows because each
-        // formatted row is generated from default attrs.
+        // history rows only. `state_formatted` below clears/repaints the live
+        // viewport with cursor and input modes; replaying the current viewport
+        // here would push a duplicate prompt/input line into scrollback on every
+        // reattach, which looks like terminal text repeating after tab switches.
+        // Reset between rows because each formatted row is generated from
+        // default attrs.
         let page_rows = usize::from(rows).max(1);
         let mut start = 0usize;
         while start < history_rows {
@@ -535,14 +536,6 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
                 snapshot.extend_from_slice(b"\x1b[0m\r\n");
             }
             start += take;
-        }
-        for row_idx in 0..rows {
-            if let Some(row) = current.rows(0, cols).nth(row_idx.into()) {
-                snapshot.extend_from_slice(row.as_bytes());
-            }
-            if row_idx + 1 < rows {
-                snapshot.extend_from_slice(b"\r\n");
-            }
         }
     }
     snapshot.extend(screen.state_formatted());
