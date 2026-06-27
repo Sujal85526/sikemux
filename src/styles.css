@@ -3480,6 +3480,25 @@ button {
     height: 4px !important;
 }
 
+.cm-blame {
+    display: inline-block;
+    margin-left: 26px;
+    color: var(--ink-faint);
+    font-style: italic;
+    white-space: pre;
+    cursor: default;
+    pointer-events: none;
+    user-select: none;
+    vertical-align: baseline;
+    /* truncate runaway summaries so a long subject never widens the scroll */
+    max-width: 60ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cm-blame-uncommitted {
+    opacity: 0.7;
+}
+
 .cm-lsp-link {
     text-decoration: underline;
     text-decoration-color: var(--acc);

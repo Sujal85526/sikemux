@@ -811,6 +811,214 @@ pub async fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, 
     Ok(paths)
 }
 
+// ---- blame ----------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+pub struct BlameCommit {
+    /// Full commit oid; all-zeros for not-yet-committed lines.
+    sha: String,
+    /// Short id for display (`1d3fa0b2`); empty when uncommitted.
+    short: String,
+    author: String,
+    author_email: String,
+    /// Pre-formatted relative time (`3 days ago`); empty when uncommitted.
+    time: String,
+    /// Raw author timestamp (unix seconds) — kept so the UI can re-format.
+    timestamp: i64,
+    summary: String,
+    /// True for lines that only exist in the working buffer (zero sha).
+    uncommitted: bool,
+}
+
+/// Compact per-file blame: the unique commits touched, plus a parallel array
+/// mapping each 0-based line to its commit's index in `commits`. The split
+/// keeps the IPC payload small (commit metadata isn't repeated per line) and
+/// lets the editor do O(1) cursor-line lookups with no further backend calls.
+#[derive(Serialize, Default)]
+pub struct GitBlame {
+    commits: Vec<BlameCommit>,
+    lines: Vec<u32>,
+}
+
+fn is_zero_sha(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b == b'0')
+}
+
+/// Parse `git blame --porcelain`. Commit metadata is emitted only the first
+/// time each commit appears, so we accumulate it keyed by sha and remember
+/// first-seen order for stable indices.
+fn parse_blame_porcelain(out: &str) -> GitBlame {
+    use std::collections::HashMap;
+
+    struct Meta {
+        author: String,
+        author_email: String,
+        timestamp: i64,
+        summary: String,
+    }
+
+    let mut meta: HashMap<String, Meta> = HashMap::new();
+    let mut index_of: HashMap<String, u32> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    let mut line_sha: Vec<(usize, String)> = Vec::new();
+
+    let mut cur = String::new();
+    let mut cur_line = 0usize;
+    let mut max_line = 0usize;
+
+    for line in out.lines() {
+        // Content line — closes the entry for the line we last saw a header for.
+        if let Some(_content) = line.strip_prefix('\t') {
+            if !cur.is_empty() && cur_line > 0 {
+                line_sha.push((cur_line, cur.clone()));
+                if cur_line > max_line {
+                    max_line = cur_line;
+                }
+            }
+            continue;
+        }
+
+        // Header: "<40-hex-sha> <orig-line> <final-line> [<group-count>]".
+        let b = line.as_bytes();
+        let is_header =
+            b.len() > 40 && b[40] == b' ' && b[..40].iter().all(|c| c.is_ascii_hexdigit());
+        if is_header {
+            let mut parts = line.split(' ');
+            let sha = parts.next().unwrap_or("").to_string();
+            let _orig = parts.next();
+            cur_line = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            cur = sha.clone();
+            if !index_of.contains_key(&sha) {
+                index_of.insert(sha.clone(), order.len() as u32);
+                order.push(sha.clone());
+                meta.insert(
+                    sha,
+                    Meta {
+                        author: String::new(),
+                        author_email: String::new(),
+                        timestamp: 0,
+                        summary: String::new(),
+                    },
+                );
+            }
+            continue;
+        }
+
+        // Metadata line for the current commit.
+        if let Some(rest) = line.strip_prefix("author ") {
+            if let Some(m) = meta.get_mut(&cur) {
+                m.author = rest.to_string();
+            }
+        } else if let Some(rest) = line.strip_prefix("author-mail ") {
+            if let Some(m) = meta.get_mut(&cur) {
+                m.author_email = rest.trim_matches(|c| c == '<' || c == '>').to_string();
+            }
+        } else if let Some(rest) = line.strip_prefix("author-time ") {
+            if let Some(m) = meta.get_mut(&cur) {
+                m.timestamp = rest.trim().parse().unwrap_or(0);
+            }
+        } else if let Some(rest) = line.strip_prefix("summary ") {
+            if let Some(m) = meta.get_mut(&cur) {
+                m.summary = rest.to_string();
+            }
+        }
+    }
+
+    let commits: Vec<BlameCommit> = order
+        .iter()
+        .map(|sha| {
+            let m = &meta[sha];
+            let uncommitted = is_zero_sha(sha);
+            BlameCommit {
+                sha: sha.clone(),
+                short: if uncommitted {
+                    String::new()
+                } else {
+                    sha[..8.min(sha.len())].to_string()
+                },
+                author: if uncommitted {
+                    "You".to_string()
+                } else {
+                    m.author.clone()
+                },
+                author_email: m.author_email.clone(),
+                time: if uncommitted {
+                    String::new()
+                } else {
+                    relative_time(m.timestamp)
+                },
+                timestamp: m.timestamp,
+                summary: if uncommitted {
+                    "Uncommitted changes".to_string()
+                } else {
+                    m.summary.clone()
+                },
+                uncommitted,
+            }
+        })
+        .collect();
+
+    let mut lines = vec![0u32; max_line];
+    for (ln, sha) in line_sha {
+        if ln >= 1 && ln <= max_line {
+            if let Some(&idx) = index_of.get(&sha) {
+                lines[ln - 1] = idx;
+            }
+        }
+    }
+
+    GitBlame { commits, lines }
+}
+
+/// Blame a single file. When `contents` is provided we blame that buffer via
+/// `--contents -` so unsaved editor edits line up correctly (those lines come
+/// back as the zero-sha "uncommitted" commit). Untracked / no-HEAD / binary
+/// files have nothing to blame and yield an empty result rather than an error
+/// so the editor just shows no inline blame.
+#[tauri::command]
+pub async fn git_blame(
+    repo: String,
+    path: String,
+    contents: Option<String>,
+) -> Result<GitBlame, String> {
+    let _permit = git_walk_permit().await?;
+    run_blocking(move || -> Result<GitBlame, String> {
+        let out = match contents {
+            Some(text) => {
+                let mut child = Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .args(["blame", "--porcelain", "--contents", "-", "--", &path])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .map_err(|e| e.to_string())?;
+                child
+                    .stdin
+                    .take()
+                    .ok_or("no stdin")?
+                    .write_all(text.as_bytes())
+                    .map_err(|e| e.to_string())?;
+                let o = child.wait_with_output().map_err(|e| e.to_string())?;
+                if !o.status.success() {
+                    return Ok(GitBlame::default());
+                }
+                String::from_utf8_lossy(&o.stdout).into_owned()
+            }
+            None => {
+                let (ok, so, _se) = run_git(&repo, &["blame", "--porcelain", "--", &path])?;
+                if !ok {
+                    return Ok(GitBlame::default());
+                }
+                so
+            }
+        };
+        Ok(parse_blame_porcelain(&out))
+    })
+    .await
+}
+
 // ---- commit / push / pull -------------------------------------------------
 
 fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
@@ -1745,6 +1953,49 @@ mod tests {
             "staged\n"
         );
         assert_eq!(git(td.path(), &["show", ":f.txt"]), "staged\n");
+    }
+
+    #[tokio::test]
+    async fn blame_maps_committed_and_uncommitted_lines() {
+        let td = init_repo();
+        fs::write(td.path().join("f.txt"), "one\ntwo\nthree\n").expect("write");
+        git(td.path(), &["add", "f.txt"]);
+        git(td.path(), &["commit", "-m", "seed"]);
+
+        // Disk blame: every line attributed to the single seed commit.
+        let on_disk = git_blame(repo_arg(td.path()), "f.txt".into(), None)
+            .await
+            .expect("blame disk");
+        assert_eq!(on_disk.lines.len(), 3);
+        assert!(on_disk.lines.iter().all(|&i| i == on_disk.lines[0]));
+        let c = &on_disk.commits[on_disk.lines[0] as usize];
+        assert_eq!(c.author, "sikemux");
+        assert!(!c.uncommitted);
+        assert_eq!(c.summary, "seed");
+        assert_eq!(c.short.len(), 8);
+
+        // Buffer blame: an appended line shows as not-yet-committed.
+        let buffer = "one\ntwo\nthree\nfour\n".to_string();
+        let blame = git_blame(repo_arg(td.path()), "f.txt".into(), Some(buffer))
+            .await
+            .expect("blame buffer");
+        assert_eq!(blame.lines.len(), 4);
+        let last = &blame.commits[blame.lines[3] as usize];
+        assert!(last.uncommitted, "appended line should be uncommitted");
+        assert_eq!(last.summary, "Uncommitted changes");
+        assert!(!blame.commits[blame.lines[0] as usize].uncommitted);
+    }
+
+    #[tokio::test]
+    async fn blame_untracked_file_is_empty() {
+        let td = init_repo();
+        commit_base(td.path());
+        fs::write(td.path().join("new.txt"), "hi\n").expect("write");
+        let blame = git_blame(repo_arg(td.path()), "new.txt".into(), None)
+            .await
+            .expect("blame untracked");
+        assert!(blame.commits.is_empty());
+        assert!(blame.lines.is_empty());
     }
 
     #[tokio::test]

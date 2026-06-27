@@ -62,6 +62,23 @@ export interface GitRemoteBranch {
     subject: string | null;
 }
 
+export interface BlameCommit {
+    sha: string;
+    short: string;
+    author: string;
+    author_email: string;
+    time: string;
+    timestamp: number;
+    summary: string;
+    uncommitted: boolean;
+}
+
+/** Compact per-file blame: unique `commits` + a per-line index into them. */
+export interface GitBlame {
+    commits: BlameCommit[];
+    lines: number[];
+}
+
 const fileAtCache = new Map<string, string>();
 const FILE_AT_LIMIT = 200;
 const SHA_RE = /^[0-9a-f]{7,}([~^][0-9]*)*$/i;
@@ -109,6 +126,7 @@ export const git = {
         return content;
     },
     commitFiles: (repo: string, rev: string) => invoke<string[]>("git_commit_files", { repo, rev }),
+    blame: (repo: string, path: string, contents?: string | null) => invoke<GitBlame>("git_blame", { repo, path, contents: contents ?? null }),
     commit: (repo: string, message: string) => invoke<string>("git_commit", { repo, message }),
     push: (repo: string) => invoke<string>("git_push", { repo }),
     pull: (repo: string) => invoke<string>("git_pull", { repo }),

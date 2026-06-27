@@ -6,6 +6,7 @@ import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
 import { auraExtensions, isLargeDoc, languageFor } from "../editor/codemirror";
 import { gitDiffGutter } from "../editor/gitGutter";
+import { gitInlineBlame } from "../editor/gitBlame";
 import { lspNav, setLspContext } from "../editor/lspNav";
 import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
 import { lspPeek } from "../editor/lspPeek";
@@ -19,6 +20,7 @@ import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
+import { useGitBlame } from "../hooks/useGitBlame";
 import { FileTree, type CtxItem } from "./FileTree";
 import { IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
@@ -165,7 +167,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     search({ top: true }),
                     auraExtensions,
                     ...languageFor(path),
-                    ...(heavy ? [] : [gitDiffGutter(), lspHoverLink()]),
+                    ...(heavy ? [] : [gitDiffGutter(), gitInlineBlame(), lspHoverLink()]),
                     lspNav(),
                     lspPeek(),
                     keymap.of([indentWithTab]),
@@ -446,6 +448,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     }, [activePath, cwd]);
 
     useGitBaseline(() => viewRef.current, cwd, activePath);
+    useGitBlame(() => viewRef.current, cwd, activePath);
 
     // Close an arbitrary set of tabs in one shot (used by the close button and the
     // tab context menu). Confirms once if any of them have unsaved changes, then
