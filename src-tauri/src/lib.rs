@@ -99,6 +99,7 @@ pub fn run() {
             system::recent_dirs,
             system::boot_init,
             system::battery_status,
+            system::runtime_diagnostics,
             state::state_load,
             state::state_save,
             agents::available_agents,

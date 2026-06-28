@@ -26,6 +26,12 @@ pub struct WatchManager {
     handles: DashMap<u32, JoinHandle<()>>,
 }
 
+impl WatchManager {
+    pub fn count(&self) -> usize {
+        self.handles.len()
+    }
+}
+
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Serialize, Clone)]

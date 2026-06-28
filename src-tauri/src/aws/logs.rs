@@ -23,6 +23,12 @@ pub struct LogsTailManager {
     pub(crate) tails: DashMap<u32, Child>,
 }
 
+impl LogsTailManager {
+    pub fn count(&self) -> usize {
+        self.tails.len()
+    }
+}
+
 static NEXT_TAIL_ID: AtomicU32 = AtomicU32::new(1);
 
 #[tauri::command]
@@ -86,15 +92,22 @@ pub async fn aws_logs_tail_start(
     let prune_app = app.clone();
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
+        let mut channel_closed = false;
         while let Ok(Some(line)) = reader.next_line().await {
             if line_ch.send(line).is_err() {
+                channel_closed = true;
                 break;
             }
         }
         let _ = line_ch.send(String::new());
         use tauri::Manager;
         if let Some(mgr) = prune_app.try_state::<LogsTailManager>() {
-            mgr.tails.remove(&id);
+            if let Some((_, mut child)) = mgr.tails.remove(&id) {
+                if channel_closed {
+                    let _ = child.start_kill();
+                }
+                let _ = child.wait().await;
+            }
         }
     });
     // stderr drain — surface failures (e.g. "log group does not exist") as
@@ -115,13 +128,13 @@ pub async fn aws_logs_tail_start(
 }
 
 #[tauri::command]
-pub fn aws_logs_tail_stop(manager: tauri::State<'_, LogsTailManager>, id: u32) -> AppResult<()> {
+pub async fn aws_logs_tail_stop(manager: tauri::State<'_, LogsTailManager>, id: u32) -> AppResult<()> {
     if let Some((_, mut child)) = manager.tails.remove(&id) {
-        // start_kill is sync (just sends the signal); the actual reaping
-        // happens when kill_on_drop fires on the Child's Drop, or when
-        // tokio's signal handler reaps the zombie. Either way we don't
-        // block the command thread.
+        // start_kill is sync (just sends the signal), but we still await
+        // wait() so repeated log-tail mount/unmount cycles do not leave
+        // zombie aws-cli children behind.
         let _ = child.start_kill();
+        let _ = child.wait().await;
     }
     Ok(())
 }

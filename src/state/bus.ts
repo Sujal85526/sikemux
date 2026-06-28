@@ -22,9 +22,16 @@ export function subscribe<T extends Event["type"]>(type: T, fn: (e: Extract<Even
     set.add(fn as AnyHandler);
     return () => {
         set!.delete(fn as AnyHandler);
+        if (set!.size === 0) handlers.delete(type);
     };
 }
 
 export function emit<T extends Event["type"]>(e: Extract<Event, { type: T }>): void {
     handlers.get(e.type)?.forEach((fn) => fn(e));
+}
+
+export function busStats(): { eventTypes: number; handlers: number } {
+    let count = 0;
+    for (const set of handlers.values()) count += set.size;
+    return { eventTypes: handlers.size, handlers: count };
 }

@@ -110,6 +110,10 @@ fn server_for(project: &str, language: &str) -> Option<ServerHandle> {
         .cloned()
 }
 
+pub fn server_count() -> usize {
+    registry().lock().map(|r| r.len()).unwrap_or(0)
+}
+
 // (bin, args) tuple for a language. Order matters only for display.
 //
 // Built-in table covers the common cases; users override or extend per-

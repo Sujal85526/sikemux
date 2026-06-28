@@ -104,6 +104,10 @@ fn watch_registry() -> &'static Mutex<HashMap<u32, Arc<AgentWatchHandle>>> {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub fn watch_count() -> usize {
+    watch_registry().lock().map(|r| r.len()).unwrap_or(0)
+}
+
 static NEXT_WATCH_ID: AtomicU32 = AtomicU32::new(1);
 
 /// Agent CLIs that are installed for the current user. The app's PATH is fixed

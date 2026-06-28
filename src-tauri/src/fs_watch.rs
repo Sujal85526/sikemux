@@ -26,6 +26,10 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<WatchHandle>>> {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub fn watch_count() -> usize {
+    registry().lock().map(|r| r.len()).unwrap_or(0)
+}
+
 #[derive(Serialize, Clone)]
 struct ChangePayload {
     repo: String,

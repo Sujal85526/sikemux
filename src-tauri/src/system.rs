@@ -4,6 +4,11 @@ use std::process::Command;
 use serde::Serialize;
 
 use crate::state::state_path;
+use crate::{
+    aws::LogsTailManager,
+    pty::PtyManager,
+    rundeck::{RundeckLogsManager, RundeckWatchManager},
+};
 
 /// macOS GUI apps launched from Finder/Dock inherit launchd's minimal PATH
 /// (`/usr/bin:/bin:/usr/sbin:/sbin`), missing `~/.local/bin`,
@@ -157,6 +162,73 @@ pub struct BootInfo {
     home: String,
     state: String,
     recent: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct RuntimeDiagnostics {
+    pid: u32,
+    fd_count: Option<usize>,
+    fd_limit_soft: Option<u64>,
+    fd_limit_hard: Option<u64>,
+    ptys: usize,
+    pty_subscribers: usize,
+    lsp_servers: usize,
+    repo_watchers: usize,
+    agent_session_watchers: usize,
+    aws_log_tails: usize,
+    rundeck_watchers: usize,
+    rundeck_log_tails: usize,
+}
+
+#[cfg(unix)]
+fn current_fd_count() -> Option<usize> {
+    fs::read_dir("/dev/fd").ok().map(|rd| rd.count())
+}
+
+#[cfg(not(unix))]
+fn current_fd_count() -> Option<usize> {
+    None
+}
+
+#[cfg(unix)]
+fn current_fd_limit() -> (Option<u64>, Option<u64>) {
+    unsafe {
+        let mut lim = std::mem::zeroed::<libc::rlimit>();
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
+            return (None, None);
+        }
+        (Some(lim.rlim_cur as u64), Some(lim.rlim_max as u64))
+    }
+}
+
+#[cfg(not(unix))]
+fn current_fd_limit() -> (Option<u64>, Option<u64>) {
+    (None, None)
+}
+
+#[tauri::command]
+pub fn runtime_diagnostics(
+    ptys: tauri::State<'_, PtyManager>,
+    aws_logs: tauri::State<'_, LogsTailManager>,
+    rundeck_watch: tauri::State<'_, RundeckWatchManager>,
+    rundeck_logs: tauri::State<'_, RundeckLogsManager>,
+) -> RuntimeDiagnostics {
+    let (pty_count, pty_subscribers) = ptys.counts();
+    let (fd_limit_soft, fd_limit_hard) = current_fd_limit();
+    RuntimeDiagnostics {
+        pid: std::process::id(),
+        fd_count: current_fd_count(),
+        fd_limit_soft,
+        fd_limit_hard,
+        ptys: pty_count,
+        pty_subscribers,
+        lsp_servers: crate::lsp::server_count(),
+        repo_watchers: crate::fs_watch::watch_count(),
+        agent_session_watchers: crate::agents::watch_count(),
+        aws_log_tails: aws_logs.count(),
+        rundeck_watchers: rundeck_watch.count(),
+        rundeck_log_tails: rundeck_logs.count(),
+    }
 }
 
 // ---- Battery -------------------------------------------------------------

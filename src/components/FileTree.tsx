@@ -234,11 +234,25 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         }
     };
 
-    const folderUnregRef = useRef<Map<HTMLElement, { dir: string; unreg: () => void }>>(new Map());
+    const folderDropRef = useRef<Map<string, { el: HTMLElement; unreg: () => void }>>(new Map());
+    const folderDropVersionRef = useRef<Map<string, number>>(new Map());
     const attachFolderDrop = (el: HTMLButtonElement | null, dir: string) => {
-        if (!el) return;
-        const existing = folderUnregRef.current.get(el);
-        if (existing?.dir === dir) return;
+        const version = (folderDropVersionRef.current.get(dir) ?? 0) + 1;
+        folderDropVersionRef.current.set(dir, version);
+        const existing = folderDropRef.current.get(dir);
+        if (!el) {
+            // Ref callbacks are inline, so React calls the old ref with null
+            // before calling the new ref with the same element on re-render.
+            // Defer cleanup; a same-tick reattach bumps the version and wins.
+            queueMicrotask(() => {
+                if (folderDropVersionRef.current.get(dir) !== version) return;
+                folderDropRef.current.get(dir)?.unreg();
+                folderDropRef.current.delete(dir);
+                folderDropVersionRef.current.delete(dir);
+            });
+            return;
+        }
+        if (existing?.el === el) return;
         existing?.unreg();
         const unreg = registerFolderDrop(el, async (paths) => {
             try {
@@ -249,13 +263,14 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 reportError("drop")(err);
             }
         });
-        folderUnregRef.current.set(el, { dir, unreg });
+        folderDropRef.current.set(dir, { el, unreg });
     };
     useEffect(() => {
-        const map = folderUnregRef.current;
+        const map = folderDropRef.current;
         return () => {
             for (const entry of map.values()) entry.unreg();
             map.clear();
+            folderDropVersionRef.current.clear();
         };
     }, []);
 

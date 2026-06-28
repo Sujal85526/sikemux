@@ -67,6 +67,7 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
                 setTailId(newId);
             })
             .catch((e) => {
+                if (cancelled) return;
                 setErr(String(e));
                 reportError("logs tail")(e);
             });

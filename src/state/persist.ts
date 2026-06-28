@@ -259,9 +259,10 @@ export function applyHydrate(raw: string): void {
 
 export function subscribePersist(): () => void {
     let timer: number | undefined;
-    return useStore.subscribe(() => {
+    const unsubscribe = useStore.subscribe(() => {
         if (timer) window.clearTimeout(timer);
         timer = window.setTimeout(() => {
+            timer = undefined;
             const slices = takeSlices(getState());
             if (lastSlices && slicesEqual(lastSlices, slices)) return;
             lastSlices = slices;
@@ -272,4 +273,9 @@ export function subscribePersist(): () => void {
             void invoke("state_save", { data: snap });
         }, 600);
     });
+    return () => {
+        if (timer) window.clearTimeout(timer);
+        timer = undefined;
+        unsubscribe();
+    };
 }

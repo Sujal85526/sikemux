@@ -4,8 +4,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { currentTheme, registerTerminal } from "../themes/bus";
 
-const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
-const FONT_WEIGHT = 500;
+const FONT = '"JetBrainsMono Nerd Font", monospace';
+const FONT_WEIGHT = 400;
 const FONT_WEIGHT_BOLD = 700;
 const SCROLLBACK = 10_000;
 
@@ -190,10 +190,10 @@ export function useXterm(opts: {
 
         const fontsThenBoot = () =>
             void Promise.all([
-                document.fonts.load(`${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
-                document.fonts.load(`italic ${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
-                document.fonts.load(`${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
-                document.fonts.load(`italic ${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
+                document.fonts.load(`${FONT_WEIGHT} 13px "JetBrainsMono Nerd Font"`),
+                document.fonts.load(`italic ${FONT_WEIGHT} 13px "JetBrainsMono Nerd Font"`),
+                document.fonts.load(`${FONT_WEIGHT_BOLD} 13px "JetBrainsMono Nerd Font"`),
+                document.fonts.load(`italic ${FONT_WEIGHT_BOLD} 13px "JetBrainsMono Nerd Font"`),
             ]).then(boot, boot);
         bootRef.current = fontsThenBoot;
 

@@ -94,6 +94,16 @@ pub struct PtyManager {
 }
 
 impl PtyManager {
+    pub fn counts(&self) -> (usize, usize) {
+        let mut subscribers = 0usize;
+        for entry in self.ptys.iter() {
+            if let Ok(subs) = entry.value().subscribers.lock() {
+                subscribers += subs.len();
+            }
+        }
+        (self.ptys.len(), subscribers)
+    }
+
     /// Tear down every live PTY: SIGTERM each child's process group, allow a
     /// brief grace window for well-behaved programs (editors, agents, builds)
     /// to catch the signal and clean up, then SIGKILL whatever's left and reap
@@ -142,14 +152,8 @@ impl PtyManager {
                 if let Ok(Some(_)) = child.try_wait() {
                     continue; // already exited cleanly on SIGTERM
                 }
-                let pid = child.process_id();
-                let _ = child.kill(); // SIGKILL the group leader
-                if let Some(pid) = pid {
-                    unsafe {
-                        libc::kill(-(pid as i32), libc::SIGKILL);
-                    }
-                }
-                let _ = child.wait(); // reap the zombie
+                let pid = child_process_id(&mut child);
+                kill_and_reap_child(&mut child, pid); // SIGKILL + reap the zombie
             }
         }
     }
@@ -174,6 +178,45 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 // SIGTERM and flush; short enough that app quit / update-relaunch doesn't
 // feel laggy. One shared window, not per-PTY — see `drain`.
 const DRAIN_GRACE: Duration = Duration::from_millis(250);
+
+fn child_process_id(child: &mut Box<dyn Child + Send + Sync>) -> Option<i32> {
+    child.process_id().map(|pid| pid as i32)
+}
+
+fn signal_process_group(pid: i32, signal: libc::c_int) {
+    if pid <= 0 {
+        return;
+    }
+    // Negative pid targets the process group. portable_pty/forkpty makes the
+    // shell the session/group leader on Unix; if that assumption ever fails,
+    // Child::kill below still targets the direct child as a fallback.
+    unsafe {
+        libc::kill(-pid, signal);
+    }
+}
+
+fn kill_and_reap_child(child: &mut Box<dyn Child + Send + Sync>, pid: Option<i32>) {
+    let _ = child.kill();
+    if let Some(pid) = pid {
+        signal_process_group(pid, libc::SIGKILL);
+    }
+    let _ = child.wait();
+}
+
+fn terminate_and_reap_child(child: &mut Box<dyn Child + Send + Sync>) {
+    if let Ok(Some(_)) = child.try_wait() {
+        return;
+    }
+    let pid = child_process_id(child);
+    if let Some(pid) = pid {
+        signal_process_group(pid, libc::SIGTERM);
+    }
+    std::thread::sleep(DRAIN_GRACE);
+    if let Ok(Some(_)) = child.try_wait() {
+        return;
+    }
+    kill_and_reap_child(child, pid);
+}
 
 // Process-start anchor so all `last_activity_ms` values are monotonic
 // deltas in ms — immune to wall-clock jumps (NTP, sleep/resume).
@@ -450,10 +493,18 @@ pub async fn pty_spawn(
         }
         // If the shell exits by itself, there is no frontend unmount to call
         // `pty_kill`. Remove the manager entry here so the retained master
-        // fd is released instead of accumulating toward the process fd limit.
+        // fd is released instead of accumulating toward the process fd limit,
+        // then reap the child. Without the wait(), long sessions accumulate
+        // defunct /bin/zsh children until app quit.
         if let Some(mgr) = app_reader.try_state::<PtyManager>() {
             mgr.ptys.remove(&id);
         }
+        let reap_pty = pty_reader.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Ok(mut child) = reap_pty.child.lock() {
+                let _ = child.wait();
+            }
+        });
     });
 
     manager.ptys.insert(id, pty);
@@ -801,11 +852,8 @@ mod tests {
 }
 
 #[tauri::command]
-pub fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
+pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
     if let Some((_, pty)) = manager.ptys.remove(&id) {
-        if let Ok(mut child) = pty.child.lock() {
-            let _ = child.kill();
-        }
         // Notify any remaining subscribers so their xterms render
         // "[process exited]" before the unmount tears them down.
         if let Ok(subs) = pty.subscribers.lock() {
@@ -813,6 +861,16 @@ pub fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
                 let _ = ch.send(Vec::new());
             }
         }
+        // Killing without wait() leaves zombies. Do the potentially-slow
+        // SIGTERM grace + SIGKILL backstop on the blocking pool, not on the
+        // async runtime worker.
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Ok(mut child) = pty.child.lock() {
+                terminate_and_reap_child(&mut child);
+            }
+        })
+        .await
+        .map_err(|e| AppError::Pty(format!("pty_kill join: {e}")))?;
     }
     Ok(())
 }

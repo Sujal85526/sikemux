@@ -25,6 +25,25 @@ const inflight = new Map<string, Promise<unknown>>();
 const subs = new Map<string, Set<() => void>>();
 const defsByKind = new Map<string, AnyDef>();
 
+const MAX_CACHE_ENTRIES = 256;
+const UNUSED_ENTRY_TTL_MS = 15 * 60_000;
+
+function pruneCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of cache) {
+        if (subs.has(key) || inflight.has(key) || entry.status === "loading") continue;
+        if (now - entry.fetchedAt > UNUSED_ENTRY_TTL_MS) cache.delete(key);
+    }
+    if (cache.size <= MAX_CACHE_ENTRIES) return;
+    const evictable = [...cache]
+        .filter(([key, entry]) => !subs.has(key) && !inflight.has(key) && entry.status !== "loading")
+        .sort((a, b) => a[1].fetchedAt - b[1].fetchedAt);
+    for (const [key] of evictable) {
+        if (cache.size <= MAX_CACHE_ENTRIES) break;
+        cache.delete(key);
+    }
+}
+
 function defaultKey(args: unknown[]): string {
     let key = "";
     for (let i = 0; i < args.length; i++) {
@@ -70,6 +89,7 @@ function notify(key: string): void {
 function setEntry(key: string, entry: Entry<unknown>): void {
     cache.set(key, entry);
     notify(key);
+    if (entry.status !== "loading") pruneCache();
 }
 
 function trigger<Args extends unknown[], T>(def: ResourceDef<Args, T>, key: string, args: Args): Promise<T> {
@@ -193,4 +213,16 @@ export function invalidate(predicate: (kind: string, args: unknown[]) => boolean
             notify(key);
         }
     }
+    pruneCache();
+}
+
+export function resourceStats(): { cacheEntries: number; inflight: number; subscribedKeys: number; subscriptions: number } {
+    let subscriptions = 0;
+    for (const set of subs.values()) subscriptions += set.size;
+    return {
+        cacheEntries: cache.size,
+        inflight: inflight.size,
+        subscribedKeys: subs.size,
+        subscriptions,
+    };
 }

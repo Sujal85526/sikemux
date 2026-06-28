@@ -21,6 +21,12 @@ pub struct LogsManager {
     handles: DashMap<u32, JoinHandle<()>>,
 }
 
+impl LogsManager {
+    pub fn count(&self) -> usize {
+        self.handles.len()
+    }
+}
+
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Serialize, Clone, Deserialize)]
