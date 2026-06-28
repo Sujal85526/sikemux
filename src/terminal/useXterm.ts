@@ -91,12 +91,36 @@ export function useXterm(opts: {
             let snapshotApplied = false;
             const pending: number[][] = [];
             const channel = new Channel<number[]>();
+            let outputFrame: number | null = null;
+            const outputPending: number[][] = [];
+            const flushOutput = () => {
+                outputFrame = null;
+                if (disposed || outputPending.length === 0) return;
+                if (outputPending.length === 1) {
+                    term.write(new Uint8Array(outputPending.pop()!));
+                    return;
+                }
+                let total = 0;
+                for (const chunk of outputPending) total += chunk.length;
+                const merged = new Uint8Array(total);
+                let offset = 0;
+                for (const chunk of outputPending.splice(0)) {
+                    merged.set(chunk, offset);
+                    offset += chunk.length;
+                }
+                term.write(merged);
+            };
+            const scheduleOutput = () => {
+                if (outputFrame == null) outputFrame = window.requestAnimationFrame(flushOutput);
+            };
             const writeChunk = (chunk: number[]) => {
                 if (chunk.length === 0) {
+                    flushOutput();
                     term.write("\r\n\x1b[38;5;245m[process exited]\x1b[0m\r\n");
-                } else {
-                    term.write(new Uint8Array(chunk));
+                    return;
                 }
+                outputPending.push(chunk);
+                scheduleOutput();
             };
             channel.onmessage = (chunk) => {
                 if (!snapshotApplied) {
@@ -182,6 +206,9 @@ export function useXterm(opts: {
                 unregisterTheme();
                 ro.disconnect();
                 dataSub.dispose();
+                if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
+                outputPending.length = 0;
+                pending.length = 0;
                 void invoke("pty_unsubscribe", { id: pid, subId });
                 term.dispose();
                 termRef.current = null;
