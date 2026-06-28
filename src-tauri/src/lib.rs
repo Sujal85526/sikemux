@@ -9,6 +9,7 @@ mod fs;
 mod fs_watch;
 mod git;
 mod lsp;
+mod mobile_sync;
 mod pty;
 mod rundeck;
 mod search;
@@ -18,7 +19,10 @@ mod state;
 mod system;
 mod transparency;
 
+use std::sync::Arc;
+
 use aws::LogsTailManager;
+use mobile_sync::MobileSyncManager;
 use pty::PtyManager;
 use rundeck::{RundeckLogsManager, RundeckWatchManager};
 
@@ -44,6 +48,7 @@ pub fn run() {
         .manage(LogsTailManager::default())
         .manage(RundeckWatchManager::default())
         .manage(RundeckLogsManager::default())
+        .manage(Arc::new(MobileSyncManager::default()))
         .on_window_event(|window, event| {
             // Drain every live PTY on close so we don't leave orphan
             // shells, agents, or `tail`s alive after the user quits.
@@ -84,6 +89,11 @@ pub fn run() {
                     }
                 }
             }
+            {
+                use tauri::Manager;
+                let manager = app.state::<Arc<MobileSyncManager>>().inner().clone();
+                mobile_sync::autostart_from_env(manager, app.handle().clone());
+            }
             Ok(())
         })
         .manage(PtyManager::default())
@@ -106,6 +116,12 @@ pub fn run() {
             agents::agent_sessions,
             agents::agent_sessions_watch_start,
             agents::agent_sessions_watch_stop,
+            mobile_sync::mobile_sync_start,
+            mobile_sync::mobile_sync_stop,
+            mobile_sync::mobile_sync_status,
+            mobile_sync::mobile_sync_pairing_info,
+            mobile_sync::mobile_sync_pairing_qr,
+            mobile_sync::mobile_sync_update_state,
             fs::read_dir,
             fs::read_file,
             fs::read_file_base64,

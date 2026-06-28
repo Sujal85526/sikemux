@@ -1,11 +1,11 @@
 {
-  "version": "0.1.23",
-  "notes": "Frontend maintainability and test coverage: adds Vitest coverage, CI workflow, GitPane/style modularization, and Bruno/layout/helper tests.",
-  "pub_date": "2026-06-28T12:40:43Z",
+  "version": "0.1.24",
+  "notes": "Mobile companion: Android Compose app, QR pairing, OS live notification, and desktop terminal sync server.",
+  "pub_date": "2026-06-28T16:17:07Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVhiY0lNTGVpejVyWWxoRURYWVJRdXFJbzlMVDhPUDQxVGdWS3BONUZJTmFjQnczTm5mZHM3YXZMRGpaUHEzZ1l6aFR2dEo5dVFxYWp4bGRJTStyN3dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjUwNDQyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6Cm5MR0ZLUlR2dXFIdDZuOWZjTU5CQUxsSkMwMWZDM21WZG14TlZud0h0RlJERVBBVU4yM0NwdGdQNENRcHZoalRMallBRkJ4S0x2UHp3STBzaXpTZ0NRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.23/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVFGdGZNTTBzcUhVSk5UYUVHL0NYMHptYlZiVnM2Mng5ZFRjb240clQ3VUM3a0pLcGZ1UCt5QXI4N296Tm5DNmhEWjZjc2dpcDZIdm1EZ05pYW5KNkFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjYzNDI2CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CnRWaURLTEc4K2tVKzBtUHZKbENEMUNRbGtqTkZoUnY3Y2pQZzYwTVJ4TDNaM3ZoYzgxaEVOMmxxeXkraUovTjhub3JCWU1CdTNVVmVveGNSazNEa0FRPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.24/Sikemux.app.tar.gz"
     }
   }
 }

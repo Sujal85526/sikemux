@@ -113,44 +113,26 @@ done
 # tar.gz hosted at `url`.
 MANIFEST="$ROOT/latest.json"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-SIG_CONTENT="$(cat "$SIG")"
 TAR_URL="https://github.com/nodelike/sikemux/releases/download/v$VERSION/${APP_NAME}.app.tar.gz"
 
 # We only ship darwin-aarch64 for now (Apple Silicon). When colleagues
 # need Intel, switch build-mac.sh to --target universal-apple-darwin and
 # duplicate the entry under darwin-x86_64 with the same url + sig.
-node -e "
-  const fs = require('fs');
-  const manifest = {
-    version: '$VERSION',
-    notes: ${NOTES:+'\"'$(printf %s "$NOTES" | sed 's/"/\\\\"/g')'\"' }${NOTES:-'\"\"'},
-    pub_date: '$PUB_DATE',
-    platforms: {
-      'darwin-aarch64': {
-        signature: \`$(printf '%s' "$SIG_CONTENT" | sed 's/`/\\\\`/g')\`,
-        url: '$TAR_URL',
-      },
-    },
-  };
-  fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2) + '\n');
-" 2>/dev/null || {
-  # Fallback if the node heredoc tripped on shell quoting — use python instead.
-  python3 - <<PYEOF
-import json, datetime, pathlib
+VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" python3 - <<'PYEOF'
+import json, os, pathlib
 m = {
-  "version": "$VERSION",
-  "notes": """$NOTES""",
-  "pub_date": "$PUB_DATE",
+  "version": os.environ["VERSION"],
+  "notes": os.environ.get("NOTES", ""),
+  "pub_date": os.environ["PUB_DATE"],
   "platforms": {
     "darwin-aarch64": {
-      "signature": pathlib.Path("$SIG").read_text(),
-      "url": "$TAR_URL",
+      "signature": pathlib.Path(os.environ["SIG"]).read_text(),
+      "url": os.environ["TAR_URL"],
     },
   },
 }
 pathlib.Path("latest.json").write_text(json.dumps(m, indent=2) + "\n")
 PYEOF
-}
 
 echo ""
 echo "✓ Built v$VERSION"

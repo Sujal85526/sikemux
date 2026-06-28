@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { mobileSyncApi, type MobileSyncPairingInfo, type MobileSyncPairingQr, type MobileSyncStatus } from "../api/mobileSync";
 import { settingsApi } from "../api/settings";
 import { prettyPath } from "../lib/paths";
 import { notify, reportError } from "../state/toast";
@@ -8,12 +9,13 @@ import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
 import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconSave, IconTrash } from "./Icons";
 
-type Page = "general" | "appearance" | "cloud";
+type Page = "general" | "appearance" | "cloud" | "mobile";
 
 const PAGES: { id: Page; name: string }[] = [
     { id: "general", name: "general" },
     { id: "appearance", name: "appearance" },
     { id: "cloud", name: "cloud" },
+    { id: "mobile", name: "mobile" },
 ];
 
 export function SettingsPanel() {
@@ -92,6 +94,8 @@ export function SettingsPanel() {
                         {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
 
                         {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
+
+                        {page === "mobile" && <MobilePage />}
                     </div>
                 </div>
             </div>
@@ -268,6 +272,137 @@ function GeneralPage({ pinnedProjects, projectRoots, home, pretty }: GeneralPage
                         ))}
                     </div>
                 )}
+            </SettingsSection>
+        </SettingsPage>
+    );
+}
+
+function MobilePage() {
+    const [bind, setBind] = useState("0.0.0.0:48731");
+    const [publicUrl, setPublicUrl] = useState("");
+    const [status, setStatus] = useState<MobileSyncStatus | null>(null);
+    const [pairing, setPairing] = useState<MobileSyncPairingInfo | null>(null);
+    const [qr, setQr] = useState<MobileSyncPairingQr | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    const refresh = async (nextPublicUrl = publicUrl) => {
+        const [nextStatus, nextPairing, nextQr] = await Promise.all([
+            mobileSyncApi.status(),
+            mobileSyncApi.pairingInfo(),
+            mobileSyncApi.pairingQr(nextPublicUrl.trim() || undefined),
+        ]);
+        setStatus(nextStatus);
+        setPairing(nextPairing);
+        setQr(nextQr);
+    };
+
+    useEffect(() => {
+        refresh().catch(reportError("mobile sync"));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const start = async () => {
+        setBusy(true);
+        try {
+            const next = await mobileSyncApi.start(bind.trim() || undefined);
+            setStatus(next);
+            notify("success", `mobile sync listening on ${next.addr ?? next.bind ?? bind}`);
+            await refresh(publicUrl);
+        } catch (err) {
+            reportError("mobile sync start")(err);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const stop = async () => {
+        setBusy(true);
+        try {
+            const next = await mobileSyncApi.stop();
+            setStatus(next);
+            notify("info", "mobile sync stopped");
+        } catch (err) {
+            reportError("mobile sync stop")(err);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const regenQr = async () => {
+        setBusy(true);
+        try {
+            await refresh(publicUrl);
+        } catch (err) {
+            reportError("mobile QR")(err);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const copyPayload = async () => {
+        if (!qr) return;
+        await navigator.clipboard.writeText(qr.payload);
+        notify("success", "pairing payload copied");
+    };
+
+    return (
+        <SettingsPage name="mobile" deck="Pair Android with this Sikemux desktop over Tailscale and control live terminals/agents.">
+            <SettingsSection
+                title="Mobile sync server"
+                meta={status?.running ? `running · ${status.addr ?? status.bind ?? ""}` : "stopped"}
+                sub="Bind to 0.0.0.0 for Tailscale/LAN access. Keep pairing token private — it allows terminal writes.">
+                <div className="settings-row-input compact">
+                    <input
+                        className="settings-input"
+                        placeholder="0.0.0.0:48731"
+                        value={bind}
+                        onChange={(e) => setBind(e.target.value)}
+                        spellCheck={false}
+                    />
+                    <button className="settings-btn primary" onClick={() => void start()} disabled={busy || status?.running} type="button">
+                        start
+                    </button>
+                    <button className="settings-btn" onClick={() => void stop()} disabled={busy || !status?.running} type="button">
+                        stop
+                    </button>
+                </div>
+                <div className="settings-empty">
+                    desktop URL: <code>{status?.baseUrl ?? "not running"}</code>
+                </div>
+            </SettingsSection>
+
+            <SettingsSection
+                title="QR pairing"
+                meta={pairing?.running ? "ready to scan" : "start server first"}
+                sub="Set the phone-reachable URL before scanning. For Tailscale use your Mac tailnet IP, e.g. http://100.x.y.z:48731.">
+                <div className="settings-row-input compact">
+                    <input
+                        className="settings-input"
+                        placeholder="http://100.x.y.z:48731"
+                        value={publicUrl}
+                        onChange={(e) => setPublicUrl(e.target.value)}
+                        spellCheck={false}
+                    />
+                    <button className="settings-btn" onClick={() => void regenQr()} disabled={busy} type="button">
+                        refresh QR
+                    </button>
+                    <button className="settings-btn" onClick={() => void copyPayload()} disabled={!qr} type="button">
+                        copy payload
+                    </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+                    <div
+                        style={{ width: 286, height: 286, display: "grid", placeItems: "center", background: "rgba(0,0,0,.28)", borderRadius: 24 }}
+                        dangerouslySetInnerHTML={{ __html: qr?.svg ?? "" }}
+                    />
+                    <div className="settings-empty" style={{ flex: "1 1 260px" }}>
+                        Open Sikemux Mobile → tap <b>Scan QR</b>. The code contains the server URL and pairing token, so do not share screenshots of it.
+                        <br />
+                        <br />
+                        token: <code>{pairing?.token ? `${pairing.token.slice(0, 8)}…${pairing.token.slice(-6)}` : "not generated"}</code>
+                    </div>
+                </div>
             </SettingsSection>
         </SettingsPage>
     );
