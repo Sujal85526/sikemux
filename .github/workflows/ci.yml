@@ -54,6 +54,9 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Prepare Tauri resource placeholder
+        run: mkdir -p src-tauri/icons/build && touch src-tauri/icons/build/Assets.car
+
       - name: Cargo check
         run: cargo check
         working-directory: src-tauri
