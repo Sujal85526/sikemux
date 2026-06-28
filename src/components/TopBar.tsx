@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installPendingUpdate } from "../api/updater";
 import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
@@ -24,10 +25,33 @@ import {
     IconZoom,
     WindowIcon,
 } from "./Icons";
-import { useMemo } from "react";
 import { branchKind } from "./rundeck/branchStyle";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
+
+const TOP_BAR_NO_DRAG_SELECTOR = [
+    "button",
+    "a[href]",
+    "input",
+    "select",
+    "textarea",
+    "[contenteditable='true']",
+    "[role='button']",
+    "[data-no-window-drag]",
+].join(",");
+
+function isTopBarNoDragTarget(target: EventTarget | null, root: HTMLElement): boolean {
+    if (!(target instanceof Element)) return false;
+    const interactive = target.closest(TOP_BAR_NO_DRAG_SELECTOR);
+    return !!interactive && root.contains(interactive);
+}
+
+function startWindowDragFromTopBar(e: ReactMouseEvent<HTMLElement>) {
+    if (e.button !== 0 || e.defaultPrevented) return;
+    if (isTopBarNoDragTarget(e.target, e.currentTarget)) return;
+    e.preventDefault();
+    void getCurrentWindow().startDragging().catch(swallow("startDragging"));
+}
 
 function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
     const h24 = d.getHours();
@@ -290,10 +314,10 @@ export function TopBar() {
     if (!session || !win) return null;
 
     return (
-        <header className="top-bar" data-tauri-drag-region>
-            <div className="tb-left" data-tauri-drag-region />
+        <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
+            <div className="tb-left" />
 
-            <div className="tb-center" data-tauri-drag-region>
+            <div className="tb-center">
                 <div className="crumb">
                     <span className="crumb-kind">{isProject ? <IconFolder size={12} /> : <IconCommand size={12} />}</span>
                     <span className="crumb-session">{session.name}</span>
@@ -324,7 +348,7 @@ export function TopBar() {
                 )}
                 {isProject && session.cwd && !(session.view === "windows" && win.role === "git") && <GitChip repo={session.cwd} />}
                 {activeLoc && (
-                    <div className="env-dd">
+                    <div className="env-dd" data-no-window-drag>
                         <button
                             className="env-dd-btn"
                             onClick={() => locations.length > 1 && setEnvOpen((v) => !v)}

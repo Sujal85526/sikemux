@@ -3,7 +3,9 @@
 // response pairs.
 
 use std::collections::HashMap;
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
@@ -114,6 +116,68 @@ pub fn server_count() -> usize {
     registry().lock().map(|r| r.len()).unwrap_or(0)
 }
 
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .map(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn executable_in_path(bin: &str) -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|dir| dir.join(bin))
+        .find(|candidate| is_executable(candidate))
+}
+
+fn go_env(name: &str) -> Option<String> {
+    let output = Command::new("go").args(["env", name]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+fn go_path_list(name: &str) -> Vec<PathBuf> {
+    go_env(name)
+        .map(|value| std::env::split_paths(&std::ffi::OsString::from(value)).collect())
+        .unwrap_or_default()
+}
+
+fn go_lsp_path() -> Option<PathBuf> {
+    executable_in_path("gopls")
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .and_then(|home| path_if_executable(home.join("go").join("bin").join("gopls")))
+        })
+        .or_else(|| {
+            go_path_list("GOBIN")
+                .into_iter()
+                .find_map(|p| path_if_executable(p.join("gopls")))
+        })
+        .or_else(|| {
+            go_path_list("GOPATH")
+                .into_iter()
+                .find_map(|p| path_if_executable(p.join("bin").join("gopls")))
+        })
+}
+
+fn path_if_executable(path: PathBuf) -> Option<PathBuf> {
+    is_executable(&path).then_some(path)
+}
+
+fn path_string(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 // (bin, args) tuple for a language. Order matters only for display.
 //
 // Built-in table covers the common cases; users override or extend per-
@@ -141,8 +205,15 @@ fn server_command(language: &str) -> Option<(String, Vec<String>)> {
     }
     for (lang, bin, args) in BUILTIN_LSP {
         if *lang == language {
+            let resolved_bin = if language == "go" && *bin == "gopls" {
+                go_lsp_path()
+                    .map(path_string)
+                    .unwrap_or_else(|| (*bin).to_string())
+            } else {
+                (*bin).to_string()
+            };
             return Some((
-                (*bin).to_string(),
+                resolved_bin,
                 args.iter().map(|s| (*s).to_string()).collect(),
             ));
         }
@@ -301,7 +372,16 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| AppError::Lsp(format!("spawn {bin}: {e}")))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                AppError::LspServerMissing {
+                    language: language.to_string(),
+                    bin: bin.clone(),
+                }
+            } else {
+                AppError::Lsp(format!("spawn {bin}: {e}"))
+            }
+        })?;
     let stdin = child.stdin.take().ok_or(AppError::Lsp("no stdin".into()))?;
     let stdout = child
         .stdout
@@ -467,7 +547,59 @@ fn enforce_server_cap(just_started: &str) {
     }
 }
 
+fn install_output_message(stdout: &[u8], stderr: &[u8]) -> String {
+    let stderr = String::from_utf8_lossy(stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+    let stdout = String::from_utf8_lossy(stdout).trim().to_string();
+    if stdout.is_empty() {
+        "unknown failure".into()
+    } else {
+        stdout
+    }
+}
+
+fn install_gopls() -> AppResult<String> {
+    let output = Command::new("go")
+        .args(["install", "golang.org/x/tools/gopls@latest"])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                AppError::Lsp(
+                    "Go toolchain not found on PATH. Install Go first: https://go.dev/doc/install"
+                        .into(),
+                )
+            } else {
+                AppError::Lsp(format!("run go install gopls: {e}"))
+            }
+        })?;
+    if !output.status.success() {
+        return Err(AppError::Lsp(format!(
+            "go install golang.org/x/tools/gopls@latest failed: {}",
+            install_output_message(&output.stdout, &output.stderr)
+        )));
+    }
+    go_lsp_path().map(path_string).ok_or_else(|| {
+        AppError::Lsp(
+            "gopls installed, but Sikemux could not locate it in PATH, GOBIN, or GOPATH/bin".into(),
+        )
+    })
+}
+
 // ---- Tauri commands -----------------------------------------------------
+
+#[tauri::command]
+pub async fn lsp_install_server(language: String) -> AppResult<String> {
+    match language.as_str() {
+        "go" => task::spawn_blocking(install_gopls)
+            .await
+            .map_err(|e| AppError::Lsp(format!("join: {e}")))?,
+        _ => Err(AppError::Lsp(format!(
+            "no language-server installer configured for `{language}`"
+        ))),
+    }
+}
 
 #[tauri::command]
 pub async fn lsp_start(app: AppHandle, project: String, language: String) -> AppResult<()> {

@@ -164,6 +164,7 @@ pub fn run() {
             git::git_checkout_remote_branch,
             git::git_delete_remote_branch,
             git::git_set_upstream,
+            lsp::lsp_install_server,
             lsp::lsp_start,
             lsp::lsp_stop,
             lsp::lsp_open,

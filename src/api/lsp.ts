@@ -60,6 +60,7 @@ export const uriToPath = (uri: string): string => {
 export const lsp = {
     start: (project: string, language: string) => invoke<void>("lsp_start", { project, language }),
     stop: (project: string) => invoke<void>("lsp_stop", { project }),
+    install: (language: string) => invoke<string>("lsp_install_server", { language }),
     open: (project: string, language: string, path: string, content: string, languageId: string = language) =>
         invoke<void>("lsp_open", { project, language, path, content, languageId }),
     change: (project: string, language: string, path: string, content: string, version: number) =>

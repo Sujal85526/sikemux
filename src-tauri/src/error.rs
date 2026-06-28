@@ -36,6 +36,9 @@ pub enum AppError {
     #[error("lsp: {0}")]
     Lsp(String),
 
+    #[error("lsp server `{bin}` for {language} not found")]
+    LspServerMissing { language: String, bin: String },
+
     #[error("rundeck: {0}")]
     Rundeck(String),
 
@@ -136,6 +139,7 @@ impl AppError {
             AppError::AwsTokenExpired => "aws-token-expired",
             AppError::AwsNoCredentials => "aws-no-credentials",
             AppError::Lsp(_) => "lsp",
+            AppError::LspServerMissing { .. } => "lsp-server-missing",
             AppError::Rundeck(_) => "rundeck",
             AppError::RundeckUnconfigured => "rundeck-unconfigured",
             AppError::RundeckAuth(_) => "rundeck-auth",
@@ -173,6 +177,14 @@ mod tests {
         assert_eq!(
             AppError::RundeckUnconfigured.category(),
             "rundeck-unconfigured"
+        );
+        assert_eq!(
+            AppError::LspServerMissing {
+                language: "go".into(),
+                bin: "gopls".into(),
+            }
+            .category(),
+            "lsp-server-missing"
         );
         assert_eq!(AppError::RundeckAuth("x".into()).category(), "rundeck-auth");
         assert_eq!(

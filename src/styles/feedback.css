@@ -95,6 +95,21 @@
     flex: 1 1 auto;
     word-break: break-word;
 }
+.toast-action {
+    flex: 0 0 auto;
+    border: 1px solid var(--acc-line);
+    background: rgba(158, 127, 255, 0.12);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.toast-action:hover {
+    background: rgba(158, 127, 255, 0.22);
+}
 .toast-x {
     flex: 0 0 auto;
     background: none;

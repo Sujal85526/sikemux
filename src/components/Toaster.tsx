@@ -10,6 +10,17 @@ export function Toaster() {
             {toasts.map((t) => (
                 <div key={t.id} className={`toast toast-${t.kind}`}>
                     <span className="toast-text">{t.text}</span>
+                    {t.action && (
+                        <button
+                            className="toast-action"
+                            onClick={() => {
+                                if (t.action?.dismissOnClick) dismiss(t.id);
+                                void t.action?.run(t.id);
+                            }}
+                        >
+                            {t.action.label}
+                        </button>
+                    )}
                     <button className="toast-x" onClick={() => dismiss(t.id)} title="Dismiss">
                         <IconClose size={10} />
                     </button>

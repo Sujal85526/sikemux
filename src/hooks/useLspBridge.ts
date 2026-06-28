@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useRef } from "react";
 import { documentLanguageIdFromPath, languageFromPath, lsp, type LspTextChange } from "../api/lsp";
-import { errMessage, notify, swallow } from "../state/toast";
+import { dismissToast, errCategory, errMessage, notify, swallow } from "../state/toast";
 
 const CHANGE_DEBOUNCE_MS = 120;
 const MAX_INCREMENTAL_BATCH = 80;
 
+const INSTALLABLE_LSP: Record<string, { bin: string; label: string }> = {
+    go: { bin: "gopls", label: "Go LSP" },
+};
+
 function openKey(lang: string, path: string) {
     return `${lang}\0${path}`;
+}
+
+function isInstallableMissingServer(lang: string, err: unknown, msg: string): boolean {
+    const spec = INSTALLABLE_LSP[lang];
+    if (!spec) return false;
+    if (errCategory(err) === "lsp-server-missing") return msg.includes(`\`${spec.bin}\``);
+    return new RegExp(`spawn\\s+${spec.bin}\\b.*(?:no such file|not found)`, "i").test(msg);
 }
 
 export function useLspBridge(cwd: string) {
@@ -17,6 +28,7 @@ export function useLspBridge(cwd: string) {
     const pendingFull = useRef<Map<string, () => string>>(new Map());
     const chains = useRef<Map<string, Promise<void>>>(new Map());
     const reportedErrors = useRef<Set<string>>(new Set());
+    const installing = useRef<Set<string>>(new Set());
 
     const nextVersion = useCallback((path: string): number => {
         const v = (versions.current.get(path) ?? 1) + 1;
@@ -24,13 +36,53 @@ export function useLspBridge(cwd: string) {
         return v;
     }, []);
 
-    const reportLspError = useCallback((lang: string, action: string, err: unknown) => {
-        const msg = errMessage(err);
-        const key = `${lang}:${action}:${msg}`;
-        if (reportedErrors.current.has(key)) return;
-        reportedErrors.current.add(key);
-        notify("error", `LSP ${lang} ${action}: ${msg}`);
+    const installLsp = useCallback((lang: string, retry?: () => Promise<void>, toastId?: number) => {
+        const spec = INSTALLABLE_LSP[lang];
+        if (!spec) return;
+        if (installing.current.has(lang)) {
+            notify("info", `${spec.bin} install already running`);
+            return;
+        }
+        installing.current.add(lang);
+        notify("info", `Installing ${spec.bin}…`);
+        void lsp
+            .install(lang)
+            .then(async (installedPath) => {
+                reportedErrors.current.clear();
+                if (toastId != null) dismissToast(toastId);
+                notify("success", `Installed ${spec.bin}${installedPath ? ` at ${installedPath}` : ""}`);
+                if (!retry) return;
+                try {
+                    await retry();
+                    notify("success", `${spec.label} ready`);
+                } catch (e) {
+                    notify("error", `LSP ${lang} retry failed: ${errMessage(e)}`);
+                }
+            })
+            .catch((e) => notify("error", `${spec.bin} install failed: ${errMessage(e)}`))
+            .finally(() => {
+                installing.current.delete(lang);
+            });
     }, []);
+
+    const reportLspError = useCallback(
+        (lang: string, action: string, err: unknown, retry?: () => Promise<void>) => {
+            const msg = errMessage(err);
+            const key = `${lang}:${action}:${msg}`;
+            if (reportedErrors.current.has(key)) return;
+            reportedErrors.current.add(key);
+            const spec = INSTALLABLE_LSP[lang];
+            if (spec && isInstallableMissingServer(lang, err, msg)) {
+                notify("error", `${spec.label} needs ${spec.bin}. Install it to enable go-to-definition and references.`, {
+                    action: { label: `Install ${spec.bin}`, run: (toastId) => installLsp(lang, retry, toastId) },
+                    timeoutMs: null,
+                });
+                return;
+            }
+            notify("error", `LSP ${lang} ${action}: ${msg}`);
+        },
+        [installLsp],
+    );
 
     const enqueue = useCallback((path: string, run: () => Promise<void>): Promise<void> => {
         const prev = chains.current.get(path) ?? Promise.resolve();
@@ -42,6 +94,21 @@ export function useLspBridge(cwd: string) {
         return next;
     }, []);
 
+    const openOrSyncDoc = useCallback(
+        async (lang: string, path: string, content: string, key: string): Promise<void> => {
+            await lsp.start(cwd, lang);
+            if (!opened.current.has(key)) {
+                await lsp.open(cwd, lang, path, content, documentLanguageIdFromPath(path) ?? lang);
+                versions.current.set(path, 1);
+                opened.current.add(key);
+                return;
+            }
+            const v = nextVersion(path);
+            await lsp.change(cwd, lang, path, content, v);
+        },
+        [cwd, nextVersion],
+    );
+
     const openDoc = useCallback(
         (path: string, content: string): Promise<void> => {
             const lang = languageFromPath(path);
@@ -49,21 +116,13 @@ export function useLspBridge(cwd: string) {
             const key = openKey(lang, path);
             return enqueue(path, async () => {
                 try {
-                    await lsp.start(cwd, lang);
-                    if (!opened.current.has(key)) {
-                        await lsp.open(cwd, lang, path, content, documentLanguageIdFromPath(path) ?? lang);
-                        versions.current.set(path, 1);
-                        opened.current.add(key);
-                        return;
-                    }
-                    const v = nextVersion(path);
-                    await lsp.change(cwd, lang, path, content, v);
+                    await openOrSyncDoc(lang, path, content, key);
                 } catch (e) {
-                    reportLspError(lang, "open", e);
+                    reportLspError(lang, "open", e, () => enqueue(path, () => openOrSyncDoc(lang, path, content, key)));
                 }
             });
         },
-        [cwd, enqueue, nextVersion, reportLspError],
+        [cwd, enqueue, openOrSyncDoc, reportLspError],
     );
 
     const scheduleChange = useCallback(
