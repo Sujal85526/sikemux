@@ -1,11 +1,11 @@
 {
-  "version": "0.1.20",
-  "notes": "Bruno sidebar styling: folder icon and title now match the side rail; tighter spacing between HTTP method and request name.",
-  "pub_date": "2026-06-16T12:46:53Z",
+  "version": "0.1.21",
+  "notes": "Editor/LSP performance pass: smarter Go command-click, incremental document sync, proper URI/LocationLink handling, didSave/didClose, and large-file rendering safeguards.",
+  "pub_date": "2026-06-28T00:48:55Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVZVWmtFeXhadjRjNlc1aHhYN1g0VjRDc21ZdWJvUmhPZ1lMc3N3YzA0RHJzT1lsSDlwWElSbEI3dDZwVk1BWkZDUFNmcCtWdlJiUkhDOXFmR0JSZ2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNjE0MDEyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjBoNHkvbVRlWjkrc0c1aURxV0NXWTRiNHI0L3VxWDg2YVhUNG4zcHY2WTZ0OEY1bjdqYVNaNmtmSk5sT1NNdVJMUERxcURaclllMSs2UWxVZ2t5WkNRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.20/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWVsOTRxSkJhRGJMZVdNdk0vUTkvajVldWxXZVRIK2E1TnNRbnhYalhpV3RGdDNMRS9jbUFRcTUzcGd2ZjRQcVZqY1FUdlQzYWVHR082cHNWaUE4WlFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjA3NzMzCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmVwL2tkLzFJMWtGekJqRC90RGJCeHh2c1Z0cEk0SEc2SlB2YnB0VSt3K3lPOXFaWlRzb0NXRDhWTWJHR3ZGNDdkNEdJNGdnWUVzdmM0NHE4L1VXcUNnPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.21/Sikemux.app.tar.gz"
     }
   }
 }
