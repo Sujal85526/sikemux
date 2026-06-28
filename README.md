@@ -10,7 +10,7 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![Rust](https://img.shields.io/badge/Rust-backend-000?logo=rust&logoColor=white)](https://www.rust-lang.org)
-![Version](https://img.shields.io/badge/version-0.1.22)
+![Version](https://img.shields.io/badge/version-0.1.23)
 
 </div>
 

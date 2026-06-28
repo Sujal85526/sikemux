@@ -7,16 +7,7 @@ function pruneBundleOnlyPublicAssets(): PluginOption {
   return {
     name: "sikemux-prune-bundle-only-public-assets",
     closeBundle() {
-      for (const rel of [
-        "screenshots",
-        ".DS_Store",
-        "fonts/JetBrainsMonoNerdFont-Regular.ttf",
-        "fonts/JetBrainsMonoNerdFont-Medium.ttf",
-        "fonts/JetBrainsMonoNerdFont-Bold.ttf",
-        "fonts/JetBrainsMonoNerdFont-Italic.ttf",
-        "fonts/JetBrainsMonoNerdFont-MediumItalic.ttf",
-        "fonts/JetBrainsMonoNerdFont-BoldItalic.ttf",
-      ]) {
+      for (const rel of ["screenshots", ".DS_Store"]) {
         rmSync(resolve("dist", rel), { recursive: true, force: true });
       }
     },
