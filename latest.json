@@ -1,11 +1,11 @@
 {
-  "version": "0.1.21",
-  "notes": "Editor/LSP performance pass: smarter Go command-click, incremental document sync, proper URI/LocationLink handling, didSave/didClose, and large-file rendering safeguards.",
-  "pub_date": "2026-06-28T00:48:55Z",
+  "version": "0.1.22",
+  "notes": "Performance/reliability pass: faster terminal switching with warm xterm instances, frame-batched PTY output, full scrollback preservation, process reaping for PTYs/log tails, bounded resource caches, diagnostics hooks, and smaller app bundle.",
+  "pub_date": "2026-06-28T11:55:09Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWVsOTRxSkJhRGJMZVdNdk0vUTkvajVldWxXZVRIK2E1TnNRbnhYalhpV3RGdDNMRS9jbUFRcTUzcGd2ZjRQcVZqY1FUdlQzYWVHR082cHNWaUE4WlFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjA3NzMzCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmVwL2tkLzFJMWtGekJqRC90RGJCeHh2c1Z0cEk0SEc2SlB2YnB0VSt3K3lPOXFaWlRzb0NXRDhWTWJHR3ZGNDdkNEdJNGdnWUVzdmM0NHE4L1VXcUNnPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.21/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWFGOGtpTytmWThJWkdWWFNJTloxVEZMRmRjbGJLY3pubnloZ3BOUXJUZERGWGs5QmhmcGpuaFJsa2gzVjBJYktoektLOWppcEtYajFMdGJGUHdObUFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjQ3NzAwCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6ClVwSytvd2lZV0RkUkdZaVJwS0c0K1JIRFZFQzk2UVJ5dmFLRThRalZSS0ZLSzE2RFJYa0JidDVMSGF4bWRyaEdHalNiOTdjZGZUd1RZYTFwTjNHWER3PT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.22/Sikemux.app.tar.gz"
     }
   }
 }
