@@ -2,6 +2,7 @@ import { StateEffect, StateField, type Extension } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType, type ViewUpdate } from "@codemirror/view";
 import { git, type GitBlame } from "../api/git";
 import { swallow } from "../state/toast";
+import { LARGE_DOC_BYTES } from "./codemirror";
 
 const setBlame = StateEffect.define<GitBlame | null>();
 
@@ -99,6 +100,10 @@ const blameFetch = ViewPlugin.fromClass(
             const ctx = contexts.get(this.view);
             if (!ctx) return;
             const my = ++this.token;
+            if (this.view.state.doc.length > LARGE_DOC_BYTES) {
+                this.view.dispatch({ effects: setBlame.of(null) });
+                return;
+            }
             // Blame the live buffer so unsaved edits map to the right lines.
             const contents = this.view.state.doc.toString();
             git.blame(ctx.repo, ctx.path, contents)

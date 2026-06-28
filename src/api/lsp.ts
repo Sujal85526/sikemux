@@ -15,7 +15,13 @@ export interface LspLocation {
     range: LspRange;
 }
 
-export type LspLocationKind = "definition" | "implementation" | "references";
+export type LspLocationKind = "definition" | "declaration" | "typeDefinition" | "implementation" | "references";
+
+export interface LspTextChange {
+    range?: LspRange;
+    rangeLength?: number;
+    text: string;
+}
 
 export function languageFromPath(path: string): string | null {
     const file = path.split("/").pop()?.toLowerCase() ?? "";
@@ -41,7 +47,15 @@ export function documentLanguageIdFromPath(path: string): string | null {
     return null;
 }
 
-export const uriToPath = (uri: string): string => (uri.startsWith("file://") ? decodeURIComponent(uri.slice("file://".length)) : uri);
+export const uriToPath = (uri: string): string => {
+    if (!uri.startsWith("file://")) return uri;
+    try {
+        const url = new URL(uri);
+        return decodeURIComponent(url.pathname);
+    } catch {
+        return decodeURIComponent(uri.slice("file://".length));
+    }
+};
 
 export const lsp = {
     start: (project: string, language: string) => invoke<void>("lsp_start", { project, language }),
@@ -50,6 +64,11 @@ export const lsp = {
         invoke<void>("lsp_open", { project, language, path, content, languageId }),
     change: (project: string, language: string, path: string, content: string, version: number) =>
         invoke<void>("lsp_change", { project, language, path, content, version }),
+    changeIncremental: (project: string, language: string, path: string, changes: LspTextChange[], version: number) =>
+        invoke<void>("lsp_change_incremental", { project, language, path, changes, version }),
+    save: (project: string, language: string, path: string, content?: string | null) =>
+        invoke<void>("lsp_save", { project, language, path, content: content ?? null }),
+    close: (project: string, language: string, path: string) => invoke<void>("lsp_close", { project, language, path }),
     locations: (project: string, language: string, path: string, line: number, character: number, kind: LspLocationKind) =>
         invoke<LspLocation[]>("lsp_locations", {
             project,
@@ -61,6 +80,10 @@ export const lsp = {
         }),
     definition: (project: string, language: string, path: string, line: number, character: number) =>
         lsp.locations(project, language, path, line, character, "definition"),
+    declaration: (project: string, language: string, path: string, line: number, character: number) =>
+        lsp.locations(project, language, path, line, character, "declaration"),
+    typeDefinition: (project: string, language: string, path: string, line: number, character: number) =>
+        lsp.locations(project, language, path, line, character, "typeDefinition"),
     implementation: (project: string, language: string, path: string, line: number, character: number) =>
         lsp.locations(project, language, path, line, character, "implementation"),
     references: (project: string, language: string, path: string, line: number, character: number) =>

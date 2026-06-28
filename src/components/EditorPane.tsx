@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EditorState, Prec } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorState, Prec, type Text } from "@codemirror/state";
+import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
@@ -11,6 +11,7 @@ import { lspNav, setLspContext } from "../editor/lspNav";
 import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
 import { lspPeek } from "../editor/lspPeek";
 import { fsapi } from "../api/fs";
+import type { LspTextChange } from "../api/lsp";
 import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { invalidate } from "../state/resources";
@@ -51,6 +52,29 @@ function scrollToLine(view: EditorView, line: number, character: number) {
         effects: EditorView.scrollIntoView(pos, { y: "center" }),
     });
     view.focus();
+}
+
+function lspPos(doc: Text, pos: number) {
+    const line = doc.lineAt(pos);
+    return { line: line.number - 1, character: pos - line.from };
+}
+
+function lspChangesFromUpdate(update: ViewUpdate): LspTextChange[] | null {
+    const out: LspTextChange[] = [];
+    let count = 0;
+    update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+        count += 1;
+        if (count > 1) return;
+        out.push({
+            range: { start: lspPos(update.startState.doc, fromA), end: lspPos(update.startState.doc, toA) },
+            rangeLength: toA - fromA,
+            text: inserted.toString(),
+        });
+    });
+    // Multiple independent ranges in one CodeMirror transaction are relative to
+    // the same start document; fall back to full sync rather than risk applying
+    // shifted LSP ranges in the wrong order.
+    return count === 1 ? out : null;
 }
 
 export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; cwd: string; active: boolean; visible: boolean }) {
@@ -98,7 +122,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         return () => cmd.setEditorDirtyPaths(paneId, []);
     }, [paneId]);
 
-    const { openDoc, scheduleChange } = useLspBridge(cwd);
+    const { openDoc, scheduleChange, saveDoc, closeDoc } = useLspBridge(cwd);
 
     const nav = useNavHistory({
         getView: () => viewRef.current,
@@ -148,11 +172,12 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 });
                 if (cwd) {
                     invalidate((kind, args) => (kind.startsWith("git.") || kind === "files.list") && args[0] === cwd);
+                    void saveDoc(path, text);
                 }
             })
             .catch(reportError("save"));
         return true;
-    }, [cwd]);
+    }, [cwd, saveDoc]);
     saveRef.current = save;
 
     const makeState = useCallback(
@@ -166,7 +191,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     basicSetup,
                     search({ top: true }),
                     auraExtensions,
-                    ...languageFor(path),
+                    ...(heavy ? [] : languageFor(path)),
                     ...(heavy ? [] : [gitDiffGutter(), gitInlineBlame(), lspHoverLink()]),
                     lspNav(),
                     lspPeek(),
@@ -229,8 +254,9 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                                 return next;
                             });
                         }
-                        // Defer serialization into the LSP debounce.
-                        scheduleChange(p, () => u.state.doc.toString());
+                        // Defer full serialization into the LSP debounce; normal
+                        // typing goes over the bridge as a tiny incremental range.
+                        scheduleChange(p, () => u.state.doc.toString(), lspChangesFromUpdate(u));
                     }),
                 ],
             });
@@ -318,24 +344,35 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         if (tabs.length === 0) return;
         let cancelled = false;
         (async () => {
-            for (const path of tabs) {
-                if (cancelled) return;
-                if (states.current.has(path)) continue;
+            const want = activePath && tabs.includes(activePath) ? activePath : tabs[0];
+            const load = async (path: string) => {
+                if (states.current.has(path)) return true;
                 try {
                     const content = await fsapi.readFile(path);
-                    if (cancelled) return;
+                    if (cancelled) return false;
                     const st = makeState(path, content);
                     states.current.set(path, st);
                     savedRef.current.set(path, content);
+                    return true;
                 } catch {
                     cmd.setEditorView(paneId, {
                         openTabs: useStore.getState().editorViews[paneId]?.openTabs.filter((t) => t !== path) ?? [],
                     });
+                    return false;
                 }
-            }
-            const want = activePath && tabs.includes(activePath) ? activePath : tabs[0];
-            if (want && states.current.has(want)) {
+            };
+
+            if (want && (await load(want)) && !cancelled) {
                 switchTo(want);
+                hydratedRef.current = true;
+            }
+
+            // Warm the rest after the active tab is usable. This avoids blocking
+            // first paint/focus on a pile of persisted tabs or one huge file.
+            for (const path of tabs) {
+                if (cancelled) return;
+                if (path === want) continue;
+                await load(path);
             }
             if (!cancelled) hydratedRef.current = true;
         })();
@@ -362,8 +399,8 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 const isActive = currentRef.current === path;
                 const view = viewRef.current;
                 if (isActive && view) {
-                    const current = view.state.doc.toString();
-                    if (current === fresh) continue;
+                    const doc = view.state.doc;
+                    if (doc.length === fresh.length && doc.toString() === fresh) continue;
                     savedRef.current.set(path, fresh);
                     const head = Math.min(view.state.selection.main.head, fresh.length);
                     view.dispatch({
@@ -372,7 +409,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     });
                 } else {
                     const cached = states.current.get(path);
-                    if (cached && cached.doc.toString() === fresh) continue;
+                    if (cached && cached.doc.length === fresh.length && cached.doc.toString() === fresh) continue;
                     savedRef.current.set(path, fresh);
                     states.current.set(path, makeState(path, fresh));
                 }
@@ -399,8 +436,8 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 const isActive = currentRef.current === path;
                 const view = viewRef.current;
                 if (isActive && view) {
-                    const current = view.state.doc.toString();
-                    if (current === fresh) continue;
+                    const doc = view.state.doc;
+                    if (doc.length === fresh.length && doc.toString() === fresh) continue;
                     savedRef.current.set(path, fresh);
                     const head = Math.min(view.state.selection.main.head, fresh.length);
                     view.dispatch({
@@ -409,7 +446,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     });
                 } else {
                     const cached = states.current.get(path);
-                    if (cached && cached.doc.toString() === fresh) continue;
+                    if (cached && cached.doc.length === fresh.length && cached.doc.toString() === fresh) continue;
                     savedRef.current.set(path, fresh);
                     states.current.set(path, makeState(path, fresh));
                 }
@@ -420,7 +457,14 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     useEffect(() => {
         return subscribe("open-file", (e) => {
-            if (cwd && !e.path.startsWith(`${cwd}/`) && e.path !== cwd) return;
+            // Project files open in their owning editor. LSP targets may live
+            // in GOMODCACHE, rust stdlib, site-packages, etc.; route those to
+            // the active editor instead of dropping them.
+            const belongsHere = !!cwd && (e.path === cwd || e.path.startsWith(`${cwd}/`));
+            const belongsToAProject = Object.values(useStore.getState().sessions).some(
+                (s) => s?.kind === "project" && (e.path === s.cwd || e.path.startsWith(`${s.cwd}/`)),
+            );
+            if (!belongsHere && (belongsToAProject || !active)) return;
             void (async () => {
                 await openPath(e.path);
                 if (e.line != null && viewRef.current) {
@@ -429,7 +473,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             })();
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cwd]);
+    }, [cwd, active]);
 
     useEffect(() => {
         const view = viewRef.current;
@@ -467,7 +511,10 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 return;
             }
         }
-        for (const p of closing) states.current.delete(p);
+        for (const p of closing) {
+            states.current.delete(p);
+            void closeDoc(p);
+        }
         setDirty((d) => {
             let changed = false;
             const next = new Set(d);

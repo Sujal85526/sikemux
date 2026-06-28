@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { EditorView } from "@codemirror/view";
 import { git } from "../api/git";
+import { LARGE_DOC_BYTES } from "../editor/codemirror";
 import { setGitBaseline } from "../editor/gitGutter";
 import { subscribe } from "../state/bus";
 import { swallow } from "../state/toast";
@@ -12,7 +13,7 @@ export function useGitBaseline(viewGetter: () => EditorView | null, cwd: string,
 
         const refetch = () => {
             const view = viewGetter();
-            if (!view) return;
+            if (!view || view.state.doc.length > LARGE_DOC_BYTES) return;
             git.fileAt(cwd, "HEAD", rel)
                 .then((content) => {
                     if (viewGetter() !== view) return;

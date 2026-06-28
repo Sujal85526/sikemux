@@ -36,6 +36,15 @@ let lastRangeKey = "";
 // or plain scrolling) does no EditorState field reads or dispatches.
 let linkShown = false;
 
+async function hasNavigationTarget(project: string, lang: string, path: string, line: number, character: number): Promise<boolean> {
+    const checks = [lsp.definition, lsp.declaration, lsp.typeDefinition, lsp.implementation];
+    for (const check of checks) {
+        const locs = await check(project, lang, path, line, character);
+        if (locs.length > 0) return true;
+    }
+    return false;
+}
+
 function clear(view: EditorView) {
     if (linkShown && view.state.field(linkField, false)) {
         view.dispatch({ effects: setLink.of(null) });
@@ -75,10 +84,9 @@ const hoverHandlers = EditorView.domEventHandlers({
         debounceTimer = window.setTimeout(() => {
             const latest = contexts.get(view);
             if (!latest || latest.project !== ctx.project || latest.path !== ctx.path) return;
-            void lsp
-                .definition(ctx.project, lang, ctx.path, lineNo, character)
-                .then((locs) => {
-                    if (locs.length === 0 || lastRangeKey !== key) return;
+            void hasNavigationTarget(ctx.project, lang, ctx.path, lineNo, character)
+                .then((ok) => {
+                    if (!ok || lastRangeKey !== key) return;
                     view.dispatch({ effects: setLink.of({ from: word.from, to: word.to }) });
                     linkShown = true;
                 })

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 use tokio::task;
+use url::Url;
 
 use crate::error::{AppError, AppResult};
 
@@ -38,6 +39,19 @@ pub struct LspLocation {
     pub range: LspRange,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LspTextChange {
+    pub range: Option<LspRange>,
+    #[serde(rename = "rangeLength")]
+    pub range_length: Option<u32>,
+    pub text: String,
+}
+
+struct OpenDoc {
+    refs: usize,
+    version: u32,
+}
+
 // Stdin and the pending map are independent — splitting them lets the reader
 // thread deliver responses while a writer is mid-flight.
 //
@@ -50,10 +64,14 @@ struct Server {
     stdin: Mutex<Option<ChildStdin>>,
     next_id: Mutex<i64>,
     pending: Mutex<HashMap<i64, mpsc::Sender<Value>>>,
-    // Per-(path) hash of last didChange payload — drops no-op resends
-    // (rare, but the 300 ms debounce can land an identical doc when the
-    // user undoes back to the saved state).
+    // Per-(path) hash of last full didChange/didOpen payload — drops no-op
+    // resends. Incremental edits clear the hash because the backend no longer
+    // has the full text to compare.
     last_change: Mutex<HashMap<String, u64>>,
+    // Backend-owned open-document refcounts + monotonically increasing LSP
+    // versions. The frontend can have several editor panes pointed at the same
+    // URI; the server must still see exactly one didOpen and one didClose.
+    open_docs: Mutex<HashMap<String, OpenDoc>>,
     shutdown: std::sync::atomic::AtomicBool,
     /// Logical LRU stamp, bumped on every message we send. The backstop cap
     /// evicts the smallest (least-recently-used) when too many servers pile
@@ -73,6 +91,11 @@ fn lsp_tick() -> u64 {
 fn registry() -> &'static Mutex<HashMap<String, ServerHandle>> {
     static R: OnceLock<Mutex<HashMap<String, ServerHandle>>> = OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn start_lock() -> &'static Mutex<()> {
+    static L: OnceLock<Mutex<()>> = OnceLock::new();
+    L.get_or_init(|| Mutex::new(()))
 }
 
 fn key(project: &str, language: &str) -> String {
@@ -124,7 +147,27 @@ fn server_command(language: &str) -> Option<(String, Vec<String>)> {
 }
 
 fn path_to_uri(path: &str) -> String {
-    format!("file://{}", path)
+    Url::from_file_path(path)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|_| format!("file://{}", path))
+}
+
+fn content_hash(content: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn next_doc_version(server: &ServerHandle, path: &str, requested: u32) -> u32 {
+    if let Ok(mut docs) = server.open_docs.lock() {
+        if let Some(doc) = docs.get_mut(path) {
+            let next = requested.max(doc.version.saturating_add(1));
+            doc.version = next;
+            return next;
+        }
+    }
+    requested
 }
 
 fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> AppResult<()> {
@@ -204,8 +247,15 @@ fn request_with_timeout(
         server.pending.lock().ok().and_then(|mut p| p.remove(&id));
         return Err(e);
     }
-    rx.recv_timeout(timeout)
-        .map_err(|e| AppError::Lsp(format!("{method} timeout: {e}")))
+    match rx.recv_timeout(timeout) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            if let Ok(mut pending) = server.pending.lock() {
+                pending.remove(&id);
+            }
+            Err(AppError::Lsp(format!("{method} timeout: {e}")))
+        }
+    }
 }
 
 fn request(server: &ServerHandle, method: &str, params: Value) -> AppResult<Value> {
@@ -215,6 +265,26 @@ fn request(server: &ServerHandle, method: &str, params: Value) -> AppResult<Valu
 fn notify(server: &ServerHandle, method: &str, params: Value) -> AppResult<()> {
     let n = json!({"jsonrpc": "2.0", "method": method, "params": params});
     send(server, &n)
+}
+
+fn response_for_server_request(method: &str, params: &Value) -> Value {
+    match method {
+        // gopls / rust-analyzer / pyright may ask for workspace config during
+        // initialization. Returning null here can make them treat the client as
+        // broken; an empty object per requested item is the safe fast default.
+        "workspace/configuration" => {
+            let n = params
+                .get("items")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(1);
+            Value::Array((0..n).map(|_| json!({})).collect())
+        }
+        "window/workDoneProgress/create"
+        | "client/registerCapability"
+        | "client/unregisterCapability" => Value::Null,
+        _ => Value::Null,
+    }
 }
 
 fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<ServerHandle> {
@@ -241,6 +311,7 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
         next_id: Mutex::new(1),
         pending: Mutex::new(HashMap::new()),
         last_change: Mutex::new(HashMap::new()),
+        open_docs: Mutex::new(HashMap::new()),
         shutdown: std::sync::atomic::AtomicBool::new(false),
         last_used: std::sync::atomic::AtomicU64::new(lsp_tick()),
     });
@@ -256,16 +327,23 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
             {
                 break;
             }
-            if let Some(id) = msg.get("id").and_then(|i| i.as_i64()) {
-                if msg.get("method").is_some() {
-                    // Server-initiated request — reply with null result so
-                    // gopls / tsserver don't stall waiting.
-                    let reply = json!({"jsonrpc": "2.0", "id": id, "result": Value::Null});
+            if let Some(id_value) = msg.get("id").cloned() {
+                if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
+                    // Server-initiated request — reply with a shape the common
+                    // language servers accept so they don't stall or downgrade
+                    // features while waiting on client config/progress support.
+                    let result = response_for_server_request(
+                        method,
+                        msg.get("params").unwrap_or(&Value::Null),
+                    );
+                    let reply = json!({"jsonrpc": "2.0", "id": id_value, "result": result});
                     let _ = send(&reader_server, &reply);
-                } else if let Ok(mut pending) = reader_server.pending.lock() {
-                    if let Some(tx) = pending.remove(&id) {
-                        let val = msg.get("result").cloned().unwrap_or(Value::Null);
-                        let _ = tx.send(val);
+                } else if let Some(id) = id_value.as_i64() {
+                    if let Ok(mut pending) = reader_server.pending.lock() {
+                        if let Some(tx) = pending.remove(&id) {
+                            let val = msg.get("result").cloned().unwrap_or(Value::Null);
+                            let _ = tx.send(val);
+                        }
                     }
                 }
             }
@@ -396,14 +474,29 @@ pub async fn lsp_start(app: AppHandle, project: String, language: String) -> App
             return Ok(());
         }
     }
+    let cap_key = k.clone();
     // The initialize handshake blocks up to 20 s on slow servers; off the
-    // Tauri worker pool so unrelated IPC isn't starved.
-    let server = task::spawn_blocking(move || spawn_server(&project, &language, app))
-        .await
-        .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
-    registry().lock().map_err(lsp)?.insert(k.clone(), server);
-    // Backstop: keep the concurrent-server count bounded (see the const).
-    enforce_server_cap(&k);
+    // Tauri worker pool so unrelated IPC isn't starved. A small start lock
+    // prevents two concurrent opens of the same language from spawning two
+    // gopls/rust-analyzer processes before either one reaches the registry.
+    let inserted = task::spawn_blocking(move || -> AppResult<bool> {
+        let _guard = start_lock().lock().map_err(lsp)?;
+        {
+            let reg = registry().lock().map_err(lsp)?;
+            if reg.contains_key(&k) {
+                return Ok(false);
+            }
+        }
+        let server = spawn_server(&project, &language, app)?;
+        registry().lock().map_err(lsp)?.insert(k, server);
+        Ok(true)
+    })
+    .await
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
+    if inserted {
+        // Backstop: keep the concurrent-server count bounded (see the const).
+        enforce_server_cap(&cap_key);
+    }
     Ok(())
 }
 
@@ -449,18 +542,60 @@ pub async fn lsp_open(
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     task::spawn_blocking(move || {
         let language_id = language_id.unwrap_or(language);
-        notify(
-            &server,
-            "textDocument/didOpen",
-            json!({
-                "textDocument": {
-                    "uri": path_to_uri(&path),
-                    "languageId": language_id,
-                    "version": 1,
-                    "text": content
+        let hash = content_hash(&content);
+        let mut should_open = false;
+        let mut change_version: Option<u32> = None;
+        {
+            let mut docs = server.open_docs.lock().map_err(lsp)?;
+            if let Some(doc) = docs.get_mut(&path) {
+                doc.refs += 1;
+                let mut last = server.last_change.lock().map_err(lsp)?;
+                if last.get(&path) != Some(&hash) {
+                    doc.version = doc.version.saturating_add(1);
+                    change_version = Some(doc.version);
+                    last.insert(path.clone(), hash);
                 }
-            }),
-        )
+            } else {
+                docs.insert(
+                    path.clone(),
+                    OpenDoc {
+                        refs: 1,
+                        version: 1,
+                    },
+                );
+                server
+                    .last_change
+                    .lock()
+                    .map_err(lsp)?
+                    .insert(path.clone(), hash);
+                should_open = true;
+            }
+        }
+        if should_open {
+            notify(
+                &server,
+                "textDocument/didOpen",
+                json!({
+                    "textDocument": {
+                        "uri": path_to_uri(&path),
+                        "languageId": language_id,
+                        "version": 1,
+                        "text": content
+                    }
+                }),
+            )
+        } else if let Some(version) = change_version {
+            notify(
+                &server,
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": path_to_uri(&path), "version": version },
+                    "contentChanges": [{ "text": content }]
+                }),
+            )
+        } else {
+            Ok(())
+        }
     })
     .await
     .map_err(|e| AppError::Lsp(format!("join: {e}")))?
@@ -476,21 +611,16 @@ pub async fn lsp_change(
 ) -> AppResult<()> {
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
-    // Cheap content-hash dedup: if the previous payload for this path
-    // hashed to the same value, skip the IPC + LSP reparse. Catches
-    // undo-back-to-saved and the debounce firing without an actual edit.
-    let h = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        content.hash(&mut hasher);
-        hasher.finish()
-    };
+    // Cheap content-hash dedup: if the previous full payload for this path
+    // hashed to the same value, skip the IPC + LSP reparse.
+    let h = content_hash(&content);
     if let Ok(mut last) = server.last_change.lock() {
         if last.get(&path) == Some(&h) {
             return Ok(());
         }
         last.insert(path.clone(), h);
     }
+    let version = next_doc_version(&server, &path, version);
     task::spawn_blocking(move || {
         notify(
             &server,
@@ -505,26 +635,125 @@ pub async fn lsp_change(
     .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
 
+#[tauri::command]
+pub async fn lsp_change_incremental(
+    project: String,
+    language: String,
+    path: String,
+    changes: Vec<LspTextChange>,
+    version: u32,
+) -> AppResult<()> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+    let server =
+        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+    if let Ok(mut last) = server.last_change.lock() {
+        last.remove(&path);
+    }
+    let version = next_doc_version(&server, &path, version);
+    task::spawn_blocking(move || {
+        notify(
+            &server,
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": path_to_uri(&path), "version": version },
+                "contentChanges": changes
+            }),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+}
+
+#[tauri::command]
+pub async fn lsp_save(
+    project: String,
+    language: String,
+    path: String,
+    content: Option<String>,
+) -> AppResult<()> {
+    let Some(server) = server_for(&project, &language) else {
+        return Ok(());
+    };
+    task::spawn_blocking(move || {
+        let mut params = json!({ "textDocument": { "uri": path_to_uri(&path) } });
+        if let Some(text) = content {
+            params["text"] = json!(text);
+        }
+        notify(&server, "textDocument/didSave", params)
+    })
+    .await
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+}
+
+#[tauri::command]
+pub async fn lsp_close(project: String, language: String, path: String) -> AppResult<()> {
+    let Some(server) = server_for(&project, &language) else {
+        return Ok(());
+    };
+    task::spawn_blocking(move || {
+        let mut should_close = false;
+        {
+            let mut docs = server.open_docs.lock().map_err(lsp)?;
+            if let Some(doc) = docs.get_mut(&path) {
+                if doc.refs > 1 {
+                    doc.refs -= 1;
+                } else {
+                    docs.remove(&path);
+                    should_close = true;
+                }
+            }
+        }
+        if !should_close {
+            return Ok(());
+        }
+        if let Ok(mut last) = server.last_change.lock() {
+            last.remove(&path);
+        }
+        notify(
+            &server,
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": path_to_uri(&path) } }),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+}
+
+fn parse_location_like(v: &Value) -> Option<LspLocation> {
+    if let Ok(loc) = serde_json::from_value::<LspLocation>(v.clone()) {
+        return Some(loc);
+    }
+    let uri = v
+        .get("targetUri")
+        .or_else(|| v.get("uri"))?
+        .as_str()?
+        .to_string();
+    let range_value = v
+        .get("targetSelectionRange")
+        .or_else(|| v.get("targetRange"))
+        .or_else(|| v.get("range"))?;
+    let range = serde_json::from_value::<LspRange>(range_value.clone()).ok()?;
+    Some(LspLocation { uri, range })
+}
+
 fn parse_locations(result: &Value) -> Vec<LspLocation> {
     if result.is_null() {
         return vec![];
     }
     if let Some(arr) = result.as_array() {
-        return arr
-            .iter()
-            .filter_map(|v| serde_json::from_value::<LspLocation>(v.clone()).ok())
-            .collect();
+        return arr.iter().filter_map(parse_location_like).collect();
     }
-    if let Ok(loc) = serde_json::from_value::<LspLocation>(result.clone()) {
-        return vec![loc];
-    }
-    vec![]
+    parse_location_like(result).into_iter().collect()
 }
 
 #[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum LspKind {
     Definition,
+    Declaration,
+    TypeDefinition,
     Implementation,
     References,
 }
@@ -542,6 +771,8 @@ pub async fn lsp_locations(
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     let (method, with_context) = match kind {
         LspKind::Definition => ("textDocument/definition", false),
+        LspKind::Declaration => ("textDocument/declaration", false),
+        LspKind::TypeDefinition => ("textDocument/typeDefinition", false),
         LspKind::Implementation => ("textDocument/implementation", false),
         LspKind::References => ("textDocument/references", true),
     };

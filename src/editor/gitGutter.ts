@@ -2,6 +2,7 @@ import { RangeSet, RangeSetBuilder, StateEffect, StateField, type Extension } fr
 import { EditorView, gutter, GutterMarker, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { diffApi, type DiffHunk } from "../api/diff";
 import { swallow } from "../state/toast";
+import { LARGE_DOC_BYTES } from "./codemirror";
 
 const setBaseline = StateEffect.define<string>();
 const setHunks = StateEffect.define<DiffHunk[]>();
@@ -68,7 +69,7 @@ function scheduleHunks(view: EditorView): { cancel: () => void } {
     const run = () => {
         const baseline = view.state.field(baselineField);
         const current = view.state.doc.toString();
-        if (!baseline) {
+        if (!baseline || baseline.length > LARGE_DOC_BYTES || view.state.doc.length > LARGE_DOC_BYTES) {
             view.dispatch({ effects: setHunks.of([]) });
             return;
         }
