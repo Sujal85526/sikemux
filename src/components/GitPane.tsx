@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { git, hasUnstaged, isStaged, type GitFile } from "../api/git";
+import { git, hasUnstaged, isStaged } from "../api/git";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, runGitCmd, toggleGitCmdLog } from "../state/git";
 import { useResourceEnabled } from "../state/resources";
@@ -8,133 +7,30 @@ import { gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../s
 import { useStore } from "../state/store";
 import { errMessage, reportError } from "../state/toast";
 import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
-import type { GitCheatsheetSection } from "../state/gitTypes";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
-import { IconChevron, IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
+import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
+import { GitPanelBlock } from "./git/GitPanelBlock";
+import { GitSelect } from "./git/GitSelect";
+import { GitToolbarButton } from "./git/GitToolbarButton";
+import {
+    AI_MODEL_STORAGE,
+    AI_MODELS,
+    AI_PROVIDER_LABEL,
+    AI_PROVIDER_STORAGE,
+    DEFAULT_AI_PROVIDER,
+    GIT_HELP,
+    GIT_PANEL_BY_KEY,
+    GIT_PANEL_ORDER,
+    defaultAiModel,
+} from "./git/gitPaneConstants";
+import { filterByQuery, isGitAiProvider, isInRange, rangeBadge } from "./git/gitPaneLogic";
+import type { GitAiProvider, RightView } from "./git/gitPaneTypes";
 import { basename as basenameOf } from "../lib/paths";
-
-type RightView =
-    | { mode: "merge"; file: GitFile }
-    | { mode: "commit"; rev: string; title: string; subtitle: string }
-    | { mode: "output"; text: string };
-
-type GitAiProvider = "hermes" | "codex" | "claude";
-
-const AI_PROVIDER_LABEL: Record<GitAiProvider, string> = {
-    hermes: "Hermes",
-    codex: "Codex",
-    claude: "Claude",
-};
-
-const AI_MODELS: Record<GitAiProvider, string[]> = {
-    hermes: ["openai/gpt-5.5", "openai/gpt-5.1", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.1", "google/gemini-2.5-pro"],
-    codex: ["gpt-5.5", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.1-codex-mini", "gpt-5.1", "gpt-5"],
-    claude: ["sonnet", "opus", "haiku", "opusplan", "sonnet[1m]", "default"],
-};
-
-const DEFAULT_AI_PROVIDER: GitAiProvider = "hermes";
-const AI_PROVIDER_STORAGE = "sikemux.git.ai.provider";
-const AI_MODEL_STORAGE = "sikemux.git.ai.model";
-
-const isGitAiProvider = (v: string | null): v is GitAiProvider => v === "hermes" || v === "codex" || v === "claude";
-const defaultAiModel = (provider: GitAiProvider) => AI_MODELS[provider][0];
-
-const GIT_PANEL_ORDER: GitPanel[] = ["files", "branches", "commits", "remotes", "stashes"];
-const GIT_PANEL_BY_KEY: Partial<Record<string, GitPanel>> = { "2": "files", "3": "branches", "4": "commits", "5": "remotes", "6": "stashes" };
-const rangeBadge = (range: [number, number] | null) => (range ? `range ${range[1] - range[0] + 1}` : null);
-const isInRange = (range: [number, number] | null, i: number) => !!range && i >= range[0] && i <= range[1];
-const helpRows = (...rows: [keys: string, label: string][]) => rows.map(([keys, label]) => ({ keys, label }));
-
-const GIT_HELP: GitCheatsheetSection[] = [
-    {
-        title: "Global",
-        rows: helpRows(
-            ["tab / 2..6", "switch panel"],
-            ["?", "open this cheatsheet"],
-            ["@", "toggle command log"],
-            ["/", "filter current panel"],
-            ["v", "toggle range select"],
-            ["r", "refresh repo state"],
-            ["P / p", "push / pull"],
-            ["^P", "open pull-request page"],
-            ["esc", "close modal / clear filter or range"],
-        ),
-    },
-    {
-        title: "Files",
-        rows: helpRows(
-            ["space", "stage / unstage selected (or range)"],
-            ["a", "toggle stage all"],
-            ["c", "focus commit message box"],
-            ["C", "commit the typed message"],
-            ["g", "generate commit message (AI)"],
-            ["⌘⏎", "commit (from message box)"],
-            ["d", "discard menu"],
-            ["s", "stash menu"],
-        ),
-    },
-    {
-        title: "Branches",
-        rows: helpRows(
-            ["enter / space", "checkout"],
-            ["n / N", "new branch (from selected / from HEAD)"],
-            ["M", "merge menu"],
-            ["d", "delete menu"],
-            ["R", "rename branch"],
-            ["c", "checkout by name"],
-        ),
-    },
-    {
-        title: "Remotes (list)",
-        rows: helpRows(
-            ["enter", "drill into remote's branches"],
-            ["n", "add remote"],
-            ["f", "fetch this remote"],
-            ["F", "fetch all remotes"],
-            ["e", "edit url"],
-            ["r", "rename"],
-            ["d", "delete"],
-            ["...", "any of the above also openable via menu"],
-        ),
-    },
-    {
-        title: "Remotes (drilled)",
-        rows: helpRows(
-            ["esc", "back to remotes list"],
-            ["space / enter", "checkout (creates tracking branch)"],
-            ["M", "merge into HEAD"],
-            ["u", "set as upstream of current branch"],
-            ["d", "delete remote branch"],
-            ["f / F", "fetch (this remote / all)"],
-        ),
-    },
-    {
-        title: "Commits",
-        rows: helpRows(["enter / space", "actions menu"], ["b", "create branch from commit"], ["r", "reset to commit menu"], ["v", "revert commit"]),
-    },
-    {
-        title: "Stashes",
-        rows: helpRows(
-            ["enter", "actions menu"],
-            ["space / a", "apply stash"],
-            ["p", "pop stash"],
-            ["b", "branch from stash"],
-            ["r", "rename stash"],
-            ["d", "drop stash"],
-        ),
-    },
-];
-
-function filterByQuery<T>(items: T[], query: string, fields: (item: T) => (string | null | undefined)[]): T[] {
-    if (!query) return items;
-    const q = query.toLowerCase();
-    return items.filter((item) => fields(item).some((v) => (v ?? "").toLowerCase().includes(q)));
-}
 
 export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; active: boolean }) {
     const repo = cwd;
@@ -1631,149 +1527,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
             </div>
 
             <GitModalRenderer paneId={paneId} active={active} />
-        </div>
-    );
-}
-
-function GitToolbarButton({
-    children,
-    className,
-    count,
-    icon,
-    kbd,
-    onClick,
-    title,
-}: {
-    children?: ReactNode;
-    className?: string;
-    count?: number;
-    icon: ReactNode;
-    kbd?: string;
-    onClick: () => void;
-    title: string;
-}) {
-    return (
-        <button className={`git-tbtn${className ? ` ${className}` : ""}`} type="button" onClick={onClick} title={title}>
-            {icon}
-            {!!count && count > 0 && <span className="git-tbtn-count">{count}</span>}
-            {children}
-            {kbd && <kbd className="git-kbd">{kbd}</kbd>}
-        </button>
-    );
-}
-
-function GitSelect({
-    value,
-    label,
-    options,
-    onSelect,
-    title,
-    width,
-}: {
-    value: string;
-    label: string;
-    options: { value: string; label: string }[];
-    onSelect: (value: string) => void;
-    title?: string;
-    width?: number;
-}) {
-    const [open, setOpen] = useState(false);
-    return (
-        <div className="git-dd">
-            <button
-                type="button"
-                className="git-dd-btn"
-                style={width ? { width } : undefined}
-                title={title}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setOpen((v) => !v);
-                }}>
-                <span className="git-dd-val">{label}</span>
-                <IconChevron size={9} className="git-dd-chev" />
-            </button>
-            {open && (
-                <>
-                    <div className="git-dd-scrim" onClick={() => setOpen(false)} />
-                    <div className="git-dd-menu">
-                        {options.map((o) => (
-                            <button
-                                key={o.value}
-                                type="button"
-                                className={`git-dd-item${o.value === value ? " active" : ""}`}
-                                onClick={() => {
-                                    onSelect(o.value);
-                                    setOpen(false);
-                                }}>
-                                <span className="git-dd-check">{o.value === value ? "✓" : ""}</span>
-                                <span className="git-dd-item-label">{o.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                </>
-            )}
-        </div>
-    );
-}
-
-interface PanelAction {
-    key?: string;
-    label: string;
-    onClick: () => void;
-    tone?: "warn" | "danger";
-}
-
-function GitPanelBlock({
-    n,
-    label,
-    focused,
-    onFocus,
-    flex,
-    extra,
-    rangeBadge,
-    filterBadge,
-    actions,
-    children,
-}: {
-    n: number;
-    label: string;
-    focused: boolean;
-    onFocus: () => void;
-    flex: number;
-    extra?: ReactNode;
-    rangeBadge?: string | null;
-    filterBadge?: string | null;
-    actions?: PanelAction[];
-    children: ReactNode;
-}) {
-    return (
-        <div className={`git-panel${focused ? " focused" : ""}`} style={{ flex }}>
-            <div className="git-panel-head" onClick={onFocus}>
-                <span className="git-panel-n">{n}</span>
-                <span className="git-panel-label">{label}</span>
-                {filterBadge && <span className="git-panel-pill">/{filterBadge}</span>}
-                {rangeBadge && <span className="git-panel-pill range">{rangeBadge}</span>}
-                {extra}
-                {actions && actions.length > 0 && (
-                    <span className="git-head-actions">
-                        {actions.map((a) => (
-                            <button
-                                key={a.label}
-                                type="button"
-                                className={`git-hbtn${a.tone ? ` ${a.tone}` : ""}`}
-                                title={a.label}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    a.onClick();
-                                }}>
-                                {a.label}
-                                {a.key && <kbd className="git-kbd">{a.key}</kbd>}
-                            </button>
-                        ))}
-                    </span>
-                )}
-            </div>
-            <div className="git-panel-body">{children}</div>
         </div>
     );
 }

@@ -27,6 +27,7 @@ make dev            # hot-reload Vite + Tauri (or: pnpm tauri dev)
 Run the same checks CI does and make sure they pass:
 
 ```bash
+pnpm test           # frontend unit tests
 make tsc            # typecheck the frontend (pnpm tsc --noEmit)
 make check          # cargo check the Rust core
 ```

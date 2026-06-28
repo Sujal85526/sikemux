@@ -1,0 +1,287 @@
+.picker-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 13vh;
+    background: rgba(8, 7, 12, 0.62);
+    backdrop-filter: blur(7px);
+    animation: fade 0.15s ease;
+}
+
+.picker {
+    width: 560px;
+    max-width: 86vw;
+    max-height: 62vh;
+    display: flex;
+    flex-direction: column;
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
+    border: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.04) inset,
+        0 30px 80px -30px rgba(0, 0, 0, 0.85);
+    overflow: hidden;
+    animation: pop 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.picker-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+}
+.picker-search-icon {
+    color: var(--ink-faint);
+}
+.picker-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+}
+.picker-input::placeholder {
+    color: var(--ink-faint);
+}
+.picker-folder-btn {
+    width: 27px;
+    height: 27px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    cursor: pointer;
+    transition:
+        color 0.1s,
+        border-color 0.1s,
+        background 0.1s;
+}
+.picker-folder-btn:hover {
+    color: var(--ink);
+    border-color: var(--ink-dim);
+    background: var(--hl);
+}
+.picker-hints {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.picker-hint {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border: 1px solid var(--line);
+    border-radius: 0;
+    padding: 2px 6px;
+}
+
+.picker-list {
+    overflow-y: auto;
+    padding: 0px;
+}
+.picker-group {
+    padding: 10px 10px 6px;
+}
+.picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 0;
+    color: var(--ink-dim);
+    text-align: left;
+}
+.picker-item.sel {
+    background: var(--acc-soft);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--acc-line);
+}
+.agent-palette-divider {
+    height: 1px;
+    margin: 8px 12px;
+    background: var(--line);
+}
+.picker-icon {
+    display: flex;
+}
+.picker-icon.project {
+    color: var(--live);
+}
+.picker-icon.command {
+    color: var(--cmd);
+}
+.picker-icon.bruno {
+    color: var(--live);
+}
+.picker-forget {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-faint);
+    opacity: 0;
+    border-radius: 4px;
+    padding: 2px;
+}
+.picker-item:hover .picker-forget,
+.picker-item.sel .picker-forget {
+    opacity: 0.7;
+}
+.picker-forget:hover {
+    opacity: 1;
+    color: var(--ink);
+    background: var(--acc-soft);
+}
+.picker-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    color: var(--ink);
+}
+.picker-sub {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: right;
+    font-size: 11px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.picker-tags {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 130px 120px 100px;
+    align-items: center;
+    gap: 6px;
+}
+.picker-tag {
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    line-height: 1;
+    padding: 3px 7px;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    white-space: nowrap;
+    text-transform: lowercase;
+}
+.picker-tag.proj {
+    grid-column: 1;
+    color: var(--ink);
+    border-color: var(--acc-line);
+    background: var(--acc-soft);
+}
+.picker-tag.env {
+    grid-column: 2;
+}
+.picker-tag.type {
+    grid-column: 3;
+    color: var(--cmd);
+    border-color: color-mix(in srgb, var(--cmd) 35%, transparent);
+}
+.picker-tag-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--ink-dim);
+}
+.picker-tag.env-dev .picker-tag-dot {
+    background: var(--live);
+}
+.picker-tag.env-staging .picker-tag-dot {
+    background: var(--warn);
+}
+.picker-tag.env-preprod .picker-tag-dot {
+    background: #ff9d5c;
+}
+.picker-tag.env-prod .picker-tag-dot {
+    background: var(--danger);
+}
+.picker-empty {
+    padding: 28px;
+    text-align: center;
+    color: var(--ink-faint);
+}
+.picker-check {
+    flex: 0 0 auto;
+    color: var(--acc);
+}
+.bruno-env-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--acc);
+}
+.bruno-env-dot.none {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--ink-faint);
+}
+
+@keyframes fadeDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+}
+@keyframes slideL {
+    from {
+        opacity: 0;
+        transform: translateX(-18px);
+    }
+}
+@keyframes slideR {
+    from {
+        opacity: 0;
+        transform: translateX(18px);
+    }
+}
+@keyframes rowIn {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+}
+@keyframes paneIn {
+    from {
+        opacity: 0;
+        transform: scale(0.985);
+    }
+}
+@keyframes fade {
+    from {
+        opacity: 0;
+    }
+}
+@keyframes pop {
+    from {
+        opacity: 0;
+        transform: translateY(-12px) scale(0.97);
+    }
+}
+@keyframes blink {
+    50% {
+        opacity: 0.25;
+    }
+}

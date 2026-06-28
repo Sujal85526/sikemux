@@ -16,6 +16,7 @@ import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.def
 import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
+import { SKIP_PERMISSION_FLAG, agentSupportsSkipPermissions } from "./commands/agentLogic";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
@@ -41,8 +42,6 @@ import type {
     FocusDir,
     PickerMode,
     PaneKind,
-    PinnedProject,
-    ProjectRoot,
     RundeckLevel,
     RundeckView,
     Session,
@@ -51,6 +50,9 @@ import type {
     Window,
     WindowRole,
 } from "./types";
+
+export { agentSupportsSkipPermissions } from "./commands/agentLogic";
+export { normalisePinnedProjects, normaliseProjectRoots } from "./commands/settingsLogic";
 
 const patchSession = (id: string, fn: (s: Session) => Session): void =>
     mutate((d) => {
@@ -1002,12 +1004,6 @@ export function cycleTabs(delta: number): void {
     setEditorView(pane.id, { activePath: tabs[(base + delta + tabs.length) % tabs.length] });
 }
 
-const SKIP_PERMISSION_FLAG: Partial<Record<AgentType, string>> = {
-    claude: "--dangerously-skip-permissions",
-    hermes: "--yolo",
-    codex: "--dangerously-bypass-approvals-and-sandbox",
-};
-
 const AGENT_RESUME_CMD: Partial<Record<AgentType, (id: string) => string>> = {
     claude: (id) => `claude --resume ${id}`,
     codex: (id) => `codex resume ${id}`,
@@ -1017,10 +1013,6 @@ const AGENT_RESUME_CMD: Partial<Record<AgentType, (id: string) => string>> = {
 };
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
-
-export function agentSupportsSkipPermissions(type: AgentType): boolean {
-    return SKIP_PERMISSION_FLAG[type] != null;
-}
 
 function shellQuote(value: string): string {
     if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;
@@ -1408,36 +1400,6 @@ export function setProjectRootDepth(path: string, depth: number): void {
         projectRoots: s.projectRoots.map((r) => (r.path === path ? { ...r, depth: d } : r)),
     }));
     invalidate((kind) => kind === projectRootsScanR.kind);
-}
-
-export function normaliseProjectRoots(raw: unknown): ProjectRoot[] {
-    if (!Array.isArray(raw)) return [];
-    return raw
-        .map((r): ProjectRoot | null => {
-            if (typeof r === "string") return { path: r, depth: 1 };
-            if (r && typeof r === "object" && typeof (r as ProjectRoot).path === "string") {
-                const depth = (r as ProjectRoot).depth;
-                return {
-                    path: (r as ProjectRoot).path,
-                    depth: Number.isFinite(depth) ? Math.max(0, Math.round(depth)) : 1,
-                };
-            }
-            return null;
-        })
-        .filter((x): x is ProjectRoot => x !== null);
-}
-
-export function normalisePinnedProjects(raw: unknown): PinnedProject[] {
-    if (!Array.isArray(raw)) return [];
-    return raw
-        .map((p): PinnedProject | null => {
-            if (typeof p === "string") return { path: p };
-            if (p && typeof p === "object" && typeof (p as PinnedProject).path === "string") {
-                return { path: (p as PinnedProject).path };
-            }
-            return null;
-        })
-        .filter((x): x is PinnedProject => x !== null);
 }
 
 export const setAwsProfile = (name: string | null): void => setState({ awsProfile: name });

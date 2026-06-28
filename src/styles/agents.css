@@ -1,0 +1,438 @@
+.agent-rail {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    width: 252px;
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
+    border-left: 1px solid var(--line);
+    overflow: hidden;
+    animation: slideR 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+.agent-empty {
+    padding: 16px 14px;
+    color: var(--ink-faint);
+    font-size: 11.5px;
+    line-height: 1.6;
+}
+.agent-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 0;
+    color: var(--ink-dim);
+    position: relative;
+    transition:
+        background 0.12s,
+        color 0.12s;
+}
+.agent-row:hover {
+    background: var(--rail-2);
+    color: var(--ink);
+}
+.agent-row.active {
+    background: var(--acc-soft);
+    color: var(--ink);
+}
+:root {
+    --brand-claude: #d97757;
+    --brand-codex: #10a37f;
+    --brand-hermes: #e0a050;
+    --brand-pi: #7dd3fc;
+    --brand-opencode: #a78bfa;
+}
+.agent-glyph {
+    display: flex;
+}
+.agent-glyph.claude {
+    color: var(--brand-claude);
+}
+.agent-glyph.codex {
+    color: var(--brand-codex);
+}
+.agent-glyph.hermes {
+    color: var(--brand-hermes);
+}
+.agent-glyph.pi {
+    color: var(--brand-pi);
+}
+.agent-glyph.opencode {
+    color: var(--brand-opencode);
+}
+.agent-title {
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.env-dd {
+    position: relative;
+}
+.env-dd-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--rail-2);
+    color: var(--ink-dim);
+    font-size: 11px;
+}
+.env-dd-btn:hover {
+    color: var(--ink);
+}
+.env-dd-chev {
+    color: var(--ink-faint);
+    transform: rotate(90deg);
+}
+.env-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+.env-dot.dev {
+    background: var(--live);
+}
+.env-dot.staging {
+    background: var(--warn);
+}
+.env-dot.preprod {
+    background: #ff9d5c;
+}
+.env-dot.production,
+.env-dot.prod {
+    background: var(--danger);
+}
+.env-dot.other {
+    background: var(--ink-faint);
+}
+.env-dd-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+.env-dd-menu {
+    position: absolute;
+    top: 30px;
+    right: 0;
+    z-index: 41;
+    min-width: 168px;
+    padding: 4px;
+    background: var(--rail-2);
+    border: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: 0 16px 44px -18px rgba(0, 0, 0, 0.85);
+}
+.env-dd-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 28px;
+    padding: 0 9px;
+    border-radius: 0;
+    color: var(--ink-dim);
+    font-size: 12px;
+}
+.env-dd-item:hover {
+    background: var(--acc-soft);
+    color: var(--ink);
+}
+.env-dd-item.active {
+    color: var(--ink);
+}
+.agent-row.sel::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2.5px;
+    border-radius: 0;
+    background: var(--acc);
+}
+.agent-row.new {
+    color: var(--ink-faint);
+}
+.agent-row.new:hover {
+    color: var(--acc);
+}
+.agent-glyph.dim {
+    color: var(--ink-faint);
+}
+.agent-ago {
+    font-size: 10px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+.agent-bm {
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    color: var(--ink-faint);
+    opacity: 0;
+    transition:
+        opacity 0.12s,
+        color 0.12s;
+}
+.agent-row:hover .agent-bm {
+    opacity: 1;
+}
+.agent-bm:hover {
+    color: var(--acc);
+}
+.agent-bm.on {
+    opacity: 1;
+    color: var(--acc);
+}
+
+.agent-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+    flex: 0 0 auto;
+}
+.agent-header-types,
+.agent-header-actions {
+    display: flex;
+    gap: 2px;
+}
+.agent-header-types {
+    flex: 1;
+}
+.agent-header-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 28px;
+    color: var(--ink-faint);
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.agent-header-btn:hover {
+    color: var(--ink);
+    background: var(--rail-2);
+}
+.agent-header-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.agent-header-btn:disabled:hover {
+    color: var(--ink-faint);
+    background: transparent;
+}
+.agent-header-btn.active {
+    color: var(--acc);
+    background: var(--acc-soft);
+}
+
+.agent-group + .agent-group {
+    margin-top: 10px;
+}
+
+.agent-row.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2.5px;
+    background: var(--acc);
+}
+
+.live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--live);
+    flex: 0 0 auto;
+}
+
+.agent-glyph {
+    position: relative;
+}
+.agent-glyph-icon {
+    display: flex;
+    transition: opacity 0.12s;
+}
+.agent-glyph-x {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--danger);
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+.agent-row.closable:hover .agent-glyph-icon {
+    opacity: 0;
+}
+.agent-row.closable:hover .agent-glyph-x {
+    opacity: 1;
+}
+
+/* agent YOLO / bypass toggle — floats over the agent terminal, top-right corner.
+   Sharp corners, no glow. Safe = theme green, armed = flowing theme rainbow. */
+.yolo-toggle {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    z-index: 6;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 10px;
+    border: 1px solid color-mix(in srgb, var(--live) 38%, transparent);
+    border-radius: 0;
+    background: color-mix(in srgb, var(--live) 7%, color-mix(in srgb, var(--pane) 82%, transparent));
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    color: var(--live);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.5;
+    transition:
+        opacity 0.16s ease,
+        border-color 0.16s ease,
+        transform 0.16s ease;
+}
+.pane-terminal:hover .yolo-toggle {
+    opacity: 0.85;
+}
+.yolo-toggle:hover {
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--live) 70%, transparent);
+    transform: translateY(-0.5px);
+}
+.yolo-glyph {
+    display: flex;
+}
+.yolo-hint {
+    font-family: var(--kbd);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    padding-left: 6px;
+    border-left: 1px solid color-mix(in srgb, var(--live) 30%, transparent);
+    transition:
+        color 0.16s ease,
+        border-color 0.16s ease;
+}
+.yolo-toggle:hover .yolo-hint {
+    color: var(--ink-dim);
+}
+
+/* armed: flowing rainbow of theme colors — gradient border + gradient text */
+.yolo-toggle.on,
+.pane-terminal:hover .yolo-toggle.on {
+    opacity: 1;
+    border-color: transparent;
+    background: color-mix(in srgb, var(--pane) 82%, transparent);
+}
+.yolo-toggle.on::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    padding: 1px;
+    background: var(--yolo-rainbow);
+    background-size: 200% 100%;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: yolo-flow 5s linear infinite;
+    pointer-events: none;
+}
+.yolo-toggle.on .yolo-label {
+    background: var(--yolo-rainbow);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: yolo-flow 5s linear infinite;
+}
+.yolo-toggle.on .yolo-glyph {
+    animation: yolo-hue 5s linear infinite;
+}
+.yolo-toggle.on .yolo-hint {
+    color: var(--ink-dim);
+    border-left-color: color-mix(in srgb, var(--ink-faint) 70%, transparent);
+}
+
+@keyframes yolo-flow {
+    from {
+        background-position: 0% 0;
+    }
+    to {
+        background-position: 200% 0;
+    }
+}
+@keyframes yolo-hue {
+    0% {
+        color: var(--acc);
+    }
+    20% {
+        color: var(--cmd);
+    }
+    40% {
+        color: var(--danger);
+    }
+    60% {
+        color: var(--warn);
+    }
+    80% {
+        color: var(--live);
+    }
+    100% {
+        color: var(--acc);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .yolo-toggle.on::before,
+    .yolo-toggle.on .yolo-label,
+    .yolo-toggle.on .yolo-glyph {
+        animation: none;
+    }
+}
+
+.agent-empty-stage {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--ink-faint);
+    font-size: 12px;
+    pointer-events: none;
+}
+.agent-empty-hint {
+    font-size: 11px;
+    color: var(--ink-faint);
+    opacity: 0.7;
+}
