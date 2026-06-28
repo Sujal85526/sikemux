@@ -1,6 +1,8 @@
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
+use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
 use tauri::async_runtime::spawn_blocking;
 
@@ -11,6 +13,13 @@ pub struct DirEntry {
     name: String,
     path: String,
     is_dir: bool,
+}
+
+#[derive(Serialize)]
+pub struct FileBlob {
+    mime: String,
+    data: String,
+    size: u64,
 }
 
 /// List a directory, directories first then files, both alphabetical.
@@ -50,6 +59,44 @@ pub async fn read_file(path: String) -> AppResult<String> {
     spawn_blocking(move || fs::read_to_string(&path).map_err(AppError::from))
         .await
         .map_err(|e| AppError::Other(format!("read_file join: {e}")))?
+}
+
+#[tauri::command]
+pub async fn read_file_base64(path: String) -> AppResult<FileBlob> {
+    spawn_blocking(move || read_file_base64_sync(path))
+        .await
+        .map_err(|e| AppError::Other(format!("read_file_base64 join: {e}")))?
+}
+
+fn read_file_base64_sync(path: String) -> AppResult<FileBlob> {
+    let bytes = fs::read(&path)?;
+    let mime = mime_for_path(&path);
+    Ok(FileBlob {
+        mime,
+        size: bytes.len() as u64,
+        data: general_purpose::STANDARD.encode(bytes),
+    })
+}
+
+fn mime_for_path(path: &str) -> String {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        "tif" | "tiff" => "image/tiff",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
 
 #[tauri::command]

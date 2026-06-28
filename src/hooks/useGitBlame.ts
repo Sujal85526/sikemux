@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { EditorView } from "@codemirror/view";
 import { refreshBlame, setBlameContext } from "../editor/gitBlame";
+import { isImagePath } from "../editor/media";
 import { subscribe } from "../state/bus";
 
 /**
@@ -13,7 +14,7 @@ export function useGitBlame(viewGetter: () => EditorView | null, cwd: string, ac
     useEffect(() => {
         const view = viewGetter();
         if (!view) return;
-        if (!activePath || !cwd || !activePath.startsWith(`${cwd}/`)) {
+        if (!activePath || !cwd || isImagePath(activePath) || !activePath.startsWith(`${cwd}/`)) {
             setBlameContext(view, null);
             return;
         }

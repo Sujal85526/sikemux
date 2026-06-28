@@ -3,12 +3,13 @@ import type { EditorView } from "@codemirror/view";
 import { git } from "../api/git";
 import { LARGE_DOC_BYTES } from "../editor/codemirror";
 import { setGitBaseline } from "../editor/gitGutter";
+import { isImagePath } from "../editor/media";
 import { subscribe } from "../state/bus";
 import { swallow } from "../state/toast";
 
 export function useGitBaseline(viewGetter: () => EditorView | null, cwd: string, activePath: string | null) {
     useEffect(() => {
-        if (!activePath || !cwd || !activePath.startsWith(`${cwd}/`)) return;
+        if (!activePath || !cwd || isImagePath(activePath) || !activePath.startsWith(`${cwd}/`)) return;
         const rel = activePath.slice(cwd.length + 1);
 
         const refetch = () => {

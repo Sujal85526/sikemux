@@ -5,18 +5,19 @@ import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
 import { auraExtensions, isLargeDoc, languageFor } from "../editor/codemirror";
+import { isImagePath } from "../editor/media";
 import { gitDiffGutter } from "../editor/gitGutter";
 import { gitInlineBlame } from "../editor/gitBlame";
 import { lspNav, setLspContext } from "../editor/lspNav";
 import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
 import { lspPeek } from "../editor/lspPeek";
-import { fsapi } from "../api/fs";
+import { fsapi, type FileBlob } from "../api/fs";
 import type { LspTextChange } from "../api/lsp";
 import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { invalidate } from "../state/resources";
 import { useStore } from "../state/store";
-import { notify, reportError } from "../state/toast";
+import { errMessage, notify, reportError } from "../state/toast";
 import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
@@ -77,6 +78,105 @@ function lspChangesFromUpdate(update: ViewUpdate): LspTextChange[] | null {
     return count === 1 ? out : null;
 }
 
+interface ImageState {
+    path: string;
+    loading: boolean;
+    blob?: FileBlob;
+    error?: string;
+}
+
+function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    const units = ["KB", "MB", "GB"];
+    let v = n / 1024;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+        v /= 1024;
+        i += 1;
+    }
+    return `${v >= 10 ? v.toFixed(1) : v.toFixed(2)} ${units[i]}`;
+}
+
+function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: string) => void }) {
+    const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+    const [zoom, setZoom] = useState<"fit" | number>("fit");
+
+    useEffect(() => {
+        setDims(null);
+        setZoom("fit");
+    }, [image.path, image.blob?.data]);
+
+    const src = image.blob ? `data:${image.blob.mime};base64,${image.blob.data}` : "";
+    const zoomLabel = zoom === "fit" ? "fit" : `${Math.round(zoom * 100)}%`;
+
+    return (
+        <div className="ed-image-viewer">
+            <div className="ed-image-bar">
+                <div className="ed-image-title" title={image.path}>
+                    <FileIcon name={basename(image.path)} size={16} />
+                    <span>{basename(image.path)}</span>
+                </div>
+                <div className="ed-image-meta">
+                    {image.blob && <span>{formatBytes(image.blob.size)}</span>}
+                    {dims && <span>{dims.w}×{dims.h}</span>}
+                    {image.blob && <span>{image.blob.mime}</span>}
+                    <span>{zoomLabel}</span>
+                </div>
+                <div className="ed-image-actions">
+                    <button type="button" onClick={() => setZoom("fit")} disabled={zoom === "fit"} title="Fit image to editor">
+                        fit
+                    </button>
+                    <button type="button" onClick={() => setZoom(1)} disabled={zoom === 1} title="Actual size">
+                        100%
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setZoom((z) => (z === "fit" ? 1.25 : Math.min(z * 1.25, 8)))}
+                        title="Zoom in">
+                        +
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setZoom((z) => (z === "fit" ? 0.8 : Math.max(z / 1.25, 0.1)))}
+                        title="Zoom out">
+                        −
+                    </button>
+                    <button type="button" onClick={() => onReload(image.path)} title="Reload image">
+                        reload
+                    </button>
+                </div>
+            </div>
+            <div className="ed-image-stage">
+                {image.loading && <div className="ed-image-message">loading image…</div>}
+                {image.error && (
+                    <div className="ed-image-message error">
+                        <strong>couldn't open image</strong>
+                        <span>{image.error}</span>
+                    </div>
+                )}
+                {image.blob && !image.error && (
+                    <img
+                        src={src}
+                        alt={basename(image.path)}
+                        draggable={false}
+                        onLoad={(e) => setDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                        style={
+                            zoom === "fit"
+                                ? undefined
+                                : {
+                                      width: `${Math.max(1, (dims?.w ?? 0) * zoom)}px`,
+                                      height: "auto",
+                                      maxWidth: "none",
+                                      maxHeight: "none",
+                                  }
+                        }
+                    />
+                )}
+            </div>
+        </div>
+    );
+}
+
 export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; cwd: string; active: boolean; visible: boolean }) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
@@ -90,6 +190,8 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     dirtyRef.current = dirty;
 
     const savedRef = useRef<Map<string, string>>(new Map());
+    const imagesRef = useRef<Map<string, FileBlob>>(new Map());
+    const [activeImage, setActiveImage] = useState<ImageState | null>(null);
 
     const [findState, setFindState] = useState<{
         open: boolean;
@@ -132,7 +234,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     });
 
     const bindLspContext = (view: EditorView, path: string | null) => {
-        if (!path || !cwd) {
+        if (!path || !cwd || isImagePath(path)) {
             setLspContext(view, null);
             setHoverLinkContext(view, null);
             return;
@@ -155,7 +257,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     const save = useCallback((): boolean => {
         const path = currentRef.current;
         const view = viewRef.current;
-        if (!path || !view) return false;
+        if (!path || !view || isImagePath(path)) return false;
         const text = view.state.doc.toString();
         void fsapi
             .writeFile(path, text)
@@ -236,7 +338,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                         ]),
                     ),
                     EditorView.updateListener.of((u) => {
-                        if (!u.docChanged || !currentRef.current) return;
+                        if (!u.docChanged || !currentRef.current || isImagePath(currentRef.current)) return;
                         const p = currentRef.current;
                         const doc = u.state.doc;
                         const baseline = savedRef.current.get(p);
@@ -275,15 +377,51 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     }, [makeState]);
 
     useEffect(() => {
-        if (active) viewRef.current?.focus();
-    }, [active, activePath]);
+        if (active && !activeImage) viewRef.current?.focus();
+    }, [active, activePath, activeImage]);
+
+    const showImage = useCallback((path: string, force = false) => {
+        const cached = force ? undefined : imagesRef.current.get(path);
+        if (cached) {
+            setActiveImage({ path, loading: false, blob: cached });
+            return;
+        }
+        setActiveImage({ path, loading: true });
+        void fsapi
+            .readFileBase64(path)
+            .then((blob) => {
+                imagesRef.current.set(path, blob);
+                if (currentRef.current === path) setActiveImage({ path, loading: false, blob });
+            })
+            .catch((e) => {
+                if (currentRef.current === path) setActiveImage({ path, loading: false, error: errMessage(e) });
+            });
+    }, []);
+
+    const reloadImage = useCallback(
+        (path: string) => {
+            imagesRef.current.delete(path);
+            showImage(path, true);
+        },
+        [showImage],
+    );
 
     const switchTo = (path: string, fresh?: EditorState) => {
         const view = viewRef.current;
         if (!view) return;
-        if (currentRef.current) states.current.set(currentRef.current, view.state);
+        if (currentRef.current && !isImagePath(currentRef.current)) states.current.set(currentRef.current, view.state);
+
+        if (isImagePath(path)) {
+            currentRef.current = path;
+            bindLspContext(view, null);
+            showImage(path);
+            cmd.setEditorView(paneId, { activePath: path });
+            return;
+        }
+
         const st = fresh ?? states.current.get(path);
         if (!st) return;
+        setActiveImage(null);
         view.setState(st);
         refreshViewTheme(view);
         currentRef.current = path;
@@ -296,6 +434,14 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     const openPath = async (path: string) => {
         const liveTabs = useStore.getState().editorViews[paneId]?.openTabs ?? [];
         if (liveTabs.includes(path)) {
+            switchTo(path);
+            return;
+        }
+        if (isImagePath(path)) {
+            cmd.setEditorView(paneId, {
+                openTabs: [...liveTabs, path],
+                activePath: path,
+            });
             switchTo(path);
             return;
         }
@@ -317,7 +463,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     // switchTo() directly, so they leave currentRef === activePath and no-op here.
     useEffect(() => {
         if (!hydratedRef.current || !activePath || currentRef.current === activePath) return;
-        if (states.current.has(activePath)) {
+        if (isImagePath(activePath) || states.current.has(activePath)) {
             switchTo(activePath);
             return;
         }
@@ -346,7 +492,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         (async () => {
             const want = activePath && tabs.includes(activePath) ? activePath : tabs[0];
             const load = async (path: string) => {
-                if (states.current.has(path)) return true;
+                if (isImagePath(path) || states.current.has(path)) return true;
                 try {
                     const content = await fsapi.readFile(path);
                     if (cancelled) return false;
@@ -389,6 +535,11 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
             for (const path of tabsNow) {
                 if (cancelled || dirtyRef.current.has(path)) continue;
+                if (isImagePath(path)) {
+                    imagesRef.current.delete(path);
+                    if (currentRef.current === path) showImage(path, true);
+                    continue;
+                }
                 let fresh: string;
                 try {
                     fresh = await fsapi.readFile(path);
@@ -418,7 +569,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         return () => {
             cancelled = true;
         };
-    }, [visible, cwd, paneId, makeState]);
+    }, [visible, cwd, paneId, makeState, showImage]);
 
     useEffect(() => {
         if (!cwd || !visible) return;
@@ -427,6 +578,11 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
             for (const path of tabsNow) {
                 if (dirtyRef.current.has(path)) continue;
+                if (isImagePath(path)) {
+                    imagesRef.current.delete(path);
+                    if (currentRef.current === path) showImage(path, true);
+                    continue;
+                }
                 let fresh: string;
                 try {
                     fresh = await fsapi.readFile(path);
@@ -467,7 +623,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             if (!belongsHere && (belongsToAProject || !active)) return;
             void (async () => {
                 await openPath(e.path);
-                if (e.line != null && viewRef.current) {
+                if (e.line != null && viewRef.current && !isImagePath(e.path)) {
                     scrollToLine(viewRef.current, e.line, e.character ?? 0);
                 }
             })();
@@ -478,7 +634,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     useEffect(() => {
         const view = viewRef.current;
         if (!view) return;
-        if (!activePath || !cwd) {
+        if (!activePath || !cwd || isImagePath(activePath)) {
             setLspContext(view, null);
             setHoverLinkContext(view, null);
             return;
@@ -513,6 +669,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         }
         for (const p of closing) {
             states.current.delete(p);
+            imagesRef.current.delete(p);
             void closeDoc(p);
         }
         setDirty((d) => {
@@ -533,6 +690,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 switchTo(fallback);
             } else {
                 currentRef.current = null;
+                setActiveImage(null);
                 viewRef.current?.setState(makeState("", ""));
             }
         }
@@ -596,15 +754,18 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     onClose={(path) => closeTabs([path])}
                     buildMenu={buildTabMenu}
                 />
-                <div className="ed-host" ref={hostRef}>
-                    <EditorFindBar
-                        getView={() => viewRef.current}
-                        open={findState.open}
-                        replaceOpenOnMount={findState.replaceOpen}
-                        seed={findState.seed}
-                        signal={findState.signal}
-                        onClose={() => setFindState((prev) => ({ ...prev, open: false }))}
-                    />
+                <div className={`ed-host${activeImage ? " image-mode" : ""}`} ref={hostRef}>
+                    {!activeImage && (
+                        <EditorFindBar
+                            getView={() => viewRef.current}
+                            open={findState.open}
+                            replaceOpenOnMount={findState.replaceOpen}
+                            seed={findState.seed}
+                            signal={findState.signal}
+                            onClose={() => setFindState((prev) => ({ ...prev, open: false }))}
+                        />
+                    )}
+                    {activeImage && <ImageViewer image={activeImage} onReload={reloadImage} />}
                 </div>
                 {tabs.length === 0 && (
                     <div className="ed-empty">

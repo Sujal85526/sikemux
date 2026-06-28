@@ -107,6 +107,7 @@ pub fn run() {
             agents::agent_sessions_watch_stop,
             fs::read_dir,
             fs::read_file,
+            fs::read_file_base64,
             fs::write_file,
             fs::write_file_new,
             fs::create_file,
