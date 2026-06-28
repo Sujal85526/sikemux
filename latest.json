@@ -1,11 +1,11 @@
 {
-  "version": "0.1.24",
-  "notes": "Mobile companion: Android Compose app, QR pairing, OS live notification, and desktop terminal sync server.",
-  "pub_date": "2026-06-28T16:17:07Z",
+  "version": "0.1.25",
+  "notes": "Fix mobile QR pairing to use the Mac's Tailscale IP instead of 0.0.0.0.",
+  "pub_date": "2026-06-28T16:28:43Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVFGdGZNTTBzcUhVSk5UYUVHL0NYMHptYlZiVnM2Mng5ZFRjb240clQ3VUM3a0pLcGZ1UCt5QXI4N296Tm5DNmhEWjZjc2dpcDZIdm1EZ05pYW5KNkFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjYzNDI2CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CnRWaURLTEc4K2tVKzBtUHZKbENEMUNRbGtqTkZoUnY3Y2pQZzYwTVJ4TDNaM3ZoYzgxaEVOMmxxeXkraUovTjhub3JCWU1CdTNVVmVveGNSazNEa0FRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.24/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVZhbUdZOVhBRGJsK3oyNTYrbElUckpaVEUyNllSKzBTSGh6bmdGR3p4Qno3K1FXWnNCR2hIa2N4WmZqQ00yYllpL2dMSWdDdi9ndmxjdmh3VEJHRnc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjY0MTIyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6ClZYREs3YWpOV2FhaEN4cXNBcFF0NjJhaGhPZVV1ODRub000bG5ya0NUZGEzVE1pT1JTT2V2d0JjWkovZmJ3WHdUYjVMVFNMOWdRL3RTcU1QYkdEeUFBPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.25/Sikemux.app.tar.gz"
     }
   }
 }

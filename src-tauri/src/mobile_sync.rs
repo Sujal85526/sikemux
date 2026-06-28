@@ -1,5 +1,5 @@
 use std::fs;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -252,11 +252,85 @@ fn normalise_pairing_url(public_url: Option<String>, fallback: Option<String>) -
         .filter(|s| !s.is_empty())
         .or(fallback)
         .unwrap_or_else(|| format!("http://{DEFAULT_BIND}"));
-    if raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("ws://") || raw.starts_with("wss://") {
+    let url = if raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("ws://") || raw.starts_with("wss://") {
         raw
     } else {
         format!("http://{raw}")
+    };
+    rewrite_unspecified_host(&url).unwrap_or(url)
+}
+
+fn rewrite_unspecified_host(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let (host, port) = authority.rsplit_once(':')?;
+    if host != "0.0.0.0" && host != "[::]" && host != "::" {
+        return None;
     }
+    let replacement = preferred_pairing_ip()?;
+    let suffix = if path.is_empty() { String::new() } else { format!("/{path}") };
+    Some(format!("{scheme}://{replacement}:{port}{suffix}"))
+}
+
+fn preferred_pairing_ip() -> Option<Ipv4Addr> {
+    let mut addrs = interface_ipv4_addrs();
+    if addrs.is_empty() {
+        return None;
+    }
+    addrs.sort_by_key(|ip| {
+        if is_tailscale_ip(*ip) {
+            0
+        } else if is_private_ip(*ip) {
+            1
+        } else {
+            2
+        }
+    });
+    addrs.into_iter().next()
+}
+
+fn is_tailscale_ip(ip: Ipv4Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 100 && (64..=127).contains(&o[1])
+}
+
+fn is_private_ip(ip: Ipv4Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168)
+}
+
+#[cfg(unix)]
+fn interface_ipv4_addrs() -> Vec<Ipv4Addr> {
+    let mut out = Vec::new();
+    let mut ifaddrs: *mut libc::ifaddrs = std::ptr::null_mut();
+    let rc = unsafe { libc::getifaddrs(&mut ifaddrs) };
+    if rc != 0 || ifaddrs.is_null() {
+        return out;
+    }
+    let mut cursor = ifaddrs;
+    while !cursor.is_null() {
+        let ifa = unsafe { &*cursor };
+        if !ifa.ifa_addr.is_null() {
+            let family = unsafe { (*ifa.ifa_addr).sa_family as libc::c_int };
+            if family == libc::AF_INET {
+                let sockaddr = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in) };
+                let ip = Ipv4Addr::from(u32::from_be(sockaddr.sin_addr.s_addr));
+                if !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local() {
+                    out.push(ip);
+                }
+            }
+        }
+        cursor = ifa.ifa_next;
+    }
+    unsafe { libc::freeifaddrs(ifaddrs) };
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[cfg(not(unix))]
+fn interface_ipv4_addrs() -> Vec<Ipv4Addr> {
+    Vec::new()
 }
 
 fn url_to_ws(url: &str) -> String {

@@ -13,8 +13,8 @@ android {
         applicationId = "com.nodelike.sikemux.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.1.24"
+        versionCode = 25
+        versionName = "0.1.25"
     }
 
     buildTypes {
