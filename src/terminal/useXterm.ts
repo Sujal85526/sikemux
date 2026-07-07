@@ -99,11 +99,18 @@ export function useXterm(opts: {
             const channel = new Channel<number[]>();
             let outputFrame: number | null = null;
             let outputBusy = false;
+            let forceScrollAfterReplay = true;
             const outputPending: Uint8Array[] = [];
             const encoder = new TextEncoder();
+            const isAtBottom = () => {
+                const buf = term.buffer.active;
+                return buf.viewportY >= buf.baseY;
+            };
             const flushOutput = () => {
                 outputFrame = null;
                 if (disposed || outputBusy || outputPending.length === 0) return;
+                const stickToBottom = forceScrollAfterReplay || isAtBottom();
+                forceScrollAfterReplay = false;
                 let total = 0;
                 for (const chunk of outputPending) total += chunk.length;
                 const merged = new Uint8Array(total);
@@ -115,6 +122,7 @@ export function useXterm(opts: {
                 outputBusy = true;
                 term.write(merged, () => {
                     outputBusy = false;
+                    if (stickToBottom && !disposed) term.scrollToBottom();
                     if (outputPending.length > 0) scheduleOutput();
                 });
             };
@@ -203,7 +211,9 @@ export function useXterm(opts: {
             const resizeNow = () => {
                 resizeFrame = null;
                 if (host.clientWidth === 0 || host.clientHeight === 0) return;
+                const stickToBottom = isAtBottom();
                 fit.fit();
+                if (stickToBottom) term.scrollToBottom();
                 if (term.cols === lastCols && term.rows === lastRows) return;
                 lastCols = term.cols;
                 lastRows = term.rows;
