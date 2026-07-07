@@ -89,7 +89,7 @@ function scheduleHunks(view: EditorView): { cancel: () => void } {
     return {
         cancel: () => {
             if (timer) window.clearTimeout(timer);
-            timer = window.setTimeout(run, 120);
+            timer = window.setTimeout(run, 500);
         },
     };
 }
@@ -124,7 +124,10 @@ const overviewRuler = ViewPlugin.fromClass(
         }
         update(u: ViewUpdate) {
             const hunksChanged = u.startState.field(hunksField) !== u.state.field(hunksField);
-            if (u.docChanged || hunksChanged) this.render(u.view);
+            // The ruler only depends on committed hunk state. Rebuilding DOM on
+            // every keystroke/selection-adjacent transaction makes dirty files
+            // progressively more expensive as hunk count grows.
+            if (hunksChanged) this.render(u.view);
         }
         destroy() {
             this.dom.remove();

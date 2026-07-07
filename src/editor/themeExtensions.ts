@@ -5,7 +5,7 @@ import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 import { tags as t } from "@lezer/highlight";
 import type { Theme } from "../themes";
 
-export function buildEditorExtensions(theme: Theme): Extension {
+export function buildEditorThemeExtensions(theme: Theme): Extension {
     const editorTheme = EditorView.theme(
         {
             "&": { color: theme.editor.fg, backgroundColor: theme.editor.bg },
@@ -87,17 +87,25 @@ export function buildEditorExtensions(theme: Theme): Extension {
         },
     ]);
 
-    return [
-        editorTheme,
-        syntaxHighlighting(highlight),
-        indentationMarkers({
-            thickness: 1,
-            colors: {
-                light: theme.editor.indent,
-                dark: theme.editor.indent,
-                activeLight: theme.editor.indentActive,
-                activeDark: theme.editor.indentActive,
-            },
-        }),
-    ];
+    return [editorTheme, syntaxHighlighting(highlight)];
+}
+
+export function buildIndentMarkerExtensions(theme: Theme): Extension {
+    return indentationMarkers({
+        thickness: 1,
+        // Active-block highlighting makes every caret-line / selection-line
+        // move rebuild the visible indent decorations. Plain guides preserve
+        // the visual affordance without making drag-selection pay that cost.
+        highlightActiveBlock: false,
+        colors: {
+            light: theme.editor.indent,
+            dark: theme.editor.indent,
+            activeLight: theme.editor.indentActive,
+            activeDark: theme.editor.indentActive,
+        },
+    });
+}
+
+export function buildEditorExtensions(theme: Theme): Extension {
+    return [buildEditorThemeExtensions(theme), buildIndentMarkerExtensions(theme)];
 }

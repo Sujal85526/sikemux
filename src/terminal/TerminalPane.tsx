@@ -3,7 +3,7 @@ import "@xterm/xterm/css/xterm.css";
 import { usePty } from "./usePty";
 import { useXterm } from "./useXterm";
 
-const SWITCH_KEEPALIVE_MS = 30_000;
+const SWITCH_KEEPALIVE_MS = 120_000;
 
 export function TerminalPane({
     cwd,

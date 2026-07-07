@@ -2,12 +2,13 @@ import { Compartment } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { Terminal } from "@xterm/xterm";
 import { DEFAULT_THEME_ID, themeById, type Theme } from ".";
-import { buildEditorExtensions } from "../editor/themeExtensions";
+import { buildEditorThemeExtensions, buildIndentMarkerExtensions } from "../editor/themeExtensions";
 
 let current: Theme = themeById(DEFAULT_THEME_ID);
 let currentOpacity = 1;
 
 const themeCompartment = new Compartment();
+const indentCompartment = new Compartment();
 const views = new Set<EditorView>();
 const terms = new Set<Terminal>();
 
@@ -43,13 +44,19 @@ export function currentTheme(): Theme {
     return current;
 }
 
-export function themeCompartmentExtension() {
-    return themeCompartment.of(buildEditorExtensions(current));
+export function themeCompartmentExtension(opts: { indentMarkers?: boolean } = {}) {
+    return [
+        themeCompartment.of(buildEditorThemeExtensions(current)),
+        ...(opts.indentMarkers === false ? [] : [indentCompartment.of(buildIndentMarkerExtensions(current))]),
+    ];
 }
 
 function pushThemeOnto(view: EditorView): void {
     view.dispatch({
-        effects: themeCompartment.reconfigure(buildEditorExtensions(current)),
+        effects: [
+            themeCompartment.reconfigure(buildEditorThemeExtensions(current)),
+            indentCompartment.reconfigure(buildIndentMarkerExtensions(current)),
+        ],
     });
 }
 
@@ -103,9 +110,10 @@ function applyChrome(theme: Theme) {
 function applyThemeObject(next: Theme): void {
     current = next;
     applyChrome(next);
-    const ext = buildEditorExtensions(next);
+    const themeExt = buildEditorThemeExtensions(next);
+    const indentExt = buildIndentMarkerExtensions(next);
     views.forEach((view) => {
-        view.dispatch({ effects: themeCompartment.reconfigure(ext) });
+        view.dispatch({ effects: [themeCompartment.reconfigure(themeExt), indentCompartment.reconfigure(indentExt)] });
     });
     applyTerminalThemes();
 }

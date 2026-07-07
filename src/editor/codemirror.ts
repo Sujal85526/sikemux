@@ -98,6 +98,7 @@ export function languageFor(path: string): Extension[] {
 }
 
 export const auraExtensions: Extension = themeCompartmentExtension();
+export const editorThemeOnlyExtensions = (): Extension => themeCompartmentExtension({ indentMarkers: false });
 
 /**
  * Docs larger than this skip the per-change / high-frequency extensions

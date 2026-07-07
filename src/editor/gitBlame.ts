@@ -72,11 +72,20 @@ const blameRender = ViewPlugin.fromClass(
             // Mid-edit the cached blame no longer lines up with the buffer's
             // line numbers; hide until the debounced re-blame settles.
             if (u.docChanged) {
-                this.deco = Decoration.none;
+                if (this.deco !== Decoration.none) this.deco = Decoration.none;
                 return;
             }
             const blameChanged = u.startState.field(blameField, false) !== u.state.field(blameField, false);
-            if (u.selectionSet || blameChanged) this.deco = widgetFor(u.view);
+            if (blameChanged) {
+                this.deco = widgetFor(u.view);
+                return;
+            }
+            if (!u.selectionSet) return;
+            // Drag-selecting emits a transaction for every pointer movement.
+            // Once the blame widget is hidden for a non-empty selection, avoid
+            // rebuilding the same empty DecorationSet on every move.
+            if (!u.state.selection.main.empty && this.deco === Decoration.none) return;
+            this.deco = widgetFor(u.view);
         }
     },
     { decorations: (v) => v.deco },

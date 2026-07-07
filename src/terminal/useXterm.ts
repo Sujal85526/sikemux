@@ -98,14 +98,12 @@ export function useXterm(opts: {
             const pending: number[][] = [];
             const channel = new Channel<number[]>();
             let outputFrame: number | null = null;
-            const outputPending: number[][] = [];
+            let outputBusy = false;
+            const outputPending: Uint8Array[] = [];
+            const encoder = new TextEncoder();
             const flushOutput = () => {
                 outputFrame = null;
-                if (disposed || outputPending.length === 0) return;
-                if (outputPending.length === 1) {
-                    term.write(new Uint8Array(outputPending.pop()!));
-                    return;
-                }
+                if (disposed || outputBusy || outputPending.length === 0) return;
                 let total = 0;
                 for (const chunk of outputPending) total += chunk.length;
                 const merged = new Uint8Array(total);
@@ -114,19 +112,26 @@ export function useXterm(opts: {
                     merged.set(chunk, offset);
                     offset += chunk.length;
                 }
-                term.write(merged);
+                outputBusy = true;
+                term.write(merged, () => {
+                    outputBusy = false;
+                    if (outputPending.length > 0) scheduleOutput();
+                });
             };
             const scheduleOutput = () => {
-                if (outputFrame == null) outputFrame = window.requestAnimationFrame(flushOutput);
+                if (!outputBusy && outputFrame == null) outputFrame = window.requestAnimationFrame(flushOutput);
+            };
+            const writeBytes = (bytes: Uint8Array) => {
+                if (bytes.length === 0) return;
+                outputPending.push(bytes);
+                scheduleOutput();
             };
             const writeChunk = (chunk: number[]) => {
                 if (chunk.length === 0) {
-                    flushOutput();
-                    term.write("\r\n\x1b[38;5;245m[process exited]\x1b[0m\r\n");
+                    writeBytes(encoder.encode("\r\n\x1b[38;5;245m[process exited]\x1b[0m\r\n"));
                     return;
                 }
-                outputPending.push(chunk);
-                scheduleOutput();
+                writeBytes(new Uint8Array(chunk));
             };
             channel.onmessage = (chunk) => {
                 if (!snapshotApplied) {
@@ -147,7 +152,7 @@ export function useXterm(opts: {
                 bootingRef.current = false;
                 return;
             }
-            if (snapshot.length > 0) term.write(new Uint8Array(snapshot));
+            if (snapshot.length > 0) writeChunk(snapshot);
             snapshotApplied = true;
             for (const chunk of pending) writeChunk(chunk);
             pending.length = 0;
@@ -192,14 +197,24 @@ export function useXterm(opts: {
                 return false;
             });
 
-            const resize = () => {
+            let resizeFrame: number | null = null;
+            let lastCols = term.cols;
+            let lastRows = term.rows;
+            const resizeNow = () => {
+                resizeFrame = null;
                 if (host.clientWidth === 0 || host.clientHeight === 0) return;
                 fit.fit();
+                if (term.cols === lastCols && term.rows === lastRows) return;
+                lastCols = term.cols;
+                lastRows = term.rows;
                 void invoke("pty_resize", {
                     id: pid,
                     cols: term.cols,
                     rows: term.rows,
                 });
+            };
+            const resize = () => {
+                if (resizeFrame == null) resizeFrame = window.requestAnimationFrame(resizeNow);
             };
             resizeRef.current = resize;
             const ro = new ResizeObserver(resize);
@@ -234,6 +249,7 @@ export function useXterm(opts: {
                 host.removeEventListener("wheel", onWheel);
                 dataSub.dispose();
                 if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
+                if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);
                 outputPending.length = 0;
                 pending.length = 0;
                 void invoke("pty_unsubscribe", { id: pid, subId });

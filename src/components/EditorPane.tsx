@@ -4,7 +4,7 @@ import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
-import { auraExtensions, isLargeDoc, languageFor } from "../editor/codemirror";
+import { auraExtensions, editorThemeOnlyExtensions, isLargeDoc, languageFor } from "../editor/codemirror";
 import { isImagePath } from "../editor/media";
 import { gitDiffGutter } from "../editor/gitGutter";
 import { gitInlineBlame } from "../editor/gitBlame";
@@ -292,7 +292,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 extensions: [
                     basicSetup,
                     search({ top: true }),
-                    auraExtensions,
+                    heavy ? editorThemeOnlyExtensions() : auraExtensions,
                     ...(heavy ? [] : languageFor(path)),
                     ...(heavy ? [] : [gitDiffGutter(), gitInlineBlame(), lspHoverLink()]),
                     lspNav(),
@@ -573,41 +573,74 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     useEffect(() => {
         if (!cwd || !visible) return;
-        return subscribe("fs-changed", async (e) => {
-            if (e.repo && e.repo !== cwd) return;
-            const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
-            for (const path of tabsNow) {
-                if (dirtyRef.current.has(path)) continue;
-                if (isImagePath(path)) {
-                    imagesRef.current.delete(path);
-                    if (currentRef.current === path) showImage(path, true);
-                    continue;
+        let timer: number | undefined;
+        let running = false;
+        let rerun = false;
+
+        const refreshOpenTabs = async () => {
+            if (running) {
+                rerun = true;
+                return;
+            }
+            running = true;
+            try {
+                const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
+                for (const path of tabsNow) {
+                    if (dirtyRef.current.has(path)) continue;
+                    if (isImagePath(path)) {
+                        imagesRef.current.delete(path);
+                        if (currentRef.current === path) showImage(path, true);
+                        continue;
+                    }
+                    let fresh: string;
+                    try {
+                        fresh = await fsapi.readFile(path);
+                    } catch {
+                        continue; // file was deleted / renamed — silently skip
+                    }
+                    const isActive = currentRef.current === path;
+                    const view = viewRef.current;
+                    if (isActive && view) {
+                        const doc = view.state.doc;
+                        if (doc.length === fresh.length && doc.toString() === fresh) continue;
+                        // Do not collapse an in-progress drag selection because a
+                        // watcher event arrived mid-gesture. Another debounced pass
+                        // will apply the external update after the selection settles.
+                        if (!view.state.selection.main.empty) {
+                            rerun = true;
+                            continue;
+                        }
+                        savedRef.current.set(path, fresh);
+                        const head = Math.min(view.state.selection.main.head, fresh.length);
+                        view.dispatch({
+                            changes: { from: 0, to: view.state.doc.length, insert: fresh },
+                            selection: { anchor: head },
+                        });
+                    } else {
+                        const cached = states.current.get(path);
+                        if (cached && cached.doc.length === fresh.length && cached.doc.toString() === fresh) continue;
+                        savedRef.current.set(path, fresh);
+                        states.current.set(path, makeState(path, fresh));
+                    }
                 }
-                let fresh: string;
-                try {
-                    fresh = await fsapi.readFile(path);
-                } catch {
-                    continue; // file was deleted / renamed — silently skip
-                }
-                const isActive = currentRef.current === path;
-                const view = viewRef.current;
-                if (isActive && view) {
-                    const doc = view.state.doc;
-                    if (doc.length === fresh.length && doc.toString() === fresh) continue;
-                    savedRef.current.set(path, fresh);
-                    const head = Math.min(view.state.selection.main.head, fresh.length);
-                    view.dispatch({
-                        changes: { from: 0, to: view.state.doc.length, insert: fresh },
-                        selection: { anchor: head },
-                    });
-                } else {
-                    const cached = states.current.get(path);
-                    if (cached && cached.doc.length === fresh.length && cached.doc.toString() === fresh) continue;
-                    savedRef.current.set(path, fresh);
-                    states.current.set(path, makeState(path, fresh));
+            } finally {
+                running = false;
+                if (rerun) {
+                    rerun = false;
+                    timer = window.setTimeout(refreshOpenTabs, 300);
                 }
             }
+        };
+
+        const unsubscribe = subscribe("fs-changed", (e) => {
+            if (e.repo && e.repo !== cwd) return;
+            if (timer) window.clearTimeout(timer);
+            timer = window.setTimeout(refreshOpenTabs, 250);
         });
+        return () => {
+            unsubscribe();
+            if (timer) window.clearTimeout(timer);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cwd, paneId, visible]);
 
