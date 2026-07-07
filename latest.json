@@ -1,11 +1,11 @@
 {
-  "version": "0.1.25",
-  "notes": "Fix mobile QR pairing to use the Mac's Tailscale IP instead of 0.0.0.0.",
-  "pub_date": "2026-06-28T16:28:43Z",
+  "version": "0.1.26",
+  "notes": "Improve editor selection performance, terminal rendering/scroll behavior, Git publish/pull UX, and top-bar checkout of deployed Rundeck branches.",
+  "pub_date": "2026-07-07T14:24:56Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVZhbUdZOVhBRGJsK3oyNTYrbElUckpaVEUyNllSKzBTSGh6bmdGR3p4Qno3K1FXWnNCR2hIa2N4WmZqQ00yYllpL2dMSWdDdi9ndmxjdmh3VEJHRnc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNjY0MTIyCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6ClZYREs3YWpOV2FhaEN4cXNBcFF0NjJhaGhPZVV1ODRub000bG5ya0NUZGEzVE1pT1JTT2V2d0JjWkovZmJ3WHdUYjVMVFNMOWdRL3RTcU1QYkdEeUFBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.25/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVhVZXV4czA1VnhsRmVHZFJxYjdNQWFxOVFiZkt5eDhRMExDSk9kdEtGZ0dHczhiSDNkS3pDMVg1YVdmeERQVjc2WW95S1dmSmVTTVpUdFQ5bDZiRHc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNDM0Mjk0CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6ClNRaXo5K3pHRGlMQ3l3dGl4bDdoZitON2V0d2tnelVtUlM4Q2xrVVNTRjhob1hMblhhODVzeStPeVBzY0hNanI0K2JjNzZhb2h3dUw1bS81WFdBQURRPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.26/Sikemux.app.tar.gz"
     }
   }
 }
