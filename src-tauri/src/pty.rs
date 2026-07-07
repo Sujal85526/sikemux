@@ -46,7 +46,6 @@ use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tokio::io::unix::AsyncFd;
-use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
 
@@ -73,16 +72,11 @@ struct Pty {
     /// reads.
     write_lock: tokio::sync::Mutex<()>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
-    cwd: String,
-    startup: Option<String>,
     /// Tracks the current screen grid + scrollback. Always up to date,
     /// even when no one's subscribed — that's the whole point.
     parser: Mutex<vt100::Parser>,
     /// Live xterm subscribers. Empty = PTY runs invisibly.
     subscribers: Mutex<HashMap<u32, Channel<Vec<u8>>>>,
-    /// Mobile/websocket subscribers. Kept separate from Tauri Channels so the
-    /// Android companion can receive raw PTY bytes over its own transport.
-    mobile_subscribers: Mutex<HashMap<u32, mpsc::UnboundedSender<Vec<u8>>>>,
     /// Millis-since-process-start of the last chunk processed. The idle
     /// sweeper reads this without contending with the reader because it's
     /// an atomic, not a Mutex.
@@ -99,23 +93,6 @@ pub struct PtyManager {
     ptys: DashMap<u32, Arc<Pty>>,
 }
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MobilePtyInfo {
-    pub id: u32,
-    pub rows: u16,
-    pub cols: u16,
-    pub cwd: String,
-    pub startup: Option<String>,
-    pub subscribers: usize,
-}
-
-pub struct MobilePtyAttach {
-    pub sub_id: u32,
-    pub snapshot: Vec<u8>,
-    pub rx: mpsc::UnboundedReceiver<Vec<u8>>,
-}
-
 impl PtyManager {
     pub fn counts(&self) -> (usize, usize) {
         let mut subscribers = 0usize;
@@ -123,79 +100,8 @@ impl PtyManager {
             if let Ok(subs) = entry.value().subscribers.lock() {
                 subscribers += subs.len();
             }
-            if let Ok(subs) = entry.value().mobile_subscribers.lock() {
-                subscribers += subs.len();
-            }
         }
         (self.ptys.len(), subscribers)
-    }
-
-    pub fn mobile_list(&self) -> Vec<MobilePtyInfo> {
-        let mut out = Vec::new();
-        for entry in self.ptys.iter() {
-            let pty = entry.value();
-            let (rows, cols) = pty
-                .parser
-                .lock()
-                .map(|parser| parser.screen().size())
-                .unwrap_or((0, 0));
-            let tauri_subscribers = pty.subscribers.lock().map(|subs| subs.len()).unwrap_or(0);
-            let mobile_subscribers = pty
-                .mobile_subscribers
-                .lock()
-                .map(|subs| subs.len())
-                .unwrap_or(0);
-            out.push(MobilePtyInfo {
-                id: *entry.key(),
-                rows,
-                cols,
-                cwd: pty.cwd.clone(),
-                startup: pty.startup.clone(),
-                subscribers: tauri_subscribers + mobile_subscribers,
-            });
-        }
-        out.sort_by_key(|pty| pty.id);
-        out
-    }
-
-    pub fn mobile_attach(&self, id: u32) -> AppResult<MobilePtyAttach> {
-        let pty = self
-            .ptys
-            .get(&id)
-            .ok_or(AppError::BadArg("pty not found"))?;
-        let parser = pty.parser.lock().map_err(pty_err)?;
-        let snapshot = attach_snapshot(parser.screen());
-        let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
-        let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
-        let mut subs = pty.mobile_subscribers.lock().map_err(pty_err)?;
-        subs.insert(sub_id, tx);
-        drop(subs);
-        drop(parser);
-        Ok(MobilePtyAttach {
-            sub_id,
-            snapshot,
-            rx,
-        })
-    }
-
-    pub fn mobile_unsubscribe(&self, id: u32, sub_id: u32) {
-        if let Some(pty) = self.ptys.get(&id) {
-            if let Ok(mut subs) = pty.mobile_subscribers.lock() {
-                subs.remove(&sub_id);
-            }
-        }
-    }
-
-    pub async fn mobile_write(&self, id: u32, data: Vec<u8>) -> AppResult<()> {
-        let pty = self
-            .ptys
-            .get(&id)
-            .map(|r| r.clone())
-            .ok_or(AppError::BadArg("pty not found"))?;
-        let _guard = pty.write_lock.lock().await;
-        write_all_async(&pty.io, &data)
-            .await
-            .map_err(AppError::from)
     }
 
     /// Tear down every live PTY: SIGTERM each child's process group, allow a
@@ -435,7 +341,7 @@ pub async fn pty_spawn(
     cmd.env("TERM", "xterm-256color");
     let cwd = cwd.unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".into()));
     let startup = startup.filter(|s| !s.is_empty());
-    cmd.cwd(cwd.clone());
+    cmd.cwd(cwd);
 
     let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
     drop(pair.slave);
@@ -482,11 +388,8 @@ pub async fn pty_spawn(
         io: AsyncFd::new(io_file).map_err(pty_err)?,
         write_lock: tokio::sync::Mutex::new(()),
         child: Mutex::new(child),
-        cwd,
-        startup: startup.clone(),
         parser: Mutex::new(vt100::Parser::new(rows, cols, PARSER_SCROLLBACK)),
         subscribers: Mutex::new(HashMap::new()),
-        mobile_subscribers: Mutex::new(HashMap::new()),
         last_activity_ms: AtomicU64::new(now_ms()),
         trimmed: AtomicBool::new(false),
     });
@@ -548,25 +451,17 @@ pub async fn pty_spawn(
                 .last_activity_ms
                 .store(now_ms(), Ordering::Relaxed);
             pty_reader.trimmed.store(false, Ordering::Relaxed);
-            let (snapshot, mobile_snapshot): (
-                Vec<(u32, Channel<Vec<u8>>)>,
-                Vec<(u32, mpsc::UnboundedSender<Vec<u8>>)>,
-            ) = {
+            let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
                 let Ok(mut parser) = pty_reader.parser.lock() else {
                     break;
                 };
                 parser.process(bytes);
-                let snapshot = match pty_reader.subscribers.lock() {
+                match pty_reader.subscribers.lock() {
                     Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
                     Err(_) => Vec::new(),
-                };
-                let mobile_snapshot = match pty_reader.mobile_subscribers.lock() {
-                    Ok(subs) => subs.iter().map(|(id, tx)| (*id, tx.clone())).collect(),
-                    Err(_) => Vec::new(),
-                };
-                (snapshot, mobile_snapshot)
+                }
             };
-            if !snapshot.is_empty() || !mobile_snapshot.is_empty() {
+            if !snapshot.is_empty() {
                 let chunk = bytes.to_vec();
                 let mut dead: Vec<u32> = Vec::new();
                 for (sub_id, ch) in &snapshot {
@@ -577,20 +472,6 @@ pub async fn pty_spawn(
                 if !dead.is_empty() {
                     if let Ok(mut subs) = pty_reader.subscribers.lock() {
                         for d in dead {
-                            subs.remove(&d);
-                        }
-                    }
-                }
-
-                let mut dead_mobile: Vec<u32> = Vec::new();
-                for (sub_id, tx) in &mobile_snapshot {
-                    if tx.send(chunk.clone()).is_err() {
-                        dead_mobile.push(*sub_id);
-                    }
-                }
-                if !dead_mobile.is_empty() {
-                    if let Ok(mut subs) = pty_reader.mobile_subscribers.lock() {
-                        for d in dead_mobile {
                             subs.remove(&d);
                         }
                     }
@@ -610,11 +491,6 @@ pub async fn pty_spawn(
         if let Ok(subs) = pty_reader.subscribers.lock() {
             for ch in subs.values() {
                 let _ = ch.send(Vec::new());
-            }
-        }
-        if let Ok(subs) = pty_reader.mobile_subscribers.lock() {
-            for tx in subs.values() {
-                let _ = tx.send(Vec::new());
             }
         }
         // If the shell exits by itself, there is no frontend unmount to call

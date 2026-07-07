@@ -270,7 +270,6 @@ export function subscribePersist(): () => void {
             const snap = snapshot();
             if (snap === lastSaved) return;
             lastSaved = snap;
-            void invoke("mobile_sync_update_state", { data: snap });
             void invoke("state_save", { data: snap });
         }, 600);
     });

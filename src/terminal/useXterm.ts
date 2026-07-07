@@ -30,13 +30,17 @@ export function useXterm(opts: {
     ptyReady: RefObject<Promise<number> | null>;
     shouldMount: boolean;
     active: boolean;
+    visible: boolean;
 }): void {
-    const { hostRef, ptyReady, shouldMount, active } = opts;
+    const { hostRef, ptyReady, shouldMount, active, visible } = opts;
     const termRef = useRef<Terminal | null>(null);
     const bootingRef = useRef(false);
     const activeRef = useRef(active);
     activeRef.current = active;
+    const visibleRef = useRef(visible);
+    visibleRef.current = visible;
     const bootRef = useRef<() => void>(() => {});
+    const resizeRef = useRef<() => void>(() => {});
 
     useEffect(() => {
         if (!shouldMount) return;
@@ -70,6 +74,8 @@ export function useXterm(opts: {
                 allowTransparency: true,
                 macOptionIsMeta: true,
                 scrollback: SCROLLBACK,
+                scrollOnUserInput: true,
+                smoothScrollDuration: 0,
             });
             const unregisterTheme = registerTerminal(term);
             const fit = new FitAddon();
@@ -195,16 +201,37 @@ export function useXterm(opts: {
                     rows: term.rows,
                 });
             };
+            resizeRef.current = resize;
             const ro = new ResizeObserver(resize);
             ro.observe(host);
 
+            const onWheel = (e: WheelEvent) => {
+                // Some agent TUIs run in the alternate screen without enabling
+                // terminal mouse tracking. In that state xterm has no native
+                // scrollback to move, so trackpad/wheel gestures can feel
+                // "stuck". Translate the gesture into cursor-key movement only
+                // when the TUI has not requested real mouse events; otherwise
+                // leave xterm's built-in mouse reporting alone.
+                if (e.defaultPrevented || term.buffer.active.type !== "alternate" || term.modes.mouseTrackingMode !== "none") return;
+                if (Math.abs(e.deltaY) < Math.abs(e.deltaX) || e.deltaY === 0) return;
+                e.preventDefault();
+                const units = Math.max(1, Math.min(6, Math.ceil(Math.abs(e.deltaY) / 40)));
+                const up = e.deltaY < 0;
+                const seq = term.modes.applicationCursorKeysMode ? (up ? "\x1bOA" : "\x1bOB") : up ? "\x1b[A" : "\x1b[B";
+                void invoke("pty_write", { id: pid, data: seq.repeat(units) });
+            };
+            host.addEventListener("wheel", onWheel, { passive: false });
+
             termRef.current = term;
             bootingRef.current = false;
+            if (visibleRef.current) window.requestAnimationFrame(resize);
             if (activeRef.current) term.focus();
 
             cleanup = () => {
+                resizeRef.current = () => {};
                 unregisterTheme();
                 ro.disconnect();
+                host.removeEventListener("wheel", onWheel);
                 dataSub.dispose();
                 if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
                 outputPending.length = 0;
@@ -234,8 +261,18 @@ export function useXterm(opts: {
     }, [shouldMount, hostRef, ptyReady]);
 
     useEffect(() => {
+        if (!visible) return;
+        if (termRef.current) {
+            window.requestAnimationFrame(resizeRef.current);
+        } else if (shouldMount) {
+            bootRef.current();
+        }
+    }, [visible, shouldMount]);
+
+    useEffect(() => {
         if (!active) return;
         if (termRef.current) {
+            window.requestAnimationFrame(resizeRef.current);
             termRef.current.focus();
         } else if (shouldMount) {
             bootRef.current();

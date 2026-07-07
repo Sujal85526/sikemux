@@ -31,7 +31,7 @@ export function TerminalPane({
         return () => window.clearTimeout(id);
     }, [visible]);
 
-    useXterm({ hostRef, ptyReady, shouldMount, active });
+    useXterm({ hostRef, ptyReady, shouldMount, active, visible });
 
     return <div ref={hostRef} className="terminal-host" />;
 }

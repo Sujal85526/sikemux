@@ -39,10 +39,7 @@ tempfile = "3"
 linked-hash-map = "0.5"
 thiserror = "1"
 futures = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "net", "io-util"] }
-axum = { version = "0.7", features = ["ws"] }
-getrandom = "0.2"
-qrcode = "0.14"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util"] }
 libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "stream", "cookies", "multipart"] }
 objc2 = "0.6"
