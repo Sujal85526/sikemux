@@ -1078,6 +1078,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const stashesRange = rangeFor("stashes");
     const stagedCount = filteredFiles.filter(isStaged).length;
     const unstagedCount = filteredFiles.filter(hasUnstaged).length;
+    const hasUpstream = !!status?.upstream;
     const upstreamLabel = status?.upstream ?? "no upstream";
     const toolbarBranchText = overviewLoading ? "loading" : overviewError ? "git error" : currentBranch || status?.branch || "—";
     const changedText = overviewLoading
@@ -1115,15 +1116,19 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     count={status?.ahead}
                     kbd="P"
                     onClick={pushRepo}
-                    title={status && status.ahead > 0 ? `Push ${status.ahead} commit${status.ahead > 1 ? "s" : ""} (P)` : "Push (P)"}>
-                    push
+                    title={!hasUpstream ? "Publish branch and set upstream (P)" : status && status.ahead > 0 ? `Push ${status.ahead} commit${status.ahead > 1 ? "s" : ""} (P)` : "Push (P)"}>
+                    {hasUpstream ? "push" : "publish"}
                 </GitToolbarButton>
                 <GitToolbarButton
                     icon={<IconPull size={13} />}
                     count={status?.behind}
                     kbd="p"
                     onClick={pullRepo}
-                    title={status && status.behind > 0 ? `Pull ${status.behind} commit${status.behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
+                    title={
+                        status && status.behind > 0
+                            ? `Pull ${status.behind} commit${status.behind > 1 ? "s" : ""}; auto-rebase if branches diverged (p)`
+                            : "Pull; auto-rebase if branches diverged (p)"
+                    }>
                     pull
                 </GitToolbarButton>
                 <GitToolbarButton icon={<IconFetch size={13} />} kbd="F" onClick={() => doFetch(null)} title="Fetch all remotes (F)">

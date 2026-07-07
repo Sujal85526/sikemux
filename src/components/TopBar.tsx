@@ -4,10 +4,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installPendingUpdate } from "../api/updater";
 import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
+import { git } from "../api/git";
 import type { RundeckEnvSpec } from "../api/rundeck";
 import * as cmd from "../state/commands";
-import { useResource, useResourceEnabled } from "../state/resources";
-import { swallow } from "../state/toast";
+import { invalidate, useResource, useResourceEnabled } from "../state/resources";
+import { notify, reportError, swallow } from "../state/toast";
 import { awsIdentityR, gitStatusR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { envFolderOf } from "../state/rundeckShape";
 import { useStore } from "../state/store";
@@ -117,23 +118,48 @@ function envDotKind(name: string | null): string {
     return "other";
 }
 
-function DeployChip({ loc }: { loc: DeployLoc }) {
+function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
     const k = branchKind(loc.branch);
-    const onClick = () => {
+    const [checkingOut, setCheckingOut] = useState(false);
+    const openRundeck = () => {
         cmd.openRundeckService({ project: loc.project, service: loc.service, jobId: loc.jobId, group: loc.group });
     };
+    const checkoutBranch = () => {
+        if (!repo || !loc.branch || checkingOut) return;
+        setCheckingOut(true);
+        void git
+            .checkoutSmart(repo, loc.branch)
+            .then((msg) => {
+                notify("success", msg);
+                invalidate((kind, args) => (kind.startsWith("git.") || kind === "files.list") && args[0] === repo);
+            })
+            .catch(reportError("checkout deployed branch"))
+            .finally(() => setCheckingOut(false));
+    };
     return (
-        <button
-            className="tb-deploy-chip"
-            onClick={onClick}
-            title={
-                loc.branch
-                    ? `Last deploy: ${loc.status ?? "?"} · ${loc.branch} · ${loc.label}`
-                    : `No deploy history for ${loc.service} on ${loc.label}`
-            }>
-            <IconRundeck size={12} />
-            {loc.branch && <span className={`tb-deploy-branch rnd-branch-${k}`}>{loc.branch}</span>}
-        </button>
+        <span className="tb-deploy-actions">
+            <button
+                className="tb-deploy-chip"
+                onClick={openRundeck}
+                title={
+                    loc.branch
+                        ? `Open Rundeck: ${loc.status ?? "?"} · ${loc.branch} · ${loc.label}`
+                        : `No deploy history for ${loc.service} on ${loc.label}`
+                }>
+                <IconRundeck size={12} />
+                {loc.branch && <span className={`tb-deploy-branch rnd-branch-${k}`}>{loc.branch}</span>}
+            </button>
+            {repo && loc.branch && (
+                <button
+                    className="tb-deploy-checkout"
+                    onClick={checkoutBranch}
+                    disabled={checkingOut}
+                    title={`Checkout deployed branch ${loc.branch}. If it only exists on a remote, Sikemux will fetch and create a tracking local branch.`}>
+                    <IconGit size={12} />
+                    <span>{checkingOut ? "…" : "checkout"}</span>
+                </button>
+            )}
+        </span>
     );
 }
 
@@ -378,7 +404,7 @@ export function TopBar() {
                         )}
                     </div>
                 )}
-                {activeLoc && <DeployChip loc={activeLoc} />}
+                {activeLoc && <DeployChip loc={activeLoc} repo={isProject ? session.cwd : null} />}
                 {activeLoc && <span className="tb-sep" />}
                 <AwsChip />
                 <BatteryChip />

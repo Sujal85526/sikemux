@@ -1,4 +1,10 @@
-.tb-deploy-chip {
+.tb-deploy-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+.tb-deploy-chip,
+.tb-deploy-checkout {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -20,8 +26,19 @@
 .tb-deploy-chip > .tb-deploy-branch {
     flex: 0 1 auto;
 }
-.tb-deploy-chip:hover {
+.tb-deploy-chip:hover,
+.tb-deploy-checkout:hover:not(:disabled) {
     color: var(--ink);
+}
+.tb-deploy-checkout {
+    gap: 4px;
+    max-width: 86px;
+    color: var(--ink-faint);
+    font-size: 10px;
+}
+.tb-deploy-checkout:disabled {
+    opacity: 0.55;
+    cursor: wait;
 }
 .tb-deploy-branch {
     font-size: 10.5px;

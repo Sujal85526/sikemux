@@ -76,6 +76,48 @@ fn git_has_head(repo: &str) -> bool {
     git_ok(repo, &["rev-parse", "--verify", "HEAD"]).is_ok()
 }
 
+fn current_branch_name(repo: &str) -> Result<String, String> {
+    let branch = git_ok(repo, &["branch", "--show-current"])?.trim().to_string();
+    if branch.is_empty() {
+        Err("Cannot operate on a detached HEAD — checkout a branch first.".into())
+    } else {
+        Ok(branch)
+    }
+}
+
+fn remote_names(repo: &str) -> Result<Vec<String>, String> {
+    Ok(git_ok(repo, &["remote"])?
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
+}
+
+fn default_remote(repo: &str) -> Result<String, String> {
+    let remotes = remote_names(repo)?;
+    if remotes.iter().any(|r| r == "origin") {
+        return Ok("origin".into());
+    }
+    if remotes.len() == 1 {
+        return Ok(remotes[0].clone());
+    }
+    if remotes.is_empty() {
+        Err("No git remotes configured — add a remote before publishing this branch.".into())
+    } else {
+        Err(format!(
+            "No remote named origin. Pick/set an upstream from the remotes panel. Available remotes: {}",
+            remotes.join(", ")
+        ))
+    }
+}
+
+fn has_upstream(repo: &str) -> bool {
+    git_ok(repo, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+}
+
 fn path_in_index(repo: &str, path: &str) -> bool {
     run_git(repo, &["ls-files", "--error-unmatch", "--", path])
         .map(|(ok, so, _)| ok && !so.trim().is_empty())
@@ -489,6 +531,84 @@ pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
 pub async fn git_checkout(repo: String, branch: String) -> Result<(), String> {
     // git2 checkout is fiddly with working-tree handling — shell out.
     git_ok(&repo, &["checkout", &branch]).map(|_| ())
+}
+
+fn local_branch_exists(repo: &str, branch: &str) -> bool {
+    git_ok(repo, &["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")]).is_ok()
+}
+
+fn remote_branch_exists(repo: &str, remote: &str, branch: &str) -> bool {
+    git_ok(repo, &["show-ref", "--verify", "--quiet", &format!("refs/remotes/{remote}/{branch}")]).is_ok()
+}
+
+fn normalize_branch_input(repo: &str, raw: &str) -> Result<(Option<String>, String), String> {
+    let mut b = raw.trim().trim_start_matches("refs/heads/").to_string();
+    if let Some(rest) = b.strip_prefix("refs/remotes/") {
+        b = rest.to_string();
+    }
+    if b.is_empty() || b == "—" || b.eq_ignore_ascii_case("n/a") {
+        return Err("No deployed branch to checkout for this environment.".into());
+    }
+    let remotes = remote_names(repo).unwrap_or_default();
+    if let Some((maybe_remote, rest)) = b.split_once('/') {
+        if remotes.iter().any(|r| r == maybe_remote) {
+            return Ok((Some(maybe_remote.to_string()), rest.to_string()));
+        }
+    }
+    Ok((None, b))
+}
+
+fn find_remote_branch(repo: &str, preferred: Option<&str>, branch: &str) -> Result<Option<String>, String> {
+    let remotes = remote_names(repo)?;
+    if let Some(r) = preferred {
+        return Ok(remote_branch_exists(repo, r, branch).then(|| r.to_string()));
+    }
+    if remotes.iter().any(|r| r == "origin") && remote_branch_exists(repo, "origin", branch) {
+        return Ok(Some("origin".into()));
+    }
+    let matches: Vec<String> = remotes
+        .into_iter()
+        .filter(|r| remote_branch_exists(repo, r, branch))
+        .collect();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [one] => Ok(Some(one.clone())),
+        many => Err(format!(
+            "Branch {branch} exists on multiple remotes ({}). Checkout from the remotes panel to choose one.",
+            many.join(", ")
+        )),
+    }
+}
+
+#[tauri::command]
+pub async fn git_checkout_smart(repo: String, branch: String) -> Result<String, String> {
+    run_blocking(move || -> Result<String, String> {
+        let (preferred_remote, local) = normalize_branch_input(&repo, &branch)?;
+        if local_branch_exists(&repo, &local) {
+            git_ok(&repo, &["checkout", &local])?;
+            return Ok(format!("checked out {local}"));
+        }
+
+        let mut remote = find_remote_branch(&repo, preferred_remote.as_deref(), &local)?;
+        if remote.is_none() {
+            match preferred_remote.as_deref() {
+                Some(r) => {
+                    let _ = git_ok(&repo, &["fetch", "--prune", r]);
+                }
+                None => {
+                    let _ = git_ok(&repo, &["fetch", "--all", "--prune"]);
+                }
+            }
+            remote = find_remote_branch(&repo, preferred_remote.as_deref(), &local)?;
+        }
+        let Some(remote) = remote else {
+            return Err(format!("Branch {branch} was not found locally or on any remote after fetch."));
+        };
+        let full_ref = format!("{remote}/{local}");
+        git_ok(&repo, &["checkout", "-b", &local, "--track", &full_ref])?;
+        Ok(format!("checked out {local} tracking {full_ref}"))
+    })
+    .await
 }
 
 /// Create a new branch starting at `start_point` (default HEAD) and check it
@@ -1053,34 +1173,77 @@ pub async fn git_commit(repo: String, message: String) -> Result<String, String>
 #[tauri::command]
 pub async fn git_push(repo: String) -> Result<String, String> {
     run_blocking(move || -> Result<String, String> {
+        let branch = current_branch_name(&repo)?;
+        if !has_upstream(&repo) {
+            let remote = default_remote(&repo)?;
+            let (ok, so, se) = run_git(&repo, &["push", "--set-upstream", &remote, &branch])?;
+            return if ok {
+                let out = format!("{so}{se}").trim().to_string();
+                Ok(if out.is_empty() {
+                    format!("published {branch} → {remote}/{branch}")
+                } else {
+                    format!("published {branch} → {remote}/{branch}\n{out}")
+                })
+            } else {
+                Err(if se.trim().is_empty() { so } else { se })
+            };
+        }
+
         let (ok, so, se) = run_git(&repo, &["push"])?;
         if ok {
             return Ok(format!("{so}{se}").trim().to_string());
         }
+        // Race-proof fallback: if upstream disappeared between the preflight
+        // check and push, publish with -u instead of dumping raw Git advice.
         if se.contains("has no upstream branch") || se.contains("--set-upstream") {
-            let branch = git_ok(&repo, &["branch", "--show-current"])?
-                .trim()
-                .to_string();
-            let (ok2, so2, se2) = run_git(&repo, &["push", "--set-upstream", "origin", &branch])?;
+            let remote = default_remote(&repo)?;
+            let (ok2, so2, se2) = run_git(&repo, &["push", "--set-upstream", &remote, &branch])?;
             return if ok2 {
-                Ok(format!("{so2}{se2}").trim().to_string())
+                Ok(format!("published {branch} → {remote}/{branch}\n{}", format!("{so2}{se2}").trim()))
             } else {
-                Err(se2)
+                Err(if se2.trim().is_empty() { so2 } else { se2 })
             };
         }
-        Err(se)
+        Err(if se.trim().is_empty() { so } else { se })
     })
     .await
+}
+
+fn looks_like_ff_only_divergence(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    s.contains("not possible to fast-forward")
+        || s.contains("divergent branches")
+        || s.contains("need to specify how to reconcile")
+        || s.contains("fatal: not possible to fast-forward")
 }
 
 #[tauri::command]
 pub async fn git_pull(repo: String) -> Result<String, String> {
     run_blocking(move || -> Result<String, String> {
+        if !has_upstream(&repo) {
+            return Err("No upstream configured for this branch — publish it or set an upstream from the remotes panel first.".into());
+        }
         let (ok, so, se) = run_git(&repo, &["pull", "--ff-only"])?;
         if ok {
-            Ok(format!("{so}{se}").trim().to_string())
+            return Ok(format!("{so}{se}").trim().to_string());
+        }
+        let err = format!("{so}{se}");
+        if !looks_like_ff_only_divergence(&err) {
+            return Err(err.trim().to_string());
+        }
+
+        // Git 2.27+ asks users to configure pull.rebase for divergent pulls.
+        // Do the app-level sane default instead: rebase with autostash, without
+        // mutating the user's global config.
+        let (ok2, so2, se2) = run_git(&repo, &["pull", "--rebase", "--autostash"])?;
+        if ok2 {
+            let out = format!("{so2}{se2}").trim().to_string();
+            Ok(if out.is_empty() { "rebased onto upstream".into() } else { format!("rebased onto upstream\n{out}") })
         } else {
-            Err(se)
+            Err(format!(
+                "Fast-forward was not possible, and rebase needs attention. Resolve in the git pane or terminal, then continue the rebase.\n\n{}",
+                format!("{so2}{se2}").trim()
+            ))
         }
     })
     .await

@@ -127,6 +127,7 @@ pub fn run() {
             git::git_unstage_all,
             git::git_branches,
             git::git_checkout,
+            git::git_checkout_smart,
             git::git_branch_create,
             git::git_branch_delete,
             git::git_branch_rename,
