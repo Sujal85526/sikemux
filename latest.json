@@ -1,11 +1,11 @@
 {
-  "version": "0.1.26",
-  "notes": "Improve editor selection performance, terminal rendering/scroll behavior, Git publish/pull UX, and top-bar checkout of deployed Rundeck branches.",
-  "pub_date": "2026-07-07T14:24:56Z",
+  "version": "0.1.27",
+  "notes": "Fix git diff hang on binary and large files",
+  "pub_date": "2026-07-08T08:29:50Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVhVZXV4czA1VnhsRmVHZFJxYjdNQWFxOVFiZkt5eDhRMExDSk9kdEtGZ0dHczhiSDNkS3pDMVg1YVdmeERQVjc2WW95S1dmSmVTTVpUdFQ5bDZiRHc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNDM0Mjk0CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6ClNRaXo5K3pHRGlMQ3l3dGl4bDdoZitON2V0d2tnelVtUlM4Q2xrVVNTRjhob1hMblhhODVzeStPeVBzY0hNanI0K2JjNzZhb2h3dUw1bS81WFdBQURRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.26/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWRmQm9ZZk5KdFZJeU9MaytQNUM4aXJMc2ZGR0pnRkZPblNrOFZKNTFtY3lGeUdUc2gxM1EzSTkxYzMyV2xLdjEwOVJyalNkeWlwNUNQTGE2TjNVOXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNDk5Mzg4CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmFWdGc1czlXcjdtTDh4N1ozQnJDQ2hBVVN3OWRyUStOeUc3TDRhQUE0MFpLdVdlZGxSTE5La3ptNnBWbVpHSm54K29NRC81RWl5YWJodm9OVjZLMEJBPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.27/Sikemux.app.tar.gz"
     }
   }
 }
