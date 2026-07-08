@@ -61,6 +61,52 @@ pub async fn read_file(path: String) -> AppResult<String> {
         .map_err(|e| AppError::Other(format!("read_file join: {e}")))?
 }
 
+const INLINE_TEXT_MAX_BYTES: u64 = 1024 * 1024;
+
+#[tauri::command]
+pub async fn read_text_file_limited(path: String) -> AppResult<String> {
+    spawn_blocking(move || read_text_file_limited_sync(path))
+        .await
+        .map_err(|e| AppError::Other(format!("read_text_file_limited join: {e}")))?
+}
+
+fn read_text_file_limited_sync(path: String) -> AppResult<String> {
+    let meta = fs::metadata(&path)?;
+    if meta.len() > INLINE_TEXT_MAX_BYTES {
+        return Err(AppError::Fs(format!(
+            "{} is too large for inline diff ({})",
+            path,
+            human_bytes(meta.len())
+        )));
+    }
+    let bytes = fs::read(&path)?;
+    if bytes.iter().take(8192).any(|b| *b == 0) {
+        return Err(AppError::Fs(format!(
+            "{} is binary; inline diff is disabled",
+            path
+        )));
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        AppError::Fs(format!(
+            "{} is not UTF-8 text; inline diff is disabled",
+            path
+        ))
+    })
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    let b = bytes as f64;
+    if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 #[tauri::command]
 pub async fn read_file_base64(path: String) -> AppResult<FileBlob> {
     spawn_blocking(move || read_file_base64_sync(path))

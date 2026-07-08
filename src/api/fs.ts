@@ -15,6 +15,7 @@ export interface FileBlob {
 export const fsapi = {
     readDir: (path: string) => invoke<DirEntry[]>("read_dir", { path }),
     readFile: (path: string) => invoke<string>("read_file", { path }),
+    readTextFileLimited: (path: string) => invoke<string>("read_text_file_limited", { path }),
     readFileBase64: (path: string) => invoke<FileBlob>("read_file_base64", { path }),
     writeFile: (path: string, content: string) => invoke<void>("write_file", { path, content }),
     writeFileNew: (path: string, content: string) => invoke<void>("write_file_new", { path, content }),

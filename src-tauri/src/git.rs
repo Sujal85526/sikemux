@@ -712,7 +712,14 @@ fn write_diff_to_string(diff: &git2::Diff) -> Result<String, String> {
             DiffLineType::Context => out.push(' '),
             DiffLineType::Addition => out.push('+'),
             DiffLineType::Deletion => out.push('-'),
-            DiffLineType::FileHeader | DiffLineType::HunkHeader | DiffLineType::Binary => {}
+            DiffLineType::Binary => {
+                if !out.ends_with('\n') && !out.is_empty() {
+                    out.push('\n');
+                }
+                out.push_str("[binary file changed]\n");
+                return true;
+            }
+            DiffLineType::FileHeader | DiffLineType::HunkHeader => {}
             _ => {}
         }
         out.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
@@ -849,6 +856,39 @@ fn is_immutable_rev(rev: &str) -> bool {
     head.len() >= 7 && head.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+const GIT_FILE_AT_MAX_BYTES: usize = 1024 * 1024;
+
+fn human_bytes(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    let b = bytes as f64;
+    if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn looks_binary_bytes(bytes: &[u8]) -> bool {
+    bytes.iter().take(8192).any(|b| *b == 0)
+}
+
+fn blob_to_inline_text(blob: &git2::Blob<'_>, path: &str) -> Result<String, String> {
+    let bytes = blob.content();
+    if bytes.len() > GIT_FILE_AT_MAX_BYTES {
+        return Err(format!(
+            "{path} is too large for inline diff ({}). Open the file directly or use git diff in the terminal.",
+            human_bytes(bytes.len())
+        ));
+    }
+    if looks_binary_bytes(bytes) {
+        return Err(format!("{path} is binary; inline diff is disabled."));
+    }
+    String::from_utf8(bytes.to_vec()).map_err(|_| format!("{path} is not UTF-8 text; inline diff is disabled."))
+}
+
 #[tauri::command]
 pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
     let cacheable = is_immutable_rev(&rev);
@@ -868,7 +908,7 @@ pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<Stri
             match idx.get_path(Path::new(&path), 0) {
                 Some(entry) => {
                     let blob = r.find_blob(entry.id).map_err(|e| e.message().to_string())?;
-                    String::from_utf8_lossy(blob.content()).into_owned()
+                    blob_to_inline_text(&blob, &path)?
                 }
                 None => String::new(),
             }
@@ -881,7 +921,7 @@ pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<Stri
                             let blob = r
                                 .find_blob(entry.id())
                                 .map_err(|e| e.message().to_string())?;
-                            String::from_utf8_lossy(blob.content()).into_owned()
+                            blob_to_inline_text(&blob, &path)?
                         }
                         Err(e) if e.code() == ErrorCode::NotFound => String::new(),
                         Err(e) => return Err(e.message().to_string()),

@@ -59,6 +59,11 @@ export function DiffEditor({
                 return;
             }
             if (cancelled || !hostRef.current) return;
+            const guard = inlineDiffGuard(path, base, head);
+            if (guard) {
+                setError(guard);
+                return;
+            }
 
             const HIGHLIGHT_LIMIT = 2000;
             const lines = Math.max(countLines(base), countLines(head));
@@ -108,6 +113,29 @@ export function DiffEditor({
     );
 }
 
+const MAX_INLINE_DIFF_CHARS = 1024 * 1024;
+
+function inlineDiffGuard(path: string, base: string, head: string): string | null {
+    const largest = Math.max(base.length, head.length);
+    if (largest > MAX_INLINE_DIFF_CHARS) return `${path} is too large for inline diff (${humanChars(largest)}).`;
+    if (looksBinaryText(base) || looksBinaryText(head)) return `${path} looks binary; inline diff is disabled.`;
+    return null;
+}
+
+function looksBinaryText(s: string): boolean {
+    const sample = s.slice(0, 8192);
+    if (sample.includes("\0")) return true;
+    // Backend used to decode blobs with from_utf8_lossy; a binary blob then
+    // arrives full of replacement chars and can wedge CodeMirror's merge view.
+    let replacements = 0;
+    for (let i = 0; i < sample.length; i++) if (sample.charCodeAt(i) === 0xfffd) replacements++;
+    return replacements > 8;
+}
+
+function humanChars(n: number): string {
+    return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${(n / 1024).toFixed(1)} KB`;
+}
+
 function countLines(s: string): number {
     let n = 1;
     for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
@@ -116,7 +144,7 @@ function countLines(s: string): number {
 
 async function readWorkingFile(path: string): Promise<string> {
     try {
-        return await fsapi.readFile(path);
+        return await fsapi.readTextFileLimited(path);
     } catch (err) {
         if (isMissingFileError(err)) return "";
         throw err;
