@@ -80,6 +80,15 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 ARCHS="$(/usr/bin/lipo -archs "$EXECUTABLE")"
 [[ -n "$ARCHS" ]] || fail "could not determine executable architecture"
 
+# Packaged apps must never depend on libraries from the build machine's
+# Homebrew/MacPorts installation. Such binaries pass codesign verification but
+# fail at launch on user machines (or under library-validation Team ID checks).
+DYNAMIC_LIBS="$(/usr/bin/otool -L "$EXECUTABLE")"
+if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$DYNAMIC_LIBS"; then
+  echo "$DYNAMIC_LIBS" >&2
+  fail "bundle executable links to a package-manager library"
+fi
+
 # Every normal build is ad-hoc signed when no Apple identity is configured.
 # Community releases require a structurally valid signature; notarized releases
 # additionally require a real certificate authority and TeamIdentifier.
