@@ -38,8 +38,15 @@ if [[ "${REQUIRE_SIGNED_APP:-0}" != "1" && -z "${APPLE_SIGNING_IDENTITY:-}" ]]; 
 fi
 
 "$ROOT/scripts/icons.sh"
-printf '→ pnpm tauri build'; printf ' %q' "${BUILD_ARGS[@]}"; echo
-pnpm tauri build "${BUILD_ARGS[@]}"
+printf '→ pnpm tauri build'
+if ((${#BUILD_ARGS[@]})); then
+  printf ' %q' "${BUILD_ARGS[@]}"
+  echo
+  pnpm tauri build "${BUILD_ARGS[@]}"
+else
+  echo
+  pnpm tauri build
+fi
 
 TARGET_ROOT="$ROOT/src-tauri/target"
 [[ -n "$TARGET" ]] && TARGET_ROOT="$TARGET_ROOT/$TARGET"
