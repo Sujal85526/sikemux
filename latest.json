@@ -1,11 +1,11 @@
 {
-  "version": "0.1.28",
-  "notes": "Performance, lifecycle, security, persistence, accessibility, and release-pipeline hardening; fixes configured HTTP Rundeck servers.",
-  "pub_date": "2026-07-09T21:42:09Z",
+  "version": "0.1.29",
+  "notes": "Hotfix: vendor libgit2 so updated macOS apps launch without Homebrew library dependencies.",
+  "pub_date": "2026-07-09T21:50:44Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVRXN1VBTkI3ZjNnM0ZHMDNoQ2JudjQyemMzWkc0Ylg1YUI4N05XOWYyaS8zYjBibEwwVy9tMzJKcnIyVzNLWXpFK0VydUZxT3MyTVJvUEcxbmorWlFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNjMzMzI2CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjJtZkhackRWRHhFMk5FRnNwUU0xYXpRaWVrSk14bkhMalk0VWhsWFFPdHJQZEhZZHlIVVhvU25LZzRrV3BJMDRsY3gzZXRFT05nTnJOMVZjOGpWNERBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.28/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWZiSkF4aEYxdnI2M0g0Wk9xVEE1c1RBM25EZzFvWnp2L0ZPeTVhZmpIdWZJZmNXRTFmUlJucHRyQlBpd3g5R1MyTXJ2OVZ2WFlOMk83Y0pFT1J1ZmdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNjMzODQxCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6Cm1ML1JuTTdtbnJTei9yRmNHM3VwOC9JeS9OV1RoMjdiaGk2S2xJWWZnbi9nR0w2SFc0TnZUYkdLQndFU2hBaUlBVW1LYzNwZWxUSjZnenVZZlc1ZkJRPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.29/Sikemux.app.tar.gz"
     }
   }
 }
