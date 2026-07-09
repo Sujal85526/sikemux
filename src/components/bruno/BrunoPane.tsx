@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import * as cmd from "../../state/commands";
 import { subscribe } from "../../state/bus";
 import { useResourceEnabled } from "../../state/resources";
@@ -52,6 +52,8 @@ export function BrunoPane({ sessionId, active }: Props) {
     const [running, setRunning] = useState<Record<string, boolean>>({});
     const [editing, setEditing] = useState<{ path: string; req: BruRequest } | null>(null);
     const [runtime, setRuntime] = useState<Scope>({});
+    const splitRef = useRef<HTMLDivElement | null>(null);
+    const reqPanePct = view.reqPanePct ?? DEFAULT_BRUNO_VIEW.reqPanePct;
 
     const path = view.activeRequestPath;
     const located = useMemo(() => (collection && path ? findRequest(collection.tree, path) : null), [collection, path]);
@@ -128,6 +130,36 @@ export function BrunoPane({ sessionId, active }: Props) {
         if (!path) return;
         void cmd.brunoSaveRequest(sessionId, path).then(() => setEditing(null));
     }, [path, sessionId]);
+
+    const onSplitPointerDown = useCallback(
+        (e: ReactPointerEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            const el = splitRef.current;
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            if (rect.width <= 0) return;
+
+            const minPx = 260;
+            const minPct = Math.min(45, (minPx / rect.width) * 100);
+            const maxPct = Math.max(55, 100 - minPct);
+
+            const move = (ev: PointerEvent) => {
+                const raw = ((ev.clientX - rect.left) / rect.width) * 100;
+                const next = Math.max(minPct, Math.min(maxPct, raw));
+                cmd.brunoSetReqPanePct(sessionId, Math.round(next * 10) / 10);
+            };
+            const up = () => {
+                document.body.classList.remove("bruno-resizing");
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+            };
+
+            document.body.classList.add("bruno-resizing");
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+        },
+        [sessionId],
+    );
 
     // ⌘↵ from anywhere in the pane: the keymap emits, we run.
     useEffect(() => {
@@ -213,7 +245,7 @@ export function BrunoPane({ sessionId, active }: Props) {
                         />
                     )}
                     {effectiveRequest && path ? (
-                        <>
+                        <div className="bruno-workbench" ref={splitRef} style={{ "--bruno-req-pct": `${reqPanePct}%` } as CSSProperties}>
                             <BrunoRequestView
                                 request={effectiveRequest}
                                 tab={view.reqTab}
@@ -225,13 +257,14 @@ export function BrunoPane({ sessionId, active }: Props) {
                                 onSave={onSave}
                                 onTab={(t) => cmd.brunoSetReqTab(sessionId, t)}
                             />
+                            <div className="bruno-splitter" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={onSplitPointerDown} />
                             <BrunoResponseView
                                 result={results[path] ?? null}
                                 running={!!running[path]}
                                 tab={view.resTab}
                                 onTab={(t) => cmd.brunoSetResTab(sessionId, t)}
                             />
-                        </>
+                        </div>
                     ) : (
                         <div className="bruno-empty bruno-empty-main">
                             <span>select a request from the collection</span>

@@ -313,6 +313,9 @@ export function brunoSetReqTab(sessionId: string, tab: BrunoReqTab): void {
 export function brunoSetResTab(sessionId: string, tab: BrunoResTab): void {
     patchBrunoView(sessionId, { resTab: tab });
 }
+export function brunoSetReqPanePct(sessionId: string, reqPanePct: number): void {
+    patchBrunoView(sessionId, { reqPanePct });
+}
 export function brunoToggleSecrets(sessionId: string, open?: boolean): void {
     mutate((d) => {
         const cur = d.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW;

@@ -89,6 +89,8 @@ export interface BrunoView {
     activeRequestPath: string | null;
     reqTab: BrunoReqTab;
     resTab: BrunoResTab;
+    /** request pane width in the request/response split, as a percent */
+    reqPanePct: number;
     secretsOpen: boolean;
 }
 
@@ -97,5 +99,6 @@ export const DEFAULT_BRUNO_VIEW: BrunoView = {
     activeRequestPath: null,
     reqTab: "params",
     resTab: "body",
+    reqPanePct: 50,
     secretsOpen: false,
 };
