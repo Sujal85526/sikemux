@@ -161,15 +161,8 @@ pub fn validate_base_url(raw: &str) -> AppResult<()> {
             "credentials in the Rundeck URL are not allowed",
         ));
     }
-    let loopback = url.host_str().is_some_and(|h| {
-        h.eq_ignore_ascii_case("localhost")
-            || h.parse::<std::net::IpAddr>()
-                .is_ok_and(|ip| ip.is_loopback())
-    });
-    if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
-        return Err(AppError::BadArg(
-            "Rundeck credentials require HTTPS (HTTP is allowed only on loopback)",
-        ));
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::BadArg("Rundeck URL must use HTTP or HTTPS"));
     }
     Ok(())
 }
@@ -238,10 +231,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn credential_transport_requires_https_except_loopback() {
+    fn accepts_configured_http_and_https_servers() {
         assert!(validate_base_url("https://rundeck.example.com").is_ok());
         assert!(validate_base_url("http://localhost:4440").is_ok());
-        assert!(validate_base_url("http://rundeck.example.com").is_err());
+        assert!(validate_base_url("http://rundeck.example.com").is_ok());
+        assert!(validate_base_url("ftp://rundeck.example.com").is_err());
         assert!(validate_base_url("https://user:pass@rundeck.example.com").is_err());
     }
 
