@@ -13,35 +13,52 @@
 
 use std::process::Command;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+
+fn validate_external_url(raw: &str) -> AppResult<()> {
+    let url = url::Url::parse(raw).map_err(|_| AppError::BadArg("invalid external URL"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::BadArg("only HTTP(S) URLs may be opened"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(AppError::BadArg(
+            "credentials in external URLs are not allowed",
+        ));
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn open_url(url: String, app: Option<String>, shortcut: Option<String>) -> AppResult<()> {
+    validate_external_url(&url)?;
     let app = app.filter(|s| !s.trim().is_empty());
     let shortcut = shortcut.filter(|s| !s.trim().is_empty());
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(app_name) = app.as_deref() {
-            run_focus(app_name, shortcut.as_deref());
-            Command::new("open")
-                .arg("-a")
-                .arg(app_name)
-                .arg(&url)
-                .status()?;
-            return Ok(());
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(app_name) = app.as_deref() {
+                run_focus(app_name, shortcut.as_deref());
+                Command::new("open")
+                    .arg("-a")
+                    .arg(app_name)
+                    .arg(&url)
+                    .status()?;
+                return Ok(());
+            }
+            Command::new("open").arg(&url).status()?;
         }
-        Command::new("open").arg(&url).status()?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, shortcut);
-        Command::new("xdg-open")
-            .arg(&url)
-            .status()
-            .or_else(|_| Command::new("open").arg(&url).status())?;
-    }
-    Ok(())
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (app, shortcut);
+            Command::new("xdg-open")
+                .arg(&url)
+                .status()
+                .or_else(|_| Command::new("open").arg(&url).status())?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("open_url join: {e}")))?
 }
 
 #[tauri::command]
@@ -51,7 +68,10 @@ pub async fn macos_focus_app(app: String, shortcut: Option<String>) -> AppResult
     }
     #[cfg(target_os = "macos")]
     {
-        run_focus(&app, shortcut.as_deref().filter(|s| !s.trim().is_empty()));
+        let shortcut = shortcut.filter(|s| !s.trim().is_empty());
+        tauri::async_runtime::spawn_blocking(move || run_focus(&app, shortcut.as_deref()))
+            .await
+            .map_err(|e| AppError::Other(format!("macos_focus_app join: {e}")))?;
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (app, shortcut);

@@ -72,7 +72,14 @@ pub async fn rnd_logs_start(
     on_chunk: Channel<LogTick>,
 ) -> AppResult<u32> {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    // Gate execution until the handle is in the manager. Otherwise a closed
+    // channel or immediately-completed execution can self-remove before the
+    // insert below and leave a dead handle behind.
+    let (start_tx, start_rx) = tokio::sync::oneshot::channel();
     let handle = tokio::spawn(async move {
+        if start_rx.await.is_err() {
+            return;
+        }
         let mut offset = String::from("0");
         let mut last_modified: Option<String> = None;
         let mut first_pass = true;
@@ -165,6 +172,7 @@ pub async fn rnd_logs_start(
         }
     });
     manager.handles.insert(id, handle);
+    let _ = start_tx.send(());
     Ok(id)
 }
 

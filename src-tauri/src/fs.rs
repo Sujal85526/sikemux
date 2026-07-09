@@ -1,5 +1,6 @@
 use std::fs;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -56,12 +57,31 @@ fn read_dir_sync(path: String) -> AppResult<Vec<DirEntry>> {
 
 #[tauri::command]
 pub async fn read_file(path: String) -> AppResult<String> {
-    spawn_blocking(move || fs::read_to_string(&path).map_err(AppError::from))
-        .await
-        .map_err(|e| AppError::Other(format!("read_file join: {e}")))?
+    spawn_blocking(move || {
+        let bytes = read_bounded(Path::new(&path), EDITOR_TEXT_MAX_BYTES)?;
+        String::from_utf8(bytes).map_err(|_| AppError::Fs(format!("{path} is not UTF-8 text")))
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("read_file join: {e}")))?
 }
 
 const INLINE_TEXT_MAX_BYTES: u64 = 1024 * 1024;
+const EDITOR_TEXT_MAX_BYTES: u64 = 16 * 1024 * 1024;
+const MEDIA_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
+fn read_bounded(path: &Path, max_bytes: u64) -> AppResult<Vec<u8>> {
+    let file = fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(file.metadata()?.len().min(max_bytes) as usize);
+    file.take(max_bytes + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(AppError::Fs(format!(
+            "{} exceeds the {} read limit",
+            path.display(),
+            human_bytes(max_bytes)
+        )));
+    }
+    Ok(bytes)
+}
 
 #[tauri::command]
 pub async fn read_text_file_limited(path: String) -> AppResult<String> {
@@ -79,7 +99,7 @@ fn read_text_file_limited_sync(path: String) -> AppResult<String> {
             human_bytes(meta.len())
         )));
     }
-    let bytes = fs::read(&path)?;
+    let bytes = read_bounded(Path::new(&path), INLINE_TEXT_MAX_BYTES)?;
     if bytes.iter().take(8192).any(|b| *b == 0) {
         return Err(AppError::Fs(format!(
             "{} is binary; inline diff is disabled",
@@ -115,7 +135,7 @@ pub async fn read_file_base64(path: String) -> AppResult<FileBlob> {
 }
 
 fn read_file_base64_sync(path: String) -> AppResult<FileBlob> {
-    let bytes = fs::read(&path)?;
+    let bytes = read_bounded(Path::new(&path), MEDIA_MAX_BYTES)?;
     let mime = mime_for_path(&path);
     Ok(FileBlob {
         mime,
@@ -147,9 +167,30 @@ fn mime_for_path(path: &str) -> String {
 
 #[tauri::command]
 pub async fn write_file(path: String, content: String) -> AppResult<()> {
-    spawn_blocking(move || fs::write(&path, content).map_err(AppError::from))
+    spawn_blocking(move || write_file_atomic(PathBuf::from(path), content.as_bytes()))
         .await
         .map_err(|e| AppError::Other(format!("write_file join: {e}")))?
+}
+
+fn write_file_atomic(path: PathBuf, content: &[u8]) -> AppResult<()> {
+    // Preserve an existing symlink by replacing its resolved target instead
+    // of replacing the symlink itself with a regular file.
+    let target = fs::canonicalize(&path).unwrap_or(path);
+    let parent = target
+        .parent()
+        .ok_or_else(|| AppError::Fs("invalid file path".into()))?;
+    fs::create_dir_all(parent)?;
+    let existing_permissions = fs::metadata(&target).ok().map(|meta| meta.permissions());
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    if let Some(permissions) = existing_permissions {
+        temp.as_file().set_permissions(permissions)?;
+    }
+    temp.write_all(content)?;
+    temp.flush()?;
+    temp.as_file().sync_all()?;
+    temp.persist(&target).map_err(|e| AppError::from(e.error))?;
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
 }
 
 /// Write a new file, refusing to overwrite an existing path.
@@ -301,7 +342,9 @@ fn reveal_in_finder_sync(path: String) -> AppResult<()> {
         let dir = if p.is_dir() {
             p.clone()
         } else {
-            p.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| p.clone())
+            p.parent()
+                .map(|d| d.to_path_buf())
+                .unwrap_or_else(|| p.clone())
         };
         Command::new("xdg-open").arg(&dir).status()?;
     }
@@ -347,10 +390,11 @@ fn trash_macos(path: &str) -> AppResult<()> {
     use objc2::msg_send;
     use objc2::runtime::AnyObject;
 
-    let c = std::ffi::CString::new(path)
-        .map_err(|_| AppError::Fs("path contains NUL byte".into()))?;
+    let c =
+        std::ffi::CString::new(path).map_err(|_| AppError::Fs("path contains NUL byte".into()))?;
     unsafe {
-        let s: *mut AnyObject = msg_send![objc2::class!(NSString), stringWithUTF8String: c.as_ptr()];
+        let s: *mut AnyObject =
+            msg_send![objc2::class!(NSString), stringWithUTF8String: c.as_ptr()];
         let url: *mut AnyObject = msg_send![objc2::class!(NSURL), fileURLWithPath: s];
         let fm: *mut AnyObject = msg_send![objc2::class!(NSFileManager), defaultManager];
         let mut err: *mut AnyObject = std::ptr::null_mut();
@@ -367,7 +411,9 @@ fn trash_macos(path: &str) -> AppResult<()> {
                 if !desc.is_null() {
                     let utf8: *const std::os::raw::c_char = msg_send![desc, UTF8String];
                     if !utf8.is_null() {
-                        msg = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                        msg = std::ffi::CStr::from_ptr(utf8)
+                            .to_string_lossy()
+                            .into_owned();
                     }
                 }
             }

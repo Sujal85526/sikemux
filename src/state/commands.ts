@@ -257,9 +257,7 @@ export async function openBrunoFolder(): Promise<void> {
 export function openBrunoSession(collectionPath: string): void {
     registerBrunoWorkspace(collectionPath);
     mutate((d) => {
-        const existing = d.sessionOrder
-            .map((id) => d.sessions[id])
-            .find((s) => s.kind === "bruno" && s.bruno?.collectionPath === collectionPath);
+        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === "bruno" && s.bruno?.collectionPath === collectionPath);
         if (existing) {
             d.activeSessionId = existing.id;
             d.zoomedPaneId = null;
@@ -504,9 +502,26 @@ export function selectRundeckProject(paneId: string, project: string, envFolder:
 
 /** Open the Rundeck session straight to a known service deploy (project + env folder). */
 export function openRundeckService(target: { project: string; service: string; jobId: string; group: string | null }): void {
+    openRundeckTarget(target);
+}
+
+export function openRundeckDeploy(target: { project: string; service: string; jobId: string; group: string | null; branch: string }): void {
+    openRundeckTarget(target, target.branch);
+}
+
+function openRundeckTarget(target: { project: string; service: string; jobId: string; group: string | null }, branch?: string): void {
     const before = getState();
     const sourceSession = before.sessions[before.activeSessionId];
     const sourceRepoPath = sourceSession?.kind === "project" ? sourceSession.cwd : "";
+    const env = inferEnv(target.project, target.group);
+    const serviceLevel: RundeckLevel = {
+        kind: "service",
+        env,
+        project: target.project,
+        service: target.service,
+        jobId: target.jobId,
+        repoPath: sourceRepoPath,
+    };
     openRundeckSession();
     const after = getState();
     const sess = Object.values(after.sessions).find((s) => s.kind === "rundeck");
@@ -517,14 +532,20 @@ export function openRundeckService(target: { project: string; service: string; j
     setRundeckProject(target.project, envFolderOf(target.group));
     rundeckReplaceStack(paneId, [
         { kind: "matrix" },
-        {
-            kind: "service",
-            env: inferEnv(target.project, target.group),
-            project: target.project,
-            service: target.service,
-            jobId: target.jobId,
-            repoPath: sourceRepoPath,
-        },
+        serviceLevel,
+        ...(branch !== undefined
+            ? [
+                  {
+                      kind: "deploy" as const,
+                      env,
+                      project: target.project,
+                      service: target.service,
+                      jobId: target.jobId,
+                      branch,
+                      repoPath: sourceRepoPath,
+                  },
+              ]
+            : []),
     ]);
 }
 
@@ -1124,14 +1145,10 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             }
         }
 
-        const candidates = rows
-            .filter((row) => !claimed.has(row.id))
-            .sort((a, b) => b.mtime - a.mtime);
+        const candidates = rows.filter((row) => !claimed.has(row.id)).sort((a, b) => b.mtime - a.mtime);
         if (candidates.length === 0) return;
 
-        const freshAgents = matchingAgents
-            .filter((agent) => !agent.resumeId)
-            .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+        const freshAgents = matchingAgents.filter((agent) => !agent.resumeId).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
         for (const agent of freshAgents) {
             // Only adopt a session that didn't exist when this agent launched,
             // otherwise it grabs the session you were just in and renames its
@@ -1417,6 +1434,15 @@ export async function runAwsSsoLogin(profile: string): Promise<boolean> {
         await fetchResource(awsIdentityR, profile, true).catch(swallow("awsIdentityR refetch"));
     }
     return result.success;
+}
+
+export function openEditorTab(paneId: string, path: string, activate = true): void {
+    mutate((d) => {
+        const cur = d.editorViews[paneId] ?? { openTabs: [], activePath: null, treeWidth: 210 };
+        if (!cur.openTabs.includes(path)) cur.openTabs.push(path);
+        if (activate) cur.activePath = path;
+        d.editorViews[paneId] = cur;
+    });
 }
 
 export function setEditorView(paneId: string, patch: Partial<StoreState["editorViews"][string]>): void {

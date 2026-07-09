@@ -32,7 +32,17 @@ export function GitPanelBlock({
 }) {
     return (
         <div className={`git-panel${focused ? " focused" : ""}`} style={{ flex }}>
-            <div className="git-panel-head" onClick={onFocus}>
+            <div
+                className="git-panel-head"
+                role="button"
+                tabIndex={0}
+                aria-label={`Focus ${label} panel`}
+                onClick={onFocus}
+                onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onFocus();
+                }}>
                 <span className="git-panel-n">{n}</span>
                 <span className="git-panel-label">{label}</span>
                 {filterBadge && <span className="git-panel-pill">/{filterBadge}</span>}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { rundeckApi, type LogEntry, type RundeckExecution as Execution, type RundeckStep, type RundeckWorkflowState } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
 import { statusKind } from "./branchStyle";
@@ -47,16 +48,27 @@ export function RundeckExecution({ paneId, level, active }: Props) {
 
     useEffect(() => {
         if (!active) return;
+        setExecution(null);
+        setState(null);
+        setTerminal(false);
+        setWatchErr(null);
+        setEntries([]);
+        setLogsCompleted(false);
+        setStepFilter(null);
         let watchId: number | undefined;
         let logsId: number | undefined;
+        let watchStarting = false;
+        let logsStarting = false;
+        let generation = 0;
         let alive = true;
 
-        const start = () => {
-            setEntries([]);
-            setLogsCompleted(false);
+        const startWatch = () => {
+            if (watchId != null || watchStarting || document.hidden || !alive) return;
+            const startedIn = generation;
+            watchStarting = true;
             rundeckApi
                 .watchStart(level.executionId, (u) => {
-                    if (!alive) return;
+                    if (!alive || startedIn !== generation) return;
                     if (u.execution) setExecution(u.execution);
                     if (u.state) setState(u.state);
                     setTerminal(u.terminal);
@@ -64,13 +76,25 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                     else setWatchErr(null);
                 })
                 .then((id) => {
-                    watchId = id;
+                    if (!alive || startedIn !== generation) void rundeckApi.watchStop(id);
+                    else watchId = id;
                 })
-                .catch((e) => setWatchErr(String(e)));
+                .catch((e) => {
+                    if (alive && startedIn === generation) setWatchErr(String(e));
+                })
+                .finally(() => {
+                    watchStarting = false;
+                    if (startedIn !== generation) startWatch();
+                });
+        };
 
+        const startLogs = () => {
+            if (logsId != null || logsStarting || document.hidden || !alive) return;
+            const startedIn = generation;
+            logsStarting = true;
             rundeckApi
                 .logsStart(level.executionId, null, (tick) => {
-                    if (!alive) return;
+                    if (!alive || startedIn !== generation) return;
                     if (tick.entries.length) {
                         setEntries((prev) => {
                             const next = prev.concat(tick.entries);
@@ -80,12 +104,27 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                     if (tick.completed) setLogsCompleted(true);
                 })
                 .then((id) => {
-                    logsId = id;
+                    if (!alive || startedIn !== generation) void rundeckApi.logsStop(id);
+                    else logsId = id;
                 })
-                .catch(swallow("rnd logs start"));
+                .catch((error) => {
+                    if (alive && startedIn === generation) swallow("rnd logs start")(error);
+                })
+                .finally(() => {
+                    logsStarting = false;
+                    if (startedIn !== generation) startLogs();
+                });
+        };
+
+        const start = () => {
+            setEntries([]);
+            setLogsCompleted(false);
+            startWatch();
+            startLogs();
         };
 
         const stop = () => {
+            generation += 1;
             if (watchId != null) {
                 void rundeckApi.watchStop(watchId);
                 watchId = undefined;
@@ -99,7 +138,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
         if (!document.hidden) start();
         const onVisibility = () => {
             if (document.hidden) stop();
-            else if (watchId == null && logsId == null) start();
+            else start();
         };
         document.addEventListener("visibilitychange", onVisibility);
 
@@ -180,9 +219,15 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                         run again
                     </button>
                     {execution?.permalink && (
-                        <a className="rnd-btn-sm" href={execution.permalink} target="_blank" rel="noreferrer" title="Open in Rundeck UI">
+                        <button
+                            type="button"
+                            className="rnd-btn-sm"
+                            onClick={() =>
+                                void invoke("open_url", { url: execution.permalink, app: null, shortcut: null }).catch(swallow("open Rundeck URL"))
+                            }
+                            title="Open in Rundeck UI">
                             open ↗
-                        </a>
+                        </button>
                     )}
                     {status === "running" && (
                         <button className="rnd-btn-sm rnd-btn-danger" disabled={aborting} onClick={abort}>

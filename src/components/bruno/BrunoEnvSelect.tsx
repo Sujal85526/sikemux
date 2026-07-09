@@ -23,7 +23,10 @@ export function BrunoEnvSelect({ sessionId, envs, showCollection, selected, secr
                 <IconChevron size={9} className="bruno-dd-chev" />
             </button>
             {secretNames.length > 0 && (
-                <button className={`bruno-secrets-btn${secretsOpen ? " active" : ""}`} title="Secret variables" onClick={() => cmd.brunoToggleSecrets(sessionId)}>
+                <button
+                    className={`bruno-secrets-btn${secretsOpen ? " active" : ""}`}
+                    title="Secret variables"
+                    onClick={() => cmd.brunoToggleSecrets(sessionId)}>
                     <IconShield size={12} />
                     secrets
                 </button>

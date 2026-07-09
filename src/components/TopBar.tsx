@@ -121,8 +121,10 @@ function envDotKind(name: string | null): string {
 function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
     const k = branchKind(loc.branch);
     const [checkingOut, setCheckingOut] = useState(false);
-    const openRundeck = () => {
-        cmd.openRundeckService({ project: loc.project, service: loc.service, jobId: loc.jobId, group: loc.group });
+    const [menuOpen, setMenuOpen] = useState(false);
+    const deployBranch = () => {
+        cmd.openRundeckDeploy({ project: loc.project, service: loc.service, jobId: loc.jobId, group: loc.group, branch: loc.branch ?? "" });
+        setMenuOpen(false);
     };
     const checkoutBranch = () => {
         if (!repo || !loc.branch || checkingOut) return;
@@ -132,32 +134,49 @@ function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
             .then((msg) => {
                 notify("success", msg);
                 invalidate((kind, args) => (kind.startsWith("git.") || kind === "files.list") && args[0] === repo);
+                setMenuOpen(false);
             })
             .catch(reportError("checkout deployed branch"))
             .finally(() => setCheckingOut(false));
     };
     return (
-        <span className="tb-deploy-actions">
+        <span className="tb-deploy-actions" data-no-window-drag>
             <button
                 className="tb-deploy-chip"
-                onClick={openRundeck}
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
                 title={
                     loc.branch
-                        ? `Open Rundeck: ${loc.status ?? "?"} · ${loc.branch} · ${loc.label}`
-                        : `No deploy history for ${loc.service} on ${loc.label}`
+                        ? `Rundeck actions: ${loc.status ?? "?"} · ${loc.branch} · ${loc.label}`
+                        : `Rundeck actions for ${loc.service} on ${loc.label}`
                 }>
                 <IconRundeck size={12} />
                 {loc.branch && <span className={`tb-deploy-branch rnd-branch-${k}`}>{loc.branch}</span>}
+                <IconChevron size={10} className="env-dd-chev" />
             </button>
-            {repo && loc.branch && (
-                <button
-                    className="tb-deploy-checkout"
-                    onClick={checkoutBranch}
-                    disabled={checkingOut}
-                    title={`Checkout deployed branch ${loc.branch}. If it only exists on a remote, Sikemux will fetch and create a tracking local branch.`}>
-                    <IconGit size={12} />
-                    <span>{checkingOut ? "…" : "checkout"}</span>
-                </button>
+            {menuOpen && (
+                <>
+                    <div className="env-dd-scrim" onClick={() => setMenuOpen(false)} />
+                    <div className="env-dd-menu tb-deploy-menu" role="menu" aria-label="Rundeck actions">
+                        <button className="env-dd-item" role="menuitem" onClick={deployBranch}>
+                            <IconRundeck size={12} />
+                            <span>deploy</span>
+                            {loc.branch && <span className={`tb-deploy-menu-branch rnd-branch-${k}`}>{loc.branch}</span>}
+                        </button>
+                        {repo && loc.branch && (
+                            <button
+                                className="env-dd-item"
+                                role="menuitem"
+                                onClick={checkoutBranch}
+                                disabled={checkingOut}
+                                title={`Checkout deployed branch ${loc.branch}. If it only exists on a remote, Sikemux will fetch and create a tracking local branch.`}>
+                                <IconGit size={12} />
+                                <span>{checkingOut ? "checking out…" : "checkout"}</span>
+                            </button>
+                        )}
+                    </div>
+                </>
             )}
         </span>
     );
@@ -377,6 +396,9 @@ export function TopBar() {
                     <div className="env-dd" data-no-window-drag>
                         <button
                             className="env-dd-btn"
+                            type="button"
+                            aria-haspopup="listbox"
+                            aria-expanded={envOpen}
                             onClick={() => locations.length > 1 && setEnvOpen((v) => !v)}
                             title={locations.length > 1 ? "Switch deploy location" : activeLoc.label}>
                             <span className={`env-dot ${envDotKind(activeLoc.folder)}`} />
@@ -386,11 +408,13 @@ export function TopBar() {
                         {envOpen && locations.length > 1 && (
                             <>
                                 <div className="env-dd-scrim" onClick={() => setEnvOpen(false)} />
-                                <div className="env-dd-menu">
+                                <div className="env-dd-menu" role="listbox" aria-label="Deploy location">
                                     {locations.map((loc) => (
                                         <button
                                             key={loc.label}
                                             className={`env-dd-item${activeLoc.label === loc.label ? " active" : ""}`}
+                                            role="option"
+                                            aria-selected={activeLoc.label === loc.label}
                                             onClick={() => {
                                                 cmd.setDeployTarget({ project: loc.project, folder: loc.folder });
                                                 setEnvOpen(false);

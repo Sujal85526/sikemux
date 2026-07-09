@@ -7,6 +7,7 @@ import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { GitPane } from "./GitPane";
 import { type CtxItem } from "./FileTree";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar } from "./TabBar";
 import { AgentIcon, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
 
@@ -328,7 +329,9 @@ const WindowLayer = memo(function WindowLayer({
                             zIndex: isZoomed ? 2 : 1,
                         }}>
                         <div className={`pane pane-${p.kind}`} onMouseDown={() => visible && cmd.focusPane(p.id)}>
-                            {PANE_RENDERER[p.kind]({ pane: p, session, active: paneActive, visible: paneVisible })}
+                            <ErrorBoundary label={`${p.kind} pane`}>
+                                {PANE_RENDERER[p.kind]({ pane: p, session, active: paneActive, visible: paneVisible })}
+                            </ErrorBoundary>
                         </div>
                     </div>
                 );
@@ -357,6 +360,7 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
 
     const onPointerDown = (e: ReactPointerEvent) => {
         e.preventDefault();
+        const handle = e.currentTarget as HTMLDivElement;
         const area = areaRef.current;
         if (!area) return;
         const bounds = area.getBoundingClientRect();
@@ -364,6 +368,7 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
         const winNode = st.windows[windowId];
         const split = winNode ? findSplit(winNode.root, d.splitId) : null;
         if (!split) return;
+        handle.setPointerCapture(e.pointerId);
 
         const startSizes = split.sizes.slice();
         const i = d.index;
@@ -379,12 +384,48 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
             cmd.setSplitSizes(windowId, d.splitId, sizes);
         };
         const up = () => {
-            window.removeEventListener("pointermove", move);
-            window.removeEventListener("pointerup", up);
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", up);
         };
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", up);
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", up);
     };
 
-    return <div className={`divider divider-${d.dir}`} style={style} onPointerDown={onPointerDown} />;
+    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        const direction = horizontal
+            ? e.key === "ArrowLeft"
+                ? -1
+                : e.key === "ArrowRight"
+                  ? 1
+                  : 0
+            : e.key === "ArrowUp"
+              ? -1
+              : e.key === "ArrowDown"
+                ? 1
+                : 0;
+        if (!direction) return;
+        e.preventDefault();
+        const winNode = getState().windows[windowId];
+        const split = winNode ? findSplit(winNode.root, d.splitId) : null;
+        if (!split) return;
+        const sizes = split.sizes.slice();
+        const step = e.shiftKey ? 0.05 : 0.02;
+        const delta = Math.max(-(sizes[d.index] - MIN_FRAC), Math.min(sizes[d.index + 1] - MIN_FRAC, direction * step));
+        sizes[d.index] += delta;
+        sizes[d.index + 1] -= delta;
+        cmd.setSplitSizes(windowId, d.splitId, sizes);
+    };
+
+    return (
+        <div
+            className={`divider divider-${d.dir}`}
+            style={style}
+            role="separator"
+            tabIndex={0}
+            aria-orientation={horizontal ? "vertical" : "horizontal"}
+            title="Drag or use arrow keys to resize"
+            onPointerDown={onPointerDown}
+            onKeyDown={onKeyDown}
+        />
+    );
 }

@@ -57,7 +57,14 @@ pub async fn rnd_watch_start(
     on_update: Channel<WatchUpdate>,
 ) -> AppResult<u32> {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    // Gate task execution until its handle is visible. Without this, a fast
+    // terminal/error response can self-prune before insert, after which start
+    // inserts a permanently-finished JoinHandle.
+    let (start_tx, start_rx) = tokio::sync::oneshot::channel();
     let handle = tokio::spawn(async move {
+        if start_rx.await.is_err() {
+            return;
+        }
         let mut last_status: Option<String> = None;
         let mut consecutive_errors: u32 = 0;
         const POLL_INTERVAL: Duration = Duration::from_millis(1500);
@@ -124,6 +131,7 @@ pub async fn rnd_watch_start(
         }
     });
     manager.handles.insert(id, handle);
+    let _ = start_tx.send(());
     Ok(id)
 }
 

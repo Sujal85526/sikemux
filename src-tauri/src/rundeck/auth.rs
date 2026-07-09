@@ -7,13 +7,40 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::Client;
+use futures::StreamExt;
+use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
 use super::client::API_VERSION;
 use super::config::{self, RundeckConfig};
+
+const MAX_AUTH_RESPONSE_BYTES: usize = 1024 * 1024;
+
+async fn response_text_limited(resp: Response) -> AppResult<String> {
+    if resp
+        .content_length()
+        .is_some_and(|size| size > MAX_AUTH_RESPONSE_BYTES as u64)
+    {
+        return Err(AppError::RundeckAuth(
+            "authentication response exceeds 1 MiB limit".into(),
+        ));
+    }
+    let mut stream = resp.bytes_stream();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| AppError::RundeckAuth(e.to_string()))?;
+        if bytes.len() + chunk.len() > MAX_AUTH_RESPONSE_BYTES {
+            return Err(AppError::RundeckAuth(
+                "authentication response exceeds 1 MiB limit".into(),
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| AppError::RundeckAuth("authentication response is not UTF-8".into()))
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LoginRequest {
@@ -48,13 +75,29 @@ fn fresh_session_client() -> AppResult<Client> {
         .cookie_provider(Arc::new(reqwest::cookie::Jar::default()))
         .timeout(Duration::from_secs(20))
         .user_agent("sikemux-rundeck-auth/0.1")
-        .redirect(reqwest::redirect::Policy::limited(5))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error("too many redirects");
+            }
+            let next = attempt.url();
+            let Some(first) = attempt.previous().first() else {
+                return attempt.stop();
+            };
+            if first.scheme() != next.scheme()
+                || first.host_str() != next.host_str()
+                || first.port_or_known_default() != next.port_or_known_default()
+            {
+                return attempt.error("refusing cross-origin credential redirect");
+            }
+            attempt.follow()
+        }))
         .build()?)
 }
 
 /// Drive the j_security_check → /tokens/{user} flow. Returns the bearer token.
 pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
     let url = req.url.trim_end_matches('/');
+    config::validate_base_url(url)?;
     let client = fresh_session_client()?;
 
     // Step 1: session login
@@ -92,7 +135,8 @@ pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
         if !resp.status().is_success() {
             return None;
         }
-        let v: serde_json::Value = resp.json().await.ok()?;
+        let text = response_text_limited(resp).await.ok()?;
+        let v: serde_json::Value = serde_json::from_str(&text).ok()?;
         v.get("roles").and_then(|r| r.as_array()).map(|arr| {
             arr.iter()
                 .filter_map(|s| s.as_str())
@@ -122,7 +166,7 @@ pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
         .map_err(|e| AppError::RundeckAuth(format!("token request: {e}")))?;
 
     let status = token_resp.status();
-    let body = token_resp.text().await.unwrap_or_default();
+    let body = response_text_limited(token_resp).await?;
     if !status.is_success() {
         let msg = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
@@ -141,24 +185,6 @@ pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
         .and_then(|t| t.as_str())
         .ok_or_else(|| AppError::RundeckAuth("token field missing in response".into()))?
         .to_string();
-    Ok(token)
-}
-
-/// Used by the auto-refresh path in client.rs. Requires stored credentials.
-pub async fn reauth_with_stored_creds() -> AppResult<String> {
-    let cfg = config::refresh_from_disk().await?;
-    if cfg.user.is_empty() || cfg.password.is_empty() {
-        return Err(AppError::RundeckAuth(
-            "stored credentials missing; re-login required".into(),
-        ));
-    }
-    let token = perform_login(&LoginRequest {
-        url: cfg.url.clone(),
-        user: cfg.user.clone(),
-        password: cfg.password.clone(),
-    })
-    .await?;
-    config::update_token(token.clone()).await?;
     Ok(token)
 }
 
@@ -249,7 +275,7 @@ pub async fn rnd_login(req: LoginRequest) -> AppResult<LoginResult> {
     let cfg = RundeckConfig {
         url: url.clone(),
         user: req.user.clone(),
-        password: req.password.clone(),
+        password: String::new(),
         token: token.clone(),
     };
     config::save(cfg).await?;

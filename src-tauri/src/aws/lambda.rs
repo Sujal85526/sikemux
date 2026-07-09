@@ -50,6 +50,6 @@ pub async fn aws_lambda_functions(profile: String) -> AppResult<Vec<LambdaFn>> {
             handler: f.handler,
         })
         .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|function| function.name.to_lowercase());
     Ok(out)
 }

@@ -27,10 +27,9 @@ async function fetchSessions(agent: string, cwd: string): Promise<AgentSession[]
     const k = key(agent, cwd);
     const existing = inflight.get(k);
     if (existing) return existing;
-    const p = invoke<AgentSession[]>("agent_sessions", { agent, cwd })
-        .finally(() => {
-            inflight.delete(k);
-        });
+    const p = invoke<AgentSession[]>("agent_sessions", { agent, cwd }).finally(() => {
+        inflight.delete(k);
+    });
     inflight.set(k, p);
     return p;
 }

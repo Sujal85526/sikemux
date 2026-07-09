@@ -218,6 +218,30 @@ fn terminate_and_reap_child(child: &mut Box<dyn Child + Send + Sync>) {
     kill_and_reap_child(child, pid);
 }
 
+/// Owns a freshly-spawned child until the fully-initialized `Pty` takes it.
+/// Child handles do not kill on drop, so every fallible setup step after spawn
+/// must be guarded explicitly.
+struct SpawnedChildGuard(Option<Box<dyn Child + Send + Sync>>);
+
+impl SpawnedChildGuard {
+    fn new(child: Box<dyn Child + Send + Sync>) -> Self {
+        Self(Some(child))
+    }
+
+    fn into_inner(mut self) -> Box<dyn Child + Send + Sync> {
+        self.0.take().expect("spawned child guard already empty")
+    }
+}
+
+impl Drop for SpawnedChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let pid = child_process_id(&mut child);
+            kill_and_reap_child(&mut child, pid);
+        }
+    }
+}
+
 // Process-start anchor so all `last_activity_ms` values are monotonic
 // deltas in ms — immune to wall-clock jumps (NTP, sleep/resume).
 fn epoch() -> Instant {
@@ -344,6 +368,7 @@ pub async fn pty_spawn(
     cmd.cwd(cwd);
 
     let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
+    let child = SpawnedChildGuard::new(child);
     drop(pair.slave);
 
     // Get the master fd and set the underlying open-file-description to
@@ -387,12 +412,17 @@ pub async fn pty_spawn(
     let pty = Arc::new(Pty {
         io: AsyncFd::new(io_file).map_err(pty_err)?,
         write_lock: tokio::sync::Mutex::new(()),
-        child: Mutex::new(child),
+        child: Mutex::new(child.into_inner()),
         parser: Mutex::new(vt100::Parser::new(rows, cols, PARSER_SCROLLBACK)),
         subscribers: Mutex::new(HashMap::new()),
         last_activity_ms: AtomicU64::new(now_ms()),
         trimmed: AtomicBool::new(false),
     });
+
+    // Publish before starting the reader. A short-lived command can reach EOF
+    // immediately; starting first lets its self-prune remove nothing and then
+    // leaves a dead PTY inserted forever.
+    manager.ptys.insert(id, pty.clone());
 
     // Reader — feeds parser then fans bytes out to subscribers.
     //
@@ -509,7 +539,6 @@ pub async fn pty_spawn(
         });
     });
 
-    manager.ptys.insert(id, pty);
     Ok(id)
 }
 

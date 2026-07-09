@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -227,36 +227,33 @@ fn spawn_agent_debouncer(
 ) {
     tauri::async_runtime::spawn(async move {
         while rx.recv().await.is_some() {
+            let sleep = tokio::time::sleep(Duration::from_millis(AGENT_DEBOUNCE_MS));
+            tokio::pin!(sleep);
+            let mut closed = false;
             loop {
-                let sleep = tokio::time::sleep(Duration::from_millis(AGENT_DEBOUNCE_MS));
-                tokio::pin!(sleep);
-                let mut closed = false;
-                loop {
-                    tokio::select! {
-                        _ = &mut sleep => break,
-                        msg = rx.recv() => {
-                            if msg.is_none() {
-                                closed = true;
-                                break;
-                            }
-                            sleep
-                                .as_mut()
-                                .reset(tokio::time::Instant::now() + Duration::from_millis(AGENT_DEBOUNCE_MS));
+                tokio::select! {
+                    _ = &mut sleep => break,
+                    msg = rx.recv() => {
+                        if msg.is_none() {
+                            closed = true;
+                            break;
                         }
+                        sleep
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + Duration::from_millis(AGENT_DEBOUNCE_MS));
                     }
                 }
-                if closed {
-                    return;
-                }
-                let _ = app.emit(
-                    "agent_sessions_changed",
-                    AgentSessionsChanged {
-                        agent,
-                        cwd: cwd.clone(),
-                    },
-                );
-                break;
             }
+            if closed {
+                return;
+            }
+            let _ = app.emit(
+                "agent_sessions_changed",
+                AgentSessionsChanged {
+                    agent,
+                    cwd: cwd.clone(),
+                },
+            );
         }
     });
 }
@@ -288,16 +285,21 @@ pub fn agent_sessions_watch_start(
         }
     }
 
-    watch_registry()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(id, Arc::new(AgentWatchHandle { _watchers: watchers }));
+    watch_registry().lock().map_err(|e| e.to_string())?.insert(
+        id,
+        Arc::new(AgentWatchHandle {
+            _watchers: watchers,
+        }),
+    );
     Ok(id)
 }
 
 #[tauri::command]
 pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
-    watch_registry().lock().map_err(|e| e.to_string())?.remove(&id);
+    watch_registry()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&id);
     Ok(())
 }
 
@@ -439,8 +441,8 @@ fn claude_sessions(cwd: &str) -> Vec<AgentSession> {
         .filter_map(|path| {
             let id = path.file_stem().and_then(|s| s.to_str())?;
             let mtime = mtime_of(path);
-            let title =
-                cached_title(path, mtime, || claude_title(path)).unwrap_or_else(|| id.chars().take(8).collect());
+            let title = cached_title(path, mtime, || claude_title(path))
+                .unwrap_or_else(|| id.chars().take(8).collect());
             Some(AgentSession {
                 id: id.to_string(),
                 title,
@@ -448,7 +450,7 @@ fn claude_sessions(cwd: &str) -> Vec<AgentSession> {
             })
         })
         .collect();
-    out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
 }
 
@@ -506,7 +508,9 @@ fn claude_title(path: &Path) -> Option<String> {
             for line in tail.lines().skip(1) {
                 if line.contains("\"type\":\"ai-title\"") {
                     if let Ok(v) = serde_json::from_str::<Value>(line) {
-                        if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense) {
+                        if let Some(t) =
+                            v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense)
+                        {
                             ai_title = Some(t);
                         }
                     }
@@ -559,8 +563,8 @@ fn codex_sessions(cwd: &str) -> Vec<AgentSession> {
             }
             let id = payload.get("id").and_then(|i| i.as_str())?;
             let mtime = mtime_of(path);
-            let title =
-                cached_title(path, mtime, || codex_title(path)).unwrap_or_else(|| id.chars().take(8).collect());
+            let title = cached_title(path, mtime, || codex_title(path))
+                .unwrap_or_else(|| id.chars().take(8).collect());
             Some(AgentSession {
                 id: id.to_string(),
                 title,
@@ -568,7 +572,7 @@ fn codex_sessions(cwd: &str) -> Vec<AgentSession> {
             })
         })
         .collect();
-    out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
 }
 
@@ -644,7 +648,7 @@ fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
             Some(AgentSession { id, title, mtime })
         })
         .collect();
-    out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
 }
 
@@ -775,7 +779,7 @@ fn opencode_sessions(cwd: &str) -> Vec<AgentSession> {
         };
         out.extend(opencode_sessions_from_conn(&conn, cwd));
     }
-    out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     let mut seen = HashSet::new();
     out.retain(|s| seen.insert(s.id.clone()));
     out.truncate(400);

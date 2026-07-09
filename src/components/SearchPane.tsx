@@ -95,8 +95,9 @@ export function SearchPane({ sessionId, cwd, active, visible }: { sessionId: str
     }, [sessionId]);
 
     useEffect(() => {
+        const requestId = requestIdRef;
         if (!cwd || !visible) {
-            requestIdRef.current++;
+            requestId.current++;
             return;
         }
         if (!view.query.trim()) {
@@ -116,7 +117,7 @@ export function SearchPane({ sessionId, cwd, active, visible }: { sessionId: str
         }, DEBOUNCE_MS);
         return () => {
             window.clearTimeout(handle);
-            requestIdRef.current++;
+            requestId.current++;
             if (started) void searchApi.cancel(cwd).catch(() => {});
         };
     }, [cwd, visible, view.query, view.options, startSearch]);

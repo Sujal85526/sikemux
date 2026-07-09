@@ -55,7 +55,7 @@ pub(super) fn classify_cli_err(stderr: &str) -> AppError {
     // Structured form: AWS prints `An error occurred (Code) when calling
     // ...` for most service errors, sometimes also as a JSON envelope.
     // Try the latter first — it's stable across locales.
-    if let Some(v) = serde_json::from_str::<serde_json::Value>(stderr.trim()).ok() {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(stderr.trim()) {
         let code = v
             .get("Error")
             .and_then(|e| e.get("Code"))

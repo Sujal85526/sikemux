@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Credential-free, offline checks for macOS release configuration and tooling.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+bash -n scripts/build-mac.sh scripts/release.sh scripts/icons.sh scripts/check-release.sh
+node --check scripts/verify-updater-signature.mjs
+/usr/bin/plutil -lint src-tauri/Info.plist >/dev/null
+
+node - <<'NODE'
+const fs = require("node:fs");
+const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+const config = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+const fail = (message) => { throw new Error(message); };
+
+if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
+if (config.bundle?.createUpdaterArtifacts !== true) fail("updater artifacts are not enabled");
+if (JSON.stringify(config.bundle?.targets) !== JSON.stringify(["app", "dmg"])) fail("bundle targets must be macOS app and dmg only");
+if (config.bundle?.resources?.["icons/build/Assets.car"] !== "Assets.car") fail("Assets.car resource mapping is missing");
+if (config.bundle?.macOS?.infoPlist !== "Info.plist") fail("pre-signing Info.plist merge is not configured");
+if (config.bundle?.macOS?.minimumSystemVersion !== "11.0") fail("unexpected minimum macOS version");
+const endpoints = config.plugins?.updater?.endpoints;
+if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
+  fail("updater endpoint is not the expected HTTPS latest.json URL");
+}
+const publicKeyText = Buffer.from(config.plugins.updater.pubkey, "base64").toString("utf8").trim();
+const publicLines = publicKeyText.split("\n");
+if (publicLines.length !== 2 || !publicLines[0].startsWith("untrusted comment:")) fail("invalid updater public-key envelope");
+const packet = Buffer.from(publicLines[1], "base64");
+if (packet.length !== 42 || packet.subarray(0, 2).toString("ascii") !== "Ed") fail("invalid updater Ed25519 public key");
+NODE
+
+CARGO_METADATA="$(cargo metadata --manifest-path src-tauri/Cargo.toml --offline --locked --no-deps --format-version 1)"
+PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+CARGO_VERSION="$(node -e '
+  const metadata = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const root = metadata.packages.find((pkg) => pkg.manifest_path === metadata.workspace_root + "/Cargo.toml");
+  if (!root) process.exit(1);
+  process.stdout.write(root.version);
+' <<<"$CARGO_METADATA")"
+[[ "$PACKAGE_VERSION" == "$CARGO_VERSION" ]] || {
+  echo "package.json and Cargo package versions differ" >&2
+  exit 1
+}
+
+# Exercise the verifier against a fresh ephemeral key and prove that changing
+# the signed bytes is rejected. No project signing key or network is used.
+printf 'offline updater verifier fixture\n' >"$TMP/artifact.tar.gz"
+CI=true pnpm tauri signer generate --password '' --write-keys "$TMP/test.key" >"$TMP/generate.out" 2>"$TMP/generate.err"
+pnpm tauri signer sign --private-key-path "$TMP/test.key" --password '' "$TMP/artifact.tar.gz" >"$TMP/sign.out" 2>"$TMP/sign.err"
+node -e '
+  const fs = require("node:fs");
+  fs.writeFileSync(process.argv[2], JSON.stringify({ plugins: { updater: { pubkey: fs.readFileSync(process.argv[1], "utf8").trim() } } }));
+' "$TMP/test.key.pub" "$TMP/config.json"
+node scripts/verify-updater-signature.mjs "$TMP/artifact.tar.gz" "$TMP/artifact.tar.gz.sig" "$TMP/config.json" >/dev/null
+printf 'tampered\n' >>"$TMP/artifact.tar.gz"
+if node scripts/verify-updater-signature.mjs "$TMP/artifact.tar.gz" "$TMP/artifact.tar.gz.sig" "$TMP/config.json" >"$TMP/tamper.out" 2>&1; then
+  echo "updater verifier accepted a modified artifact" >&2
+  exit 1
+fi
+
+echo "✓ Release tooling static checks passed"

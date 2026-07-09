@@ -129,12 +129,25 @@
     text-align: left;
     color: var(--ink-dim);
 }
-.m-get { color: var(--live); }
-.m-post { color: var(--warn); }
-.m-put { color: #7dd3fc; }
-.m-delete { color: var(--danger); }
-.m-patch { color: var(--cmd); }
-.m-options, .m-head { color: var(--ink-dim); }
+.m-get {
+    color: var(--live);
+}
+.m-post {
+    color: var(--warn);
+}
+.m-put {
+    color: #7dd3fc;
+}
+.m-delete {
+    color: var(--danger);
+}
+.m-patch {
+    color: var(--cmd);
+}
+.m-options,
+.m-head {
+    color: var(--ink-dim);
+}
 .bruno-row-dirty {
     flex: 0 0 auto;
     width: 6px;
@@ -198,7 +211,9 @@
     border-left: 1px solid var(--line);
     border-right: 1px solid var(--line-soft);
     background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 55%), transparent);
-    transition: background 0.12s, border-color 0.12s;
+    transition:
+        background 0.12s,
+        border-color 0.12s;
 }
 .bruno-splitter:hover {
     background: var(--acc-soft);
@@ -373,7 +388,9 @@ body.bruno-resizing {
     border: 1px solid var(--line);
     border-radius: 0;
     cursor: pointer;
-    transition: color 0.12s, border-color 0.12s;
+    transition:
+        color 0.12s,
+        border-color 0.12s;
 }
 .bruno-save:disabled {
     opacity: 0.45;
@@ -620,12 +637,24 @@ body.bruno-resizing {
     padding: 2px 8px;
     border-radius: 0;
 }
-.bruno-resp-status.ok { color: var(--live); background: rgba(97, 255, 202, 0.1); }
-.bruno-resp-status.redir { color: var(--warn); background: rgba(255, 202, 133, 0.1); }
+.bruno-resp-status.ok {
+    color: var(--live);
+    background: rgba(97, 255, 202, 0.1);
+}
+.bruno-resp-status.redir {
+    color: var(--warn);
+    background: rgba(255, 202, 133, 0.1);
+}
 .bruno-resp-status.clienterr,
-.bruno-resp-status.servererr { color: var(--danger); background: rgba(255, 103, 103, 0.1); }
+.bruno-resp-status.servererr {
+    color: var(--danger);
+    background: rgba(255, 103, 103, 0.1);
+}
 .bruno-resp-status.idle,
-.bruno-resp-status.running { color: var(--ink-faint); font-weight: 500; }
+.bruno-resp-status.running {
+    color: var(--ink-faint);
+    font-weight: 500;
+}
 .bruno-resp-meta {
     color: var(--ink-dim);
     font-size: 11px;
@@ -684,7 +713,9 @@ body.bruno-resizing {
     font-family: var(--mono);
     font-size: 11px;
     cursor: pointer;
-    transition: color 0.12s, border-color 0.12s;
+    transition:
+        color 0.12s,
+        border-color 0.12s;
 }
 .bruno-secrets-btn:hover,
 .bruno-icon-btn:hover {
@@ -874,7 +905,9 @@ body.bruno-resizing {
     font-family: var(--mono);
     font-size: 11.5px;
     cursor: pointer;
-    transition: border-color 0.12s, color 0.12s;
+    transition:
+        border-color 0.12s,
+        color 0.12s;
 }
 .bruno-dd-btn:hover {
     border-color: var(--acc-line);
@@ -941,7 +974,9 @@ body.bruno-resizing {
     text-align: left;
     white-space: nowrap;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition:
+        background 0.1s,
+        color 0.1s;
 }
 .bruno-dd-item:hover {
     background: var(--rail);
@@ -975,7 +1010,9 @@ body.bruno-resizing {
     color: var(--void);
     border-radius: 0;
     cursor: pointer;
-    transition: background 0.12s, border-color 0.12s;
+    transition:
+        background 0.12s,
+        border-color 0.12s;
 }
 .bruno-check:hover {
     border-color: var(--acc-line);

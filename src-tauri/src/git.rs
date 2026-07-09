@@ -1,7 +1,11 @@
-use std::io::{ErrorKind, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::process::{Command, Output, Stdio};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::time::{Duration, Instant};
 
 use git2::{
     BranchType, DiffFormat, DiffLineType, DiffOptions, ErrorCode, Repository, Status, StatusOptions,
@@ -49,13 +53,147 @@ fn open_repo(path: &str) -> Result<Repository, String> {
     Repository::discover(path).map_err(|e| e.message().to_string())
 }
 
+const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+const MAX_COMMAND_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
+
+fn kill_and_reap_process(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn read_bounded_pipe(mut pipe: impl Read, exceeded: Arc<AtomicBool>) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = pipe.read(&mut chunk)?;
+        if read == 0 {
+            return Ok(bytes);
+        }
+        if bytes.len().saturating_add(read) > MAX_COMMAND_OUTPUT_BYTES {
+            exceeded.store(true, Ordering::Release);
+            return Err(io::Error::other("subprocess output exceeds 32 MiB limit"));
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+}
+
+/// Capture both pipes while enforcing a deadline and an output cap. Stdin and
+/// both output pipes are handled concurrently so no pipe-ordering deadlock is
+/// possible. Every timeout/error path kills the process group and reaps the
+/// direct child.
+fn run_command_with_timeout(
+    command: &mut Command,
+    input: Option<&[u8]>,
+    timeout: Duration,
+) -> Result<Output, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if input.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command.spawn().map_err(|e| e.to_string())?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            kill_and_reap_process(&mut child);
+            return Err("subprocess stdout unavailable".into());
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            kill_and_reap_process(&mut child);
+            return Err("subprocess stderr unavailable".into());
+        }
+    };
+
+    let output_exceeded = Arc::new(AtomicBool::new(false));
+    let stdout_exceeded = Arc::clone(&output_exceeded);
+    let stdout_reader = std::thread::spawn(move || read_bounded_pipe(stdout, stdout_exceeded));
+    let stderr_exceeded = Arc::clone(&output_exceeded);
+    let stderr_reader = std::thread::spawn(move || read_bounded_pipe(stderr, stderr_exceeded));
+    let stdin_writer = input.map(|bytes| {
+        let bytes = bytes.to_vec();
+        let stdin = child.stdin.take();
+        std::thread::spawn(move || {
+            stdin
+                .ok_or_else(|| "subprocess stdin unavailable".to_string())
+                .and_then(|mut stdin| stdin.write_all(&bytes).map_err(|e| e.to_string()))
+        })
+    });
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if output_exceeded.load(Ordering::Acquire) {
+            kill_and_reap_process(&mut child);
+            if let Some(writer) = stdin_writer {
+                let _ = writer.join();
+            }
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err("subprocess output exceeds 32 MiB limit".into());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                kill_and_reap_process(&mut child);
+                if let Some(writer) = stdin_writer {
+                    let _ = writer.join();
+                }
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!("subprocess timed out after {}s", timeout.as_secs()));
+            }
+            Err(error) => {
+                kill_and_reap_process(&mut child);
+                if let Some(writer) = stdin_writer {
+                    let _ = writer.join();
+                }
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(error.to_string());
+            }
+        }
+    };
+    if let Some(writer) = stdin_writer {
+        writer
+            .join()
+            .map_err(|_| "stdin writer panicked".to_string())??;
+    }
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "stdout reader panicked".to_string())?
+        .map_err(|e| e.to_string())?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "stderr reader panicked".to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 fn run_git(repo: &str, args: &[&str]) -> Result<(bool, String, String), String> {
-    let out = Command::new("git")
+    let mut command = Command::new("git");
+    command
+        .env("GIT_TERMINAL_PROMPT", "0")
         .arg("-C")
         .arg(repo)
-        .args(args)
-        .output()
-        .map_err(|e| e.to_string())?;
+        .args(args);
+    let out = run_command_with_timeout(&mut command, None, GIT_COMMAND_TIMEOUT)?;
     Ok((
         out.status.success(),
         String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -77,7 +215,9 @@ fn git_has_head(repo: &str) -> bool {
 }
 
 fn current_branch_name(repo: &str) -> Result<String, String> {
-    let branch = git_ok(repo, &["branch", "--show-current"])?.trim().to_string();
+    let branch = git_ok(repo, &["branch", "--show-current"])?
+        .trim()
+        .to_string();
     if branch.is_empty() {
         Err("Cannot operate on a detached HEAD — checkout a branch first.".into())
     } else {
@@ -113,9 +253,12 @@ fn default_remote(repo: &str) -> Result<String, String> {
 }
 
 fn has_upstream(repo: &str) -> bool {
-    git_ok(repo, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false)
+    git_ok(
+        repo,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .map(|s| !s.trim().is_empty())
+    .unwrap_or(false)
 }
 
 fn path_in_index(repo: &str, path: &str) -> bool {
@@ -239,7 +382,7 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
 
     // branch + upstream tracking
     if let Ok(head) = repo.head() {
-        if let Some(name) = head.shorthand() {
+        if let Ok(name) = head.shorthand() {
             status.branch = name.to_string();
         }
         if let Ok(branch) = repo.find_branch(&status.branch, BranchType::Local) {
@@ -263,7 +406,7 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
     if status.branch.is_empty() {
         // unborn branch — pull from HEAD reference name
         if let Ok(reference) = repo.find_reference("HEAD") {
-            if let Some(target) = reference.symbolic_target() {
+            if let Ok(Some(target)) = reference.symbolic_target() {
                 status.branch = target
                     .strip_prefix("refs/heads/")
                     .unwrap_or(target)
@@ -277,8 +420,8 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
         .map_err(|e| e.message().to_string())?;
     for entry in statuses.iter() {
         let path = match entry.path() {
-            Some(p) => p.to_string(),
-            None => continue,
+            Ok(p) => p.to_string(),
+            Err(_) => continue,
         };
         let (x, y) = status_chars(entry.status());
         if x == ' ' && y == ' ' {
@@ -399,8 +542,8 @@ fn build_ref_map(repo: &Repository) -> std::collections::HashMap<String, Vec<Str
     if let Ok(refs) = repo.references() {
         for r in refs.flatten() {
             let name = match r.shorthand() {
-                Some(n) => n.to_string(),
-                None => continue,
+                Ok(n) => n.to_string(),
+                Err(_) => continue,
             };
             // `HEAD` is handled above; `origin/HEAD` & friends are symbolic
             // pointers, not real branches — skip the noise.
@@ -438,6 +581,7 @@ fn unpushed_set(repo: &Repository) -> std::collections::HashSet<String> {
     };
     let upstream_oid = head
         .shorthand()
+        .ok()
         .and_then(|name| repo.find_branch(name, BranchType::Local).ok())
         .and_then(|b| b.upstream().ok())
         .and_then(|u| u.get().target());
@@ -487,7 +631,7 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             .as_object()
             .short_id()
             .ok()
-            .and_then(|b| b.as_str().map(String::from))
+            .and_then(|b| b.as_str().ok().map(String::from))
             .unwrap_or_else(|| oid.to_string()[..7].to_string());
         let full = oid.to_string();
         let refs = ref_map.get(&full).cloned().unwrap_or_default();
@@ -499,7 +643,7 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             author: commit.author().name().unwrap_or("").to_string(),
             author_email: commit.author().email().unwrap_or("").to_string(),
             date: relative_time(commit.time().seconds()),
-            subject: commit.summary().unwrap_or("").to_string(),
+            subject: commit.summary().ok().flatten().unwrap_or("").to_string(),
             unpushed: is_unpushed,
             refs,
         });
@@ -530,15 +674,33 @@ pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
 #[tauri::command]
 pub async fn git_checkout(repo: String, branch: String) -> Result<(), String> {
     // git2 checkout is fiddly with working-tree handling — shell out.
-    git_ok(&repo, &["checkout", &branch]).map(|_| ())
+    run_blocking(move || git_ok(&repo, &["checkout", &branch]).map(|_| ())).await
 }
 
 fn local_branch_exists(repo: &str, branch: &str) -> bool {
-    git_ok(repo, &["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")]).is_ok()
+    git_ok(
+        repo,
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .is_ok()
 }
 
 fn remote_branch_exists(repo: &str, remote: &str, branch: &str) -> bool {
-    git_ok(repo, &["show-ref", "--verify", "--quiet", &format!("refs/remotes/{remote}/{branch}")]).is_ok()
+    git_ok(
+        repo,
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/remotes/{remote}/{branch}"),
+        ],
+    )
+    .is_ok()
 }
 
 fn normalize_branch_input(repo: &str, raw: &str) -> Result<(Option<String>, String), String> {
@@ -558,7 +720,11 @@ fn normalize_branch_input(repo: &str, raw: &str) -> Result<(Option<String>, Stri
     Ok((None, b))
 }
 
-fn find_remote_branch(repo: &str, preferred: Option<&str>, branch: &str) -> Result<Option<String>, String> {
+fn find_remote_branch(
+    repo: &str,
+    preferred: Option<&str>,
+    branch: &str,
+) -> Result<Option<String>, String> {
     let remotes = remote_names(repo)?;
     if let Some(r) = preferred {
         return Ok(remote_branch_exists(repo, r, branch).then(|| r.to_string()));
@@ -602,7 +768,9 @@ pub async fn git_checkout_smart(repo: String, branch: String) -> Result<String, 
             remote = find_remote_branch(&repo, preferred_remote.as_deref(), &local)?;
         }
         let Some(remote) = remote else {
-            return Err(format!("Branch {branch} was not found locally or on any remote after fetch."));
+            return Err(format!(
+                "Branch {branch} was not found locally or on any remote after fetch."
+            ));
         };
         let full_ref = format!("{remote}/{local}");
         git_ok(&repo, &["checkout", "-b", &local, "--track", &full_ref])?;
@@ -729,8 +897,7 @@ fn write_diff_to_string(diff: &git2::Diff) -> Result<String, String> {
     Ok(out)
 }
 
-#[tauri::command]
-pub async fn git_diff(repo: String, path: String, staged: bool) -> Result<String, String> {
+fn git_diff_sync(repo: String, path: String, staged: bool) -> Result<String, String> {
     let r = open_repo(&repo)?;
     let mut opts = DiffOptions::new();
     opts.pathspec(&path).context_lines(3);
@@ -766,10 +933,14 @@ pub async fn git_diff(repo: String, path: String, staged: bool) -> Result<String
     Ok(so)
 }
 
+#[tauri::command]
+pub async fn git_diff(repo: String, path: String, staged: bool) -> Result<String, String> {
+    run_blocking(move || git_diff_sync(repo, path, staged)).await
+}
+
 // ---- staging --------------------------------------------------------------
 
-#[tauri::command]
-pub fn git_stage(repo: String, path: String) -> Result<(), String> {
+fn git_stage_sync(repo: String, path: String) -> Result<(), String> {
     let r = open_repo(&repo)?;
     let mut index = r.index().map_err(|e| e.message().to_string())?;
     let p = Path::new(&path);
@@ -783,8 +954,7 @@ pub fn git_stage(repo: String, path: String) -> Result<(), String> {
     index.write().map_err(|e| e.message().to_string())
 }
 
-#[tauri::command]
-pub fn git_unstage(repo: String, path: String) -> Result<(), String> {
+fn git_unstage_sync(repo: String, path: String) -> Result<(), String> {
     let r = open_repo(&repo)?;
     let head_commit = r.head().and_then(|h| h.peel_to_commit()).ok();
     let result = if let Some(head) = head_commit {
@@ -801,15 +971,28 @@ pub fn git_unstage(repo: String, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn git_stage(repo: String, path: String) -> Result<(), String> {
+    run_blocking(move || git_stage_sync(repo, path)).await
+}
+
+#[tauri::command]
+pub async fn git_unstage(repo: String, path: String) -> Result<(), String> {
+    run_blocking(move || git_unstage_sync(repo, path)).await
+}
+
+#[tauri::command]
 pub async fn git_stage_all(repo: String) -> Result<(), String> {
-    let r = open_repo(&repo)?;
-    let mut idx = r.index().map_err(|e| e.message().to_string())?;
-    idx.add_all(["*"], git2::IndexAddOption::DEFAULT, None)
-        .map_err(|e| e.message().to_string())?;
-    // Also stage deletions.
-    idx.update_all(["*"], None)
-        .map_err(|e| e.message().to_string())?;
-    idx.write().map_err(|e| e.message().to_string())
+    run_blocking(move || {
+        let r = open_repo(&repo)?;
+        let mut idx = r.index().map_err(|e| e.message().to_string())?;
+        idx.add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+            .map_err(|e| e.message().to_string())?;
+        // Also stage deletions.
+        idx.update_all(["*"], None)
+            .map_err(|e| e.message().to_string())?;
+        idx.write().map_err(|e| e.message().to_string())
+    })
+    .await
 }
 
 /// Reset every staged change back to HEAD — lazygit-style "unstage all".
@@ -818,7 +1001,7 @@ pub async fn git_stage_all(repo: String) -> Result<(), String> {
 /// is fiddlier than spawning the canonical command.
 #[tauri::command]
 pub async fn git_unstage_all(repo: String) -> Result<(), String> {
-    git_ok(&repo, &["reset", "HEAD", "--"]).map(|_| ())
+    run_blocking(move || git_ok(&repo, &["reset", "HEAD", "--"]).map(|_| ())).await
 }
 
 // ---- show / file_at -------------------------------------------------------
@@ -833,7 +1016,7 @@ fn revparse_commit<'a>(repo: &'a Repository, rev: &str) -> Result<git2::Commit<'
 pub async fn git_show(repo: String, rev: String) -> Result<String, String> {
     // git2's diff doesn't render the message + stat block the way `git show`
     // does — shelling out here costs us nothing and keeps the UI identical.
-    git_ok(&repo, &["show", "--no-ext-diff", "--stat", "-p", &rev])
+    run_blocking(move || git_ok(&repo, &["show", "--no-ext-diff", "--stat", "-p", &rev])).await
 }
 
 // Content-addressed cache for immutable revs.
@@ -852,7 +1035,7 @@ fn file_at_cache() -> &'static Mutex<linked_hash_map::LinkedHashMap<FileAtKey, S
 }
 
 fn is_immutable_rev(rev: &str) -> bool {
-    let head = rev.split(|c| c == '~' || c == '^').next().unwrap_or(rev);
+    let head = rev.split(['~', '^']).next().unwrap_or(rev);
     head.len() >= 7 && head.chars().all(|c| c.is_ascii_hexdigit())
 }
 
@@ -886,7 +1069,8 @@ fn blob_to_inline_text(blob: &git2::Blob<'_>, path: &str) -> Result<String, Stri
     if looks_binary_bytes(bytes) {
         return Err(format!("{path} is binary; inline diff is disabled."));
     }
-    String::from_utf8(bytes.to_vec()).map_err(|_| format!("{path} is not UTF-8 text; inline diff is disabled."))
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| format!("{path} is not UTF-8 text; inline diff is disabled."))
 }
 
 #[tauri::command]
@@ -1145,22 +1329,20 @@ pub async fn git_blame(
     run_blocking(move || -> Result<GitBlame, String> {
         let out = match contents {
             Some(text) => {
-                let mut child = Command::new("git")
-                    .arg("-C")
-                    .arg(&repo)
-                    .args(["blame", "--porcelain", "--contents", "-", "--", &path])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                    .map_err(|e| e.to_string())?;
-                child
-                    .stdin
-                    .take()
-                    .ok_or("no stdin")?
-                    .write_all(text.as_bytes())
-                    .map_err(|e| e.to_string())?;
-                let o = child.wait_with_output().map_err(|e| e.to_string())?;
+                let mut command = Command::new("git");
+                command.arg("-C").arg(&repo).args([
+                    "blame",
+                    "--porcelain",
+                    "--contents",
+                    "-",
+                    "--",
+                    &path,
+                ]);
+                let o = run_command_with_timeout(
+                    &mut command,
+                    Some(text.as_bytes()),
+                    GIT_COMMAND_TIMEOUT,
+                )?;
                 if !o.status.success() {
                     return Ok(GitBlame::default());
                 }
@@ -1182,22 +1364,10 @@ pub async fn git_blame(
 // ---- commit / push / pull -------------------------------------------------
 
 fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(["commit", "-F", "-"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    child
-        .stdin
-        .take()
-        .ok_or("no stdin")?
-        .write_all(message.as_bytes())
-        .map_err(|e| e.to_string())?;
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let mut command = Command::new("git");
+    command.arg("-C").arg(repo).args(["commit", "-F", "-"]);
+    let out =
+        run_command_with_timeout(&mut command, Some(message.as_bytes()), GIT_COMMAND_TIMEOUT)?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
@@ -1239,7 +1409,10 @@ pub async fn git_push(repo: String) -> Result<String, String> {
             let remote = default_remote(&repo)?;
             let (ok2, so2, se2) = run_git(&repo, &["push", "--set-upstream", &remote, &branch])?;
             return if ok2 {
-                Ok(format!("published {branch} → {remote}/{branch}\n{}", format!("{so2}{se2}").trim()))
+                Ok(format!(
+                    "published {branch} → {remote}/{branch}\n{}",
+                    format!("{so2}{se2}").trim()
+                ))
             } else {
                 Err(if se2.trim().is_empty() { so2 } else { se2 })
             };
@@ -1301,8 +1474,8 @@ fn clean_commit_message(raw: &str) -> Result<String, String> {
         }
     }
     let te = t.trim_end();
-    if te.ends_with("```") {
-        t = te[..te.len() - 3].to_string();
+    if let Some(stripped) = te.strip_suffix("```") {
+        t = stripped.to_string();
     }
     const CONV: [&str; 11] = [
         "feat", "fix", "refactor", "chore", "docs", "test", "perf", "build", "ci", "style",
@@ -1404,17 +1577,12 @@ where
         if stdin_text.is_some() {
             cmd.stdin(Stdio::piped());
         }
-        match cmd.spawn() {
-            Ok(mut child) => {
-                if let Some(text) = stdin_text {
-                    child
-                        .stdin
-                        .take()
-                        .ok_or("no stdin")?
-                        .write_all(text.as_bytes())
-                        .map_err(|e| e.to_string())?;
-                }
-                let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        match run_command_with_timeout(
+            &mut cmd,
+            stdin_text.map(str::as_bytes),
+            Duration::from_secs(5 * 60),
+        ) {
+            Ok(out) => {
                 if out.status.success() {
                     return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
                 }
@@ -1427,7 +1595,7 @@ where
                 };
                 return Err(format!("{} failed: {detail}", provider.label()));
             }
-            Err(e) if e.kind() == ErrorKind::NotFound => continue,
+            Err(e) if e.contains("No such file") || e.contains("os error 2") => continue,
             Err(e) => return Err(format!("{} failed: {e}", provider.label())),
         }
     }
@@ -1609,13 +1777,13 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
         .find_remote("origin")
         .map_err(|e| e.message().to_string())?
         .url()
-        .ok_or("origin has no URL")?
+        .map_err(|e| e.message().to_string())?
         .to_string();
 
     let branch = r
         .head()
         .ok()
-        .and_then(|h| h.shorthand().map(String::from))
+        .and_then(|h| h.shorthand().ok().map(String::from))
         .ok_or("no current branch (detached HEAD?)")?;
 
     let mut url = if let Some(rest) = remote_url.strip_prefix("git@") {
@@ -1884,7 +2052,12 @@ pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
         if !is_fetch {
             continue;
         }
-        let url = rest.rsplitn(2, ' ').nth(1).unwrap_or("").trim().to_string();
+        let url = rest
+            .rsplit_once(' ')
+            .map(|(url, _)| url)
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if !url.is_empty() {
             seen.insert(name, url);
         }
@@ -2130,6 +2303,31 @@ mod tests {
         git(td.path(), &["config", "user.email", "sikemux@example.test"]);
         git(td.path(), &["config", "user.name", "sikemux"]);
         td
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn subprocess_drains_output_before_child_reads_stdin() {
+        let input = vec![b'i'; 2 * 1024 * 1024];
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            "dd if=/dev/zero bs=1048576 count=2 2>/dev/null; cat >/dev/null",
+        ]);
+        let out = run_command_with_timeout(&mut command, Some(&input), Duration::from_secs(5))
+            .expect("concurrent stdin/stdout handling must not deadlock");
+        assert!(out.status.success());
+        assert_eq!(out.stdout.len(), 2 * 1024 * 1024);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn subprocess_output_is_bounded() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "dd if=/dev/zero bs=1048576 count=33 2>/dev/null"]);
+        let error = run_command_with_timeout(&mut command, None, Duration::from_secs(5))
+            .expect_err("oversized output must be rejected");
+        assert!(error.contains("output exceeds"), "{error}");
     }
 
     fn commit_base(repo: &Path) {

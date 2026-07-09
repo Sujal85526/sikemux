@@ -12,10 +12,8 @@
 #       release geometry/padding (flat fallback, no Liquid Glass effect).
 #
 #   * Release bundle (target/release/bundle/macos/sikemux.app):
-#       tauri.conf.json's bundle.resources copies Assets.car into
-#       Resources/. scripts/build-mac.sh then patches Info.plist with
-#       CFBundleIconName=sikemux so macOS Big Sur+ loads the layered
-#       Liquid Glass icon instead of the flat .icns.
+#       tauri.conf.json copies Assets.car into Resources/ and merges
+#       CFBundleIconName=sikemux from Info.plist before code signing.
 #
 set -euo pipefail
 
@@ -30,7 +28,7 @@ ICON_BUILD="$ROOT/src-tauri/icons/build"
 STAMP="$ICON_BUILD/.stamp"
 if [[ -f "$STAMP" ]]; then
   NEWEST_SRC="$(find "$ICON_SOURCE" -type f -newer "$STAMP" -print -quit)"
-  if [[ -z "$NEWEST_SRC" ]]; then
+  if [[ -z "$NEWEST_SRC" && ! "$0" -nt "$STAMP" ]]; then
     exit 0
   fi
 fi
@@ -49,7 +47,7 @@ actool "$ICON_SOURCE" \
   --enable-on-demand-resources NO \
   --development-region en \
   --target-device mac \
-  --minimum-deployment-target 26.0 \
+  --minimum-deployment-target 11.0 \
   --platform macosx >/dev/null
 
 if [[ ! -f "$ICON_BUILD/Assets.car" ]]; then

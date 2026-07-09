@@ -54,6 +54,7 @@ pub fn run() {
                 if let Some(mgr) = window.try_state::<PtyManager>() {
                     mgr.drain();
                 }
+                lsp::drain_all();
             }
         })
         .on_page_load(|webview, payload| {
@@ -65,6 +66,7 @@ pub fn run() {
                 if let Some(mgr) = webview.try_state::<PtyManager>() {
                     mgr.drain();
                 }
+                lsp::drain_all();
             }
         })
         .setup(|app| {
@@ -239,6 +241,7 @@ pub fn run() {
                 if let Some(mgr) = app_handle.try_state::<PtyManager>() {
                     mgr.drain();
                 }
+                lsp::drain_all();
             }
         });
 }

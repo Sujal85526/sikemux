@@ -41,8 +41,8 @@ export function BrunoPane({ sessionId, active }: Props) {
     const bruno = session?.bruno ?? null;
     const collectionPath = bruno?.collectionPath ?? "";
     const view = useStore((s) => s.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW);
-    const drafts = bruno?.drafts ?? {};
-    const secretVars = bruno?.secretVars ?? {};
+    const drafts = useMemo(() => bruno?.drafts ?? {}, [bruno?.drafts]);
+    const secretVars = useMemo(() => bruno?.secretVars ?? {}, [bruno?.secretVars]);
     const selectedEnvs = bruno?.selectedEnvs ?? {};
 
     const coll = useResourceEnabled(active && !!collectionPath, brunoCollectionR, collectionPath);
@@ -52,6 +52,7 @@ export function BrunoPane({ sessionId, active }: Props) {
     const [running, setRunning] = useState<Record<string, boolean>>({});
     const [editing, setEditing] = useState<{ path: string; req: BruRequest } | null>(null);
     const [runtime, setRuntime] = useState<Scope>({});
+    const [trustedCollection, setTrustedCollection] = useState<string | null>(null);
     const splitRef = useRef<HTMLDivElement | null>(null);
     const reqPanePct = view.reqPanePct ?? DEFAULT_BRUNO_VIEW.reqPanePct;
 
@@ -75,7 +76,7 @@ export function BrunoPane({ sessionId, active }: Props) {
     const showEnvCollection = !reqCollPath; // only disambiguate by collection when not scoped
     const selectedEnvId = selectedEnvs[reqCollPath] ?? null;
     const env = collection ? selectedEnvOf(collection, selectedEnvId) : undefined;
-    const secretNames = env?.secretNames ?? [];
+    const secretNames = useMemo(() => env?.secretNames ?? [], [env?.secretNames]);
     const inheritedScope = useMemo(() => {
         if (!collection) return {} as Scope;
         return buildScope({ collection, env, secretVars, folderScopes: located?.folderScopes ?? [] });
@@ -110,9 +111,17 @@ export function BrunoPane({ sessionId, active }: Props) {
     const onSend = useCallback(async () => {
         if (!path || !effectiveRequest || !collection) return;
         const scopes = [collection.config, ...(located?.folderScopes ?? [])].filter(Boolean) as BruScope[];
+        let trusted = trustedCollection === collectionPath;
+        if (!trusted) {
+            trusted = window.confirm(
+                "Trust this Bruno collection for this session?\n\nTrusted collections may run request scripts, contact localhost/private APIs, and upload files located inside the collection folder. Requests still have hard time and size limits.",
+            );
+            if (!trusted) return;
+            setTrustedCollection(collectionPath);
+        }
         setRunning((r) => ({ ...r, [path]: true }));
         try {
-            const result = await runRequest({ request: effectiveRequest, scopes, vars: scope });
+            const result = await runRequest({ request: effectiveRequest, scopes, vars: scope, trust: trusted, collectionPath });
             setResults((r) => ({ ...r, [path]: result }));
             if (Object.keys(result.envUpdates).length) {
                 setRuntime((prev) => ({ ...prev, ...result.envUpdates }));
@@ -124,7 +133,7 @@ export function BrunoPane({ sessionId, active }: Props) {
         } finally {
             setRunning((r) => ({ ...r, [path]: false }));
         }
-    }, [path, effectiveRequest, collection, located, scope, runtime, secretNames, sessionId]);
+    }, [path, effectiveRequest, collection, located, scope, secretNames, sessionId, trustedCollection, collectionPath]);
 
     const onSave = useCallback(() => {
         if (!path) return;
@@ -134,10 +143,12 @@ export function BrunoPane({ sessionId, active }: Props) {
     const onSplitPointerDown = useCallback(
         (e: ReactPointerEvent<HTMLDivElement>) => {
             e.preventDefault();
+            const handle = e.currentTarget;
             const el = splitRef.current;
             if (!el) return;
             const rect = el.getBoundingClientRect();
             if (rect.width <= 0) return;
+            handle.setPointerCapture(e.pointerId);
 
             const minPx = 260;
             const minPct = Math.min(45, (minPx / rect.width) * 100);
@@ -150,16 +161,29 @@ export function BrunoPane({ sessionId, active }: Props) {
             };
             const up = () => {
                 document.body.classList.remove("bruno-resizing");
-                window.removeEventListener("pointermove", move);
-                window.removeEventListener("pointerup", up);
+                handle.removeEventListener("pointermove", move);
+                handle.removeEventListener("pointerup", up);
             };
 
             document.body.classList.add("bruno-resizing");
-            window.addEventListener("pointermove", move);
-            window.addEventListener("pointerup", up);
+            handle.addEventListener("pointermove", move);
+            handle.addEventListener("pointerup", up);
         },
         [sessionId],
     );
+
+    const onSplitKeyDown = useCallback(
+        (event: React.KeyboardEvent<HTMLDivElement>) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            event.preventDefault();
+            const step = event.shiftKey ? 5 : 2;
+            const next = Math.max(20, Math.min(80, reqPanePct + (event.key === "ArrowRight" ? step : -step)));
+            cmd.brunoSetReqPanePct(sessionId, next);
+        },
+        [reqPanePct, sessionId],
+    );
+
+    useEffect(() => () => document.body.classList.remove("bruno-resizing"), []);
 
     // ⌘↵ from anywhere in the pane: the keymap emits, we run.
     useEffect(() => {
@@ -168,8 +192,7 @@ export function BrunoPane({ sessionId, active }: Props) {
         });
     }, [sessionId, onSend]);
 
-    const relativePath = (p: string) =>
-        collectionPath && p.startsWith(`${collectionPath}/`) ? p.slice(collectionPath.length + 1) : basename(p);
+    const relativePath = (p: string) => (collectionPath && p.startsWith(`${collectionPath}/`) ? p.slice(collectionPath.length + 1) : basename(p));
     const copyText = (text: string, label: string) =>
         navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 
@@ -257,7 +280,18 @@ export function BrunoPane({ sessionId, active }: Props) {
                                 onSave={onSave}
                                 onTab={(t) => cmd.brunoSetReqTab(sessionId, t)}
                             />
-                            <div className="bruno-splitter" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={onSplitPointerDown} />
+                            <div
+                                className="bruno-splitter"
+                                role="separator"
+                                tabIndex={0}
+                                aria-orientation="vertical"
+                                aria-valuemin={20}
+                                aria-valuemax={80}
+                                aria-valuenow={Math.round(reqPanePct)}
+                                title="Drag or use arrow keys to resize"
+                                onPointerDown={onSplitPointerDown}
+                                onKeyDown={onSplitKeyDown}
+                            />
                             <BrunoResponseView
                                 result={results[path] ?? null}
                                 running={!!running[path]}

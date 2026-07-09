@@ -97,7 +97,12 @@ export function SeshPicker() {
                   }))
             : [];
 
-        const openBrunoPaths = new Set(sessions.filter((s) => s.kind === "bruno").map((s) => s.cwd).filter(Boolean));
+        const openBrunoPaths = new Set(
+            sessions
+                .filter((s) => s.kind === "bruno")
+                .map((s) => s.cwd)
+                .filter(Boolean),
+        );
         const brunoItems: Item[] = showBruno
             ? brunoWorkspaces
                   .filter((p) => !openBrunoPaths.has(p))
@@ -188,7 +193,7 @@ export function SeshPicker() {
 
     return (
         <div className="picker-backdrop" onMouseDown={cmd.closePicker}>
-            <div className="picker" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="picker" role="dialog" aria-modal="true" aria-label="Open session or project" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="picker-input-wrap">
                     <IconSearch size={15} className="picker-search-icon" />
                     <input
@@ -273,29 +278,32 @@ export function SeshPicker() {
                                 {dirLabel && <div className="picker-group">{dirLabel}</div>}
                                 {brunoLabel && <div className="picker-group">{brunoLabel}</div>}
                                 {sshLabel && <div className="picker-group">{sshLabel}</div>}
-                                <button
-                                    className={`picker-item${i === sel ? " sel" : ""}`}
+                                <div
+                                    className="picker-item-wrap"
                                     onMouseEnter={() => {
                                         if (mouseActive.current) setSel(i);
-                                    }}
-                                    onClick={() => activate(it)}>
-                                    <span className={`picker-icon ${iconClass}`}>
-                                        {isBruno ? <IconBruno size={14} /> : isFolder ? <IconFolder size={14} /> : <IconCommand size={14} />}
-                                    </span>
-                                    <span className="picker-name">{it.name}</span>
-                                    <span className="picker-sub">{it.sub}</span>
+                                    }}>
+                                    <button className={`picker-item${i === sel ? " sel" : ""}`} onClick={() => activate(it)}>
+                                        <span className={`picker-icon ${iconClass}`}>
+                                            {isBruno ? <IconBruno size={14} /> : isFolder ? <IconFolder size={14} /> : <IconCommand size={14} />}
+                                        </span>
+                                        <span className="picker-name">{it.name}</span>
+                                        <span className="picker-sub">{it.sub}</span>
+                                    </button>
                                     {it.kind === "bruno" && (
-                                        <span
+                                        <button
+                                            type="button"
                                             className="picker-forget"
+                                            aria-label={`Forget ${it.name} workspace`}
                                             title="Forget this workspace"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 cmd.removeBrunoWorkspace(it.path);
                                             }}>
                                             <IconClose size={11} />
-                                        </span>
+                                        </button>
                                     )}
-                                </button>
+                                </div>
                             </div>
                         );
                     })}

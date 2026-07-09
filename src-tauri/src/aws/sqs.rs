@@ -37,6 +37,6 @@ pub async fn aws_sqs_queues(profile: String) -> AppResult<Vec<SqsQueue>> {
             delayed: None,
         });
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|queue| queue.name.to_lowercase());
     Ok(out)
 }

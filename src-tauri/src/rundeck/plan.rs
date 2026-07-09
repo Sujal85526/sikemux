@@ -47,10 +47,14 @@ pub enum BranchRelation {
 #[derive(Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PushAction {
-    WillPushCurrent,
-    WillNotPushDifferentBranch,
-    WillNotPushNoRepo,
-    WillNotPushDetached,
+    #[serde(rename = "will-push-current")]
+    PushCurrent,
+    #[serde(rename = "will-not-push-different-branch")]
+    NotPushDifferentBranch,
+    #[serde(rename = "will-not-push-no-repo")]
+    NotPushNoRepo,
+    #[serde(rename = "will-not-push-detached")]
+    NotPushDetached,
 }
 
 #[derive(serde::Deserialize)]
@@ -105,7 +109,7 @@ pub async fn rnd_plan(
         ahead: None,
         behind: None,
         remote_target_exists: false,
-        push_action: PushAction::WillNotPushNoRepo,
+        push_action: PushAction::NotPushNoRepo,
     };
 
     if repo_path.trim().is_empty() {
@@ -134,7 +138,7 @@ pub async fn rnd_plan(
 
     // HEAD info
     if let Ok(head) = repo.head() {
-        if let Some(name) = head.shorthand() {
+        if let Ok(name) = head.shorthand() {
             plan.current_branch = Some(name.to_string());
         }
         if let Some(oid) = head.target() {
@@ -177,9 +181,9 @@ pub async fn rnd_plan(
 
     // Push action prediction
     plan.push_action = match &plan.current_branch {
-        Some(cb) if cb == &target_branch => PushAction::WillPushCurrent,
-        Some(_) => PushAction::WillNotPushDifferentBranch,
-        None => PushAction::WillNotPushDetached,
+        Some(cb) if cb == &target_branch => PushAction::PushCurrent,
+        Some(_) => PushAction::NotPushDifferentBranch,
+        None => PushAction::NotPushDetached,
     };
 
     // Branch relation

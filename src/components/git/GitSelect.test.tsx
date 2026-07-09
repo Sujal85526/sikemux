@@ -20,8 +20,8 @@ describe("GitSelect", () => {
         );
 
         await user.click(screen.getByRole("button", { name: /hermes/i }));
-        expect(screen.getByRole("button", { name: /codex/i })).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: /codex/i }));
+        expect(screen.getByRole("option", { name: /codex/i })).toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: /codex/i }));
         expect(onSelect).toHaveBeenCalledWith("codex");
         expect(screen.queryByRole("button", { name: /codex/i })).not.toBeInTheDocument();
     });

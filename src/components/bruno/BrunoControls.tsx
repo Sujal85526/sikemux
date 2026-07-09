@@ -37,6 +37,8 @@ export function BrunoSelect({
                 type="button"
                 className={`bruno-dd-btn${className ? ` ${className}` : ""}`}
                 title={title}
+                aria-haspopup="listbox"
+                aria-expanded={open}
                 onClick={(e) => {
                     e.stopPropagation();
                     setOpen((v) => !v);
@@ -47,11 +49,17 @@ export function BrunoSelect({
             {open && (
                 <>
                     <div className="bruno-dd-scrim" onClick={() => setOpen(false)} />
-                    <div className={`bruno-dd-menu${align === "right" ? " right" : ""}`} style={menuWidth ? { minWidth: menuWidth } : undefined}>
+                    <div
+                        className={`bruno-dd-menu${align === "right" ? " right" : ""}`}
+                        role="listbox"
+                        aria-label={title ?? "Select value"}
+                        style={menuWidth ? { minWidth: menuWidth } : undefined}>
                         {options.map((o) => (
                             <button
                                 key={o.value}
                                 type="button"
+                                role="option"
+                                aria-selected={o.value === value}
                                 className={`bruno-dd-item${o.value === value ? " active" : ""}`}
                                 onClick={() => {
                                     onChange(o.value);

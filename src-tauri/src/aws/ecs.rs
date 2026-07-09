@@ -177,7 +177,7 @@ pub async fn aws_ecs_services(profile: String, cluster: String) -> AppResult<Vec
             });
         }
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|service| service.name.to_lowercase());
     Ok(out)
 }
 

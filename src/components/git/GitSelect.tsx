@@ -24,6 +24,8 @@ export function GitSelect({
                 className="git-dd-btn"
                 style={width ? { width } : undefined}
                 title={title}
+                aria-haspopup="listbox"
+                aria-expanded={open}
                 onClick={(e) => {
                     e.stopPropagation();
                     setOpen((v) => !v);
@@ -34,11 +36,13 @@ export function GitSelect({
             {open && (
                 <>
                     <div className="git-dd-scrim" onClick={() => setOpen(false)} />
-                    <div className="git-dd-menu">
+                    <div className="git-dd-menu" role="listbox" aria-label={title ?? label}>
                         {options.map((o) => (
                             <button
                                 key={o.value}
                                 type="button"
+                                role="option"
+                                aria-selected={o.value === value}
                                 className={`git-dd-item${o.value === value ? " active" : ""}`}
                                 onClick={() => {
                                     onSelect(o.value);

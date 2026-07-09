@@ -6,9 +6,9 @@ export function Toaster() {
     const dismiss = useToasts((s) => s.dismiss);
     if (toasts.length === 0) return null;
     return (
-        <div className="toaster">
+        <div className="toaster" aria-live="polite" aria-atomic="false">
             {toasts.map((t) => (
-                <div key={t.id} className={`toast toast-${t.kind}`}>
+                <div key={t.id} className={`toast toast-${t.kind}`} role={t.kind === "error" ? "alert" : "status"}>
                     <span className="toast-text">{t.text}</span>
                     {t.action && (
                         <button
@@ -16,12 +16,11 @@ export function Toaster() {
                             onClick={() => {
                                 if (t.action?.dismissOnClick) dismiss(t.id);
                                 void t.action?.run(t.id);
-                            }}
-                        >
+                            }}>
                             {t.action.label}
                         </button>
                     )}
-                    <button className="toast-x" onClick={() => dismiss(t.id)} title="Dismiss">
+                    <button className="toast-x" onClick={() => dismiss(t.id)} title="Dismiss" aria-label="Dismiss notification">
                         <IconClose size={10} />
                     </button>
                 </div>

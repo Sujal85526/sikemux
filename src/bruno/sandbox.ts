@@ -1,10 +1,6 @@
-// Pre/post-request script + assertion sandbox.
-//
-// Scripts run in the webview's own JS engine — no second runtime — via a
-// constructed async function with the Bruno-compatible `bru` / `req` / `res` /
-// `expect` / `test` / `console` API injected. Network calls (bru.sendRequest)
-// route to the Rust HTTP command. Scripts come from the user's own .bru files,
-// so this is a convenience sandbox (timeout-guarded), not a security boundary.
+// Pre/post-request scripts and assertion expressions execute only inside
+// disposable workers. The parent owns all privileged bridges and re-applies
+// the user-approved trust policy to every worker-originated network request.
 
 import { brunoApi, type BruSendRequest } from "../api/bruno";
 import type { Scope } from "./interpolate";
@@ -40,6 +36,7 @@ export interface SandboxCtx {
     res?: ResView;
     logs: ScriptLog[];
     tests: TestResult[];
+    trust: BruSendRequest["trust"];
 }
 
 const SCRIPT_TIMEOUT_MS = 15_000;
@@ -57,24 +54,6 @@ function errMsg(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }
 
-function typeName(v: unknown): string {
-    if (v === null) return "null";
-    if (Array.isArray(v)) return "array";
-    return typeof v;
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (typeof a !== typeof b || a == null || b == null) return false;
-    if (typeof a !== "object") return false;
-    const ao = a as Record<string, unknown>;
-    const bo = b as Record<string, unknown>;
-    const ak = Object.keys(ao);
-    const bk = Object.keys(bo);
-    if (ak.length !== bk.length) return false;
-    return ak.every((k) => deepEqual(ao[k], bo[k]));
-}
-
 function includes(actual: unknown, v: unknown): boolean {
     if (typeof actual === "string") return actual.includes(String(v));
     if (Array.isArray(actual)) return actual.includes(v);
@@ -87,183 +66,6 @@ function isEmpty(v: unknown): boolean {
     if (typeof v === "string" || Array.isArray(v)) return v.length === 0;
     if (typeof v === "object") return Object.keys(v as object).length === 0;
     return false;
-}
-
-/** A compact chai-like expect supporting the chains common in Bruno test scripts. */
-function makeExpect() {
-    const make = (actual: unknown, negated: boolean): unknown => {
-        const ok = (cond: boolean, msg: string) => {
-            if (negated ? cond : !cond) throw new Error(msg);
-        };
-        const fns: Record<string, (...a: never[]) => void> = {
-            equal: ((v: unknown) => ok(actual === v, `expected ${fmt(actual)} to equal ${fmt(v)}`)) as never,
-            eql: ((v: unknown) => ok(deepEqual(actual, v), `expected ${fmt(actual)} to deeply equal ${fmt(v)}`)) as never,
-            above: ((v: number) => ok(Number(actual) > v, `expected ${fmt(actual)} to be above ${v}`)) as never,
-            least: ((v: number) => ok(Number(actual) >= v, `expected ${fmt(actual)} to be >= ${v}`)) as never,
-            below: ((v: number) => ok(Number(actual) < v, `expected ${fmt(actual)} to be below ${v}`)) as never,
-            most: ((v: number) => ok(Number(actual) <= v, `expected ${fmt(actual)} to be <= ${v}`)) as never,
-            include: ((v: unknown) => ok(includes(actual, v), `expected ${fmt(actual)} to include ${fmt(v)}`)) as never,
-            contain: ((v: unknown) => ok(includes(actual, v), `expected ${fmt(actual)} to contain ${fmt(v)}`)) as never,
-            a: ((t: string) => ok(typeName(actual) === t, `expected ${fmt(actual)} to be a ${t}`)) as never,
-            an: ((t: string) => ok(typeName(actual) === t, `expected ${fmt(actual)} to be an ${t}`)) as never,
-            property: ((k: string) => ok(actual != null && k in Object(actual), `expected property ${k}`)) as never,
-            match: ((re: RegExp) => ok(re.test(String(actual)), `expected ${fmt(actual)} to match ${re}`)) as never,
-            status: ((v: number) => {
-                const s = actual && typeof actual === "object" && "status" in actual ? (actual as { status: number }).status : actual;
-                ok(s === v, `expected status ${fmt(s)} to be ${v}`);
-            }) as never,
-            length: ((v: number) => ok((actual as { length?: number })?.length === v, `expected length ${v}`)) as never,
-        };
-        const getters: Record<string, () => void> = {
-            ok: () => ok(!!actual, `expected ${fmt(actual)} to be truthy`),
-            exist: () => ok(actual != null, `expected ${fmt(actual)} to exist`),
-            empty: () => ok(isEmpty(actual), `expected ${fmt(actual)} to be empty`),
-            true: () => ok(actual === true, `expected true`),
-            false: () => ok(actual === false, `expected false`),
-            null: () => ok(actual === null, `expected null`),
-            undefined: () => ok(actual === undefined, `expected undefined`),
-        };
-        const PASS = new Set(["to", "be", "been", "is", "that", "which", "and", "has", "have", "with", "at", "of", "the", "same", "deep"]);
-        return new Proxy(
-            {},
-            {
-                get(_t, prop: string) {
-                    if (prop === "not") return make(actual, !negated);
-                    if (prop in fns) return fns[prop];
-                    if (prop in getters) {
-                        getters[prop]();
-                        return undefined;
-                    }
-                    if (PASS.has(prop)) return make(actual, negated);
-                    return make(actual, negated);
-                },
-            },
-        );
-    };
-    return (actual: unknown) => make(actual, false);
-}
-
-function makeBru(ctx: SandboxCtx) {
-    const get = (k: string) => ctx.vars[k];
-    const set = (k: string, v: unknown) => {
-        ctx.vars[k] = v == null ? "" : String(v);
-    };
-    return {
-        getEnvVar: get,
-        setEnvVar: set,
-        getVar: get,
-        setVar: set,
-        getCollectionVar: get,
-        getProcessEnv: (k: string) => ctx.vars[`process.env.${k}`] ?? "",
-        setNextRequest: (_: string) => {},
-        sendRequest: async (opts: { url: string; method?: string; headers?: Record<string, unknown>; data?: unknown }) => {
-            const headers: [string, string][] = Object.entries(opts.headers ?? {}).map(([k, v]) => [k, String(v)]);
-            const data = opts.data;
-            const body =
-                data == null
-                    ? ({ kind: "none" } as const)
-                    : typeof data === "string"
-                      ? ({ kind: "raw", content_type: null, data } as const)
-                      : ({ kind: "raw", content_type: "application/json", data: JSON.stringify(data) } as const);
-            const r = await brunoApi.send({ method: (opts.method ?? "GET").toUpperCase(), url: opts.url, headers, body, timeout_ms: 0, skip_tls_verify: false });
-            let parsed: unknown = r.body;
-            try {
-                parsed = JSON.parse(r.body);
-            } catch {
-                /* keep raw */
-            }
-            return { status: r.status, statusText: r.status_text, headers: Object.fromEntries(r.headers), data: parsed };
-        },
-    };
-}
-
-function makeReq(ctx: SandboxCtx) {
-    const r = ctx.req;
-    return {
-        getUrl: () => r.url,
-        setUrl: (u: string) => {
-            r.url = u;
-        },
-        getMethod: () => r.method,
-        setMethod: (m: string) => {
-            r.method = m;
-        },
-        getHeaders: () => r.headers,
-        getHeader: (k: string) => r.headers[k],
-        setHeader: (k: string, v: string) => {
-            r.headers[k] = v;
-        },
-        getBody: () => r.body,
-        setBody: (b: unknown) => {
-            r.body = b;
-        },
-        getName: () => r.name,
-    };
-}
-
-function makeRes(ctx: SandboxCtx) {
-    const r = ctx.res as ResView;
-    return {
-        get status() {
-            return r.status;
-        },
-        get body() {
-            return r.body;
-        },
-        get headers() {
-            return r.headers;
-        },
-        get responseTime() {
-            return r.responseTime;
-        },
-        getStatus: () => r.status,
-        getBody: () => r.body,
-        getHeader: (k: string) => r.headers[k],
-        getHeaders: () => r.headers,
-        getResponseTime: () => r.responseTime,
-    };
-}
-
-async function runScriptInline(code: string, ctx: SandboxCtx): Promise<void> {
-    if (!code.trim()) return;
-    const bru = makeBru(ctx);
-    const req = makeReq(ctx);
-    const res = ctx.res ? makeRes(ctx) : undefined;
-    const expect = makeExpect();
-    const pending: Promise<void>[] = [];
-    const test = (name: string, fn: () => unknown) => {
-        try {
-            const r = fn();
-            if (r && typeof (r as Promise<unknown>).then === "function") {
-                pending.push(
-                    (r as Promise<unknown>).then(
-                        () => void ctx.tests.push({ name, passed: true }),
-                        (e: unknown) => void ctx.tests.push({ name, passed: false, error: errMsg(e) }),
-                    ),
-                );
-            } else {
-                ctx.tests.push({ name, passed: true });
-            }
-        } catch (e) {
-            ctx.tests.push({ name, passed: false, error: errMsg(e) });
-        }
-    };
-    const log =
-        (level: string) =>
-        (...args: unknown[]) =>
-            ctx.logs.push({ level, text: args.map(fmt).join(" ") });
-    const consoleShim = { log: log("log"), info: log("info"), warn: log("warn"), error: log("error"), debug: log("debug") };
-
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const fn = new Function("bru", "req", "res", "expect", "test", "console", `return (async () => {\n${code}\n})();`);
-    const exec = Promise.resolve(fn(bru, req, res, expect, test, consoleShim));
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("script timed out")), SCRIPT_TIMEOUT_MS));
-    try {
-        await Promise.race([exec, timeout]);
-        await Promise.all(pending);
-    } catch (e) {
-        ctx.logs.push({ level: "error", text: `script error: ${errMsg(e)}` });
-    }
 }
 
 const WORKER_SOURCE = String.raw`
@@ -377,7 +179,7 @@ function makeBru(ctx) {
                 : typeof data === "string"
                   ? { kind: "raw", content_type: null, data }
                   : { kind: "raw", content_type: "application/json", data: JSON.stringify(data) };
-            const r = await sendRequest({ method: (opts.method || "GET").toUpperCase(), url: opts.url, headers, body, timeout_ms: 0, skip_tls_verify: false });
+            const r = await sendRequest({ method: (opts.method || "GET").toUpperCase(), url: opts.url, headers, body, timeout_ms: 0, skip_tls_verify: false, trust: ctx.trust });
             let parsed = r.body;
             try { parsed = JSON.parse(r.body); } catch {}
             return { status: r.status, statusText: r.status_text, headers: Object.fromEntries(r.headers), data: parsed };
@@ -454,8 +256,17 @@ self.onmessage = (event) => {
         else entry.reject(new Error(msg.error || "request failed"));
         return;
     }
+    if (msg.type === "evaluate") {
+        try {
+            const fn = new Function("res", "req", "bru", "return (" + msg.expression + ");");
+            self.postMessage({ type: "evaluated", value: fn(msg.env.res, msg.env.req, msg.env.bru) });
+        } catch (e) {
+            self.postMessage({ type: "evaluationError", error: errMsg(e) });
+        }
+        return;
+    }
     if (msg.type !== "start") return;
-    const ctx = { vars: msg.ctx.vars, req: msg.ctx.req, res: msg.ctx.res, logs: [], tests: [] };
+    const ctx = { vars: msg.ctx.vars, req: msg.ctx.req, res: msg.ctx.res, trust: msg.ctx.trust, logs: [], tests: [] };
     run(msg.code, ctx).then(
         () => self.postMessage({ type: "done", vars: ctx.vars, req: ctx.req, logs: ctx.logs, tests: ctx.tests }),
         (e) => self.postMessage({ type: "done", vars: ctx.vars, req: ctx.req, logs: [{ level: "error", text: "script error: " + errMsg(e) }], tests: ctx.tests }),
@@ -492,6 +303,12 @@ interface WorkerSendRequest {
 
 type WorkerMessage = WorkerDone | WorkerSendRequest;
 
+/** Worker messages are attacker-controlled: collection code can call
+ * `self.postMessage` directly. Never honor trust flags supplied by the worker. */
+export function constrainWorkerRequest(request: BruSendRequest, trust: BruSendRequest["trust"]): BruSendRequest {
+    return { ...request, trust: { ...trust } };
+}
+
 function isWorkerAvailable(): boolean {
     return typeof Worker !== "undefined" && typeof Blob !== "undefined" && typeof URL !== "undefined";
 }
@@ -499,7 +316,7 @@ function isWorkerAvailable(): boolean {
 export async function runScript(code: string, ctx: SandboxCtx): Promise<void> {
     if (!code.trim()) return;
     if (!isWorkerAvailable()) {
-        await runScriptInline(code, ctx);
+        ctx.logs.push({ level: "error", text: "script error: isolated script worker unavailable" });
         return;
     }
 
@@ -523,7 +340,8 @@ export async function runScript(code: string, ctx: SandboxCtx): Promise<void> {
         worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
             const msg = event.data;
             if (msg.type === "sendRequest") {
-                void brunoApi.send(msg.req).then(
+                const request = constrainWorkerRequest(msg.req, ctx.trust);
+                void brunoApi.send(request).then(
                     (response) => worker.postMessage({ type: "sendResponse", id: msg.id, ok: true, response }),
                     (e: unknown) => worker.postMessage({ type: "sendResponse", id: msg.id, ok: false, error: errMsg(e) }),
                 );
@@ -543,6 +361,7 @@ export async function runScript(code: string, ctx: SandboxCtx): Promise<void> {
                 vars: { ...ctx.vars },
                 req: { ...ctx.req, headers: { ...ctx.req.headers } },
                 res: ctx.res ? { ...ctx.res, headers: { ...ctx.res.headers } } : undefined,
+                trust: ctx.trust,
             },
         });
     });
@@ -589,9 +408,29 @@ function coerce(s: string): unknown {
     }
 }
 
-export function evaluateExpression(expr: string, env: { res?: ResView; req: ReqView; bru: Record<string, unknown> }): unknown {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    return new Function("res", "req", "bru", `return (${expr});`)(env.res, env.req, env.bru);
+export async function evaluateExpression(expr: string, env: { res?: ResView; req: ReqView; bru: Record<string, unknown> }): Promise<unknown> {
+    if (!isWorkerAvailable()) throw new Error("isolated expression worker unavailable");
+    const url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
+    const worker = new Worker(url);
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: string, value?: unknown) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            worker.terminate();
+            URL.revokeObjectURL(url);
+            if (error) reject(new Error(error));
+            else resolve(value);
+        };
+        const timeout = setTimeout(() => finish("expression timed out"), SCRIPT_TIMEOUT_MS);
+        worker.onmessage = (event: MessageEvent<{ type: string; value?: unknown; error?: string }>) => {
+            if (event.data.type === "evaluated") finish(undefined, event.data.value);
+            else if (event.data.type === "evaluationError") finish(event.data.error ?? "evaluation failed");
+        };
+        worker.onerror = (event) => finish(event.message || "expression worker error");
+        worker.postMessage({ type: "evaluate", expression: expr, env });
+    });
 }
 
 function compare(actual: unknown, op: string, expectedRaw: string): { passed: boolean; error?: string } {
@@ -662,11 +501,11 @@ function compare(actual: unknown, op: string, expectedRaw: string): { passed: bo
 }
 
 /** Evaluate `assert` rows: lhs is a JS expression over res/req/bru, rhs is `<op> <expected>`. */
-export function evaluateAssertions(
+export async function evaluateAssertions(
     rows: { name: string; value: string; enabled: boolean }[],
     env: { res?: ResView; req: ReqView; bru: Record<string, unknown> },
     tests: TestResult[],
-): void {
+): Promise<void> {
     for (const a of rows) {
         if (!a.enabled || !a.name.trim()) continue;
         const raw = a.value.trim();
@@ -675,7 +514,7 @@ export function evaluateAssertions(
         const expectedRaw = ASSERT_OPS.has(sp[0]) ? sp.slice(1).join(" ") : raw;
         let actual: unknown;
         try {
-            actual = evaluateExpression(a.name, env);
+            actual = await evaluateExpression(a.name, env);
         } catch (e) {
             tests.push({ name: `${a.name} ${raw}`, passed: false, error: `eval error: ${errMsg(e)}` });
             continue;

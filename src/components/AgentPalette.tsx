@@ -69,9 +69,7 @@ export function AgentPalette() {
         const fresh = agents.map(({ type }): NewAgentItem => ({ kind: "new", type }));
         const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
         const rankedFresh = rankBy(query, fresh, (item) => `+ new ${labelForType(item.type, agents)} ${item.type}`);
-        const rankedResumable = rankBy(query, resumable, (item) =>
-            `${item.row.title} ${labelForType(item.row.type, agents)} ${item.row.type}`,
-        );
+        const rankedResumable = rankBy(query, resumable, (item) => `${item.row.title} ${labelForType(item.row.type, agents)} ${item.row.type}`);
         return [...rankedFresh, ...rankedResumable];
     }, [agents, rows, query]);
 
@@ -153,7 +151,9 @@ export function AgentPalette() {
                                     <span className={`picker-icon agent-glyph ${type}`}>
                                         <AgentIcon type={type} size={14} />
                                     </span>
-                                    <span className="picker-name">{item.kind === "new" ? `+ new ${labelForType(type, agents)}` : item.row.title}</span>
+                                    <span className="picker-name">
+                                        {item.kind === "new" ? `+ new ${labelForType(type, agents)}` : item.row.title}
+                                    </span>
                                     <span className="picker-sub">
                                         {item.kind === "new" ? "start agent" : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
                                     </span>

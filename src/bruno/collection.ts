@@ -48,7 +48,14 @@ async function buildTree(entries: DirEntry[], collPath: string): Promise<BruTree
             const childNodes = await buildTree(children, childColl);
             // Skip empty structural dirs (e.g. a bare `collections/` wrapper with nothing useful).
             if (childNodes.length === 0 && !scope) continue;
-            nodes.push({ type: "folder", name: scope?.meta.name || e.name, path: e.path, seq: scope?.meta.seq ?? SEQ_LAST, scope, children: childNodes });
+            nodes.push({
+                type: "folder",
+                name: scope?.meta.name || e.name,
+                path: e.path,
+                seq: scope?.meta.seq ?? SEQ_LAST,
+                scope,
+                children: childNodes,
+            });
         } else if (e.name.endsWith(BRU) && e.name !== "collection.bru" && e.name !== "folder.bru") {
             const request = parseRequest(await fsapi.readFile(e.path));
             nodes.push({

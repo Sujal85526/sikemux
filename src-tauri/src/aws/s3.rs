@@ -34,6 +34,6 @@ pub async fn aws_s3_buckets(profile: String) -> AppResult<Vec<S3Bucket>> {
             created_at: b.created,
         })
         .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|bucket| bucket.name.to_lowercase());
     Ok(out)
 }

@@ -22,15 +22,23 @@ export function CommitReview({
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
     useEffect(() => {
+        let cancelled = false;
+        setFiles([]);
+        setCollapsed(new Set());
         git.commitFiles(repo, rev)
             .then((fs) => {
+                if (cancelled) return;
                 setFiles(fs);
                 setCollapsed(new Set(fs));
             })
             .catch(() => {
+                if (cancelled) return;
                 setFiles([]);
                 setCollapsed(new Set());
             });
+        return () => {
+            cancelled = true;
+        };
     }, [repo, rev]);
 
     const toggle = (f: string) =>

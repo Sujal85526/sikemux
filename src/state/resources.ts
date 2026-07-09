@@ -20,8 +20,14 @@ interface Entry<T> {
 
 type AnyDef = ResourceDef<unknown[], unknown>;
 
+interface Inflight {
+    generation: number;
+    promise: Promise<unknown>;
+}
+
 const cache = new Map<string, Entry<unknown>>();
-const inflight = new Map<string, Promise<unknown>>();
+const inflight = new Map<string, Inflight>();
+const generations = new Map<string, number>();
 const subs = new Map<string, Set<() => void>>();
 const defsByKind = new Map<string, AnyDef>();
 
@@ -44,25 +50,58 @@ function pruneCache(): void {
     }
 }
 
-function defaultKey(args: unknown[]): string {
-    let key = "";
-    for (let i = 0; i < args.length; i++) {
-        const a = args[i];
-        const t = typeof a;
-        if (a === null || a === undefined) {
-            key += i ? "|n" : "n";
-        } else if (t === "string" || t === "number" || t === "boolean") {
-            key += i ? "|" + String(a) : String(a);
-        } else {
-            key += i ? "|" + JSON.stringify(a) : JSON.stringify(a);
-        }
+function framed(tag: string, value: string): string {
+    return `${tag}${value.length}:${value}`;
+}
+
+function encodeKey(value: unknown, seen: Set<object>): string {
+    if (value === null) return "l";
+    if (value === undefined) return "u";
+    if (typeof value === "string") return framed("s", value);
+    if (typeof value === "boolean") return value ? "b1" : "b0";
+    if (typeof value === "number") {
+        const rendered = Number.isNaN(value) ? "NaN" : Object.is(value, -0) ? "-0" : String(value);
+        return framed("n", rendered);
     }
-    return key;
+    if (typeof value === "bigint") return framed("i", String(value));
+    if (typeof value !== "object") throw new TypeError(`unsupported resource argument type: ${typeof value}`);
+    if (seen.has(value)) throw new TypeError("resource arguments must not be cyclic");
+    seen.add(value);
+    let encoded: string;
+    if (Array.isArray(value)) {
+        const indexedKeys = Object.keys(value).filter((key) => /^(0|[1-9]\d*)$/.test(key) && Number(key) < value.length);
+        if (indexedKeys.length !== Object.keys(value).length || Object.getOwnPropertySymbols(value).length > 0) {
+            throw new TypeError("resource argument arrays must not have custom properties");
+        }
+        let items = "";
+        for (let index = 0; index < value.length; index += 1) {
+            items += Object.prototype.hasOwnProperty.call(value, index) ? framed("e", encodeKey(value[index], seen)) : framed("h", "");
+        }
+        encoded = framed("a", items);
+    } else {
+        const proto = Object.getPrototypeOf(value);
+        if ((proto !== Object.prototype && proto !== null) || Object.getOwnPropertySymbols(value).length > 0) {
+            throw new TypeError("resource arguments must contain only plain objects and arrays");
+        }
+        encoded = framed(
+            "o",
+            Object.keys(value as Record<string, unknown>)
+                .sort()
+                .map((key) => framed("k", key) + framed("v", encodeKey((value as Record<string, unknown>)[key], seen)))
+                .join(""),
+        );
+    }
+    seen.delete(value);
+    return encoded;
+}
+
+function defaultKey(args: unknown[]): string {
+    return encodeKey(args, new Set());
 }
 
 function keyOf(kind: string, args: unknown[], def?: AnyDef): string {
     const k = def?.keyFn ? def.keyFn(args as never) : defaultKey(args);
-    return `${kind}|${k}`;
+    return framed("r", kind) + framed("k", k);
 }
 
 function stringifyError(err: unknown): string {
@@ -93,8 +132,9 @@ function setEntry(key: string, entry: Entry<unknown>): void {
 }
 
 function trigger<Args extends unknown[], T>(def: ResourceDef<Args, T>, key: string, args: Args): Promise<T> {
+    const generation = generations.get(key) ?? 0;
     const existing = inflight.get(key);
-    if (existing) return existing as Promise<T>;
+    if (existing?.generation === generation) return existing.promise as Promise<T>;
     const current = cache.get(key) as Entry<T> | undefined;
     setEntry(key, {
         kind: def.kind,
@@ -106,31 +146,35 @@ function trigger<Args extends unknown[], T>(def: ResourceDef<Args, T>, key: stri
     const p = def
         .fetch(...args)
         .then((data) => {
-            setEntry(key, {
-                kind: def.kind,
-                args,
-                status: "ok",
-                data,
-                fetchedAt: Date.now(),
-            });
+            if ((generations.get(key) ?? 0) === generation) {
+                setEntry(key, {
+                    kind: def.kind,
+                    args,
+                    status: "ok",
+                    data,
+                    fetchedAt: Date.now(),
+                });
+            }
             return data;
         })
         .catch((err: unknown) => {
-            setEntry(key, {
-                kind: def.kind,
-                args,
-                status: "error",
-                data: current?.data,
-                error: stringifyError(err),
-                fetchedAt: Date.now(),
-            });
+            if ((generations.get(key) ?? 0) === generation) {
+                setEntry(key, {
+                    kind: def.kind,
+                    args,
+                    status: "error",
+                    data: current?.data,
+                    error: stringifyError(err),
+                    fetchedAt: Date.now(),
+                });
+            }
             throw err;
         })
         .finally(() => {
-            inflight.delete(key);
+            if (inflight.get(key)?.promise === p) inflight.delete(key);
         });
-    inflight.set(key, p);
-    return p as Promise<T>;
+    inflight.set(key, { generation, promise: p });
+    return p;
 }
 
 export function resource<Args extends unknown[], T>(def: ResourceDef<Args, T>): ResourceDef<Args, T> {
@@ -200,6 +244,7 @@ export function peekResource<Args extends unknown[], T>(def: ResourceDef<Args, T
 export function invalidate(predicate: (kind: string, args: unknown[]) => boolean): void {
     for (const [key, entry] of [...cache]) {
         if (!predicate(entry.kind, entry.args)) continue;
+        generations.set(key, (generations.get(key) ?? 0) + 1);
         if (subs.has(key)) {
             const def = defsByKind.get(entry.kind);
             if (def) {
@@ -214,6 +259,14 @@ export function invalidate(predicate: (kind: string, args: unknown[]) => boolean
         }
     }
     pruneCache();
+}
+
+export function resetResourcesForTests(): void {
+    cache.clear();
+    inflight.clear();
+    generations.clear();
+    subs.clear();
+    defsByKind.clear();
 }
 
 export function resourceStats(): { cacheEntries: number; inflight: number; subscribedKeys: number; subscriptions: number } {

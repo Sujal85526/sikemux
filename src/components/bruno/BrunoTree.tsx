@@ -39,6 +39,12 @@ export function BrunoTree({ sessionId, collectionPath, tree, activePath, drafts,
         if (window.confirm(`Delete request "${name}"?`)) void cmd.brunoDeleteRequest(sessionId, path);
     };
 
+    const activateOnKey = (e: React.KeyboardEvent, action: () => void) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        action();
+    };
+
     const renderNodes = (nodes: BruTreeNode[], depth: number): React.ReactNode =>
         nodes.map((n) => {
             const pad = { paddingLeft: 8 + depth * 14 } as const;
@@ -46,7 +52,15 @@ export function BrunoTree({ sessionId, collectionPath, tree, activePath, drafts,
                 const isOpen = !!expanded[n.path];
                 return (
                     <div key={n.path} className="bruno-folder">
-                        <div className="bruno-row bruno-folder-row" style={pad} role="button" tabIndex={0} onClick={() => toggle(n.path)} title={n.name}>
+                        <div
+                            className="bruno-row bruno-folder-row"
+                            style={pad}
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={isOpen}
+                            onClick={() => toggle(n.path)}
+                            onKeyDown={(e) => activateOnKey(e, () => toggle(n.path))}
+                            title={n.name}>
                             <span className={`bruno-chevron${isOpen ? " open" : ""}`}>
                                 <IconChevron size={11} />
                             </span>
@@ -73,6 +87,7 @@ export function BrunoTree({ sessionId, collectionPath, tree, activePath, drafts,
                     role="button"
                     tabIndex={0}
                     onClick={() => onSelect(n.path)}
+                    onKeyDown={(e) => activateOnKey(e, () => onSelect(n.path))}
                     title={n.name}>
                     <span className={methodClass(n.method)}>{n.method.toUpperCase()}</span>
                     <span className="bruno-row-name">{n.name}</span>

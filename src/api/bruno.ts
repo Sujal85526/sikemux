@@ -14,6 +14,12 @@ export interface BruSendRequest {
     body: BruBodyWire;
     timeout_ms: number;
     skip_tls_verify: boolean;
+    trust: {
+        allow_private_network: boolean;
+        allow_file_read: boolean;
+        allow_insecure_tls: boolean;
+        file_root: string | null;
+    };
 }
 
 export interface BruSendResponse {

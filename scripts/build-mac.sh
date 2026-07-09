@@ -1,65 +1,98 @@
 #!/usr/bin/env bash
-#
-# Build sikemux for macOS with the Liquid Glass app icon.
-#
-# Pipeline:
-#   1. scripts/icons.sh — compiles sikemux.icon → Assets.car + legacy .icns
-#      (idempotent; no-op when the .icon source hasn't changed).
-#   2. pnpm tauri build — Tauri auto-copies Assets.car into the .app's
-#      Resources/ via bundle.resources in tauri.conf.json.
-#   3. Patch the bundled Info.plist with CFBundleIconName so macOS Big
-#      Sur+ loads the Liquid Glass icon from Assets.car. Legacy icon.icns
-#      stays in Resources/ as a fallback for older macOS.
-#
-# Args are forwarded to `pnpm tauri build`:
-#   ./scripts/build-mac.sh --target universal-apple-darwin
-#
+# Build and validate the macOS app bundle. Tauri merges src-tauri/Info.plist
+# before signing; this script never mutates the completed .app.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd -P)"
-# APP_NAME = bundle filename — read from tauri.conf.json so it tracks
-# productName automatically (currently "Sikemux"). ICON_ASSET = name of
-# the asset inside Assets.car, set by icons.sh's `--app-icon` flag.
-# These are separate identifiers: CFBundleIconName must equal ICON_ASSET
-# regardless of how the app bundle is named.
 APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+APP_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+APP_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
 ICON_ASSET="sikemux"
+TARGET=""
 
-# ---- 1. ensure icons are current ----
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  case "${args[$i]}" in
+    --target)
+      if ((i + 1 >= ${#args[@]})); then
+        echo "--target requires a value" >&2
+        exit 2
+      fi
+      TARGET="${args[$((i + 1))]}"
+      ;;
+    --target=*) TARGET="${args[$i]#--target=}" ;;
+  esac
+done
+
+BUILD_ARGS=("$@")
+# Normal developer builds do not have the updater private key, so avoid asking
+# Tauri to create an updater archive it cannot sign.
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+fi
+# Community releases and local builds use a complete ad-hoc bundle signature.
+# RELEASE_NOTARIZED=1 supplies a real Developer ID identity instead.
+if [[ "${REQUIRE_SIGNED_APP:-0}" != "1" && -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+  export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
+fi
+
 "$ROOT/scripts/icons.sh"
+printf '→ pnpm tauri build'; printf ' %q' "${BUILD_ARGS[@]}"; echo
+pnpm tauri build "${BUILD_ARGS[@]}"
 
-# ---- 2. tauri build (beforeBuildCommand re-runs icons.sh — idempotent) ----
-echo "→ pnpm tauri build $*"
-pnpm tauri build "$@"
-
-# ---- 3. patch the bundled .app ----
-APP_PATH="$(/usr/bin/find src-tauri/target -maxdepth 6 -type d -name "${APP_NAME}.app" -path "*/bundle/macos/*" -print 2>/dev/null \
-  | xargs -I{} stat -f '%m %N' {} \
-  | sort -rn \
-  | head -1 \
-  | cut -d' ' -f2-)"
-
-if [[ -z "${APP_PATH:-}" || ! -d "$APP_PATH" ]]; then
-  echo "Couldn't locate built .app under src-tauri/target/" >&2
-  exit 1
-fi
-echo "→ Patching $APP_PATH"
-
-# Assets.car: belt-and-braces — bundle.resources should have copied it.
-if [[ ! -f "$APP_PATH/Contents/Resources/Assets.car" ]]; then
-  cp "$ROOT/src-tauri/icons/build/Assets.car" "$APP_PATH/Contents/Resources/Assets.car"
-  echo "  ✓ Assets.car copied (bundle.resources didn't)"
-fi
-
+TARGET_ROOT="$ROOT/src-tauri/target"
+[[ -n "$TARGET" ]] && TARGET_ROOT="$TARGET_ROOT/$TARGET"
+BUNDLE="$TARGET_ROOT/release/bundle"
+APP_PATH="$BUNDLE/macos/${APP_NAME}.app"
 PLIST="$APP_PATH/Contents/Info.plist"
-if /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$PLIST" >/dev/null 2>&1; then
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_ASSET" "$PLIST"
+
+fail() {
+  echo "macOS bundle verification failed: $*" >&2
+  exit 1
+}
+
+[[ -d "$APP_PATH" ]] || fail "missing app at $APP_PATH"
+[[ -f "$PLIST" ]] || fail "missing $PLIST"
+[[ -s "$APP_PATH/Contents/Resources/Assets.car" ]] || fail "missing or empty Assets.car"
+/usr/bin/cmp -s "$ROOT/src-tauri/icons/build/Assets.car" "$APP_PATH/Contents/Resources/Assets.car" || fail "bundled Assets.car differs from the generated asset catalog"
+/usr/bin/plutil -lint "$PLIST" >/dev/null || fail "invalid Info.plist"
+
+plist_value() {
+  /usr/libexec/PlistBuddy -c "Print :$1" "$PLIST" 2>/dev/null || true
+}
+
+[[ "$(plist_value CFBundleIconName)" == "$ICON_ASSET" ]] || fail "CFBundleIconName is not $ICON_ASSET"
+[[ "$(plist_value CFBundleShortVersionString)" == "$APP_VERSION" ]] || fail "CFBundleShortVersionString does not match $APP_VERSION"
+[[ "$(plist_value CFBundleIdentifier)" == "$APP_IDENTIFIER" ]] || fail "CFBundleIdentifier does not match $APP_IDENTIFIER"
+
+EXECUTABLE_NAME="$(plist_value CFBundleExecutable)"
+[[ -n "$EXECUTABLE_NAME" ]] || fail "CFBundleExecutable is missing"
+EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+[[ -x "$EXECUTABLE" ]] || fail "bundle executable is missing or not executable"
+ARCHS="$(/usr/bin/lipo -archs "$EXECUTABLE")"
+[[ -n "$ARCHS" ]] || fail "could not determine executable architecture"
+
+# Every normal build is ad-hoc signed when no Apple identity is configured.
+# Community releases require a structurally valid signature; notarized releases
+# additionally require a real certificate authority and TeamIdentifier.
+if /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH" 2>/dev/null; then
+  echo "  ✓ code signature is structurally valid"
+elif [[ "${REQUIRE_VALID_SIGNATURE:-0}" == "1" || "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
+  /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH" >&2 || true
+  fail "codesign verification failed"
 else
-  /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string $ICON_ASSET" "$PLIST"
+  echo "  ! local app is not fully code signed (release.sh enforces signing)" >&2
 fi
-echo "  ✓ CFBundleIconName=$ICON_ASSET injected"
+
+if [[ "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
+  SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$APP_PATH" 2>&1)"
+  grep -q '^Authority=' <<<"$SIGNING_INFO" || fail "release app has no certificate authority (ad-hoc signature)"
+  grep -q '^TeamIdentifier=' <<<"$SIGNING_INFO" || fail "release app has no TeamIdentifier"
+fi
 
 echo ""
-echo "Liquid Glass icon installed."
-echo "Built: $APP_PATH"
+echo "✓ Verified macOS bundle"
+echo "  app: $APP_PATH"
+echo "  version: $APP_VERSION"
+echo "  architectures: $ARCHS"

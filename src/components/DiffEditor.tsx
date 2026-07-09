@@ -103,7 +103,6 @@ export function DiffEditor({
             unregister?.();
             view?.destroy();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [repo, path, baseRev, headRev, editable, autoHeight]);
 
     return (

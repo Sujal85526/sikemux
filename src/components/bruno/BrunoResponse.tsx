@@ -69,7 +69,9 @@ export function BrunoResponseView({ result, running, tab, onTab }: Props) {
                             <button key={t} className={`bruno-tab${tab === t ? " active" : ""}`} onClick={() => onTab(t)}>
                                 {t}
                                 {t === "tests" && result && result.tests.length > 0 && (
-                                    <span className={`bruno-tab-count${result.tests.some((x) => !x.passed) ? " fail" : " pass"}`}>{result.tests.length}</span>
+                                    <span className={`bruno-tab-count${result.tests.some((x) => !x.passed) ? " fail" : " pass"}`}>
+                                        {result.tests.length}
+                                    </span>
                                 )}
                             </button>
                         ))}

@@ -118,7 +118,11 @@ function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: 
                 </div>
                 <div className="ed-image-meta">
                     {image.blob && <span>{formatBytes(image.blob.size)}</span>}
-                    {dims && <span>{dims.w}×{dims.h}</span>}
+                    {dims && (
+                        <span>
+                            {dims.w}×{dims.h}
+                        </span>
+                    )}
                     {image.blob && <span>{image.blob.mime}</span>}
                     <span>{zoomLabel}</span>
                 </div>
@@ -129,16 +133,10 @@ function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: 
                     <button type="button" onClick={() => setZoom(1)} disabled={zoom === 1} title="Actual size">
                         100%
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => setZoom((z) => (z === "fit" ? 1.25 : Math.min(z * 1.25, 8)))}
-                        title="Zoom in">
+                    <button type="button" onClick={() => setZoom((z) => (z === "fit" ? 1.25 : Math.min(z * 1.25, 8)))} title="Zoom in">
                         +
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => setZoom((z) => (z === "fit" ? 0.8 : Math.max(z / 1.25, 0.1)))}
-                        title="Zoom out">
+                    <button type="button" onClick={() => setZoom((z) => (z === "fit" ? 0.8 : Math.max(z / 1.25, 0.1)))} title="Zoom out">
                         −
                     </button>
                     <button type="button" onClick={() => onReload(image.path)} title="Reload image">
@@ -184,6 +182,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     const currentRef = useRef<string | null>(null);
     const hydratedRef = useRef(false);
     const saveRef = useRef<() => boolean>(() => false);
+    const openRequestRef = useRef(0);
 
     const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
     const dirtyRef = useRef(dirty);
@@ -432,29 +431,31 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     };
 
     const openPath = async (path: string) => {
+        const request = ++openRequestRef.current;
         const liveTabs = useStore.getState().editorViews[paneId]?.openTabs ?? [];
         if (liveTabs.includes(path)) {
             switchTo(path);
             return;
         }
         if (isImagePath(path)) {
-            cmd.setEditorView(paneId, {
-                openTabs: [...liveTabs, path],
-                activePath: path,
-            });
+            cmd.openEditorTab(paneId, path);
             switchTo(path);
             return;
         }
         try {
             const content = await fsapi.readFile(path);
+            const latest = request === openRequestRef.current;
+            // Two rapid opens of the same path can resolve out of order. Do not
+            // replace the state created by the newer request with the stale read.
+            if (!latest && states.current.has(path)) {
+                cmd.openEditorTab(paneId, path, false);
+                return;
+            }
             const st = makeState(path, content);
             states.current.set(path, st);
             savedRef.current.set(path, content);
-            cmd.setEditorView(paneId, {
-                openTabs: [...liveTabs, path],
-                activePath: path,
-            });
-            switchTo(path, st);
+            cmd.openEditorTab(paneId, path, latest);
+            if (latest) switchTo(path, st);
         } catch {}
     };
 
@@ -734,10 +735,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     const relativePath = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : basename(p));
 
     const copyText = (text: string, label: string) =>
-        navigator.clipboard.writeText(text).then(
-            () => notify("success", `copied ${label}`),
-            reportError("copy"),
-        );
+        navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 
     const buildTabMenu = (path: string): CtxItem[] => {
         const idx = tabs.indexOf(path);

@@ -37,7 +37,12 @@ export function GitModalRenderer({ paneId, active }: { paneId: string; active: b
     if (!modal || !ownsModal || !active) return null;
     return (
         <div className="git-modal-scrim" onClick={closeGitModal}>
-            <div className={`git-modal git-modal-${modal.kind}`} onClick={(e) => e.stopPropagation()}>
+            <div
+                className={`git-modal git-modal-${modal.kind}`}
+                role="dialog"
+                aria-modal="true"
+                aria-label={modal.title}
+                onClick={(e) => e.stopPropagation()}>
                 {modal.kind === "menu" && <MenuBody modal={modal} />}
                 {modal.kind === "confirm" && <ConfirmBody modal={modal} />}
                 {modal.kind === "prompt" && <PromptBody modal={modal} />}
@@ -77,15 +82,16 @@ function MenuBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof useS
 
 function ConfirmBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof useStore.getState>["gitModal"]>, { kind: "confirm" }> }) {
     const confirmRef = useRef<HTMLButtonElement>(null);
+    const cancelRef = useRef<HTMLButtonElement>(null);
     useEffect(() => {
-        confirmRef.current?.focus();
-    }, []);
+        (modal.destructive ? cancelRef : confirmRef).current?.focus();
+    }, [modal.destructive]);
     return (
         <>
             <div className="git-modal-h">{modal.title}</div>
             <div className="git-modal-body git-modal-confirm">{modal.body}</div>
             <div className="git-modal-foot">
-                <button type="button" className="git-modal-btn" onClick={closeGitModal}>
+                <button ref={cancelRef} type="button" className="git-modal-btn" onClick={closeGitModal}>
                     {modal.cancelLabel ?? "cancel"}
                 </button>
                 <button

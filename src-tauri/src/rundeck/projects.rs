@@ -26,7 +26,7 @@ pub struct RundeckProject {
 #[tauri::command]
 pub async fn rnd_projects() -> AppResult<Vec<RundeckProject>> {
     let mut out: Vec<RundeckProject> = get_json("/projects", &[]).await?;
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|project| project.name.to_lowercase());
     Ok(out)
 }
 
@@ -56,7 +56,7 @@ impl RundeckJob {
 #[tauri::command]
 pub async fn rnd_jobs(project: String) -> AppResult<Vec<RundeckJob>> {
     let mut out: Vec<RundeckJob> = get_json(&format!("/project/{project}/jobs"), &[]).await?;
-    out.sort_by(|a, b| a.qualified_name().cmp(&b.qualified_name()));
+    out.sort_by_key(|job| job.qualified_name());
     Ok(out)
 }
 
@@ -190,7 +190,7 @@ pub async fn rnd_branches_matrix(envs: Vec<EnvSpec>) -> AppResult<MatrixResult> 
         let jobs_result = rnd_jobs(spec.project.clone()).await;
         let (cells, err) = match jobs_result {
             Ok(jobs) => {
-                let mut cells = stream::iter(jobs.into_iter())
+                let mut cells = stream::iter(jobs)
                     .map(|j| async move { fetch_last_for_job(&j, spec.only_succeeded).await })
                     .buffer_unordered(8)
                     .collect::<Vec<_>>()

@@ -28,7 +28,7 @@ export function RundeckPane({ paneId, active }: Props) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [paneId]);
 
-    const top = view.stack[view.stack.length - 1] ?? { kind: "matrix" as const };
+    const top = useMemo(() => view.stack[view.stack.length - 1] ?? { kind: "matrix" as const }, [view.stack]);
 
     const body = useMemo(() => {
         if (status.status === "loading" && !status.data) {

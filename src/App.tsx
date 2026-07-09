@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate } from "./api/updater";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
@@ -22,7 +23,7 @@ import { useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
-import { applyHydrate, subscribePersist } from "./state/persist";
+import { applyHydrate, canFlushPersist, flushPersist, subscribePersist } from "./state/persist";
 import { dispatchFolder, dispatchPty } from "./state/dropRegistry";
 import { reportError, swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
@@ -117,9 +118,11 @@ export default function App() {
     );
 
     useEffect(() => {
+        let disposed = false;
         let unsub = () => {};
         invoke<BootInfo>("boot_init")
             .then((boot) => {
+                if (disposed) return;
                 cmd.setHome(boot.home);
                 applyHydrate(boot.state);
                 const st = getState();
@@ -130,9 +133,44 @@ export default function App() {
             })
             .catch(swallow("boot_init"))
             .finally(() => {
-                unsub = subscribePersist();
+                if (!disposed) unsub = subscribePersist();
             });
-        return () => unsub();
+        return () => {
+            disposed = true;
+            unsub();
+        };
+    }, []);
+
+    useEffect(() => {
+        let disposed = false;
+        let closing = false;
+        const onPageHide = () => {
+            if (canFlushPersist()) void flushPersist();
+        };
+        window.addEventListener("pagehide", onPageHide);
+        const closeListener = getCurrentWindow()
+            .onCloseRequested(async (event) => {
+                if (closing) return;
+                // boot_init may still be loading the durable snapshot. Let Tauri
+                // close normally instead of replacing it with initial UI state.
+                if (!canFlushPersist()) return;
+                closing = true;
+                event.preventDefault();
+                try {
+                    const saved = (await flushPersist()) || (await flushPersist());
+                    if (saved && !disposed) await getCurrentWindow().destroy();
+                } finally {
+                    closing = false;
+                }
+            })
+            .catch(swallow("close persistence"));
+        return () => {
+            disposed = true;
+            window.removeEventListener("pagehide", onPageHide);
+            void closeListener.then((unlisten) => {
+                if (typeof unlisten === "function") unlisten();
+            });
+        };
     }, []);
 
     useEffect(() => {

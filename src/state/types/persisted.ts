@@ -2,9 +2,13 @@ import type { Theme } from "../../themes";
 import type { Agent, AgentBookmark, AwsService, PinnedProject, ProjectRoot, RecentEntry, RundeckSettings, Session, Window } from "./domain";
 import type { EditorPaneView } from "./view";
 
+export type PersistedSession = Omit<Session, "bruno"> & {
+    bruno?: Pick<NonNullable<Session["bruno"]>, "collectionPath" | "selectedEnvs"> | null;
+};
+
 export interface PersistedSnapshot {
     version: number;
-    sessions: Session[];
+    sessions: PersistedSession[];
     windowsBySession: Record<string, Window[]>;
     agentsBySession: Record<string, Agent[]>;
     sessionOrder: string[];

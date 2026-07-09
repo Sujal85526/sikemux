@@ -6,11 +6,11 @@
 
 ![Sikemux editor](public/screenshots/project-editor-view.png)
 
-[![macOS](https://img.shields.io/badge/macOS-11%2B-000?logo=apple&logoColor=white)](#installation)
+[![macOS](https://img.shields.io/badge/macOS-11%2B%20Apple%20Silicon-000?logo=apple&logoColor=white)](#installation)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![Rust](https://img.shields.io/badge/Rust-backend-000?logo=rust&logoColor=white)](https://www.rust-lang.org)
-![Version](https://img.shields.io/badge/version-0.1.25)
+[![Latest release](https://img.shields.io/github/v/release/nodelike/sikemux?display_name=tag)](https://github.com/nodelike/sikemux/releases/latest)
 
 </div>
 
@@ -93,27 +93,27 @@ Tiling pane splits with vim-style focus movement, fuzzy session picker, live upd
 
 ## Keyboard shortcuts
 
-| Key | Action | | Key | Action |
-|---|---|---|---|---|
-| `⌥S` | Open / create a session | | `⌥\` / `⌥-` | Split pane (row / column) |
-| `⌥P` | Open project | | `⌥H/J/K/L` | Move focus between panes |
-| `⌥⇧S` | Connect SSH host | | `⌥⇧H/J/K/L` | Resize active pane |
-| `⌥A` | Open AWS | | `⌥Z` | Zoom / unzoom pane |
-| `⌥B` | Open Bruno workspace | | `⌥W` | Close focused pane |
-| `⌥I / ⌥R / ⌥G / ⌥F` | Files / Term / Git / Search | | `⌥Tab` / `⌥⇧Tab` | Cycle session / group |
-| `⌥C` or `⌥/` | Focus agents | | `⌥[` `⌥]` | Prev / next window |
-| `⌘P` | File / request palette | | `⌘⇧F` | Global search |
-| `⌘,` | Settings | | `⌥Y` | Toggle agent YOLO mode |
+| Key                 | Action                      |     | Key              | Action                    |
+| ------------------- | --------------------------- | --- | ---------------- | ------------------------- |
+| `⌥S`                | Open / create a session     |     | `⌥\` / `⌥-`      | Split pane (row / column) |
+| `⌥P`                | Open project                |     | `⌥H/J/K/L`       | Move focus between panes  |
+| `⌥⇧S`               | Connect SSH host            |     | `⌥⇧H/J/K/L`      | Resize active pane        |
+| `⌥A`                | Open AWS                    |     | `⌥Z`             | Zoom / unzoom pane        |
+| `⌥B`                | Open Bruno workspace        |     | `⌥W`             | Close focused pane        |
+| `⌥I / ⌥R / ⌥G / ⌥F` | Files / Term / Git / Search |     | `⌥Tab` / `⌥⇧Tab` | Cycle session / group     |
+| `⌥C` or `⌥/`        | Focus agents                |     | `⌥[` `⌥]`        | Prev / next window        |
+| `⌘P`                | File / request palette      |     | `⌘⇧F`            | Global search             |
+| `⌘,`                | Settings                    |     | `⌥Y`             | Toggle agent YOLO mode    |
 
 ## Installation
 
 ### Download (recommended)
 
-Grab the latest `.dmg` from the [**Releases**](https://github.com/nodelike/sikemux/releases/latest) page. Sikemux ships an auto-updater, so it keeps itself current after that. Requires **macOS 11+**.
+Grab the latest `.dmg` from the [**Releases**](https://github.com/nodelike/sikemux/releases/latest) page. Published releases currently target **Apple Silicon** and require **macOS 11+**. Sikemux ships an auto-updater, so it keeps itself current after that. Intel Macs are not currently covered by the published updater feed.
 
 ### Build from source
 
-**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install), Node.js 18+, and [pnpm](https://pnpm.io/).
+**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install), Node.js 22+, and [pnpm](https://pnpm.io/).
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git
@@ -123,12 +123,20 @@ pnpm install
 # Hot-reload dev (Vite + Tauri)
 make dev            # or: pnpm tauri dev
 
-# Production .app + .dmg (with the Liquid Glass icon)
+# Production Apple Silicon .app + .dmg on an Apple Silicon host
 make build          # or: pnpm build:mac
-pnpm build:mac:universal   # universal Apple Silicon + Intel
+
+# Explicit local universal build (Apple Silicon + Intel; not the published feed)
+pnpm build:mac:universal
 ```
 
-Handy checks: `make tsc` (typecheck frontend) · `make check` (cargo check) · `make run` (run the built release binary).
+Run `make check` for the full local quality gate: Prettier, ESLint, TypeScript, deterministic frontend tests, Rust formatting, Clippy, Rust tests, and credential-free release-tooling verification. `make test-coverage` reports coverage across all frontend TypeScript/TSX source, including files no test imports. `make run` launches an already-built release binary.
+
+### Community releases without an Apple Developer membership
+
+The updater and Apple Gatekeeper are separate trust systems. `scripts/release.sh` defaults to a **community release**: the updater archive is signed with the Tauri updater key and the app/DMG receive a structurally valid ad-hoc code signature. This supports in-app updates for the existing community installation flow, but fresh downloads are not Apple-notarized and macOS may require removing quarantine again. Keep the updater private key secure; clients reject archives that do not match the public key embedded in the app.
+
+After joining the Apple Developer Program, set `RELEASE_NOTARIZED=1` plus the Developer ID and notarization environment variables. The same script then requires Gatekeeper assessment and stapled notarization tickets before publishing.
 
 ## Contributing
 

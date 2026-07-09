@@ -475,7 +475,11 @@
         linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
         linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%);
     background-size: 22px 22px;
-    background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+    background-position:
+        0 0,
+        0 11px,
+        11px -11px,
+        -11px 0;
 }
 .ed-image-stage img {
     display: block;

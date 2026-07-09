@@ -243,14 +243,19 @@ export function useLspBridge(cwd: string) {
     );
 
     useEffect(() => {
+        const activeTimers = timers.current;
+        const queuedChanges = pendingChanges.current;
+        const queuedFull = pendingFull.current;
+        const openDocuments = opened.current;
+        const documentVersions = versions.current;
         return () => {
-            for (const timer of timers.current.values()) window.clearTimeout(timer);
-            timers.current.clear();
-            pendingChanges.current.clear();
-            pendingFull.current.clear();
-            const docs = [...opened.current];
-            opened.current.clear();
-            versions.current.clear();
+            for (const timer of activeTimers.values()) window.clearTimeout(timer);
+            activeTimers.clear();
+            queuedChanges.clear();
+            queuedFull.clear();
+            const docs = [...openDocuments];
+            openDocuments.clear();
+            documentVersions.clear();
             for (const key of docs) {
                 const sep = key.indexOf("\0");
                 if (sep < 0) continue;

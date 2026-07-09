@@ -1,34 +1,57 @@
-.PHONY: dev build run tsc check clean icons
+.PHONY: dev build run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test release-check check ci clean
 
-# Single source of truth for the app icon: src-tauri/icons/sikemux.icon
-# Both dev and build depend on `icons` so the Liquid Glass artwork drives
-# every binary's dock appearance.
 icons:
 	./scripts/icons.sh
 
-# dev hot-reload — vite + tauri attached. icons.sh also runs as part of
-# tauri.conf.json's beforeDevCommand, but we declare the dependency here
-# so a bare `make dev` is self-contained.
 dev: icons
 	pnpm tauri dev
 
-# production app bundle (.app + .dmg under src-tauri/target/release/bundle)
-# with Liquid Glass icon properly injected.
+# Default release artifacts target the host architecture (Apple Silicon on the
+# supported release machine). Use `pnpm build:mac:universal` explicitly for a
+# universal Apple Silicon + Intel bundle.
 build: icons
 	./scripts/build-mac.sh
 
-# run the already-built release binary without rebundling
 run:
 	./src-tauri/target/release/sikemux
 
-# typecheck the frontend without emitting
-tsc:
-	pnpm tsc --noEmit
+format:
+	pnpm format
+	pnpm rust:fmt
 
-# typecheck rust
-check:
-	cd src-tauri && cargo check
+format-check:
+	pnpm format:check
+	pnpm rust:fmt:check
+
+lint:
+	pnpm lint
+
+test:
+	pnpm test
+
+test-coverage:
+	pnpm test:coverage
+
+tsc:
+	pnpm typecheck
+
+rust-fmt:
+	pnpm rust:fmt:check
+
+rust-clippy:
+	pnpm rust:clippy
+
+rust-test:
+	pnpm rust:test
+
+release-check:
+	pnpm release:check
+
+check: format-check lint tsc test rust-clippy rust-test release-check
+
+ci: check
+	pnpm build
 
 clean:
 	cd src-tauri && cargo clean
-	rm -rf dist node_modules/.vite
+	rm -rf coverage dist node_modules/.vite

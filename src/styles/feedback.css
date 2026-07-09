@@ -46,6 +46,29 @@
 .git-busy-label {
     animation: gitBusyPulse 1.6s ease-in-out infinite;
 }
+
+.pane-error {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px;
+    color: var(--ink-dim);
+    text-align: center;
+}
+.pane-error strong {
+    color: var(--danger);
+}
+.pane-error button {
+    padding: 5px 12px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--ink);
+    background: var(--rail-2);
+}
 @keyframes gitBusyPulse {
     0%,
     100% {

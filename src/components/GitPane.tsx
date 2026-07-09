@@ -55,12 +55,12 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const overviewLoading = !!repo && overview.status === "loading" && !overview.data;
     const overviewError = !!repo && overview.status === "error" && !overview.data ? (overview.error ?? "failed to load git state") : null;
     const status = repo ? (overview.data?.status ?? null) : null;
-    const branches = repo ? (overview.data?.branches ?? []) : [];
-    const commits = repo ? (overview.data?.log ?? []) : [];
-    const files = status?.files ?? [];
-    const remotes = repo ? (remotesRes.data ?? []) : [];
-    const stashes = repo ? (stashesRes.data ?? []) : [];
-    const remoteBranches = repo && remoteDrill ? (remoteBranchesRes.data ?? []) : [];
+    const branches = useMemo(() => (repo ? (overview.data?.branches ?? []) : []), [repo, overview.data?.branches]);
+    const commits = useMemo(() => (repo ? (overview.data?.log ?? []) : []), [repo, overview.data?.log]);
+    const files = useMemo(() => status?.files ?? [], [status?.files]);
+    const remotes = useMemo(() => (repo ? (remotesRes.data ?? []) : []), [repo, remotesRes.data]);
+    const stashes = useMemo(() => (repo ? (stashesRes.data ?? []) : []), [repo, stashesRes.data]);
+    const remoteBranches = useMemo(() => (repo && remoteDrill ? (remoteBranchesRes.data ?? []) : []), [repo, remoteDrill, remoteBranchesRes.data]);
     const currentBranch = branches.find((b) => b.current)?.name ?? status?.branch ?? "";
 
     const [right, setRight] = useState<RightView>({ mode: "output", text: "" });
@@ -243,6 +243,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         remoteDrill,
         remoteBranchSel,
         status,
+        commits,
         files.length,
         stashes.length,
         filteredFiles,
@@ -1116,7 +1117,13 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     count={status?.ahead}
                     kbd="P"
                     onClick={pushRepo}
-                    title={!hasUpstream ? "Publish branch and set upstream (P)" : status && status.ahead > 0 ? `Push ${status.ahead} commit${status.ahead > 1 ? "s" : ""} (P)` : "Push (P)"}>
+                    title={
+                        !hasUpstream
+                            ? "Publish branch and set upstream (P)"
+                            : status && status.ahead > 0
+                              ? `Push ${status.ahead} commit${status.ahead > 1 ? "s" : ""} (P)`
+                              : "Push (P)"
+                    }>
                     {hasUpstream ? "push" : "publish"}
                 </GitToolbarButton>
                 <GitToolbarButton

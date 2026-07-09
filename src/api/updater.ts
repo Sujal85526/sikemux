@@ -2,6 +2,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { setState } from "../state/store";
+import { swallow } from "../state/toast";
 
 let pendingHandle: Update | null = null;
 
@@ -25,7 +26,9 @@ export async function checkForUpdate(): Promise<void> {
                 error: null,
             },
         });
-    } catch {}
+    } catch (error) {
+        swallow("update check")(error);
+    }
 }
 
 export async function installPendingUpdate(): Promise<void> {

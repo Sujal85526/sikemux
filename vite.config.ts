@@ -26,11 +26,19 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
-          if (id.includes("@codemirror") || id.includes("@lezer") || id.includes("codemirror")) {
+          if (
+            id.includes("@codemirror") ||
+            id.includes("@lezer") ||
+            id.includes("codemirror")
+          ) {
             return "codemirror";
           }
           if (id.includes("@xterm")) return "xterm";
-          if (id.includes("react") || id.includes("react-dom") || id.includes("scheduler")) {
+          if (
+            id.includes("react") ||
+            id.includes("react-dom") ||
+            id.includes("scheduler")
+          ) {
             return "react";
           }
           return "vendor";
@@ -49,8 +57,17 @@ export default defineConfig({
     globals: false,
     coverage: {
       provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/**/*.d.ts"],
       reporter: ["text", "html", "lcov"],
       reportsDirectory: "coverage",
+      clean: true,
+      thresholds: {
+        statements: 10,
+        branches: 8,
+        functions: 7,
+        lines: 10,
+      },
     },
   },
 });

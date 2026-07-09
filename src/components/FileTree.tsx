@@ -267,10 +267,11 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     };
     useEffect(() => {
         const map = folderDropRef.current;
+        const versions = folderDropVersionRef.current;
         return () => {
             for (const entry of map.values()) entry.unreg();
             map.clear();
-            folderDropVersionRef.current.clear();
+            versions.clear();
         };
     }, []);
 
@@ -344,9 +345,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         updateDragOver(ok ? highlightPath : null);
         updateRootDragOver(ok && !highlightPath);
         const nextGhost = { name: basename(s.path), x: point.x, y: point.y };
-        setDragGhost((prev) =>
-            prev && prev.name === nextGhost.name && prev.x === nextGhost.x && prev.y === nextGhost.y ? prev : nextGhost,
-        );
+        setDragGhost((prev) => (prev && prev.name === nextGhost.name && prev.x === nextGhost.x && prev.y === nextGhost.y ? prev : nextGhost));
     };
 
     const onDragMove = (e: PointerEvent) => {
@@ -356,7 +355,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         }
     };
 
-    const endDrag = () => {
+    const endDrag = useCallback(() => {
         if (moveHandlerRef.current) window.removeEventListener("pointermove", moveHandlerRef.current);
         if (dragFrameRef.current != null) window.cancelAnimationFrame(dragFrameRef.current);
         moveHandlerRef.current = null;
@@ -364,10 +363,10 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         dragPointRef.current = null;
         dragSession.current = null;
         setDraggingPath(null);
-        updateDragOver(null);
-        updateRootDragOver(false);
+        setDragOver(null);
+        setRootDragOver(false);
         setDragGhost(null);
-    };
+    }, []);
 
     const onDragUp = (e: PointerEvent) => {
         const s = dragSession.current;
@@ -394,7 +393,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     };
 
     // Defensive: drop the move listener if we unmount mid-drag.
-    useEffect(() => () => endDrag(), []);
+    useEffect(() => () => endDrag(), [endDrag]);
 
     useEffect(() => {
         if (!active || !cwd) return;
@@ -598,6 +597,8 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
 
     const onResizeDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
         e.preventDefault();
+        const handle = e.currentTarget;
+        handle.setPointerCapture(e.pointerId);
         const startX = e.clientX;
         const startW = width;
         let latest = startW;
@@ -617,11 +618,18 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 frame = null;
             }
             onResize(latest);
-            window.removeEventListener("pointermove", move);
-            window.removeEventListener("pointerup", up);
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", up);
         };
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", up);
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", up);
+    };
+
+    const onResizeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const step = e.shiftKey ? 40 : 16;
+        onResize(Math.min(600, Math.max(160, width + (e.key === "ArrowRight" ? step : -step))));
     };
 
     const rootScrollRef = useRef<HTMLDivElement>(null);
@@ -673,7 +681,18 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                     )}
                 </div>
             </div>
-            <div className="ed-tree-resizer" onPointerDown={onResizeDrag} title="Drag to resize" />
+            <div
+                className="ed-tree-resizer"
+                role="separator"
+                tabIndex={0}
+                aria-orientation="vertical"
+                aria-valuemin={160}
+                aria-valuemax={600}
+                aria-valuenow={Math.round(width)}
+                onPointerDown={onResizeDrag}
+                onKeyDown={onResizeKeyDown}
+                title="Drag or use arrow keys to resize"
+            />
             {menu && <TreeContextMenu x={menu.x} y={menu.y} items={buildMenuItems(menu.entry)} onClose={() => setMenu(null)} />}
             {dragGhost &&
                 createPortal(

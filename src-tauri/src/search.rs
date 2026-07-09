@@ -40,6 +40,7 @@ const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
 /// of one line anyway, and 4000-col minified-JS hits can blow IPC payload
 /// size by 2-3 orders of magnitude.
 const MAX_MATCH_TEXT_BYTES: usize = 400;
+const MAX_WINDOW_CONTEXT_LINES: u32 = 500;
 
 // ---- wire types --------------------------------------------------------
 
@@ -101,7 +102,7 @@ pub struct ReplaceFile {
     pub match_count: usize,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ReplaceError {
     pub path: String,
     pub reason: String,
@@ -720,6 +721,12 @@ fn run_replace(
                 path: rel.clone(),
                 reason: format!("read failed: {e}"),
             })?;
+            let permissions = fs::metadata(path)
+                .map_err(|e| ReplaceError {
+                    path: rel.clone(),
+                    reason: format!("metadata failed: {e}"),
+                })?
+                .permissions();
 
             // UTF-8 check before letting the byte-regex loose. The walker
             // already drops most binaries (BinaryDetection::quit), but
@@ -755,22 +762,7 @@ fn run_replace(
                 }));
             }
 
-            // tempfile gives us a unique sibling path that auto-cleans if
-            // we drop it without persisting. NamedTempFile::persist does
-            // the atomic rename for us.
-            let parent = path.parent().unwrap_or_else(|| Path::new("."));
-            let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| ReplaceError {
-                path: rel.clone(),
-                reason: format!("tempfile failed: {e}"),
-            })?;
-            tmp.write_all(&rewritten).map_err(|e| ReplaceError {
-                path: rel.clone(),
-                reason: format!("write failed: {e}"),
-            })?;
-            tmp.persist(path).map_err(|e| ReplaceError {
-                path: rel.clone(),
-                reason: format!("rename failed: {}", e.error),
-            })?;
+            persist_rewrite(path, &rel, &original, &rewritten, permissions)?;
 
             Ok(Some(ReplaceFile {
                 path: rel,
@@ -804,6 +796,49 @@ fn run_replace(
     })
 }
 
+fn persist_rewrite(
+    path: &Path,
+    rel: &str,
+    original: &[u8],
+    rewritten: &[u8],
+    permissions: fs::Permissions,
+) -> Result<(), ReplaceError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| ReplaceError {
+        path: rel.to_string(),
+        reason: format!("tempfile failed: {e}"),
+    })?;
+    tmp.as_file()
+        .set_permissions(permissions)
+        .map_err(|e| ReplaceError {
+            path: rel.to_string(),
+            reason: format!("preserve permissions failed: {e}"),
+        })?;
+    tmp.write_all(rewritten).map_err(|e| ReplaceError {
+        path: rel.to_string(),
+        reason: format!("write failed: {e}"),
+    })?;
+
+    // Search/replace is a read-modify-write. Never clobber an editor/save or
+    // build that changed the path while this worker prepared its tempfile.
+    let current = fs::read(path).map_err(|e| ReplaceError {
+        path: rel.to_string(),
+        reason: format!("concurrent-change check failed: {e}"),
+    })?;
+    if current != original {
+        return Err(ReplaceError {
+            path: rel.to_string(),
+            reason: "skipped: file changed during replacement".to_string(),
+        });
+    }
+
+    tmp.persist(path).map_err(|e| ReplaceError {
+        path: rel.to_string(),
+        reason: format!("rename failed: {}", e.error),
+    })?;
+    Ok(())
+}
+
 // ---- windowed file read ------------------------------------------------
 //
 // For the search-pane preview: rather than streaming a 5MB source file
@@ -830,7 +865,18 @@ pub async fn read_file_window(
     before: u32,
     after: u32,
 ) -> AppResult<FileWindow> {
+    if before > MAX_WINDOW_CONTEXT_LINES || after > MAX_WINDOW_CONTEXT_LINES {
+        return Err(AppError::Search(format!(
+            "file window context is limited to {MAX_WINDOW_CONTEXT_LINES} lines per side"
+        )));
+    }
     tauri::async_runtime::spawn_blocking(move || {
+        let metadata = fs::metadata(&path).map_err(AppError::from)?;
+        if metadata.len() > MAX_FILE_BYTES {
+            return Err(AppError::Search(format!(
+                "file window is limited to {MAX_FILE_BYTES} bytes"
+            )));
+        }
         let bytes = fs::read(&path).map_err(AppError::from)?;
         let text = String::from_utf8_lossy(&bytes).into_owned();
         let lines: Vec<&str> = text.lines().collect();
@@ -859,4 +905,45 @@ pub async fn read_file_window(
     })
     .await
     .map_err(|e| AppError::Search(format!("join: {e}")))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::persist_rewrite;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[cfg(unix)]
+    #[test]
+    fn replacement_preserves_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("script.sh");
+        fs::write(&path, b"old\n").expect("write");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o751)).expect("chmod");
+        let permissions = fs::metadata(&path).expect("metadata").permissions();
+
+        persist_rewrite(&path, "script.sh", b"old\n", b"new\n", permissions).expect("replace");
+
+        assert_eq!(
+            fs::metadata(&path).expect("metadata").permissions().mode() & 0o777,
+            0o751
+        );
+        assert_eq!(fs::read(&path).expect("read"), b"new\n");
+    }
+
+    #[test]
+    fn replacement_rejects_concurrent_file_change() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("file.txt");
+        fs::write(&path, b"changed elsewhere\n").expect("write");
+        let permissions = fs::metadata(&path).expect("metadata").permissions();
+
+        let error = persist_rewrite(&path, "file.txt", b"old\n", b"new\n", permissions)
+            .expect_err("concurrent change must be rejected");
+
+        assert!(error.reason.contains("changed during replacement"));
+        assert_eq!(fs::read(&path).expect("read"), b"changed elsewhere\n");
+    }
 }

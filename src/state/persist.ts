@@ -3,10 +3,22 @@ import { isTheme } from "../themes";
 import { registerCustomThemes } from "../themes/bus";
 import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
-import type { Agent, EditorPaneView, PersistedPrefs, PersistedSnapshot, Session, Window, WindowRole } from "./types";
+import { errMessage, notify } from "./toast";
+import type {
+    Agent,
+    AgentBookmark,
+    EditorPaneView,
+    PersistedPrefs,
+    PersistedSession,
+    PersistedSnapshot,
+    RecentEntry,
+    Session,
+    Window,
+    WindowRole,
+} from "./types";
 
 function deriveRole(w: Window): WindowRole {
-    if (w.role) return w.role;
+    if (WINDOW_ROLES.has(w.role)) return w.role;
     if (w.name === "files") return "files";
     if (w.name === "git") return "git";
     if (w.name === "aws") return "aws";
@@ -17,7 +29,15 @@ function deriveRole(w: Window): WindowRole {
 }
 
 const VERSION = 4;
+const MIN_SUPPORTED_VERSION = 3;
+const RETRY_MS = 1500;
 let lastSaved = "";
+let activeSnapshot: string | null = null;
+let pendingSnapshot: string | null = null;
+let saveLoop: Promise<boolean> | null = null;
+let retryTimer: number | undefined;
+let persistTimer: number | undefined;
+let persistenceReady = false;
 
 const PERSISTED_KEYS = [
     "sessions",
@@ -47,23 +67,17 @@ const PERSISTED_KEYS = [
     "rundeck",
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
-
 type SliceShot = { [K in PersistedKey]: StoreState[K] };
-
 let lastSlices: SliceShot | null = null;
 
 function takeSlices(s: StoreState): SliceShot {
     const out = {} as SliceShot;
-    for (const k of PERSISTED_KEYS) {
-        (out as Record<string, unknown>)[k] = s[k];
-    }
+    for (const k of PERSISTED_KEYS) (out as Record<string, unknown>)[k] = s[k];
     return out;
 }
 
 function slicesEqual(a: SliceShot, b: SliceShot): boolean {
-    for (const k of PERSISTED_KEYS) {
-        if (a[k] !== b[k]) return false;
-    }
+    for (const k of PERSISTED_KEYS) if (a[k] !== b[k]) return false;
     return true;
 }
 
@@ -83,6 +97,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         leftRailOpen: s.leftRailOpen,
         rightRailOpen: s.rightRailOpen,
         zenMode: s.zenMode,
+        rundeck: s.rundeck,
     };
 }
 
@@ -90,22 +105,146 @@ function packPrefs(s: StoreState): PersistedPrefs {
 function mergeBrunoWorkspaces(saved: string[] | undefined, sessions: Session[]): string[] {
     const open = sessions.filter((s) => s.kind === "bruno").map((s) => s.bruno?.collectionPath);
     const out: string[] = [];
-    for (const p of [...(saved ?? []), ...open]) {
-        if (typeof p === "string" && p && !out.includes(p)) out.push(p);
-    }
+    for (const p of [...(saved ?? []), ...open]) if (typeof p === "string" && p && !out.includes(p)) out.push(p);
     return out;
 }
 
 const AGENT_TYPES = new Set<Agent["type"]>(["claude", "codex", "hermes", "pi", "opencode"]);
+const SESSION_KINDS = new Set<Session["kind"]>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
+const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "search", "aws", "rundeck", "bruno", "named"]);
+const PANE_KINDS = new Set(["terminal", "editor", "git", "aws", "search", "rundeck", "bruno"]);
+const AWS_SERVICES = new Set<StoreState["awsService"]>(["ecs", "ec2", "lambda", "sqs", "billing", "s3"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+    return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
+}
 
 function isAgentType(value: unknown): value is Agent["type"] {
     return typeof value === "string" && AGENT_TYPES.has(value as Agent["type"]);
 }
 
 function isPersistedAgent(value: unknown): value is Agent {
-    if (!value || typeof value !== "object") return false;
-    const agent = value as Partial<Agent>;
-    return typeof agent.id === "string" && isAgentType(agent.type) && typeof agent.title === "string" && typeof agent.startup === "string";
+    if (!isRecord(value)) return false;
+    return typeof value.id === "string" && isAgentType(value.type) && typeof value.title === "string" && typeof value.startup === "string";
+}
+
+function isLayout(value: unknown): value is Window["root"] {
+    if (!isRecord(value) || typeof value.id !== "string") return false;
+    if (value.type === "pane") {
+        return typeof value.cwd === "string" && PANE_KINDS.has(value.kind as never) && typeof value.title === "string";
+    }
+    return (
+        value.type === "split" &&
+        (value.dir === "row" || value.dir === "column") &&
+        Array.isArray(value.children) &&
+        value.children.length > 0 &&
+        value.children.every(isLayout) &&
+        Array.isArray(value.sizes) &&
+        value.sizes.length === value.children.length &&
+        value.sizes.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)
+    );
+}
+
+function isWindow(value: unknown): value is Window {
+    return (
+        isRecord(value) &&
+        typeof value.id === "string" &&
+        typeof value.name === "string" &&
+        typeof value.activePaneId === "string" &&
+        isLayout(value.root)
+    );
+}
+
+function layoutIds(root: Window["root"]): { all: string[]; panes: string[] } {
+    const all: string[] = [];
+    const panes: string[] = [];
+    const walk = (node: Window["root"]): void => {
+        all.push(node.id);
+        if (node.type === "pane") panes.push(node.id);
+        else node.children.forEach(walk);
+    };
+    walk(root);
+    return { all, panes };
+}
+
+function toSession(value: unknown): Session | null {
+    if (!isRecord(value)) return null;
+    if (
+        typeof value.id !== "string" ||
+        typeof value.name !== "string" ||
+        !SESSION_KINDS.has(value.kind as Session["kind"]) ||
+        typeof value.cwd !== "string" ||
+        typeof value.pinned !== "boolean" ||
+        typeof value.activeWindowId !== "string" ||
+        !(value.activeAgentId === null || typeof value.activeAgentId === "string") ||
+        !(value.view === "windows" || value.view === "agent")
+    ) {
+        return null;
+    }
+    const deploy =
+        isRecord(value.deploy) &&
+        typeof value.deploy.project === "string" &&
+        (value.deploy.folder === null || typeof value.deploy.folder === "string")
+            ? { project: value.deploy.project, folder: value.deploy.folder }
+            : null;
+    const session: Session = {
+        id: value.id,
+        name: value.name,
+        kind: value.kind as Session["kind"],
+        cwd: value.cwd,
+        deploy,
+        pinned: value.pinned,
+        activeWindowId: value.activeWindowId,
+        activeAgentId: value.activeAgentId,
+        view: value.view,
+    };
+    if (session.kind === "bruno") {
+        const bruno = isRecord(value.bruno) ? value.bruno : {};
+        session.bruno = {
+            collectionPath: typeof bruno.collectionPath === "string" ? bruno.collectionPath : session.cwd,
+            selectedEnvs: isStringRecord(bruno.selectedEnvs) ? bruno.selectedEnvs : {},
+            // Older snapshots may contain credentials. Never restore them into runtime state.
+            secretVars: {},
+            drafts: {},
+        };
+    } else {
+        delete session.bruno;
+    }
+    return session;
+}
+
+function isEditorView(value: unknown): value is EditorPaneView {
+    return (
+        isRecord(value) &&
+        Array.isArray(value.openTabs) &&
+        value.openTabs.every((p) => typeof p === "string") &&
+        (value.activePath === null || typeof value.activePath === "string") &&
+        typeof value.treeWidth === "number" &&
+        Number.isFinite(value.treeWidth)
+    );
+}
+
+function isRecent(value: unknown): value is RecentEntry {
+    return isRecord(value) && SESSION_KINDS.has(value.kind as Session["kind"]) && typeof value.name === "string" && typeof value.cwd === "string";
+}
+
+function isBookmark(value: unknown): value is AgentBookmark {
+    return isRecord(value) && isAgentType(value.type) && typeof value.id === "string" && typeof value.title === "string";
+}
+
+function persistedSession(sess: Session, activeAgentId: string | null, view: Session["view"]): PersistedSession {
+    const { bruno, ...base } = sess;
+    if (sess.kind !== "bruno" || !bruno) return { ...base, activeAgentId, view };
+    return {
+        ...base,
+        activeAgentId,
+        view,
+        bruno: { collectionPath: bruno.collectionPath, selectedEnvs: bruno.selectedEnvs },
+    };
 }
 
 function snapshot(): string {
@@ -120,7 +259,7 @@ function snapshot(): string {
             const savedActiveAgentId = sess.activeAgentId && agentIds.includes(sess.activeAgentId) ? sess.activeAgentId : null;
             const activeAgentId = savedActiveAgentId ?? (sess.view === "agent" ? (agentIds[0] ?? null) : null);
             const view: Session["view"] = sess.view === "agent" && activeAgentId ? "agent" : "windows";
-            return { ...sess, activeAgentId, view };
+            return persistedSession(sess, activeAgentId, view);
         });
     const windowsBySession: Record<string, Window[]> = {};
     const agentsBySession: Record<string, Agent[]> = {};
@@ -133,65 +272,143 @@ function snapshot(): string {
         sessions,
         windowsBySession,
         agentsBySession,
-        sessionOrder: s.sessionOrder,
+        sessionOrder: sessions.map((s) => s.id),
         activeSessionId: s.activeSessionId,
         recent: s.recent,
         agentBookmarks: s.agentBookmarks,
         prefs: packPrefs(s),
         editorViews: s.editorViews,
     };
-    return JSON.stringify(snap);
+    // Defense in depth: these runtime-only Bruno fields must never reach disk,
+    // even if a malformed record introduced them outside the typed session shape.
+    return JSON.stringify(snap, (key, value) => (key === "secretVars" || key === "drafts" ? undefined : value));
+}
+
+function scheduleRetry(): void {
+    if (retryTimer != null) return;
+    retryTimer = window.setTimeout(() => {
+        retryTimer = undefined;
+        void startSaveLoop();
+    }, RETRY_MS);
+}
+
+async function drainSaves(): Promise<boolean> {
+    while (pendingSnapshot != null) {
+        const current = pendingSnapshot;
+        pendingSnapshot = null;
+        activeSnapshot = current;
+        try {
+            await invoke("state_save", { data: current });
+            lastSaved = current;
+        } catch (error) {
+            if (pendingSnapshot == null) pendingSnapshot = current;
+            notify("error", `state save failed: ${errMessage(error)}; retrying`);
+            scheduleRetry();
+            return false;
+        } finally {
+            activeSnapshot = null;
+        }
+    }
+    return true;
+}
+
+function startSaveLoop(): Promise<boolean> {
+    if (saveLoop) return saveLoop;
+    saveLoop = drainSaves().finally(() => {
+        saveLoop = null;
+    });
+    return saveLoop;
+}
+
+function queueSnapshot(next: string): void {
+    if (activeSnapshot != null) {
+        // The active write will leave disk at activeSnapshot. If current state has
+        // returned to that value, any previously queued newer value is obsolete.
+        pendingSnapshot = next === activeSnapshot ? null : next;
+        return;
+    }
+    pendingSnapshot = next === lastSaved ? null : next;
+}
+
+/** Save the latest state and wait until all currently queued writes have completed. */
+export function flushPersist(): Promise<boolean> {
+    if (persistTimer != null) {
+        window.clearTimeout(persistTimer);
+        persistTimer = undefined;
+    }
+    if (retryTimer != null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = undefined;
+    }
+    lastSlices = takeSlices(getState());
+    queueSnapshot(snapshot());
+    return startSaveLoop();
 }
 
 export function applyHydrate(raw: string): void {
     if (!raw) return;
-    let data: PersistedSnapshot;
+    let decoded: unknown;
     try {
-        data = JSON.parse(raw) as PersistedSnapshot;
+        decoded = JSON.parse(raw);
     } catch {
         return;
     }
-    if (data.version !== VERSION) return;
-    if (!Array.isArray(data.sessions) || data.sessions.length === 0) return;
+    if (!isRecord(decoded) || typeof decoded.version !== "number" || decoded.version < MIN_SUPPORTED_VERSION || decoded.version > VERSION) return;
+    if (!Array.isArray(decoded.sessions)) return;
 
     const sessions: Record<string, Session> = {};
+    for (const row of decoded.sessions) {
+        const session = toSession(row);
+        if (session && !sessions[session.id]) sessions[session.id] = session;
+    }
+    if (Object.keys(sessions).length === 0) return;
+
     const windows: Record<string, Window> = {};
     const agents: Record<string, Agent> = {};
     const windowsBySession: Record<string, string[]> = {};
     const agentsBySession: Record<string, string[]> = {};
-    for (const s of data.sessions) {
-        sessions[s.id] = { ...s };
-    }
-    for (const [sid, ws] of Object.entries(data.windowsBySession ?? {})) {
-        windowsBySession[sid] = ws.map((w) => {
-            windows[w.id] = { ...w, role: deriveRole(w) };
-            return w.id;
-        });
-    }
+    const rawWindows = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
+    const usedLayoutIds = new Set<string>();
     for (const sid of Object.keys(sessions)) {
+        const rows = Array.isArray(rawWindows[sid]) ? rawWindows[sid] : [];
+        windowsBySession[sid] = [];
+        for (const row of rows) {
+            if (!isWindow(row) || windows[row.id]) continue;
+            const ids = layoutIds(row.root);
+            if (new Set(ids.all).size !== ids.all.length || ids.all.some((id) => usedLayoutIds.has(id))) continue;
+            ids.all.forEach((id) => usedLayoutIds.add(id));
+            windows[row.id] = {
+                ...row,
+                role: deriveRole(row),
+                activePaneId: ids.panes.includes(row.activePaneId) ? row.activePaneId : ids.panes[0],
+            };
+            windowsBySession[sid].push(row.id);
+        }
         agentsBySession[sid] = [];
     }
-    for (const [sid, rows] of Object.entries(data.agentsBySession ?? {})) {
-        if (!sessions[sid] || !Array.isArray(rows)) continue;
-        const ids: string[] = [];
+    const rawAgents = isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {};
+    for (const sid of Object.keys(sessions)) {
+        const rows = Array.isArray(rawAgents[sid]) ? rawAgents[sid] : [];
         for (const row of rows) {
             if (!isPersistedAgent(row) || agents[row.id]) continue;
             agents[row.id] = row;
-            ids.push(row.id);
+            agentsBySession[sid].push(row.id);
         }
-        agentsBySession[sid] = ids;
     }
     for (const sid of Object.keys(sessions)) {
         const session = sessions[sid];
-        const agentIds = agentsBySession[sid] ?? [];
+        const agentIds = agentsBySession[sid];
+        const windowIds = windowsBySession[sid];
         const savedActiveAgentId = session.activeAgentId && agentIds.includes(session.activeAgentId) ? session.activeAgentId : null;
         const activeAgentId = savedActiveAgentId ?? (session.view === "agent" ? (agentIds[0] ?? null) : null);
         sessions[sid] = {
             ...session,
+            activeWindowId: windowIds.includes(session.activeWindowId) ? session.activeWindowId : (windowIds[0] ?? ""),
             activeAgentId,
             view: session.view === "agent" && activeAgentId ? "agent" : "windows",
         };
     }
+
     const validPaneIds = new Set<string>();
     for (const w of Object.values(windows)) {
         const walk = (n: Window["root"]): void => {
@@ -201,81 +418,99 @@ export function applyHydrate(raw: string): void {
         walk(w.root);
     }
     const editorViews: Record<string, EditorPaneView> = {};
-    for (const [pid, v] of Object.entries(data.editorViews ?? {})) {
-        if (validPaneIds.has(pid)) editorViews[pid] = v;
-    }
+    const rawEditorViews = isRecord(decoded.editorViews) ? decoded.editorViews : {};
+    for (const [pid, value] of Object.entries(rawEditorViews)) if (validPaneIds.has(pid) && isEditorView(value)) editorViews[pid] = value;
 
-    const activeSessionId = sessions[data.activeSessionId]
-        ? data.activeSessionId
-        : (data.sessionOrder.find((id) => sessions[id]) ?? Object.keys(sessions)[0]);
-
+    const requestedOrder = Array.isArray(decoded.sessionOrder) ? decoded.sessionOrder.filter((id): id is string => typeof id === "string") : [];
+    const sessionOrder = [...new Set(requestedOrder.filter((id) => sessions[id]))];
+    for (const sid of Object.keys(sessions)) if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
+    const requestedActive = typeof decoded.activeSessionId === "string" ? decoded.activeSessionId : "";
+    const activeSessionId = sessions[requestedActive] ? requestedActive : sessionOrder[0];
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
     const cur = getState();
+    const rundeck = isRecord(prefs.rundeck) ? prefs.rundeck : {};
+    const prodEnvs = Array.isArray(rundeck.prodEnvs) ? rundeck.prodEnvs.filter((v): v is string => typeof v === "string") : cur.rundeck.prodEnvs;
+
     setState({
         sessions,
         windows,
         agents,
-        sessionOrder: data.sessionOrder.filter((id) => sessions[id]),
+        sessionOrder,
         windowsBySession,
         agentsBySession,
         activeSessionId,
-        recent: data.recent ?? [],
-        agentBookmarks: data.agentBookmarks ?? [],
+        recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
+        agentBookmarks: Array.isArray(decoded.agentBookmarks) ? decoded.agentBookmarks.filter(isBookmark) : [],
         editorViews,
-        pinnedProjects: normalisePinnedProjects(data.prefs?.pinnedProjects),
-        projectRoots: data.prefs?.projectRoots ? normaliseProjectRoots(data.prefs.projectRoots) : cur.projectRoots,
-        brunoWorkspaces: mergeBrunoWorkspaces(data.prefs?.brunoWorkspaces, Object.values(sessions)),
-        themeId: data.prefs?.themeId ?? cur.themeId,
-        customThemes: Array.isArray(data.prefs?.customThemes) ? data.prefs.customThemes.filter(isTheme) : cur.customThemes,
-        windowOpacity: data.prefs?.windowOpacity ?? cur.windowOpacity,
-        windowBlur: data.prefs?.windowBlur ?? cur.windowBlur,
-        cloudBrowser: data.prefs?.cloudBrowser ?? cur.cloudBrowser,
-        cloudBrowserShortcut: data.prefs?.cloudBrowserShortcut ?? cur.cloudBrowserShortcut,
-        awsProfile: data.prefs?.awsProfile ?? cur.awsProfile,
-        awsService: data.prefs?.awsService ?? cur.awsService,
-        leftRailOpen: data.prefs?.leftRailOpen ?? cur.leftRailOpen,
-        rightRailOpen: data.prefs?.rightRailOpen ?? cur.rightRailOpen,
-        zenMode: data.prefs?.zenMode ?? cur.zenMode,
-        rundeck: (() => {
-            const raw = data.prefs?.rundeck as
-                | {
-                      activeProject?: string;
-                      activeEnvFolder?: string | null;
-                      prodEnvs?: string[];
-                  }
-                | undefined;
-            if (!raw) return cur.rundeck;
-            return {
-                activeProject: raw.activeProject ?? "",
-                activeEnvFolder: raw.activeEnvFolder ?? null,
-                prodEnvs: raw.prodEnvs ?? cur.rundeck.prodEnvs,
-            };
-        })(),
+        pinnedProjects: normalisePinnedProjects(Array.isArray(prefs.pinnedProjects) ? prefs.pinnedProjects : []),
+        projectRoots: Array.isArray(prefs.projectRoots) ? normaliseProjectRoots(prefs.projectRoots) : cur.projectRoots,
+        brunoWorkspaces: mergeBrunoWorkspaces(
+            Array.isArray(prefs.brunoWorkspaces) ? prefs.brunoWorkspaces.filter((v): v is string => typeof v === "string") : undefined,
+            Object.values(sessions),
+        ),
+        themeId: typeof prefs.themeId === "string" ? prefs.themeId : cur.themeId,
+        customThemes: Array.isArray(prefs.customThemes) ? prefs.customThemes.filter(isTheme) : cur.customThemes,
+        windowOpacity: typeof prefs.windowOpacity === "number" && Number.isFinite(prefs.windowOpacity) ? prefs.windowOpacity : cur.windowOpacity,
+        windowBlur: typeof prefs.windowBlur === "number" && Number.isFinite(prefs.windowBlur) ? prefs.windowBlur : cur.windowBlur,
+        cloudBrowser: typeof prefs.cloudBrowser === "string" ? prefs.cloudBrowser : cur.cloudBrowser,
+        cloudBrowserShortcut: typeof prefs.cloudBrowserShortcut === "string" ? prefs.cloudBrowserShortcut : cur.cloudBrowserShortcut,
+        awsProfile: prefs.awsProfile === null || typeof prefs.awsProfile === "string" ? prefs.awsProfile : cur.awsProfile,
+        awsService: AWS_SERVICES.has(prefs.awsService as StoreState["awsService"]) ? (prefs.awsService as StoreState["awsService"]) : cur.awsService,
+        leftRailOpen: typeof prefs.leftRailOpen === "boolean" ? prefs.leftRailOpen : cur.leftRailOpen,
+        rightRailOpen: typeof prefs.rightRailOpen === "boolean" ? prefs.rightRailOpen : cur.rightRailOpen,
+        zenMode: typeof prefs.zenMode === "boolean" ? prefs.zenMode : cur.zenMode,
+        rundeck: {
+            activeProject: typeof rundeck.activeProject === "string" ? rundeck.activeProject : "",
+            activeEnvFolder: rundeck.activeEnvFolder === null || typeof rundeck.activeEnvFolder === "string" ? rundeck.activeEnvFolder : null,
+            prodEnvs,
+        },
     });
     ensureSearchWindow();
     registerCustomThemes(getState().customThemes);
-    lastSaved = snapshot();
+    // Preserve the actual disk payload as the saved marker. The subscription
+    // rewrites migrations and sanitized legacy credentials in canonical v4 form.
+    lastSaved = raw;
     lastSlices = takeSlices(getState());
 }
 
+export function canFlushPersist(): boolean {
+    return persistenceReady;
+}
+
 export function subscribePersist(): () => void {
-    let timer: number | undefined;
+    persistenceReady = true;
+    queueSnapshot(snapshot());
+    void startSaveLoop();
     const unsubscribe = useStore.subscribe(() => {
-        if (timer) window.clearTimeout(timer);
-        timer = window.setTimeout(() => {
-            timer = undefined;
+        if (persistTimer != null) window.clearTimeout(persistTimer);
+        persistTimer = window.setTimeout(() => {
+            persistTimer = undefined;
             const slices = takeSlices(getState());
             if (lastSlices && slicesEqual(lastSlices, slices)) return;
             lastSlices = slices;
-
-            const snap = snapshot();
-            if (snap === lastSaved) return;
-            lastSaved = snap;
-            void invoke("state_save", { data: snap });
+            queueSnapshot(snapshot());
+            void startSaveLoop();
         }, 600);
     });
+    let closed = false;
     return () => {
-        if (timer) window.clearTimeout(timer);
-        timer = undefined;
+        if (closed) return;
+        closed = true;
         unsubscribe();
+        void flushPersist();
+        persistenceReady = false;
     };
+}
+
+export function resetPersistenceForTests(): void {
+    if (persistTimer != null) window.clearTimeout(persistTimer);
+    if (retryTimer != null) window.clearTimeout(retryTimer);
+    persistTimer = undefined;
+    retryTimer = undefined;
+    lastSaved = "";
+    activeSnapshot = null;
+    pendingSnapshot = null;
+    saveLoop = null;
+    lastSlices = null;
+    persistenceReady = false;
 }

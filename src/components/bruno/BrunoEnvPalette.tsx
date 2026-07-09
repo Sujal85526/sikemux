@@ -56,10 +56,7 @@ export function BrunoEnvPalette() {
         [visibleEnvs, showCollection],
     );
 
-    const items = useMemo(
-        () => rankBy(query, rows, (r) => [r.name, r.showCollection ? `${r.collectionName} ${r.name}` : r.name]),
-        [rows, query],
-    );
+    const items = useMemo(() => rankBy(query, rows, (r) => [r.name, r.showCollection ? `${r.collectionName} ${r.name}` : r.name]), [rows, query]);
 
     useEffect(() => {
         inputRef.current?.focus();

@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
@@ -22,8 +22,8 @@ use crate::error::{AppError, AppResult};
 pub struct RundeckConfig {
     pub url: String,
     pub user: String,
-    /// Cleartext password — same as the bash CLI does. Used only to silently
-    /// re-auth when a token is rejected. Lives in a chmod-600 file.
+    /// Ephemeral login password received from the UI. It is never written to
+    /// disk and is cleared from the returned/saved configuration.
     pub password: String,
     pub token: String,
 }
@@ -122,23 +122,54 @@ fn write_file(cfg: &RundeckConfig) -> AppResult<()> {
     let Some(path) = config_path() else {
         return Err(AppError::Rundeck("no HOME directory".into()));
     };
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&path)?;
-    writeln!(file, "RD_URL={}", quote(&cfg.url))?;
-    writeln!(file, "RD_USER={}", quote(&cfg.user))?;
-    writeln!(file, "RD_PASSWORD={}", quote(&cfg.password))?;
-    writeln!(file, "RD_TOKEN={}", quote(&cfg.token))?;
-    // chmod 600 — matches the CLI; reqwest doesn't care but the user's other
-    // tools (the bash CLI) refuse to source a world-readable secrets file.
+    write_file_at(&path, cfg)
+}
+
+fn write_file_at(path: &Path, cfg: &RundeckConfig) -> AppResult<()> {
+    validate_base_url(&cfg.url)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::Rundeck("invalid config path".into()))?;
+    fs::create_dir_all(parent)?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perm = fs::metadata(&path)?.permissions();
-        perm.set_mode(0o600);
-        fs::set_permissions(&path, perm)?;
+        temp.as_file()
+            .set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    writeln!(temp, "RD_URL={}", quote(&cfg.url))?;
+    writeln!(temp, "RD_USER={}", quote(&cfg.user))?;
+    // Passwords are intentionally never persisted. A rejected token now asks
+    // the user to log in again rather than retaining a reusable password.
+    writeln!(temp, "RD_PASSWORD={}", quote(""))?;
+    writeln!(temp, "RD_TOKEN={}", quote(&cfg.token))?;
+    temp.as_file_mut().sync_all()?;
+    temp.persist(path).map_err(|e| AppError::Io(e.error))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+pub fn validate_base_url(raw: &str) -> AppResult<()> {
+    let url = url::Url::parse(raw).map_err(|_| AppError::BadArg("invalid Rundeck URL"))?;
+    if url.username() != "" || url.password().is_some() {
+        return Err(AppError::BadArg(
+            "credentials in the Rundeck URL are not allowed",
+        ));
+    }
+    let loopback = url.host_str().is_some_and(|h| {
+        h.eq_ignore_ascii_case("localhost")
+            || h.parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
+        return Err(AppError::BadArg(
+            "Rundeck credentials require HTTPS (HTTP is allowed only on loopback)",
+        ));
     }
     Ok(())
 }
@@ -202,13 +233,39 @@ pub async fn save(cfg: RundeckConfig) -> AppResult<()> {
     Ok(())
 }
 
-/// Update only the token (used after auto-refresh). Keeps url/user/password
-/// untouched so we don't race with a concurrent `save` carrying new creds.
-pub async fn update_token(token: String) -> AppResult<()> {
-    let path = config_path();
-    let mut w = cache().write().await;
-    w.cfg.token = token;
-    write_file(&w.cfg)?;
-    w.seen_mtime = path.as_ref().and_then(mtime_of);
-    Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn credential_transport_requires_https_except_loopback() {
+        assert!(validate_base_url("https://rundeck.example.com").is_ok());
+        assert!(validate_base_url("http://localhost:4440").is_ok());
+        assert!(validate_base_url("http://rundeck.example.com").is_err());
+        assert!(validate_base_url("https://user:pass@rundeck.example.com").is_err());
+    }
+
+    #[test]
+    fn writes_atomically_without_persisting_password() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rd-config");
+        let cfg = RundeckConfig {
+            url: "https://rundeck.example.com".into(),
+            user: "alice".into(),
+            password: "never-store-me".into(),
+            token: "token".into(),
+        };
+        write_file_at(&path, &cfg).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("never-store-me"));
+        assert!(text.contains("RD_PASSWORD=''"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
 }

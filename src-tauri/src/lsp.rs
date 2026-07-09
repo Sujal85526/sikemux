@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -18,6 +18,9 @@ use tokio::task;
 use url::Url;
 
 use crate::error::{AppError, AppResult};
+
+const MAX_LSP_FRAME_BYTES: usize = 8 * 1024 * 1024;
+const MAX_LSP_HEADER_BYTES: usize = 8 * 1024;
 
 fn lsp<E: std::fmt::Display>(e: E) -> AppError {
     AppError::Lsp(e.to_string())
@@ -247,6 +250,12 @@ fn next_doc_version(server: &ServerHandle, path: &str, requested: u32) -> u32 {
 
 fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> AppResult<()> {
     let body = serde_json::to_string(msg)?;
+    if body.len() > MAX_LSP_FRAME_BYTES {
+        return Err(AppError::Lsp(format!(
+            "outbound LSP frame exceeds {} bytes",
+            MAX_LSP_FRAME_BYTES
+        )));
+    }
     let header = format!("Content-Length: {}\r\n\r\n", body.len());
     stdin.write_all(header.as_bytes())?;
     stdin.write_all(body.as_bytes())?;
@@ -268,28 +277,46 @@ fn send(server: &ServerHandle, msg: &Value) -> AppResult<()> {
     write_frame(stdin, msg)
 }
 
-fn read_message(reader: &mut BufReader<ChildStdout>) -> Option<Value> {
+fn read_message<R: BufRead>(reader: &mut R) -> AppResult<Option<Value>> {
     let mut content_length: usize = 0;
+    let mut header_bytes = 0usize;
     loop {
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).ok()?;
-        if n == 0 {
-            return None;
+        let mut bytes = Vec::new();
+        let remaining = MAX_LSP_HEADER_BYTES.saturating_sub(header_bytes);
+        if remaining == 0 {
+            return Err(AppError::Lsp("LSP headers exceed size limit".into()));
         }
-        let line = line.trim_end_matches(|c| c == '\r' || c == '\n');
+        let n = reader
+            .take((remaining + 1) as u64)
+            .read_until(b'\n', &mut bytes)?;
+        if n == 0 {
+            return Ok(None);
+        }
+        header_bytes = header_bytes.saturating_add(n);
+        if header_bytes > MAX_LSP_HEADER_BYTES || !bytes.ends_with(b"\n") {
+            return Err(AppError::Lsp("LSP headers exceed size limit".into()));
+        }
+        let line = std::str::from_utf8(&bytes).map_err(lsp)?;
+        let line = line.trim_end_matches(['\r', '\n']);
         if line.is_empty() {
             break;
         }
         if let Some(v) = line.strip_prefix("Content-Length:") {
-            content_length = v.trim().parse().ok()?;
+            content_length = v.trim().parse().map_err(lsp)?;
+            if content_length > MAX_LSP_FRAME_BYTES {
+                return Err(AppError::Lsp(format!(
+                    "LSP frame exceeds {} bytes",
+                    MAX_LSP_FRAME_BYTES
+                )));
+            }
         }
     }
     if content_length == 0 {
-        return None;
+        return Err(AppError::Lsp("missing or empty Content-Length".into()));
     }
     let mut buf = vec![0u8; content_length];
-    reader.read_exact(&mut buf).ok()?;
-    serde_json::from_slice(&buf).ok()
+    reader.read_exact(&mut buf)?;
+    Ok(Some(serde_json::from_slice(&buf)?))
 }
 
 fn next_id(server: &ServerHandle) -> i64 {
@@ -362,10 +389,31 @@ fn response_for_server_request(method: &str, params: &Value) -> Value {
     }
 }
 
+struct SpawnedProcessGuard(Option<Child>);
+
+impl SpawnedProcessGuard {
+    fn child_mut(&mut self) -> &mut Child {
+        self.0.as_mut().expect("spawned process guard empty")
+    }
+
+    fn into_inner(mut self) -> Child {
+        self.0.take().expect("spawned process guard empty")
+    }
+}
+
+impl Drop for SpawnedProcessGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<ServerHandle> {
     let (bin, args) = server_command(language)
         .ok_or_else(|| AppError::Lsp(format!("no language server configured for `{language}`")))?;
-    let mut child = Command::new(&bin)
+    let child = Command::new(&bin)
         .args(&args)
         .current_dir(project)
         .stdin(Stdio::piped())
@@ -382,12 +430,19 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
                 AppError::Lsp(format!("spawn {bin}: {e}"))
             }
         })?;
-    let stdin = child.stdin.take().ok_or(AppError::Lsp("no stdin".into()))?;
+    let mut child = SpawnedProcessGuard(Some(child));
+    let stdin = child
+        .child_mut()
+        .stdin
+        .take()
+        .ok_or(AppError::Lsp("no stdin".into()))?;
     let stdout = child
+        .child_mut()
         .stdout
         .take()
         .ok_or(AppError::Lsp("no stdout".into()))?;
-    let stderr = child.stderr.take();
+    let stderr = child.child_mut().stderr.take();
+    let child = child.into_inner();
 
     let server = Arc::new(Server {
         child: Mutex::new(Some(child)),
@@ -404,7 +459,7 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
     let _ = app;
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
-        while let Some(msg) = read_message(&mut reader) {
+        while let Ok(Some(msg)) = read_message(&mut reader) {
             if reader_server
                 .shutdown
                 .load(std::sync::atomic::Ordering::Relaxed)
@@ -433,10 +488,13 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
             }
         }
         // Reader exit unblocks any pending RPC waiters so they fail fast
-        // instead of timing out — important when lsp_stop is racing us.
+        // instead of timing out. It also owns teardown for malformed frames or
+        // natural server exit; otherwise the registry would retain an unusable
+        // server forever and later lsp_start calls would falsely succeed.
         if let Ok(mut pending) = reader_server.pending.lock() {
             pending.clear();
         }
+        shutdown_server(reader_server);
     });
 
     // Drain stderr on its own thread. rust-analyzer / pyright emit a LOT of
@@ -489,8 +547,12 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
         },
         "workspaceFolders": [{ "uri": path_to_uri(project), "name": project }]
     });
-    request_with_timeout(&server, "initialize", init, Duration::from_secs(20))?;
-    notify(&server, "initialized", json!({}))?;
+    if let Err(error) = request_with_timeout(&server, "initialize", init, Duration::from_secs(20))
+        .and_then(|_| notify(&server, "initialized", json!({})))
+    {
+        shutdown_server(server.clone());
+        return Err(error);
+    }
     Ok(server)
 }
 
@@ -521,6 +583,42 @@ fn shutdown_server(server: ServerHandle) {
             let _ = c.kill();
             let _ = c.wait();
         }
+    }
+}
+
+/// Return true only for a usable registry entry. Reader-owned teardown marks
+/// failed/exited servers shut down; remove those entries so a subsequent start
+/// can actually spawn a replacement.
+fn live_server_exists(key: &str) -> AppResult<bool> {
+    let stale = {
+        let mut registry = registry().lock().map_err(lsp)?;
+        match registry.get(key) {
+            Some(server) if !server.shutdown.load(std::sync::atomic::Ordering::Relaxed) => {
+                return Ok(true)
+            }
+            Some(_) => registry.remove(key),
+            None => None,
+        }
+    };
+    if let Some(server) = stale {
+        shutdown_server(server);
+    }
+    Ok(false)
+}
+
+/// Application-teardown backstop for servers whose project stop never arrived.
+pub fn drain_all() {
+    let servers = registry()
+        .lock()
+        .map(|mut registry| {
+            registry
+                .drain()
+                .map(|(_, server)| server)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for server in servers {
+        shutdown_server(server);
     }
 }
 
@@ -604,11 +702,8 @@ pub async fn lsp_install_server(language: String) -> AppResult<String> {
 #[tauri::command]
 pub async fn lsp_start(app: AppHandle, project: String, language: String) -> AppResult<()> {
     let k = key(&project, &language);
-    {
-        let reg = registry().lock().map_err(lsp)?;
-        if reg.contains_key(&k) {
-            return Ok(());
-        }
+    if live_server_exists(&k)? {
+        return Ok(());
     }
     let cap_key = k.clone();
     // The initialize handshake blocks up to 20 s on slow servers; off the
@@ -617,11 +712,8 @@ pub async fn lsp_start(app: AppHandle, project: String, language: String) -> App
     // gopls/rust-analyzer processes before either one reaches the registry.
     let inserted = task::spawn_blocking(move || -> AppResult<bool> {
         let _guard = start_lock().lock().map_err(lsp)?;
-        {
-            let reg = registry().lock().map_err(lsp)?;
-            if reg.contains_key(&k) {
-                return Ok(false);
-            }
+        if live_server_exists(&k)? {
+            return Ok(false);
         }
         let server = spawn_server(&project, &language, app)?;
         registry().lock().map_err(lsp)?.insert(k, server);
@@ -923,4 +1015,42 @@ pub async fn lsp_locations(
         .await
         .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
     Ok(parse_locations(&result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_message, MAX_LSP_FRAME_BYTES, MAX_LSP_HEADER_BYTES};
+    use serde_json::json;
+    use std::io::{BufReader, Cursor};
+
+    #[test]
+    fn reads_bounded_lsp_frame() {
+        let body = br#"{"jsonrpc":"2.0","id":1,"result":null}"#;
+        let mut frame = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+        frame.extend_from_slice(body);
+        let mut reader = BufReader::new(Cursor::new(frame));
+
+        assert_eq!(
+            read_message(&mut reader).expect("frame"),
+            Some(json!({
+                "jsonrpc": "2.0", "id": 1, "result": null
+            }))
+        );
+    }
+
+    #[test]
+    fn rejects_oversized_lsp_frame_before_allocating_body() {
+        let frame = format!("Content-Length: {}\r\n\r\n", MAX_LSP_FRAME_BYTES + 1);
+        let mut reader = BufReader::new(Cursor::new(frame.into_bytes()));
+        let error = read_message(&mut reader).expect_err("oversized frame");
+        assert!(error.to_string().contains("exceeds"));
+    }
+
+    #[test]
+    fn rejects_oversized_lsp_headers() {
+        let frame = format!("X-Long: {}\r\n\r\n", "x".repeat(MAX_LSP_HEADER_BYTES));
+        let mut reader = BufReader::new(Cursor::new(frame.into_bytes()));
+        let error = read_message(&mut reader).expect_err("oversized headers");
+        assert!(error.to_string().contains("headers exceed"));
+    }
 }

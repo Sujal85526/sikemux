@@ -52,22 +52,15 @@ fn credentials_path() -> Option<PathBuf> {
 
 /// Parse an INI-style AWS config. Supports `[profile X]`, `[default]`, and
 /// `[sso-session Y]`. Returns `(profile_blocks, sso_session_blocks)`.
-fn parse_ini(
-    content: &str,
-) -> (
-    HashMap<String, HashMap<String, String>>,
-    HashMap<String, HashMap<String, String>>,
-) {
+type IniBlocks = HashMap<String, HashMap<String, String>>;
+
+fn parse_ini(content: &str) -> (IniBlocks, IniBlocks) {
     let mut profiles: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut sessions: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut current: Option<(bool, String)> = None;
 
     for raw in content.lines() {
-        let line = raw
-            .split(|c| c == '#' || c == ';')
-            .next()
-            .unwrap_or("")
-            .trim();
+        let line = raw.split(['#', ';']).next().unwrap_or("").trim();
         if line.is_empty() {
             continue;
         }
@@ -163,7 +156,7 @@ pub fn aws_profiles() -> Vec<AwsProfile> {
         }
     }
 
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|profile| profile.name.to_lowercase());
     out
 }
 

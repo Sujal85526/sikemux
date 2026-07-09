@@ -1,15 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-    MIN_FRAC,
-    collectPanes,
-    computeLayout,
-    makePane,
-    neighborPane,
-    removePane,
-    resizeTowards,
-    setSplitSizes,
-    splitPane,
-} from "./layout";
+import { MIN_FRAC, collectPanes, computeLayout, makePane, neighborPane, removePane, resizeTowards, setSplitSizes, splitPane } from "./layout";
 import type { LayoutNode, PaneNode } from "./types";
 
 const pane = (id: string): PaneNode => ({ type: "pane", id, cwd: `/tmp/${id}`, kind: "terminal", title: id });

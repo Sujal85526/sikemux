@@ -22,7 +22,7 @@ export function FilePalette() {
     const mouseActive = useMouseActive();
 
     const list = useResourceEnabled(!!cwd, filesListR, cwd || "");
-    const all = cwd ? (list.data ?? []) : [];
+    const all = useMemo(() => (cwd ? (list.data ?? []) : []), [cwd, list.data]);
 
     useEffect(() => {
         inputRef.current?.focus();

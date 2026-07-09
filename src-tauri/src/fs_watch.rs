@@ -41,34 +41,31 @@ const DEBOUNCE_MS: u64 = 200;
 fn spawn_debouncer(app: AppHandle, repo: String, mut rx: tokio::sync::mpsc::UnboundedReceiver<()>) {
     tauri::async_runtime::spawn(async move {
         while rx.recv().await.is_some() {
+            let sleep = tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS));
+            tokio::pin!(sleep);
+            let mut closed = false;
             loop {
-                let sleep = tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS));
-                tokio::pin!(sleep);
-                let mut closed = false;
-                loop {
-                    tokio::select! {
-                        _ = &mut sleep => break,
-                        msg = rx.recv() => {
-                            if msg.is_none() {
-                                closed = true;
-                                break;
-                            }
-                            sleep
-                                .as_mut()
-                                .reset(tokio::time::Instant::now() + Duration::from_millis(DEBOUNCE_MS));
+                tokio::select! {
+                    _ = &mut sleep => break,
+                    msg = rx.recv() => {
+                        if msg.is_none() {
+                            closed = true;
+                            break;
                         }
+                        sleep
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + Duration::from_millis(DEBOUNCE_MS));
                     }
                 }
-                if closed {
-                    return;
-                }
-                // File list for the Cmd-P palette is stale now — drop the cache
-                // so the next palette open rewalks. Cheap; the walk itself is
-                // debounced behind user interaction.
-                crate::files::invalidate(&repo);
-                let _ = app.emit("git_changed", ChangePayload { repo: repo.clone() });
-                break;
             }
+            if closed {
+                return;
+            }
+            // File list for the Cmd-P palette is stale now — drop the cache
+            // so the next palette open rewalks. Cheap; the walk itself is
+            // debounced behind user interaction.
+            crate::files::invalidate(&repo);
+            let _ = app.emit("git_changed", ChangePayload { repo: repo.clone() });
         }
     });
 }

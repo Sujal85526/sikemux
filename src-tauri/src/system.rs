@@ -3,7 +3,7 @@ use std::process::Command;
 
 use serde::Serialize;
 
-use crate::state::state_path;
+use crate::state::state_load;
 use crate::{
     aws::LogsTailManager,
     pty::PtyManager,
@@ -60,7 +60,7 @@ pub fn fix_path_from_login_shell() {
     ];
     let mut parts: Vec<&str> = shell_path.split(':').filter(|s| !s.is_empty()).collect();
     for d in &extra {
-        if !parts.iter().any(|p| *p == d.as_str()) {
+        if !parts.contains(&d.as_str()) {
             parts.push(d.as_str());
         }
     }
@@ -103,9 +103,7 @@ pub fn raise_fd_limit() {
         for &cand in &[131_072u64, 65_536, 16_384, 10_240] {
             let cand = cand as libc::rlim_t;
             let hard = lim.rlim_max;
-            let target = if hard == libc::RLIM_INFINITY {
-                cand
-            } else if cand <= hard {
+            let target = if hard == libc::RLIM_INFINITY || cand <= hard {
                 cand
             } else {
                 hard
@@ -324,14 +322,12 @@ fn parse_pmset(text: &str) -> BatteryStatus {
 }
 
 /// Single round-trip the renderer uses on boot — home dir + persisted state
-/// + zoxide recents in one IPC instead of three. Resolves the state path
-/// through `state::state_path()` so dev and release builds stay separated.
+/// + zoxide recents in one IPC instead of three. `state_load` validates the
+/// primary snapshot and falls back to the previous-good backup when needed.
 #[tauri::command]
 pub fn boot_init() -> BootInfo {
     let home = home_dir();
-    let state = state_path()
-        .and_then(|p| fs::read_to_string(p).ok())
-        .unwrap_or_default();
+    let state = state_load();
     BootInfo {
         home,
         state,

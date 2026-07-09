@@ -70,7 +70,15 @@ export function useKeymap(): void {
         const handler = (e: KeyboardEvent): void => {
             if (!e.altKey || e.metaKey || e.ctrlKey) return;
             const st = getState();
-            if (st.pickerOpen || st.filePaletteOpen || st.agentPaletteOpen || st.rundeckJobPaletteOpen || st.brunoReqPaletteOpen || st.brunoEnvPaletteOpen || st.settingsOpen)
+            if (
+                st.pickerOpen ||
+                st.filePaletteOpen ||
+                st.agentPaletteOpen ||
+                st.rundeckJobPaletteOpen ||
+                st.brunoReqPaletteOpen ||
+                st.brunoEnvPaletteOpen ||
+                st.settingsOpen
+            )
                 return; // modals own the keyboard
             const shift = e.shiftKey;
             let handled = true;

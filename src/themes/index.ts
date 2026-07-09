@@ -704,10 +704,7 @@ export function isTheme(value: unknown): value is Theme {
     const groupOk = (obj: unknown, keys: readonly string[]) =>
         !!obj && typeof obj === "object" && keys.every((k) => typeof (obj as Record<string, unknown>)[k] === "string");
     return (
-        groupOk(t.chrome, CHROME_KEYS) &&
-        groupOk(t.editor, EDITOR_KEYS) &&
-        groupOk(t.highlight, HIGHLIGHT_KEYS) &&
-        groupOk(t.terminal, TERMINAL_KEYS)
+        groupOk(t.chrome, CHROME_KEYS) && groupOk(t.editor, EDITOR_KEYS) && groupOk(t.highlight, HIGHLIGHT_KEYS) && groupOk(t.terminal, TERMINAL_KEYS)
     );
 }
 

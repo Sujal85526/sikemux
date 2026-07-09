@@ -5,17 +5,17 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use reqwest::{Client, Method, Response, StatusCode};
+use futures::StreamExt;
+use reqwest::{Client, Method, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio::sync::Mutex;
 
 use crate::error::{AppError, AppResult};
 
-use super::auth::reauth_with_stored_creds;
 use super::config;
 
 pub const API_VERSION: u32 = 41;
+const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn http() -> &'static Client {
     static C: OnceLock<Client> = OnceLock::new();
@@ -25,18 +25,11 @@ pub fn http() -> &'static Client {
             // after ~30s. 25s pool idle keeps reuse safe.
             .pool_idle_timeout(Duration::from_secs(25))
             .timeout(Duration::from_secs(30))
-            .cookie_store(true)
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent("sikemux-rundeck/0.1")
             .build()
             .expect("build reqwest client")
     })
-}
-
-/// Serialise re-auth attempts so a burst of concurrent 401s doesn't trigger
-/// N parallel j_security_check round trips against the same Rundeck.
-fn reauth_lock() -> &'static Mutex<()> {
-    static L: OnceLock<Mutex<()>> = OnceLock::new();
-    L.get_or_init(|| Mutex::new(()))
 }
 
 fn api_url(base: &str, endpoint: &str) -> String {
@@ -61,6 +54,7 @@ async fn send_with_token(
     if cfg.url.is_empty() {
         return Err(AppError::RundeckUnconfigured);
     }
+    config::validate_base_url(&cfg.url)?;
     let token = token_override.unwrap_or(&cfg.token);
     if token.is_empty() {
         return Err(AppError::RundeckUnconfigured);
@@ -108,39 +102,29 @@ async fn request_json<T: DeserializeOwned>(
     body: Option<&serde_json::Value>,
     query: &[(&str, String)],
 ) -> AppResult<T> {
-    let resp = send_with_token(method.clone(), endpoint, body, query, None).await?;
-    let status = resp.status();
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        // Drain body, then attempt one silent re-auth + retry.
-        let _ = resp.bytes().await;
-        let new_token = {
-            let _guard = reauth_lock().lock().await;
-            // Another request may have just refreshed the token — peek first.
-            let cur = config::refresh_from_disk().await?;
-            if !cur.token.is_empty() {
-                match send_with_token(method.clone(), endpoint, body, query, Some(&cur.token)).await
-                {
-                    Ok(retry)
-                        if retry.status() != StatusCode::UNAUTHORIZED
-                            && retry.status() != StatusCode::FORBIDDEN =>
-                    {
-                        return decode(retry).await;
-                    }
-                    _ => {}
-                }
-            }
-            reauth_with_stored_creds().await?
-        };
-        let retry = send_with_token(method, endpoint, body, query, Some(&new_token)).await?;
-        return decode(retry).await;
-    }
+    let resp = send_with_token(method, endpoint, body, query, None).await?;
     decode(resp).await
 }
 
 async fn decode<T: DeserializeOwned>(resp: Response) -> AppResult<T> {
     let status = resp.status();
+    if resp
+        .content_length()
+        .is_some_and(|size| size > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(AppError::Rundeck("response exceeds 16 MiB limit".into()));
+    }
+    let mut stream = resp.bytes_stream();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(AppError::Rundeck("response exceeds 16 MiB limit".into()));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
     if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
+        let body = String::from_utf8_lossy(&bytes).into_owned();
         let message = extract_message(&body).unwrap_or_else(|| {
             if body.is_empty() {
                 status.canonical_reason().unwrap_or("error").to_string()
@@ -153,7 +137,6 @@ async fn decode<T: DeserializeOwned>(resp: Response) -> AppResult<T> {
             message,
         });
     }
-    let bytes = resp.bytes().await?;
     if bytes.is_empty() {
         // Caller deserialising into () should still succeed.
         return serde_json::from_slice::<T>(b"null").map_err(AppError::Json);

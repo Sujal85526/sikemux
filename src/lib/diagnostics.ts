@@ -28,6 +28,14 @@ declare global {
 
 const longTasks: LongTaskEntry[] = [];
 const MAX_LONG_TASKS = 200;
+const runtimeErrors: { at: string; kind: "error" | "unhandledrejection"; message: string }[] = [];
+const MAX_RUNTIME_ERRORS = 64;
+
+function recordRuntimeError(kind: "error" | "unhandledrejection", value: unknown): void {
+    const message = value instanceof Error ? value.message : typeof value === "string" ? value : String(value);
+    runtimeErrors.push({ at: new Date().toISOString(), kind, message });
+    if (runtimeErrors.length > MAX_RUNTIME_ERRORS) runtimeErrors.splice(0, runtimeErrors.length - MAX_RUNTIME_ERRORS);
+}
 
 function memorySnapshot(): MemoryInfo | null {
     const perf = performance as Performance & { memory?: MemoryInfo };
@@ -71,6 +79,7 @@ export function installDiagnostics(): void {
             bus: busStats(),
             longTaskCount: longTasks.length,
             lastLongTasks: longTasks.slice(-10),
+            runtimeErrors: runtimeErrors.slice(),
         }),
         native: () => invoke("runtime_diagnostics"),
         longTasks: () => longTasks.slice(),
@@ -78,6 +87,9 @@ export function installDiagnostics(): void {
             longTasks.length = 0;
         },
     };
+
+    window.addEventListener("error", (event) => recordRuntimeError("error", event.error ?? event.message));
+    window.addEventListener("unhandledrejection", (event) => recordRuntimeError("unhandledrejection", event.reason));
 
     if (typeof PerformanceObserver !== "undefined") {
         try {

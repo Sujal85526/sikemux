@@ -197,7 +197,11 @@ function GeneralPage({ pinnedProjects, projectRoots, home, pretty }: GeneralPage
                     <button className="settings-btn" onClick={onPickPinned} type="button" title="Browse…">
                         <IconFolder size={11} /> browse
                     </button>
-                    <button className="settings-btn primary" onClick={() => void commitPinnedDraft()} disabled={!pinnedDraftPath.trim()} type="button">
+                    <button
+                        className="settings-btn primary"
+                        onClick={() => void commitPinnedDraft()}
+                        disabled={!pinnedDraftPath.trim()}
+                        type="button">
                         <IconPlus size={11} /> add
                     </button>
                 </div>
@@ -312,8 +316,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
             baseName: src.name,
         });
 
-    const editCustom = (src: Theme) =>
-        openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
+    const editCustom = (src: Theme) => openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
 
     const newFromActive = () => customizeFrom(THEMES_BY_ID[themeId] ?? customThemes.find((t) => t.id === themeId) ?? THEMES[0]);
 
@@ -398,17 +401,16 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         onColor={(group, key, value) =>
                             setEdit((e) =>
                                 e
-                                    ? { ...e, theme: { ...e.theme, [group]: { ...(e.theme[group] as unknown as Record<string, string>), [key]: value } } }
+                                    ? {
+                                          ...e,
+                                          theme: { ...e.theme, [group]: { ...(e.theme[group] as unknown as Record<string, string>), [key]: value } },
+                                      }
                                     : e,
                             )
                         }
                         onName={(name) => setEdit((e) => (e ? { ...e, theme: { ...e.theme, name } } : e))}
                         onDark={(dark) => setEdit((e) => (e ? { ...e, theme: { ...e.theme, dark } } : e))}
-                        onReset={() =>
-                            setEdit((e) =>
-                                e ? { ...e, theme: { ...cloneTheme(e.original), id: e.theme.id, name: e.theme.name } } : e,
-                            )
-                        }
+                        onReset={() => setEdit((e) => (e ? { ...e, theme: { ...cloneTheme(e.original), id: e.theme.id, name: e.theme.name } } : e))}
                         onSave={saveEditor}
                         onCancel={closeEditor}
                     />
@@ -631,7 +633,10 @@ function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
                 <div className="settings-field-help">must match a running app's name · trailing .app is fine</div>
             </SettingsSection>
 
-            <SettingsSection title="Workspace switch" meta="optional" sub="Fired right after the link opens — point it at the desktop where the browser lives.">
+            <SettingsSection
+                title="Workspace switch"
+                meta="optional"
+                sub="Fired right after the link opens — point it at the desktop where the browser lives.">
                 <label className="settings-field-label">workspace shortcut</label>
                 <input
                     className="settings-input wide"
@@ -660,17 +665,7 @@ function SettingsPage({ name, deck, children }: { name: string; deck: ReactNode;
     );
 }
 
-function SettingsSection({
-    title,
-    meta,
-    sub,
-    children,
-}: {
-    title: ReactNode;
-    meta?: ReactNode;
-    sub?: ReactNode;
-    children: ReactNode;
-}) {
+function SettingsSection({ title, meta, sub, children }: { title: ReactNode; meta?: ReactNode; sub?: ReactNode; children: ReactNode }) {
     return (
         <section className="settings-section">
             <div className="settings-section-head">

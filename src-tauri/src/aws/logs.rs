@@ -128,7 +128,10 @@ pub async fn aws_logs_tail_start(
 }
 
 #[tauri::command]
-pub async fn aws_logs_tail_stop(manager: tauri::State<'_, LogsTailManager>, id: u32) -> AppResult<()> {
+pub async fn aws_logs_tail_stop(
+    manager: tauri::State<'_, LogsTailManager>,
+    id: u32,
+) -> AppResult<()> {
     if let Some((_, mut child)) = manager.tails.remove(&id) {
         // start_kill is sync (just sends the signal), but we still await
         // wait() so repeated log-tail mount/unmount cycles do not leave

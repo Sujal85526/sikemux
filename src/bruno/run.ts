@@ -15,6 +15,9 @@ export interface RunInput {
     /** merged variable scope for interpolation (runtime overrides already folded in) */
     vars: Scope;
     runScripts?: boolean;
+    /** Explicit, session-scoped approval for scripts, local endpoints and collection files. */
+    trust?: boolean;
+    collectionPath?: string;
 }
 
 export interface RunResult {
@@ -93,7 +96,10 @@ function bodyWire(request: BruRequest, reqView: ReqView, scope: Scope): BruBodyW
         return path ? { kind: "file", path, content_type: null } : { kind: "none" };
     }
     if (mode === "form-urlencoded") {
-        return { kind: "form", fields: enabled(request.body.form).map((f) => [interpolate(f.name, scope), interpolate(f.value, scope)] as [string, string]) };
+        return {
+            kind: "form",
+            fields: enabled(request.body.form).map((f) => [interpolate(f.name, scope), interpolate(f.value, scope)] as [string, string]),
+        };
     }
     if (mode === "multipart-form") {
         const fileRe = /^@file\((.*)\)$/;
@@ -154,14 +160,19 @@ function exprValue(v: unknown): string {
     }
 }
 
-function applyResponseVars(rows: KeyVal[], env: { res: ResView; req: ReqView; bru: Record<string, unknown> }, scope: Scope, logs: ScriptLog[]): void {
+async function applyResponseVars(
+    rows: KeyVal[],
+    env: { res: ResView; req: ReqView; bru: Record<string, unknown> },
+    scope: Scope,
+    logs: ScriptLog[],
+): Promise<void> {
     for (const row of enabled(rows)) {
         if (!row.value.trim()) {
             scope[row.name] = "";
             continue;
         }
         try {
-            const value = exprValue(evaluateExpression(row.value, env));
+            const value = exprValue(await evaluateExpression(row.value, env));
             scope[row.name] = value;
             env.bru[row.name] = value;
         } catch (e) {
@@ -181,6 +192,12 @@ export async function runRequest(input: RunInput): Promise<RunResult> {
 
     const logs: ScriptLog[] = [];
     const tests: TestResult[] = [];
+    const trust = {
+        allow_private_network: input.trust === true,
+        allow_file_read: input.trust === true,
+        allow_insecure_tls: input.trust === true,
+        file_root: input.collectionPath ?? null,
+    };
 
     // Pre-script view of the request (interpolated, no auth applied yet).
     const preHeaders: Record<string, string> = {};
@@ -196,15 +213,18 @@ export async function runRequest(input: RunInput): Promise<RunResult> {
     };
 
     if (runScripts) {
-        for (const s of scopes) await runScript(s.scripts.pre, { vars: scope, req: reqView, logs, tests });
-        await runScript(request.scripts.pre, { vars: scope, req: reqView, logs, tests });
+        for (const s of scopes) await runScript(s.scripts.pre, { vars: scope, req: reqView, logs, tests, trust });
+        await runScript(request.scripts.pre, { vars: scope, req: reqView, logs, tests, trust });
     }
 
     // Final build using the (possibly script-mutated) reqView + post-script scope.
     const finalScope = scope;
     const headers: [string, string][] = Object.entries(reqView.headers).map(([k, v]) => [k, interpolate(v, finalScope)]);
     const encodeUrl = request.settings.encodeUrl !== false;
-    const pathParams: [string, string][] = enabled(request.params.path).map((p) => [interpolate(p.name, finalScope), interpolate(p.value, finalScope)]);
+    const pathParams: [string, string][] = enabled(request.params.path).map((p) => [
+        interpolate(p.name, finalScope),
+        interpolate(p.value, finalScope),
+    ]);
     const query: [string, string][] = enabled(request.params.query).map((p) => [interpolate(p.name, finalScope), interpolate(p.value, finalScope)]);
     const auth = effectiveAuth(request, scopes);
     applyAuth(auth, headers, query, finalScope);
@@ -216,6 +236,7 @@ export async function runRequest(input: RunInput): Promise<RunResult> {
         body: bodyWire(request, reqView, finalScope),
         timeout_ms: request.settings.timeout && request.settings.timeout > 0 ? request.settings.timeout : 0,
         skip_tls_verify: false,
+        trust,
     };
     const meta = { method: wire.method, url: wire.url, headers: wire.headers, body: wire.body };
     const envUpdates = (): Scope => {
@@ -246,13 +267,13 @@ export async function runRequest(input: RunInput): Promise<RunResult> {
             body: parsed,
             responseTime: response.duration_ms,
         };
-        for (const s of scopes) await runScript(s.scripts.post, { vars: scope, req: reqView, res: resView, logs, tests });
-        await runScript(request.scripts.post, { vars: scope, req: reqView, res: resView, logs, tests });
+        for (const s of scopes) await runScript(s.scripts.post, { vars: scope, req: reqView, res: resView, logs, tests, trust });
+        await runScript(request.scripts.post, { vars: scope, req: reqView, res: resView, logs, tests, trust });
         const varEnv = { res: resView, req: reqView, bru: { ...scope } };
-        for (const s of scopes) applyResponseVars(s.vars.res, varEnv, scope, logs);
-        applyResponseVars(request.vars.res, { ...varEnv, bru: { ...scope } }, scope, logs);
+        for (const s of scopes) await applyResponseVars(s.vars.res, varEnv, scope, logs);
+        await applyResponseVars(request.vars.res, { ...varEnv, bru: { ...scope } }, scope, logs);
         if (request.assertions.length) {
-            evaluateAssertions(request.assertions, { res: resView, req: reqView, bru: { ...finalScope } }, tests);
+            await evaluateAssertions(request.assertions, { res: resView, req: reqView, bru: { ...finalScope } }, tests);
         }
     }
 

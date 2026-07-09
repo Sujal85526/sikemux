@@ -167,6 +167,6 @@ pub async fn scan_project_roots(
         walk(&root, &root, r.depth.max(0), &mut out, &mut seen);
     }
 
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|profile| profile.name.to_lowercase());
     out
 }

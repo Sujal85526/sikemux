@@ -32,7 +32,19 @@ const APIKEY_PLACEMENT_OPTS: BrunoOption[] = [
     { value: "queryparams", label: "Query param" },
 ];
 
-function KeyValTable({ rows, scope, onChange, namePh = "name", valuePh = "value" }: { rows: KeyVal[]; scope: Scope; onChange: (r: KeyVal[]) => void; namePh?: string; valuePh?: string }) {
+function KeyValTable({
+    rows,
+    scope,
+    onChange,
+    namePh = "name",
+    valuePh = "value",
+}: {
+    rows: KeyVal[];
+    scope: Scope;
+    onChange: (r: KeyVal[]) => void;
+    namePh?: string;
+    valuePh?: string;
+}) {
     const display = [...rows, { name: "", value: "", enabled: true }];
     const commit = (i: number, patch: Partial<KeyVal>) => {
         if (i < rows.length) onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -46,7 +58,11 @@ function KeyValTable({ rows, scope, onChange, namePh = "name", valuePh = "value"
                 return (
                     <div className={`bruno-kv-row${real ? "" : " add"}`} key={i}>
                         {real ? (
-                            <BrunoCheck checked={r.enabled} onChange={(enabled) => commit(i, { enabled })} title={r.enabled ? "Disable row" : "Enable row"} />
+                            <BrunoCheck
+                                checked={r.enabled}
+                                onChange={(enabled) => commit(i, { enabled })}
+                                title={r.enabled ? "Disable row" : "Enable row"}
+                            />
                         ) : (
                             <span className="bruno-check ghost" />
                         )}
@@ -92,7 +108,14 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
     return (
         <div className="bruno-request">
             <div className="bruno-urlbar">
-                <BrunoSelect value={request.method} options={METHOD_OPTS} onChange={(m) => set({ method: m as BruRequest["method"] })} className="bruno-method-dd" title="Method" menuWidth={132} />
+                <BrunoSelect
+                    value={request.method}
+                    options={METHOD_OPTS}
+                    onChange={(m) => set({ method: m as BruRequest["method"] })}
+                    className="bruno-method-dd"
+                    title="Method"
+                    menuWidth={132}
+                />
                 <VarInput
                     className="bruno-url"
                     value={request.url}
@@ -145,7 +168,11 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                         {request.params.path.length > 0 && (
                             <>
                                 <div className="bruno-section-head">Path params</div>
-                                <KeyValTable rows={request.params.path} scope={scope} onChange={(path) => set({ params: { ...request.params, path } })} />
+                                <KeyValTable
+                                    rows={request.params.path}
+                                    scope={scope}
+                                    onChange={(path) => set({ params: { ...request.params, path } })}
+                                />
                             </>
                         )}
                     </div>
@@ -154,7 +181,14 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                 {tab === "body" && (
                     <div className="bruno-section bruno-section-fill">
                         <div className="bruno-section-bar">
-                            <BrunoSelect value={request.body.mode} options={BODY_OPTS} onChange={(m) => setBody({ mode: m as BodyMode })} className="bruno-mode-dd" title="Body type" menuWidth={150} />
+                            <BrunoSelect
+                                value={request.body.mode}
+                                options={BODY_OPTS}
+                                onChange={(m) => setBody({ mode: m as BodyMode })}
+                                className="bruno-mode-dd"
+                                title="Body type"
+                                menuWidth={150}
+                            />
                         </div>
                         {request.body.mode === "none" && <div className="bruno-muted">This request has no body.</div>}
                         {TEXT_MODES.has(request.body.mode) && (
@@ -188,23 +222,44 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                     <div className="bruno-section bruno-auth">
                         <label className="bruno-field">
                             <span>Mode</span>
-                            <BrunoSelect value={request.auth.mode} options={AUTH_OPTS} onChange={(m) => setAuth({ mode: m as AuthMode })} className="bruno-mode-dd" menuWidth={132} />
+                            <BrunoSelect
+                                value={request.auth.mode}
+                                options={AUTH_OPTS}
+                                onChange={(m) => setAuth({ mode: m as AuthMode })}
+                                className="bruno-mode-dd"
+                                menuWidth={132}
+                            />
                         </label>
                         {request.auth.mode === "bearer" && (
                             <label className="bruno-field">
                                 <span>Token</span>
-                                <VarInput value={request.auth.bearer.token} scope={scope} placeholder="{{token}}" onChange={(v) => setAuth({ bearer: { token: v } })} />
+                                <VarInput
+                                    value={request.auth.bearer.token}
+                                    scope={scope}
+                                    placeholder="{{token}}"
+                                    onChange={(v) => setAuth({ bearer: { token: v } })}
+                                />
                             </label>
                         )}
                         {request.auth.mode === "basic" && (
                             <>
                                 <label className="bruno-field">
                                     <span>Username</span>
-                                    <input className="bruno-input" value={request.auth.basic.username} spellCheck={false} onChange={(e) => setAuth({ basic: { ...request.auth.basic, username: e.target.value } })} />
+                                    <input
+                                        className="bruno-input"
+                                        value={request.auth.basic.username}
+                                        spellCheck={false}
+                                        onChange={(e) => setAuth({ basic: { ...request.auth.basic, username: e.target.value } })}
+                                    />
                                 </label>
                                 <label className="bruno-field">
                                     <span>Password</span>
-                                    <input className="bruno-input" type="password" value={request.auth.basic.password} onChange={(e) => setAuth({ basic: { ...request.auth.basic, password: e.target.value } })} />
+                                    <input
+                                        className="bruno-input"
+                                        type="password"
+                                        value={request.auth.basic.password}
+                                        onChange={(e) => setAuth({ basic: { ...request.auth.basic, password: e.target.value } })}
+                                    />
                                 </label>
                             </>
                         )}
@@ -212,11 +267,20 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                             <>
                                 <label className="bruno-field">
                                     <span>Key</span>
-                                    <input className="bruno-input" value={request.auth.apikey.key} spellCheck={false} onChange={(e) => setAuth({ apikey: { ...request.auth.apikey, key: e.target.value } })} />
+                                    <input
+                                        className="bruno-input"
+                                        value={request.auth.apikey.key}
+                                        spellCheck={false}
+                                        onChange={(e) => setAuth({ apikey: { ...request.auth.apikey, key: e.target.value } })}
+                                    />
                                 </label>
                                 <label className="bruno-field">
                                     <span>Value</span>
-                                    <VarInput value={request.auth.apikey.value} scope={scope} onChange={(v) => setAuth({ apikey: { ...request.auth.apikey, value: v } })} />
+                                    <VarInput
+                                        value={request.auth.apikey.value}
+                                        scope={scope}
+                                        onChange={(v) => setAuth({ apikey: { ...request.auth.apikey, value: v } })}
+                                    />
                                 </label>
                                 <label className="bruno-field">
                                     <span>Add to</span>
@@ -238,24 +302,50 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                 {tab === "vars" && (
                     <div className="bruno-section">
                         <div className="bruno-section-head">Pre-request vars</div>
-                        <KeyValTable rows={request.vars.req} scope={scope} onChange={(req) => set({ vars: { ...request.vars, req } })} valuePh="value or {{expr}}" />
+                        <KeyValTable
+                            rows={request.vars.req}
+                            scope={scope}
+                            onChange={(req) => set({ vars: { ...request.vars, req } })}
+                            valuePh="value or {{expr}}"
+                        />
                         <div className="bruno-section-head">Post-response vars</div>
-                        <KeyValTable rows={request.vars.res} scope={scope} onChange={(res) => set({ vars: { ...request.vars, res } })} valuePh="res.body.x" />
+                        <KeyValTable
+                            rows={request.vars.res}
+                            scope={scope}
+                            onChange={(res) => set({ vars: { ...request.vars, res } })}
+                            valuePh="res.body.x"
+                        />
                     </div>
                 )}
 
                 {tab === "script" && (
                     <div className="bruno-section bruno-section-fill">
                         <div className="bruno-section-head">Pre-request</div>
-                        <BrunoCode value={request.scripts.pre} lang="javascript" placeholder="// runs before the request" onChange={(pre) => set({ scripts: { ...request.scripts, pre } })} />
+                        <BrunoCode
+                            value={request.scripts.pre}
+                            lang="javascript"
+                            placeholder="// runs before the request"
+                            onChange={(pre) => set({ scripts: { ...request.scripts, pre } })}
+                        />
                         <div className="bruno-section-head">Post-response</div>
-                        <BrunoCode value={request.scripts.post} lang="javascript" placeholder="// runs after the response" onChange={(post) => set({ scripts: { ...request.scripts, post } })} />
+                        <BrunoCode
+                            value={request.scripts.post}
+                            lang="javascript"
+                            placeholder="// runs after the response"
+                            onChange={(post) => set({ scripts: { ...request.scripts, post } })}
+                        />
                     </div>
                 )}
 
                 {tab === "docs" && (
                     <div className="bruno-section bruno-section-fill">
-                        <BrunoCode value={request.docs} lang="markdown" placeholder="Markdown documentation for this request" onChange={(docs) => set({ docs })} className="bruno-cm-fill" />
+                        <BrunoCode
+                            value={request.docs}
+                            lang="markdown"
+                            placeholder="Markdown documentation for this request"
+                            onChange={(docs) => set({ docs })}
+                            className="bruno-cm-fill"
+                        />
                     </div>
                 )}
             </div>

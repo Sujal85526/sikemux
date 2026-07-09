@@ -1,57 +1,55 @@
-import { describe, expect, it } from "vitest";
-import { evaluateAssertions, evaluateExpression, runScript, type SandboxCtx } from "./sandbox";
+import { describe, expect, it, vi } from "vitest";
+import { constrainWorkerRequest, evaluateExpression, runScript, type SandboxCtx } from "./sandbox";
+
+const trust = {
+    allow_private_network: false,
+    allow_file_read: false,
+    allow_insecure_tls: false,
+    file_root: null,
+};
 
 function ctx(): SandboxCtx {
     return {
         vars: { token: "old" },
         req: { method: "GET", url: "https://example.test", headers: {}, body: null, name: "request" },
-        res: { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, body: { ok: true, items: [1, 2] }, responseTime: 42 },
+        res: { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, body: { ok: true }, responseTime: 42 },
         logs: [],
         tests: [],
+        trust,
     };
 }
 
-describe("Bruno script sandbox", () => {
-    it("runs pre/post scripts against the Bruno-compatible API", async () => {
+describe("Bruno script isolation", () => {
+    it("fails closed instead of evaluating in the renderer when workers are unavailable", async () => {
+        const original = globalThis.Worker;
+        vi.stubGlobal("Worker", undefined);
         const c = ctx();
-        await runScript(
-            `
-            bru.setVar("token", "new");
-            req.setHeader("X-Test", bru.getVar("token"));
-            console.log(req.getUrl());
-            test("status ok", () => expect(res.getStatus()).to.equal(200));
-            test("async pass", async () => expect(res.body.items).to.have.length(2));
-            `,
-            c,
-        );
-
-        expect(c.vars.token).toBe("new");
-        expect(c.req.headers["X-Test"]).toBe("new");
-        expect(c.logs).toEqual([{ level: "log", text: "https://example.test" }]);
-        expect(c.tests).toEqual([
-            { name: "status ok", passed: true },
-            { name: "async pass", passed: true },
-        ]);
+        await runScript("globalThis.__rendererPwned = true", c);
+        expect((globalThis as typeof globalThis & { __rendererPwned?: boolean }).__rendererPwned).toBeUndefined();
+        expect(c.logs[0]?.text).toContain("isolated script worker unavailable");
+        await expect(evaluateExpression("res.status", { res: c.res, req: c.req, bru: {} })).rejects.toThrow("isolated expression worker unavailable");
+        vi.stubGlobal("Worker", original);
     });
 
-    it("evaluates expressions and assertion rows", () => {
-        const c = ctx();
-        expect(evaluateExpression("res.status", { res: c.res, req: c.req, bru: {} })).toBe(200);
-        evaluateAssertions(
-            [
-                { name: "res.status", value: "eq 200", enabled: true },
-                { name: "res.body.items", value: "length 2", enabled: true },
-                { name: "req.method", value: "eq POST", enabled: true },
-                { name: "ignored", value: "eq anything", enabled: false },
-            ],
-            { res: c.res, req: c.req, bru: {} },
-            c.tests,
+    it("does not let worker messages escalate collection trust", () => {
+        const request = constrainWorkerRequest(
+            {
+                method: "GET",
+                url: "http://127.0.0.1",
+                headers: [],
+                body: { kind: "none" },
+                timeout_ms: 0,
+                skip_tls_verify: true,
+                trust: {
+                    allow_private_network: true,
+                    allow_file_read: true,
+                    allow_insecure_tls: true,
+                    file_root: "/",
+                },
+            },
+            trust,
         );
-
-        expect(c.tests).toHaveLength(3);
-        expect(c.tests[0]).toMatchObject({ passed: true });
-        expect(c.tests[1]).toMatchObject({ passed: true });
-        expect(c.tests[2].passed).toBe(false);
-        expect(c.tests[2].error).toContain("POST");
+        expect(request.trust).toEqual(trust);
+        expect(request.trust).not.toBe(trust);
     });
 });
