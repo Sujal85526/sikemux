@@ -1,11 +1,11 @@
 {
-  "version": "0.1.27",
-  "notes": "Fix git diff hang on binary and large files",
-  "pub_date": "2026-07-08T08:29:50Z",
+  "version": "0.1.28",
+  "notes": "Performance, lifecycle, security, persistence, accessibility, and release-pipeline hardening; fixes configured HTTP Rundeck servers.",
+  "pub_date": "2026-07-09T21:42:09Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWRmQm9ZZk5KdFZJeU9MaytQNUM4aXJMc2ZGR0pnRkZPblNrOFZKNTFtY3lGeUdUc2gxM1EzSTkxYzMyV2xLdjEwOVJyalNkeWlwNUNQTGE2TjNVOXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNDk5Mzg4CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmFWdGc1czlXcjdtTDh4N1ozQnJDQ2hBVVN3OWRyUStOeUc3TDRhQUE0MFpLdVdlZGxSTE5La3ptNnBWbVpHSm54K29NRC81RWl5YWJodm9OVjZLMEJBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.27/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVRXN1VBTkI3ZjNnM0ZHMDNoQ2JudjQyemMzWkc0Ylg1YUI4N05XOWYyaS8zYjBibEwwVy9tMzJKcnIyVzNLWXpFK0VydUZxT3MyTVJvUEcxbmorWlFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNjMzMzI2CWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CjJtZkhackRWRHhFMk5FRnNwUU0xYXpRaWVrSk14bkhMalk0VWhsWFFPdHJQZEhZZHlIVVhvU25LZzRrV3BJMDRsY3gzZXRFT05nTnJOMVZjOGpWNERBPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.28/Sikemux.app.tar.gz"
     }
   }
 }
