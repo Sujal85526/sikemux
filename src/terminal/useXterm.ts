@@ -112,6 +112,8 @@ export function useXterm(opts: {
             const channel = new Channel<number[]>();
             let outputFrame: number | null = null;
             let outputBusy = false;
+            let closing = false;
+            let finalized = false;
             let replayScrollState = initialReplayScrollState();
             let initialReplayOutputPending = false;
             const outputPending: Uint8Array[] = [];
@@ -137,9 +139,20 @@ export function useXterm(opts: {
             viewport?.addEventListener("pointerdown", onUserViewportGesture);
             terminalElement?.addEventListener("touchstart", onUserViewportGesture, { capture: true, passive: true });
             terminalElement?.addEventListener("keydown", onViewportKeyDown, { capture: true });
+            const finalizeCleanup = () => {
+                if (finalized || outputBusy || outputPending.length > 0) return;
+                finalized = true;
+                try {
+                    serializedNormalRef.current = serializeNormalBuffer(serializer, pid, SCROLLBACK);
+                } catch (error) {
+                    serializedNormalRef.current = null;
+                    console.warn("terminal normal-buffer serialization failed", error);
+                }
+                term.dispose();
+            };
             const flushOutput = () => {
                 outputFrame = null;
-                if (disposed || outputBusy || outputPending.length === 0) return;
+                if ((disposed && !closing) || outputBusy || outputPending.length === 0) return;
                 const completesInitialReplay = initialReplayOutputPending;
                 initialReplayOutputPending = false;
                 let total = 0;
@@ -158,7 +171,12 @@ export function useXterm(opts: {
                         replayScrollState = completion.state;
                         if (completion.shouldScrollToBottom && !disposed) term.scrollToBottom();
                     }
-                    if (outputPending.length > 0) scheduleOutput();
+                    if (outputPending.length > 0) {
+                        if (closing) flushOutput();
+                        else scheduleOutput();
+                    } else if (closing) {
+                        finalizeCleanup();
+                    }
                 });
             };
             const scheduleOutput = () => {
@@ -281,13 +299,9 @@ export function useXterm(opts: {
             if (activeRef.current) term.focus();
 
             cleanup = () => {
+                if (closing) return;
+                closing = true;
                 resizeRef.current = () => {};
-                try {
-                    serializedNormalRef.current = serializeNormalBuffer(serializer, pid, SCROLLBACK);
-                } catch (error) {
-                    serializedNormalRef.current = null;
-                    console.warn("terminal normal-buffer serialization failed", error);
-                }
                 unregisterTheme();
                 ro.disconnect();
                 viewport?.removeEventListener("pointerdown", onUserViewportGesture);
@@ -295,12 +309,15 @@ export function useXterm(opts: {
                 terminalElement?.removeEventListener("keydown", onViewportKeyDown, { capture: true });
                 dataSub.dispose();
                 if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
+                outputFrame = null;
                 if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);
-                outputPending.length = 0;
                 pending.length = 0;
+                channel.onmessage = () => {};
                 void invoke("pty_unsubscribe", { id: pid, subId });
-                term.dispose();
                 termRef.current = null;
+                if (outputBusy) return;
+                if (outputPending.length > 0) flushOutput();
+                else finalizeCleanup();
             };
         };
 

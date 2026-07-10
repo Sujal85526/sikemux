@@ -332,6 +332,13 @@ fn ensure_sweeper(app: AppHandle) {
                 // alternate buffer can destroy the saved normal buffer that
                 // 1049l is expected to restore.
                 if let Ok(mut parser) = pty.parser.lock() {
+                    // Output records activity before taking this lock. Re-read
+                    // it here so bytes that raced the optimistic check above
+                    // cannot be immediately compacted back to 2,000 rows.
+                    let last = pty.last_activity_ms.load(Ordering::Relaxed);
+                    if now.saturating_sub(last) < IDLE_TRIM.as_millis() as u64 {
+                        continue;
+                    }
                     // `pty_attach` takes parser -> subscribers in this same
                     // order. Re-check under the parser lock so an attach that
                     // raced the optimistic check above cannot receive a
@@ -699,7 +706,7 @@ pub fn pty_attach(
     })
 }
 
-const RESET_MODES: &[u8] = b"\x1b>\x1b[?1l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?2004l\x1b[?1049l";
+const RESET_MODES: &[u8] = b"\x1b>\x1b[4l\x1b[?1l\x1b[?6l\x1b[?7h\x1b[?9l\x1b[?45l\x1b[?66l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?2004l\x1b[?1049l";
 
 #[tauri::command]
 pub fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
