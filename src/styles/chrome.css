@@ -660,19 +660,30 @@
 }
 .terminal-host .xterm-viewport {
     overscroll-behavior: contain;
-    scrollbar-width: none;
+    scrollbar-width: thin;
     scrollbar-color: transparent transparent;
 }
+.terminal-host .xterm-viewport:hover {
+    scrollbar-color: var(--ink-faint) transparent;
+}
 .terminal-host .xterm-viewport::-webkit-scrollbar {
-    width: 0;
-    height: 0;
+    width: 4px;
+    height: 4px;
 }
 .terminal-host .xterm-viewport::-webkit-scrollbar-track,
-.terminal-host .xterm-viewport::-webkit-scrollbar-corner,
-.terminal-host .xterm-viewport::-webkit-scrollbar-thumb,
-.terminal-host .xterm-viewport::-webkit-scrollbar-thumb:hover {
+.terminal-host .xterm-viewport::-webkit-scrollbar-corner {
     background: transparent;
     border: none;
+}
+.terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 2px;
+}
+.terminal-host .xterm-viewport:hover::-webkit-scrollbar-thumb {
+    background: var(--ink-faint);
+}
+.terminal-host .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-dim);
 }
 
 .divider {

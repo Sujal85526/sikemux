@@ -332,6 +332,17 @@ fn ensure_sweeper(app: AppHandle) {
                 // alternate buffer can destroy the saved normal buffer that
                 // 1049l is expected to restore.
                 if let Ok(mut parser) = pty.parser.lock() {
+                    // `pty_attach` takes parser -> subscribers in this same
+                    // order. Re-check under the parser lock so an attach that
+                    // raced the optimistic check above cannot receive a
+                    // snapshot and then have its backing parser compacted.
+                    let has_subs = match pty.subscribers.lock() {
+                        Ok(s) => !s.is_empty(),
+                        Err(_) => true,
+                    };
+                    if has_subs {
+                        continue;
+                    }
                     if compact_parser_for_idle(&mut parser) {
                         // Publish the capacity change while still holding the
                         // parser lock. The reader clears this flag and grows
@@ -688,7 +699,7 @@ pub fn pty_attach(
     })
 }
 
-const RESET_MODES: &[u8] = b"\x1b[?1l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?2004l\x1b[?1049l";
+const RESET_MODES: &[u8] = b"\x1b>\x1b[?1l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?2004l\x1b[?1049l";
 
 #[tauri::command]
 pub fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
@@ -698,6 +709,26 @@ pub fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()>
         .ok_or(AppError::BadArg("pty not found"))?;
     let mut parser = pty.parser.lock().map_err(pty_err)?;
     parser.process(RESET_MODES);
+    // Queue the exact same bytes to every attached xterm while the parser
+    // lock is still held. The reader cannot process and broadcast newer PTY
+    // output until this reset is queued, so frontend and backend mode state
+    // cannot be reordered around a concurrent child write.
+    let mut dead = Vec::new();
+    {
+        let subscribers = pty.subscribers.lock().map_err(pty_err)?;
+        for (sub_id, channel) in subscribers.iter() {
+            if channel.send(RESET_MODES.to_vec()).is_err() {
+                dead.push(*sub_id);
+            }
+        }
+    }
+    drop(parser);
+    if !dead.is_empty() {
+        let mut subscribers = pty.subscribers.lock().map_err(pty_err)?;
+        for sub_id in dead {
+            subscribers.remove(&sub_id);
+        }
+    }
     Ok(())
 }
 
@@ -755,7 +786,10 @@ pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16)
 
 #[cfg(test)]
 mod tests {
-    use super::{attach_snapshot, PARSER_SCROLLBACK};
+    use super::{
+        attach_snapshot, compact_parser_for_idle, reseed_parser, AttachResult, IDLE_SCROLLBACK,
+        PARSER_SCROLLBACK, RESET_MODES,
+    };
 
     #[test]
     fn snapshot_round_trips_visible_state() {
@@ -864,6 +898,124 @@ mod tests {
 
         assert!(b.screen().alternate_screen());
         assert_eq!(b.screen().contents(), a.screen().contents());
+    }
+
+    #[test]
+    fn attach_snapshot_has_exact_history_continuity_without_blank_hole() {
+        let mut source = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        for i in 0..30 {
+            source.process(format!("line {i:02}\r\n").as_bytes());
+        }
+
+        let mut restored = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        restored.process(&attach_snapshot(source.screen()));
+
+        let source_screen = source.screen_mut();
+        source_screen.set_scrollback(5);
+        let expected = source_screen.contents();
+        source_screen.set_scrollback(0);
+        let expected_viewport = source_screen.contents();
+
+        let screen = restored.screen_mut();
+        screen.set_scrollback(5);
+        let joined = screen.contents();
+        assert_eq!(joined, expected, "history-to-viewport boundary has a hole");
+        assert!(!joined.lines().any(|line| line.trim().is_empty()));
+        screen.set_scrollback(0);
+        assert_eq!(screen.contents(), expected_viewport);
+    }
+
+    #[test]
+    fn idle_compaction_retains_tail_and_modes() {
+        let mut parser = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        for i in 0..2_100 {
+            parser.process(format!("line {i:04}\r\n").as_bytes());
+        }
+        parser.process(b"\x1b[?1h\x1b[?2004h\x1b[?1002h\x1b[?1006h");
+
+        assert!(compact_parser_for_idle(&mut parser));
+        assert!(parser.screen().application_cursor());
+        assert!(parser.screen().bracketed_paste());
+        assert_eq!(
+            parser.screen().mouse_protocol_mode(),
+            vt100::MouseProtocolMode::ButtonMotion
+        );
+        assert_eq!(
+            parser.screen().mouse_protocol_encoding(),
+            vt100::MouseProtocolEncoding::Sgr
+        );
+        let screen = parser.screen_mut();
+        screen.set_scrollback(usize::MAX);
+        assert!(screen.scrollback() <= IDLE_SCROLLBACK);
+        assert!(screen.contents().contains("line 0100"));
+    }
+
+    #[test]
+    fn idle_compaction_skips_alternate_screen() {
+        let mut parser = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        parser.process(b"normal history\r\n\x1b[?1049halt screen");
+        let before = attach_snapshot(parser.screen());
+
+        assert!(!compact_parser_for_idle(&mut parser));
+        assert_eq!(attach_snapshot(parser.screen()), before);
+        assert!(parser.screen().alternate_screen());
+    }
+
+    #[test]
+    fn reseed_restores_full_future_scrollback_capacity() {
+        let mut parser = vt100::Parser::new(5, 20, IDLE_SCROLLBACK);
+        for i in 0..1_000 {
+            parser.process(format!("old {i:04}\r\n").as_bytes());
+        }
+        reseed_parser(&mut parser, PARSER_SCROLLBACK);
+        for i in 0..3_000 {
+            parser.process(format!("new {i:04}\r\n").as_bytes());
+        }
+
+        let screen = parser.screen_mut();
+        screen.set_scrollback(usize::MAX);
+        assert!(screen.scrollback() > IDLE_SCROLLBACK);
+        assert!(screen.contents().contains("old 0000"));
+    }
+
+    #[test]
+    fn attach_result_serializes_alternate_screen_camel_case() {
+        let value = serde_json::to_value(AttachResult {
+            sub_id: 7,
+            snapshot: Vec::new(),
+            alternate_screen: true,
+        })
+        .expect("serialize attach result");
+        assert_eq!(value["alternateScreen"], true);
+        assert!(value.get("alternate_screen").is_none());
+    }
+
+    #[test]
+    fn reset_modes_disables_interaction_modes_without_losing_normal_history() {
+        let mut parser = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        for i in 0..20 {
+            parser.process(format!("line {i:02}\r\n").as_bytes());
+        }
+        parser.process(
+            b"\x1b=\x1b[?1h\x1b[?9h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1005h\x1b[?1006h\x1b[?2004h\x1b[?1049halt",
+        );
+        parser.process(RESET_MODES);
+
+        assert!(!parser.screen().alternate_screen());
+        assert!(!parser.screen().application_keypad());
+        assert!(!parser.screen().application_cursor());
+        assert!(!parser.screen().bracketed_paste());
+        assert_eq!(
+            parser.screen().mouse_protocol_mode(),
+            vt100::MouseProtocolMode::None
+        );
+        assert_eq!(
+            parser.screen().mouse_protocol_encoding(),
+            vt100::MouseProtocolEncoding::Default
+        );
+        let screen = parser.screen_mut();
+        screen.set_scrollback(usize::MAX);
+        assert!(screen.contents().contains("line 00"));
     }
 
     #[test]

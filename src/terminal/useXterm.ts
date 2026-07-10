@@ -1,8 +1,17 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { currentTheme, registerTerminal } from "../themes/bus";
+import {
+    completeInitialReplay,
+    initialReplayScrollState,
+    noteUserViewportGesture,
+    replaySerializedNormalBuffer,
+    serializeNormalBuffer,
+    type SerializedNormalBuffer,
+} from "./sessionState";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_WEIGHT = 500;
@@ -23,6 +32,7 @@ const ALT_CHORDS: Record<string, string> = {
 interface AttachResult {
     subId: number;
     snapshot: number[];
+    alternateScreen: boolean;
 }
 
 export function useXterm(opts: {
@@ -41,6 +51,7 @@ export function useXterm(opts: {
     visibleRef.current = visible;
     const bootRef = useRef<() => void>(() => {});
     const resizeRef = useRef<() => void>(() => {});
+    const serializedNormalRef = useRef<SerializedNormalBuffer | null>(null);
 
     useEffect(() => {
         if (!shouldMount) return;
@@ -79,7 +90,9 @@ export function useXterm(opts: {
             });
             const unregisterTheme = registerTerminal(term);
             const fit = new FitAddon();
+            const serializer = new SerializeAddon();
             term.loadAddon(fit);
+            term.loadAddon(serializer);
             term.open(host);
             // Keep xterm on its default DOM renderer. The WebGL renderer is fast,
             // but in WKWebView it can leave stale atlas cells during high-churn
@@ -99,18 +112,36 @@ export function useXterm(opts: {
             const channel = new Channel<number[]>();
             let outputFrame: number | null = null;
             let outputBusy = false;
-            let forceScrollAfterReplay = true;
+            let replayScrollState = initialReplayScrollState();
+            let initialReplayOutputPending = false;
             const outputPending: Uint8Array[] = [];
             const encoder = new TextEncoder();
             const isAtBottom = () => {
                 const buf = term.buffer.active;
                 return buf.viewportY >= buf.baseY;
             };
+            const onUserViewportGesture = () => {
+                replayScrollState = noteUserViewportGesture(replayScrollState);
+            };
+            term.attachCustomWheelEventHandler(() => {
+                onUserViewportGesture();
+                return true;
+            });
+            const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
+            const terminalElement = term.element;
+            const onViewportKeyDown = (event: KeyboardEvent) => {
+                if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
+                    onUserViewportGesture();
+                }
+            };
+            viewport?.addEventListener("pointerdown", onUserViewportGesture);
+            terminalElement?.addEventListener("touchstart", onUserViewportGesture, { capture: true, passive: true });
+            terminalElement?.addEventListener("keydown", onViewportKeyDown, { capture: true });
             const flushOutput = () => {
                 outputFrame = null;
                 if (disposed || outputBusy || outputPending.length === 0) return;
-                const stickToBottom = forceScrollAfterReplay || isAtBottom();
-                forceScrollAfterReplay = false;
+                const completesInitialReplay = initialReplayOutputPending;
+                initialReplayOutputPending = false;
                 let total = 0;
                 for (const chunk of outputPending) total += chunk.length;
                 const merged = new Uint8Array(total);
@@ -122,7 +153,11 @@ export function useXterm(opts: {
                 outputBusy = true;
                 term.write(merged, () => {
                     outputBusy = false;
-                    if (stickToBottom && !disposed) term.scrollToBottom();
+                    if (completesInitialReplay) {
+                        const completion = completeInitialReplay(replayScrollState);
+                        replayScrollState = completion.state;
+                        if (completion.shouldScrollToBottom && !disposed) term.scrollToBottom();
+                    }
                     if (outputPending.length > 0) scheduleOutput();
                 });
             };
@@ -149,7 +184,7 @@ export function useXterm(opts: {
                 writeChunk(chunk);
             };
 
-            const { subId, snapshot } = await invoke<AttachResult>("pty_attach", {
+            const { subId, snapshot, alternateScreen } = await invoke<AttachResult>("pty_attach", {
                 id: pid,
                 onEvent: channel,
             });
@@ -160,10 +195,14 @@ export function useXterm(opts: {
                 bootingRef.current = false;
                 return;
             }
+            const serializedNormal = replaySerializedNormalBuffer(serializedNormalRef.current, pid, alternateScreen);
+            if (serializedNormal !== null) writeBytes(encoder.encode(serializedNormal));
             if (snapshot.length > 0) writeChunk(snapshot);
             snapshotApplied = true;
             for (const chunk of pending) writeChunk(chunk);
             pending.length = 0;
+            initialReplayOutputPending = outputPending.length > 0;
+            if (!initialReplayOutputPending) replayScrollState = completeInitialReplay(replayScrollState).state;
 
             let pendingInput = "";
             let scheduled = false;
@@ -184,6 +223,12 @@ export function useXterm(opts: {
 
             term.attachCustomKeyEventHandler((e) => {
                 if (e.type !== "keydown") return true;
+                if (e.code === "KeyR" && e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey) {
+                    void invoke("pty_reset_modes", { id: pid });
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
                 if (e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
                     void invoke("pty_write", { id: pid, data: "\x1b[13;2u" });
                     e.preventDefault();
@@ -230,23 +275,6 @@ export function useXterm(opts: {
             const ro = new ResizeObserver(resize);
             ro.observe(host);
 
-            const onWheel = (e: WheelEvent) => {
-                // Some agent TUIs run in the alternate screen without enabling
-                // terminal mouse tracking. In that state xterm has no native
-                // scrollback to move, so trackpad/wheel gestures can feel
-                // "stuck". Translate the gesture into cursor-key movement only
-                // when the TUI has not requested real mouse events; otherwise
-                // leave xterm's built-in mouse reporting alone.
-                if (e.defaultPrevented || term.buffer.active.type !== "alternate" || term.modes.mouseTrackingMode !== "none") return;
-                if (Math.abs(e.deltaY) < Math.abs(e.deltaX) || e.deltaY === 0) return;
-                e.preventDefault();
-                const units = Math.max(1, Math.min(6, Math.ceil(Math.abs(e.deltaY) / 40)));
-                const up = e.deltaY < 0;
-                const seq = term.modes.applicationCursorKeysMode ? (up ? "\x1bOA" : "\x1bOB") : up ? "\x1b[A" : "\x1b[B";
-                void invoke("pty_write", { id: pid, data: seq.repeat(units) });
-            };
-            host.addEventListener("wheel", onWheel, { passive: false });
-
             termRef.current = term;
             bootingRef.current = false;
             if (visibleRef.current) window.requestAnimationFrame(resize);
@@ -254,9 +282,17 @@ export function useXterm(opts: {
 
             cleanup = () => {
                 resizeRef.current = () => {};
+                try {
+                    serializedNormalRef.current = serializeNormalBuffer(serializer, pid, SCROLLBACK);
+                } catch (error) {
+                    serializedNormalRef.current = null;
+                    console.warn("terminal normal-buffer serialization failed", error);
+                }
                 unregisterTheme();
                 ro.disconnect();
-                host.removeEventListener("wheel", onWheel);
+                viewport?.removeEventListener("pointerdown", onUserViewportGesture);
+                terminalElement?.removeEventListener("touchstart", onUserViewportGesture, { capture: true });
+                terminalElement?.removeEventListener("keydown", onViewportKeyDown, { capture: true });
                 dataSub.dispose();
                 if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
                 if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);

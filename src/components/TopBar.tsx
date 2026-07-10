@@ -161,10 +161,16 @@ function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
                 <>
                     <div className="env-dd-scrim" onClick={() => setMenuOpen(false)} />
                     <div className="env-dd-menu tb-deploy-menu" role="menu" aria-label="Rundeck actions">
-                        <button className="env-dd-item" role="menuitem" onClick={deployBranch} disabled={!!repo && repoStatus.status === "loading" && !currentBranch}>
+                        <button
+                            className="env-dd-item"
+                            role="menuitem"
+                            onClick={deployBranch}
+                            disabled={!!repo && repoStatus.status === "loading" && !currentBranch}>
                             <IconRundeck size={12} />
                             <span>{repo && !currentBranch ? "deploy (loading branch…)" : "deploy"}</span>
-                            {currentBranch && <span className={`tb-deploy-menu-branch rnd-branch-${branchKind(currentBranch)}`}>{currentBranch}</span>}
+                            {currentBranch && (
+                                <span className={`tb-deploy-menu-branch rnd-branch-${branchKind(currentBranch)}`}>{currentBranch}</span>
+                            )}
                         </button>
                         {repo && loc.branch && (
                             <button
