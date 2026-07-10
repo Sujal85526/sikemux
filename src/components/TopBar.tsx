@@ -120,10 +120,12 @@ function envDotKind(name: string | null): string {
 
 function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
     const k = branchKind(loc.branch);
+    const repoStatus = useResourceEnabled(!!repo, gitStatusR, repo ?? "");
+    const currentBranch = repoStatus.data?.branch.trim() ?? "";
     const [checkingOut, setCheckingOut] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const deployBranch = () => {
-        cmd.openRundeckDeploy({ project: loc.project, service: loc.service, jobId: loc.jobId, group: loc.group, branch: loc.branch ?? "" });
+        cmd.openRundeckDeploy({ project: loc.project, service: loc.service, jobId: loc.jobId, group: loc.group, branch: currentBranch });
         setMenuOpen(false);
     };
     const checkoutBranch = () => {
@@ -159,10 +161,10 @@ function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
                 <>
                     <div className="env-dd-scrim" onClick={() => setMenuOpen(false)} />
                     <div className="env-dd-menu tb-deploy-menu" role="menu" aria-label="Rundeck actions">
-                        <button className="env-dd-item" role="menuitem" onClick={deployBranch}>
+                        <button className="env-dd-item" role="menuitem" onClick={deployBranch} disabled={!!repo && repoStatus.status === "loading" && !currentBranch}>
                             <IconRundeck size={12} />
-                            <span>deploy</span>
-                            {loc.branch && <span className={`tb-deploy-menu-branch rnd-branch-${k}`}>{loc.branch}</span>}
+                            <span>{repo && !currentBranch ? "deploy (loading branch…)" : "deploy"}</span>
+                            {currentBranch && <span className={`tb-deploy-menu-branch rnd-branch-${branchKind(currentBranch)}`}>{currentBranch}</span>}
                         </button>
                         {repo && loc.branch && (
                             <button

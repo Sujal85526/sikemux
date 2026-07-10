@@ -327,17 +327,19 @@ fn ensure_sweeper(app: AppHandle) {
                     // through right now.
                     continue;
                 }
-                // Re-seed the parser at the smaller scrollback. The
-                // round-trip-via-contents_formatted invariant is exercised
-                // by the test below.
+                // Re-seed the parser at the smaller scrollback. Alternate
+                // screen applications must not be compacted: rebuilding an
+                // alternate buffer can destroy the saved normal buffer that
+                // 1049l is expected to restore.
                 if let Ok(mut parser) = pty.parser.lock() {
-                    let (rows, cols) = parser.screen().size();
-                    let snapshot = parser.screen().contents_formatted();
-                    let mut fresh = vt100::Parser::new(rows, cols, IDLE_SCROLLBACK);
-                    fresh.process(&snapshot);
-                    *parser = fresh;
+                    if compact_parser_for_idle(&mut parser) {
+                        // Publish the capacity change while still holding the
+                        // parser lock. The reader clears this flag and grows
+                        // the parser under the same lock before processing its
+                        // first new bytes, so no output can land in between.
+                        pty.trimmed.store(true, Ordering::Release);
+                    }
                 }
-                pty.trimmed.store(true, Ordering::Relaxed);
             }
         }
     });
@@ -480,11 +482,13 @@ pub async fn pty_spawn(
             pty_reader
                 .last_activity_ms
                 .store(now_ms(), Ordering::Relaxed);
-            pty_reader.trimmed.store(false, Ordering::Relaxed);
             let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
                 let Ok(mut parser) = pty_reader.parser.lock() else {
                     break;
                 };
+                if pty_reader.trimmed.swap(false, Ordering::AcqRel) {
+                    reseed_parser(&mut parser, PARSER_SCROLLBACK);
+                }
                 parser.process(bytes);
                 match pty_reader.subscribers.lock() {
                     Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
@@ -575,6 +579,7 @@ pub fn pty_unsubscribe(manager: State<'_, PtyManager>, id: u32, sub_id: u32) -> 
 pub struct AttachResult {
     pub sub_id: u32,
     pub snapshot: Vec<u8>,
+    pub alternate_screen: bool,
 }
 
 fn screen_scrollback_len(screen: &vt100::Screen) -> usize {
@@ -619,9 +624,33 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
             }
             start += take;
         }
+
+        // Move the replay cursor far enough that state_formatted's viewport
+        // repaint does not overwrite the newest history rows. Without this
+        // separator, a fresh parser has a rows-1 hole between the replayed
+        // history and the restored live viewport.
+        for _ in 1..rows {
+            snapshot.extend_from_slice(b"\r\n");
+        }
     }
     snapshot.extend(screen.state_formatted());
     snapshot
+}
+
+fn reseed_parser(parser: &mut vt100::Parser, scrollback: usize) {
+    let (rows, cols) = parser.screen().size();
+    let snapshot = attach_snapshot(parser.screen());
+    let mut fresh = vt100::Parser::new(rows, cols, scrollback);
+    fresh.process(&snapshot);
+    *parser = fresh;
+}
+
+fn compact_parser_for_idle(parser: &mut vt100::Parser) -> bool {
+    if parser.screen().alternate_screen() {
+        return false;
+    }
+    reseed_parser(parser, IDLE_SCROLLBACK);
+    true
 }
 
 /// Atomic snapshot + subscribe. The parser lock is held while we both
@@ -645,13 +674,31 @@ pub fn pty_attach(
         .get(&id)
         .ok_or(AppError::BadArg("pty not found"))?;
     let parser = pty.parser.lock().map_err(pty_err)?;
+    let alternate_screen = parser.screen().alternate_screen();
     let snapshot = attach_snapshot(parser.screen());
     let mut subs = pty.subscribers.lock().map_err(pty_err)?;
     let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
     subs.insert(sub_id, on_event);
     drop(subs);
     drop(parser);
-    Ok(AttachResult { sub_id, snapshot })
+    Ok(AttachResult {
+        sub_id,
+        snapshot,
+        alternate_screen,
+    })
+}
+
+const RESET_MODES: &[u8] = b"\x1b[?1l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?2004l\x1b[?1049l";
+
+#[tauri::command]
+pub fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
+    let pty = manager
+        .ptys
+        .get(&id)
+        .ok_or(AppError::BadArg("pty not found"))?;
+    let mut parser = pty.parser.lock().map_err(pty_err)?;
+    parser.process(RESET_MODES);
+    Ok(())
 }
 
 #[tauri::command]

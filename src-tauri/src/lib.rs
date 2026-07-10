@@ -96,6 +96,7 @@ pub fn run() {
             pty::pty_attach,
             pty::pty_write,
             pty::pty_resize,
+            pty::pty_reset_modes,
             pty::pty_kill,
             system::home_dir,
             system::recent_dirs,
