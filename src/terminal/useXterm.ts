@@ -12,6 +12,7 @@ import {
     serializeNormalBuffer,
     type SerializedNormalBuffer,
 } from "./sessionState";
+import { alternateScreenWheelFallbackSequence } from "./wheelNavigation";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_WEIGHT = 500;
@@ -129,6 +130,24 @@ export function useXterm(opts: {
                 onUserViewportGesture();
                 return true;
             });
+            const onWheel = (event: WheelEvent) => {
+                const sequence = alternateScreenWheelFallbackSequence({
+                    defaultPrevented: event.defaultPrevented,
+                    bufferType: term.buffer.active.type,
+                    mouseTrackingMode: term.modes.mouseTrackingMode,
+                    applicationCursorKeysMode: term.modes.applicationCursorKeysMode,
+                    deltaX: event.deltaX,
+                    deltaY: event.deltaY,
+                });
+                if (sequence === null) return;
+
+                // Alternate-screen TUIs have no xterm scrollback. xterm turns
+                // wheel gestures into cursor keys, but tiny trackpad deltas can
+                // round down to zero; guarantee movement in that fallback case.
+                event.preventDefault();
+                void invoke("pty_write", { id: pid, data: sequence });
+            };
+            host.addEventListener("wheel", onWheel, { passive: false });
             const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
             const terminalElement = term.element;
             const onViewportKeyDown = (event: KeyboardEvent) => {
@@ -304,6 +323,7 @@ export function useXterm(opts: {
                 resizeRef.current = () => {};
                 unregisterTheme();
                 ro.disconnect();
+                host.removeEventListener("wheel", onWheel);
                 viewport?.removeEventListener("pointerdown", onUserViewportGesture);
                 terminalElement?.removeEventListener("touchstart", onUserViewportGesture, { capture: true });
                 terminalElement?.removeEventListener("keydown", onViewportKeyDown, { capture: true });
