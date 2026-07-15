@@ -1,11 +1,11 @@
 {
-  "version": "0.1.29",
-  "notes": "Hotfix: vendor libgit2 so updated macOS apps launch without Homebrew library dependencies.",
-  "pub_date": "2026-07-09T21:50:44Z",
+  "version": "0.1.30",
+  "notes": "Fix terminal session continuity and scrollback across pane reattach, including reliable trackpad navigation in Codex and Pi alternate-screen TUIs.",
+  "pub_date": "2026-07-15T21:56:04Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWZiSkF4aEYxdnI2M0g0Wk9xVEE1c1RBM25EZzFvWnp2L0ZPeTVhZmpIdWZJZmNXRTFmUlJucHRyQlBpd3g5R1MyTXJ2OVZ2WFlOMk83Y0pFT1J1ZmdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNjMzODQxCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6Cm1ML1JuTTdtbnJTei9yRmNHM3VwOC9JeS9OV1RoMjdiaGk2S2xJWWZnbi9nR0w2SFc0TnZUYkdLQndFU2hBaUlBVW1LYzNwZWxUSjZnenVZZlc1ZkJRPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.29/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVFoYWxZekVuK0dWT0plNkRrV1dSTGdyamY0bi9WRTczeEg0dkxLWHp5eWUrcFVnUjNoOTRRdWlMWWROQjdFcnk1a3NiNVRnbkhOUkpEa09xY01JWEE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0MTUyNTMxCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmdnaUQxNEdiUHNRVEJGelFiU2xDZER3OFVzbEd1dlZNM09ZOFA4V3NZSHNabXhCTzBKYXVpTXBjdEpCanROM3RidmtkVXlXZWVjbktFcUNGUnVVTEFBPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.30/Sikemux.app.tar.gz"
     }
   }
 }
