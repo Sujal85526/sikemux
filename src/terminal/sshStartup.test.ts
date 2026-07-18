@@ -10,6 +10,7 @@ describe("sshStartup", () => {
         expect(startup).toContain('if [ "$sikemux_ssh_retries" -ge 5 ]; then');
         expect(startup).toContain("Retrying (%s/5)");
         expect(startup).toContain("sleep 3 || break");
+        expect(startup).not.toMatch(/[\r\n]/);
     });
 
     it("quotes SSH aliases before passing them to the shell", () => {

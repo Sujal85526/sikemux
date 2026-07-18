@@ -172,10 +172,11 @@ function layoutIds(root: Window["root"]): { all: string[]; panes: string[] } {
     return { all, panes };
 }
 
-/** Upgrade SSH sessions saved before reconnect support was added. */
+/** Upgrade saved SSH startups, including the briefly shipped multiline form. */
 function upgradeSshStartup(root: Window["root"], alias: string): Window["root"] {
     if (root.type === "pane") {
-        return root.kind === "terminal" && root.startup === `ssh ${alias}` ? { ...root, startup: sshStartup(alias) } : root;
+        const needsUpgrade = root.startup === `ssh ${alias}` || root.startup?.includes("sikemux_ssh_retries");
+        return root.kind === "terminal" && needsUpgrade ? { ...root, startup: sshStartup(alias) } : root;
     }
     const children = root.children.map((child) => upgradeSshStartup(child, alias));
     return children.some((child, i) => child !== root.children[i]) ? { ...root, children } : root;
