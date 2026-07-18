@@ -13,6 +13,7 @@ import {
     type SerializedNormalBuffer,
 } from "./sessionState";
 import { alternateScreenWheelFallbackSequence } from "./wheelNavigation";
+import { needsTerminalRedraw } from "./redraw";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_WEIGHT = 500;
@@ -185,6 +186,12 @@ export function useXterm(opts: {
                 outputBusy = true;
                 term.write(merged, () => {
                     outputBusy = false;
+                    if (needsTerminalRedraw(merged)) {
+                        // zsh-autosuggestions erases then redraws the input line.
+                        // Force a complete canvas pass so transparent WKWebView
+                        // terminals cannot retain the previous suggestion glyphs.
+                        term.refresh(0, term.rows - 1);
+                    }
                     if (completesInitialReplay) {
                         const completion = completeInitialReplay(replayScrollState);
                         replayScrollState = completion.state;
