@@ -19,13 +19,20 @@ import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { hcl, makefile } from "./langs";
 import type { Extension } from "@codemirror/state";
+import { tags as t } from "@lezer/highlight";
+
+const propertiesMode = {
+    ...properties,
+    languageData: { commentTokens: { line: "#" } },
+    tokenTable: { quote: t.string },
+};
 
 export function languageFor(path: string): Extension[] {
     const file = path.split("/").pop()?.toLowerCase() ?? "";
     if (file === "makefile" || file === "gnumakefile" || file.endsWith(".mk")) return [StreamLanguage.define(makefile)];
     if (file === "dockerfile" || file.startsWith("dockerfile.")) return [StreamLanguage.define(dockerFile)];
     // dotenv: .env, .env.local, .env.production, .env.example, etc.
-    if (file === ".env" || file.startsWith(".env.")) return [StreamLanguage.define(properties)];
+    if (file === ".env" || file.startsWith(".env.")) return [StreamLanguage.define(propertiesMode)];
 
     const ext = file.includes(".") ? file.split(".").pop()! : "";
     switch (ext) {
@@ -91,7 +98,7 @@ export function languageFor(path: string): Extension[] {
         case "ini":
         case "env":
         case "properties":
-            return [StreamLanguage.define(properties)];
+            return [StreamLanguage.define(propertiesMode)];
         default:
             return [];
     }
