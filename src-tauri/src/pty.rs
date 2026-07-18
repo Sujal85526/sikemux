@@ -262,6 +262,15 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
+/// Execute startup commands before the interactive shell is launched. Sending
+/// text to readline makes it visible in the terminal (and multi-line commands
+/// are especially fragile), so startup must be a shell argument, never PTY
+/// input. Once it returns, replace the bootstrap shell with the normal local
+/// shell so users always land at a usable prompt.
+fn startup_bootstrap(startup: &str) -> String {
+    format!("{startup}\nexec \"$SIKEMUX_SHELL\"")
+}
+
 /// Drive a non-blocking write to completion against a tokio `AsyncFd`.
 /// Loops on EAGAIN via the readiness machinery; returns once every byte
 /// has been written or the kernel reports an I/O error.
@@ -381,11 +390,16 @@ pub async fn pty_spawn(
         .map_err(pty_err)?;
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let mut cmd = CommandBuilder::new(shell);
+    let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
     let cwd = cwd.unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".into()));
     let startup = startup.filter(|s| !s.is_empty());
     cmd.cwd(cwd);
+    if let Some(startup) = startup.as_deref() {
+        cmd.env("SIKEMUX_SHELL", &shell);
+        cmd.arg("-c");
+        cmd.arg(startup_bootstrap(startup));
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
     let child = SpawnedChildGuard::new(child);
@@ -452,12 +466,6 @@ pub async fn pty_spawn(
     // non-blocking read. WouldBlock just loops back to `readable().await`
     // after clearing the readiness flag, so we never busy-spin.
     //
-    // First-output gate for `startup`: the shell's first byte of output
-    // is its prompt (rcs run silently then print the PS1). Writing the
-    // startup command at that moment means it lands when readline is
-    // actually accepting input — replaces the previous frontend
-    // setTimeout(350ms) which was a race dressed as a delay.
-    //
     // Atomicity invariant (vs `pty_attach`): a freshly-attached subscriber
     // must see EXACTLY the bytes NOT present in the snapshot it got back.
     // We achieve that by, under the parser lock:
@@ -472,14 +480,12 @@ pub async fn pty_spawn(
     // bounded.
     let pty_reader = pty.clone();
     let app_reader = app.clone();
-    let mut startup_pending = startup;
     tokio::spawn(async move {
         let mut buf = [0u8; 65536];
         loop {
             // Read off the single master fd. The readiness guard is scoped
-            // tight and dropped before we touch the parser or inject the
-            // startup line, so the same `AsyncFd`'s writable() side stays
-            // free for a concurrent `pty_write`.
+            // tight and dropped before we touch the parser, so the same
+            // `AsyncFd`'s writable() side stays free for a concurrent write.
             let n = {
                 let mut guard = match pty_reader.io.readable().await {
                     Ok(g) => g,
@@ -528,14 +534,6 @@ pub async fn pty_spawn(
                         }
                     }
                 }
-            }
-            // First-output gate: shell has printed its prompt and reached
-            // the read loop; safe to inject startup. Serialised behind the
-            // same write_lock as pty_write so bytes can't interleave.
-            if let Some(line) = startup_pending.take() {
-                let _g = pty_reader.write_lock.lock().await;
-                let payload = format!("{line}\r");
-                let _ = write_all_async(&pty_reader.io, payload.as_bytes()).await;
             }
         }
         // Notify on EOF — empty payload is the frontend's "process exited"
@@ -794,8 +792,8 @@ pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16)
 #[cfg(test)]
 mod tests {
     use super::{
-        attach_snapshot, compact_parser_for_idle, reseed_parser, AttachResult, IDLE_SCROLLBACK,
-        PARSER_SCROLLBACK, RESET_MODES,
+        attach_snapshot, compact_parser_for_idle, reseed_parser, startup_bootstrap, AttachResult,
+        IDLE_SCROLLBACK, PARSER_SCROLLBACK, RESET_MODES,
     };
 
     #[test]
@@ -1030,6 +1028,13 @@ mod tests {
         // If this number changes, update SCROLLBACK in TerminalPane.tsx
         // so reattach doesn't repaint a truncated history.
         assert_eq!(PARSER_SCROLLBACK, 10_000);
+    }
+
+    #[test]
+    fn startup_runs_before_the_interactive_shell_without_pty_input() {
+        let bootstrap = startup_bootstrap("ssh prod-db");
+        assert_eq!(bootstrap, "ssh prod-db\nexec \"$SIKEMUX_SHELL\"");
+        assert!(!bootstrap.contains('\r'));
     }
 
     // The load-bearing invariant of the single-fd PTY design: after we dup
