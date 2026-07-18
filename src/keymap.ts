@@ -3,13 +3,6 @@ import * as cmd from "./state/commands";
 import { emit } from "./state/bus";
 import { getState } from "./state/store";
 
-const WINDOW_KEYS: Record<string, string> = {
-    KeyI: "files",
-    KeyR: "term",
-    KeyG: "git",
-    KeyF: "search",
-};
-
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
     return !!target?.closest?.(".xterm");
@@ -162,16 +155,6 @@ export function useKeymap(): void {
                     break;
                 case "Backquote":
                     cmd.cycleSession(-1);
-                    break;
-                case "KeyI":
-                case "KeyR":
-                case "KeyG":
-                case "KeyF":
-                    cmd.selectWindowByName(WINDOW_KEYS[e.code]);
-                    break;
-                case "KeyC":
-                case "Slash":
-                    cmd.focusAgents();
                     break;
                 case "KeyY": {
                     const active = st.sessions[st.activeSessionId];

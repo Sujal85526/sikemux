@@ -93,17 +93,17 @@ Tiling pane splits with vim-style focus movement, fuzzy session picker, live upd
 
 ## Keyboard shortcuts
 
-| Key                 | Action                      |     | Key              | Action                    |
-| ------------------- | --------------------------- | --- | ---------------- | ------------------------- |
-| `⌥S`                | Open / create a session     |     | `⌥\` / `⌥-`      | Split pane (row / column) |
-| `⌥P`                | Open project                |     | `⌥H/J/K/L`       | Move focus between panes  |
-| `⌥⇧S`               | Connect SSH host            |     | `⌥⇧H/J/K/L`      | Resize active pane        |
-| `⌥A`                | Open AWS                    |     | `⌥Z`             | Zoom / unzoom pane        |
-| `⌥B`                | Open Bruno workspace        |     | `⌥W`             | Close focused pane        |
-| `⌥I / ⌥R / ⌥G / ⌥F` | Files / Term / Git / Search |     | `⌥Tab` / `⌥⇧Tab` | Cycle session / group     |
-| `⌥C` or `⌥/`        | Focus agents                |     | `⌥[` `⌥]`        | Prev / next window        |
-| `⌘P`                | File / request palette      |     | `⌘⇧F`            | Global search             |
-| `⌘,`                | Settings                    |     | `⌥Y`             | Toggle agent YOLO mode    |
+| Key       | Action                               |     | Key              | Action                    |
+| --------- | ------------------------------------ | --- | ---------------- | ------------------------- |
+| `⌥S`      | Open / create a session              |     | `⌥\` / `⌥-`      | Split pane (row / column) |
+| `⌥P`      | Open project                         |     | `⌥H/J/K/L`       | Move focus between panes  |
+| `⌥⇧S`     | Connect SSH host                     |     | `⌥⇧H/J/K/L`      | Resize active pane        |
+| `⌥A`      | Open AWS                             |     | `⌥Z`             | Zoom / unzoom pane        |
+| `⌥B`      | Open Bruno workspace                 |     | `⌥W`             | Close focused pane        |
+| `⌥1`–`⌥5` | Files / Term / Git / Agents / Search |     | `⌥Tab` / `⌥⇧Tab` | Cycle session / group     |
+| `⌥[` `⌥]` | Prev / next window                   |     | `⌥Y`             | Toggle agent YOLO mode    |
+| `⌘P`      | File / request palette               |     | `⌘⇧F`            | Global search             |
+| `⌘,`      | Settings                             |     |                  |                           |
 
 ## Installation
 

@@ -1199,7 +1199,7 @@ export function closeAgent(id: string): void {
 export function focusAgents(): void {
     // Agents only exist in project sessions. Other groups (bruno, aws, rundeck,
     // ssh, command) have no agents and no way back out of "agent" view, so the
-    // agent shortcuts (⌥/, ⌥C, ⌥4) are a no-op there.
+    // The agent pane shortcut (⌥4) is a no-op there.
     if (getState().sessions[getState().activeSessionId]?.kind !== "project") return;
     withActiveSession((d, session) => {
         const ids = d.agentsBySession[session.id] ?? [];

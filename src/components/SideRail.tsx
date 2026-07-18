@@ -124,23 +124,23 @@ export function SideRail() {
             icons: React.ReactNode[];
         };
         const children: SubRow[] = [
-            { role: "files", label: "Files", kbd: hint(ALT, "I"), title: `Files — ${hint(ALT, "I")}`, icons: [] },
+            { role: "files", label: "Files", kbd: hint(ALT, "1"), title: `Files — ${hint(ALT, "1")}`, icons: [] },
             {
                 role: "term",
                 label: "Term",
-                kbd: hint(ALT, "R"),
-                title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${hint(ALT, "R")}`,
+                kbd: hint(ALT, "2"),
+                title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${hint(ALT, "2")}`,
                 icons: termIcons,
             },
-            { role: "git", label: "Git", kbd: hint(ALT, "G"), title: `Git — ${hint(ALT, "G")}`, icons: [] },
+            { role: "git", label: "Git", kbd: hint(ALT, "3"), title: `Git — ${hint(ALT, "3")}`, icons: [] },
             {
                 role: "agents",
                 label: "Agents",
-                kbd: hint(ALT, "C"),
-                title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${hint(ALT, "C")}`,
+                kbd: hint(ALT, "4"),
+                title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${hint(ALT, "4")}`,
                 icons: agentIcons,
             },
-            { role: "search", label: "Search", kbd: hint(ALT, "F"), title: `Search — ${hint(ALT, "F")}`, icons: [] },
+            { role: "search", label: "Search", kbd: hint(ALT, "5"), title: `Search — ${hint(ALT, "5")}`, icons: [] },
         ];
 
         return (
