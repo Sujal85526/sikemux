@@ -188,6 +188,8 @@ pub fn run() {
             search::project_search_replace,
             search::read_file_window,
             ssh::ssh_hosts,
+            ssh::ssh_config_read,
+            ssh::ssh_config_write,
             aws::auth::aws_profiles,
             aws::auth::aws_caller_identity,
             aws::auth::aws_sso_login,

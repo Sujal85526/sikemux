@@ -141,6 +141,9 @@ export function useKeymap(): void {
                 case "KeyB":
                     cmd.openPicker("bruno");
                     break;
+                case "KeyT":
+                    cmd.focusCommandSession();
+                    break;
                 case "KeyE":
                     // Alt+E opens the environment picker for the active Bruno collection.
                     if (st.sessions[st.activeSessionId]?.kind === "bruno") cmd.openBrunoEnvPalette();

@@ -159,4 +159,35 @@ describe("frontend persistence", () => {
         expect(migrated).not.toContain("legacy-secret");
         expect(JSON.parse(migrated).version).toBe(4);
     });
+
+    it("upgrades saved SSH terminals to the reconnecting startup command", () => {
+        const sid = getState().activeSessionId;
+        const session = getState().sessions[sid];
+        const window = getState().windows[session.activeWindowId];
+
+        applyHydrate(
+            JSON.stringify({
+                version: 4,
+                sessions: [{ ...session, kind: "ssh", name: "prod-db" }],
+                windowsBySession: {
+                    [sid]: [
+                        {
+                            ...window,
+                            root: { ...window.root, startup: "ssh prod-db" },
+                        },
+                    ],
+                },
+                agentsBySession: {},
+                sessionOrder: [sid],
+                activeSessionId: sid,
+                prefs: {},
+            }),
+        );
+
+        const restored = getState().windows[session.activeWindowId].root;
+        expect(restored.type).toBe("pane");
+        if (restored.type === "pane") {
+            expect(restored.startup).toContain("Retrying (%s/5)");
+        }
+    });
 });

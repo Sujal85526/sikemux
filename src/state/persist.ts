@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { sshStartup } from "../terminal/sshStartup";
 import { isTheme } from "../themes";
 import { registerCustomThemes } from "../themes/bus";
 import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
@@ -169,6 +170,15 @@ function layoutIds(root: Window["root"]): { all: string[]; panes: string[] } {
     };
     walk(root);
     return { all, panes };
+}
+
+/** Upgrade SSH sessions saved before reconnect support was added. */
+function upgradeSshStartup(root: Window["root"], alias: string): Window["root"] {
+    if (root.type === "pane") {
+        return root.kind === "terminal" && root.startup === `ssh ${alias}` ? { ...root, startup: sshStartup(alias) } : root;
+    }
+    const children = root.children.map((child) => upgradeSshStartup(child, alias));
+    return children.some((child, i) => child !== root.children[i]) ? { ...root, children } : root;
 }
 
 function toSession(value: unknown): Session | null {
@@ -379,6 +389,7 @@ export function applyHydrate(raw: string): void {
             ids.all.forEach((id) => usedLayoutIds.add(id));
             windows[row.id] = {
                 ...row,
+                root: sessions[sid].kind === "ssh" ? upgradeSshStartup(row.root, sessions[sid].name) : row.root,
                 role: deriveRole(row),
                 activePaneId: ids.panes.includes(row.activePaneId) ? row.activePaneId : ids.panes[0],
             };

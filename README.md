@@ -103,7 +103,7 @@ Tiling pane splits with vim-style focus movement, fuzzy session picker, live upd
 | `⌥1`–`⌥5` | Files / Term / Git / Agents / Search |     | `⌥Tab` / `⌥⇧Tab` | Cycle session / group     |
 | `⌥[` `⌥]` | Prev / next window                   |     | `⌥Y`             | Toggle agent YOLO mode    |
 | `⌘P`      | File / request palette               |     | `⌘⇧F`            | Global search             |
-| `⌘,`      | Settings                             |     |                  |                           |
+| `⌘,`      | Settings                             |     | `⌥T`             | Focus command terminal    |
 
 ## Installation
 

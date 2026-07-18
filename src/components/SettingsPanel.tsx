@@ -10,10 +10,10 @@ import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconSave, IconT
 
 type Page = "general" | "appearance" | "cloud";
 
-const PAGES: { id: Page; name: string }[] = [
-    { id: "general", name: "general" },
-    { id: "appearance", name: "appearance" },
-    { id: "cloud", name: "cloud" },
+const PAGES: { id: Page; name: string; detail: string }[] = [
+    { id: "general", name: "General", detail: "Projects and discovery" },
+    { id: "appearance", name: "Appearance", detail: "Theme and window" },
+    { id: "cloud", name: "Cloud", detail: "Sign-in workspace" },
 ];
 
 export function SettingsPanel() {
@@ -42,47 +42,55 @@ export function SettingsPanel() {
     const pretty = (p: string) => prettyPath(p, home);
 
     return (
-        <div className="settings-pane">
+        <div className="settings-pane" role="dialog" aria-modal="true" aria-label="Settings">
             <div className="settings-frame">
                 <aside className="settings-rail">
                     <div className="settings-rail-head">
-                        <span className="settings-logo-mark">▶</span>
-                        <span className="settings-logo-text">sikemux</span>
-                        <span className="settings-logo-tag">settings</span>
+                        <span className="settings-logo-mark">S</span>
+                        <span>
+                            <span className="settings-logo-text">Sikemux</span>
+                            <span className="settings-logo-tag">Preferences</span>
+                        </span>
                     </div>
 
+                    <p className="settings-rail-intro">A calmer workspace starts here.</p>
+
                     <nav className="settings-rail-list">
-                        {PAGES.map((p, i) => (
+                        {PAGES.map((p) => (
                             <button
                                 key={p.id}
                                 className={`settings-rail-item${page === p.id ? " active" : ""}`}
                                 onClick={() => setPage(p.id)}
                                 type="button">
-                                <span className="settings-rail-num">{String(i + 1).padStart(2, "0")}</span>
                                 <span className="settings-rail-name">{p.name}</span>
+                                <span className="settings-rail-detail">{p.detail}</span>
                             </button>
                         ))}
                     </nav>
 
                     <div className="settings-rail-foot">
-                        <span className="settings-rail-path">~/.config/sikemux</span>
-                        <button className="settings-close" onClick={cmd.closeSettings} title="Close (Esc / ⌘,)" type="button">
-                            <IconClose size={11} /> close
+                        <span className="settings-rail-path">Changes save automatically</span>
+                        <button className="settings-close" onClick={cmd.closeSettings} title="Close settings (Esc / ⌘,)" type="button">
+                            <IconClose size={12} /> Done
                         </button>
                     </div>
                 </aside>
 
                 <div className="settings-main">
-                    <div className="settings-crumb">
-                        <div className="settings-crumb-path">
-                            <span>settings</span>
-                            <span className="crumb-sep">/</span>
-                            <span className="crumb-group">{page}</span>
+                    <header className="settings-topbar">
+                        <div>
+                            <span className="settings-topbar-kicker">Preferences</span>
+                            <span className="settings-topbar-title">Settings</span>
                         </div>
-                        <div className="settings-crumb-meta">
-                            autosave on · <kbd>⌘,</kbd> close
-                        </div>
-                    </div>
+                        <button
+                            className="settings-topbar-close"
+                            onClick={cmd.closeSettings}
+                            title="Close settings (Esc / ⌘,)"
+                            aria-label="Close settings"
+                            type="button">
+                            <IconClose size={14} />
+                        </button>
+                    </header>
 
                     <div className="settings-scroll">
                         {page === "general" && (
@@ -337,14 +345,28 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
         return (
             <div key={th.id} className={`settings-theme${active ? " active" : ""}${editing ? " editing" : ""}`}>
                 <button className="settings-theme-hit" onClick={() => cmd.setThemeId(th.id)} title={`Apply ${th.name}`} type="button">
-                    <div className="settings-theme-name">{th.name}</div>
-                    <div className="settings-swatches">
-                        <span style={{ background: th.terminal.red }} />
-                        <span style={{ background: th.terminal.green }} />
-                        <span style={{ background: th.terminal.yellow }} />
-                        <span style={{ background: th.terminal.blue }} />
-                        <span style={{ background: th.terminal.magenta }} />
-                        <span style={{ background: th.terminal.cyan }} />
+                    <div className="settings-theme-preview" style={{ background: th.editor.bg, color: th.editor.fg }}>
+                        <span className="settings-theme-preview-mark" style={{ color: th.chrome.acc }}>
+                            Aa
+                        </span>
+                        <span className="settings-theme-preview-code" style={{ color: th.highlight.comment }}>
+                            // make it yours
+                        </span>
+                        <span className="settings-theme-preview-accent" style={{ background: th.chrome.acc }} />
+                    </div>
+                    <div className="settings-theme-body">
+                        <div className="settings-theme-name-row">
+                            <span className="settings-theme-name">{th.name}</span>
+                            {active && <span className="settings-theme-current">Current</span>}
+                        </div>
+                        <div className="settings-swatches">
+                            <span style={{ background: th.terminal.red }} />
+                            <span style={{ background: th.terminal.green }} />
+                            <span style={{ background: th.terminal.yellow }} />
+                            <span style={{ background: th.terminal.blue }} />
+                            <span style={{ background: th.terminal.magenta }} />
+                            <span style={{ background: th.terminal.cyan }} />
+                        </div>
                     </div>
                 </button>
                 <div className="settings-theme-actions">
@@ -417,38 +439,49 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 </div>
             )}
 
-            <SettingsSection title="Window opacity" sub="0.00 transparent · 1.00 opaque.">
-                <div className="settings-knob-row">
-                    <input
-                        type="range"
-                        className="settings-slider"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={windowOpacity}
-                        onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
-                    />
-                    <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
-                </div>
-            </SettingsSection>
-
-            <SettingsSection title="Background blur" meta="px radius" sub="0 none · 20–40 frosted.">
-                <div className="settings-knob-row">
-                    <input
-                        type="range"
-                        className="settings-slider alt"
-                        min={0}
-                        max={60}
-                        step={1}
-                        value={Math.min(60, windowBlur)}
-                        onChange={(e) => cmd.setWindowBlur(parseInt(e.target.value, 10))}
-                    />
-                    <NumberField
-                        value={windowBlur}
-                        onCommit={(v) => cmd.setWindowBlur(Math.round(v))}
-                        format={(v) => String(Math.round(v))}
-                        suffix="px"
-                    />
+            <SettingsSection title="Window feel" sub="Tune the amount of glass without leaving this page.">
+                <div className="settings-control-stack">
+                    <div className="settings-control">
+                        <div className="settings-control-copy">
+                            <h3>Opacity</h3>
+                            <p>Solid at 1.00, translucent below it.</p>
+                        </div>
+                        <div className="settings-knob-row">
+                            <input
+                                type="range"
+                                className="settings-slider"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={windowOpacity}
+                                onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
+                            />
+                            <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
+                        </div>
+                    </div>
+                    <div className="settings-control">
+                        <div className="settings-control-copy">
+                            <h3>Background blur</h3>
+                            <p>0 is crisp; 20–40px gives a soft frosted effect.</p>
+                        </div>
+                        <div className="settings-knob-row">
+                            <input
+                                type="range"
+                                className="settings-slider alt"
+                                min={0}
+                                max={60}
+                                step={1}
+                                value={Math.min(60, windowBlur)}
+                                onChange={(e) => cmd.setWindowBlur(parseInt(e.target.value, 10))}
+                            />
+                            <NumberField
+                                value={windowBlur}
+                                onCommit={(v) => cmd.setWindowBlur(Math.round(v))}
+                                format={(v) => String(Math.round(v))}
+                                suffix="px"
+                            />
+                        </div>
+                    </div>
                 </div>
             </SettingsSection>
         </SettingsPage>

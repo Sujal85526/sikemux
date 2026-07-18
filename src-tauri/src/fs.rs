@@ -172,7 +172,7 @@ pub async fn write_file(path: String, content: String) -> AppResult<()> {
         .map_err(|e| AppError::Other(format!("write_file join: {e}")))?
 }
 
-fn write_file_atomic(path: PathBuf, content: &[u8]) -> AppResult<()> {
+pub(crate) fn write_file_atomic(path: PathBuf, content: &[u8]) -> AppResult<()> {
     // Preserve an existing symlink by replacing its resolved target instead
     // of replacing the symlink itself with a regular file.
     let target = fs::canonicalize(&path).unwrap_or(path);

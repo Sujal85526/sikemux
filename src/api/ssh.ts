@@ -27,4 +27,9 @@ export const sshApi = {
     invalidate: () => {
         cached = null;
     },
+    configRead: (): Promise<string> => invoke<string>("ssh_config_read"),
+    configWrite: async (content: string): Promise<void> => {
+        await invoke("ssh_config_write", { content });
+        cached = null;
+    },
 };

@@ -2,7 +2,20 @@ import type { ReactNode } from "react";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconAws, IconBruno, IconClose, IconCommand, IconFolder, IconPlus, IconRundeck, Logo, WindowIcon } from "./Icons";
+import {
+    AgentIcon,
+    IconAgent,
+    IconAws,
+    IconBruno,
+    IconClose,
+    IconCommand,
+    IconFolder,
+    IconPencil,
+    IconPlus,
+    IconRundeck,
+    Logo,
+    WindowIcon,
+} from "./Icons";
 import { ALT, Kbd, SHIFT, hint } from "./Kbd";
 import { UpdateChip, VersionChip } from "./TopBar";
 
@@ -223,6 +236,8 @@ export function SideRail() {
         add,
         addTitle,
         addKbd,
+        action,
+        actionTitle,
         emptyText,
     }: {
         label: string;
@@ -230,6 +245,8 @@ export function SideRail() {
         add?: () => void;
         addTitle?: string;
         addKbd?: string;
+        action?: () => void;
+        actionTitle?: string;
         emptyText: string;
     }) => (
         <div className="rail-group">
@@ -239,6 +256,11 @@ export function SideRail() {
                 {add && (
                     <span className="rail-group-actions">
                         {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
+                        {action && (
+                            <button className="rail-group-add" onClick={action} title={actionTitle} aria-label={actionTitle} type="button">
+                                <IconPencil size={11} />
+                            </button>
+                        )}
                         <button className="rail-group-add" onClick={add} title={addTitle}>
                             <IconPlus size={11} />
                         </button>
@@ -285,6 +307,8 @@ export function SideRail() {
                     add={() => cmd.openPicker("ssh")}
                     addTitle={`Connect to SSH host — ${hint(ALT, SHIFT, "S")}`}
                     addKbd={hint(ALT, SHIFT, "S")}
+                    action={cmd.openSshConfigEditor}
+                    actionTitle="Edit ~/.ssh/config"
                     emptyText="no ssh hosts"
                 />
                 <Group

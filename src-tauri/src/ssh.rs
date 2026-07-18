@@ -14,6 +14,11 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::error::{AppError, AppResult};
+use crate::fs::write_file_atomic;
+
+const SSH_CONFIG_MAX_BYTES: usize = 1024 * 1024;
+
 #[derive(Serialize)]
 pub struct SshHost {
     alias: String,
@@ -42,12 +47,16 @@ fn flush(
     }
 }
 
+fn config_path() -> AppResult<PathBuf> {
+    let home = std::env::var("HOME").map_err(|_| AppError::Fs("HOME is not set".into()))?;
+    Ok(PathBuf::from(home).join(".ssh/config"))
+}
+
 #[tauri::command]
 pub fn ssh_hosts() -> Vec<SshHost> {
-    let Ok(home) = std::env::var("HOME") else {
+    let Ok(path) = config_path() else {
         return Vec::new();
     };
-    let path = PathBuf::from(home).join(".ssh/config");
     let Ok(content) = fs::read_to_string(&path) else {
         return Vec::new();
     };
@@ -96,4 +105,38 @@ pub fn ssh_hosts() -> Vec<SshHost> {
     }
     flush(&mut out, &aliases, &hn, &user, port);
     out
+}
+
+/// Read the exact config file used by the SSH host picker. A missing config is
+/// a normal first-run state, so the editor opens with a blank buffer instead
+/// of making the caller handle an error.
+#[tauri::command]
+pub fn ssh_config_read() -> AppResult<String> {
+    let path = config_path()?;
+    match fs::read_to_string(path) {
+        Ok(content) => Ok(content),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Persist the user's SSH config atomically. This command intentionally takes
+/// no path argument: the editor may only write to ~/.ssh/config.
+#[tauri::command]
+pub fn ssh_config_write(content: String) -> AppResult<()> {
+    if content.len() > SSH_CONFIG_MAX_BYTES {
+        return Err(AppError::Fs(
+            "SSH config exceeds the 1 MB editor limit".into(),
+        ));
+    }
+    let path = config_path()?;
+    let ssh_dir = path
+        .parent()
+        .ok_or_else(|| AppError::Fs("invalid SSH config path".into()))?;
+    if !ssh_dir.exists() {
+        fs::create_dir_all(ssh_dir)?;
+        #[cfg(unix)]
+        fs::set_permissions(ssh_dir, std::os::unix::fs::PermissionsExt::from_mode(0o700))?;
+    }
+    write_file_atomic(path, content.as_bytes())
 }

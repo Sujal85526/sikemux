@@ -7,6 +7,7 @@
 @import "./styles/codemirror.css";
 @import "./styles/feedback.css";
 @import "./styles/settings.css";
+@import "./styles/ssh.css";
 @import "./styles/aws.css";
 @import "./styles/search.css";
 @import "./styles/rundeck.css";

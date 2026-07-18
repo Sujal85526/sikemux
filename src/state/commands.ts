@@ -9,6 +9,7 @@ import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname } from "../lib/paths";
 import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
+import { sshStartup } from "../terminal/sshStartup";
 import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
 import { emit } from "./bus";
 import { fetchResource, invalidate, peekResource } from "./resources";
@@ -213,6 +214,17 @@ export function createCommandSession(): void {
     });
 }
 
+export function focusCommandSession(): void {
+    mutate((d) => {
+        const commandId = d.sessionOrder.find((id) => d.sessions[id]?.kind === "command");
+        if (!commandId) return;
+        d.activeSessionId = commandId;
+        d.zoomedPaneId = null;
+        d.pickerOpen = false;
+        d.settingsOpen = false;
+    });
+}
+
 export function createSshSession(alias: string): void {
     mutate((d) => {
         const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === "ssh" && s.name === alias);
@@ -222,7 +234,7 @@ export function createSshSession(alias: string): void {
             d.activeSessionId = existing.id;
             return;
         }
-        const win = makeWindow("", alias, { startup: `ssh ${alias}`, role: "named" });
+        const win = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
         attachSession(d as unknown as StoreState, makeSession("ssh", alias, "", win.id), [win]);
     });
 }
@@ -1302,6 +1314,8 @@ export const closeBrunoEnvPalette = (): void => setState({ brunoEnvPaletteOpen: 
 export const openSettings = (): void => setState({ settingsOpen: true });
 export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));
+export const openSshConfigEditor = (): void => setState({ sshConfigEditorOpen: true });
+export const closeSshConfigEditor = (): void => setState({ sshConfigEditorOpen: false });
 export const toggleLeftRail = (): void => setState((s) => ({ leftRailOpen: !s.leftRailOpen }));
 export const toggleRightRail = (): void => setState((s) => ({ rightRailOpen: !s.rightRailOpen }));
 export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));

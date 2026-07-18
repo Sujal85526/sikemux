@@ -68,6 +68,7 @@ export interface ViewState {
     brunoReqPaletteOpen: boolean;
     brunoEnvPaletteOpen: boolean;
     settingsOpen: boolean;
+    sshConfigEditorOpen: boolean;
     awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
     zoomedPaneId: string | null;
 
@@ -165,6 +166,7 @@ export const useStore = create<StoreState>(() => {
         brunoReqPaletteOpen: false,
         brunoEnvPaletteOpen: false,
         settingsOpen: false,
+        sshConfigEditorOpen: false,
         awsAuthModal: null,
         zoomedPaneId: null,
         editorViews: {},
