@@ -1,11 +1,11 @@
 {
-  "version": "0.1.30",
-  "notes": "Fix terminal session continuity and scrollback across pane reattach, including reliable trackpad navigation in Codex and Pi alternate-screen TUIs.",
-  "pub_date": "2026-07-15T21:56:04Z",
+  "version": "0.1.31",
+  "notes": "Polish SSH workspace controls and reconnect reliability, fix terminal startup behavior and cleared zsh suggestion repainting, restore digit shortcuts for project panes, and improve dotenv comment highlighting.",
+  "pub_date": "2026-07-20T07:22:16Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaVFoYWxZekVuK0dWT0plNkRrV1dSTGdyamY0bi9WRTczeEg0dkxLWHp5eWUrcFVnUjNoOTRRdWlMWWROQjdFcnk1a3NiNVRnbkhOUkpEa09xY01JWEE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0MTUyNTMxCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CmdnaUQxNEdiUHNRVEJGelFiU2xDZER3OFVzbEd1dlZNM09ZOFA4V3NZSHNabXhCTzBKYXVpTXBjdEpCanROM3RidmtkVXlXZWVjbktFcUNGUnVVTEFBPT0K",
-      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.30/Sikemux.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSUFpJaEFXRTFFaWY3WVo1d3k3c2FFd2F5UUtYeEdLY3NuTCtXZVRsZ0hpUzdIdDVvVHRJRi9EVUZoTmlPbWRCdk8vSUQydzN0NFdMTUtmTzF2dU55YTk5YlUwZ1JtWEE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTMyMTMzCWZpbGU6U2lrZW11eC5hcHAudGFyLmd6CnBPZjVDMmVSTjI1Rjg2bXhHL2xOMk5JMkMyRStDYjVaMXBDeVB2UWR2ekZnR2dTSzJkSFN5RDNKTHpFRzdqRGZMb3k5eTJPQ01QUUViSCtnOWZ5NEFRPT0K",
+      "url": "https://github.com/nodelike/sikemux/releases/download/v0.1.31/Sikemux.app.tar.gz"
     }
   }
 }
