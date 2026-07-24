@@ -1,30 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import {
-    eventToKeybinding,
-    findKeybindingConflict,
-    KEYBINDING_ACTIONS,
-    KEYBINDING_CATEGORIES,
-    keybindingHasModifier,
-    keybindingLabel,
-    resolvedKeybinding,
-    type KeybindingActionId,
-    type KeybindingOverrides,
-} from "../keybindings";
+import type { ReactNode } from "react";
 import { settingsApi } from "../api/settings";
 import { prettyPath } from "../lib/paths";
+import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
-import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconRefresh, IconSave, IconTrash } from "./Icons";
+import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconSave, IconTrash } from "./Icons";
 
-type Page = "general" | "appearance" | "keybindings" | "cloud";
+type Page = "general" | "appearance" | "cloud";
 
 const PAGES: { id: Page; name: string; detail: string }[] = [
     { id: "general", name: "General", detail: "Projects and discovery" },
     { id: "appearance", name: "Appearance", detail: "Theme and window" },
-    { id: "keybindings", name: "Keybindings", detail: "Commands and navigation" },
     { id: "cloud", name: "Cloud", detail: "Sign-in workspace" },
 ];
 
@@ -36,10 +25,7 @@ export function SettingsPanel() {
     const windowBlur = useStore((s) => s.windowBlur);
     const cloudBrowser = useStore((s) => s.cloudBrowser);
     const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
-    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const home = useStore((s) => s.home);
-    const settingsBinding = resolvedKeybinding(keybindingOverrides, "settings.toggle");
-    const closeSettingsHint = settingsBinding ? `Esc / ${keybindingLabel(settingsBinding)}` : "Esc";
 
     const [page, setPage] = useState<Page>("general");
 
@@ -85,7 +71,11 @@ export function SettingsPanel() {
 
                     <div className="settings-rail-foot">
                         <span className="settings-rail-path">Changes save automatically</span>
-                        <button className="settings-close" onClick={cmd.closeSettings} title={`Close settings (${closeSettingsHint})`} type="button">
+                        <button
+                            className="settings-close"
+                            onClick={cmd.closeSettings}
+                            title={`Close settings (Esc / ${PRIMARY_SHORTCUT},)`}
+                            type="button">
                             <IconClose size={12} /> Done
                         </button>
                     </div>
@@ -100,7 +90,7 @@ export function SettingsPanel() {
                         <button
                             className="settings-topbar-close"
                             onClick={cmd.closeSettings}
-                            title={`Close settings (${closeSettingsHint})`}
+                            title={`Close settings (Esc / ${PRIMARY_SHORTCUT},)`}
                             aria-label="Close settings"
                             type="button">
                             <IconClose size={14} />
@@ -113,8 +103,6 @@ export function SettingsPanel() {
                         )}
 
                         {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
-
-                        {page === "keybindings" && <KeybindingsPage overrides={keybindingOverrides} />}
 
                         {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
                     </div>
@@ -302,177 +290,6 @@ function GeneralPage({ pinnedProjects, projectRoots, home, pretty }: GeneralPage
     );
 }
 
-function KeybindingsPage({ overrides }: { overrides: KeybindingOverrides }) {
-    const [query, setQuery] = useState("");
-    const [recording, setRecording] = useState<KeybindingActionId | null>(null);
-    const [message, setMessage] = useState("");
-    const normalizedQuery = query.trim().toLowerCase();
-    const overrideCount = Object.keys(overrides).length;
-
-    useEffect(() => {
-        if (!recording) return;
-        const cancelRecording = (event: KeyboardEvent) => {
-            if (event.key !== "Escape") return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            setRecording(null);
-            setMessage("Change cancelled.");
-        };
-        window.addEventListener("keydown", cancelRecording, { capture: true });
-        return () => window.removeEventListener("keydown", cancelRecording, { capture: true });
-    }, [recording]);
-
-    const beginRecording = (id: KeybindingActionId) => {
-        setRecording(id);
-        setMessage("Press a shortcut. Backspace clears it; Escape cancels.");
-    };
-
-    const capture = (event: ReactKeyboardEvent<HTMLButtonElement>, id: KeybindingActionId) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (event.key === "Escape") {
-            setRecording(null);
-            setMessage("Change cancelled.");
-            return;
-        }
-        if (event.key === "Backspace" || event.key === "Delete") {
-            cmd.setKeybinding(id, null);
-            setRecording(null);
-            setMessage(`${KEYBINDING_ACTIONS.find((action) => action.id === id)?.label} is now unassigned.`);
-            return;
-        }
-
-        const binding = eventToKeybinding(event.nativeEvent);
-        if (!binding) return;
-        if (!keybindingHasModifier(binding)) {
-            setMessage("Add Command, Control, Option, or Shift so typing stays safe.");
-            return;
-        }
-        const conflict = findKeybindingConflict(overrides, id, binding);
-        if (conflict) {
-            setMessage(`${keybindingLabel(binding)} is already assigned to “${conflict.label}”.`);
-            return;
-        }
-
-        cmd.setKeybinding(id, binding);
-        setRecording(null);
-        setMessage(`${KEYBINDING_ACTIONS.find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.`);
-    };
-
-    return (
-        <SettingsPage name="keybindings" deck="Make the workspace move the way your hands already do. Changes apply instantly.">
-            <SettingsSection
-                title="Command map"
-                meta={`${KEYBINDING_ACTIONS.length} commands · ${overrideCount} changed`}
-                sub="Select a shortcut, then press a new combination. Conflicts are blocked so every command stays reachable.">
-                <div className="keymap-toolbar">
-                    <label className="keymap-search">
-                        <span>filter</span>
-                        <input
-                            value={query}
-                            onChange={(event) => setQuery(event.target.value)}
-                            placeholder="panes, session, Bruno…"
-                            spellCheck={false}
-                        />
-                    </label>
-                    <button
-                        className="settings-btn"
-                        type="button"
-                        disabled={overrideCount === 0}
-                        onClick={() => {
-                            cmd.resetAllKeybindings();
-                            setRecording(null);
-                            setMessage("All shortcuts restored to their defaults.");
-                        }}>
-                        <IconRefresh size={11} /> reset all
-                    </button>
-                </div>
-
-                <div className={`keymap-status${recording ? " listening" : ""}`} aria-live="polite">
-                    <span className="keymap-status-light" />
-                    <span>{message || "Select any keycap to record a replacement."}</span>
-                </div>
-
-                <div className="keymap-groups">
-                    {KEYBINDING_CATEGORIES.map((category) => {
-                        const actions = KEYBINDING_ACTIONS.filter(
-                            (action) =>
-                                action.category === category &&
-                                (!normalizedQuery ||
-                                    `${action.label} ${action.detail} ${keybindingLabel(
-                                        resolvedKeybinding(overrides, action.id as KeybindingActionId),
-                                    )}`
-                                        .toLowerCase()
-                                        .includes(normalizedQuery)),
-                        );
-                        if (!actions.length) return null;
-                        return (
-                            <section className="keymap-group" key={category}>
-                                <header className="keymap-group-head">
-                                    <h3>{category}</h3>
-                                    <span>{actions.length}</span>
-                                </header>
-                                <div className="keymap-list">
-                                    {actions.map((action) => {
-                                        const id = action.id as KeybindingActionId;
-                                        const binding = resolvedKeybinding(overrides, id);
-                                        const changed = Object.prototype.hasOwnProperty.call(overrides, id);
-                                        const listening = recording === id;
-                                        return (
-                                            <div className={`keymap-row${listening ? " recording" : ""}`} key={id}>
-                                                <div className="keymap-copy">
-                                                    <span className="keymap-name">{action.label}</span>
-                                                    <span className="keymap-detail">{action.detail}</span>
-                                                </div>
-                                                <div className="keymap-controls">
-                                                    {changed && (
-                                                        <button
-                                                            className="keymap-reset"
-                                                            type="button"
-                                                            title={`Reset ${action.label}`}
-                                                            aria-label={`Reset ${action.label}`}
-                                                            onClick={() => {
-                                                                cmd.resetKeybinding(id);
-                                                                setMessage(`${action.label} restored to ${keybindingLabel(action.defaultBinding)}.`);
-                                                            }}>
-                                                            <IconRefresh size={10} />
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        className={`keymap-recorder${!binding ? " empty" : ""}${listening ? " listening" : ""}`}
-                                                        type="button"
-                                                        data-keybinding-recorder={listening ? "true" : undefined}
-                                                        ref={(node) => {
-                                                            if (listening) node?.focus();
-                                                        }}
-                                                        onClick={() => beginRecording(id)}
-                                                        onKeyDown={(event) => capture(event, id)}
-                                                        aria-label={`${action.label}: ${keybindingLabel(binding)}. Activate to change.`}>
-                                                        {listening ? <span className="keymap-caret">press keys</span> : keybindingLabel(binding)}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-                        );
-                    })}
-                    {normalizedQuery &&
-                        !KEYBINDING_ACTIONS.some((action) =>
-                            `${action.label} ${action.detail} ${keybindingLabel(resolvedKeybinding(overrides, action.id as KeybindingActionId))}`
-                                .toLowerCase()
-                                .includes(normalizedQuery),
-                        ) && <div className="settings-empty">no commands match “{query.trim()}”</div>}
-                </div>
-
-                <p className="keymap-foot">macOS may keep system-reserved combinations before Sikemux can receive them.</p>
-            </SettingsSection>
-        </SettingsPage>
-    );
-}
-
 interface AppearancePageProps {
     themeId: string;
     windowOpacity: number;
@@ -583,7 +400,13 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
     };
 
     return (
-        <SettingsPage name="appearance" deck="Theme, window opacity and background blur. Changes apply instantly.">
+        <SettingsPage
+            name="appearance"
+            deck={
+                IS_MACOS
+                    ? "Theme, window opacity and background blur. Changes apply instantly."
+                    : "Theme and editor appearance. Changes apply instantly."
+            }>
             <SettingsSection
                 title="Theme"
                 meta={`${THEMES.length} built-in · ${customThemes.length} custom`}
@@ -627,51 +450,53 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 </div>
             )}
 
-            <SettingsSection title="Window feel" sub="Tune the amount of glass without leaving this page.">
-                <div className="settings-control-stack">
-                    <div className="settings-control">
-                        <div className="settings-control-copy">
-                            <h3>Opacity</h3>
-                            <p>Solid at 1.00, translucent below it.</p>
+            {IS_MACOS && (
+                <SettingsSection title="Window feel" sub="Tune the amount of glass without leaving this page.">
+                    <div className="settings-control-stack">
+                        <div className="settings-control">
+                            <div className="settings-control-copy">
+                                <h3>Opacity</h3>
+                                <p>Solid at 1.00, translucent below it.</p>
+                            </div>
+                            <div className="settings-knob-row">
+                                <input
+                                    type="range"
+                                    className="settings-slider"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    value={windowOpacity}
+                                    onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
+                                />
+                                <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
+                            </div>
                         </div>
-                        <div className="settings-knob-row">
-                            <input
-                                type="range"
-                                className="settings-slider"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                value={windowOpacity}
-                                onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
-                            />
-                            <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
+                        <div className="settings-control">
+                            <div className="settings-control-copy">
+                                <h3>Background blur</h3>
+                                <p>0 is crisp; 20–40px gives a soft frosted effect.</p>
+                            </div>
+                            <div className="settings-knob-row">
+                                <input
+                                    type="range"
+                                    className="settings-slider alt"
+                                    min={0}
+                                    max={60}
+                                    step={1}
+                                    value={Math.min(60, windowBlur)}
+                                    onChange={(e) => cmd.setWindowBlur(parseInt(e.target.value, 10))}
+                                />
+                                <NumberField
+                                    value={windowBlur}
+                                    onCommit={(v) => cmd.setWindowBlur(Math.round(v))}
+                                    format={(v) => String(Math.round(v))}
+                                    suffix="px"
+                                />
+                            </div>
                         </div>
                     </div>
-                    <div className="settings-control">
-                        <div className="settings-control-copy">
-                            <h3>Background blur</h3>
-                            <p>0 is crisp; 20–40px gives a soft frosted effect.</p>
-                        </div>
-                        <div className="settings-knob-row">
-                            <input
-                                type="range"
-                                className="settings-slider alt"
-                                min={0}
-                                max={60}
-                                step={1}
-                                value={Math.min(60, windowBlur)}
-                                onChange={(e) => cmd.setWindowBlur(parseInt(e.target.value, 10))}
-                            />
-                            <NumberField
-                                value={windowBlur}
-                                onCommit={(v) => cmd.setWindowBlur(Math.round(v))}
-                                format={(v) => String(Math.round(v))}
-                                suffix="px"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </SettingsSection>
+                </SettingsSection>
+            )}
         </SettingsPage>
     );
 }

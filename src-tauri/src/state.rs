@@ -98,6 +98,7 @@ fn write_atomic(path: &Path, data: &[u8]) -> AppResult<()> {
     temp.flush()?;
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|e| AppError::from(e.error))?;
+    #[cfg(unix)]
     fs::File::open(parent)?.sync_all()?;
     Ok(())
 }

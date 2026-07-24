@@ -34,17 +34,22 @@
 //   pty_kill        — terminate the PTY process
 
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::fs::File;
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
+#[cfg(windows)]
+use portable_pty::MasterPty;
 use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
+#[cfg(unix)]
 use tokio::io::unix::AsyncFd;
 
 use crate::error::{AppError, AppResult};
@@ -66,11 +71,19 @@ fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
 struct Pty {
     /// The PTY master as one non-blocking fd, servicing both directions.
     /// Resize is an ioctl straight on this fd (see `pty_resize`).
+    #[cfg(unix)]
     io: AsyncFd<File>,
     /// Serialises concurrent writers so two `pty_write`s can't interleave
     /// bytes on the shared fd. Reads need no guard — only the reader task
     /// reads.
+    #[cfg(unix)]
     write_lock: tokio::sync::Mutex<()>,
+    /// ConPTY exposes separate blocking pipe handles. They stay behind a
+    /// platform boundary so Unix keeps its single-fd async fast path.
+    #[cfg(windows)]
+    master: Mutex<Box<dyn MasterPty + Send>>,
+    #[cfg(windows)]
+    writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     /// Tracks the current screen grid + scrollback. Always up to date,
     /// even when no one's subscribed — that's the whole point.
@@ -128,10 +141,7 @@ impl PtyManager {
             if let Some((_, pty)) = self.ptys.remove(&id) {
                 if let Ok(child) = pty.child.lock() {
                     if let Some(pid) = child.process_id() {
-                        // Negative pid → signal the whole process group.
-                        unsafe {
-                            libc::kill(-(pid as i32), libc::SIGTERM);
-                        }
+                        terminate_process_tree(pid, false);
                     }
                 }
                 draining.push(pty);
@@ -179,26 +189,46 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 // feel laggy. One shared window, not per-PTY — see `drain`.
 const DRAIN_GRACE: Duration = Duration::from_millis(250);
 
-fn child_process_id(child: &mut Box<dyn Child + Send + Sync>) -> Option<i32> {
-    child.process_id().map(|pid| pid as i32)
+fn child_process_id(child: &mut Box<dyn Child + Send + Sync>) -> Option<u32> {
+    child.process_id()
 }
 
-fn signal_process_group(pid: i32, signal: libc::c_int) {
-    if pid <= 0 {
+#[cfg(unix)]
+fn signal_process_group(pid: u32, signal: libc::c_int) {
+    if pid == 0 {
         return;
     }
     // Negative pid targets the process group. portable_pty/forkpty makes the
     // shell the session/group leader on Unix; if that assumption ever fails,
     // Child::kill below still targets the direct child as a fallback.
     unsafe {
-        libc::kill(-pid, signal);
+        libc::kill(-(pid as i32), signal);
     }
 }
 
-fn kill_and_reap_child(child: &mut Box<dyn Child + Send + Sync>, pid: Option<i32>) {
+#[cfg(unix)]
+fn terminate_process_tree(pid: u32, force: bool) {
+    signal_process_group(pid, if force { libc::SIGKILL } else { libc::SIGTERM });
+}
+
+#[cfg(windows)]
+fn terminate_process_tree(pid: u32, force: bool) {
+    // ConPTY's portable child handle terminates only the direct shell. Use
+    // taskkill's tree mode so foreground commands and agent subprocesses do
+    // not survive an app close. Child::kill remains the fallback below.
+    let mut command = std::process::Command::new("taskkill");
+    let pid = pid.to_string();
+    command.args(["/PID", &pid, "/T"]);
+    if force {
+        command.arg("/F");
+    }
+    let _ = command.status();
+}
+
+fn kill_and_reap_child(child: &mut Box<dyn Child + Send + Sync>, pid: Option<u32>) {
     let _ = child.kill();
     if let Some(pid) = pid {
-        signal_process_group(pid, libc::SIGKILL);
+        terminate_process_tree(pid, true);
     }
     let _ = child.wait();
 }
@@ -209,7 +239,7 @@ fn terminate_and_reap_child(child: &mut Box<dyn Child + Send + Sync>) {
     }
     let pid = child_process_id(child);
     if let Some(pid) = pid {
-        signal_process_group(pid, libc::SIGTERM);
+        terminate_process_tree(pid, false);
     }
     std::thread::sleep(DRAIN_GRACE);
     if let Ok(Some(_)) = child.try_wait() {
@@ -267,6 +297,7 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 /// are especially fragile), so startup must be a shell argument, never PTY
 /// input. Once it returns, replace the bootstrap shell with the normal local
 /// shell so users always land at a usable prompt.
+#[cfg(unix)]
 fn startup_bootstrap(startup: &str) -> String {
     format!("{startup}\nexec \"$SIKEMUX_SHELL\"")
 }
@@ -274,6 +305,7 @@ fn startup_bootstrap(startup: &str) -> String {
 /// Drive a non-blocking write to completion against a tokio `AsyncFd`.
 /// Loops on EAGAIN via the readiness machinery; returns once every byte
 /// has been written or the kernel reports an I/O error.
+#[cfg(unix)]
 async fn write_all_async(writer: &AsyncFd<File>, mut data: &[u8]) -> std::io::Result<()> {
     while !data.is_empty() {
         let mut guard = writer.writable().await?;
@@ -372,6 +404,47 @@ fn ensure_sweeper(app: AppHandle) {
     });
 }
 
+/// Update the headless terminal and fan one output chunk to live subscribers.
+/// Both Unix's readiness task and Windows' ConPTY reader thread share this
+/// path, preserving the snapshot/subscription ordering invariant.
+fn broadcast_output(pty: &Pty, bytes: &[u8]) {
+    pty.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
+        let Ok(mut parser) = pty.parser.lock() else {
+            return;
+        };
+        if pty.trimmed.swap(false, Ordering::AcqRel) {
+            reseed_parser(&mut parser, PARSER_SCROLLBACK);
+        }
+        parser.process(bytes);
+        match pty.subscribers.lock() {
+            Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
+            Err(_) => Vec::new(),
+        }
+    };
+    if snapshot.is_empty() {
+        return;
+    }
+    let chunk = bytes.to_vec();
+    let dead: Vec<u32> = snapshot
+        .iter()
+        .filter_map(|(sub_id, channel)| channel.send(chunk.clone()).err().map(|_| *sub_id))
+        .collect();
+    if let Ok(mut subscribers) = pty.subscribers.lock() {
+        for sub_id in dead {
+            subscribers.remove(&sub_id);
+        }
+    }
+}
+
+fn notify_process_exited(pty: &Pty) {
+    if let Ok(subscribers) = pty.subscribers.lock() {
+        for channel in subscribers.values() {
+            let _ = channel.send(Vec::new());
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn pty_spawn(
     app: AppHandle,
@@ -389,22 +462,37 @@ pub async fn pty_spawn(
         .openpty(pty_size(cols, rows))
         .map_err(pty_err)?;
 
+    #[cfg(unix)]
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    #[cfg(windows)]
+    let shell = std::env::var("SIKEMUX_SHELL").unwrap_or_else(|_| "powershell.exe".into());
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
-    let cwd = cwd.unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".into()));
+    #[cfg(windows)]
+    cmd.args(["-NoLogo"]);
+    let cwd = cwd.unwrap_or_else(|| crate::system::user_home().to_string_lossy().into_owned());
     let startup = startup.filter(|s| !s.is_empty());
     cmd.cwd(cwd);
     if let Some(startup) = startup.as_deref() {
-        cmd.env("SIKEMUX_SHELL", &shell);
-        cmd.arg("-c");
-        cmd.arg(startup_bootstrap(startup));
+        #[cfg(unix)]
+        {
+            cmd.env("SIKEMUX_SHELL", &shell);
+            cmd.arg("-c");
+            cmd.arg(startup_bootstrap(startup));
+        }
+        #[cfg(windows)]
+        {
+            // -NoExit runs the requested startup action and then leaves the
+            // user at a normal interactive PowerShell prompt.
+            cmd.args(["-NoExit", "-Command", startup]);
+        }
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
     let child = SpawnedChildGuard::new(child);
     drop(pair.slave);
 
+    #[cfg(unix)]
     // Get the master fd and set the underlying open-file-description to
     // O_NONBLOCK. This is shared across every dup of the master (a
     // property of the file description, not the fd), which is exactly
@@ -415,6 +503,7 @@ pub async fn pty_spawn(
         .master
         .as_raw_fd()
         .ok_or_else(|| pty_err("master pty has no fd"))?;
+    #[cfg(unix)]
     unsafe {
         let flags = libc::fcntl(master_fd, libc::F_GETFL);
         if flags < 0 {
@@ -435,17 +524,31 @@ pub async fn pty_spawn(
     // ioctl on this fd. At ~50+ live shells this is the difference between
     // ~150 fds and ~50 — the headroom that keeps a heavy session off the
     // process fd limit.
+    #[cfg(unix)]
     let dup_fd = unsafe { libc::dup(master_fd) };
+    #[cfg(unix)]
     if dup_fd < 0 {
         return Err(pty_err(std::io::Error::last_os_error()));
     }
+    #[cfg(unix)]
     drop(pair.master);
+    #[cfg(unix)]
     let io_file = unsafe { File::from_raw_fd(dup_fd) };
+    #[cfg(windows)]
+    let mut reader = pair.master.try_clone_reader().map_err(pty_err)?;
+    #[cfg(windows)]
+    let writer = pair.master.take_writer().map_err(pty_err)?;
     let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
 
     let pty = Arc::new(Pty {
+        #[cfg(unix)]
         io: AsyncFd::new(io_file).map_err(pty_err)?,
+        #[cfg(unix)]
         write_lock: tokio::sync::Mutex::new(()),
+        #[cfg(windows)]
+        master: Mutex::new(pair.master),
+        #[cfg(windows)]
+        writer: Mutex::new(writer),
         child: Mutex::new(child.into_inner()),
         parser: Mutex::new(vt100::Parser::new(rows, cols, PARSER_SCROLLBACK)),
         subscribers: Mutex::new(HashMap::new()),
@@ -478,8 +581,11 @@ pub async fn pty_spawn(
     // Dead subscribers (channel closed because the JS xterm unmounted
     // without explicit unsub) are GC'd on send error so the map stays
     // bounded.
+    #[cfg(unix)]
     let pty_reader = pty.clone();
+    #[cfg(unix)]
     let app_reader = app.clone();
+    #[cfg(unix)]
     tokio::spawn(async move {
         let mut buf = [0u8; 65536];
         loop {
@@ -502,47 +608,11 @@ pub async fn pty_spawn(
                     Err(_would_block) => continue, // spurious wake; loop
                 }
             };
-            let bytes = &buf[..n];
-            pty_reader
-                .last_activity_ms
-                .store(now_ms(), Ordering::Relaxed);
-            let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
-                let Ok(mut parser) = pty_reader.parser.lock() else {
-                    break;
-                };
-                if pty_reader.trimmed.swap(false, Ordering::AcqRel) {
-                    reseed_parser(&mut parser, PARSER_SCROLLBACK);
-                }
-                parser.process(bytes);
-                match pty_reader.subscribers.lock() {
-                    Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
-                    Err(_) => Vec::new(),
-                }
-            };
-            if !snapshot.is_empty() {
-                let chunk = bytes.to_vec();
-                let mut dead: Vec<u32> = Vec::new();
-                for (sub_id, ch) in &snapshot {
-                    if ch.send(chunk.clone()).is_err() {
-                        dead.push(*sub_id);
-                    }
-                }
-                if !dead.is_empty() {
-                    if let Ok(mut subs) = pty_reader.subscribers.lock() {
-                        for d in dead {
-                            subs.remove(&d);
-                        }
-                    }
-                }
-            }
+            broadcast_output(&pty_reader, &buf[..n]);
         }
         // Notify on EOF — empty payload is the frontend's "process exited"
         // signal. Same convention as before.
-        if let Ok(subs) = pty_reader.subscribers.lock() {
-            for ch in subs.values() {
-                let _ = ch.send(Vec::new());
-            }
-        }
+        notify_process_exited(&pty_reader);
         // If the shell exits by itself, there is no frontend unmount to call
         // `pty_kill`. Remove the manager entry here so the retained master
         // fd is released instead of accumulating toward the process fd limit,
@@ -558,6 +628,29 @@ pub async fn pty_spawn(
             }
         });
     });
+
+    #[cfg(windows)]
+    {
+        let pty_reader = pty.clone();
+        let app_reader = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut buf = [0u8; 65536];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => broadcast_output(&pty_reader, &buf[..n]),
+                    Err(_) => break,
+                }
+            }
+            notify_process_exited(&pty_reader);
+            if let Some(mgr) = app_reader.try_state::<PtyManager>() {
+                mgr.ptys.remove(&id);
+            }
+            if let Ok(mut child) = pty_reader.child.lock() {
+                let _ = child.wait();
+            }
+        });
+    }
 
     Ok(id)
 }
@@ -746,12 +839,23 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
         .get(&id)
         .map(|r| r.clone())
         .ok_or(AppError::BadArg("pty not found"))?;
+    #[cfg(unix)]
     // Serialise writers on the shared fd; the reader's readable() side is
     // unaffected and keeps draining concurrently.
     let _guard = pty.write_lock.lock().await;
+    #[cfg(unix)]
     write_all_async(&pty.io, data.as_bytes())
         .await
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    #[cfg(windows)]
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut writer = pty.writer.lock().map_err(pty_err)?;
+        writer.write_all(data.as_bytes()).map_err(AppError::from)?;
+        writer.flush().map_err(AppError::from)
+    })
+    .await
+    .map_err(|e| AppError::Pty(format!("pty_write join: {e}")))??;
+    Ok(())
 }
 
 #[tauri::command]
@@ -760,26 +864,33 @@ pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16)
         .ptys
         .get(&id)
         .ok_or(AppError::BadArg("pty not found"))?;
-    // Resize via TIOCSWINSZ straight on the master fd (the kernel also
-    // raises SIGWINCH on the foreground process group). This is exactly
-    // what portable_pty's MasterPty::resize did internally — we just issue
-    // the ioctl ourselves now that we no longer retain the MasterPty.
-    let ws = libc::winsize {
-        ws_row: rows,
-        ws_col: cols,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    let rc = unsafe {
-        libc::ioctl(
-            pty.io.get_ref().as_raw_fd(),
-            libc::TIOCSWINSZ,
-            &ws as *const _,
-        )
-    };
-    if rc != 0 {
-        return Err(pty_err(std::io::Error::last_os_error()));
+    #[cfg(unix)]
+    {
+        // Resize via TIOCSWINSZ straight on the master fd (the kernel also
+        // raises SIGWINCH on the foreground process group).
+        let ws = libc::winsize {
+            ws_row: rows,
+            ws_col: cols,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        let rc = unsafe {
+            libc::ioctl(
+                pty.io.get_ref().as_raw_fd(),
+                libc::TIOCSWINSZ,
+                &ws as *const _,
+            )
+        };
+        if rc != 0 {
+            return Err(pty_err(std::io::Error::last_os_error()));
+        }
     }
+    #[cfg(windows)]
+    pty.master
+        .lock()
+        .map_err(pty_err)?
+        .resize(pty_size(cols, rows))
+        .map_err(pty_err)?;
     // Resize the parser too so the grid the snapshot returns matches the
     // xterm's geometry — otherwise re-attach lands on a mis-sized canvas.
     // `set_size` lives on the Screen, not the Parser itself.
@@ -791,9 +902,11 @@ pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16)
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use super::startup_bootstrap;
     use super::{
-        attach_snapshot, compact_parser_for_idle, reseed_parser, startup_bootstrap, AttachResult,
-        IDLE_SCROLLBACK, PARSER_SCROLLBACK, RESET_MODES,
+        attach_snapshot, compact_parser_for_idle, reseed_parser, AttachResult, IDLE_SCROLLBACK,
+        PARSER_SCROLLBACK, RESET_MODES,
     };
 
     #[test]
@@ -1030,6 +1143,7 @@ mod tests {
         assert_eq!(PARSER_SCROLLBACK, 10_000);
     }
 
+    #[cfg(unix)]
     #[test]
     fn startup_runs_before_the_interactive_shell_without_pty_input() {
         let bootstrap = startup_bootstrap("ssh prod-db");
@@ -1043,6 +1157,7 @@ mod tests {
     // terminal) alive. The child sleeps, THEN prints — so if dropping the
     // MasterPty had hung up the terminal, the child would take SIGHUP during
     // the sleep and the read below would hit EOF before the marker arrives.
+    #[cfg(unix)]
     #[test]
     fn lone_master_dup_keeps_child_alive_after_masterpty_drop() {
         use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};

@@ -12,7 +12,6 @@ import { notify, reportError, swallow } from "../state/toast";
 import { awsIdentityR, gitStatusR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { envFolderOf } from "../state/rundeckShape";
 import { useStore } from "../state/store";
-import { keybindingLabelForAction } from "../keybindings";
 import {
     IconAws,
     IconBattery,
@@ -28,6 +27,7 @@ import {
     WindowIcon,
 } from "./Icons";
 import { branchKind } from "./rundeck/branchStyle";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -313,7 +313,6 @@ function BatteryChip() {
 }
 
 export function TopBar() {
-    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const now = useClock();
     const t = twelveHour(now);
     const session = useStore((s) => s.sessions[s.activeSessionId]);
@@ -458,10 +457,7 @@ export function TopBar() {
                     <button className={`tb-btn${rightOpen ? " on" : ""}`} onClick={cmd.toggleRightRail} title="Toggle agents rail">
                         <IconPanelRight size={15} />
                     </button>
-                    <button
-                        className="tb-btn"
-                        onClick={cmd.toggleSettings}
-                        title={`Settings — ${keybindingLabelForAction(keybindingOverrides, "settings.toggle")}`}>
+                    <button className="tb-btn" onClick={cmd.toggleSettings} title={`Settings — ${PRIMARY_SHORTCUT},`}>
                         <CogIcon size={15} />
                     </button>
                 </div>

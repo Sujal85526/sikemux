@@ -62,6 +62,7 @@ mod imp {
 pub use imp::apply;
 
 #[cfg(not(target_os = "macos"))]
+#[allow(dead_code)]
 pub unsafe fn apply(_ns_window: *mut std::ffi::c_void, _blur_radius: i32) {}
 
 /// Tauri command — re-apply transparency + blur at runtime from the

@@ -73,6 +73,7 @@ pub enum AppError {
     State(String),
 
     #[error("window: {0}")]
+    #[allow(dead_code)]
     Window(String),
 
     #[error("{0}")]

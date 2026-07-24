@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { refreshBlame, setBlameContext } from "../editor/gitBlame";
 import { isImagePath } from "../editor/media";
 import { subscribe } from "../state/bus";
+import { relativePath } from "../lib/paths";
 
 /**
  * Bind the editor's inline git-blame to the active file: points the blame
@@ -14,11 +15,11 @@ export function useGitBlame(viewGetter: () => EditorView | null, cwd: string, ac
     useEffect(() => {
         const view = viewGetter();
         if (!view) return;
-        if (!activePath || !cwd || isImagePath(activePath) || !activePath.startsWith(`${cwd}/`)) {
+        const rel = activePath && cwd ? relativePath(activePath, cwd) : null;
+        if (!activePath || !cwd || isImagePath(activePath) || !rel) {
             setBlameContext(view, null);
             return;
         }
-        const rel = activePath.slice(cwd.length + 1);
         setBlameContext(view, { repo: cwd, path: rel });
         return subscribe("git-refresh", (e) => {
             if (e.repo !== cwd) return;

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Credential-free, offline checks for macOS release configuration and tooling.
+# Credential-free, offline checks for platform release configuration and tooling.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+if command -v pnpm >/dev/null 2>&1; then
+  PNPM=(pnpm)
+else
+  PNPM=(corepack pnpm)
+fi
 
 bash -n scripts/build-mac.sh scripts/release.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
@@ -14,14 +20,20 @@ node - <<'NODE'
 const fs = require("node:fs");
 const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const config = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", "utf8"));
+const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
 const fail = (message) => { throw new Error(message); };
 
 if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
 if (config.bundle?.createUpdaterArtifacts !== true) fail("updater artifacts are not enabled");
-if (JSON.stringify(config.bundle?.targets) !== JSON.stringify(["app", "dmg"])) fail("bundle targets must be macOS app and dmg only");
-if (config.bundle?.resources?.["icons/build/Assets.car"] !== "Assets.car") fail("Assets.car resource mapping is missing");
-if (config.bundle?.macOS?.infoPlist !== "Info.plist") fail("pre-signing Info.plist merge is not configured");
-if (config.bundle?.macOS?.minimumSystemVersion !== "11.0") fail("unexpected minimum macOS version");
+if (JSON.stringify(macConfig.bundle?.targets) !== JSON.stringify(["app", "dmg"])) fail("macOS bundle targets must be app and dmg");
+if (macConfig.bundle?.resources?.["icons/build/Assets.car"] !== "Assets.car") fail("Assets.car resource mapping is missing");
+if (macConfig.bundle?.macOS?.infoPlist !== "Info.plist") fail("pre-signing Info.plist merge is not configured");
+if (macConfig.bundle?.macOS?.minimumSystemVersion !== "11.0") fail("unexpected minimum macOS version");
+if (JSON.stringify(windowsConfig.bundle?.targets) !== JSON.stringify(["nsis"])) fail("Windows bundle target must be NSIS");
+if (windowsConfig.bundle?.createUpdaterArtifacts !== false) fail("unsigned Windows builds must not require updater credentials");
+if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon is not configured");
+if (windowsConfig.bundle?.windows?.nsis?.installMode !== "currentUser") fail("unexpected Windows install mode");
 const endpoints = config.plugins?.updater?.endpoints;
 if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
   fail("updater endpoint is not the expected HTTPS latest.json URL");
@@ -49,8 +61,8 @@ CARGO_VERSION="$(node -e '
 # Exercise the verifier against a fresh ephemeral key and prove that changing
 # the signed bytes is rejected. No project signing key or network is used.
 printf 'offline updater verifier fixture\n' >"$TMP/artifact.tar.gz"
-CI=true pnpm tauri signer generate --password '' --write-keys "$TMP/test.key" >"$TMP/generate.out" 2>"$TMP/generate.err"
-pnpm tauri signer sign --private-key-path "$TMP/test.key" --password '' "$TMP/artifact.tar.gz" >"$TMP/sign.out" 2>"$TMP/sign.err"
+CI=true "${PNPM[@]}" tauri signer generate --password '' --write-keys "$TMP/test.key" >"$TMP/generate.out" 2>"$TMP/generate.err"
+"${PNPM[@]}" tauri signer sign --private-key-path "$TMP/test.key" --password '' "$TMP/artifact.tar.gz" >"$TMP/sign.out" 2>"$TMP/sign.err"
 node -e '
   const fs = require("node:fs");
   fs.writeFileSync(process.argv[2], JSON.stringify({ plugins: { updater: { pubkey: fs.readFileSync(process.argv[1], "utf8").trim() } } }));

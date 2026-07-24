@@ -6,11 +6,13 @@ import { setGitBaseline } from "../editor/gitGutter";
 import { isImagePath } from "../editor/media";
 import { subscribe } from "../state/bus";
 import { swallow } from "../state/toast";
+import { relativePath } from "../lib/paths";
 
 export function useGitBaseline(viewGetter: () => EditorView | null, cwd: string, activePath: string | null) {
     useEffect(() => {
-        if (!activePath || !cwd || isImagePath(activePath) || !activePath.startsWith(`${cwd}/`)) return;
-        const rel = activePath.slice(cwd.length + 1);
+        if (!activePath || !cwd || isImagePath(activePath)) return;
+        const rel = relativePath(activePath, cwd);
+        if (!rel) return;
 
         const refetch = () => {
             const view = viewGetter();

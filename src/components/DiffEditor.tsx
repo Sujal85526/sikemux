@@ -8,6 +8,7 @@ import { fsapi } from "../api/fs";
 import { auraExtensions, languageFor } from "../editor/codemirror";
 import { registerView } from "../themes/bus";
 import { errMessage, swallow } from "../state/toast";
+import { joinPath } from "../lib/paths";
 
 export function DiffEditor({
     repo,
@@ -35,7 +36,7 @@ export function DiffEditor({
         let cancelled = false;
         let view: EditorView | null = null;
         let unregister: (() => void) | null = null;
-        const absPath = `${repo}/${path}`;
+        const absPath = joinPath(repo, path);
         setError(null);
 
         const save = (v: EditorView): boolean => {

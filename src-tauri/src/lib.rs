@@ -23,6 +23,8 @@ use pty::PtyManager;
 use rundeck::{RundeckLogsManager, RundeckWatchManager};
 
 pub fn run() {
+    system::normalize_user_environment();
+
     // Raise our open-file-descriptor limit FIRST, before any subsystem
     // opens an fd. macOS launchd hands GUI apps a soft RLIMIT_NOFILE of 256;
     // a heavy multi-terminal/agent/project session holds far more than that
@@ -69,7 +71,7 @@ pub fn run() {
                 lsp::drain_all();
             }
         })
-        .setup(|app| {
+        .setup(|_app| {
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
             // CGS background blur via private API). No NSVisualEffectView
             // because its frosted look is heavier than the gaussian CGS blur
@@ -78,7 +80,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 use tauri::Manager;
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(window) = _app.get_webview_window("main") {
                     if let Ok(handle) = window.ns_window() {
                         unsafe {
                             transparency::apply(handle, 0);

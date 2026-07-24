@@ -1,6 +1,11 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { registerPtyDrop } from "../state/dropRegistry";
+import { IS_WINDOWS } from "../lib/platform";
+
+function shellPathArgument(path: string): string {
+    return IS_WINDOWS ? `'${path.replaceAll("'", "''")}'` : path.replace(/([\s'"\\])/g, "\\$1");
+}
 
 export function usePty(opts: {
     cwd?: string;
@@ -21,7 +26,7 @@ export function usePty(opts: {
             unregisterDropRef.current = registerPtyDrop(host, (paths) => {
                 const pid = pidRef.current;
                 if (pid === null || paths.length === 0) return;
-                const body = paths.map((p) => p.replace(/([\s'"\\])/g, "\\$1")).join(" ");
+                const body = paths.map(shellPathArgument).join(" ");
                 void invoke("pty_write", {
                     id: pid,
                     data: `\x1b[200~${body}\x1b[201~`,

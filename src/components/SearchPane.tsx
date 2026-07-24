@@ -13,7 +13,8 @@ import { DEFAULT_GLOBAL_SEARCH_VIEW } from "../state/types";
 import { notify, errMessage } from "../state/toast";
 import { FileIcon } from "./FileIcon";
 import { IconSearch } from "./Icons";
-import { basename, dirname } from "../lib/paths";
+import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
+import { PRIMARY_SHORTCUT, SHIFT_SHORTCUT } from "../lib/platform";
 
 const DEBOUNCE_MS = 250;
 const PREVIEW_BEFORE_LINES = 40;
@@ -142,7 +143,7 @@ export function SearchPane({ sessionId, cwd, active, visible }: { sessionId: str
     useEffect(() => {
         if (!cwd || !visible) return;
         return subscribe("fs-changed", (e) => {
-            if (!e.repo || !cwd.startsWith(e.repo)) return;
+            if (!e.repo || !isPathWithin(cwd, e.repo)) return;
             if (files.length > 0) setStale(true);
         });
     }, [cwd, visible, files.length]);
@@ -162,8 +163,8 @@ export function SearchPane({ sessionId, cwd, active, visible }: { sessionId: str
                 return;
             }
             const dirty = Object.values(useStore.getState().dirtyEditorPaths).flat();
-            const dirtySet = new Set(dirty);
-            const conflicts = replacePreview.files.map((f) => `${cwd}/${f.path}`).filter((path) => dirtySet.has(path));
+            const dirtySet = new Set(dirty.map(normalizePath));
+            const conflicts = replacePreview.files.map((f) => joinPath(cwd, f.path)).filter((path) => dirtySet.has(normalizePath(path)));
             if (conflicts.length > 0) {
                 const shown = conflicts.slice(0, 3).map(basename).join(", ");
                 const more = conflicts.length > 3 ? ` and ${conflicts.length - 3} more` : "";
@@ -514,7 +515,7 @@ function Threads({
         return (
             <ThreadNotice className="sp-empty">
                 start typing to search
-                <span className="sp-empty-sub">tab → replace · ⌘↵ replace all</span>
+                <span className="sp-empty-sub">tab → replace · {PRIMARY_SHORTCUT}↵ replace all</span>
             </ThreadNotice>
         );
     }
@@ -612,7 +613,7 @@ const MessageRow = memo(function MessageRow({
             className={`sp-msg${isSelected ? " sel" : ""}`}
             style={style}
             onClick={() => cmd.setGlobalSearchSelected(sessionId, { path: file.path, matchIndex: hitIndex })}
-            onDoubleClick={() => cmd.requestOpenFile(`${repo}/${file.path}`, hit.line - 1, hit.ranges[0]?.start ?? 0)}
+            onDoubleClick={() => cmd.requestOpenFile(joinPath(repo, file.path), hit.line - 1, hit.ranges[0]?.start ?? 0)}
             title={replace ? `${hit.text}  →  (with replace)` : hit.text}>
             <span className="sp-msg-ln">{hit.line}</span>
             <span className="sp-msg-tx">
@@ -786,13 +787,13 @@ function Preview({
         onOpenRef.current = () => {
             if (!resolved) return;
             const hit = resolved.hit;
-            cmd.requestOpenFile(`${repo}/${resolved.file.path}`, hit.line - 1, hit.ranges[0]?.start ?? 0);
+            cmd.requestOpenFile(joinPath(repo, resolved.file.path), hit.line - 1, hit.ranges[0]?.start ?? 0);
         };
     }, [repo, resolved]);
 
     useEffect(() => {
         if (!resolved) return;
-        const wantedPath = `${repo}/${resolved.file.path}`;
+        const wantedPath = joinPath(repo, resolved.file.path);
         const cached = cacheRef.current.get(wantedPath);
         const hitLine = resolved.hit.line;
         const inWindow = !!cached && hitLine >= cached.startLine && hitLine < cached.startLine + countLines(cached.doc);
@@ -985,10 +986,14 @@ function Footer() {
                 <kbd>tab</kbd> replace
             </span>
             <span>
-                <kbd>⌘↵</kbd> replace all
+                <kbd>{PRIMARY_SHORTCUT}↵</kbd> replace all
             </span>
             <span>
-                <kbd>⌘⇧F</kbd> focus
+                <kbd>
+                    {PRIMARY_SHORTCUT}
+                    {SHIFT_SHORTCUT}F
+                </kbd>{" "}
+                focus
             </span>
         </div>
     );

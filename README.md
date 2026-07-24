@@ -107,6 +107,8 @@ These are the defaults. Every command can be reassigned or cleared in **Settings
 | `⌘P`      | File / request palette               |     | `⌘⇧F`            | Global search             |
 | `⌘,`      | Settings                             |     | `⌥T`             | Focus command terminal    |
 
+On Windows, use `Ctrl` for `⌘` shortcuts and `Alt` for `⌥` shortcuts.
+
 ## Installation
 
 ### Download (recommended)
@@ -130,7 +132,12 @@ make build          # or: pnpm build:mac
 
 # Explicit local universal build (Apple Silicon + Intel; not the published feed)
 pnpm build:mac:universal
+
+# Windows NSIS installer (run from Windows)
+pnpm build:windows
 ```
+
+Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY with PowerShell as its default Windows shell.
 
 Run `make check` for the full local quality gate: Prettier, ESLint, TypeScript, deterministic frontend tests, Rust formatting, Clippy, Rust tests, and credential-free release-tooling verification. `make test-coverage` reports coverage across all frontend TypeScript/TSX source, including files no test imports. `make run` launches an already-built release binary.
 

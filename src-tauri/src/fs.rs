@@ -189,6 +189,7 @@ pub(crate) fn write_file_atomic(path: PathBuf, content: &[u8]) -> AppResult<()> 
     temp.flush()?;
     temp.as_file().sync_all()?;
     temp.persist(&target).map_err(|e| AppError::from(e.error))?;
+    #[cfg(unix)]
     fs::File::open(parent)?.sync_all()?;
     Ok(())
 }
@@ -337,7 +338,14 @@ fn reveal_in_finder_sync(path: String) -> AppResult<()> {
     {
         Command::new("open").arg("-R").arg(&p).status()?;
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer.exe")
+            .arg("/select,")
+            .arg(&p)
+            .status()?;
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         let dir = if p.is_dir() {
             p.clone()
@@ -351,10 +359,7 @@ fn reveal_in_finder_sync(path: String) -> AppResult<()> {
     Ok(())
 }
 
-/// Move a file or directory to the system Trash (recoverable), matching what
-/// a manual delete does. macOS uses `NSFileManager trashItemAtURL:` natively —
-/// no Finder-automation prompt, the item lands in the Trash. Other platforms
-/// fall back to a permanent remove (no portable trash API).
+/// Move a file or directory to the platform's recoverable Trash/Recycle Bin.
 #[tauri::command]
 pub async fn delete_path(path: String) -> AppResult<()> {
     spawn_blocking(move || delete_path_sync(path))
@@ -367,58 +372,6 @@ fn delete_path_sync(path: String) -> AppResult<()> {
     if !p.exists() {
         return Err(AppError::Fs(format!("path missing: {}", path)));
     }
-    #[cfg(target_os = "macos")]
-    {
-        trash_macos(&path)?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        if p.is_dir() {
-            fs::remove_dir_all(&p)?;
-        } else {
-            fs::remove_file(&p)?;
-        }
-    }
-    Ok(())
-}
-
-/// `[[NSFileManager defaultManager] trashItemAtURL:[NSURL fileURLWithPath:…]
-/// resultingItemURL:nil error:&err]`. Raw msg_send (same style as
-/// transparency.rs) so we don't need objc2-foundation class features.
-#[cfg(target_os = "macos")]
-fn trash_macos(path: &str) -> AppResult<()> {
-    use objc2::msg_send;
-    use objc2::runtime::AnyObject;
-
-    let c =
-        std::ffi::CString::new(path).map_err(|_| AppError::Fs("path contains NUL byte".into()))?;
-    unsafe {
-        let s: *mut AnyObject =
-            msg_send![objc2::class!(NSString), stringWithUTF8String: c.as_ptr()];
-        let url: *mut AnyObject = msg_send![objc2::class!(NSURL), fileURLWithPath: s];
-        let fm: *mut AnyObject = msg_send![objc2::class!(NSFileManager), defaultManager];
-        let mut err: *mut AnyObject = std::ptr::null_mut();
-        let ok: bool = msg_send![
-            fm,
-            trashItemAtURL: url,
-            resultingItemURL: std::ptr::null_mut::<*mut AnyObject>(),
-            error: &mut err
-        ];
-        if !ok {
-            let mut msg = String::from("trash failed");
-            if !err.is_null() {
-                let desc: *mut AnyObject = msg_send![err, localizedDescription];
-                if !desc.is_null() {
-                    let utf8: *const std::os::raw::c_char = msg_send![desc, UTF8String];
-                    if !utf8.is_null() {
-                        msg = std::ffi::CStr::from_ptr(utf8)
-                            .to_string_lossy()
-                            .into_owned();
-                    }
-                }
-            }
-            return Err(AppError::Fs(msg));
-        }
-    }
+    trash::delete(&p).map_err(|error| AppError::Fs(error.to_string()))?;
     Ok(())
 }
