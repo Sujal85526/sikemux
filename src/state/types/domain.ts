@@ -22,7 +22,7 @@ export type LayoutNode = PaneNode | SplitNode;
 
 export type SessionKind = "project" | "command" | "ssh" | "aws" | "rundeck" | "bruno";
 
-export type WindowRole = "term" | "files" | "git" | "search" | "aws" | "rundeck" | "bruno" | "named";
+export type WindowRole = "term" | "files" | "git" | "search" | "aws" | "rundeck" | "bruno" | "ssh-config" | "named";
 
 export interface Window {
     id: string;

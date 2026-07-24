@@ -15,10 +15,6 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
-use crate::fs::write_file_atomic;
-
-const SSH_CONFIG_MAX_BYTES: usize = 1024 * 1024;
-
 #[derive(Serialize)]
 pub struct SshHost {
     alias: String,
@@ -107,28 +103,11 @@ pub fn ssh_hosts() -> Vec<SshHost> {
     out
 }
 
-/// Read the exact config file used by the SSH host picker. A missing config is
-/// a normal first-run state, so the editor opens with a blank buffer instead
-/// of making the caller handle an error.
+/// Ensure the SSH editor has a real file to open, without ever modifying an
+/// existing config. Returning the canonical app path keeps the frontend's
+/// regular file editor independent of platform-specific home discovery.
 #[tauri::command]
-pub fn ssh_config_read() -> AppResult<String> {
-    let path = config_path()?;
-    match fs::read_to_string(path) {
-        Ok(content) => Ok(content),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(error) => Err(error.into()),
-    }
-}
-
-/// Persist the user's SSH config atomically. This command intentionally takes
-/// no path argument: the editor may only write to ~/.ssh/config.
-#[tauri::command]
-pub fn ssh_config_write(content: String) -> AppResult<()> {
-    if content.len() > SSH_CONFIG_MAX_BYTES {
-        return Err(AppError::Fs(
-            "SSH config exceeds the 1 MB editor limit".into(),
-        ));
-    }
+pub fn ssh_config_ensure() -> AppResult<String> {
     let path = config_path()?;
     let ssh_dir = path
         .parent()
@@ -138,5 +117,15 @@ pub fn ssh_config_write(content: String) -> AppResult<()> {
         #[cfg(unix)]
         fs::set_permissions(ssh_dir, std::os::unix::fs::PermissionsExt::from_mode(0o700))?;
     }
-    write_file_atomic(path, content.as_bytes())
+    if !path.exists() {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options.open(&path)?;
+    }
+    Ok(path.to_string_lossy().into_owned())
 }

@@ -298,6 +298,29 @@
 .tab-add:hover {
     color: var(--ink);
 }
+.tabbar-trailing {
+    display: flex;
+    align-items: stretch;
+    margin-left: auto;
+    position: sticky;
+    right: 0;
+    background: var(--rail);
+    border-left: 1px solid var(--line-soft);
+}
+.tabbar-window-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+}
+.tabbar-window-close:hover {
+    color: var(--danger);
+    background: var(--rail-2);
+}
 
 /* variant: editor file tabs */
 .tabbar.v-editor {

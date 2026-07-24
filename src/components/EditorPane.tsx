@@ -4,7 +4,7 @@ import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
-import { auraExtensions, editorThemeOnlyExtensions, isLargeDoc, languageFor } from "../editor/codemirror";
+import { auraExtensions, editorThemeOnlyExtensions, isLargeDoc, isSshConfigPath, languageFor, type EditorLanguageHint } from "../editor/codemirror";
 import { isImagePath } from "../editor/media";
 import { gitDiffGutter } from "../editor/gitGutter";
 import { gitInlineBlame } from "../editor/gitBlame";
@@ -24,7 +24,7 @@ import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
 import { useGitBlame } from "../hooks/useGitBlame";
 import { FileTree, type CtxItem } from "./FileTree";
-import { IconFile } from "./Icons";
+import { IconClose, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { TabBar } from "./TabBar";
 import { EditorFindBar } from "./EditorFindBar";
@@ -175,7 +175,23 @@ function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: 
     );
 }
 
-export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; cwd: string; active: boolean; visible: boolean }) {
+export function EditorPane({
+    paneId,
+    cwd,
+    active,
+    visible,
+    showTree = true,
+    onCloseWindow,
+    languageHint,
+}: {
+    paneId: string;
+    cwd: string;
+    active: boolean;
+    visible: boolean;
+    showTree?: boolean;
+    onCloseWindow?: () => void;
+    languageHint?: EditorLanguageHint;
+}) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const states = useRef<Map<string, EditorState>>(new Map());
@@ -275,6 +291,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                     invalidate((kind, args) => (kind.startsWith("git.") || kind === "files.list") && args[0] === cwd);
                     void saveDoc(path, text);
                 }
+                if (isSshConfigPath(path)) invalidate((kind) => kind === "ssh.hosts");
             })
             .catch(reportError("save"));
         return true;
@@ -286,13 +303,14 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             // Large files: skip the per-change (git diff) and per-mousemove (hover link)
             // extensions — they're the ones whose cost scales with the document.
             const heavy = isLargeDoc(content);
+            const language = languageFor(path, languageHint);
             return EditorState.create({
                 doc: content,
                 extensions: [
                     basicSetup,
                     search({ top: true }),
                     heavy ? editorThemeOnlyExtensions() : auraExtensions,
-                    ...(heavy ? [] : languageFor(path)),
+                    ...(heavy && !languageHint ? [] : language),
                     ...(heavy ? [] : [gitDiffGutter(), gitInlineBlame(), lspHoverLink()]),
                     lspNav(),
                     lspPeek(),
@@ -362,7 +380,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                 ],
             });
         },
-        [scheduleChange],
+        [languageHint, scheduleChange],
     );
 
     useEffect(() => {
@@ -760,14 +778,16 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
 
     return (
         <div className="editor-pane">
-            <FileTree
-                cwd={cwd}
-                activePath={activePath}
-                onOpenFile={(entry) => void openPath(entry.path)}
-                width={treeWidth}
-                onResize={setTreeWidth}
-                active={visible}
-            />
+            {showTree && (
+                <FileTree
+                    cwd={cwd}
+                    activePath={activePath}
+                    onOpenFile={(entry) => void openPath(entry.path)}
+                    width={treeWidth}
+                    onResize={setTreeWidth}
+                    active={visible}
+                />
+            )}
             <div className="ed-main">
                 <TabBar
                     variant="editor"
@@ -779,11 +799,19 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
                             icon: <FileIcon name={name} size={18} />,
                             dirty: dirty.has(path),
                             active: activePath === path,
+                            closable: onCloseWindow ? false : undefined,
                         };
                     })}
                     onSelect={(path) => switchTo(path)}
                     onClose={(path) => closeTabs([path])}
-                    buildMenu={buildTabMenu}
+                    buildMenu={onCloseWindow ? undefined : buildTabMenu}
+                    trailing={
+                        onCloseWindow ? (
+                            <button type="button" className="tabbar-window-close" title="Close SSH config" onClick={onCloseWindow}>
+                                <IconClose size={12} />
+                            </button>
+                        ) : undefined
+                    }
                 />
                 <div className={`ed-host${activeImage ? " image-mode" : ""}`} ref={hostRef}>
                     {!activeImage && (

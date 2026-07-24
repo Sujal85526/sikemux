@@ -37,10 +37,11 @@ interface TabBarProps {
     onAdd?: () => void;
     addIcon?: ReactNode;
     addTitle?: string;
+    trailing?: ReactNode;
     style?: CSSProperties;
 }
 
-export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, addIcon, addTitle, style }: TabBarProps) {
+export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, addIcon, addTitle, trailing, style }: TabBarProps) {
     const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
     const menuItems = menu && buildMenu ? buildMenu(menu.id) : null;
 
@@ -88,6 +89,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                     {addIcon}
                 </button>
             )}
+            {trailing && <div className="tabbar-trailing">{trailing}</div>}
             {menu && menuItems && <TreeContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
         </div>
     );

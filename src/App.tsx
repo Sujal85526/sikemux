@@ -12,7 +12,6 @@ import { AgentPalette } from "./components/AgentPalette";
 import { FilePalette } from "./components/FilePalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { SshConfigEditor } from "./components/SshConfigEditor";
 import { AwsAuthModal } from "./components/aws/AwsAuthModal";
 import { RundeckJobPalette } from "./components/rundeck/RundeckJobPalette";
 import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
@@ -107,7 +106,6 @@ export default function App() {
     const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
     const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
-    const sshConfigEditorOpen = useStore((s) => s.sshConfigEditorOpen);
     const awsAuthModal = useStore((s) => s.awsAuthModal);
     const projectRepoKey = useStore((s) =>
         s.sessionOrder
@@ -281,7 +279,6 @@ export default function App() {
                 <main className={`stage${settingsOpen ? " stage--settings" : ""}`}>
                     <Workspace />
                     {settingsOpen && <SettingsPanel />}
-                    {sshConfigEditorOpen && <SshConfigEditor />}
                 </main>
                 {rightOpen && activeSessionIsProject && <AgentRail />}
             </div>

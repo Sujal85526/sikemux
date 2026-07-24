@@ -17,7 +17,7 @@ import { properties } from "@codemirror/legacy-modes/mode/properties";
 import { ruby } from "@codemirror/legacy-modes/mode/ruby";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
-import { hcl, makefile } from "./langs";
+import { hcl, makefile, sshConfig } from "./langs";
 import type { Extension } from "@codemirror/state";
 import { tags as t } from "@lezer/highlight";
 
@@ -27,12 +27,21 @@ const propertiesMode = {
     tokenTable: { quote: t.string },
 };
 
-export function languageFor(path: string): Extension[] {
-    const file = path.split("/").pop()?.toLowerCase() ?? "";
+export type EditorLanguageHint = "ssh-config";
+
+export function isSshConfigPath(path: string): boolean {
+    const file = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+    return file === "ssh_config" || /(?:^|[\\/])\.ssh[\\/]config$/i.test(path);
+}
+
+export function languageFor(path: string, hint?: EditorLanguageHint): Extension[] {
+    const file = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+    if (hint === "ssh-config") return [StreamLanguage.define(sshConfig)];
     if (file === "makefile" || file === "gnumakefile" || file.endsWith(".mk")) return [StreamLanguage.define(makefile)];
     if (file === "dockerfile" || file.startsWith("dockerfile.")) return [StreamLanguage.define(dockerFile)];
     // dotenv: .env, .env.local, .env.production, .env.example, etc.
     if (file === ".env" || file.startsWith(".env.")) return [StreamLanguage.define(propertiesMode)];
+    if (isSshConfigPath(path)) return [StreamLanguage.define(sshConfig)];
 
     const ext = file.includes(".") ? file.split(".").pop()! : "";
     switch (ext) {

@@ -24,7 +24,6 @@
 .stage--settings .window-layer.visible {
     visibility: hidden;
 }
-
 .top-bar {
     display: flex;
     align-items: center;

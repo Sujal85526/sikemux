@@ -25,6 +25,7 @@ const sessionView = (s: Session): "windows" | "agent" => (s.kind === "project" ?
 type PaneRendererProps = {
     pane: PaneNode;
     session: Session;
+    win: WindowT;
     active: boolean;
     visible: boolean;
 };
@@ -40,9 +41,17 @@ function PaneFallback() {
 }
 
 const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => ReactNode> = {
-    editor: ({ pane, session, active, visible }) => (
+    editor: ({ pane, session, win, active, visible }) => (
         <Suspense fallback={<PaneFallback />}>
-            <EditorPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
+            <EditorPane
+                paneId={pane.id}
+                cwd={paneCwd(pane, session)}
+                active={active}
+                visible={visible}
+                showTree={win.role !== "ssh-config"}
+                onCloseWindow={win.role === "ssh-config" ? () => cmd.closeSession(session.id) : undefined}
+                languageHint={win.role === "ssh-config" ? "ssh-config" : undefined}
+            />
         </Suspense>
     ),
     git: ({ pane, session, active }) => <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} />,
@@ -330,7 +339,7 @@ const WindowLayer = memo(function WindowLayer({
                         }}>
                         <div className={`pane pane-${p.kind}`} onMouseDown={() => visible && cmd.focusPane(p.id)}>
                             <ErrorBoundary label={`${p.kind} pane`}>
-                                {PANE_RENDERER[p.kind]({ pane: p, session, active: paneActive, visible: paneVisible })}
+                                {PANE_RENDERER[p.kind]({ pane: p, session, win, active: paneActive, visible: paneVisible })}
                             </ErrorBoundary>
                         </div>
                     </div>

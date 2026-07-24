@@ -4,6 +4,7 @@ import type { AgentSession } from "../api/agents";
 import { awsApi } from "../api/aws";
 import { fsapi } from "../api/fs";
 import { lsp } from "../api/lsp";
+import { sshApi } from "../api/ssh";
 import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
@@ -587,6 +588,7 @@ export function closeSession(id: string): void {
         const idx = d.sessionOrder.indexOf(id);
         const winIds = d.windowsBySession[id] ?? [];
         const agentIds = d.agentsBySession[id] ?? [];
+        const isSshConfig = winIds.some((windowId) => d.windows[windowId]?.role === "ssh-config");
 
         for (const wid of winIds) {
             const w = d.windows[wid];
@@ -611,7 +613,7 @@ export function closeSession(id: string): void {
         if (d.activeSessionId === id) {
             d.activeSessionId = d.sessionOrder[Math.min(idx, d.sessionOrder.length - 1)];
         }
-        if (closed.kind !== "command") {
+        if (closed.kind !== "command" && !isSshConfig) {
             d.recent = [{ kind: closed.kind, name: closed.name, cwd: closed.cwd }, ...d.recent.filter((r) => r.cwd !== closed.cwd)].slice(0, 12);
         }
         d.zoomedPaneId = null;
@@ -782,6 +784,12 @@ export function closeActiveFocusTarget(): void {
         return;
     }
 
+    const win = st.windows[session.activeWindowId];
+    if (win?.role === "ssh-config") {
+        closeSession(session.id);
+        return;
+    }
+
     if (session.kind === "bruno") {
         // ⌥W closes the active request tab, not the whole Bruno workspace.
         const path = st.brunoViews[session.id]?.activeRequestPath;
@@ -789,7 +797,6 @@ export function closeActiveFocusTarget(): void {
         return;
     }
 
-    const win = st.windows[session.activeWindowId];
     if (win && collectPanes(win.root).length > 1) {
         if (!confirmDiscardDirty(dirtyPathsForPane(st, win.activePaneId), "close pane")) return;
         closeActivePane();
@@ -1314,8 +1321,73 @@ export const closeBrunoEnvPalette = (): void => setState({ brunoEnvPaletteOpen: 
 export const openSettings = (): void => setState({ settingsOpen: true });
 export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));
-export const openSshConfigEditor = (): void => setState({ sshConfigEditorOpen: true });
-export const closeSshConfigEditor = (): void => setState({ sshConfigEditorOpen: false });
+export async function openSshConfigEditor(): Promise<void> {
+    let configPath: string;
+    try {
+        configPath = await sshApi.configEnsure();
+    } catch (error) {
+        reportError("open SSH config")(error);
+        return;
+    }
+    const sshDir = dirname(configPath);
+
+    mutate((d) => {
+        let owner = d.sessionOrder.find((sessionId) =>
+            (d.windowsBySession[sessionId] ?? []).some((windowId) => d.windows[windowId]?.role === "ssh-config"),
+        );
+        const targetId = owner ? (d.windowsBySession[owner] ?? []).find((windowId) => d.windows[windowId]?.role === "ssh-config") : undefined;
+        let target = targetId ? d.windows[targetId] : undefined;
+        let editorPane = target ? collectPanes(target.root).find((pane) => pane.kind === "editor") : undefined;
+
+        // Replace the short-lived bespoke SSH pane shape from development builds.
+        if (!target || !editorPane) {
+            const stale = target;
+            target = makeWindow(sshDir, "ssh config", { kind: "editor", role: "ssh-config" });
+            editorPane = target.root.type === "pane" ? target.root : undefined;
+            d.windows[target.id] = target;
+            if (stale && owner) {
+                pruneWindowViews(d, stale);
+                delete d.windows[stale.id];
+                d.windowsBySession[owner] = (d.windowsBySession[owner] ?? []).map((id) => (id === stale.id ? target!.id : id));
+            }
+        }
+        if (!editorPane) return;
+
+        // Older builds attached this window to whichever project happened to be
+        // active. Detach it and give it its own SSH-side session instead.
+        if (owner && d.sessions[owner]?.kind !== "ssh") {
+            const formerIds = d.windowsBySession[owner] ?? [];
+            const remaining = formerIds.filter((id) => id !== target!.id);
+            d.windowsBySession[owner] = remaining;
+            if (d.sessions[owner].activeWindowId === target.id && remaining.length > 0) {
+                d.sessions[owner].activeWindowId = remaining[0];
+            }
+            owner = undefined;
+        }
+
+        let configSession = owner ? d.sessions[owner] : undefined;
+        if (!configSession) {
+            configSession = makeSession("ssh", "SSH config", sshDir, target.id);
+            attachSession(d as unknown as StoreState, configSession, [target]);
+            owner = configSession.id;
+        } else {
+            d.activeSessionId = configSession.id;
+            d.zoomedPaneId = null;
+            d.pickerOpen = false;
+        }
+
+        const editorView = d.editorViews[editorPane.id] ?? { openTabs: [], activePath: null, treeWidth: 210 };
+        if (!editorView.openTabs.includes(configPath)) editorView.openTabs.push(configPath);
+        editorView.activePath = configPath;
+        d.editorViews[editorPane.id] = editorView;
+
+        configSession.activeWindowId = target.id;
+        target.activePaneId = editorPane.id;
+        configSession.view = "windows";
+        d.zoomedPaneId = null;
+        d.settingsOpen = false;
+    });
+}
 export const toggleLeftRail = (): void => setState((s) => ({ leftRailOpen: !s.leftRailOpen }));
 export const toggleRightRail = (): void => setState((s) => ({ rightRailOpen: !s.rightRailOpen }));
 export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));

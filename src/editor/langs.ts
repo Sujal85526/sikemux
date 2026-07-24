@@ -80,3 +80,37 @@ export const makefile: StreamParser<unknown> = {
         return null;
     },
 };
+
+interface SshConfigState {
+    expectDirective: boolean;
+}
+
+const SSH_BLOCK_DIRECTIVES = new Set(["host", "match"]);
+const SSH_ATOMS = /^(?:yes|no|true|false|ask|auto|none)\b/i;
+
+/** OpenSSH client config: directive-led lines with shell-like values and # comments. */
+export const sshConfig: StreamParser<SshConfigState> = {
+    startState: () => ({ expectDirective: true }),
+    languageData: { commentTokens: { line: "#" } },
+    token(stream, state) {
+        if (stream.sol()) state.expectDirective = true;
+        if (stream.eatSpace()) return null;
+        if (stream.match(/^#.*/)) return "comment";
+
+        if (state.expectDirective) {
+            state.expectDirective = false;
+            if (stream.match(/^[A-Za-z][\w-]*/)) {
+                return SSH_BLOCK_DIRECTIVES.has(stream.current().toLowerCase()) ? "keyword" : "propertyName";
+            }
+        }
+
+        if (stream.match(/^"(?:[^"\\]|\\.)*"?/) || stream.match(/^'(?:[^'\\]|\\.)*'?/)) return "string";
+        if (stream.match(/^\$\{[A-Za-z_][A-Za-z0-9_]*\}/) || stream.match(/^%[A-Za-z%]/)) return "variableName";
+        if (stream.match(SSH_ATOMS)) return "bool";
+        if (stream.match(/^\d+\b/)) return "number";
+        if (stream.match(/^[^\s#]+/)) return "string";
+
+        stream.next();
+        return null;
+    },
+};
