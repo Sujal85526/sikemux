@@ -1,4 +1,6 @@
+#[cfg(unix)]
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 use serde::Serialize;
@@ -20,6 +22,7 @@ use crate::{
 /// "$PATH"'` to extract the real PATH, then set it on our own process so
 /// every `Command::new(...)` (hermes, rnd, aws, claude, …) inherits it.
 /// Standard "fix-path" pattern Electron + Tauri apps have used for years.
+#[cfg(unix)]
 pub fn fix_path_from_login_shell() {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
 
@@ -75,6 +78,72 @@ pub fn fix_path_from_login_shell() {
     unsafe { std::env::set_var("PATH", new_path) };
 }
 
+#[cfg(windows)]
+pub fn fix_path_from_login_shell() {
+    // Windows desktop applications inherit the user's PATH. Unlike macOS,
+    // there is no login-shell environment to recover here.
+}
+
+pub fn user_home() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_default()
+}
+
+pub fn find_executable(name: &str) -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    #[cfg(windows)]
+    let names: Vec<String> = if PathBuf::from(name).extension().is_some() {
+        vec![name.to_string()]
+    } else {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+            .split(';')
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| format!("{name}{}", extension.to_ascii_lowercase()))
+            .chain(std::iter::once(name.to_string()))
+            .collect()
+    };
+    #[cfg(not(windows))]
+    let names = vec![name.to_string()];
+
+    for directory in std::env::split_paths(&paths) {
+        for candidate_name in &names {
+            let candidate = directory.join(candidate_name);
+            if !candidate.is_file() {
+                continue;
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let Ok(metadata) = candidate.metadata() else {
+                    continue;
+                };
+                if metadata.permissions().mode() & 0o111 == 0 {
+                    continue;
+                }
+            }
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Existing modules use HOME for established ~/.config, ~/.ssh and ~/.aws
+/// locations. Windows normally exposes USERPROFILE instead, so normalize it
+/// once before Tauri creates worker threads rather than branching every
+/// consumer independently.
+pub fn normalize_user_environment() {
+    if std::env::var_os("HOME").is_some() {
+        return;
+    }
+    if let Some(home) = std::env::var_os("USERPROFILE") {
+        // SAFETY: run() calls this before the Tauri runtime starts threads.
+        unsafe { std::env::set_var("HOME", home) };
+    }
+}
+
 /// Raise this process's open-file-descriptor soft limit toward its hard
 /// limit. See the call site in `lib.rs` for the why: macOS `launchd` hands
 /// GUI-launched apps a soft `RLIMIT_NOFILE` of 256, but sikemux holds one
@@ -127,7 +196,7 @@ pub fn raise_fd_limit() {}
 
 #[tauri::command]
 pub fn home_dir() -> String {
-    std::env::var("HOME").unwrap_or_default()
+    user_home().to_string_lossy().into_owned()
 }
 
 /// Frecency-ranked directories from zoxide, for the sesh picker.
@@ -247,11 +316,11 @@ pub struct BatteryStatus {
 pub fn battery_status() -> BatteryStatus {
     #[cfg(not(target_os = "macos"))]
     {
-        return BatteryStatus {
+        BatteryStatus {
             percent: None,
             charging: false,
             time_remaining: None,
-        };
+        }
     }
     #[cfg(target_os = "macos")]
     {

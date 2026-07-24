@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Compile sikemux.icon → Liquid Glass Assets.car + legacy .icns, in one
-# pass. Called from BOTH `make dev` (via beforeDevCommand) and
-# `make build` (via beforeBuildCommand + build-mac.sh), so the same
+# pass. Called from macOS `make dev` (via tauri.macos.conf.json) and
+# `make build` (via build-mac.sh), so the same
 # `src-tauri/icons/sikemux.icon` is the single source of truth for
 # every icon surface:
 #
@@ -12,7 +12,7 @@
 #       release geometry/padding (flat fallback, no Liquid Glass effect).
 #
 #   * Release bundle (target/release/bundle/macos/sikemux.app):
-#       tauri.conf.json copies Assets.car into Resources/ and merges
+#       tauri.macos.conf.json copies Assets.car into Resources/ and merges
 #       CFBundleIconName=sikemux from Info.plist before code signing.
 #
 set -euo pipefail

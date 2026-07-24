@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { SearchQuery, findNext, findPrevious, getSearchQuery, replaceAll, replaceNext, setSearchQuery } from "@codemirror/search";
 import { IconSearch } from "./Icons";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 interface Props {
     getView: () => EditorView | null;
@@ -208,7 +209,12 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
                         <button type="button" className="ed-findbar-btn" onClick={() => run(replaceNext)} title="Replace — ⏎" disabled={!query}>
                             ↪
                         </button>
-                        <button type="button" className="ed-findbar-btn" onClick={() => run(replaceAll)} title="Replace all — ⌘⏎" disabled={!query}>
+                        <button
+                            type="button"
+                            className="ed-findbar-btn"
+                            onClick={() => run(replaceAll)}
+                            title={`Replace all — ${PRIMARY_SHORTCUT}⏎`}
+                            disabled={!query}>
                             ⇶
                         </button>
                         <span className="ed-findbar-btn-spacer" aria-hidden />

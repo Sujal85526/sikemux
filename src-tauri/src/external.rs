@@ -11,6 +11,7 @@
 // (US-QWERTY hardware key codes) so the keystroke is delivered to the right
 // process regardless of focus races + keyboard layout.
 
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use crate::error::{AppError, AppResult};
@@ -50,10 +51,7 @@ pub async fn open_url(url: String, app: Option<String>, shortcut: Option<String>
         #[cfg(not(target_os = "macos"))]
         {
             let _ = (app, shortcut);
-            Command::new("xdg-open")
-                .arg(&url)
-                .status()
-                .or_else(|_| Command::new("open").arg(&url).status())?;
+            open::that(&url)?;
         }
         Ok(())
     })
@@ -116,6 +114,7 @@ fn escape_applescript(s: &str) -> String {
 }
 
 /// Parse "ctrl+3" / "cmd+shift+1" into AppleScript modifier list + bare key.
+#[cfg(target_os = "macos")]
 fn parse_shortcut(input: &str) -> Option<(String, String)> {
     let mut parts: Vec<&str> = input.split('+').map(str::trim).collect();
     if parts.len() < 2 {

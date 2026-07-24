@@ -10,7 +10,8 @@ import { notify, reportError, swallow } from "../state/toast";
 import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
-import { basename, dirname } from "../lib/paths";
+import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
+import { FILE_MANAGER_NAME } from "../lib/platform";
 
 function gitDecoration(f: GitFile): { letter: string; cls: string } {
     if (f.index === "?" || f.worktree === "?") return { letter: "U", cls: "u" };
@@ -81,7 +82,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     const gitMap = useMemo(() => {
         const m = new Map<string, GitFile>();
         if (cwd && status.data) {
-            status.data.files.forEach((f) => m.set(`${cwd}/${f.path}`, f));
+            status.data.files.forEach((f) => m.set(joinPath(cwd, f.path), f));
         }
         return m;
     }, [cwd, status.data]);
@@ -112,14 +113,15 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
 
     useEffect(() => {
         const path = revealPath ?? activePath;
-        if (!active || !path || !cwd || !path.startsWith(`${cwd}/`)) return;
-        const rel = path.slice(cwd.length + 1);
+        if (!active || !path || !cwd) return;
+        const rel = pathRelative(path, cwd);
+        if (!rel) return;
         const parts = rel.split("/");
         if (parts.length < 2) return;
         const parents: string[] = [];
         let p = cwd;
         for (let i = 0; i < parts.length - 1; i++) {
-            p = `${p}/${parts[i]}`;
+            p = joinPath(p, parts[i]);
             parents.push(p);
         }
         setExpanded((s) => {
@@ -168,11 +170,10 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
             cancelRename();
             return;
         }
-        const lastSlash = renaming.lastIndexOf("/");
-        const dest = `${renaming.slice(0, lastSlash)}/${trimmed}`;
+        const parent = dirname(renaming);
+        const dest = joinPath(parent, trimmed);
         try {
             await fsapi.rename(renaming, dest);
-            const parent = renaming.slice(0, lastSlash);
             await loadDir(parent);
             cancelRename();
         } catch (err) {
@@ -193,9 +194,9 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
 
     const startNew = (kind: "file" | "folder", parentOverride?: string) => {
         let parent = parentOverride ?? selectedDir;
-        if (!parent && activePath && activePath.startsWith(`${cwd}/`)) {
-            const last = activePath.lastIndexOf("/");
-            if (last > cwd.length) parent = activePath.slice(0, last);
+        if (!parent && activePath && pathRelative(activePath, cwd) !== null) {
+            const activeParent = dirname(activePath);
+            if (activeParent !== cwd) parent = activeParent;
         }
         if (!parent) parent = cwd;
         setExpanded((s) => new Set(s).add(parent!));
@@ -216,7 +217,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
             notify("error", "name must be a single file or folder name");
             return;
         }
-        const target = `${newRequest.parent}/${name}`;
+        const target = joinPath(newRequest.parent, name);
         try {
             if (newRequest.kind === "file") await fsapi.createFile(target);
             else await fsapi.createDir(target);
@@ -280,14 +281,14 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     const canDropInto = (src: string, destDir: string): boolean => {
         if (!src) return false;
         if (destDir === src) return false; // into itself
-        if (destDir.startsWith(`${src}/`)) return false; // into its own descendant
+        if (isPathWithin(destDir, src)) return false; // into its own descendant
         if (dirname(src) === destDir) return false; // already lives there
         return true;
     };
 
     const moveEntry = async (src: string, destDir: string) => {
         if (!canDropInto(src, destDir)) return;
-        const dest = `${destDir}/${basename(src)}`;
+        const dest = joinPath(destDir, basename(src));
         try {
             await fsapi.rename(src, dest);
             await Promise.all([loadDir(dirname(src)), loadDir(destDir)]);
@@ -410,7 +411,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     }, [active, cwd]);
 
     // ---- right-click context menu -------------------------------------
-    const relativePath = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : basename(p));
+    const relativePath = (p: string) => pathRelative(p, cwd) ?? basename(p);
 
     const copyText = async (text: string, label: string) => {
         try {
@@ -449,12 +450,12 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 { label: "New File", run: () => startNew("file", cwd) },
                 { label: "New Folder", run: () => startNew("folder", cwd) },
                 { sep: true },
-                { label: "Reveal in Finder", run: () => revealInFinder(cwd) },
+                { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => revealInFinder(cwd) },
                 { label: "Copy Path", run: () => void copyText(cwd, "path") },
             ];
         }
         const tail: CtxItem[] = [
-            { label: "Reveal in Finder", run: () => revealInFinder(entry.path) },
+            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => revealInFinder(entry.path) },
             { label: "Copy Path", run: () => void copyText(entry.path, "path") },
             { label: "Copy Relative Path", run: () => void copyText(relativePath(entry.path), "relative path") },
         ];
@@ -546,7 +547,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                     </div>,
                 );
             } else {
-                const gf = gitMap.get(e.path);
+                const gf = gitMap.get(normalizePath(e.path));
                 const gd = gf ? gitDecoration(gf) : null;
                 const isRenaming = renaming === e.path;
                 if (isRenaming) {

@@ -4,13 +4,13 @@ Thanks for taking the time to contribute. Sikemux is a Tauri + Rust + React desk
 
 ## Getting started
 
-**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). Development and release builds are macOS-only; building a macOS bundle requires Xcode command-line tools. Published releases currently target Apple Silicon, while `pnpm build:mac:universal` explicitly creates a local Apple Silicon + Intel build.
+**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). macOS bundles require Xcode; Windows development requires Microsoft C++ Build Tools and WebView2. Published releases currently target Apple Silicon, while Windows support is validated in CI as an NSIS installer.
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git
 cd sikemux
 pnpm install
-make dev            # hot-reload Vite + Tauri (or: pnpm tauri dev)
+pnpm tauri dev      # hot-reload Vite + Tauri on macOS or Windows
 ```
 
 ## Project layout
@@ -20,7 +20,7 @@ make dev            # hot-reload Vite + Tauri (or: pnpm tauri dev)
 | `src/`           | React UI — components, Zustand state, editor, terminal, themes, keymap |
 | `src/api/`       | Thin wrappers over Tauri `invoke` commands                             |
 | `src-tauri/src/` | Rust core — PTY, git, LSP, fs watchers, AWS & Rundeck clients          |
-| `scripts/`       | Icon pipeline and macOS build script                                   |
+| `scripts/`       | Icon pipeline and platform release tooling                             |
 
 ## Before you open a PR
 
@@ -57,7 +57,7 @@ Common types: `feat`, `fix`, `style`, `refactor`, `perf`, `chore`, `docs`. Scope
 Open an [issue](https://github.com/nodelike/sikemux/issues) with:
 
 - What you expected vs. what happened, and steps to reproduce.
-- Your macOS version and the Sikemux version (shown in the side rail).
+- Your operating-system version and the Sikemux version (shown in the side rail).
 - Logs or screenshots where relevant.
 
 ## License

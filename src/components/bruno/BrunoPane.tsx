@@ -11,7 +11,8 @@ import { buildScope, findRequest, requestVars, selectedEnvOf } from "../../bruno
 import { mergeScope, type Scope } from "../../bruno/interpolate";
 import { runRequest, type RunResult } from "../../bruno/run";
 import type { BruRequest, BruScope } from "../../bruno/types";
-import { basename } from "../../lib/paths";
+import { basename, relativePath as pathRelative } from "../../lib/paths";
+import { FILE_MANAGER_NAME } from "../../lib/platform";
 import { fsapi } from "../../api/fs";
 import { notify, reportError } from "../../state/toast";
 import { type CtxItem } from "../FileTree";
@@ -192,7 +193,7 @@ export function BrunoPane({ sessionId, active }: Props) {
         });
     }, [sessionId, onSend]);
 
-    const relativePath = (p: string) => (collectionPath && p.startsWith(`${collectionPath}/`) ? p.slice(collectionPath.length + 1) : basename(p));
+    const relativePath = (p: string) => pathRelative(p, collectionPath) ?? basename(p);
     const copyText = (text: string, label: string) =>
         navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 
@@ -212,7 +213,7 @@ export function BrunoPane({ sessionId, active }: Props) {
             { label: "Copy Path", run: () => void copyText(tabPath, "path") },
             { label: "Copy Relative Path", run: () => void copyText(relativePath(tabPath), "relative path") },
             { sep: true },
-            { label: "Reveal in Finder", run: () => void fsapi.revealInFinder(tabPath).catch(reportError("reveal")) },
+            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(tabPath).catch(reportError("reveal")) },
         ];
     };
 

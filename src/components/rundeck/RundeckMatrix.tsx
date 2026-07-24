@@ -7,6 +7,7 @@ import { envFolderOf, inferEnv } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
 import { IconSearch } from "../Icons";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
+import { PRIMARY_SHORTCUT } from "../../lib/platform";
 
 interface Props {
     paneId: string;
@@ -193,7 +194,7 @@ function DeployRow({ paneId, project, cell }: { paneId: string; project: string;
                         last
                     </button>
                 )}
-                <button className="rnd-row-action accent" onClick={deploy} title="Deploy (⌘-click anywhere on the row)">
+                <button className="rnd-row-action accent" onClick={deploy} title={`Deploy (${PRIMARY_SHORTCUT}click anywhere on the row)`}>
                     deploy
                 </button>
             </span>

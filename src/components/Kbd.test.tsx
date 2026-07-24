@@ -5,7 +5,7 @@ import { ALT, CMD, CTRL, Kbd, SHIFT, hint } from "./Kbd";
 describe("Kbd", () => {
     it("renders visible keyboard chips and hint strings", () => {
         render(<Kbd>{ALT}S</Kbd>);
-        expect(screen.getByText("⌥S")).toHaveClass("kbd");
-        expect(hint(CMD, SHIFT, CTRL, "P")).toBe("⌘⇧⌃P");
+        expect(screen.getByText(`${ALT}S`)).toHaveClass("kbd");
+        expect(hint(CMD, SHIFT, CTRL, "P")).toBe(`${CMD}${SHIFT}${CTRL}P`);
     });
 });

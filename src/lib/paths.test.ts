@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { basename, dirname, expandHome, prettyPath } from "./paths";
+import { basename, dirname, expandHome, isPathWithin, joinPath, prettyPath, relativePath } from "./paths";
 
 describe("path helpers", () => {
     it("extracts basenames for unix-style paths", () => {
@@ -7,6 +7,7 @@ describe("path helpers", () => {
         expect(basename("/tmp/project/")).toBe("project");
         expect(basename("file.ts")).toBe("file.ts");
         expect(basename("")).toBe("");
+        expect(basename("C:\\work\\sikemux\\src\\main.ts")).toBe("main.ts");
     });
 
     it("extracts dirnames without trailing slash noise", () => {
@@ -14,6 +15,13 @@ describe("path helpers", () => {
         expect(dirname("/tmp/project/")).toBe("/tmp");
         expect(dirname("file.ts")).toBe("");
         expect(dirname("/")).toBe("");
+        expect(dirname("C:\\work\\sikemux\\src\\main.ts")).toBe("C:\\work\\sikemux\\src");
+    });
+
+    it("joins and compares mixed Windows path separators", () => {
+        expect(joinPath("C:\\work\\sikemux", "src", "main.ts")).toBe("C:/work/sikemux/src/main.ts");
+        expect(relativePath("C:\\work\\sikemux\\src\\main.ts", "C:/work/sikemux")).toBe("src/main.ts");
+        expect(isPathWithin("C:\\work\\sikemux-old", "C:\\work\\sikemux")).toBe(false);
     });
 
     it("pretty-prints and expands home paths", () => {

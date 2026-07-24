@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { hasPrimaryModifier } from "./lib/platform";
 import * as cmd from "./state/commands";
 import { emit } from "./state/bus";
 import { getState } from "./state/store";
@@ -11,7 +12,7 @@ function isTerminalKeyTarget(e: KeyboardEvent): boolean {
 export function useKeymap(): void {
     useEffect(() => {
         const meta = (e: KeyboardEvent): void => {
-            if (!e.metaKey || e.altKey || e.ctrlKey) return;
+            if (!hasPrimaryModifier(e) || e.altKey) return;
             if (e.code === "KeyP" && !e.shiftKey) {
                 e.preventDefault();
                 e.stopImmediatePropagation();

@@ -304,13 +304,9 @@ pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
 }
 
 fn executable_in_path(agent: &str, bin: &str) -> bool {
-    let Some(paths) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&paths).any(|dir| {
-        let candidate = dir.join(bin);
-        allowed_agent_path(agent, &candidate) && is_executable(&candidate)
-    })
+    crate::system::find_executable(bin)
+        .map(|candidate| allowed_agent_path(agent, &candidate))
+        .unwrap_or(false)
 }
 
 fn allowed_agent_path(agent: &str, path: &Path) -> bool {
@@ -324,19 +320,6 @@ fn allowed_agent_path(agent: &str, path: &Path) -> bool {
     // Treat that as app data/cache rather than a user-visible system install;
     // otherwise stale copies keep showing up in the agent rail after uninstall.
     path != PathBuf::from(home).join(".opencode/bin/opencode")
-}
-
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    fs::metadata(path)
-        .map(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-fn is_executable(path: &Path) -> bool {
-    path.is_file()
 }
 
 fn mtime_of(path: &Path) -> u64 {

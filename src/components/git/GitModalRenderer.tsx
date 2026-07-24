@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { closeGitModal, dispatchGitMenuKey } from "../../state/git";
 import { getState, useStore } from "../../state/store";
+import { PRIMARY_SHORTCUT } from "../../lib/platform";
 
 export function GitModalRenderer({ paneId, active }: { paneId: string; active: boolean }) {
     const modal = useStore((s) => s.gitModal);
@@ -187,7 +188,7 @@ function PromptBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof us
                     cancel
                 </button>
                 <button type="button" className="git-modal-btn primary" onClick={submit}>
-                    {modal.multiline ? "submit (⌘↵)" : "ok (↵)"}
+                    {modal.multiline ? `submit (${PRIMARY_SHORTCUT}↵)` : "ok (↵)"}
                 </button>
             </div>
         </>

@@ -27,6 +27,7 @@ import {
     WindowIcon,
 } from "./Icons";
 import { branchKind } from "./rundeck/branchStyle";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -456,7 +457,7 @@ export function TopBar() {
                     <button className={`tb-btn${rightOpen ? " on" : ""}`} onClick={cmd.toggleRightRail} title="Toggle agents rail">
                         <IconPanelRight size={15} />
                     </button>
-                    <button className="tb-btn" onClick={cmd.toggleSettings} title="Settings — ⌘,">
+                    <button className="tb-btn" onClick={cmd.toggleSettings} title={`Settings — ${PRIMARY_SHORTCUT},`}>
                         <CogIcon size={15} />
                     </button>
                 </div>

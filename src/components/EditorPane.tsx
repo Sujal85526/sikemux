@@ -28,7 +28,8 @@ import { IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { TabBar } from "./TabBar";
 import { EditorFindBar } from "./EditorFindBar";
-import { basename } from "../lib/paths";
+import { basename, isPathWithin, relativePath as pathRelative } from "../lib/paths";
+import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null, treeWidth: 210 };
 
@@ -650,10 +651,8 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             // Project files open in their owning editor. LSP targets may live
             // in GOMODCACHE, rust stdlib, site-packages, etc.; route those to
             // the active editor instead of dropping them.
-            const belongsHere = !!cwd && (e.path === cwd || e.path.startsWith(`${cwd}/`));
-            const belongsToAProject = Object.values(useStore.getState().sessions).some(
-                (s) => s?.kind === "project" && (e.path === s.cwd || e.path.startsWith(`${s.cwd}/`)),
-            );
+            const belongsHere = !!cwd && isPathWithin(e.path, cwd);
+            const belongsToAProject = Object.values(useStore.getState().sessions).some((s) => s?.kind === "project" && isPathWithin(e.path, s.cwd));
             if (!belongsHere && (belongsToAProject || !active)) return;
             void (async () => {
                 await openPath(e.path);
@@ -732,7 +731,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
     };
 
     // ---- tab context menu ---------------------------------------------
-    const relativePath = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : basename(p));
+    const relativePath = (p: string) => pathRelative(p, cwd) ?? basename(p);
 
     const copyText = (text: string, label: string) =>
         navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
@@ -744,7 +743,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
         const toRight = tabs.slice(idx + 1);
         const saved = tabs.filter((t) => !dirty.has(t));
         return [
-            { label: "Close", hint: "⌘W", run: () => closeTabs([path]) },
+            { label: "Close", hint: `${PRIMARY_SHORTCUT}W`, run: () => closeTabs([path]) },
             { label: "Close Others", disabled: others.length === 0, run: () => closeTabs(others) },
             { label: "Close to the Left", disabled: toLeft.length === 0, run: () => closeTabs(toLeft) },
             { label: "Close to the Right", disabled: toRight.length === 0, run: () => closeTabs(toRight) },
@@ -754,7 +753,7 @@ export function EditorPane({ paneId, cwd, active, visible }: { paneId: string; c
             { label: "Copy Path", run: () => void copyText(path, "path") },
             { label: "Copy Relative Path", run: () => void copyText(relativePath(path), "relative path") },
             { sep: true },
-            { label: "Reveal in Finder", run: () => void fsapi.revealInFinder(path).catch(reportError("reveal")) },
+            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(path).catch(reportError("reveal")) },
         ];
     };
 

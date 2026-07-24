@@ -1,7 +1,7 @@
 import { DiffEditor } from "./DiffEditor";
 import { FileIcon } from "./FileIcon";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
-import { basename } from "../lib/paths";
+import { basename, joinPath } from "../lib/paths";
 
 export function MergeReview({
     repo,
@@ -20,7 +20,7 @@ export function MergeReview({
 
     return (
         <div className="merge-review">
-            <button className="merge-header" onClick={() => onOpenFile(`${repo}/${path}`)} title="Open the full file in the editor">
+            <button className="merge-header" onClick={() => onOpenFile(joinPath(repo, path))} title="Open the full file in the editor">
                 <FileIcon name={basename(path)} size={14} />
                 <span className="merge-path">{path}</span>
                 <span className="merge-open">open in editor →</span>

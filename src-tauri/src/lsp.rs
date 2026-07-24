@@ -3,6 +3,7 @@
 // response pairs.
 
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -133,10 +134,7 @@ fn is_executable(path: &Path) -> bool {
 }
 
 fn executable_in_path(bin: &str) -> Option<PathBuf> {
-    let paths = std::env::var_os("PATH")?;
-    std::env::split_paths(&paths)
-        .map(|dir| dir.join(bin))
-        .find(|candidate| is_executable(candidate))
+    crate::system::find_executable(bin)
 }
 
 fn go_env(name: &str) -> Option<String> {

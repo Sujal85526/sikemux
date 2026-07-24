@@ -4,6 +4,7 @@ import { HTTP_METHODS, type AuthMode, type BodyMode, type BruRequest, type KeyVa
 import { IconRun, IconSave, IconTrash, IconPlus } from "../Icons";
 import { VarInput } from "./VarText";
 import { BrunoSelect, BrunoCheck, type BrunoOption } from "./BrunoControls";
+import { PRIMARY_SHORTCUT } from "../../lib/platform";
 import { BrunoCode, type BrunoLang } from "./BrunoCode";
 
 interface Props {
@@ -126,17 +127,21 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
                         if (e.key === "Enter") onSend();
                     }}
                 />
-                <button className="bruno-send" onClick={onSend} disabled={running} title="Send (⌘↵)">
+                <button className="bruno-send" onClick={onSend} disabled={running} title={`Send (${PRIMARY_SHORTCUT}↵)`}>
                     {running ? <span className="bruno-row-spin" /> : <IconRun size={12} />}
                     <span>{running ? "Sending" : "Send"}</span>
                     {!running && (
                         <kbd className="bruno-send-kbd">
-                            <span className="bruno-kbd-cmd">⌘</span>
+                            <span className="bruno-kbd-cmd">{PRIMARY_SHORTCUT}</span>
                             <span className="bruno-kbd-ret">↵</span>
                         </kbd>
                     )}
                 </button>
-                <button className={`bruno-save${dirty ? " dirty" : ""}`} onClick={onSave} disabled={!dirty} title="Save to .bru (⌘S)">
+                <button
+                    className={`bruno-save${dirty ? " dirty" : ""}`}
+                    onClick={onSave}
+                    disabled={!dirty}
+                    title={`Save to .bru (${PRIMARY_SHORTCUT}S)`}>
                     <IconSave size={13} />
                 </button>
             </div>

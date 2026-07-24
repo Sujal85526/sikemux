@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { sshApi } from "../api/ssh";
 import * as cmd from "../state/commands";
 import { errMessage, notify } from "../state/toast";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { IconClose, IconSave } from "./Icons";
 
 const EXAMPLE = "Host staging\n  HostName staging.example.com\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519";
@@ -95,7 +96,7 @@ export function SshConfigEditor() {
             </header>
             <div className="ssh-config-meta">
                 <span>~/.ssh/config</span>
-                <span>⌘S save · Esc close</span>
+                <span>{PRIMARY_SHORTCUT}S save · Esc close</span>
             </div>
             <div className="ssh-config-editor-wrap">
                 {loading ? (

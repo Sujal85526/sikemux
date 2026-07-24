@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { settingsApi } from "../api/settings";
 import { prettyPath } from "../lib/paths";
+import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -70,7 +71,11 @@ export function SettingsPanel() {
 
                     <div className="settings-rail-foot">
                         <span className="settings-rail-path">Changes save automatically</span>
-                        <button className="settings-close" onClick={cmd.closeSettings} title="Close settings (Esc / ⌘,)" type="button">
+                        <button
+                            className="settings-close"
+                            onClick={cmd.closeSettings}
+                            title={`Close settings (Esc / ${PRIMARY_SHORTCUT},)`}
+                            type="button">
                             <IconClose size={12} /> Done
                         </button>
                     </div>
@@ -85,7 +90,7 @@ export function SettingsPanel() {
                         <button
                             className="settings-topbar-close"
                             onClick={cmd.closeSettings}
-                            title="Close settings (Esc / ⌘,)"
+                            title={`Close settings (Esc / ${PRIMARY_SHORTCUT},)`}
                             aria-label="Close settings"
                             type="button">
                             <IconClose size={14} />
@@ -395,7 +400,13 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
     };
 
     return (
-        <SettingsPage name="appearance" deck="Theme, window opacity and background blur. Changes apply instantly.">
+        <SettingsPage
+            name="appearance"
+            deck={
+                IS_MACOS
+                    ? "Theme, window opacity and background blur. Changes apply instantly."
+                    : "Theme and editor appearance. Changes apply instantly."
+            }>
             <SettingsSection
                 title="Theme"
                 meta={`${THEMES.length} built-in · ${customThemes.length} custom`}
@@ -439,51 +450,53 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 </div>
             )}
 
-            <SettingsSection title="Window feel" sub="Tune the amount of glass without leaving this page.">
-                <div className="settings-control-stack">
-                    <div className="settings-control">
-                        <div className="settings-control-copy">
-                            <h3>Opacity</h3>
-                            <p>Solid at 1.00, translucent below it.</p>
+            {IS_MACOS && (
+                <SettingsSection title="Window feel" sub="Tune the amount of glass without leaving this page.">
+                    <div className="settings-control-stack">
+                        <div className="settings-control">
+                            <div className="settings-control-copy">
+                                <h3>Opacity</h3>
+                                <p>Solid at 1.00, translucent below it.</p>
+                            </div>
+                            <div className="settings-knob-row">
+                                <input
+                                    type="range"
+                                    className="settings-slider"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    value={windowOpacity}
+                                    onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
+                                />
+                                <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
+                            </div>
                         </div>
-                        <div className="settings-knob-row">
-                            <input
-                                type="range"
-                                className="settings-slider"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                value={windowOpacity}
-                                onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
-                            />
-                            <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
+                        <div className="settings-control">
+                            <div className="settings-control-copy">
+                                <h3>Background blur</h3>
+                                <p>0 is crisp; 20–40px gives a soft frosted effect.</p>
+                            </div>
+                            <div className="settings-knob-row">
+                                <input
+                                    type="range"
+                                    className="settings-slider alt"
+                                    min={0}
+                                    max={60}
+                                    step={1}
+                                    value={Math.min(60, windowBlur)}
+                                    onChange={(e) => cmd.setWindowBlur(parseInt(e.target.value, 10))}
+                                />
+                                <NumberField
+                                    value={windowBlur}
+                                    onCommit={(v) => cmd.setWindowBlur(Math.round(v))}
+                                    format={(v) => String(Math.round(v))}
+                                    suffix="px"
+                                />
+                            </div>
                         </div>
                     </div>
-                    <div className="settings-control">
-                        <div className="settings-control-copy">
-                            <h3>Background blur</h3>
-                            <p>0 is crisp; 20–40px gives a soft frosted effect.</p>
-                        </div>
-                        <div className="settings-knob-row">
-                            <input
-                                type="range"
-                                className="settings-slider alt"
-                                min={0}
-                                max={60}
-                                step={1}
-                                value={Math.min(60, windowBlur)}
-                                onChange={(e) => cmd.setWindowBlur(parseInt(e.target.value, 10))}
-                            />
-                            <NumberField
-                                value={windowBlur}
-                                onCommit={(v) => cmd.setWindowBlur(Math.round(v))}
-                                format={(v) => String(Math.round(v))}
-                                suffix="px"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </SettingsSection>
+                </SettingsSection>
+            )}
         </SettingsPage>
     );
 }
