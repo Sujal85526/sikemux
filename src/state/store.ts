@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID, type Theme } from "../themes";
+import type { KeybindingOverrides } from "../keybindings";
 
 enableMapSet();
 import { makePane, newId } from "./layout";
@@ -49,6 +50,7 @@ export interface DomainState {
     windowBlur: number;
     cloudBrowser: string;
     cloudBrowserShortcut: string;
+    keybindingOverrides: KeybindingOverrides;
     awsProfile: string | null;
     awsService: AwsService;
     leftRailOpen: boolean;
@@ -146,6 +148,7 @@ export const useStore = create<StoreState>(() => {
         windowBlur: 0,
         cloudBrowser: "",
         cloudBrowserShortcut: "",
+        keybindingOverrides: {},
         awsProfile: null,
         awsService: "ecs",
         leftRailOpen: true,

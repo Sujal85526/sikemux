@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -16,7 +17,7 @@ import {
     Logo,
     WindowIcon,
 } from "./Icons";
-import { ALT, Kbd, SHIFT, hint } from "./Kbd";
+import { Kbd } from "./Kbd";
 import { UpdateChip, VersionChip } from "./TopBar";
 
 function kindIcon(kind: SessionKind): ReactNode {
@@ -38,7 +39,9 @@ export function SideRail() {
     const agentsById = useStore((s) => s.agents);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
+    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
+    const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
 
     const projects = sessions.filter((s) => s.kind === "project");
@@ -132,30 +135,29 @@ export function SideRail() {
         type SubRow = {
             role: WindowRole | "agents";
             label: string;
-            kbd: string;
+            kbd?: string;
             title: string;
             icons: React.ReactNode[];
         };
         const children: SubRow[] = [
-            { role: "files", label: "Files", kbd: hint(ALT, "1"), title: `Files — ${hint(ALT, "1")}`, icons: [] },
+            { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}`, icons: [] },
             {
                 role: "term",
                 label: "Term",
-                kbd: hint(ALT, "2"),
-                title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${hint(ALT, "2")}`,
+                kbd: kb("window.terminal"),
+                title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
                 icons: termIcons,
             },
-            { role: "git", label: "Git", kbd: hint(ALT, "3"), title: `Git — ${hint(ALT, "3")}`, icons: [] },
+            { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}`, icons: [] },
             {
                 role: "agents",
                 label: "Agents",
-                kbd: hint(ALT, "4"),
-                title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${hint(ALT, "4")}`,
+                kbd: kb("window.agents"),
+                title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
                 icons: agentIcons,
             },
-            { role: "search", label: "Search", kbd: hint(ALT, "5"), title: `Search — ${hint(ALT, "5")}`, icons: [] },
+            { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
         ];
-
         return (
             <div className="proj-tree active">
                 <button className="proj-row expanded" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
@@ -198,7 +200,7 @@ export function SideRail() {
                                         {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                                     </span>
                                 )}
-                                <span className="proj-child-kbd">{c.kbd}</span>
+                                {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
                         );
                     })}
@@ -297,17 +299,17 @@ export function SideRail() {
                     label="Projects"
                     list={projects}
                     add={() => cmd.openPicker("projects")}
-                    addTitle={`Open project — ${hint(ALT, "P")}`}
-                    addKbd={hint(ALT, "P")}
+                    addTitle={`Open project — ${kb("project.open")}`}
+                    addKbd={kb("project.open")}
                     emptyText="no projects"
                 />
                 <Group
                     label="SSH"
                     list={sshs}
                     add={() => cmd.openPicker("ssh")}
-                    addTitle={`Connect to SSH host — ${hint(ALT, SHIFT, "S")}`}
-                    addKbd={hint(ALT, SHIFT, "S")}
-                    action={cmd.openSshConfigEditor}
+                    addTitle={`Connect to SSH host — ${kb("ssh.open")}`}
+                    addKbd={kb("ssh.open")}
+                    action={() => void cmd.openSshConfigEditor()}
                     actionTitle="Edit ~/.ssh/config"
                     emptyText="no ssh hosts"
                 />
@@ -315,8 +317,8 @@ export function SideRail() {
                     label="Cloud"
                     list={cloud}
                     add={cmd.openAwsSession}
-                    addTitle={`Open AWS — ${hint(ALT, "A")}`}
-                    addKbd={hint(ALT, "A")}
+                    addTitle={`Open AWS — ${kb("aws.open")}`}
+                    addKbd={kb("aws.open")}
                     emptyText="no cloud sessions"
                 />
                 <Group
@@ -330,8 +332,8 @@ export function SideRail() {
                     label="API"
                     list={apis}
                     add={() => cmd.openPicker("bruno")}
-                    addTitle={`Open Bruno workspace — ${hint(ALT, "B")}`}
-                    addKbd={hint(ALT, "B")}
+                    addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
+                    addKbd={kb("bruno.open")}
                     emptyText="open a bruno workspace"
                 />
                 <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
@@ -339,8 +341,8 @@ export function SideRail() {
 
             <UpdateChip />
 
-            <button className="rail-foot" onClick={() => cmd.openPicker("all")} title={`Open or create a session — ${hint(ALT, "S")}`}>
-                <Kbd>{hint(ALT, "S")}</Kbd>
+            <button className="rail-foot" onClick={() => cmd.openPicker("all")} title={`Open or create a session — ${kb("session.open")}`}>
+                <Kbd>{kb("session.open")}</Kbd>
                 <span>open or create a session</span>
             </button>
         </aside>

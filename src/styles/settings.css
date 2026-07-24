@@ -730,6 +730,227 @@
     line-height: 1.45;
 }
 
+/* ── keybinding command map ─────────────────────────── */
+.keymap-toolbar {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.keymap-search {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--s-bg) 72%, transparent);
+    transition: border-color 0.1s;
+}
+.keymap-search:focus-within {
+    border-color: var(--acc-line);
+}
+.keymap-search span {
+    padding: 0 10px;
+    color: var(--ink-muted);
+    font: 600 8.5px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.keymap-search input {
+    min-width: 0;
+    border: 0;
+    border-left: 1px solid var(--line);
+    outline: 0;
+    background: transparent;
+    color: var(--ink);
+    padding: 8px 10px;
+    font: 500 11px/1.2 var(--mono);
+}
+.keymap-search input::placeholder {
+    color: var(--ink-muted);
+}
+.keymap-toolbar .settings-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.keymap-status {
+    min-height: 31px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    background: var(--s-bg-dim);
+    color: var(--ink-muted);
+    font-size: 10px;
+    line-height: 1.4;
+}
+.keymap-status-light {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border: 1px solid var(--ink-muted);
+    background: transparent;
+}
+.keymap-status.listening {
+    color: var(--ink);
+    border-color: var(--acc-line);
+}
+.keymap-status.listening .keymap-status-light {
+    border-color: var(--acc);
+    background: var(--acc);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 16%, transparent);
+    animation: keymapListen 1s steps(2, end) infinite;
+}
+@keyframes keymapListen {
+    50% {
+        opacity: 0.25;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .keymap-status.listening .keymap-status-light,
+    .keymap-caret::after {
+        animation: none;
+    }
+}
+.keymap-groups {
+    margin-top: 16px;
+    display: grid;
+    gap: 18px;
+}
+.keymap-group {
+    min-width: 0;
+}
+.keymap-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+.keymap-group-head h3 {
+    margin: 0;
+    color: var(--ink-dim);
+    font: 650 9px/1 var(--mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+.keymap-group-head span {
+    color: var(--ink-muted);
+    font: 500 9px/1 var(--mono);
+    font-variant-numeric: tabular-nums;
+}
+.keymap-list {
+    border: 1px solid var(--line);
+}
+.keymap-row {
+    min-height: 50px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 20px;
+    align-items: center;
+    padding: 7px 8px 7px 12px;
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--s-bg-dim) 54%, transparent);
+    transition:
+        background 0.1s,
+        border-color 0.1s;
+}
+.keymap-row:first-child {
+    border-top: 0;
+}
+.keymap-row:hover,
+.keymap-row.recording {
+    background: color-mix(in srgb, var(--acc) 5%, var(--s-bg-dim));
+}
+.keymap-row.recording {
+    box-shadow: inset 2px 0 0 var(--acc);
+}
+.keymap-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.keymap-name {
+    color: var(--ink);
+    font: 600 10.5px/1.25 var(--mono);
+}
+.keymap-detail {
+    overflow: hidden;
+    color: var(--ink-muted);
+    font-size: 9.5px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.keymap-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.keymap-reset {
+    width: 25px;
+    height: 25px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ink-muted);
+    cursor: pointer;
+}
+.keymap-reset:hover,
+.keymap-reset:focus-visible {
+    border-color: var(--line);
+    color: var(--ink);
+    outline: 0;
+}
+.keymap-recorder {
+    min-width: 96px;
+    min-height: 28px;
+    padding: 5px 10px;
+    border: 1px solid color-mix(in srgb, var(--ink-muted) 64%, var(--line));
+    background: var(--bg);
+    color: var(--ink);
+    font: 650 10.5px/1 var(--mono);
+    letter-spacing: 0.02em;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--line) 76%, transparent);
+    transition:
+        border-color 0.1s,
+        color 0.1s,
+        background 0.1s;
+}
+.keymap-recorder:hover,
+.keymap-recorder:focus-visible {
+    border-color: var(--acc-line);
+    color: var(--acc);
+    outline: 0;
+}
+.keymap-recorder.empty {
+    color: var(--ink-muted);
+    font-weight: 500;
+}
+.keymap-recorder.listening {
+    border-color: var(--acc);
+    background: color-mix(in srgb, var(--acc) 9%, var(--bg));
+    color: var(--acc);
+    box-shadow: inset 0 -2px 0 var(--acc);
+}
+.keymap-caret::after {
+    content: "_";
+    margin-left: 4px;
+    animation: keymapListen 0.8s steps(2, end) infinite;
+}
+.keymap-foot {
+    margin: 14px 0 0;
+    color: var(--ink-muted);
+    font-size: 9.5px;
+    line-height: 1.45;
+}
+
 /* ── theme editor ───────────────────────────────────── */
 .theme-editor {
     margin: 0;
@@ -1068,6 +1289,15 @@
     .settings-control {
         grid-template-columns: 1fr;
         gap: 12px;
+    }
+    .keymap-row {
+        gap: 10px;
+    }
+    .keymap-detail {
+        white-space: normal;
+    }
+    .keymap-recorder {
+        min-width: 82px;
     }
     .settings-knob-row {
         grid-template-columns: 1fr 118px;

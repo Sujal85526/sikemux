@@ -59,6 +59,38 @@ describe("frontend persistence", () => {
         expect(saved.prefs.rundeck).toEqual({ activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] });
     });
 
+    it("persists and safely hydrates keybinding overrides", async () => {
+        setState({
+            keybindingOverrides: {
+                "project.open": "Ctrl+KeyP",
+                "pane.zoom": null,
+            },
+        });
+        invoke.mockResolvedValue(undefined);
+
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.prefs.keybindingOverrides).toEqual({
+            "project.open": "Ctrl+KeyP",
+            "pane.zoom": null,
+        });
+
+        applyHydrate(
+            JSON.stringify({
+                ...saved,
+                prefs: {
+                    ...saved.prefs,
+                    keybindingOverrides: {
+                        "project.open": "Meta+Shift+KeyO",
+                        "pane.zoom": "KeyZ",
+                        unknown: "Meta+KeyU",
+                    },
+                },
+            }),
+        );
+        expect(getState().keybindingOverrides).toEqual({ "project.open": "Meta+Shift+KeyO" });
+    });
+
     it("serializes writes, coalesces queued snapshots, and marks only successful writes saved", async () => {
         const first = deferred<void>();
         invoke.mockImplementationOnce(() => first.promise).mockResolvedValue(undefined);

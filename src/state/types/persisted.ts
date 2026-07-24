@@ -1,4 +1,5 @@
 import type { Theme } from "../../themes";
+import type { KeybindingOverrides } from "../../keybindings";
 import type { Agent, AgentBookmark, AwsService, PinnedProject, ProjectRoot, RecentEntry, RundeckSettings, Session, Window } from "./domain";
 import type { EditorPaneView } from "./view";
 
@@ -29,6 +30,7 @@ export interface PersistedPrefs {
     windowBlur: number;
     cloudBrowser: string;
     cloudBrowserShortcut: string;
+    keybindingOverrides?: KeybindingOverrides;
     awsProfile: string | null;
     awsService: AwsService;
     leftRailOpen: boolean;

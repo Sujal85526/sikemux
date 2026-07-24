@@ -93,6 +93,8 @@ Tiling pane splits with vim-style focus movement, fuzzy session picker, live upd
 
 ## Keyboard shortcuts
 
+These are the defaults. Every command can be reassigned or cleared in **Settings → Keybindings**; changes save automatically.
+
 | Key       | Action                               |     | Key              | Action                    |
 | --------- | ------------------------------------ | --- | ---------------- | ------------------------- |
 | `⌥S`      | Open / create a session              |     | `⌥\` / `⌥-`      | Split pane (row / column) |

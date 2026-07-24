@@ -1394,6 +1394,20 @@ export function setWindowBlur(v: number): void {
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
 
+export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
+    setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
+}
+
+export function resetKeybinding(id: import("../keybindings").KeybindingActionId): void {
+    setState((s) => {
+        const keybindingOverrides = { ...s.keybindingOverrides };
+        delete keybindingOverrides[id];
+        return { keybindingOverrides };
+    });
+}
+
+export const resetAllKeybindings = (): void => setState({ keybindingOverrides: {} });
+
 export function addProjectRoot(path: string, depth = 1): void {
     setState((s) => (s.projectRoots.some((r) => r.path === path) ? {} : { projectRoots: [...s.projectRoots, { path, depth }] }));
     invalidate((kind) => kind === projectRootsScanR.kind);

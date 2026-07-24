@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { sshStartup } from "../terminal/sshStartup";
 import { isTheme } from "../themes";
+import { normaliseKeybindingOverrides } from "../keybindings";
 import { registerCustomThemes } from "../themes/bus";
 import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
@@ -60,6 +61,7 @@ const PERSISTED_KEYS = [
     "windowBlur",
     "cloudBrowser",
     "cloudBrowserShortcut",
+    "keybindingOverrides",
     "awsProfile",
     "awsService",
     "leftRailOpen",
@@ -93,6 +95,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         windowBlur: s.windowBlur,
         cloudBrowser: s.cloudBrowser,
         cloudBrowserShortcut: s.cloudBrowserShortcut,
+        keybindingOverrides: s.keybindingOverrides,
         awsProfile: s.awsProfile,
         awsService: s.awsService,
         leftRailOpen: s.leftRailOpen,
@@ -466,6 +469,7 @@ export function applyHydrate(raw: string): void {
         windowBlur: typeof prefs.windowBlur === "number" && Number.isFinite(prefs.windowBlur) ? prefs.windowBlur : cur.windowBlur,
         cloudBrowser: typeof prefs.cloudBrowser === "string" ? prefs.cloudBrowser : cur.cloudBrowser,
         cloudBrowserShortcut: typeof prefs.cloudBrowserShortcut === "string" ? prefs.cloudBrowserShortcut : cur.cloudBrowserShortcut,
+        keybindingOverrides: normaliseKeybindingOverrides(prefs.keybindingOverrides),
         awsProfile: prefs.awsProfile === null || typeof prefs.awsProfile === "string" ? prefs.awsProfile : cur.awsProfile,
         awsService: AWS_SERVICES.has(prefs.awsService as StoreState["awsService"]) ? (prefs.awsService as StoreState["awsService"]) : cur.awsService,
         leftRailOpen: typeof prefs.leftRailOpen === "boolean" ? prefs.leftRailOpen : cur.leftRailOpen,
