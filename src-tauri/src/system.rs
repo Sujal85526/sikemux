@@ -1,6 +1,6 @@
 #[cfg(unix)]
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Serialize;
@@ -92,6 +92,10 @@ pub fn user_home() -> PathBuf {
 }
 
 pub fn find_executable(name: &str) -> Option<PathBuf> {
+    find_executable_matching(name, |_| true)
+}
+
+pub fn find_executable_matching(name: &str, predicate: impl Fn(&Path) -> bool) -> Option<PathBuf> {
     let paths = std::env::var_os("PATH")?;
     #[cfg(windows)]
     let names: Vec<String> = if PathBuf::from(name).extension().is_some() {
@@ -108,8 +112,16 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
     #[cfg(not(windows))]
     let names = vec![name.to_string()];
 
-    for directory in std::env::split_paths(&paths) {
-        for candidate_name in &names {
+    find_executable_matching_in(std::env::split_paths(&paths), &names, &predicate)
+}
+
+fn find_executable_matching_in(
+    paths: impl IntoIterator<Item = PathBuf>,
+    names: &[String],
+    predicate: &impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    for directory in paths {
+        for candidate_name in names {
             let candidate = directory.join(candidate_name);
             if !candidate.is_file() {
                 continue;
@@ -124,7 +136,9 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
                     continue;
                 }
             }
-            return Some(candidate);
+            if predicate(&candidate) {
+                return Some(candidate);
+            }
         }
     }
     None
@@ -401,5 +415,39 @@ pub fn boot_init() -> BootInfo {
         home,
         state,
         recent: zoxide_dirs(),
+    }
+}
+
+#[cfg(test)]
+mod executable_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn executable_lookup_continues_after_a_rejected_candidate() {
+        let first = tempdir().expect("first path");
+        let second = tempdir().expect("second path");
+        let first_candidate = first.path().join("tool");
+        let second_candidate = second.path().join("tool");
+        std::fs::write(&first_candidate, b"first").expect("first executable");
+        std::fs::write(&second_candidate, b"second").expect("second executable");
+
+        #[cfg(unix)]
+        for candidate in [&first_candidate, &second_candidate] {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(candidate)
+                .expect("candidate metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(candidate, permissions).expect("mark executable");
+        }
+
+        let names = vec!["tool".to_string()];
+        let result = find_executable_matching_in(
+            [first.path().to_path_buf(), second.path().to_path_buf()],
+            &names,
+            &|candidate| candidate != first_candidate,
+        );
+        assert_eq!(result, Some(second_candidate));
     }
 }

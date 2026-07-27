@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
+import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { getState, setState } from "../state/store";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -17,22 +18,25 @@ describe("SettingsPanel keybindings", () => {
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "KeybindingsCommands and navigation" }));
 
-        const project = screen.getByRole("button", { name: "Open project: ⌥P. Activate to change." });
+        const projectDefault = keybindingLabel(resolvedKeybinding({}, "project.open"));
+        const project = screen.getByRole("button", { name: `Open project: ${projectDefault}. Activate to change.` });
         await user.click(project);
         fireEvent.keyDown(project, { key: "Escape", code: "Escape" });
         expect(getState().settingsOpen).toBe(true);
         expect(screen.getByText("Change cancelled.")).toBeInTheDocument();
 
         await user.click(project);
-        fireEvent.keyDown(project, { key: "o", code: "KeyO", metaKey: true, shiftKey: true });
-        expect(getState().keybindingOverrides["project.open"]).toBe("Meta+Shift+KeyO");
-        expect(screen.getByRole("button", { name: "Open project: ⌘⇧O. Activate to change." })).toBeInTheDocument();
+        fireEvent.keyDown(project, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
+        expect(getState().keybindingOverrides["project.open"]).toBe("Ctrl+Shift+KeyO");
+        const replacementLabel = keybindingLabel("Ctrl+Shift+KeyO");
+        expect(screen.getByRole("button", { name: `Open project: ${replacementLabel}. Activate to change.` })).toBeInTheDocument();
 
-        const aws = screen.getByRole("button", { name: "Open AWS: ⌥A. Activate to change." });
+        const awsDefault = keybindingLabel(resolvedKeybinding({}, "aws.open"));
+        const aws = screen.getByRole("button", { name: `Open AWS: ${awsDefault}. Activate to change.` });
         await user.click(aws);
-        fireEvent.keyDown(aws, { key: "o", code: "KeyO", metaKey: true, shiftKey: true });
+        fireEvent.keyDown(aws, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
         expect(getState().keybindingOverrides["aws.open"]).toBeUndefined();
-        expect(screen.getByText("⌘⇧O is already assigned to “Open project”.")).toBeInTheDocument();
+        expect(screen.getByText(`${replacementLabel} is already assigned to “Open project”.`)).toBeInTheDocument();
 
         fireEvent.keyDown(aws, { key: "Backspace", code: "Backspace" });
         expect(getState().keybindingOverrides["aws.open"]).toBeNull();

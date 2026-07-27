@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", default-features = false, features = ["wry"] }
+tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -48,7 +48,6 @@ trash = "5"
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", default-features = false, features = ["wry", "macos-private-api"] }
 objc2 = "0.6"
 
 [profile.release]

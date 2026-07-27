@@ -2303,6 +2303,7 @@ mod tests {
         git(td.path(), &["init"]);
         git(td.path(), &["config", "user.email", "sikemux@example.test"]);
         git(td.path(), &["config", "user.name", "sikemux"]);
+        git(td.path(), &["config", "core.autocrlf", "false"]);
         td
     }
 

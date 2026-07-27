@@ -1,3 +1,5 @@
+import { IS_MACOS } from "./lib/platform";
+
 export type KeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Bruno";
 
 export interface KeybindingAction {
@@ -14,21 +16,21 @@ const keybindingActions = [
         label: "Open file or request palette",
         detail: "Files in projects, requests in Bruno",
         category: "Workspace",
-        defaultBinding: "Meta+KeyP",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyP`,
     },
     {
         id: "search.global",
         label: "Global search",
         detail: "Search across the active project",
         category: "Workspace",
-        defaultBinding: "Meta+Shift+KeyF",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Shift+KeyF`,
     },
     {
         id: "settings.toggle",
         label: "Open settings",
         detail: "Open or close this preferences window",
         category: "Workspace",
-        defaultBinding: "Meta+Comma",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Comma`,
     },
     {
         id: "session.open",
@@ -266,14 +268,14 @@ const keybindingActions = [
         label: "Save request",
         detail: "Save the active Bruno request",
         category: "Bruno",
-        defaultBinding: "Meta+KeyS",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyS`,
     },
     {
         id: "bruno.send",
         label: "Send request",
         detail: "Run the active Bruno request",
         category: "Bruno",
-        defaultBinding: "Meta+Enter",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Enter`,
     },
     {
         id: "bruno.environment",
@@ -377,10 +379,10 @@ export function keybindingLabel(binding: string | null): string {
     const code = parts.pop() ?? "";
     const modifiers = parts
         .map((part) => {
-            if (part === "Meta") return "⌘";
-            if (part === "Ctrl") return "⌃";
-            if (part === "Alt") return "⌥";
-            if (part === "Shift") return "⇧";
+            if (part === "Meta") return IS_MACOS ? "⌘" : "Meta+";
+            if (part === "Ctrl") return IS_MACOS ? "⌃" : "Ctrl+";
+            if (part === "Alt") return IS_MACOS ? "⌥" : "Alt+";
+            if (part === "Shift") return IS_MACOS ? "⇧" : "Shift+";
             return part;
         })
         .join("");
