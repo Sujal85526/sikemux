@@ -662,6 +662,12 @@
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
 }
+/* xterm 6 paints the viewport black in its base stylesheet. The renderer's
+   transparent theme only clears its inner surface, so keep the viewport from
+   blocking Sikemux's native window transparency. */
+html.is-transparent .terminal-host .xterm-viewport {
+    background-color: transparent !important;
+}
 .terminal-host .xterm-viewport:hover {
     scrollbar-color: var(--ink-faint) transparent;
 }
