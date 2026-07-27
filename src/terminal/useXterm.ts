@@ -2,6 +2,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
+import type { WebglAddon } from "@xterm/addon-webgl";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { currentTheme, registerTerminal } from "../themes/bus";
 import { IS_MACOS } from "../lib/platform";
@@ -15,11 +16,13 @@ import {
 } from "./sessionState";
 import { alternateScreenWheelFallbackSequence } from "./wheelNavigation";
 import { needsTerminalRedraw } from "./redraw";
+import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_WEIGHT = 500;
 const FONT_WEIGHT_BOLD = 700;
 const SCROLLBACK = 10_000;
+const WEBGL_REQUESTED = terminalWebglRequested(import.meta.env.VITE_TERMINAL_WEBGL);
 
 const META_CHORDS: Record<string, string> = {
     "Meta+ArrowLeft": "\x01", // Ctrl-A: start of line
@@ -97,11 +100,38 @@ export function useXterm(opts: {
             term.loadAddon(fit);
             term.loadAddon(serializer);
             term.open(host);
-            // Keep xterm on its default DOM renderer. The WebGL renderer is fast,
-            // but in WKWebView it can leave stale atlas cells during high-churn
-            // prompt redraws (notably zsh-autosuggestions/right-prompt repaint),
-            // which looks like duplicated words while typing. Correctness beats
-            // GPU acceleration for terminal input rendering.
+            let renderer: TerminalRenderer = "dom";
+            let webgl: WebglAddon | null = null;
+            let contextLossSub: { dispose(): void } | null = null;
+            const setRenderer = (next: TerminalRenderer) => {
+                renderer = next;
+                host.dataset.terminalRenderer = next;
+            };
+            setRenderer("dom");
+            if (WEBGL_REQUESTED) {
+                try {
+                    const { WebglAddon } = await import("@xterm/addon-webgl");
+                    const addon = new WebglAddon();
+                    webgl = addon;
+                    contextLossSub = addon.onContextLoss(() => {
+                        if (renderer !== "webgl") return;
+                        console.warn("terminal WebGL context lost; falling back to DOM renderer");
+                        setRenderer("dom");
+                        addon.dispose();
+                        webgl = null;
+                        term.refresh(0, term.rows - 1);
+                    });
+                    term.loadAddon(addon);
+                    setRenderer("webgl");
+                } catch (error) {
+                    contextLossSub?.dispose();
+                    contextLossSub = null;
+                    webgl?.dispose();
+                    webgl = null;
+                    setRenderer("dom");
+                    console.warn("terminal WebGL initialization failed; using DOM renderer", error);
+                }
+            }
             fit.fit();
 
             await invoke("pty_resize", {
@@ -163,6 +193,8 @@ export function useXterm(opts: {
             const finalizeCleanup = () => {
                 if (finalized || outputBusy || outputPending.length > 0) return;
                 finalized = true;
+                contextLossSub?.dispose();
+                contextLossSub = null;
                 try {
                     serializedNormalRef.current = serializeNormalBuffer(serializer, pid, SCROLLBACK);
                 } catch (error) {
@@ -170,6 +202,7 @@ export function useXterm(opts: {
                     console.warn("terminal normal-buffer serialization failed", error);
                 }
                 term.dispose();
+                delete host.dataset.terminalRenderer;
             };
             const flushOutput = () => {
                 outputFrame = null;

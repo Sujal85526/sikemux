@@ -33,6 +33,10 @@ export default defineConfig({
           ) {
             return "codemirror";
           }
+          // Keep the opt-in renderer out of the default startup path. The
+          // dynamic import in useXterm loads this chunk only when the WebGL
+          // feature gate is enabled.
+          if (id.includes("@xterm/addon-webgl")) return "xterm-webgl";
           if (id.includes("@xterm")) return "xterm";
           if (
             id.includes("react") ||

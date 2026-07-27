@@ -32,7 +32,7 @@ A project session bundles five views (`Files`, `Term`, `Git`, `Agents`, `Search`
 <td width="50%"><img src="public/screenshots/project-git-view.png" alt="Git view"/></td>
 </tr>
 <tr>
-<td align="center"><b>Integrated terminal</b> — xterm.js + WebGL, real PTYs via Rust, split panes, tabs, drag-drop paths.</td>
+<td align="center"><b>Integrated terminal</b> — xterm.js with gated WebGL acceleration, real PTYs via Rust, split panes, tabs, drag-drop paths.</td>
 <td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, current branch pinned on top.</td>
 </tr>
 </table>
@@ -138,6 +138,8 @@ pnpm build:windows
 ```
 
 Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY with PowerShell as its default Windows shell.
+
+The terminal uses xterm.js's DOM renderer by default. To exercise the opt-in WebGL renderer, launch with `VITE_TERMINAL_WEBGL=1 pnpm tauri dev`. Sikemux automatically falls back to DOM rendering if WebGL initialization fails or its context is lost; `window.sikemuxDiagnostics?.snapshot()` reports the active renderer counts.
 
 Run `make check` for the full local quality gate: Prettier, ESLint, TypeScript, deterministic frontend tests, Rust formatting, Clippy, Rust tests, and credential-free release-tooling verification. `make test-coverage` reports coverage across all frontend TypeScript/TSX source, including files no test imports. `make run` launches an already-built release binary.
 

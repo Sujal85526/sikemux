@@ -47,6 +47,10 @@ function domSnapshot() {
         elements: document.getElementsByTagName("*").length,
         xterms: document.querySelectorAll(".xterm").length,
         canvases: document.querySelectorAll("canvas").length,
+        terminalRenderers: {
+            dom: document.querySelectorAll('[data-terminal-renderer="dom"]').length,
+            webgl: document.querySelectorAll('[data-terminal-renderer="webgl"]').length,
+        },
         codeMirrorEditors: document.querySelectorAll(".cm-editor").length,
         visibleWindowLayers: document.querySelectorAll(".window-layer.visible").length,
     };
