@@ -7,6 +7,7 @@ import { gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../s
 import { useStore } from "../state/store";
 import { errMessage, reportError } from "../state/toast";
 import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
@@ -1215,7 +1216,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                     type="button"
                                     disabled={!commitText.trim()}
                                     onClick={() => doCommit(commitText)}
-                                    title="Commit staged (⌘⏎)">
+                                    title={`Commit staged (${PRIMARY_SHORTCUT}⏎)`}>
                                     <IconCommit size={13} />
                                     commit
                                 </button>

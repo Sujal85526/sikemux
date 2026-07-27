@@ -3,6 +3,7 @@ import {
     actionForEvent,
     eventToKeybinding,
     findKeybindingConflict,
+    getKeybindingAction,
     keybindingHasModifier,
     keybindingLabel,
     normaliseKeybindingOverrides,
@@ -21,25 +22,28 @@ function key(code: string, modifiers: Partial<Pick<KeyboardEvent, "metaKey" | "c
 }
 
 describe("keybindings", () => {
-    it("serializes physical keys and renders macOS labels", () => {
-        const binding = eventToKeybinding(key("KeyF", { metaKey: true, shiftKey: true }));
-        expect(binding).toBe("Meta+Shift+KeyF");
-        expect(keybindingLabel(binding)).toBe("⌘⇧F");
-        expect(keybindingLabel("Alt+Backslash")).toBe("⌥\\");
-        expect(actionForEvent(key("NumpadEnter", { metaKey: true }), {})).toBe("bruno.send");
+    it("serializes physical keys and renders platform labels", () => {
+        const binding = eventToKeybinding(key("KeyF", { ctrlKey: true, shiftKey: true }));
+        expect(binding).toBe("Ctrl+Shift+KeyF");
+        expect(keybindingLabel(binding)).toMatch(/F$/);
+        expect(keybindingLabel("Alt+Backslash")).toMatch(/\\$/);
+        const sendBinding = getKeybindingAction("bruno.send").defaultBinding;
+        expect(actionForEvent(key("NumpadEnter", { metaKey: sendBinding.startsWith("Meta"), ctrlKey: sendBinding.startsWith("Ctrl") }), {})).toBe(
+            "bruno.send",
+        );
     });
 
     it("resolves defaults, replacements, and explicit unassignment", () => {
-        expect(resolvedKeybinding({}, "settings.toggle")).toBe("Meta+Comma");
+        expect(resolvedKeybinding({}, "settings.toggle")).toBe(getKeybindingAction("settings.toggle").defaultBinding);
         expect(resolvedKeybinding({ "settings.toggle": "Ctrl+Comma" }, "settings.toggle")).toBe("Ctrl+Comma");
         expect(resolvedKeybinding({ "settings.toggle": null }, "settings.toggle")).toBeNull();
     });
 
     it("routes an event through overrides and reports conflicts", () => {
-        const overrides = { "project.open": "Ctrl+KeyP" } as const;
-        expect(actionForEvent(key("KeyP", { ctrlKey: true }), overrides)).toBe("project.open");
+        const overrides = { "project.open": "Ctrl+Shift+KeyO" } as const;
+        expect(actionForEvent(key("KeyO", { ctrlKey: true, shiftKey: true }), overrides)).toBe("project.open");
         expect(actionForEvent(key("KeyP", { altKey: true }), overrides)).toBeNull();
-        expect(findKeybindingConflict(overrides, "aws.open", "Ctrl+KeyP")?.id).toBe("project.open");
+        expect(findKeybindingConflict(overrides, "aws.open", "Ctrl+Shift+KeyO")?.id).toBe("project.open");
     });
 
     it("requires a modifier for user-recorded shortcuts", () => {

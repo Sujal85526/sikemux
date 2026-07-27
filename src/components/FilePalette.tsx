@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as cmd from "../state/commands";
 import { rankBy } from "../lib/fuzzy";
-import { basename, dirname } from "../lib/paths";
+import { basename, dirname, joinPath } from "../lib/paths";
 import { useResourceEnabled } from "../state/resources";
 import { filesListR } from "../state/resources.defs";
 import { useStore } from "../state/store";
@@ -41,7 +41,7 @@ export function FilePalette() {
 
     const activate = (path: string | undefined) => {
         if (!path || !cwd) return;
-        cmd.requestOpenFile(`${cwd}/${path}`);
+        cmd.requestOpenFile(joinPath(cwd, path));
         cmd.closeFilePalette();
     };
 

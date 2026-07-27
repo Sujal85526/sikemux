@@ -304,13 +304,8 @@ pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
 }
 
 fn executable_in_path(agent: &str, bin: &str) -> bool {
-    let Some(paths) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&paths).any(|dir| {
-        let candidate = dir.join(bin);
-        allowed_agent_path(agent, &candidate) && is_executable(&candidate)
-    })
+    crate::system::find_executable_matching(bin, |candidate| allowed_agent_path(agent, candidate))
+        .is_some()
 }
 
 fn allowed_agent_path(agent: &str, path: &Path) -> bool {
@@ -320,23 +315,17 @@ fn allowed_agent_path(agent: &str, path: &Path) -> bool {
     let Ok(home) = std::env::var("HOME") else {
         return true;
     };
+    allowed_agent_path_for_home(agent, path, Path::new(&home))
+}
+
+fn allowed_agent_path_for_home(agent: &str, path: &Path, home: &Path) -> bool {
+    if agent != "opencode" {
+        return true;
+    }
     // OpenCode leaves a runnable self-contained binary under ~/.opencode/bin.
     // Treat that as app data/cache rather than a user-visible system install;
     // otherwise stale copies keep showing up in the agent rail after uninstall.
-    path != PathBuf::from(home).join(".opencode/bin/opencode")
-}
-
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    fs::metadata(path)
-        .map(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-fn is_executable(path: &Path) -> bool {
-    path.is_file()
+    path.parent() != Some(home.join(".opencode").join("bin").as_path())
 }
 
 fn mtime_of(path: &Path) -> u64 {
@@ -835,4 +824,27 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
         })
         .ok()?;
     Some(rows.filter_map(|r| r.ok()).collect())
+}
+
+#[cfg(test)]
+mod executable_tests {
+    use super::allowed_agent_path_for_home;
+    use std::path::Path;
+
+    #[test]
+    fn opencode_cache_executables_are_rejected_with_any_windows_suffix() {
+        let home = Path::new("/home/tester");
+        for name in ["opencode", "opencode.exe", "opencode.cmd"] {
+            assert!(!allowed_agent_path_for_home(
+                "opencode",
+                &home.join(".opencode").join("bin").join(name),
+                home,
+            ));
+        }
+        assert!(allowed_agent_path_for_home(
+            "opencode",
+            Path::new("/usr/local/bin/opencode"),
+            home,
+        ));
+    }
 }

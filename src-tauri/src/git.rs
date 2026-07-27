@@ -1553,14 +1553,18 @@ impl GitAiProvider {
 
 fn command_candidates(name: &str) -> Vec<String> {
     let home = std::env::var("HOME").unwrap_or_default();
-    vec![
+    let mut candidates = vec![
         name.to_string(),
         format!("{home}/.local/bin/{name}"),
         format!("{home}/.cargo/bin/{name}"),
         format!("{home}/.opencode/bin/{name}"),
         format!("/opt/homebrew/bin/{name}"),
         format!("/usr/local/bin/{name}"),
-    ]
+    ];
+    if let Some(path) = crate::system::find_executable(name) {
+        candidates.insert(0, path.to_string_lossy().into_owned());
+    }
+    candidates
 }
 
 fn run_ai_candidate<F>(
@@ -1803,10 +1807,7 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
         return Err(format!("unsupported remote host: {url}"));
     }
 
-    Command::new("open")
-        .arg(&url)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    open::that_detached(&url).map_err(|e| e.to_string())?;
     Ok(url)
 }
 
@@ -2302,6 +2303,7 @@ mod tests {
         git(td.path(), &["init"]);
         git(td.path(), &["config", "user.email", "sikemux@example.test"]);
         git(td.path(), &["config", "user.name", "sikemux"]);
+        git(td.path(), &["config", "core.autocrlf", "false"]);
         td
     }
 

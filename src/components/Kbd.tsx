@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
+import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 
-// Real macOS modifier glyphs — never tmux-style "M-"/"C-"/"S-" notation.
-export const CMD = "⌘";
-export const ALT = "⌥";
-export const SHIFT = "⇧";
-export const CTRL = "⌃";
+export const CMD = PRIMARY_SHORTCUT;
+export const ALT = IS_MACOS ? "⌥" : "Alt+";
+export const SHIFT = IS_MACOS ? "⇧" : "Shift+";
+export const CTRL = IS_MACOS ? "⌃" : "Ctrl+";
 
 /** A shortcut string for use inside title="" tooltips, e.g. hint(ALT, "S") -> "⌥S". */
 export function hint(...parts: string[]): string {

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionKind } from "../state/types";
 import { fuzzyScore, isSubstringMatch } from "../lib/fuzzy";
-import { basename, expandHome, prettyPath } from "../lib/paths";
+import { basename, expandHome, normalizePath, prettyPath, relativePath } from "../lib/paths";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { settingsApi } from "../api/settings";
 import * as cmd from "../state/commands";
 import { useResourceEnabled } from "../state/resources";
@@ -62,12 +63,12 @@ export function SeshPicker() {
     const pretty = (p: string) => prettyPath(p, home);
     const projectLabel = (cwd: string, fallback: string) => {
         const roots = projectRoots
-            .map((r) => expandHome(r.path, home).replace(/\/+$/, ""))
+            .map((r) => normalizePath(expandHome(r.path, home)))
             .filter(Boolean)
             .sort((a, b) => b.length - a.length);
         for (const root of roots) {
-            if (cwd === root) return fallback;
-            if (cwd.startsWith(`${root}/`)) return basename(cwd);
+            if (relativePath(cwd, root) === "") return fallback;
+            if (relativePath(cwd, root) !== null) return basename(cwd);
         }
         return fallback;
     };
@@ -243,7 +244,7 @@ export function SeshPicker() {
                                         }}>
                                         open settings
                                     </button>{" "}
-                                    to add some (⌘,)
+                                    to add some ({PRIMARY_SHORTCUT},)
                                 </>
                             ) : showSsh && hosts.length === 0 && mode === "ssh" ? (
                                 "no hosts in ~/.ssh/config"

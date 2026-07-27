@@ -22,4 +22,13 @@ describe("sshStartup", () => {
         expect(sshStartup("prod-db")).toContain("\\033[?2004l");
         expect(sshStartup("prod-db")).toContain("SSH reconnect cancelled");
     });
+
+    it("builds a quoted PowerShell retry loop on Windows", () => {
+        const startup = sshStartup("host'; Write-Host nope", "windows");
+        expect(startup).toContain("& ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=3 'host''; Write-Host nope'");
+        expect(startup).toContain("$LASTEXITCODE");
+        expect(startup).toContain("Start-Sleep -Seconds 3");
+        expect(startup).toContain("[char]27");
+        expect(startup).not.toMatch(/[\r\n]/);
+    });
 });

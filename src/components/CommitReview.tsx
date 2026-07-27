@@ -3,7 +3,7 @@ import { git } from "../api/git";
 import { DiffEditor } from "./DiffEditor";
 import { IconChevron } from "./Icons";
 import { FileIcon } from "./FileIcon";
-import { basename } from "../lib/paths";
+import { basename, joinPath } from "../lib/paths";
 
 export function CommitReview({
     repo,
@@ -66,7 +66,7 @@ export function CommitReview({
                                         <IconChevron size={11} />
                                     </span>
                                 </button>
-                                <button className="acc-name" onClick={() => onOpenFile(`${repo}/${f}`)} title="Open in editor">
+                                <button className="acc-name" onClick={() => onOpenFile(joinPath(repo, f))} title="Open in editor">
                                     <FileIcon name={basename(f)} size={15} />
                                     <span>{f}</span>
                                 </button>

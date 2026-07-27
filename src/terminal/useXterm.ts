@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { currentTheme, registerTerminal } from "../themes/bus";
+import { IS_MACOS } from "../lib/platform";
 import {
     completeInitialReplay,
     initialReplayScrollState,
@@ -85,7 +86,7 @@ export function useXterm(opts: {
                 cursorBlink: true,
                 allowProposedApi: true,
                 allowTransparency: true,
-                macOptionIsMeta: true,
+                macOptionIsMeta: IS_MACOS,
                 scrollback: SCROLLBACK,
                 scrollOnUserInput: true,
                 smoothScrollDuration: 0,

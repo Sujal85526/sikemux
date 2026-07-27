@@ -1,4 +1,6 @@
+#[cfg(unix)]
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Serialize;
@@ -20,6 +22,7 @@ use crate::{
 /// "$PATH"'` to extract the real PATH, then set it on our own process so
 /// every `Command::new(...)` (hermes, rnd, aws, claude, …) inherits it.
 /// Standard "fix-path" pattern Electron + Tauri apps have used for years.
+#[cfg(unix)]
 pub fn fix_path_from_login_shell() {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
 
@@ -75,6 +78,86 @@ pub fn fix_path_from_login_shell() {
     unsafe { std::env::set_var("PATH", new_path) };
 }
 
+#[cfg(windows)]
+pub fn fix_path_from_login_shell() {
+    // Windows desktop applications inherit the user's PATH. Unlike macOS,
+    // there is no login-shell environment to recover here.
+}
+
+pub fn user_home() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_default()
+}
+
+pub fn find_executable(name: &str) -> Option<PathBuf> {
+    find_executable_matching(name, |_| true)
+}
+
+pub fn find_executable_matching(name: &str, predicate: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    #[cfg(windows)]
+    let names: Vec<String> = if PathBuf::from(name).extension().is_some() {
+        vec![name.to_string()]
+    } else {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+            .split(';')
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| format!("{name}{}", extension.to_ascii_lowercase()))
+            .chain(std::iter::once(name.to_string()))
+            .collect()
+    };
+    #[cfg(not(windows))]
+    let names = vec![name.to_string()];
+
+    find_executable_matching_in(std::env::split_paths(&paths), &names, &predicate)
+}
+
+fn find_executable_matching_in(
+    paths: impl IntoIterator<Item = PathBuf>,
+    names: &[String],
+    predicate: &impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    for directory in paths {
+        for candidate_name in names {
+            let candidate = directory.join(candidate_name);
+            if !candidate.is_file() {
+                continue;
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let Ok(metadata) = candidate.metadata() else {
+                    continue;
+                };
+                if metadata.permissions().mode() & 0o111 == 0 {
+                    continue;
+                }
+            }
+            if predicate(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Existing modules use HOME for established ~/.config, ~/.ssh and ~/.aws
+/// locations. Windows normally exposes USERPROFILE instead, so normalize it
+/// once before Tauri creates worker threads rather than branching every
+/// consumer independently.
+pub fn normalize_user_environment() {
+    if std::env::var_os("HOME").is_some() {
+        return;
+    }
+    if let Some(home) = std::env::var_os("USERPROFILE") {
+        // SAFETY: run() calls this before the Tauri runtime starts threads.
+        unsafe { std::env::set_var("HOME", home) };
+    }
+}
+
 /// Raise this process's open-file-descriptor soft limit toward its hard
 /// limit. See the call site in `lib.rs` for the why: macOS `launchd` hands
 /// GUI-launched apps a soft `RLIMIT_NOFILE` of 256, but sikemux holds one
@@ -127,7 +210,7 @@ pub fn raise_fd_limit() {}
 
 #[tauri::command]
 pub fn home_dir() -> String {
-    std::env::var("HOME").unwrap_or_default()
+    user_home().to_string_lossy().into_owned()
 }
 
 /// Frecency-ranked directories from zoxide, for the sesh picker.
@@ -247,11 +330,11 @@ pub struct BatteryStatus {
 pub fn battery_status() -> BatteryStatus {
     #[cfg(not(target_os = "macos"))]
     {
-        return BatteryStatus {
+        BatteryStatus {
             percent: None,
             charging: false,
             time_remaining: None,
-        };
+        }
     }
     #[cfg(target_os = "macos")]
     {
@@ -332,5 +415,39 @@ pub fn boot_init() -> BootInfo {
         home,
         state,
         recent: zoxide_dirs(),
+    }
+}
+
+#[cfg(test)]
+mod executable_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn executable_lookup_continues_after_a_rejected_candidate() {
+        let first = tempdir().expect("first path");
+        let second = tempdir().expect("second path");
+        let first_candidate = first.path().join("tool");
+        let second_candidate = second.path().join("tool");
+        std::fs::write(&first_candidate, b"first").expect("first executable");
+        std::fs::write(&second_candidate, b"second").expect("second executable");
+
+        #[cfg(unix)]
+        for candidate in [&first_candidate, &second_candidate] {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(candidate)
+                .expect("candidate metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(candidate, permissions).expect("mark executable");
+        }
+
+        let names = vec!["tool".to_string()];
+        let result = find_executable_matching_in(
+            [first.path().to_path_buf(), second.path().to_path_buf()],
+            &names,
+            &|candidate| candidate != first_candidate,
+        );
+        assert_eq!(result, Some(second_candidate));
     }
 }

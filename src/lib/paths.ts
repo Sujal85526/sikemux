@@ -1,11 +1,40 @@
+import { IS_WINDOWS } from "./platform";
+
 export function basename(path: string): string {
-    return path.replace(/\/+$/, "").split("/").pop() || path;
+    return (
+        path
+            .replace(/[\\/]+$/, "")
+            .split(/[\\/]/)
+            .pop() || path
+    );
 }
 
 export function dirname(path: string): string {
-    const trimmed = path.replace(/\/+$/, "");
-    const i = trimmed.lastIndexOf("/");
+    const trimmed = path.replace(/[\\/]+$/, "");
+    const i = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
     return i < 0 ? "" : trimmed.slice(0, i);
+}
+
+export function normalizePath(path: string): string {
+    return path.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+export function joinPath(base: string, ...parts: string[]): string {
+    return [normalizePath(base), ...parts.map((part) => part.replaceAll("\\", "/").replace(/^\/+|\/+$/g, ""))].filter(Boolean).join("/");
+}
+
+export function relativePath(path: string, root: string): string | null {
+    const normalizedPath = normalizePath(path);
+    const normalizedRoot = normalizePath(root);
+    const comparePath = IS_WINDOWS ? normalizedPath.toLocaleLowerCase() : normalizedPath;
+    const compareRoot = IS_WINDOWS ? normalizedRoot.toLocaleLowerCase() : normalizedRoot;
+    if (comparePath === compareRoot) return "";
+    if (!comparePath.startsWith(`${compareRoot}/`)) return null;
+    return normalizedPath.slice(normalizedRoot.length + 1);
+}
+
+export function isPathWithin(path: string, root: string): boolean {
+    return relativePath(path, root) !== null;
 }
 
 export function prettyPath(path: string, home: string | null | undefined): string {

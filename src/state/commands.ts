@@ -8,7 +8,8 @@ import { sshApi } from "../api/ssh";
 import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
-import { basename, dirname } from "../lib/paths";
+import { basename, dirname, joinPath } from "../lib/paths";
+import { IS_WINDOWS } from "../lib/platform";
 import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
@@ -391,7 +392,7 @@ const safeFileName = (name: string): string => name.trim().replace(/[\\/:*?"<>|]
 export async function brunoNewRequest(sessionId: string, dirPath: string, name: string): Promise<void> {
     const s = getState().sessions[sessionId];
     if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
-    const file = `${dirPath}/${safeFileName(name)}.bru`;
+    const file = joinPath(dirPath, `${safeFileName(name)}.bru`);
     try {
         await fsapi.writeFileNew(file, serializeRequest(emptyRequest(name.trim())));
         reloadBruno(s.bruno.collectionPath);
@@ -406,10 +407,10 @@ export async function brunoNewRequest(sessionId: string, dirPath: string, name: 
 export async function brunoNewFolder(sessionId: string, parentPath: string, name: string): Promise<void> {
     const s = getState().sessions[sessionId];
     if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
-    const folder = `${parentPath}/${safeFileName(name)}`;
+    const folder = joinPath(parentPath, safeFileName(name));
     try {
         await fsapi.createDir(folder);
-        await fsapi.writeFileNew(`${folder}/folder.bru`, `meta {\n  name: ${name.trim()}\n}\n`);
+        await fsapi.writeFileNew(joinPath(folder, "folder.bru"), `meta {\n  name: ${name.trim()}\n}\n`);
         reloadBruno(s.bruno.collectionPath);
         notify("success", `Created folder ${name.trim()}`);
     } catch (e) {
@@ -421,7 +422,7 @@ export async function brunoNewFolder(sessionId: string, parentPath: string, name
 export async function brunoRenameRequest(sessionId: string, path: string, name: string): Promise<void> {
     const s = getState().sessions[sessionId];
     if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
-    const newPath = `${dirname(path)}/${safeFileName(name)}.bru`;
+    const newPath = joinPath(dirname(path), `${safeFileName(name)}.bru`);
     try {
         const text = s.bruno.drafts[path] ?? (await fsapi.readFile(path));
         const req = parseRequest(text);
@@ -1107,6 +1108,7 @@ const FALLBACK_AGENT_TITLE_MAX = 13;
 
 function shellQuote(value: string): string {
     if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;
+    if (IS_WINDOWS) return `'${value.replace(/'/g, "''")}'`;
     return `'${value.replace(/'/g, "'\\''")}'`;
 }
 

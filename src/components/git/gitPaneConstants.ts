@@ -1,4 +1,5 @@
 import type { GitCheatsheetSection } from "../../state/gitTypes";
+import { PRIMARY_SHORTCUT } from "../../lib/platform";
 import type { GitPanel } from "../../state/types";
 import { helpRows } from "./gitPaneLogic";
 import type { GitAiProvider } from "./gitPaneTypes";
@@ -47,7 +48,7 @@ export const GIT_HELP: GitCheatsheetSection[] = [
             ["c", "focus commit message box"],
             ["C", "commit the typed message"],
             ["g", "generate commit message (AI)"],
-            ["⌘⏎", "commit (from message box)"],
+            [`${PRIMARY_SHORTCUT}⏎`, "commit (from message box)"],
             ["d", "discard menu"],
             ["s", "stash menu"],
         ),
