@@ -573,6 +573,7 @@ export function selectSession(id: string): void {
         if (!d.sessions[id]) return;
         d.activeSessionId = id;
         d.zoomedPaneId = null;
+        d.sessionSwitcher = null;
         d.pickerOpen = false;
         d.settingsOpen = false;
     });
@@ -639,6 +640,53 @@ export function cycleSession(delta: number): void {
         const idx = groupIds.indexOf(cur.id);
         d.activeSessionId = groupIds[(idx + delta + groupIds.length) % groupIds.length];
         d.zoomedPaneId = null;
+    });
+}
+
+export function beginSessionSwitch(delta: number, releaseModifier: import("./types").KeyModifier): void {
+    mutate((d) => {
+        const cur = d.sessions[d.activeSessionId];
+        if (!cur) return;
+        const sessionIds = d.sessionOrder.filter((id) => d.sessions[id]?.kind === cur.kind);
+        if (sessionIds.length < 2) return;
+        const idx = sessionIds.indexOf(cur.id);
+        d.sessionSwitcher = {
+            sessionIds,
+            selectedSessionId: sessionIds[(idx + delta + sessionIds.length) % sessionIds.length],
+            releaseModifier,
+        };
+    });
+}
+
+export function cycleSessionSwitch(delta: number): void {
+    mutate((d) => {
+        const switcher = d.sessionSwitcher;
+        if (!switcher) return;
+        const sessionIds = switcher.sessionIds.filter((id) => d.sessions[id]);
+        if (sessionIds.length < 2) {
+            d.sessionSwitcher = null;
+            return;
+        }
+        const idx = sessionIds.indexOf(switcher.selectedSessionId);
+        switcher.sessionIds = sessionIds;
+        switcher.selectedSessionId = sessionIds[((idx < 0 ? 0 : idx) + delta + sessionIds.length) % sessionIds.length];
+    });
+}
+
+export function commitSessionSwitch(): void {
+    mutate((d) => {
+        const selectedId = d.sessionSwitcher?.selectedSessionId;
+        if (selectedId && d.sessions[selectedId]) {
+            d.activeSessionId = selectedId;
+            d.zoomedPaneId = null;
+        }
+        d.sessionSwitcher = null;
+    });
+}
+
+export function cancelSessionSwitch(): void {
+    mutate((d) => {
+        d.sessionSwitcher = null;
     });
 }
 

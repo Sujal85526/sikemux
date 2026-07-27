@@ -35,6 +35,14 @@ export interface GlobalSearchView {
     selected: { path: string; matchIndex: number } | null;
 }
 
+export type KeyModifier = "Alt" | "Control" | "Meta" | "Shift";
+
+export interface SessionSwitcherView {
+    sessionIds: string[];
+    selectedSessionId: string;
+    releaseModifier: KeyModifier;
+}
+
 export const DEFAULT_GLOBAL_SEARCH_VIEW: GlobalSearchView = {
     query: "",
     replace: "",

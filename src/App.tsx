@@ -11,6 +11,7 @@ import { AgentSessionSync } from "./components/AgentSessionSync";
 import { AgentPalette } from "./components/AgentPalette";
 import { FilePalette } from "./components/FilePalette";
 import { SeshPicker } from "./components/SeshPicker";
+import { SessionSwitcher } from "./components/SessionSwitcher";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AwsAuthModal } from "./components/aws/AwsAuthModal";
 import { RundeckJobPalette } from "./components/rundeck/RundeckJobPalette";
@@ -107,6 +108,7 @@ export default function App() {
     const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const awsAuthModal = useStore((s) => s.awsAuthModal);
+    const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
     const projectRepoKey = useStore((s) =>
         s.sessionOrder
             .map((id) => {
@@ -289,6 +291,7 @@ export default function App() {
             {brunoReqPaletteOpen && <BrunoRequestPalette />}
             {brunoEnvPaletteOpen && <BrunoEnvPalette />}
             {awsAuthModal && <AwsAuthModal />}
+            {sessionSwitcherOpen && <SessionSwitcher />}
             <Toaster />
         </div>
     );
