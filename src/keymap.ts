@@ -3,6 +3,7 @@ import { actionForEvent, type KeybindingActionId } from "./keybindings";
 import * as cmd from "./state/commands";
 import { emit } from "./state/bus";
 import { getState, type StoreState } from "./state/store";
+import type { KeyModifier } from "./state/types";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
@@ -23,6 +24,21 @@ function hasOpenModal(st: StoreState): boolean {
 }
 
 const MODAL_ACTIONS = new Set<KeybindingActionId>(["palette.files", "search.global", "settings.toggle"]);
+
+function releaseModifierForEvent(event: KeyboardEvent): KeyModifier | null {
+    if (event.altKey) return "Alt";
+    if (event.metaKey) return "Meta";
+    if (event.ctrlKey) return "Control";
+    if (event.shiftKey) return "Shift";
+    return null;
+}
+
+function modifierHeld(event: KeyboardEvent, modifier: KeyModifier): boolean {
+    if (modifier === "Alt") return event.altKey;
+    if (modifier === "Meta") return event.metaKey;
+    if (modifier === "Control") return event.ctrlKey;
+    return event.shiftKey;
+}
 
 function runKeybindingAction(action: KeybindingActionId, event: KeyboardEvent, st: StoreState): boolean {
     const active = st.sessions[st.activeSessionId];
@@ -146,10 +162,18 @@ function runKeybindingAction(action: KeybindingActionId, event: KeyboardEvent, s
             cmd.closeActiveSession();
             return true;
         case "session.next":
-            cmd.cycleSession(1);
+            {
+                const releaseModifier = releaseModifierForEvent(event);
+                if (releaseModifier) cmd.beginSessionSwitch(1, releaseModifier);
+                else cmd.cycleSession(1);
+            }
             return true;
         case "session.previous":
-            cmd.cycleSession(-1);
+            {
+                const releaseModifier = releaseModifierForEvent(event);
+                if (releaseModifier) cmd.beginSessionSwitch(-1, releaseModifier);
+                else cmd.cycleSession(-1);
+            }
             return true;
         case "session.nextGroup":
             cmd.cycleSessionGroup(1);
@@ -178,21 +202,65 @@ function runKeybindingAction(action: KeybindingActionId, event: KeyboardEvent, s
 
 export function useKeymap(): void {
     useEffect(() => {
-        const handler = (event: KeyboardEvent): void => {
+        const consume = (event: KeyboardEvent): void => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        };
+
+        const keydown = (event: KeyboardEvent): void => {
             const target = event.target instanceof Element ? event.target : null;
             if (target?.closest("[data-keybinding-recorder]")) return;
 
             const st = getState();
             const action = actionForEvent(event, st.keybindingOverrides);
+
+            if (st.sessionSwitcher) {
+                if (event.key === "Escape") {
+                    cmd.cancelSessionSwitch();
+                    consume(event);
+                    return;
+                }
+                if (action === "session.next" || action === "session.previous") {
+                    cmd.cycleSessionSwitch(action === "session.next" ? 1 : -1);
+                    consume(event);
+                    return;
+                }
+                if (
+                    !event.code.startsWith("Alt") &&
+                    !event.code.startsWith("Control") &&
+                    !event.code.startsWith("Meta") &&
+                    !event.code.startsWith("Shift")
+                ) {
+                    consume(event);
+                }
+                return;
+            }
+
             if (!action) return;
             if (hasOpenModal(st) && !MODAL_ACTIONS.has(action)) return;
             if (!runKeybindingAction(action, event, st)) return;
 
-            event.preventDefault();
-            event.stopImmediatePropagation();
+            consume(event);
         };
 
-        window.addEventListener("keydown", handler, { capture: true });
-        return () => window.removeEventListener("keydown", handler, { capture: true });
+        const keyup = (event: KeyboardEvent): void => {
+            const switcher = getState().sessionSwitcher;
+            if (!switcher || modifierHeld(event, switcher.releaseModifier)) return;
+            cmd.commitSessionSwitch();
+            consume(event);
+        };
+
+        const commitOnBlur = (): void => {
+            if (getState().sessionSwitcher) cmd.commitSessionSwitch();
+        };
+
+        window.addEventListener("keydown", keydown, { capture: true });
+        window.addEventListener("keyup", keyup, { capture: true });
+        window.addEventListener("blur", commitOnBlur);
+        return () => {
+            window.removeEventListener("keydown", keydown, { capture: true });
+            window.removeEventListener("keyup", keyup, { capture: true });
+            window.removeEventListener("blur", commitOnBlur);
+        };
     }, []);
 }

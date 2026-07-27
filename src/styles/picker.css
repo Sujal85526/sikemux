@@ -11,6 +11,138 @@
     animation: fade 0.15s ease;
 }
 
+.session-switcher-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(8, 7, 12, 0.38);
+    backdrop-filter: blur(3px);
+    animation: fade 0.1s ease;
+}
+
+.session-switcher {
+    width: min(460px, 88vw);
+    max-height: min(560px, 76vh);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
+    border: 1px solid var(--acc-line);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.05) inset,
+        0 32px 90px -28px rgba(0, 0, 0, 0.9);
+    animation: pop 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.session-switcher-head,
+.session-switcher-foot {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 12px;
+    color: var(--ink-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.session-switcher-head {
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-dim);
+}
+
+.session-switcher-hint {
+    color: var(--ink-faint);
+}
+
+.session-switcher-list {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.session-switcher-item {
+    width: 100%;
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    color: var(--ink-dim);
+    text-align: left;
+    border: 1px solid transparent;
+}
+
+.session-switcher-item.selected {
+    color: var(--ink);
+    background: var(--acc-soft);
+    border-color: var(--acc-line);
+}
+
+.session-switcher-icon {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    color: var(--cmd);
+    border: 1px solid var(--line);
+    background: var(--void);
+}
+
+.session-switcher-icon.project,
+.session-switcher-icon.bruno {
+    color: var(--live);
+}
+
+.session-switcher-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.session-switcher-name,
+.session-switcher-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-switcher-name {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.session-switcher-sub {
+    color: var(--ink-faint);
+    font-size: 10.5px;
+}
+
+.session-switcher-foot {
+    border-top: 1px solid var(--line);
+}
+
+.session-switcher-foot span:nth-child(odd) {
+    padding: 2px 5px;
+    color: var(--ink-dim);
+    border: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .session-switcher-backdrop,
+    .session-switcher {
+        animation: none;
+    }
+}
+
 .picker {
     width: 560px;
     max-width: 86vw;

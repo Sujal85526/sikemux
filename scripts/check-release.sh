@@ -26,6 +26,7 @@ const fail = (message) => { throw new Error(message); };
 
 if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
 if (config.bundle?.createUpdaterArtifacts !== true) fail("updater artifacts are not enabled");
+if (config.app?.macOSPrivateApi !== true) fail("shared macOS private API feature flag is missing");
 if (JSON.stringify(macConfig.bundle?.targets) !== JSON.stringify(["app", "dmg"])) fail("macOS bundle targets must be app and dmg");
 if (macConfig.bundle?.resources?.["icons/build/Assets.car"] !== "Assets.car") fail("Assets.car resource mapping is missing");
 if (macConfig.bundle?.macOS?.infoPlist !== "Info.plist") fail("pre-signing Info.plist merge is not configured");

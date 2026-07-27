@@ -22,6 +22,7 @@ import type {
     RundeckSettings,
     RundeckView,
     Session,
+    SessionSwitcherView,
     Window,
 } from "./types";
 
@@ -72,6 +73,7 @@ export interface ViewState {
     settingsOpen: boolean;
     awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
     zoomedPaneId: string | null;
+    sessionSwitcher: SessionSwitcherView | null;
 
     editorViews: Record<string, EditorPaneView>;
     dirtyEditorPaths: Record<string, string[]>;
@@ -170,6 +172,7 @@ export const useStore = create<StoreState>(() => {
         settingsOpen: false,
         awsAuthModal: null,
         zoomedPaneId: null,
+        sessionSwitcher: null,
         editorViews: {},
         dirtyEditorPaths: {},
         gitViews: {},
