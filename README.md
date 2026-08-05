@@ -33,7 +33,7 @@ A project session bundles five views (`Files`, `Term`, `Git`, `Agents`, `Search`
 </tr>
 <tr>
 <td align="center"><b>Integrated terminal</b> — xterm.js with gated WebGL acceleration, real PTYs via Rust, split panes, tabs, drag-drop paths.</td>
-<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, current branch pinned on top.</td>
+<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, plus Groq-powered commit messages.</td>
 </tr>
 </table>
 
@@ -136,6 +136,8 @@ pnpm build:mac:universal
 # Windows NSIS installer (run from Windows)
 pnpm build:windows
 ```
+
+AI commit-message generation uses Groq's fixed `openai/gpt-oss-20b` model and streams the response directly into the commit box. Set `GROQ_API_KEY` in your environment or copy `.env.example` to `.env` and add your key. `.env` is ignored by Git.
 
 Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY with PowerShell as its default Windows shell.
 

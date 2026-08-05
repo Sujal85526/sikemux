@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 export interface GitFile {
     path: string;
@@ -131,8 +131,12 @@ export const git = {
     commit: (repo: string, message: string) => invoke<string>("git_commit", { repo, message }),
     push: (repo: string) => invoke<string>("git_push", { repo }),
     pull: (repo: string) => invoke<string>("git_pull", { repo }),
-    aiCommit: (repo: string, provider: string, model: string) => invoke<string>("git_ai_commit", { repo, provider, model }),
-    aiMessage: (repo: string, provider: string, model: string) => invoke<string>("git_ai_message", { repo, provider, model }),
+    aiCommit: (repo: string) => invoke<string>("git_ai_commit", { repo }),
+    aiMessage: (repo: string, onChunk: (chunk: string) => void) => {
+        const channel = new Channel<string>();
+        channel.onmessage = onChunk;
+        return invoke<string>("git_ai_message", { repo, onChunk: channel });
+    },
     prOpen: (repo: string) => invoke<string>("pr_open", { repo }),
     watchStart: (repo: string) => invoke<void>("repo_watch_start", { repo }),
     watchStop: (repo: string) => invoke<void>("repo_watch_stop", { repo }),

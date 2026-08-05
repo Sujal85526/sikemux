@@ -16,21 +16,10 @@ import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
 import { GitPanelBlock } from "./git/GitPanelBlock";
-import { GitSelect } from "./git/GitSelect";
 import { GitToolbarButton } from "./git/GitToolbarButton";
-import {
-    AI_MODEL_STORAGE,
-    AI_MODELS,
-    AI_PROVIDER_LABEL,
-    AI_PROVIDER_STORAGE,
-    DEFAULT_AI_PROVIDER,
-    GIT_HELP,
-    GIT_PANEL_BY_KEY,
-    GIT_PANEL_ORDER,
-    defaultAiModel,
-} from "./git/gitPaneConstants";
-import { filterByQuery, isGitAiProvider, isInRange, rangeBadge } from "./git/gitPaneLogic";
-import type { GitAiProvider, RightView } from "./git/gitPaneTypes";
+import { GIT_HELP, GIT_PANEL_BY_KEY, GIT_PANEL_ORDER } from "./git/gitPaneConstants";
+import { filterByQuery, isInRange, rangeBadge } from "./git/gitPaneLogic";
+import type { RightView } from "./git/gitPaneTypes";
 import { basename as basenameOf } from "../lib/paths";
 
 export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; active: boolean }) {
@@ -68,15 +57,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     const [busy, setBusy] = useState<string | null>(null);
     const [commitText, setCommitText] = useState("");
     const commitInputRef = useRef<HTMLTextAreaElement>(null);
-    const [aiProvider, setAiProvider] = useState<GitAiProvider>(() => {
-        const stored = window.localStorage.getItem(AI_PROVIDER_STORAGE);
-        return isGitAiProvider(stored) ? stored : DEFAULT_AI_PROVIDER;
-    });
-    const [aiModel, setAiModel] = useState(() => {
-        const storedProvider = window.localStorage.getItem(AI_PROVIDER_STORAGE);
-        const provider = isGitAiProvider(storedProvider) ? storedProvider : DEFAULT_AI_PROVIDER;
-        return window.localStorage.getItem(AI_MODEL_STORAGE) || defaultAiModel(provider);
-    });
     const [branchInput, setBranchInput] = useState<{ startPoint: string } | null>(null);
     const [branchText, setBranchText] = useState("");
     const branchInputRef = useRef<HTMLInputElement>(null);
@@ -107,11 +87,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
     useEffect(() => {
         if (searchOpen) searchInputRef.current?.focus();
     }, [searchOpen]);
-
-    useEffect(() => {
-        window.localStorage.setItem(AI_PROVIDER_STORAGE, aiProvider);
-        window.localStorage.setItem(AI_MODEL_STORAGE, aiModel);
-    }, [aiProvider, aiModel]);
 
     const fileQuery = searchByPanel.files;
     const branchQuery = searchByPanel.branches;
@@ -333,13 +308,20 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         });
     };
 
-    const generateCommitMessage = () =>
-        run(`${AI_PROVIDER_LABEL[aiProvider]} is writing the message…`, async () => {
-            const model = aiModel.trim() || defaultAiModel(aiProvider);
-            const msg = await git.aiMessage(repo, aiProvider, model);
+    const generateCommitMessage = () => {
+        setCommitText("");
+        commitInputRef.current?.focus();
+        void run("Groq is writing the message…", async () => {
+            const msg = await git.aiMessage(repo, (chunk) => {
+                setCommitText((current) => current + chunk);
+                window.requestAnimationFrame(() => {
+                    const input = commitInputRef.current;
+                    if (input) input.scrollTop = input.scrollHeight;
+                });
+            });
             setCommitText(msg);
-            commitInputRef.current?.focus();
         });
+    };
 
     const moveSel = (d: number) => {
         const len = lenFor(panel);
@@ -1160,34 +1142,12 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                 <span className="git-panel-label">Commit</span>
                             </button>
                             <div className="git-cp-head-actions">
-                                <GitSelect
-                                    title="AI provider"
-                                    width={76}
-                                    value={aiProvider}
-                                    label={AI_PROVIDER_LABEL[aiProvider]}
-                                    options={(Object.keys(AI_PROVIDER_LABEL) as GitAiProvider[]).map((p) => ({
-                                        value: p,
-                                        label: AI_PROVIDER_LABEL[p],
-                                    }))}
-                                    onSelect={(v) => {
-                                        const provider = isGitAiProvider(v) ? v : DEFAULT_AI_PROVIDER;
-                                        setAiProvider(provider);
-                                        setAiModel(defaultAiModel(provider));
-                                    }}
-                                />
-                                <GitSelect
-                                    title="AI model"
-                                    width={150}
-                                    value={aiModel || defaultAiModel(aiProvider)}
-                                    label={aiModel || defaultAiModel(aiProvider)}
-                                    options={AI_MODELS[aiProvider].map((m) => ({ value: m, label: m }))}
-                                    onSelect={(v) => setAiModel(v)}
-                                />
                                 <button
                                     className="git-cp-ai"
                                     type="button"
-                                    onClick={() => void generateCommitMessage()}
-                                    title={`Generate commit message with ${AI_PROVIDER_LABEL[aiProvider]} · ${aiModel || defaultAiModel(aiProvider)} (g) — does not stage or commit`}>
+                                    disabled={!!busy}
+                                    onClick={generateCommitMessage}
+                                    title="Generate commit message with Groq · openai/gpt-oss-20b (g) — does not stage or commit">
                                     <IconSparkle size={15} />
                                 </button>
                             </div>
@@ -1199,10 +1159,12 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                 placeholder="commit message…"
                                 value={commitText}
                                 spellCheck={false}
+                                readOnly={!!busy}
                                 rows={3}
                                 onChange={(e) => setCommitText(e.target.value)}
                                 onKeyDown={(e) => {
-                                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) doCommit(commitText);
+                                    if (busy) e.preventDefault();
+                                    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) doCommit(commitText);
                                     else if (e.key === "Escape") {
                                         setCommitText("");
                                         commitInputRef.current?.blur();
@@ -1214,7 +1176,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                 <button
                                     className="git-cp-commit"
                                     type="button"
-                                    disabled={!commitText.trim()}
+                                    disabled={!!busy || !commitText.trim()}
                                     onClick={() => doCommit(commitText)}
                                     title={`Commit staged (${PRIMARY_SHORTCUT}⏎)`}>
                                     <IconCommit size={13} />

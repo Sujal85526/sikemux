@@ -1,7 +1,3 @@
-import type { GitAiProvider } from "./gitPaneTypes";
-
-export const isGitAiProvider = (v: string | null): v is GitAiProvider => v === "hermes" || v === "codex" || v === "claude";
-
 export const rangeBadge = (range: [number, number] | null): string | null => (range ? `range ${range[1] - range[0] + 1}` : null);
 
 export const isInRange = (range: [number, number] | null, i: number): boolean => !!range && i >= range[0] && i <= range[1];
