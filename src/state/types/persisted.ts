@@ -1,6 +1,6 @@
 import type { Theme } from "../../themes";
 import type { KeybindingOverrides } from "../../keybindings";
-import type { Agent, AgentBookmark, AwsService, PinnedProject, ProjectRoot, RecentEntry, RundeckSettings, Session, Window } from "./domain";
+import type { Agent, AwsService, PinnedProject, ProjectRoot, RecentEntry, RundeckSettings, Session, Window } from "./domain";
 import type { EditorPaneView } from "./view";
 
 export type PersistedSession = Omit<Session, "bruno"> & {
@@ -15,7 +15,6 @@ export interface PersistedSnapshot {
     sessionOrder: string[];
     activeSessionId: string;
     recent: RecentEntry[];
-    agentBookmarks: AgentBookmark[];
     prefs: PersistedPrefs;
     editorViews: Record<string, EditorPaneView>;
 }

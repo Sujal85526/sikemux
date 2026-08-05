@@ -34,7 +34,6 @@ import {
 } from "./layout";
 import type {
     Agent,
-    AgentBookmark,
     AgentType,
     AwsService,
     BrunoReqTab,
@@ -1125,13 +1124,6 @@ function usableAgentSessionTitle(row: AgentSession, current: string): string {
     return title;
 }
 
-function refreshAgentBookmarkTitle(d: { agentBookmarks: AgentBookmark[] }, type: AgentType, oldId: string, newId: string, title: string): void {
-    const bookmark = d.agentBookmarks.find((b) => b.type === type && b.id === oldId);
-    if (!bookmark) return;
-    bookmark.id = newId;
-    bookmark.title = title;
-}
-
 export function toggleAgentSkipPermissions(id: string): void {
     mutate((d) => {
         const a = d.agents[id];
@@ -1210,7 +1202,6 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             const nextTitle = usableAgentSessionTitle(row, agent.title);
             if (nextTitle !== agent.title) {
                 agent.title = nextTitle;
-                refreshAgentBookmarkTitle(d, type, agent.resumeId, agent.resumeId, nextTitle);
             }
         }
 
@@ -1230,13 +1221,11 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             const idx = candidates.findIndex((row) => (baseline ? !baseline.includes(row.id) : row.mtime >= launchedAt));
             if (idx < 0) continue;
             const [row] = candidates.splice(idx, 1);
-            const oldBookmarkId = agent.id;
             agent.resumeId = row.id;
             agent.title = usableAgentSessionTitle(row, agent.title);
             agent.startup = agentStartup(agent.type, agent.resumeId, agent.skipPermissions ?? false);
             delete agent.baselineSessionIds;
             claimed.add(row.id);
-            refreshAgentBookmarkTitle(d, type, oldBookmarkId, row.id, agent.title);
         }
     });
 }
@@ -1278,78 +1267,6 @@ export function focusAgents(): void {
         d.zoomedPaneId = null;
     });
     emit({ type: "agent-focus", sessionId: getState().activeSessionId });
-}
-
-export function toggleAgentBookmark(b: AgentBookmark): void {
-    mutate((d) => {
-        const idx = d.agentBookmarks.findIndex((x) => x.type === b.type && x.id === b.id);
-        if (idx >= 0) {
-            d.agentBookmarks.splice(idx, 1);
-        } else {
-            d.agentBookmarks.unshift(b);
-        }
-    });
-}
-
-export function openAgentBookmark(b: AgentBookmark): void {
-    const st = getState();
-    for (const id of st.sessionOrder) {
-        const sess = st.sessions[id];
-        if (sess.kind !== "project") continue;
-        const ownedIds = st.agentsBySession[id] ?? [];
-        const live = ownedIds.map((aid) => st.agents[aid]).find((a) => a && a.type === b.type && a.resumeId === b.id);
-        if (live) {
-            mutate((d) => {
-                d.activeSessionId = id;
-                d.zoomedPaneId = null;
-                const sess = d.sessions[id];
-                sess.activeAgentId = live.id;
-                sess.view = "agent";
-            });
-            return;
-        }
-    }
-
-    if (b.cwd) {
-        const cur = getState();
-        const existing = cur.sessionOrder.map((id) => cur.sessions[id]).find((s) => s.kind === "project" && s.cwd === b.cwd);
-        if (existing) {
-            if (existing.id !== cur.activeSessionId) {
-                setState({ activeSessionId: existing.id, zoomedPaneId: null });
-            }
-        } else {
-            createProjectSession(b.cwd);
-        }
-    }
-
-    const isFreshBookmark = b.id.startsWith("agent-");
-    if (!isFreshBookmark) {
-        const cur = getState();
-        const dest = cur.sessions[cur.activeSessionId];
-        if (dest && dest.kind === "project") {
-            const ownedIds = cur.agentsBySession[dest.id] ?? [];
-            const freshs = ownedIds.map((aid) => cur.agents[aid]).filter((a) => a && a.type === b.type && !a.resumeId);
-            if (freshs.length === 1) {
-                const fresh = freshs[0]!;
-                mutate((d) => {
-                    const a = d.agents[fresh.id];
-                    if (a) {
-                        a.resumeId = b.id;
-                        a.title = b.title;
-                    }
-                    const sess = d.sessions[dest.id];
-                    if (sess) {
-                        sess.activeAgentId = fresh.id;
-                        sess.view = "agent";
-                    }
-                });
-                return;
-            }
-        }
-    }
-
-    if (isFreshBookmark) addAgent(b.type);
-    else addAgent(b.type, b.id, b.title);
 }
 
 export const setHome = (home: string): void => setState({ home });

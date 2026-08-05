@@ -189,6 +189,7 @@ describe("frontend persistence", () => {
         expect(invoke).toHaveBeenCalledTimes(1);
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
+        expect(migrated).not.toContain("agentBookmarks");
         expect(JSON.parse(migrated).version).toBe(4);
     });
 

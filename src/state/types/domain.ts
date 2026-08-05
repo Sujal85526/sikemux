@@ -93,13 +93,6 @@ export interface RecentEntry {
     cwd: string;
 }
 
-export interface AgentBookmark {
-    type: AgentType;
-    id: string;
-    title: string;
-    cwd?: string;
-}
-
 export type AwsService = "ecs" | "ec2" | "lambda" | "sqs" | "billing" | "s3";
 export const AWS_SERVICES: AwsService[] = ["ecs", "ec2", "lambda", "sqs", "billing", "s3"];
 

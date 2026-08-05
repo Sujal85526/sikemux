@@ -173,27 +173,6 @@
     font-variant-numeric: tabular-nums;
 }
 
-.agent-bm {
-    display: flex;
-    align-items: center;
-    padding: 3px;
-    color: var(--ink-faint);
-    opacity: 0;
-    transition:
-        opacity 0.12s,
-        color 0.12s;
-}
-.agent-row:hover .agent-bm {
-    opacity: 1;
-}
-.agent-bm:hover {
-    color: var(--acc);
-}
-.agent-bm.on {
-    opacity: 1;
-    color: var(--acc);
-}
-
 .agent-header {
     display: flex;
     align-items: center;
@@ -238,10 +217,6 @@
     background: var(--acc-soft);
 }
 
-.agent-group + .agent-group {
-    margin-top: 10px;
-}
-
 .agent-row.active::before {
     content: "";
     position: absolute;
@@ -250,14 +225,6 @@
     bottom: 8px;
     width: 2.5px;
     background: var(--acc);
-}
-
-.live-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--live);
-    flex: 0 0 auto;
 }
 
 .agent-glyph {

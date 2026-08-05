@@ -6,18 +6,7 @@ import { registerCustomThemes } from "../themes/bus";
 import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
-import type {
-    Agent,
-    AgentBookmark,
-    EditorPaneView,
-    PersistedPrefs,
-    PersistedSession,
-    PersistedSnapshot,
-    RecentEntry,
-    Session,
-    Window,
-    WindowRole,
-} from "./types";
+import type { Agent, EditorPaneView, PersistedPrefs, PersistedSession, PersistedSnapshot, RecentEntry, Session, Window, WindowRole } from "./types";
 
 function deriveRole(w: Window): WindowRole {
     if (WINDOW_ROLES.has(w.role)) return w.role;
@@ -50,7 +39,6 @@ const PERSISTED_KEYS = [
     "agentsBySession",
     "activeSessionId",
     "recent",
-    "agentBookmarks",
     "editorViews",
     "pinnedProjects",
     "projectRoots",
@@ -246,10 +234,6 @@ function isRecent(value: unknown): value is RecentEntry {
     return isRecord(value) && SESSION_KINDS.has(value.kind as Session["kind"]) && typeof value.name === "string" && typeof value.cwd === "string";
 }
 
-function isBookmark(value: unknown): value is AgentBookmark {
-    return isRecord(value) && isAgentType(value.type) && typeof value.id === "string" && typeof value.title === "string";
-}
-
 function persistedSession(sess: Session, activeAgentId: string | null, view: Session["view"]): PersistedSession {
     const { bruno, ...base } = sess;
     if (sess.kind !== "bruno" || !bruno) return { ...base, activeAgentId, view };
@@ -289,7 +273,6 @@ function snapshot(): string {
         sessionOrder: sessions.map((s) => s.id),
         activeSessionId: s.activeSessionId,
         recent: s.recent,
-        agentBookmarks: s.agentBookmarks,
         prefs: packPrefs(s),
         editorViews: s.editorViews,
     };
@@ -455,7 +438,6 @@ export function applyHydrate(raw: string): void {
         agentsBySession,
         activeSessionId,
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
-        agentBookmarks: Array.isArray(decoded.agentBookmarks) ? decoded.agentBookmarks.filter(isBookmark) : [],
         editorViews,
         pinnedProjects: normalisePinnedProjects(Array.isArray(prefs.pinnedProjects) ? prefs.pinnedProjects : []),
         projectRoots: Array.isArray(prefs.projectRoots) ? normaliseProjectRoots(prefs.projectRoots) : cur.projectRoots,

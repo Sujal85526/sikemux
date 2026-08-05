@@ -8,7 +8,6 @@ import { makePane, newId } from "./layout";
 import type { GitCmdEntry, GitModal } from "./gitTypes";
 import type {
     Agent,
-    AgentBookmark,
     AwsService,
     EcsLevel,
     EditorPaneView,
@@ -38,7 +37,6 @@ export interface DomainState {
     activeSessionId: string;
 
     recent: RecentEntry[];
-    agentBookmarks: AgentBookmark[];
 
     pinnedProjects: PinnedProject[];
     projectRoots: ProjectRoot[];
@@ -139,7 +137,6 @@ export const useStore = create<StoreState>(() => {
         agentsBySession: { [session.id]: [] },
         activeSessionId: session.id,
         recent: [],
-        agentBookmarks: [],
         pinnedProjects: [],
         projectRoots: [],
         brunoWorkspaces: [],

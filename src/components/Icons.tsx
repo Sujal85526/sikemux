@@ -191,14 +191,6 @@ export const IconFolderPlus = makeSvgIcon(
     </>,
 );
 
-export function IconPin({ size, className, filled }: IconProps & { filled?: boolean }) {
-    return (
-        <Svg size={size} className={className} fill={filled ? "currentColor" : "none"}>
-            <path d="M4 2.4h8v11.4l-4-3.1-4 3.1z" />
-        </Svg>
-    );
-}
-
 export function IconClaude({ size, className }: IconProps) {
     return (
         <Svg size={size} className={className} viewBox="-4 -4 32 32" fill="currentColor">
