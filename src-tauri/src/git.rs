@@ -7,11 +7,10 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use futures::StreamExt;
 use git2::{
     BranchType, DiffFormat, DiffLineType, DiffOptions, ErrorCode, Repository, Status, StatusOptions,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::async_runtime::spawn_blocking;
 
 /// Run a synchronous closure off the Tauri worker pool. Every `pub fn`
@@ -1466,11 +1465,9 @@ pub async fn git_pull(repo: String) -> Result<String, String> {
 // ---- AI commit ------------------------------------------------------------
 
 const PRIMARY_DIFF_BUDGET: usize = 18_000;
-const RETRY_DIFF_BUDGET: usize = 8_000;
 const STAT_BUDGET: usize = 4_000;
-const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL: &str = "openai/gpt-oss-20b";
-const GROQ_RESPONSE_LIMIT: u64 = 1024 * 1024;
+const AI_COMMAND_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const AI_RESPONSE_LIMIT: usize = 1024 * 1024;
 const OMITTED_HUNK_MARKER: &str = "\n[... hunk body compacted ...]\n";
 const OMITTED_GENERATED_MARKER: &str =
     "[generated, vendored, or lockfile patch omitted; file and hunk retained]\n";
@@ -1512,286 +1509,454 @@ fn clean_commit_message(raw: &str) -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
-#[derive(Serialize)]
-struct GroqChatRequest<'a> {
-    model: &'static str,
-    messages: [GroqChatMessage<'a>; 1],
-    temperature: f32,
-    max_completion_tokens: u16,
-    reasoning_effort: &'static str,
-    stream: bool,
+#[derive(Clone, Copy, Debug)]
+enum GitAiProvider {
+    Hermes,
+    Codex,
+    Claude,
 }
 
-#[derive(Serialize)]
-struct GroqChatMessage<'a> {
-    role: &'static str,
-    content: &'a str,
-}
-
-#[derive(Deserialize)]
-struct GroqStreamChunk {
-    #[serde(default)]
-    choices: Vec<GroqStreamChoice>,
-    error: Option<GroqStreamError>,
-}
-
-#[derive(Deserialize)]
-struct GroqStreamChoice {
-    delta: GroqStreamDelta,
-}
-
-#[derive(Deserialize)]
-struct GroqStreamDelta {
-    content: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct GroqStreamError {
-    message: String,
-}
-
-#[derive(Debug)]
-enum GroqGenerateError {
-    TooLarge(String),
-    Other(String),
-}
-
-impl From<String> for GroqGenerateError {
-    fn from(error: String) -> Self {
-        Self::Other(error)
+impl GitAiProvider {
+    fn parse(raw: Option<String>) -> Result<Self, String> {
+        match raw
+            .as_deref()
+            .unwrap_or("hermes")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "hermes" => Ok(Self::Hermes),
+            "codex" => Ok(Self::Codex),
+            "claude" => Ok(Self::Claude),
+            other => Err(format!("unknown local AI provider: {other}")),
+        }
     }
-}
 
-impl From<&str> for GroqGenerateError {
-    fn from(error: &str) -> Self {
-        Self::Other(error.to_string())
-    }
-}
-
-impl std::fmt::Display for GroqGenerateError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn bin(self) -> &'static str {
         match self {
-            Self::TooLarge(error) | Self::Other(error) => formatter.write_str(error),
+            Self::Hermes => "hermes",
+            Self::Codex => "codex",
+            Self::Claude => "claude",
+        }
+    }
+
+    fn default_model(self) -> &'static str {
+        match self {
+            Self::Hermes => "openai/gpt-5.5",
+            Self::Codex => "gpt-5.5",
+            Self::Claude => "sonnet",
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum GroqStreamEvent {
-    Delta(String),
-    Done,
-    Ignore,
+#[derive(Clone, Copy)]
+enum AiOutputFormat {
+    Text,
+    CodexJson,
+    ClaudeJson,
 }
 
-#[derive(Default)]
-struct GroqStreamDecoder {
+struct AiStreamDecoder {
+    format: AiOutputFormat,
     pending: Vec<u8>,
+    message: String,
 }
 
-impl GroqStreamDecoder {
-    fn push(&mut self, bytes: &[u8]) -> Result<Vec<GroqStreamEvent>, String> {
+impl AiStreamDecoder {
+    fn new(format: AiOutputFormat) -> Self {
+        Self {
+            format,
+            pending: Vec::new(),
+            message: String::new(),
+        }
+    }
+
+    fn emit(
+        &mut self,
+        text: &str,
+        on_chunk: Option<&tauri::ipc::Channel<String>>,
+    ) -> Result<(), String> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.message.push_str(text);
+        if let Some(channel) = on_chunk {
+            channel
+                .send(text.to_string())
+                .map_err(|e| format!("Commit message stream closed: {e}"))?;
+        }
+        Ok(())
+    }
+
+    fn apply_snapshot(
+        &mut self,
+        text: &str,
+        on_chunk: Option<&tauri::ipc::Channel<String>>,
+    ) -> Result<(), String> {
+        if let Some(suffix) = text.strip_prefix(&self.message) {
+            self.emit(suffix, on_chunk)
+        } else {
+            // The command's final snapshot is authoritative. The frontend
+            // replaces its streamed draft with the returned cleaned message.
+            self.message.clear();
+            self.message.push_str(text);
+            Ok(())
+        }
+    }
+
+    fn structured_line(
+        &mut self,
+        line: &str,
+        on_chunk: Option<&tauri::ipc::Channel<String>>,
+    ) -> Result<(), String> {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() {
+            return Ok(());
+        }
+        let event: serde_json::Value = serde_json::from_str(line)
+            .map_err(|e| format!("Local AI returned invalid streaming JSON: {e}"))?;
+        match self.format {
+            AiOutputFormat::CodexJson => {
+                let event_type = event.get("type").and_then(|value| value.as_str());
+                let item = event.get("item");
+                let is_agent_message = item
+                    .and_then(|value| value.get("type"))
+                    .and_then(|value| value.as_str())
+                    == Some("agent_message");
+                if matches!(event_type, Some("item.updated" | "item.completed")) && is_agent_message
+                {
+                    if let Some(text) = item
+                        .and_then(|value| value.get("text"))
+                        .and_then(|value| value.as_str())
+                    {
+                        self.apply_snapshot(text, on_chunk)?;
+                    }
+                }
+            }
+            AiOutputFormat::ClaudeJson => {
+                if event.get("type").and_then(|value| value.as_str()) == Some("stream_event") {
+                    let delta = event.pointer("/event/delta");
+                    if delta
+                        .and_then(|value| value.get("type"))
+                        .and_then(|value| value.as_str())
+                        == Some("text_delta")
+                    {
+                        if let Some(text) = delta
+                            .and_then(|value| value.get("text"))
+                            .and_then(|value| value.as_str())
+                        {
+                            self.emit(text, on_chunk)?;
+                        }
+                    }
+                } else if event.get("type").and_then(|value| value.as_str()) == Some("result") {
+                    if let Some(text) = event.get("result").and_then(|value| value.as_str()) {
+                        self.apply_snapshot(text, on_chunk)?;
+                    }
+                }
+            }
+            AiOutputFormat::Text => unreachable!("text output is not line decoded"),
+        }
+        Ok(())
+    }
+
+    fn push(
+        &mut self,
+        bytes: &[u8],
+        on_chunk: Option<&tauri::ipc::Channel<String>>,
+    ) -> Result<(), String> {
         self.pending.extend_from_slice(bytes);
-        let mut events = Vec::new();
+        if matches!(self.format, AiOutputFormat::Text) {
+            loop {
+                match std::str::from_utf8(&self.pending) {
+                    Ok(text) => {
+                        let text = text.to_string();
+                        self.pending.clear();
+                        return self.emit(&text, on_chunk);
+                    }
+                    Err(error) if error.valid_up_to() > 0 => {
+                        let valid = error.valid_up_to();
+                        let text = std::str::from_utf8(&self.pending[..valid])
+                            .expect("validated UTF-8 prefix")
+                            .to_string();
+                        self.pending.drain(..valid);
+                        self.emit(&text, on_chunk)?;
+                    }
+                    Err(error) if error.error_len().is_none() => return Ok(()),
+                    Err(error) => {
+                        return Err(format!("Local AI returned invalid UTF-8: {error}"));
+                    }
+                }
+            }
+        }
+
         while let Some(newline) = self.pending.iter().position(|byte| *byte == b'\n') {
             let mut line = self.pending.drain(..=newline).collect::<Vec<_>>();
             line.pop();
             let line = std::str::from_utf8(&line)
-                .map_err(|e| format!("Groq returned invalid UTF-8: {e}"))?;
-            events.push(parse_groq_stream_event(line)?);
+                .map_err(|e| format!("Local AI returned invalid UTF-8: {e}"))?;
+            self.structured_line(line, on_chunk)?;
         }
-        Ok(events)
+        Ok(())
     }
 
-    fn finish(&mut self) -> Result<Vec<GroqStreamEvent>, String> {
-        if self.pending.is_empty() {
-            return Ok(Vec::new());
+    fn finish(mut self, on_chunk: Option<&tauri::ipc::Channel<String>>) -> Result<String, String> {
+        if !self.pending.is_empty() {
+            match self.format {
+                AiOutputFormat::Text => {
+                    let text = std::str::from_utf8(&self.pending)
+                        .map_err(|e| format!("Local AI returned incomplete UTF-8: {e}"))?
+                        .to_string();
+                    self.pending.clear();
+                    self.emit(&text, on_chunk)?;
+                }
+                AiOutputFormat::CodexJson | AiOutputFormat::ClaudeJson => {
+                    let line = std::str::from_utf8(&self.pending)
+                        .map_err(|e| format!("Local AI returned invalid UTF-8: {e}"))?
+                        .to_string();
+                    self.pending.clear();
+                    self.structured_line(&line, on_chunk)?;
+                }
+            }
         }
-        let line = std::str::from_utf8(&self.pending)
-            .map_err(|e| format!("Groq returned invalid UTF-8: {e}"))?;
-        let event = parse_groq_stream_event(line)?;
-        self.pending.clear();
-        Ok(vec![event])
+        Ok(self.message)
     }
 }
 
-fn groq_key_from_dotenv(path: &Path) -> Option<String> {
-    let entries = dotenvy::from_path_iter(path).ok()?;
-    for entry in entries.flatten() {
-        if entry.0 == "GROQ_API_KEY" {
-            let key = entry.1.trim().to_string();
-            if !key.is_empty() {
-                return Some(key);
+fn command_candidates(name: &str) -> Vec<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut candidates = vec![
+        name.to_string(),
+        format!("{home}/.local/bin/{name}"),
+        format!("{home}/.cargo/bin/{name}"),
+        format!("{home}/.opencode/bin/{name}"),
+        format!("/opt/homebrew/bin/{name}"),
+        format!("/usr/local/bin/{name}"),
+    ];
+    if let Some(path) = crate::system::find_executable(name) {
+        candidates.insert(0, path.to_string_lossy().into_owned());
+    }
+    candidates.dedup();
+    candidates
+}
+
+fn read_ai_pipe(
+    mut pipe: impl Read,
+    format: AiOutputFormat,
+    on_chunk: Option<tauri::ipc::Channel<String>>,
+    exceeded: Arc<AtomicBool>,
+) -> Result<String, String> {
+    let mut decoder = AiStreamDecoder::new(format);
+    let mut total = 0usize;
+    let mut chunk = [0_u8; 4096];
+    let mut decode_error = None;
+    loop {
+        let read = pipe.read(&mut chunk).map_err(|e| e.to_string())?;
+        if read == 0 {
+            if let Some(error) = decode_error {
+                return Err(error);
+            }
+            return decoder.finish(on_chunk.as_ref());
+        }
+        total = total.saturating_add(read);
+        if total > AI_RESPONSE_LIMIT {
+            exceeded.store(true, Ordering::Release);
+            return Err("Local AI response exceeds 1 MiB limit".into());
+        }
+        if decode_error.is_none() {
+            if let Err(error) = decoder.push(&chunk[..read], on_chunk.as_ref()) {
+                decode_error = Some(error);
             }
         }
     }
-    None
 }
 
-fn groq_api_key(repo: &str) -> Result<String, String> {
-    if let Ok(key) = std::env::var("GROQ_API_KEY") {
-        let key = key.trim().to_string();
-        if !key.is_empty() {
-            return Ok(key);
+fn run_ai_candidate<F>(
+    provider: GitAiProvider,
+    on_chunk: Option<tauri::ipc::Channel<String>>,
+    mut build: F,
+) -> Result<String, String>
+where
+    F: FnMut(&str) -> (Command, Option<Vec<u8>>, AiOutputFormat),
+{
+    for bin in command_candidates(provider.bin()) {
+        let (mut command, input, format) = build(&bin);
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        if input.is_some() {
+            command.stdin(Stdio::piped());
         }
-    }
-
-    let repo_env = Path::new(repo).join(".env");
-    if let Some(key) = groq_key_from_dotenv(&repo_env) {
-        return Ok(key);
-    }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let app_env = cwd.join(".env");
-        if app_env != repo_env {
-            if let Some(key) = groq_key_from_dotenv(&app_env) {
-                return Ok(key);
-            }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
         }
-    }
-
-    Err("Groq API key not found. Set GROQ_API_KEY or add it to .env.".into())
-}
-
-fn groq_error_message(body: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(body)
-        .ok()?
-        .pointer("/error/message")?
-        .as_str()
-        .map(ToOwned::to_owned)
-}
-
-fn parse_groq_stream_event(line: &str) -> Result<GroqStreamEvent, String> {
-    let Some(data) = line.trim_end_matches('\r').strip_prefix("data:") else {
-        return Ok(GroqStreamEvent::Ignore);
-    };
-    let data = data.trim_start();
-    if data == "[DONE]" {
-        return Ok(GroqStreamEvent::Done);
-    }
-    let chunk: GroqStreamChunk = serde_json::from_str(data)
-        .map_err(|e| format!("Groq returned an invalid stream event: {e}"))?;
-    if let Some(error) = chunk.error {
-        return Err(format!("Groq stream failed: {}", error.message));
-    }
-    Ok(chunk
-        .choices
-        .into_iter()
-        .next()
-        .and_then(|choice| choice.delta.content)
-        .filter(|content| !content.is_empty())
-        .map(GroqStreamEvent::Delta)
-        .unwrap_or(GroqStreamEvent::Ignore))
-}
-
-fn apply_groq_stream_event(
-    event: GroqStreamEvent,
-    message: &mut String,
-    on_chunk: Option<&tauri::ipc::Channel<String>>,
-) -> Result<bool, String> {
-    match event {
-        GroqStreamEvent::Delta(delta) => {
-            message.push_str(&delta);
-            if let Some(channel) = on_chunk {
-                channel
-                    .send(delta)
-                    .map_err(|e| format!("Commit message stream closed: {e}"))?;
-            }
-            Ok(false)
-        }
-        GroqStreamEvent::Done => Ok(true),
-        GroqStreamEvent::Ignore => Ok(false),
-    }
-}
-
-async fn generate_commit_message(
-    repo: &str,
-    prompt: &str,
-    on_chunk: Option<&tauri::ipc::Channel<String>>,
-) -> Result<String, GroqGenerateError> {
-    let key = groq_api_key(repo)?;
-    let payload = GroqChatRequest {
-        model: GROQ_MODEL,
-        messages: [GroqChatMessage {
-            role: "user",
-            content: prompt,
-        }],
-        temperature: 0.2,
-        max_completion_tokens: 256,
-        reasoning_effort: "low",
-        stream: true,
-    };
-    let response = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .user_agent("sikemux/0.1")
-        .build()
-        .map_err(|e| format!("Could not create Groq client: {e}"))?
-        .post(GROQ_CHAT_URL)
-        .bearer_auth(key)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("Groq request failed: {e}"))?;
-
-    let status = response.status();
-    if response
-        .content_length()
-        .is_some_and(|size| size > GROQ_RESPONSE_LIMIT)
-    {
-        return Err("Groq response exceeds 1 MiB limit".into());
-    }
-    if !status.is_success() {
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| format!("Could not read Groq response: {e}"))?;
-        if bytes.len() as u64 > GROQ_RESPONSE_LIMIT {
-            return Err("Groq response exceeds 1 MiB limit".into());
-        }
-        let body = String::from_utf8_lossy(&bytes);
-        let detail = groq_error_message(&body)
-            .unwrap_or_else(|| status.canonical_reason().unwrap_or("request failed").into());
-        let error = format!("Groq API returned {}: {detail}", status.as_u16());
-        return if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
-            Err(GroqGenerateError::TooLarge(error))
-        } else {
-            Err(GroqGenerateError::Other(error))
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("{} failed to start: {error}", provider.bin())),
         };
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut decoder = GroqStreamDecoder::default();
-    let mut total_bytes = 0_u64;
-    let mut message = String::new();
-    let mut done = false;
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Could not read Groq stream: {e}"))?;
-        total_bytes = total_bytes.saturating_add(chunk.len() as u64);
-        if total_bytes > GROQ_RESPONSE_LIMIT {
-            return Err("Groq response exceeds 1 MiB limit".into());
-        }
-        for event in decoder.push(&chunk)? {
-            if apply_groq_stream_event(event, &mut message, on_chunk)? {
-                done = true;
-                break;
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                kill_and_reap_process(&mut child);
+                return Err(format!("{} stdout unavailable", provider.bin()));
             }
-        }
-        if done {
-            break;
-        }
-    }
-
-    if !done {
-        for event in decoder.finish()? {
-            if apply_groq_stream_event(event, &mut message, on_chunk)? {
-                break;
+        };
+        let stderr = match child.stderr.take() {
+            Some(stderr) => stderr,
+            None => {
+                kill_and_reap_process(&mut child);
+                return Err(format!("{} stderr unavailable", provider.bin()));
             }
+        };
+
+        let output_exceeded = Arc::new(AtomicBool::new(false));
+        let stdout_exceeded = Arc::clone(&output_exceeded);
+        let stream_channel = on_chunk.clone();
+        let stdout_reader = std::thread::spawn(move || {
+            read_ai_pipe(stdout, format, stream_channel, stdout_exceeded)
+        });
+        let stderr_exceeded = Arc::clone(&output_exceeded);
+        let stderr_reader = std::thread::spawn(move || read_bounded_pipe(stderr, stderr_exceeded));
+        let stdin_writer = input.map(|bytes| {
+            let stdin = child.stdin.take();
+            std::thread::spawn(move || {
+                stdin
+                    .ok_or_else(|| "Local AI stdin unavailable".to_string())
+                    .and_then(|mut stdin| stdin.write_all(&bytes).map_err(|e| e.to_string()))
+            })
+        });
+
+        let deadline = Instant::now() + AI_COMMAND_TIMEOUT;
+        let status = loop {
+            if output_exceeded.load(Ordering::Acquire) {
+                kill_and_reap_process(&mut child);
+                if let Some(writer) = stdin_writer {
+                    let _ = writer.join();
+                }
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err("Local AI output exceeds its safety limit".into());
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(None) => {
+                    kill_and_reap_process(&mut child);
+                    if let Some(writer) = stdin_writer {
+                        let _ = writer.join();
+                    }
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
+                    return Err(format!(
+                        "{} timed out after {}s",
+                        provider.bin(),
+                        AI_COMMAND_TIMEOUT.as_secs()
+                    ));
+                }
+                Err(error) => {
+                    kill_and_reap_process(&mut child);
+                    return Err(format!("{} failed: {error}", provider.bin()));
+                }
+            }
+        };
+        if let Some(writer) = stdin_writer {
+            writer
+                .join()
+                .map_err(|_| "Local AI stdin writer panicked".to_string())??;
         }
+        let message = stdout_reader
+            .join()
+            .map_err(|_| "Local AI stdout reader panicked".to_string())?;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| "Local AI stderr reader panicked".to_string())?
+            .map_err(|e| e.to_string())?;
+        if !status.success() {
+            let detail = String::from_utf8_lossy(&stderr).trim().to_string();
+            return Err(if detail.is_empty() {
+                format!("{} exited with {status}", provider.bin())
+            } else {
+                format!("{} failed: {detail}", provider.bin())
+            });
+        }
+        let message = message?;
+        if message.trim().is_empty() {
+            return Err(format!("{} returned no commit message", provider.bin()));
+        }
+        return Ok(message);
     }
-    if message.trim().is_empty() {
-        return Err("Groq returned no commit message".into());
+    Err(format!(
+        "{} is not installed or could not be found on PATH",
+        provider.bin()
+    ))
+}
+
+fn run_ai_commit_model(
+    repo: &str,
+    provider: GitAiProvider,
+    model: &str,
+    prompt: &str,
+    on_chunk: Option<tauri::ipc::Channel<String>>,
+) -> Result<String, String> {
+    let model = if model.trim().is_empty() {
+        provider.default_model()
+    } else {
+        model.trim()
+    };
+    match provider {
+        GitAiProvider::Hermes => run_ai_candidate(provider, on_chunk, |bin| {
+            let mut command = Command::new(bin);
+            command
+                .current_dir(repo)
+                .args(["chat", "-Q", "-m", model, "-t", "safe", "-q", prompt]);
+            (command, None, AiOutputFormat::Text)
+        }),
+        GitAiProvider::Codex => run_ai_candidate(provider, on_chunk, |bin| {
+            let mut command = Command::new(bin);
+            command.current_dir(repo).args([
+                "exec",
+                "-m",
+                model,
+                "-C",
+                repo,
+                "--sandbox",
+                "read-only",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--color",
+                "never",
+                "--json",
+                "-",
+            ]);
+            (
+                command,
+                Some(prompt.as_bytes().to_vec()),
+                AiOutputFormat::CodexJson,
+            )
+        }),
+        GitAiProvider::Claude => run_ai_candidate(provider, on_chunk, |bin| {
+            let mut command = Command::new(bin);
+            command.current_dir(repo).args([
+                "--print",
+                "--model",
+                model,
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--include-partial-messages",
+                "--no-session-persistence",
+                "--tools",
+                "",
+            ]);
+            (
+                command,
+                Some(prompt.as_bytes().to_vec()),
+                AiOutputFormat::ClaudeJson,
+            )
+        }),
     }
-    Ok(message)
 }
 
 /// Build the AI prompt from a stat + diff. Shared by the generate-only
@@ -2089,71 +2254,74 @@ fn worktree_diff(repo: &str) -> Result<(String, String), String> {
     }
 }
 
-async fn describe_diff_with_groq(
+fn describe_diff_with_local_ai(
     repo: &str,
     stat: &str,
     diff: &str,
-    on_chunk: Option<&tauri::ipc::Channel<String>>,
+    provider: GitAiProvider,
+    model: &str,
+    on_chunk: Option<tauri::ipc::Channel<String>>,
 ) -> Result<String, String> {
     let stat = compact_stat(stat);
-    let primary = prepare_diff(diff, PRIMARY_DIFF_BUDGET);
-    let prompt = commit_message_prompt(repo, &stat, &primary.text, primary.compacted);
-    match generate_commit_message(repo, &prompt, on_chunk).await {
-        Ok(raw) => clean_commit_message(&raw),
-        Err(GroqGenerateError::TooLarge(_)) => {
-            let retry = prepare_diff(diff, RETRY_DIFF_BUDGET);
-            let prompt = commit_message_prompt(repo, &stat, &retry.text, true);
-            match generate_commit_message(repo, &prompt, on_chunk).await {
-                Ok(raw) => clean_commit_message(&raw),
-                Err(GroqGenerateError::TooLarge(_)) => Err(
-                    "This change set still exceeds Groq's free-tier request limit after safe compaction. Stage fewer related files and try again."
-                        .into(),
-                ),
-                Err(error) => Err(error.to_string()),
-            }
-        }
-        Err(error) => Err(error.to_string()),
-    }
+    let prepared = prepare_diff(diff, PRIMARY_DIFF_BUDGET);
+    let prompt = commit_message_prompt(repo, &stat, &prepared.text, prepared.compacted);
+    clean_commit_message(&run_ai_commit_model(
+        repo, provider, model, &prompt, on_chunk,
+    )?)
 }
 
-/// Generate a commit message with Groq WITHOUT staging or committing — backs
-/// the `✦` button + the `g` keybinding. Prefers the staged diff; if nothing's
-/// staged, falls back to the full working-tree diff.
+/// Generate a commit message through a locally installed CLI without staging
+/// or committing. Output chunks are forwarded to the commit textarea.
 #[tauri::command]
 pub async fn git_ai_message(
     repo: String,
+    provider: Option<String>,
+    model: Option<String>,
     on_chunk: tauri::ipc::Channel<String>,
 ) -> Result<String, String> {
-    let (mut stat, mut diff) = staged_diff(&repo)?;
-    if diff.trim().is_empty() {
-        (stat, diff) = worktree_diff(&repo)?;
-    }
-    if diff.trim().is_empty() {
-        return Err("Nothing to describe — stage changes or edit some files first.".into());
-    }
-    describe_diff_with_groq(&repo, &stat, &diff, Some(&on_chunk)).await
+    run_blocking(move || -> Result<String, String> {
+        let (mut stat, mut diff) = staged_diff(&repo)?;
+        if diff.trim().is_empty() {
+            (stat, diff) = worktree_diff(&repo)?;
+        }
+        if diff.trim().is_empty() {
+            return Err("Nothing to describe — stage changes or edit some files first.".into());
+        }
+        let provider = GitAiProvider::parse(provider)?;
+        let model = model.unwrap_or_else(|| provider.default_model().to_string());
+        describe_diff_with_local_ai(&repo, &stat, &diff, provider, &model, Some(on_chunk))
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_ai_commit(repo: String) -> Result<String, String> {
-    // Auto-stage all working changes if nothing's been staged yet — pressing
-    // Shift+C should "just commit," matching VSCode / Cursor's AI-commit UX.
-    if git_ok(&repo, &["diff", "--cached", "--name-only"])?
-        .trim()
-        .is_empty()
-    {
-        git_ok(&repo, &["add", "-A"])?;
+pub async fn git_ai_commit(
+    repo: String,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<String, String> {
+    run_blocking(move || -> Result<String, String> {
+        // Auto-stage all working changes if nothing's been staged yet.
         if git_ok(&repo, &["diff", "--cached", "--name-only"])?
             .trim()
             .is_empty()
         {
-            return Err("Nothing to commit — working tree is clean.".into());
+            git_ok(&repo, &["add", "-A"])?;
+            if git_ok(&repo, &["diff", "--cached", "--name-only"])?
+                .trim()
+                .is_empty()
+            {
+                return Err("Nothing to commit — working tree is clean.".into());
+            }
         }
-    }
-    let (stat, diff) = staged_diff(&repo)?;
-    let message = describe_diff_with_groq(&repo, &stat, &diff, None).await?;
-    commit_with_message(&repo, &message)?;
-    Ok(message)
+        let (stat, diff) = staged_diff(&repo)?;
+        let provider = GitAiProvider::parse(provider)?;
+        let model = model.unwrap_or_else(|| provider.default_model().to_string());
+        let message = describe_diff_with_local_ai(&repo, &stat, &diff, provider, &model, None)?;
+        commit_with_message(&repo, &message)?;
+        Ok(message)
+    })
+    .await
 }
 
 // ---- open PR --------------------------------------------------------------
@@ -2692,60 +2860,51 @@ mod tests {
     }
 
     #[test]
-    fn reads_groq_key_from_dotenv_without_exposing_it() {
-        let td = tempdir().expect("tempdir");
-        let env_path = td.path().join(".env");
-        fs::write(&env_path, "OTHER=value\nGROQ_API_KEY=\"gsk_test_value\"\n")
-            .expect("write dotenv");
-
-        assert_eq!(
-            groq_key_from_dotenv(&env_path).as_deref(),
-            Some("gsk_test_value")
+    fn decodes_claude_partial_stream_across_single_byte_chunks() {
+        let stream = concat!(
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"feat(git): \"}}}\n",
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"stream ✨\"}}}\n",
+            "{\"type\":\"result\",\"result\":\"feat(git): stream ✨\"}\n",
         );
-    }
-
-    #[test]
-    fn parses_groq_stream_and_api_error() {
-        let delta = r#"data: {"choices":[{"delta":{"content":"feat(git)"}}]}"#;
-        assert_eq!(
-            parse_groq_stream_event(delta).expect("delta"),
-            GroqStreamEvent::Delta("feat(git)".into())
-        );
-        assert_eq!(
-            parse_groq_stream_event("data: [DONE]").expect("done"),
-            GroqStreamEvent::Done
-        );
-
-        let error = r#"{"error":{"message":"rate limit reached"}}"#;
-        assert_eq!(
-            groq_error_message(error).as_deref(),
-            Some("rate limit reached")
-        );
-    }
-
-    #[test]
-    fn decodes_groq_sse_across_single_byte_network_chunks() {
-        let sse = concat!(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"feat(git): \"}}]}\r\n\r\n",
-            "data: {\"choices\":[{\"delta\":{\"content\":\"stream ✨\"}}]}\n\n",
-            "data: [DONE]\n\n",
-        );
-        let mut decoder = GroqStreamDecoder::default();
-        let mut events = Vec::new();
-        for byte in sse.as_bytes() {
-            events.extend(decoder.push(std::slice::from_ref(byte)).expect("chunk"));
+        let mut decoder = AiStreamDecoder::new(AiOutputFormat::ClaudeJson);
+        for byte in stream.as_bytes() {
+            decoder
+                .push(std::slice::from_ref(byte), None)
+                .expect("stream chunk");
         }
-        events.extend(decoder.finish().expect("finish"));
-        events.retain(|event| *event != GroqStreamEvent::Ignore);
 
         assert_eq!(
-            events,
-            vec![
-                GroqStreamEvent::Delta("feat(git): ".into()),
-                GroqStreamEvent::Delta("stream ✨".into()),
-                GroqStreamEvent::Done,
-            ]
+            decoder.finish(None).expect("finish"),
+            "feat(git): stream ✨"
         );
+    }
+
+    #[test]
+    fn decodes_codex_agent_message_snapshot() {
+        let stream = concat!(
+            "{\"type\":\"thread.started\",\"thread_id\":\"test\"}\n",
+            "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"fix(ui): stream local output\"}}\n",
+        );
+        let mut decoder = AiStreamDecoder::new(AiOutputFormat::CodexJson);
+        decoder.push(stream.as_bytes(), None).expect("stream");
+
+        assert_eq!(
+            decoder.finish(None).expect("finish"),
+            "fix(ui): stream local output"
+        );
+    }
+
+    #[test]
+    fn text_decoder_preserves_split_utf8() {
+        let text = "feat(git): stream ✨";
+        let mut decoder = AiStreamDecoder::new(AiOutputFormat::Text);
+        for byte in text.as_bytes() {
+            decoder
+                .push(std::slice::from_ref(byte), None)
+                .expect("text chunk");
+        }
+
+        assert_eq!(decoder.finish(None).expect("finish"), text);
     }
 
     #[test]

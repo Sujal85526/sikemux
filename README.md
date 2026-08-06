@@ -33,7 +33,7 @@ A project session bundles five views (`Files`, `Term`, `Git`, `Agents`, `Search`
 </tr>
 <tr>
 <td align="center"><b>Integrated terminal</b> — xterm.js with gated WebGL acceleration, real PTYs via Rust, split panes, tabs, drag-drop paths.</td>
-<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, plus Groq-powered commit messages.</td>
+<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, plus local-CLI-powered commit messages.</td>
 </tr>
 </table>
 
@@ -137,7 +137,7 @@ pnpm build:mac:universal
 pnpm build:windows
 ```
 
-AI commit-message generation uses Groq's fixed `openai/gpt-oss-20b` model and streams the response directly into the commit box. Large changes are sent as zero-context diffs with budget-aware coverage across every file and hunk; noisy generated/lockfile bodies are summarized, and a 413 response triggers one tighter automatic retry. Set `GROQ_API_KEY` in your environment or copy `.env.example` to `.env` and add your key. `.env` is ignored by Git.
+AI commit-message generation runs through a locally installed **Hermes**, **Codex**, or **Claude** CLI—Sikemux makes no direct model-provider request and needs no API key of its own. Pick the CLI and model in the commit panel; response output streams directly into the commit box. Claude's structured stream provides token-level deltas, Codex's structured event stream is forwarded as events arrive, and Hermes output is forwarded whenever its quiet CLI mode flushes it. Large changes use zero-context diffs with budget-aware coverage across every file and hunk, while noisy generated and lockfile bodies are summarized.
 
 Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY with PowerShell as its default Windows shell.
 

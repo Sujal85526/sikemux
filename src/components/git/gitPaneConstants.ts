@@ -2,6 +2,25 @@ import type { GitCheatsheetSection } from "../../state/gitTypes";
 import { PRIMARY_SHORTCUT } from "../../lib/platform";
 import type { GitPanel } from "../../state/types";
 import { helpRows } from "./gitPaneLogic";
+import type { GitAiProvider } from "./gitPaneTypes";
+
+export const AI_PROVIDER_LABEL: Record<GitAiProvider, string> = {
+    hermes: "Hermes",
+    codex: "Codex",
+    claude: "Claude",
+};
+
+export const AI_MODELS: Record<GitAiProvider, string[]> = {
+    hermes: ["openai/gpt-5.5", "openai/gpt-5.1", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.1", "google/gemini-2.5-pro"],
+    codex: ["gpt-5.5", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.1-codex-mini", "gpt-5.1", "gpt-5"],
+    claude: ["sonnet", "opus", "haiku", "opusplan", "sonnet[1m]", "default"],
+};
+
+export const DEFAULT_AI_PROVIDER: GitAiProvider = "hermes";
+export const AI_PROVIDER_STORAGE = "sikemux.git.ai.provider";
+export const AI_MODEL_STORAGE = "sikemux.git.ai.model";
+
+export const defaultAiModel = (provider: GitAiProvider): string => AI_MODELS[provider][0];
 
 export const GIT_PANEL_ORDER: GitPanel[] = ["files", "branches", "commits", "remotes", "stashes"];
 export const GIT_PANEL_BY_KEY: Partial<Record<string, GitPanel>> = { "2": "files", "3": "branches", "4": "commits", "5": "remotes", "6": "stashes" };
