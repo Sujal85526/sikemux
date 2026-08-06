@@ -137,7 +137,7 @@ pnpm build:mac:universal
 pnpm build:windows
 ```
 
-AI commit-message generation runs through a locally installed **Hermes**, **Codex**, or **Claude** CLI—Sikemux makes no direct model-provider request and needs no API key of its own. Pick the CLI and model in the commit panel; response output streams directly into the commit box. Claude's structured stream provides token-level deltas, Codex's structured event stream is forwarded as events arrive, and Hermes output is forwarded whenever its quiet CLI mode flushes it. Large changes use zero-context diffs with budget-aware coverage across every file and hunk, while noisy generated and lockfile bodies are summarized.
+AI commit-message generation runs through a locally installed **Hermes**, **Codex**, or **Claude** CLI—Sikemux makes no direct model-provider request and needs no API key of its own. Pick the CLI and model in the commit panel; response output streams directly into the commit box. Claude's partial-message stream and Codex's local app-server both provide token-level text deltas; Hermes output is forwarded whenever its quiet CLI mode flushes it. Large changes use zero-context diffs with budget-aware coverage across every file and hunk, while noisy generated and lockfile bodies are summarized.
 
 Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY with PowerShell as its default Windows shell.
 
