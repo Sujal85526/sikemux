@@ -120,8 +120,9 @@ export function AgentRail() {
                     </div>
                 )}
 
-                {(opens.length > 0 || recentDisplay.length > 0) && (
-                    <div>
+                {opens.length > 0 && (
+                    <div className="agent-group">
+                        <div className="rail-group-label">Open</div>
                         {opens.map((a) => {
                             const active = session.view === "agent" && a.id === session.activeAgentId;
                             return (
@@ -150,16 +151,21 @@ export function AgentRail() {
                                 </button>
                             );
                         })}
-                        {selectedType &&
-                            recentDisplay.map((s) => (
-                                <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(selectedType, s.id, s.title)}>
-                                    <span className={`agent-glyph ${selectedType}`}>
-                                        <AgentIcon type={selectedType} size={20} />
-                                    </span>
-                                    <span className="agent-title">{s.title}</span>
-                                    <span className="agent-ago">{ago(s.mtime)}</span>
-                                </button>
-                            ))}
+                    </div>
+                )}
+
+                {selectedType && recentDisplay.length > 0 && (
+                    <div className="agent-group">
+                        <div className="rail-group-label">Recent</div>
+                        {recentDisplay.map((s) => (
+                            <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(selectedType, s.id, s.title)}>
+                                <span className={`agent-glyph ${selectedType}`}>
+                                    <AgentIcon type={selectedType} size={20} />
+                                </span>
+                                <span className="agent-title">{s.title}</span>
+                                <span className="agent-ago">{ago(s.mtime)}</span>
+                            </button>
+                        ))}
                     </div>
                 )}
             </div>
