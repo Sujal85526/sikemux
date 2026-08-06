@@ -50,7 +50,50 @@ export interface Agent {
      * once attached.
      */
     baselineSessionIds?: string[];
+    /** Restored tabs stay dormant until the user explicitly resumes them. */
+    launchState?: "live" | "dormant";
 }
+
+export type AgentBackendState = "unknown" | "working" | "blocked" | "idle";
+export type AgentPresentationState = AgentBackendState | "done";
+
+export interface AgentRuntimeState {
+    state: AgentPresentationState;
+    backendState: AgentBackendState;
+    unread: boolean;
+    updatedAt: number;
+    sequence: number;
+    source: "screen" | "activity" | "process" | "fallback";
+    confidence: "high" | "medium" | "low";
+    reason: string;
+    matchedRule?: string;
+}
+
+/** Identity Sikemux attaches to every shell it owns. Runtime-only. */
+export interface PtyContext {
+    sessionId: string;
+    sessionName: string;
+    sessionKind: SessionKind;
+    project?: string;
+    windowId?: string;
+    paneId?: string;
+    agentId?: string;
+    agentType?: AgentType;
+}
+
+export interface NotificationPreferences {
+    enabled: boolean;
+    onlyWhenUnfocused: boolean;
+    sounds: boolean;
+    soundStyle: "soft" | "bright";
+    delayMs: number;
+    quietHoursEnabled: boolean;
+    quietHoursStart: string;
+    quietHoursEnd: string;
+    mutedAgentTypes: AgentType[];
+}
+
+export type RailDensity = "comfortable" | "compact";
 
 /** A resolved Rundeck deploy location for a service: a project plus an env subfolder. */
 export interface DeployRef {

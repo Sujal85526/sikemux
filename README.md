@@ -81,6 +81,19 @@ Open your [Bruno](https://www.usebruno.com/) collections as first-class sessions
 
 Connect to SSH hosts (`⌥⇧S`) or open scratch command shells (`⌥S`) as their own multiplexed sessions.
 
+### ⌨️ Command-line editor integration
+
+Packaged builds include a native `sikemux` CLI that hands files and project directories to the running app. It supports editor-style line and column locations plus `--wait`, so tools such as Git can pause until the opened tab is closed. Install the launchers from **Settings → CLI**; Sikemux refuses to replace unrelated files and never edits your shell startup files.
+
+```bash
+sikemux .
+sikemux src/App.tsx:42:5
+sikemux open --wait README.md
+EDITOR=sikemux-editor git commit
+```
+
+Sikemux-owned terminals identify themselves with `TERM_PROGRAM=Sikemux`, `SIKEMUX=1`, the app version, and typed session/project/pane or agent context. When neither `EDITOR` nor `VISUAL` is already configured, both point to the bundled wait-enabled editor CLI; existing user choices are preserved.
+
 ### 🎨 Themes & chrome
 
 - **9 built-in themes** — Aura, Ayu Dark, Tokyo Night, Catppuccin Mocha, Dracula, Gruvbox Dark, Nord, One Dark, Solarized Dark.
@@ -148,6 +161,15 @@ Run `make check` for the full local quality gate: Prettier, ESLint, TypeScript, 
 ### Community releases without an Apple Developer membership
 
 The updater and Apple Gatekeeper are separate trust systems. `scripts/release.sh` defaults to a **community release**: the updater archive is signed with the Tauri updater key and the app/DMG receive a structurally valid ad-hoc code signature. This supports in-app updates for the existing community installation flow, but fresh downloads are not Apple-notarized and macOS may require removing quarantine again. Keep the updater private key secure; clients reject archives that do not match the public key embedded in the app.
+
+Stable releases use a versioned GitHub release and update the normal `latest.json` feed. Preview builds require a prerelease semver and update the moving `preview` release consumed by the opt-in Preview channel:
+
+```bash
+./scripts/release.sh 0.2.0 "Release notes" --publish
+./scripts/release.sh 0.3.0-beta.1 "Preview notes" --preview --publish
+```
+
+Omit `--publish` to perform the complete signed build and verification without changing GitHub.
 
 After joining the Apple Developer Program, set `RELEASE_NOTARIZED=1` plus the Developer ID and notarization environment variables. The same script then requires Gatekeeper assessment and stapled notarization tickets before publishing.
 

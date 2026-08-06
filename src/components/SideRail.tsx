@@ -2,7 +2,10 @@ import type { ReactNode } from "react";
 import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
+import { rollupAgentStates } from "../state/agentStatus";
 import { useStore } from "../state/store";
+import { useResourceEnabled } from "../state/resources";
+import { gitStatusR } from "../state/resources.defs";
 import {
     AgentIcon,
     IconAgent,
@@ -19,6 +22,7 @@ import {
 } from "./Icons";
 import { Kbd } from "./Kbd";
 import { UpdateChip, VersionChip } from "./TopBar";
+import { AgentStateIndicator } from "./AgentStateIndicator";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -42,6 +46,9 @@ export function SideRail() {
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
+    const activeProject = activeSessionId ? sessionsById[activeSessionId] : undefined;
+    const activeProjectCwd = activeProject?.kind === "project" ? activeProject.cwd : "";
+    const activeGitStatus = useResourceEnabled(!!activeProjectCwd, gitStatusR, activeProjectCwd).data;
     const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
 
@@ -67,8 +74,7 @@ export function SideRail() {
         const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
         const agentIds = agentsBySession[s.id] ?? [];
         const agents = agentIds.map((id) => agentsById[id]).filter(Boolean);
-        const agentsWorking = agents.some((agent) => activityById[agent.id]?.state === "working");
-        const agentsUnread = agents.some((agent) => activityById[agent.id]?.unread);
+        const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
         const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
         if (!active) {
@@ -85,17 +91,14 @@ export function SideRail() {
                             {visible.map((a) => (
                                 <span
                                     key={a.id}
-                                    className={`proj-pip proj-pip-${a.type}${activityById[a.id]?.state === "working" ? " is-working" : ""}${activityById[a.id]?.unread ? " has-unread" : ""}`}>
+                                    className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
                                     <AgentIcon type={a.type} size={20} />
                                 </span>
                             ))}
                             {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                         </span>
                     )}
-                    {agentsWorking && <span className="agent-activity working" title="Agent is working" aria-label="Agent is working" />}
-                    {!agentsWorking && agentsUnread && (
-                        <span className="agent-activity unread" title="New agent response" aria-label="New agent response" />
-                    )}
+                    {rollup && <AgentStateIndicator state={rollup} />}
                     <span
                         className="sess-close"
                         title="Close session"
@@ -141,9 +144,7 @@ export function SideRail() {
                   ))
                 : [];
         const agentIcons: React.ReactNode[] = agents.map((a) => (
-            <span
-                key={a.id}
-                className={`proj-pip proj-pip-${a.type}${activityById[a.id]?.state === "working" ? " is-working" : ""}${activityById[a.id]?.unread ? " has-unread" : ""}`}>
+            <span key={a.id} className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
                 <AgentIcon type={a.type} size={20} />
             </span>
         ));
@@ -191,6 +192,14 @@ export function SideRail() {
                         <IconClose size={11} />
                     </span>
                 </button>
+                {activeGitStatus && (
+                    <div className="proj-metadata" title={`Git branch ${activeGitStatus.branch}`}>
+                        <span className="proj-metadata-branch">{activeGitStatus.branch || "detached HEAD"}</span>
+                        {activeGitStatus.files.length > 0 && <span>{activeGitStatus.files.length} dirty</span>}
+                        {activeGitStatus.ahead > 0 && <span>↑{activeGitStatus.ahead}</span>}
+                        {activeGitStatus.behind > 0 && <span>↓{activeGitStatus.behind}</span>}
+                    </div>
+                )}
                 <div className="proj-children">
                     {children.map((c) => {
                         const subActive = isSubActive(c.role);
@@ -216,12 +225,7 @@ export function SideRail() {
                                         {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                                     </span>
                                 )}
-                                {c.role === "agents" && agentsWorking && (
-                                    <span className="agent-activity working" title="Agent is working" aria-label="Agent is working" />
-                                )}
-                                {c.role === "agents" && !agentsWorking && agentsUnread && (
-                                    <span className="agent-activity unread" title="New agent response" aria-label="New agent response" />
-                                )}
+                                {c.role === "agents" && rollup && <AgentStateIndicator state={rollup} />}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
                         );

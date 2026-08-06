@@ -18,10 +18,18 @@ interface AgentSessionsChanged {
     cwd: string;
 }
 
-interface PtyActivityChanged {
+interface AgentStateChanged {
     agentId: string;
-    state: "working" | "complete";
+    state: "unknown" | "working" | "blocked" | "idle";
+    sequence: number;
+    source: "screen" | "activity" | "process" | "fallback";
+    confidence: "high" | "medium" | "low";
+    reason: string;
+    matchedRule?: string;
 }
+
+const TITLE_RETRY_MS = 1_500;
+const TITLE_RETRY_LIMIT = 20;
 
 function groupKey(type: AgentType, cwd: string): string {
     return `${type}\0${cwd}`;
@@ -68,8 +76,8 @@ export function AgentSessionSync() {
     });
 
     useEffect(() => {
-        const unlisten = listen<PtyActivityChanged>("pty_activity", (event) => {
-            cmd.noteAgentActivity(event.payload.agentId, event.payload.state);
+        const unlisten = listen<AgentStateChanged>("agent_state_changed", (event) => {
+            cmd.noteAgentActivity(event.payload.agentId, event.payload);
         });
         return () => void unlisten.then((off) => off());
     }, []);
@@ -92,6 +100,18 @@ export function AgentSessionSync() {
                 .catch(swallow("agent sessions"));
         };
 
+        const groupNeedsMetadata = ({ type, cwd }: AgentSyncGroup): boolean => {
+            const state = getState();
+            return state.sessionOrder.some((sessionId) => {
+                const session = state.sessions[sessionId];
+                if (session?.kind !== "project" || session.cwd !== cwd) return false;
+                return (state.agentsBySession[sessionId] ?? []).some((agentId) => {
+                    const agent = state.agents[agentId];
+                    return agent?.type === type && cmd.agentSessionMetadataPending(agent);
+                });
+            });
+        };
+
         for (const group of groups) {
             syncGroup(group.type, group.cwd);
             void agentApi
@@ -112,8 +132,28 @@ export function AgentSessionSync() {
             syncGroup(agent, cwd);
         });
 
+        // Filesystem events can land while a brand-new transcript contains
+        // only session metadata, before the first user prompt that supplies a
+        // useful title. Retry only groups with unresolved open agents; stop as
+        // soon as their session id and human title have both been discovered.
+        let titleRetries = 0;
+        const titleRetryTimer = window.setInterval(() => {
+            if (cancelled || titleRetries >= TITLE_RETRY_LIMIT) {
+                window.clearInterval(titleRetryTimer);
+                return;
+            }
+            const pending = groups.filter(groupNeedsMetadata);
+            if (pending.length === 0) {
+                window.clearInterval(titleRetryTimer);
+                return;
+            }
+            titleRetries += 1;
+            for (const group of pending) syncGroup(group.type, group.cwd);
+        }, TITLE_RETRY_MS);
+
         return () => {
             cancelled = true;
+            window.clearInterval(titleRetryTimer);
             void unlisten.then((off) => off());
             for (const id of watchIds) {
                 void agentApi.watchStop(id).catch(swallow("agent sessions watch stop"));

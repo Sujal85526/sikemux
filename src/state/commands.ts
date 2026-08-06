@@ -8,26 +8,30 @@ import { sshApi } from "../api/ssh";
 import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
-import { basename, dirname, joinPath } from "../lib/paths";
+import { basename, dirname, isPathWithin, joinPath } from "../lib/paths";
 import { IS_WINDOWS } from "../lib/platform";
-import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
+import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
 import { emit } from "./bus";
+import { reduceAgentState } from "./agentStatus";
 import { fetchResource, invalidate, peekResource } from "./resources";
 import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.defs";
 import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
 import { SKIP_PERMISSION_FLAG, agentSupportsSkipPermissions } from "./commands/agentLogic";
+import { parseSessionBundle } from "./sessionBundle";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
+    cloneLayout,
     computeLayout,
     makePane,
     neighborPane,
     newId,
     removePane,
+    replacePane,
     resizeTowards,
     setSplitSizes as setSplitSizesFn,
     splitPane,
@@ -39,6 +43,9 @@ import type {
     BrunoReqTab,
     BrunoResTab,
     BrunoView,
+    CliOpenRequest,
+    CliOpenResult,
+    CliOpenTarget,
     DeployRef,
     EcsLevel,
     FocusDir,
@@ -195,6 +202,115 @@ export function createProjectSession(cwd: string): void {
         }
         const windows = projectWindows(cwd);
         attachSession(d as unknown as StoreState, makeSession("project", basename(cwd), cwd, windows[0].id), windows);
+    });
+}
+
+function cliProjectOwner(target: CliOpenTarget): Session | undefined {
+    const st = getState();
+    return st.sessionOrder
+        .map((id) => st.sessions[id])
+        .filter((session): session is Session => !!session && session.kind === "project" && isPathWithin(target.path, session.cwd))
+        .sort((a, b) => b.cwd.length - a.cwd.length)[0];
+}
+
+function cliProjectRootOwner(projectRoot: string): Session | undefined {
+    const st = getState();
+    return st.sessionOrder
+        .map((id) => st.sessions[id])
+        .find((session): session is Session => !!session && session.kind === "project" && session.cwd === projectRoot);
+}
+
+/**
+ * Focus the owning project for every CLI target and queue file targets for its
+ * editor. Directory targets are complete as soon as their project is focused;
+ * file targets are acknowledged by EditorPane only after the read succeeds.
+ */
+export function routeCliOpenRequest(request: CliOpenRequest): CliOpenResult[] {
+    const immediate: CliOpenResult[] = [];
+
+    for (const target of request.targets) {
+        let owner = cliProjectOwner(target) ?? cliProjectRootOwner(target.projectRoot);
+        if (!owner) {
+            createProjectSession(target.projectRoot);
+            owner = cliProjectOwner(target) ?? cliProjectRootOwner(target.projectRoot);
+        }
+
+        if (!owner) {
+            immediate.push({
+                requestId: request.id,
+                targetId: target.id,
+                paneId: null,
+                path: target.path,
+                error: `couldn't create a project session for ${target.projectRoot}`,
+            });
+            continue;
+        }
+
+        const ownerId = owner.id;
+        if (target.kind === "directory") {
+            mutate((d) => {
+                const session = d.sessions[ownerId];
+                if (!session) return;
+                d.activeSessionId = ownerId;
+                session.view = "windows";
+                d.zoomedPaneId = null;
+                d.pickerOpen = false;
+                d.settingsOpen = false;
+            });
+            immediate.push({
+                requestId: request.id,
+                targetId: target.id,
+                paneId: null,
+                path: target.path,
+                error: null,
+            });
+            continue;
+        }
+
+        const st = getState();
+        const fileWindowId = (st.windowsBySession[ownerId] ?? []).find((id) => st.windows[id]?.role === "files");
+        const fileWindow = fileWindowId ? st.windows[fileWindowId] : undefined;
+        const editorPane = fileWindow ? collectPanes(fileWindow.root).find((pane) => pane.kind === "editor") : undefined;
+        if (!fileWindow || !editorPane) {
+            immediate.push({
+                requestId: request.id,
+                targetId: target.id,
+                paneId: null,
+                path: target.path,
+                error: `project ${owner.cwd} has no files editor`,
+            });
+            continue;
+        }
+
+        mutate((d) => {
+            const session = d.sessions[ownerId];
+            const win = d.windows[fileWindow.id];
+            if (!session || !win) return;
+            d.activeSessionId = ownerId;
+            session.activeWindowId = win.id;
+            session.view = "windows";
+            win.activePaneId = editorPane.id;
+            d.zoomedPaneId = null;
+            d.pickerOpen = false;
+            d.settingsOpen = false;
+            const queued = d.pendingEditorOpens[editorPane.id] ?? [];
+            if (!queued.some((item) => item.requestId === request.id && item.id === target.id)) {
+                queued.push({ ...target, requestId: request.id });
+            }
+            d.pendingEditorOpens[editorPane.id] = queued;
+        });
+    }
+
+    return immediate;
+}
+
+export function consumeCliEditorOpen(paneId: string, requestId: string, targetId: string): void {
+    mutate((d) => {
+        const queued = d.pendingEditorOpens[paneId];
+        if (!queued) return;
+        const next = queued.filter((item) => item.requestId !== requestId || item.id !== targetId);
+        if (next.length === 0) delete d.pendingEditorOpens[paneId];
+        else d.pendingEditorOpens[paneId] = next;
     });
 }
 
@@ -579,6 +695,11 @@ export function selectSession(id: string): void {
     });
 }
 
+export function selectLastSession(): void {
+    const id = getState().lastSessionId;
+    if (id) selectSession(id);
+}
+
 export function closeSession(id: string): void {
     if (!confirmDiscardDirty(dirtyPathsForSession(getState(), id), "close session")) return;
     const closingCwd = getState().sessions[id]?.cwd;
@@ -597,6 +718,7 @@ export function closeSession(id: string): void {
                 for (const p of collectPanes(w.root as unknown as Window["root"])) {
                     if (d.gitModal?.ownerPaneId === p.id) d.gitModal = null;
                     delete d.editorViews[p.id];
+                    delete d.pendingEditorOpens[p.id];
                     delete d.dirtyEditorPaths[p.id];
                     delete d.gitViews[p.id];
                     delete d.ecsViews[p.id];
@@ -723,6 +845,163 @@ export function splitActivePane(dir: SplitDir): void {
     });
 }
 
+export function runCustomCommand(custom: import("../commands/registry").CustomCommand): void {
+    const st = getState();
+    const session = st.sessions[st.activeSessionId];
+    if (!session) return;
+    const startup = custom.command;
+    if (custom.placement === "background") {
+        void invoke<{ code: number; output: string }>("run_background_command", {
+            command: custom.command,
+            cwd: session.cwd || null,
+            env: {
+                SIKEMUX_SESSION_ID: session.id,
+                SIKEMUX_SESSION_NAME: session.name,
+                SIKEMUX_SESSION_KIND: session.kind,
+                SIKEMUX_PROJECT: session.kind === "project" ? session.cwd : "",
+            },
+        })
+            .then((result) => notify(result.code === 0 ? "success" : "error", `${custom.title}: ${result.output.trim() || `exit ${result.code}`}`))
+            .catch(reportError(custom.title));
+        return;
+    }
+    if (custom.placement === "popup") {
+        setState({
+            commandPopup: {
+                id: newId("popup"),
+                title: custom.title,
+                startup,
+                cwd: session.cwd,
+                context: {
+                    sessionId: session.id,
+                    sessionName: session.name,
+                    sessionKind: session.kind,
+                    ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
+                },
+            },
+        });
+        return;
+    }
+    mutate((d) => {
+        const current = d.sessions[d.activeSessionId];
+        if (!current) return;
+        const window = d.windows[current.activeWindowId];
+        if (!window) return;
+        const pane = makePane(current.cwd, { startup });
+        pane.title = custom.title;
+        if (custom.placement === "terminal") {
+            const ids = d.windowsBySession[current.id] ?? [];
+            const created = makeWindow(current.cwd, custom.title, { startup });
+            d.windows[created.id] = created;
+            d.windowsBySession[current.id] = [...ids, created.id];
+            current.activeWindowId = created.id;
+        } else if (custom.placement === "split") {
+            window.root = splitPane(window.root, window.activePaneId, "row", pane);
+            window.activePaneId = pane.id;
+        } else {
+            window.root = replacePane(window.root, window.activePaneId, pane);
+            window.activePaneId = pane.id;
+        }
+        current.view = "windows";
+        d.zoomedPaneId = null;
+    });
+}
+
+export function closeCommandPopup(): void {
+    setState({ commandPopup: null });
+}
+
+export function upsertCustomCommand(command: import("../commands/registry").CustomCommand): void {
+    setState((s) => ({ customCommands: [...s.customCommands.filter((item) => item.id !== command.id), command] }));
+}
+
+export function deleteCustomCommand(id: string): void {
+    setState((s) => ({ customCommands: s.customCommands.filter((item) => item.id !== id) }));
+}
+
+export function noteRecentCommand(key: string): void {
+    setState((s) => ({ recentCommandKeys: [key, ...s.recentCommandKeys.filter((item) => item !== key)].slice(0, 20) }));
+}
+
+function stripImportedStartup(node: Window["root"]): Window["root"] {
+    if (node.type === "pane") return { ...node, startup: undefined, title: node.kind === "terminal" ? "shell" : node.title };
+    return { ...node, children: node.children.map(stripImportedStartup) };
+}
+
+export async function exportActiveSession(): Promise<void> {
+    const state = getState();
+    const session = state.sessions[state.activeSessionId];
+    if (!session) return;
+    const safeSession = {
+        ...session,
+        bruno: session.bruno ? { collectionPath: session.bruno.collectionPath, selectedEnvs: session.bruno.selectedEnvs } : undefined,
+    };
+    const windows = (state.windowsBySession[session.id] ?? []).map((id) => state.windows[id]).filter(Boolean);
+    const agents = (state.agentsBySession[session.id] ?? [])
+        .map((id) => state.agents[id])
+        .filter((agent): agent is Agent => !!agent?.resumeId)
+        .map(({ type, title, resumeId }) => ({ type, title, resumeId }));
+    const payload = JSON.stringify({ format: "sikemux-session", version: 1, session: safeSession, windows, agents }, (key, value) =>
+        key === "secretVars" || key === "drafts" || key === "startup" || key === "baselineSessionIds" ? undefined : value,
+    );
+    await navigator.clipboard.writeText(payload);
+    notify("success", `Copied ${session.name} session bundle (secrets and startup commands stripped)`);
+}
+
+export async function importSessionFromClipboard(): Promise<void> {
+    const raw = await navigator.clipboard.readText();
+    // Parse and validate the complete untrusted payload before entering Immer.
+    // Any error therefore leaves the store byte-for-byte unchanged.
+    const bundle = parseSessionBundle(raw);
+    const sourceName = bundle.session.name;
+    const sourceCwd = bundle.session.cwd;
+    const sourceKind = bundle.session.kind;
+    mutate((d) => {
+        const sessionId = newId("sess");
+        const importedWindows: Window[] = [];
+        for (const sourceWindow of bundle.windows) {
+            const root = stripImportedStartup(cloneLayout(sourceWindow.root));
+            const panes = collectPanes(root);
+            const sourcePanes = collectPanes(sourceWindow.root);
+            const sourceActiveIndex = sourcePanes.findIndex((pane) => pane.id === sourceWindow.activePaneId);
+            importedWindows.push({
+                ...sourceWindow,
+                id: newId("win"),
+                name: sourceWindow.name || "imported",
+                root,
+                activePaneId: panes[Math.max(0, sourceActiveIndex)].id,
+                fixed: false,
+            });
+        }
+        const session: Session = {
+            id: sessionId,
+            name: `${sourceName} imported`,
+            kind: sourceKind,
+            cwd: sourceCwd,
+            pinned: false,
+            deploy: null,
+            activeWindowId: importedWindows[0].id,
+            activeAgentId: null,
+            view: "windows",
+        };
+        if (sourceKind === "bruno") session.bruno = { collectionPath: sourceCwd, selectedEnvs: {}, secretVars: {}, drafts: {} };
+        attachSession(d as unknown as StoreState, session, importedWindows);
+        for (const row of bundle.agents) {
+            const id = newId("agent");
+            d.agents[id] = {
+                id,
+                type: row.type,
+                title: row.title,
+                resumeId: row.resumeId,
+                startup: agentStartup(row.type, row.resumeId),
+                launchState: "dormant",
+            };
+            d.agentsBySession[sessionId].push(id);
+        }
+    });
+    notify("success", "Imported session as a safe, dormant copy");
+}
+
 function closeActivePane(): void {
     withActiveWindow((d, w, session) => {
         const closingPaneId = w.activePaneId;
@@ -731,6 +1010,7 @@ function closeActivePane(): void {
         if (root === null && w.fixed) return;
         d.zoomedPaneId = null;
         delete d.editorViews[closingPaneId];
+        delete d.pendingEditorOpens[closingPaneId];
         delete d.dirtyEditorPaths[closingPaneId];
         delete d.gitViews[closingPaneId];
         delete d.ecsViews[closingPaneId];
@@ -765,6 +1045,7 @@ function pruneWindowViews(d: StoreState, win: Window): void {
     for (const p of collectPanes(win.root)) {
         if (d.gitModal?.ownerPaneId === p.id) d.gitModal = null;
         delete d.editorViews[p.id];
+        delete d.pendingEditorOpens[p.id];
         delete d.dirtyEditorPaths[p.id];
         delete d.gitViews[p.id];
         delete d.ecsViews[p.id];
@@ -923,6 +1204,31 @@ export function newWindow(): void {
         sess.activeWindowId = w.id;
         sess.view = "windows";
         d.zoomedPaneId = null;
+    });
+}
+
+export function duplicateWindow(id: string): void {
+    mutate((d) => {
+        const source = d.windows[id];
+        const ownerId = d.sessionOrder.find((sid) => d.windowsBySession[sid]?.includes(id));
+        if (!source || !ownerId) return;
+        const root = cloneLayout(source.root);
+        const activePane = collectPanes(root)[0];
+        const duplicate: Window = {
+            ...source,
+            id: newId("win"),
+            name: `${source.name} copy`,
+            root,
+            activePaneId: activePane.id,
+            fixed: false,
+            role: source.role === "term" ? "term" : "named",
+        };
+        d.windows[duplicate.id] = duplicate;
+        const ids = d.windowsBySession[ownerId] ?? [];
+        const index = ids.indexOf(id);
+        d.windowsBySession[ownerId] = [...ids.slice(0, index + 1), duplicate.id, ...ids.slice(index + 1)];
+        d.sessions[ownerId].activeWindowId = duplicate.id;
+        d.sessions[ownerId].view = "windows";
     });
 }
 
@@ -1130,7 +1436,7 @@ function shellQuote(value: string): string {
     return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function agentStartup(type: AgentType, resumeId?: string, skipPermissions = false): string {
+export function agentStartup(type: AgentType, resumeId?: string, skipPermissions = false): string {
     const cmd = resumeId ? (AGENT_RESUME_CMD[type]?.(shellQuote(resumeId)) ?? type) : type;
     const skipFlag = SKIP_PERMISSION_FLAG[type];
     return skipPermissions && skipFlag ? `${cmd} ${skipFlag}` : cmd;
@@ -1141,6 +1447,13 @@ function usableAgentSessionTitle(row: AgentSession, current: string): string {
     if (!title) return current;
     if (title.length <= FALLBACK_AGENT_TITLE_MAX && row.id.startsWith(title)) return current;
     return title;
+}
+
+export function agentSessionMetadataPending(agent: Agent): boolean {
+    if (!agent.resumeId) return true;
+    const title = agent.title.trim();
+    if (!title || title.toLowerCase() === agent.type) return true;
+    return title.length <= FALLBACK_AGENT_TITLE_MAX && agent.resumeId.startsWith(title);
 }
 
 export function toggleAgentSkipPermissions(id: string): void {
@@ -1182,6 +1495,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string): vo
             startup: agentStartup(type, resumeId),
             resumeId,
             createdAt: Date.now(),
+            launchState: "live",
         };
         // Fresh agents (no resumeId) record the sessions that already exist so
         // reconciliation never adopts the session you were just in. The rail
@@ -1255,29 +1569,50 @@ export function selectAgent(id: string): void {
         sess.activeAgentId = id;
         sess.view = "agent";
         const activity = d.agentActivity[id];
-        if (activity) activity.unread = false;
+        if (activity) {
+            activity.unread = false;
+            if (activity.state === "done") activity.state = "idle";
+        }
     });
 }
 
-export function noteAgentActivity(id: string, state: "working" | "complete"): void {
+export function resumeAgent(id: string): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (agent) agent.launchState = "live";
+    });
+}
+
+export function noteAgentActivity(id: string, event: "working" | "complete" | import("./agentStatus").AgentStateEvent): void {
     mutate((d) => {
         if (!d.agents[id]) return;
         const ownerId = d.sessionOrder.find((sid) => (d.agentsBySession[sid] ?? []).includes(id));
         const owner = ownerId ? d.sessions[ownerId] : undefined;
         const visible = !!owner && owner.id === d.activeSessionId && owner.view === "agent" && owner.activeAgentId === id;
         const previous = d.agentActivity[id];
-        d.agentActivity[id] = {
-            state,
-            unread: state === "complete" ? (previous?.unread ?? false) || !visible : false,
-            updatedAt: Date.now(),
-        };
+        const semantic =
+            typeof event === "string"
+                ? {
+                      agentId: id,
+                      state: event === "complete" ? ("idle" as const) : ("working" as const),
+                      sequence: (previous?.sequence ?? 0) + 1,
+                      source: "activity" as const,
+                      confidence: "low" as const,
+                      reason: event === "complete" ? "legacy activity settled" : "terminal input or output",
+                  }
+                : event;
+        const reduced = reduceAgentState(previous, semantic, visible);
+        if (reduced) d.agentActivity[id] = reduced;
     });
 }
 
 export function clearAgentUnread(id: string): void {
     mutate((d) => {
         const activity = d.agentActivity[id];
-        if (activity) activity.unread = false;
+        if (activity) {
+            activity.unread = false;
+            if (activity.state === "done") activity.state = "idle";
+        }
     });
 }
 
@@ -1314,10 +1649,23 @@ export function focusAgents(): void {
 }
 
 export const setHome = (home: string): void => setState({ home });
+export const setLastSessionId = (id: string): void => setState({ lastSessionId: id });
+export const setTerminalTitle = (paneId: string, title: string): void =>
+    setState((s) => ({ terminalTitles: { ...s.terminalTitles, [paneId]: title } }));
 export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, rundeckJobPaletteOpen: false });
 export const closePicker = (): void => setState({ pickerOpen: false });
 export const openAgentPalette = (): void => setState({ agentPaletteOpen: true, rundeckJobPaletteOpen: false });
 export const closeAgentPalette = (): void => setState({ agentPaletteOpen: false });
+export const openCommandPalette = (): void => setState({ commandPaletteOpen: true });
+export const closeCommandPalette = (): void => setState({ commandPaletteOpen: false });
+export const toggleCommandPalette = (): void => setState((s) => ({ commandPaletteOpen: !s.commandPaletteOpen }));
+export const openOnboarding = (): void => setState({ onboardingOpen: true });
+export const closeOnboarding = (complete = true): void => setState({ onboardingOpen: false, ...(complete ? { onboardingComplete: true } : {}) });
+export const openDiagnostics = (): void => setState({ diagnosticsOpen: true });
+export const closeDiagnostics = (): void => setState({ diagnosticsOpen: false });
+export const openWhatsNew = (): void => setState({ whatsNewOpen: true });
+export const closeWhatsNew = (): void =>
+    setState((s) => ({ whatsNewOpen: false, lastSeenVersion: s.lastReleaseNotes?.version ?? s.lastSeenVersion }));
 export const openFilePalette = (): void => setState({ filePaletteOpen: true, rundeckJobPaletteOpen: false });
 export const closeFilePalette = (): void => setState({ filePaletteOpen: false });
 export const openRundeckJobPalette = (): void =>
@@ -1426,8 +1774,37 @@ export function openGitPane(): void {
 
 export function setThemeId(id: string): void {
     applyTheme(id);
+    setState({ themeId: id, themeMode: "manual" });
+}
+
+export function applySystemTheme(dark: boolean): void {
+    const state = getState();
+    if (state.themeMode !== "system") return;
+    const id = dark ? state.systemDarkThemeId : state.systemLightThemeId;
+    applyTheme(id);
     setState({ themeId: id });
 }
+
+export function setThemeMode(mode: "manual" | "system"): void {
+    setState({ themeMode: mode });
+    if (mode === "system") applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+
+function setSystemThemeId(mode: "light" | "dark", id: string): void {
+    const state = getState();
+    const exists = !!THEMES_BY_ID[id] || state.customThemes.some((theme) => theme.id === id);
+    if (!exists) return;
+    setState(mode === "light" ? { systemLightThemeId: id } : { systemDarkThemeId: id });
+    if (state.themeMode !== "system") return;
+    const hostIsDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (hostIsDark === (mode === "dark")) {
+        applyTheme(id);
+        setState({ themeId: id });
+    }
+}
+
+export const setSystemLightThemeId = (id: string): void => setSystemThemeId("light", id);
+export const setSystemDarkThemeId = (id: string): void => setSystemThemeId("dark", id);
 
 /** Live-apply a draft theme to the whole UI without persisting it — drives the theme editor preview. */
 export function previewThemeDraft(theme: Theme): void {
@@ -1476,6 +1853,13 @@ export function setWindowBlur(v: number): void {
 
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
+export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value, ...(!value ? { autoResumeAgents: false } : {}) });
+export const setAutoResumeAgents = (value: boolean): void =>
+    setState({ autoResumeAgents: value, restoreAgentTabs: value ? true : getState().restoreAgentTabs });
+export const setRailDensity = (value: import("./types").RailDensity): void => setState({ railDensity: value });
+export const setUpdateChannel = (value: "stable" | "preview"): void => setState({ updateChannel: value, pendingUpdate: null });
+export const patchNotificationPreferences = (patch: Partial<import("./types").NotificationPreferences>): void =>
+    setState((s) => ({ notificationPreferences: { ...s.notificationPreferences, ...patch } }));
 
 export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));

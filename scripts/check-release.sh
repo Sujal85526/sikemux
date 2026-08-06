@@ -14,7 +14,21 @@ fi
 
 bash -n scripts/build-mac.sh scripts/release.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
+node --check scripts/build-cli-sidecar.mjs
 /usr/bin/plutil -lint src-tauri/Info.plist >/dev/null
+
+if RELEASE_CHANNEL=nightly scripts/release.sh 0.2.0-beta.1 fixture >/dev/null 2>&1; then
+  echo "release tooling accepted an unsupported channel" >&2
+  exit 1
+fi
+if scripts/release.sh 0.2.0 fixture --preview >/dev/null 2>&1; then
+  echo "release tooling accepted a stable semver for the preview channel" >&2
+  exit 1
+fi
+if scripts/release.sh 0.2.0-beta.1 fixture >/dev/null 2>&1; then
+  echo "release tooling accepted a prerelease semver for the stable channel" >&2
+  exit 1
+fi
 
 node - <<'NODE'
 const fs = require("node:fs");
@@ -22,6 +36,8 @@ const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const config = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
 const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", "utf8"));
 const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
+const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
+const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
 const fail = (message) => { throw new Error(message); };
 
 if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
@@ -35,6 +51,11 @@ if (JSON.stringify(windowsConfig.bundle?.targets) !== JSON.stringify(["nsis"])) 
 if (windowsConfig.bundle?.createUpdaterArtifacts !== false) fail("unsigned Windows builds must not require updater credentials");
 if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon is not configured");
 if (windowsConfig.bundle?.windows?.nsis?.installMode !== "currentUser") fail("unexpected Windows install mode");
+if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor"])) fail("CLI sidecar bundle mapping is missing");
+if (!pkg.scripts?.["build:windows"]?.includes("build-cli-sidecar.mjs")) fail("Windows build does not build the CLI sidecar");
+if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("Windows build does not bundle the CLI sidecar");
+if (!macBuild.includes("build-cli-sidecar.mjs")) fail("macOS build does not build the CLI sidecar");
+if (!macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build does not bundle the CLI sidecar");
 const endpoints = config.plugins?.updater?.endpoints;
 if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
   fail("updater endpoint is not the expected HTTPS latest.json URL");
@@ -45,6 +66,19 @@ if (publicLines.length !== 2 || !publicLines[0].startsWith("untrusted comment:")
 const packet = Buffer.from(publicLines[1], "base64");
 if (packet.length !== 42 || packet.subarray(0, 2).toString("ascii") !== "Ed") fail("invalid updater Ed25519 public key");
 NODE
+
+grep -Fq 'RELEASE_TAG=preview' scripts/release.sh || {
+  echo "preview updater release tag is not configured" >&2
+  exit 1
+}
+grep -Fq 'gh release upload preview' scripts/release.sh || {
+  echo "preview updater publishing path is missing" >&2
+  exit 1
+}
+grep -Fq 'releases/download/preview/latest.json' src-tauri/src/updates.rs || {
+  echo "preview updater endpoint is missing" >&2
+  exit 1
+}
 
 CARGO_METADATA="$(cargo metadata --manifest-path src-tauri/Cargo.toml --offline --locked --no-deps --format-version 1)"
 PACKAGE_VERSION="$(node -p "require('./package.json').version")"

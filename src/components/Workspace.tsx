@@ -1,8 +1,9 @@
 import { lazy, memo, Suspense, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
-import type { Agent, Divider, PaneNode, Rect, Session, Window as WindowT } from "../state/types";
+import type { Agent, Divider, PaneNode, PtyContext, Rect, Session, Window as WindowT } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
+import { AgentStateIndicator } from "./AgentStateIndicator";
 import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { GitPane } from "./GitPane";
@@ -17,6 +18,14 @@ const TERM_TABS_H = 32;
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
 const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
+const terminalContext = (session: Session, win: WindowT, pane: PaneNode): PtyContext => ({
+    sessionId: session.id,
+    sessionName: session.name,
+    sessionKind: session.kind,
+    ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
+    windowId: win.id,
+    paneId: pane.id,
+});
 
 // Agents only exist in project sessions; every other group is always in
 // "windows" view, so stale agent state can never strand a non-project session.
@@ -75,8 +84,15 @@ const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => Reac
             <SearchPane sessionId={session.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
         </Suspense>
     ),
-    terminal: ({ pane, session, active, visible }) => (
-        <TerminalPane cwd={paneCwd(pane, session) || undefined} startup={pane.startup} active={active} visible={visible} />
+    terminal: ({ pane, session, win, active, visible }) => (
+        <TerminalPane
+            cwd={paneCwd(pane, session) || undefined}
+            startup={pane.startup}
+            active={active}
+            visible={visible}
+            context={terminalContext(session, win, pane)}
+            onTitleChange={(title) => cmd.setTerminalTitle(pane.id, title)}
+        />
     ),
 };
 
@@ -96,7 +112,7 @@ export function Workspace() {
     const activeAgents = activeSession ? (agentsBySession[activeSession.id] ?? []).map((id) => agentsById[id]) : [];
 
     const inAgentView = !!activeSession && sessionView(activeSession) === "agent";
-    const showAgentTabs = inAgentView && activeAgents.length >= 1;
+    const showAgentTabs = inAgentView && activeAgents.length > 1;
     const showAgentEmpty = inAgentView && activeAgents.length === 0;
 
     const activeWindowList = activeSession ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id]) : [];
@@ -104,7 +120,7 @@ export function Workspace() {
         activeSession && sessionView(activeSession) === "windows" && activeWindow?.role === "term"
             ? activeWindowList.filter((w) => w.role === "term")
             : [];
-    const showTermTabs = termTabs.length >= 1;
+    const showTermTabs = termTabs.length > 1;
 
     return (
         <div className="window-area" ref={areaRef}>
@@ -121,8 +137,8 @@ export function Workspace() {
                 const view = sessionView(session);
                 const winIds = windowsBySession[session.id] ?? [];
                 const aIds = agentsBySession[session.id] ?? [];
-                const sessTabs = view === "agent" && aIds.length >= 1;
-                const sessHasTermTabs = winIds.some((id) => windowsById[id]?.role === "term");
+                const sessTabs = view === "agent" && aIds.length > 1;
+                const sessHasTermTabs = winIds.filter((id) => windowsById[id]?.role === "term").length > 1;
                 const windowLayers = winIds.map((wid) => {
                     const win = windowsById[wid];
                     if (!win) return null;
@@ -160,12 +176,14 @@ export function Workspace() {
 }
 
 function TerminalTabsBar({ session, tabs }: { session: Session; tabs: WindowT[] }) {
+    const terminalTitles = useStore((s) => s.terminalTitles);
     const buildMenu = (id: string): CtxItem[] => {
         const w = tabs.find((t) => t.id === id);
         if (!w) return [];
         const others = tabs.filter((t) => t.id !== id && !t.fixed);
         const all = tabs.filter((t) => !t.fixed);
         return [
+            { label: "Duplicate", run: () => cmd.duplicateWindow(id) },
             { label: "Close", hint: "⌥W", disabled: w.fixed, run: () => cmd.closeWindowById(id) },
             { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((t) => cmd.closeWindowById(t.id)) },
             { label: "Close All", disabled: all.length === 0, run: () => all.forEach((t) => cmd.closeWindowById(t.id)) },
@@ -178,8 +196,8 @@ function TerminalTabsBar({ session, tabs }: { session: Session; tabs: WindowT[] 
             style={{ height: TERM_TABS_H }}
             tabs={tabs.map((w) => ({
                 id: w.id,
-                label: w.name,
-                title: w.name,
+                label: terminalTitles[w.activePaneId] || w.name,
+                title: terminalTitles[w.activePaneId] || w.name,
                 active: w.id === session.activeWindowId,
                 closable: !w.fixed,
                 icon: (
@@ -281,6 +299,7 @@ const AgentLayer = memo(function AgentLayer({
     visible: boolean;
     tabsShown: boolean;
 }) {
+    const autoResumeAgents = useStore((s) => s.autoResumeAgents);
     return (
         <div className={`window-layer${visible ? " visible" : ""}`}>
             <div
@@ -292,7 +311,35 @@ const AgentLayer = memo(function AgentLayer({
                     height: tabsShown ? `calc(100% - ${AGENT_TABS_H}px)` : "100%",
                 }}>
                 <div className="pane pane-terminal">
-                    <TerminalPane cwd={session.cwd || undefined} startup={agent.startup} active={visible} visible={visible} activityKey={agent.id} />
+                    {agent.launchState === "dormant" ? (
+                        <div className="agent-dormant" role="group" aria-label={`${agent.title} is ready to resume`}>
+                            <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
+                            <span className="agent-dormant-kicker">restored safely</span>
+                            <strong>{agent.title}</strong>
+                            <span>
+                                This tab is inert. Resume it when you are ready; Sikemux will never relaunch an agent merely because the app opened.
+                            </span>
+                            <button type="button" onClick={() => cmd.resumeAgent(agent.id)}>
+                                Resume {agent.type}
+                            </button>
+                        </div>
+                    ) : (
+                        <TerminalPane
+                            cwd={session.cwd || undefined}
+                            startup={agent.startup}
+                            active={visible}
+                            visible={visible}
+                            spawnWhen={visible || (autoResumeAgents && !!agent.resumeId)}
+                            context={{
+                                sessionId: session.id,
+                                sessionName: session.name,
+                                sessionKind: session.kind,
+                                ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
+                                agentId: agent.id,
+                                agentType: agent.type,
+                            }}
+                        />
+                    )}
                     {cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} />}
                 </div>
             </div>
@@ -300,10 +347,9 @@ const AgentLayer = memo(function AgentLayer({
     );
 });
 
-function AgentActivityMark({ state, unread }: { state?: "idle" | "working" | "complete"; unread: boolean }) {
-    if (state === "working") return <span className="agent-activity working" title="Agent is working" aria-label="Agent is working" />;
-    if (unread) return <span className="agent-activity unread" title="New agent response" aria-label="New agent response" />;
-    return null;
+function AgentActivityMark({ state, unread }: { state?: import("../state/types").AgentPresentationState; unread: boolean }) {
+    if (!state || (state === "idle" && !unread)) return null;
+    return <AgentStateIndicator state={state} unread={unread} />;
 }
 
 const WindowLayer = memo(function WindowLayer({

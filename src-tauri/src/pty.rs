@@ -36,11 +36,13 @@
 use std::collections::HashMap;
 #[cfg(unix)]
 use std::fs::File;
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -52,6 +54,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[cfg(unix)]
 use tokio::io::unix::AsyncFd;
 
+use crate::agent_detection::{
+    AgentDetection, AgentDetectionState, AgentKind, DetectionConfidence, DetectionExplain,
+    DetectionInput, ManifestRegistry, ManifestReloadReport,
+};
 use crate::error::{AppError, AppResult};
 
 fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
@@ -88,7 +94,7 @@ struct Pty {
     child: Mutex<Box<dyn Child + Send + Sync>>,
     /// Tracks the current screen grid + scrollback. Always up to date,
     /// even when no one's subscribed — that's the whole point.
-    parser: Mutex<vt100::Parser>,
+    parser: Mutex<SemanticParser>,
     /// Live xterm subscribers. Empty = PTY runs invisibly.
     subscribers: Mutex<HashMap<u32, Channel<Vec<u8>>>>,
     /// Millis-since-process-start of the last chunk processed. The idle
@@ -102,14 +108,34 @@ struct Pty {
     /// Present only for agent PTYs. Activity is inferred natively so it
     /// remains observable after the heavyweight xterm renderer detaches.
     activity_key: Option<String>,
+    agent_kind: Option<AgentKind>,
     activity_armed: AtomicBool,
     activity_state: AtomicU8,
+    activity_sequence: AtomicU64,
+    last_published_fingerprint: AtomicU64,
+    idle_confirmations: AtomicU8,
+    /// Advances whenever submitted input or parsed output changes the
+    /// semantic evidence. Combined with screen/title contents below to make
+    /// settled detection edge-triggered instead of a perpetual 4 Hz rescan.
+    activity_revision: AtomicU64,
+    last_detection_fingerprint: AtomicU64,
 }
 
 /// All live PTYs, keyed by an id handed back to the frontend.
-#[derive(Default)]
 pub struct PtyManager {
     ptys: DashMap<u32, Arc<Pty>>,
+    detection_registry: RwLock<ManifestRegistry>,
+}
+
+impl Default for PtyManager {
+    fn default() -> Self {
+        Self {
+            ptys: DashMap::new(),
+            detection_registry: RwLock::new(
+                ManifestRegistry::bundled().expect("bundled agent manifests must be valid"),
+            ),
+        }
+    }
 }
 
 impl PtyManager {
@@ -187,23 +213,117 @@ pub struct PtyDiagnostics {
     pub output_broadcasts: u64,
     pub output_bytes: u64,
     pub working_agents: usize,
+    pub blocked_agents: usize,
+    pub idle_agents: usize,
+    pub unknown_agents: usize,
 }
 
 impl PtyManager {
     pub fn diagnostics(&self) -> PtyDiagnostics {
+        let count_state = |state| {
+            self.ptys
+                .iter()
+                .filter(|entry| {
+                    entry.value().agent_kind.is_some()
+                        && entry.value().activity_state.load(Ordering::Relaxed) == state
+                })
+                .count()
+        };
         PtyDiagnostics {
             output_reads: OUTPUT_READS.load(Ordering::Relaxed),
             output_broadcasts: OUTPUT_BROADCASTS.load(Ordering::Relaxed),
             output_bytes: OUTPUT_BYTES.load(Ordering::Relaxed),
-            working_agents: self
-                .ptys
-                .iter()
-                .filter(|entry| {
-                    entry.value().activity_state.load(Ordering::Relaxed) == ACTIVITY_WORKING
-                })
-                .count(),
+            working_agents: count_state(ACTIVITY_WORKING),
+            blocked_agents: count_state(ACTIVITY_BLOCKED),
+            idle_agents: count_state(ACTIVITY_IDLE),
+            unknown_agents: count_state(ACTIVITY_UNKNOWN),
         }
     }
+}
+
+#[tauri::command]
+pub fn agent_detection_manifests(
+    manager: State<'_, PtyManager>,
+) -> AppResult<ManifestReloadReport> {
+    manager
+        .detection_registry
+        .read()
+        .map(|registry| registry.report())
+        .map_err(|_| AppError::Other("agent detection registry lock poisoned".into()))
+}
+
+#[tauri::command]
+pub fn agent_detection_reload(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+) -> AppResult<ManifestReloadReport> {
+    let directory = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| AppError::Other(format!("agent detection config path: {error}")))?
+        .join("agent-detection");
+    let mut replacement = ManifestRegistry::with_override_dir(directory)
+        .map_err(|error| AppError::Other(format!("agent detection manifests: {error}")))?;
+    let report = replacement
+        .reload()
+        .map_err(|error| AppError::Other(format!("agent detection manifests: {error}")))?;
+    *manager
+        .detection_registry
+        .write()
+        .map_err(|_| AppError::Other("agent detection registry lock poisoned".into()))? =
+        replacement;
+    // The terminal evidence may be unchanged while the matching rules have
+    // changed. Invalidate every settled scan so the new registry takes effect
+    // on the next sweeper tick without requiring fresh PTY output.
+    for entry in manager.ptys.iter() {
+        entry
+            .value()
+            .last_detection_fingerprint
+            .store(0, Ordering::Release);
+    }
+    Ok(report)
+}
+
+#[tauri::command]
+pub fn agent_detection_explain(
+    manager: State<'_, PtyManager>,
+    agent_id: String,
+) -> AppResult<DetectionExplain> {
+    let pty = manager
+        .ptys
+        .iter()
+        .find(|entry| entry.value().activity_key.as_deref() == Some(agent_id.as_str()))
+        .map(|entry| entry.value().clone())
+        .ok_or(AppError::BadArg("agent has no live terminal"))?;
+    let kind = pty
+        .agent_kind
+        .ok_or(AppError::BadArg("terminal has no known agent type"))?;
+    let (recent, title) = pty
+        .parser
+        .lock()
+        .map(|parser| {
+            (
+                parser.screen().contents(),
+                parser.callbacks().window_title.clone(),
+            )
+        })
+        .map_err(|_| AppError::Other("agent terminal parser lock poisoned".into()))?;
+    manager
+        .detection_registry
+        .read()
+        .map(|registry| {
+            let input = if title.is_empty() {
+                DetectionInput::screen(&recent)
+            } else {
+                DetectionInput {
+                    recent_screen: &recent,
+                    osc_title: &title,
+                    osc_progress: "",
+                }
+            };
+            registry.explain(kind, input)
+        })
+        .map_err(|_| AppError::Other("agent detection registry lock poisoned".into()))
 }
 
 // Scrollback held in the headless vt100 parser. Must match (or exceed)
@@ -218,33 +338,144 @@ const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const ACTIVITY_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
-const ACTIVITY_IDLE: u8 = 0;
-const ACTIVITY_WORKING: u8 = 1;
-const ACTIVITY_COMPLETE: u8 = 2;
+const ACTIVITY_UNKNOWN: u8 = 0;
+const ACTIVITY_IDLE: u8 = 1;
+const ACTIVITY_WORKING: u8 = 2;
+const ACTIVITY_BLOCKED: u8 = 3;
 #[cfg(unix)]
 const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
 #[cfg(unix)]
 const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
 
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PtyActivityEvent<'a> {
-    agent_id: &'a str,
-    state: &'static str,
+#[derive(Default)]
+struct SemanticCallbacks {
+    window_title: String,
 }
 
-fn set_activity_state(pty: &Pty, next: u8, label: &'static str) {
+impl vt100::Callbacks for SemanticCallbacks {
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        // Titles are untrusted child-process output. Keep only printable text
+        // and impose a small scalar limit before retaining it for detection.
+        self.window_title = String::from_utf8_lossy(title)
+            .chars()
+            .filter(|ch| !ch.is_control())
+            .take(512)
+            .collect();
+    }
+}
+
+type SemanticParser = vt100::Parser<SemanticCallbacks>;
+
+fn semantic_parser(rows: u16, cols: u16, scrollback: usize) -> SemanticParser {
+    SemanticParser::new_with_callbacks(rows, cols, scrollback, SemanticCallbacks::default())
+}
+
+fn semantic_fingerprint(revision: u64, screen: &str, title: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    revision.hash(&mut hasher);
+    screen.hash(&mut hasher);
+    title.hash(&mut hasher);
+    // Zero is the initial "never evaluated" sentinel.
+    hasher.finish().max(1)
+}
+
+fn event_fingerprint(
+    state: u8,
+    label: &str,
+    source: &str,
+    confidence: &str,
+    reason: &str,
+    matched_rule: Option<&str>,
+) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    state.hash(&mut hasher);
+    label.hash(&mut hasher);
+    source.hash(&mut hasher);
+    confidence.hash(&mut hasher);
+    reason.hash(&mut hasher);
+    matched_rule.hash(&mut hasher);
+    hasher.finish().max(1)
+}
+
+fn detection_reason(detection: &AgentDetection) -> String {
+    if let Some(fallback) = detection.fallback_reason.as_deref() {
+        return format!("agent detection fallback: {fallback}");
+    }
+    let Some(rule) = detection.matched_rule.as_deref() else {
+        return format!(
+            "agent screen evaluated with manifest {}",
+            detection.manifest_version
+        );
+    };
+    let evidence = &detection.evidence;
+    let visible = if evidence.visible_blocker {
+        "visible blocker"
+    } else if evidence.visible_working {
+        "visible working status"
+    } else if evidence.visible_idle {
+        "visible idle prompt"
+    } else {
+        "screen evidence"
+    };
+    match evidence.region.as_deref() {
+        Some(region) => format!("manifest rule {rule} matched {visible} in {region}"),
+        None => format!("manifest rule {rule} matched {visible}"),
+    }
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentStateEvent<'a> {
+    agent_id: &'a str,
+    state: &'static str,
+    sequence: u64,
+    source: &'static str,
+    confidence: &'static str,
+    reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matched_rule: Option<String>,
+}
+
+fn publish_agent_state(
+    pty: &Pty,
+    next: u8,
+    label: &'static str,
+    source: &'static str,
+    confidence: &'static str,
+    reason: impl Into<String>,
+    matched_rule: Option<String>,
+) {
     let Some(agent_id) = pty.activity_key.as_deref() else {
         return;
     };
-    if pty.activity_state.swap(next, Ordering::AcqRel) == next {
+    let reason = reason.into();
+    let fingerprint = event_fingerprint(
+        next,
+        label,
+        source,
+        confidence,
+        &reason,
+        matched_rule.as_deref(),
+    );
+    if pty
+        .last_published_fingerprint
+        .swap(fingerprint, Ordering::AcqRel)
+        == fingerprint
+    {
         return;
     }
+    pty.activity_state.store(next, Ordering::Release);
+    let sequence = pty.activity_sequence.fetch_add(1, Ordering::AcqRel) + 1;
     let _ = pty.app.emit(
-        "pty_activity",
-        PtyActivityEvent {
+        "agent_state_changed",
+        AgentStateEvent {
             agent_id,
             state: label,
+            sequence,
+            source,
+            confidence,
+            reason,
+            matched_rule,
         },
     );
 }
@@ -255,7 +486,17 @@ fn arm_agent_activity(pty: &Pty) {
     }
     pty.activity_armed.store(true, Ordering::Release);
     pty.last_activity_ms.store(now_ms(), Ordering::Relaxed);
-    set_activity_state(pty, ACTIVITY_WORKING, "working");
+    pty.idle_confirmations.store(0, Ordering::Release);
+    pty.activity_revision.fetch_add(1, Ordering::AcqRel);
+    publish_agent_state(
+        pty,
+        ACTIVITY_WORKING,
+        "working",
+        "activity",
+        "high",
+        "command submitted",
+        None,
+    );
 }
 
 fn submits_line(data: &str) -> bool {
@@ -263,8 +504,18 @@ fn submits_line(data: &str) -> bool {
 }
 
 fn note_agent_output(pty: &Pty) {
-    if pty.activity_armed.load(Ordering::Acquire) {
-        set_activity_state(pty, ACTIVITY_WORKING, "working");
+    if pty.agent_kind.is_some() {
+        pty.activity_armed.store(true, Ordering::Release);
+        pty.idle_confirmations.store(0, Ordering::Release);
+        publish_agent_state(
+            pty,
+            ACTIVITY_WORKING,
+            "working",
+            "activity",
+            "medium",
+            "agent produced output",
+            None,
+        );
     }
 }
 
@@ -435,13 +686,84 @@ fn ensure_sweeper(app: AppHandle) {
             for entry in mgr.ptys.iter() {
                 let pty = entry.value();
                 if !pty.activity_armed.load(Ordering::Acquire)
-                    || pty.activity_state.load(Ordering::Acquire) != ACTIVITY_WORKING
                     || now.saturating_sub(pty.last_activity_ms.load(Ordering::Relaxed))
                         < ACTIVITY_SETTLE.as_millis() as u64
                 {
                     continue;
                 }
-                set_activity_state(pty, ACTIVITY_COMPLETE, "complete");
+                let Some(agent) = pty.agent_kind else {
+                    continue;
+                };
+                let (recent, title) = match pty.parser.lock() {
+                    Ok(parser) => (
+                        parser.screen().contents(),
+                        parser.callbacks().window_title.clone(),
+                    ),
+                    Err(_) => continue,
+                };
+                let fingerprint = semantic_fingerprint(
+                    pty.activity_revision.load(Ordering::Acquire),
+                    &recent,
+                    &title,
+                );
+                if pty.last_detection_fingerprint.load(Ordering::Acquire) == fingerprint {
+                    continue;
+                }
+                let detection = match mgr.detection_registry.read() {
+                    Ok(registry) => {
+                        let input = if title.is_empty() {
+                            DetectionInput::screen(&recent)
+                        } else {
+                            DetectionInput {
+                                recent_screen: &recent,
+                                osc_title: &title,
+                                osc_progress: "",
+                            }
+                        };
+                        registry.detect(agent, input)
+                    }
+                    Err(_) => continue,
+                };
+                if detection.skip_state_update {
+                    pty.last_detection_fingerprint
+                        .store(fingerprint, Ordering::Release);
+                    continue;
+                }
+                let (next, label) = match detection.state {
+                    AgentDetectionState::Unknown => (ACTIVITY_UNKNOWN, "unknown"),
+                    AgentDetectionState::Idle => (ACTIVITY_IDLE, "idle"),
+                    AgentDetectionState::Working => (ACTIVITY_WORKING, "working"),
+                    AgentDetectionState::Blocked => (ACTIVITY_BLOCKED, "blocked"),
+                };
+                if next == ACTIVITY_IDLE {
+                    let confirmations = pty.idle_confirmations.fetch_add(1, Ordering::AcqRel) + 1;
+                    if confirmations < 2 {
+                        continue;
+                    }
+                } else {
+                    pty.idle_confirmations.store(0, Ordering::Release);
+                }
+                let source = if detection.fallback_reason.is_some() {
+                    "fallback"
+                } else {
+                    "screen"
+                };
+                let confidence = match detection.confidence {
+                    DetectionConfidence::Authoritative | DetectionConfidence::Strong => "high",
+                    DetectionConfidence::Fallback => "low",
+                };
+                let reason = detection_reason(&detection);
+                publish_agent_state(
+                    pty,
+                    next,
+                    label,
+                    source,
+                    confidence,
+                    reason,
+                    detection.matched_rule,
+                );
+                pty.last_detection_fingerprint
+                    .store(fingerprint, Ordering::Release);
             }
         }
     });
@@ -528,6 +850,7 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
             reseed_parser(&mut parser, PARSER_SCROLLBACK);
         }
         parser.process(bytes);
+        pty.activity_revision.fetch_add(1, Ordering::AcqRel);
         match pty.subscribers.lock() {
             Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
             Err(_) => Vec::new(),
@@ -557,14 +880,148 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
     }
 }
 
-fn notify_process_exited(pty: &Pty) {
+fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
     if let Ok(subscribers) = pty.subscribers.lock() {
         for channel in subscribers.values() {
             let _ = channel.send(Vec::new());
         }
     }
     if pty.activity_armed.load(Ordering::Acquire) {
-        set_activity_state(pty, ACTIVITY_COMPLETE, "complete");
+        if status.is_some_and(portable_pty::ExitStatus::success) {
+            publish_agent_state(
+                pty,
+                ACTIVITY_IDLE,
+                "idle",
+                "process",
+                "high",
+                "agent process completed successfully",
+                None,
+            );
+        } else {
+            let reason = status.map_or_else(
+                || "agent process exit status unavailable".to_string(),
+                |status| {
+                    status.signal().map_or_else(
+                        || format!("agent process exited with code {}", status.exit_code()),
+                        |signal| format!("agent process exited from signal {signal}"),
+                    )
+                },
+            );
+            publish_agent_state(
+                pty,
+                ACTIVITY_UNKNOWN,
+                "unknown",
+                "process",
+                "high",
+                reason,
+                None,
+            );
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyContext {
+    session_id: String,
+    session_name: String,
+    session_kind: String,
+    project: Option<String>,
+    window_id: Option<String>,
+    pane_id: Option<String>,
+    agent_id: Option<String>,
+    agent_type: Option<String>,
+}
+
+const OPTIONAL_PTY_ENV: &[&str] = &[
+    "SIKEMUX_SHELL",
+    "SIKEMUX_SESSION_ID",
+    "SIKEMUX_SESSION_NAME",
+    "SIKEMUX_SESSION_KIND",
+    "SIKEMUX_PROJECT",
+    "SIKEMUX_WINDOW_ID",
+    "SIKEMUX_PANE_ID",
+    "SIKEMUX_AGENT_ID",
+    "SIKEMUX_AGENT_TYPE",
+    "SIKEMUX_BIN_PATH",
+    "SIKEMUX_CLI_ENDPOINT",
+    "CODEX_THREAD_ID",
+];
+
+fn non_empty(value: &Option<String>) -> Option<&str> {
+    value.as_deref().filter(|value| !value.is_empty())
+}
+
+fn editor_command(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    let shell_safe = raw.bytes().all(|byte| {
+        byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'\\' | b':' | b'.' | b'_' | b'-')
+    });
+    if shell_safe {
+        return raw.into_owned();
+    }
+    #[cfg(windows)]
+    {
+        format!("\"{}\"", raw.replace('"', "\\\""))
+    }
+    #[cfg(not(windows))]
+    {
+        format!("'{}'", raw.replace('\'', "'\\''"))
+    }
+}
+
+/// Apply a clean, typed Sikemux identity to a PTY command. Optional fields are
+/// removed before being rebuilt so a terminal can never inherit the identity
+/// of the app's parent terminal (or a Codex thread that launched the app).
+fn configure_pty_environment(
+    cmd: &mut CommandBuilder,
+    context: Option<&PtyContext>,
+    version: &str,
+    cli_executable: Option<&Path>,
+    cli_endpoint: Option<&Path>,
+) {
+    for key in OPTIONAL_PTY_ENV {
+        cmd.env_remove(key);
+    }
+
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("TERM_PROGRAM", "Sikemux");
+    cmd.env("TERM_PROGRAM_VERSION", version);
+    cmd.env("SIKEMUX", "1");
+    cmd.env("SIKEMUX_VERSION", version);
+
+    if let Some(context) = context {
+        cmd.env("SIKEMUX_SESSION_ID", &context.session_id);
+        cmd.env("SIKEMUX_SESSION_NAME", &context.session_name);
+        cmd.env("SIKEMUX_SESSION_KIND", &context.session_kind);
+        if let Some(project) = non_empty(&context.project) {
+            cmd.env("SIKEMUX_PROJECT", project);
+        }
+        if let Some(window_id) = non_empty(&context.window_id) {
+            cmd.env("SIKEMUX_WINDOW_ID", window_id);
+        }
+        if let Some(pane_id) = non_empty(&context.pane_id) {
+            cmd.env("SIKEMUX_PANE_ID", pane_id);
+        }
+        if let Some(agent_id) = non_empty(&context.agent_id) {
+            cmd.env("SIKEMUX_AGENT_ID", agent_id);
+        }
+        if let Some(agent_type) = non_empty(&context.agent_type) {
+            cmd.env("SIKEMUX_AGENT_TYPE", agent_type);
+        }
+    }
+
+    if let Some(path) = cli_executable {
+        cmd.env("SIKEMUX_BIN_PATH", path);
+        if cmd.get_env("EDITOR").is_none() && cmd.get_env("VISUAL").is_none() {
+            let editor = editor_command(path);
+            cmd.env("EDITOR", &editor);
+            cmd.env("VISUAL", &editor);
+        }
+    }
+    if let Some(path) = cli_endpoint {
+        cmd.env("SIKEMUX_CLI_ENDPOINT", path);
     }
 }
 
@@ -576,7 +1033,7 @@ pub async fn pty_spawn(
     rows: u16,
     cwd: Option<String>,
     startup: Option<String>,
-    activity_key: Option<String>,
+    context: Option<PtyContext>,
 ) -> AppResult<u32> {
     ensure_sweeper(app.clone());
     // Has to be `async fn` so the body runs inside Tauri's tokio
@@ -591,7 +1048,15 @@ pub async fn pty_spawn(
     #[cfg(windows)]
     let shell = std::env::var("SIKEMUX_SHELL").unwrap_or_else(|_| "powershell.exe".into());
     let mut cmd = CommandBuilder::new(&shell);
-    cmd.env("TERM", "xterm-256color");
+    let cli_executable = crate::cli_server::cli_executable_path();
+    let cli_endpoint = crate::cli_server::cli_endpoint_path();
+    configure_pty_environment(
+        &mut cmd,
+        context.as_ref(),
+        &app.package_info().version.to_string(),
+        cli_executable.as_deref(),
+        cli_endpoint.as_deref(),
+    );
     #[cfg(windows)]
     cmd.args(["-NoLogo"]);
     let cwd = cwd.unwrap_or_else(|| crate::system::user_home().to_string_lossy().into_owned());
@@ -664,6 +1129,13 @@ pub async fn pty_spawn(
     let writer = pair.master.take_writer().map_err(pty_err)?;
     let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
 
+    let parsed_agent_kind = context
+        .as_ref()
+        .and_then(|context| context.agent_type.as_deref())
+        .and_then(AgentKind::from_label);
+    let activity_key = context
+        .and_then(|context| context.agent_id)
+        .filter(|key| !key.is_empty());
     let pty = Arc::new(Pty {
         app: app.clone(),
         #[cfg(unix)]
@@ -675,13 +1147,19 @@ pub async fn pty_spawn(
         #[cfg(windows)]
         writer: Mutex::new(writer),
         child: Mutex::new(child.into_inner()),
-        parser: Mutex::new(vt100::Parser::new(rows, cols, PARSER_SCROLLBACK)),
+        parser: Mutex::new(semantic_parser(rows, cols, PARSER_SCROLLBACK)),
         subscribers: Mutex::new(HashMap::new()),
         last_activity_ms: AtomicU64::new(now_ms()),
         trimmed: AtomicBool::new(false),
-        activity_key: activity_key.filter(|key| !key.is_empty()),
+        activity_key,
+        agent_kind: parsed_agent_kind,
         activity_armed: AtomicBool::new(false),
-        activity_state: AtomicU8::new(ACTIVITY_IDLE),
+        activity_state: AtomicU8::new(ACTIVITY_UNKNOWN),
+        activity_sequence: AtomicU64::new(0),
+        last_published_fingerprint: AtomicU64::new(0),
+        idle_confirmations: AtomicU8::new(0),
+        activity_revision: AtomicU64::new(0),
+        last_detection_fingerprint: AtomicU64::new(0),
     });
 
     // Publish before starting the reader. A short-lived command can reach EOF
@@ -782,9 +1260,6 @@ pub async fn pty_spawn(
                 break;
             }
         }
-        // Notify on EOF — empty payload is the frontend's "process exited"
-        // signal. Same convention as before.
-        notify_process_exited(&pty_reader);
         // If the shell exits by itself, there is no frontend unmount to call
         // `pty_kill`. Remove the manager entry here so the retained master
         // fd is released instead of accumulating toward the process fd limit,
@@ -795,9 +1270,15 @@ pub async fn pty_spawn(
         }
         let reap_pty = pty_reader.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            if let Ok(mut child) = reap_pty.child.lock() {
-                let _ = child.wait();
-            }
+            let status = reap_pty
+                .child
+                .lock()
+                .ok()
+                .and_then(|mut child| child.wait().ok());
+            // Empty payload remains the frontend's "process exited" signal.
+            // Waiting first lets the semantic event distinguish a successful
+            // completion from a crash/signal instead of always saying unknown.
+            notify_process_exited(&reap_pty, status.as_ref());
         });
     });
 
@@ -817,13 +1298,15 @@ pub async fn pty_spawn(
                     Err(_) => break,
                 }
             }
-            notify_process_exited(&pty_reader);
             if let Some(mgr) = app_reader.try_state::<PtyManager>() {
                 mgr.ptys.remove(&id);
             }
-            if let Ok(mut child) = pty_reader.child.lock() {
-                let _ = child.wait();
-            }
+            let status = pty_reader
+                .child
+                .lock()
+                .ok()
+                .and_then(|mut child| child.wait().ok());
+            notify_process_exited(&pty_reader, status.as_ref());
         });
     }
 
@@ -921,15 +1404,16 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
     snapshot
 }
 
-fn reseed_parser(parser: &mut vt100::Parser, scrollback: usize) {
+fn reseed_parser(parser: &mut SemanticParser, scrollback: usize) {
     let (rows, cols) = parser.screen().size();
     let snapshot = attach_snapshot(parser.screen());
-    let mut fresh = vt100::Parser::new(rows, cols, scrollback);
+    let callbacks = std::mem::take(parser.callbacks_mut());
+    let mut fresh = SemanticParser::new_with_callbacks(rows, cols, scrollback, callbacks);
     fresh.process(&snapshot);
     *parser = fresh;
 }
 
-fn compact_parser_for_idle(parser: &mut vt100::Parser) -> bool {
+fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
     if parser.screen().alternate_screen() {
         return false;
     }
@@ -1083,9 +1567,160 @@ mod tests {
     #[cfg(unix)]
     use super::startup_bootstrap;
     use super::{
-        attach_snapshot, compact_parser_for_idle, reseed_parser, submits_line, AttachResult,
-        IDLE_SCROLLBACK, PARSER_SCROLLBACK, RESET_MODES,
+        attach_snapshot, compact_parser_for_idle, configure_pty_environment, event_fingerprint,
+        reseed_parser, semantic_fingerprint, semantic_parser, submits_line, AttachResult,
+        PtyContext, IDLE_SCROLLBACK, PARSER_SCROLLBACK, RESET_MODES,
     };
+    use portable_pty::CommandBuilder;
+    use std::path::Path;
+
+    fn env(command: &CommandBuilder, key: &str) -> Option<String> {
+        command
+            .get_env(key)
+            .map(|value| value.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn pty_environment_has_terminal_and_typed_sikemux_identity() {
+        let mut command = CommandBuilder::new("shell");
+        command.env("SIKEMUX_AGENT_ID", "stale-agent");
+        command.env("CODEX_THREAD_ID", "parent-thread");
+        command.env_remove("EDITOR");
+        command.env_remove("VISUAL");
+        let context = PtyContext {
+            session_id: "session-1".into(),
+            session_name: "repo".into(),
+            session_kind: "project".into(),
+            project: Some("/repo".into()),
+            window_id: Some("window-1".into()),
+            pane_id: Some("pane-1".into()),
+            agent_id: None,
+            agent_type: None,
+        };
+
+        configure_pty_environment(
+            &mut command,
+            Some(&context),
+            "1.2.3",
+            Some(Path::new("/app/sikemux-editor")),
+            Some(Path::new("/runtime/cli.json")),
+        );
+
+        assert_eq!(env(&command, "TERM"), Some("xterm-256color".into()));
+        assert_eq!(env(&command, "COLORTERM"), Some("truecolor".into()));
+        assert_eq!(env(&command, "TERM_PROGRAM"), Some("Sikemux".into()));
+        assert_eq!(env(&command, "TERM_PROGRAM_VERSION"), Some("1.2.3".into()));
+        assert_eq!(env(&command, "SIKEMUX"), Some("1".into()));
+        assert_eq!(env(&command, "SIKEMUX_VERSION"), Some("1.2.3".into()));
+        assert_eq!(
+            env(&command, "SIKEMUX_SESSION_ID"),
+            Some("session-1".into())
+        );
+        assert_eq!(env(&command, "SIKEMUX_SESSION_NAME"), Some("repo".into()));
+        assert_eq!(
+            env(&command, "SIKEMUX_SESSION_KIND"),
+            Some("project".into())
+        );
+        assert_eq!(env(&command, "SIKEMUX_PROJECT"), Some("/repo".into()));
+        assert_eq!(env(&command, "SIKEMUX_WINDOW_ID"), Some("window-1".into()));
+        assert_eq!(env(&command, "SIKEMUX_PANE_ID"), Some("pane-1".into()));
+        assert_eq!(env(&command, "SIKEMUX_AGENT_ID"), None);
+        assert_eq!(env(&command, "CODEX_THREAD_ID"), None);
+        assert_eq!(
+            env(&command, "SIKEMUX_BIN_PATH"),
+            Some("/app/sikemux-editor".into())
+        );
+        assert_eq!(
+            env(&command, "SIKEMUX_CLI_ENDPOINT"),
+            Some("/runtime/cli.json".into())
+        );
+        assert_eq!(env(&command, "EDITOR"), Some("/app/sikemux-editor".into()));
+        assert_eq!(env(&command, "VISUAL"), Some("/app/sikemux-editor".into()));
+    }
+
+    #[test]
+    fn pty_environment_preserves_user_editor_choice_if_either_var_exists() {
+        let mut editor_only = CommandBuilder::new("shell");
+        editor_only.env("EDITOR", "nvim");
+        editor_only.env_remove("VISUAL");
+        configure_pty_environment(
+            &mut editor_only,
+            None,
+            "1.2.3",
+            Some(Path::new("/app/sikemux-editor")),
+            None,
+        );
+        assert_eq!(env(&editor_only, "EDITOR"), Some("nvim".into()));
+        assert_eq!(env(&editor_only, "VISUAL"), None);
+
+        let mut visual_only = CommandBuilder::new("shell");
+        visual_only.env_remove("EDITOR");
+        visual_only.env("VISUAL", "code --wait");
+        configure_pty_environment(
+            &mut visual_only,
+            None,
+            "1.2.3",
+            Some(Path::new("/app/sikemux-editor")),
+            None,
+        );
+        assert_eq!(env(&visual_only, "EDITOR"), None);
+        assert_eq!(env(&visual_only, "VISUAL"), Some("code --wait".into()));
+    }
+
+    #[test]
+    fn pty_environment_quotes_editor_command_paths_with_spaces() {
+        let mut command = CommandBuilder::new("shell");
+        command.env_remove("EDITOR");
+        command.env_remove("VISUAL");
+        configure_pty_environment(
+            &mut command,
+            None,
+            "1.2.3",
+            Some(Path::new(
+                "/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor",
+            )),
+            None,
+        );
+
+        assert_eq!(
+            env(&command, "SIKEMUX_BIN_PATH"),
+            Some("/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor".into())
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            env(&command, "EDITOR"),
+            Some("'/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor'".into())
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            env(&command, "EDITOR"),
+            Some("\"/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor\"".into())
+        );
+    }
+
+    #[test]
+    fn pty_environment_rebuilds_agent_identity_without_fake_pane_identity() {
+        let mut command = CommandBuilder::new("shell");
+        command.env("SIKEMUX_WINDOW_ID", "parent-window");
+        command.env("SIKEMUX_PANE_ID", "parent-pane");
+        let context = PtyContext {
+            session_id: "session-1".into(),
+            session_name: "repo".into(),
+            session_kind: "project".into(),
+            project: Some("/repo".into()),
+            window_id: None,
+            pane_id: None,
+            agent_id: Some("agent-1".into()),
+            agent_type: Some("codex".into()),
+        };
+
+        configure_pty_environment(&mut command, Some(&context), "1.2.3", None, None);
+
+        assert_eq!(env(&command, "SIKEMUX_AGENT_ID"), Some("agent-1".into()));
+        assert_eq!(env(&command, "SIKEMUX_AGENT_TYPE"), Some("codex".into()));
+        assert_eq!(env(&command, "SIKEMUX_WINDOW_ID"), None);
+        assert_eq!(env(&command, "SIKEMUX_PANE_ID"), None);
+    }
 
     #[test]
     fn only_submitted_input_arms_agent_activity() {
@@ -1093,6 +1728,57 @@ mod tests {
         assert!(submits_line("first\nsecond"));
         assert!(!submits_line("still typing"));
         assert!(!submits_line("\x1b[A"));
+    }
+
+    #[test]
+    fn semantic_fingerprint_changes_with_evidence_or_revision() {
+        let base = semantic_fingerprint(1, "prompt", "Codex");
+        assert_eq!(base, semantic_fingerprint(1, "prompt", "Codex"));
+        assert_ne!(base, semantic_fingerprint(2, "prompt", "Codex"));
+        assert_ne!(base, semantic_fingerprint(1, "working", "Codex"));
+        assert_ne!(base, semantic_fingerprint(1, "prompt", "Action required"));
+    }
+
+    #[test]
+    fn event_fingerprint_preserves_same_state_evidence_upgrades() {
+        let activity =
+            event_fingerprint(1, "working", "activity", "high", "command submitted", None);
+        let screen = event_fingerprint(
+            1,
+            "working",
+            "screen",
+            "high",
+            "manifest rule spinner matched visible working status",
+            Some("spinner"),
+        );
+        let changed_reason = event_fingerprint(
+            1,
+            "working",
+            "screen",
+            "high",
+            "manifest rule tool matched visible working status",
+            Some("tool"),
+        );
+        assert_ne!(activity, screen);
+        assert_ne!(screen, changed_reason);
+        assert_eq!(
+            screen,
+            event_fingerprint(
+                1,
+                "working",
+                "screen",
+                "high",
+                "manifest rule spinner matched visible working status",
+                Some("spinner")
+            )
+        );
+    }
+
+    #[test]
+    fn semantic_parser_captures_and_sanitizes_osc_title() {
+        let mut parser = semantic_parser(24, 80, PARSER_SCROLLBACK);
+        parser.process(b"\x1b]2;Action\n required\x07");
+        assert_eq!(parser.callbacks().window_title, "Action required");
     }
 
     #[test]
@@ -1231,7 +1917,7 @@ mod tests {
 
     #[test]
     fn idle_compaction_retains_tail_and_modes() {
-        let mut parser = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        let mut parser = semantic_parser(5, 20, PARSER_SCROLLBACK);
         for i in 0..2_100 {
             parser.process(format!("line {i:04}\r\n").as_bytes());
         }
@@ -1256,7 +1942,7 @@ mod tests {
 
     #[test]
     fn idle_compaction_skips_alternate_screen() {
-        let mut parser = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
+        let mut parser = semantic_parser(5, 20, PARSER_SCROLLBACK);
         parser.process(b"normal history\r\n\x1b[?1049halt screen");
         let before = attach_snapshot(parser.screen());
 
@@ -1267,7 +1953,7 @@ mod tests {
 
     #[test]
     fn reseed_restores_full_future_scrollback_capacity() {
-        let mut parser = vt100::Parser::new(5, 20, IDLE_SCROLLBACK);
+        let mut parser = semantic_parser(5, 20, IDLE_SCROLLBACK);
         for i in 0..1_000 {
             parser.process(format!("old {i:04}\r\n").as_bytes());
         }

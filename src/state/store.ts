@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID, type Theme } from "../themes";
 import type { KeybindingOverrides } from "../keybindings";
+import type { CustomCommand } from "../commands/registry";
 
 enableMapSet();
 import { makePane, newId } from "./layout";
@@ -11,6 +12,7 @@ import type {
     AwsService,
     EcsLevel,
     EditorPaneView,
+    CliPendingEditorOpen,
     GitPaneView,
     BrunoView,
     GlobalSearchView,
@@ -19,6 +21,8 @@ import type {
     ProjectRoot,
     RecentEntry,
     RundeckSettings,
+    NotificationPreferences,
+    RailDensity,
     RundeckView,
     Session,
     SessionSwitcherView,
@@ -43,6 +47,9 @@ export interface DomainState {
     /** Imported Bruno (API) workspace collection paths, most-recent-first. Survive session close so they stay reopenable. */
     brunoWorkspaces: string[];
     themeId: string;
+    themeMode: "manual" | "system";
+    systemLightThemeId: string;
+    systemDarkThemeId: string;
     /** User-defined themes, derived from a built-in or another custom theme via the theme editor. */
     customThemes: Theme[];
     windowOpacity: number;
@@ -56,6 +63,16 @@ export interface DomainState {
     rightRailOpen: boolean;
     zenMode: boolean;
     rundeck: RundeckSettings;
+    restoreAgentTabs: boolean;
+    autoResumeAgents: boolean;
+    notificationPreferences: NotificationPreferences;
+    railDensity: RailDensity;
+    onboardingComplete: boolean;
+    lastSeenVersion: string;
+    customCommands: CustomCommand[];
+    updateChannel: "stable" | "preview";
+    lastReleaseNotes: { version: string; notes: string | null; date: string | null } | null;
+    recentCommandKeys: string[];
 }
 
 export interface ViewState {
@@ -74,6 +91,8 @@ export interface ViewState {
     sessionSwitcher: SessionSwitcherView | null;
 
     editorViews: Record<string, EditorPaneView>;
+    /** Runtime-only file opens claimed from the CLI broker, keyed by editor pane. */
+    pendingEditorOpens: Record<string, CliPendingEditorOpen[]>;
     dirtyEditorPaths: Record<string, string[]>;
     gitViews: Record<string, GitPaneView>;
     ecsViews: Record<string, EcsLevel>;
@@ -88,14 +107,15 @@ export interface ViewState {
     globalSearchBySession: Record<string, GlobalSearchView>;
 
     /** Runtime-only PTY activity for live agents. Never persisted or hydrated. */
-    agentActivity: Record<
-        string,
-        {
-            state: "idle" | "working" | "complete";
-            unread: boolean;
-            updatedAt: number;
-        }
-    >;
+    agentActivity: Record<string, import("./types").AgentRuntimeState>;
+
+    commandPaletteOpen: boolean;
+    onboardingOpen: boolean;
+    diagnosticsOpen: boolean;
+    whatsNewOpen: boolean;
+    commandPopup: { id: string; title: string; startup: string; cwd: string; context: import("./types").PtyContext } | null;
+    terminalTitles: Record<string, string>;
+    lastSessionId: string | null;
 
     pendingUpdate: {
         version: string;
@@ -151,6 +171,9 @@ export const useStore = create<StoreState>(() => {
         projectRoots: [],
         brunoWorkspaces: [],
         themeId: DEFAULT_THEME_ID,
+        themeMode: "manual",
+        systemLightThemeId: "aura-day",
+        systemDarkThemeId: DEFAULT_THEME_ID,
         customThemes: [],
         windowOpacity: 1,
         windowBlur: 0,
@@ -167,6 +190,26 @@ export const useStore = create<StoreState>(() => {
             activeEnvFolder: null,
             prodEnvs: ["prod", "production"],
         },
+        restoreAgentTabs: true,
+        autoResumeAgents: false,
+        notificationPreferences: {
+            enabled: true,
+            onlyWhenUnfocused: true,
+            sounds: true,
+            soundStyle: "soft",
+            delayMs: 650,
+            quietHoursEnabled: false,
+            quietHoursStart: "22:00",
+            quietHoursEnd: "08:00",
+            mutedAgentTypes: [],
+        },
+        railDensity: "comfortable",
+        onboardingComplete: false,
+        lastSeenVersion: "",
+        customCommands: [],
+        updateChannel: "stable",
+        lastReleaseNotes: null,
+        recentCommandKeys: [],
 
         home: "",
         pickerOpen: false,
@@ -181,6 +224,7 @@ export const useStore = create<StoreState>(() => {
         zoomedPaneId: null,
         sessionSwitcher: null,
         editorViews: {},
+        pendingEditorOpens: {},
         dirtyEditorPaths: {},
         gitViews: {},
         ecsViews: {},
@@ -192,6 +236,13 @@ export const useStore = create<StoreState>(() => {
         gitCmdLogOpen: false,
         globalSearchBySession: {},
         agentActivity: {},
+        commandPaletteOpen: false,
+        onboardingOpen: false,
+        diagnosticsOpen: false,
+        whatsNewOpen: false,
+        commandPopup: null,
+        terminalTitles: {},
+        lastSessionId: null,
         pendingUpdate: null,
     };
 });

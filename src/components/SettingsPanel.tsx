@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
     eventToKeybinding,
     findKeybindingConflict,
@@ -19,14 +20,22 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
 import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconRefresh, IconSave, IconTrash } from "./Icons";
+import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
+import { requestAgentNotificationPermission } from "./AgentNotifications";
+import type { AgentType } from "../state/types";
 
-type Page = "general" | "appearance" | "keybindings" | "cloud";
+type Page = "general" | "appearance" | "keybindings" | "commands" | "agents" | "notifications" | "cli" | "cloud" | "about";
 
 const PAGES: { id: Page; name: string; detail: string }[] = [
     { id: "general", name: "General", detail: "Projects and discovery" },
     { id: "appearance", name: "Appearance", detail: "Theme and window" },
     { id: "keybindings", name: "Keybindings", detail: "Commands and navigation" },
+    { id: "commands", name: "Command deck", detail: "Your contextual actions" },
+    { id: "agents", name: "Agents", detail: "Restore and status behavior" },
+    { id: "notifications", name: "Notifications", detail: "Attention without noise" },
+    { id: "cli", name: "CLI", detail: "Shell and editor integration" },
     { id: "cloud", name: "Cloud", detail: "Sign-in workspace" },
+    { id: "about", name: "About", detail: "Updates and diagnostics" },
 ];
 
 export function SettingsPanel() {
@@ -117,11 +126,463 @@ export function SettingsPanel() {
 
                         {page === "keybindings" && <KeybindingsPage overrides={keybindingOverrides} />}
 
+                        {page === "commands" && <CommandsPage />}
+
+                        {page === "agents" && <AgentsPage />}
+
+                        {page === "notifications" && <NotificationsPage />}
+
+                        {page === "cli" && <CliPage />}
+
                         {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
+
+                        {page === "about" && <AboutPage />}
                     </div>
                 </div>
             </div>
         </div>
+    );
+}
+
+const COMMAND_CONTEXT_OPTIONS: CommandContext[] = ["project", "command", "ssh", "aws", "rundeck", "bruno"];
+const COMMAND_PLACEMENTS: CustomCommandPlacement[] = ["terminal", "split", "popup", "background", "replace"];
+
+function blankCommand(): CustomCommand {
+    return { id: `command-${Date.now().toString(36)}`, title: "", detail: "", command: "", contexts: [], placement: "terminal" };
+}
+
+function CommandsPage() {
+    const commands = useStore((s) => s.customCommands);
+    const [draft, setDraft] = useState<CustomCommand>(() => blankCommand());
+    const save = () => {
+        if (!draft.title.trim() || !draft.command.trim()) return;
+        cmd.upsertCustomCommand({ ...draft, title: draft.title.trim(), detail: draft.detail.trim() });
+        setDraft(blankCommand());
+    };
+    return (
+        <SettingsPage name="command deck" deck="Trusted shell actions that appear beside every built-in Sikemux command.">
+            <SettingsSection
+                title="Custom actions"
+                meta={`${commands.length} saved`}
+                sub="Commands run with the active session as cwd and receive SIKEMUX_SESSION_* and SIKEMUX_PROJECT environment variables. They are unsandboxed—only add commands you trust.">
+                <div className="custom-command-list">
+                    {commands.map((item) => (
+                        <button key={item.id} type="button" onClick={() => setDraft(item)}>
+                            <span>{item.title}</span>
+                            <small>
+                                {item.placement} · {item.contexts.length ? item.contexts.join(", ") : "all contexts"}
+                            </small>
+                        </button>
+                    ))}
+                    {commands.length === 0 && (
+                        <span className="settings-field-help">
+                            No custom commands yet. Built-ins are already searchable with the command-deck shortcut.
+                        </span>
+                    )}
+                </div>
+            </SettingsSection>
+            <SettingsSection
+                title={commands.some((item) => item.id === draft.id) ? "Edit action" : "New action"}
+                sub="Choose where output should live: a terminal tab, split, temporary popup, background toast, or replacement pane.">
+                <div className="command-editor-grid">
+                    <input
+                        className="settings-input"
+                        placeholder="Display name"
+                        value={draft.title}
+                        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                    />
+                    <input
+                        className="settings-input"
+                        placeholder="What it does"
+                        value={draft.detail}
+                        onChange={(e) => setDraft({ ...draft, detail: e.target.value })}
+                    />
+                    <textarea
+                        className="settings-input command-editor-source"
+                        placeholder="shell command"
+                        value={draft.command}
+                        onChange={(e) => setDraft({ ...draft, command: e.target.value })}
+                        spellCheck={false}
+                    />
+                    <select
+                        className="settings-input"
+                        value={draft.placement}
+                        onChange={(e) => setDraft({ ...draft, placement: e.target.value as CustomCommandPlacement })}>
+                        {COMMAND_PLACEMENTS.map((value) => (
+                            <option key={value}>{value}</option>
+                        ))}
+                    </select>
+                    <div className="command-contexts">
+                        {COMMAND_CONTEXT_OPTIONS.map((context) => (
+                            <label key={context}>
+                                <input
+                                    type="checkbox"
+                                    checked={draft.contexts.includes(context)}
+                                    onChange={(e) =>
+                                        setDraft({
+                                            ...draft,
+                                            contexts: e.target.checked
+                                                ? [...draft.contexts, context]
+                                                : draft.contexts.filter((item) => item !== context),
+                                        })
+                                    }
+                                />
+                                {context}
+                            </label>
+                        ))}
+                    </div>
+                    <div className="command-editor-actions">
+                        <button className="settings-btn" type="button" onClick={() => setDraft(blankCommand())}>
+                            new
+                        </button>
+                        {commands.some((item) => item.id === draft.id) && (
+                            <button
+                                className="settings-btn danger"
+                                type="button"
+                                onClick={() => {
+                                    cmd.deleteCustomCommand(draft.id);
+                                    setDraft(blankCommand());
+                                }}>
+                                <IconTrash size={11} /> delete
+                            </button>
+                        )}
+                        <button className="settings-btn primary" type="button" disabled={!draft.title.trim() || !draft.command.trim()} onClick={save}>
+                            <IconSave size={11} /> save
+                        </button>
+                    </div>
+                </div>
+            </SettingsSection>
+        </SettingsPage>
+    );
+}
+
+function ToggleSetting({
+    label,
+    detail,
+    checked,
+    disabled = false,
+    onChange,
+}: {
+    label: string;
+    detail: string;
+    checked: boolean;
+    disabled?: boolean;
+    onChange: (value: boolean) => void;
+}) {
+    return (
+        <label className="experience-setting-row">
+            <span>
+                <b>{label}</b>
+                <small>{detail}</small>
+            </span>
+            <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+        </label>
+    );
+}
+
+function AgentsPage() {
+    const restore = useStore((s) => s.restoreAgentTabs);
+    const auto = useStore((s) => s.autoResumeAgents);
+    const density = useStore((s) => s.railDensity);
+    return (
+        <SettingsPage name="agents" deck="Safe continuity and dense, non-color-only status signals.">
+            <SettingsSection
+                title="Restart behavior"
+                sub="Only confirmed native agent session IDs are saved. Raw startup commands and terminal evidence never touch disk.">
+                <ToggleSetting
+                    label="Restore agent tabs"
+                    detail="Bring resumable tabs back in a dormant, inert state."
+                    checked={restore}
+                    onChange={cmd.setRestoreAgentTabs}
+                />
+                <ToggleSetting
+                    label="Auto-resume restored agents"
+                    detail="Explicit opt-in: launch every restored agent after Sikemux starts."
+                    checked={auto}
+                    disabled={!restore}
+                    onChange={cmd.setAutoResumeAgents}
+                />
+            </SettingsSection>
+            <SettingsSection title="Rail density" sub="Compact mode fits more sessions while keeping state symbols visible.">
+                <select className="settings-input" value={density} onChange={(e) => cmd.setRailDensity(e.target.value as "comfortable" | "compact")}>
+                    <option value="comfortable">comfortable</option>
+                    <option value="compact">compact</option>
+                </select>
+            </SettingsSection>
+        </SettingsPage>
+    );
+}
+
+function NotificationsPage() {
+    const prefs = useStore((s) => s.notificationPreferences);
+    const patch = cmd.patchNotificationPreferences;
+    return (
+        <SettingsPage name="notifications" deck="Agent attention, delayed just enough to avoid noisy state flicker.">
+            <SettingsSection title="Delivery" sub="Blocked and completed signals are delayed and cancelled if the agent starts working again.">
+                <ToggleSetting
+                    label="Agent notifications"
+                    detail="Show in-app alerts. Native banners are added when macOS permission is granted."
+                    checked={prefs.enabled}
+                    onChange={(enabled) => {
+                        if (!enabled) patch({ enabled: false });
+                        else {
+                            patch({ enabled: true });
+                            void requestAgentNotificationPermission()
+                                .then((granted) => {
+                                    if (!granted) notify("info", "In-app alerts are on; native notification permission was not granted");
+                                })
+                                .catch(reportError("notifications"));
+                        }
+                    }}
+                />
+                <ToggleSetting
+                    label="Native banners only when unfocused"
+                    detail="In-app completion alerts remain visible while you are using Sikemux."
+                    checked={prefs.onlyWhenUnfocused}
+                    onChange={(onlyWhenUnfocused) => patch({ onlyWhenUnfocused })}
+                />
+                <div className="settings-actions">
+                    <button
+                        className="settings-btn"
+                        type="button"
+                        onClick={() =>
+                            void requestAgentNotificationPermission()
+                                .then((granted) =>
+                                    notify(
+                                        granted ? "success" : "info",
+                                        granted ? "Native agent banners enabled" : "macOS did not grant native banners; in-app alerts remain enabled",
+                                    ),
+                                )
+                                .catch(reportError("notifications"))
+                        }>
+                        Enable native banners…
+                    </button>
+                    <small>In-app alerts do not require macOS permission.</small>
+                </div>
+                <ToggleSetting
+                    label="Signal sounds"
+                    detail="Short synthesized tones; no external audio files or network fetches."
+                    checked={prefs.sounds}
+                    onChange={(sounds) => patch({ sounds })}
+                />
+                <label className="settings-field-label" htmlFor="notification-sound-style">
+                    signal tone
+                </label>
+                <select
+                    id="notification-sound-style"
+                    className="settings-input"
+                    value={prefs.soundStyle}
+                    disabled={!prefs.sounds}
+                    onChange={(event) => patch({ soundStyle: event.target.value as "soft" | "bright" })}>
+                    <option value="soft">soft · calm sine</option>
+                    <option value="bright">bright · sharper triangle</option>
+                </select>
+                <label className="settings-field-label">delivery delay · {prefs.delayMs} ms</label>
+                <input type="range" min="0" max="5000" step="50" value={prefs.delayMs} onChange={(e) => patch({ delayMs: Number(e.target.value) })} />
+            </SettingsSection>
+            <SettingsSection title="Quiet hours" sub="Cross-midnight ranges are supported and evaluated in local time.">
+                <ToggleSetting
+                    label="Enable quiet hours"
+                    detail="Silence sounds and native notifications in this window."
+                    checked={prefs.quietHoursEnabled}
+                    onChange={(quietHoursEnabled) => patch({ quietHoursEnabled })}
+                />
+                <div className="quiet-hours">
+                    <input
+                        className="settings-input"
+                        type="time"
+                        value={prefs.quietHoursStart}
+                        onChange={(e) => patch({ quietHoursStart: e.target.value })}
+                    />
+                    <span>to</span>
+                    <input
+                        className="settings-input"
+                        type="time"
+                        value={prefs.quietHoursEnd}
+                        onChange={(e) => patch({ quietHoursEnd: e.target.value })}
+                    />
+                </div>
+            </SettingsSection>
+            <SettingsSection title="Agent types" sub="Mute individual agent integrations while keeping notifications enabled for the others.">
+                {(
+                    [
+                        ["claude", "Claude"],
+                        ["codex", "Codex"],
+                        ["hermes", "Hermes"],
+                        ["pi", "Pi"],
+                        ["opencode", "OpenCode"],
+                    ] as const satisfies readonly (readonly [AgentType, string])[]
+                ).map(([type, label]) => {
+                    const muted = prefs.mutedAgentTypes.includes(type);
+                    return (
+                        <ToggleSetting
+                            key={type}
+                            label={`Mute ${label}`}
+                            detail={`Suppress blocked and completed notifications from ${label} agents.`}
+                            checked={muted}
+                            onChange={(nextMuted) =>
+                                patch({
+                                    mutedAgentTypes: nextMuted
+                                        ? [...prefs.mutedAgentTypes, type]
+                                        : prefs.mutedAgentTypes.filter((candidate) => candidate !== type),
+                                })
+                            }
+                        />
+                    );
+                })}
+            </SettingsSection>
+        </SettingsPage>
+    );
+}
+
+type CliInstallState = "unavailable" | "notInstalled" | "installed" | "outdated" | "conflict";
+
+interface CliInstallStatus {
+    state: CliInstallState;
+    installDir: string;
+    cliPath: string;
+    editorPath: string;
+    executable: string | null;
+    pathConfigured: boolean;
+    message: string;
+}
+
+function CliPage() {
+    const [status, setStatus] = useState<CliInstallStatus | null>(null);
+    const [busy, setBusy] = useState(false);
+    const refresh = useCallback(() => invoke<CliInstallStatus>("cli_install_status").then(setStatus).catch(reportError("CLI status")), []);
+
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+
+    const install = async () => {
+        setBusy(true);
+        try {
+            const next = await invoke<CliInstallStatus>("cli_install");
+            setStatus(next);
+            notify("success", next.pathConfigured ? "Sikemux CLI is ready" : "Sikemux CLI installed; add its directory to PATH");
+        } catch (error) {
+            reportError("CLI install")(error);
+            await invoke<CliInstallStatus>("cli_install_status")
+                .then(setStatus)
+                .catch(() => undefined);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const stateLabel = status?.state.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`) ?? "checking";
+    const installDisabled = !status || busy || status.state === "installed" || status.state === "unavailable" || status.state === "conflict";
+    const buttonLabel = busy
+        ? "Installing…"
+        : status?.state === "outdated"
+          ? "Update CLI"
+          : status?.state === "installed"
+            ? "Installed"
+            : "Install CLI";
+
+    return (
+        <SettingsPage name="command line" deck="Open files and projects in the running Sikemux app, with editor-style wait semantics.">
+            <SettingsSection title="Shell integration" meta={stateLabel} sub={status?.message ?? "Checking the packaged command-line integration…"}>
+                <div className="cli-integration">
+                    <div className="cli-integration-paths">
+                        <span>
+                            <b>Commands</b>
+                            <code>sikemux</code>
+                            <code>sikemux-editor</code>
+                        </span>
+                        <span>
+                            <b>Install directory</b>
+                            <code>{status?.installDir || "—"}</code>
+                        </span>
+                    </div>
+                    <div className="cli-integration-actions">
+                        <button className="settings-btn" type="button" disabled={busy} onClick={refresh}>
+                            <IconRefresh size={11} /> Refresh
+                        </button>
+                        <button className="settings-btn primary" type="button" disabled={installDisabled} onClick={() => void install()}>
+                            {status?.state === "installed" && <IconCheck size={11} />}
+                            {buttonLabel}
+                        </button>
+                    </div>
+                </div>
+                {status?.state === "conflict" && (
+                    <p className="settings-field-help cli-integration-warning">
+                        Sikemux will not overwrite <em>{status.cliPath}</em> or <em>{status.editorPath}</em>. Move the existing file yourself, then
+                        refresh.
+                    </p>
+                )}
+                {status?.state === "installed" && !status.pathConfigured && (
+                    <p className="settings-field-help">
+                        Add <em>{status.installDir}</em> to your shell’s PATH. Sikemux never edits shell startup files automatically.
+                    </p>
+                )}
+            </SettingsSection>
+            <SettingsSection title="Usage" sub="Existing files open in an editor tab. Project directories focus or create their workspace.">
+                <pre className="cli-usage">{`sikemux .\nsikemux src/App.tsx:42:5\nsikemux open --wait README.md\nEDITOR=sikemux-editor git commit`}</pre>
+            </SettingsSection>
+        </SettingsPage>
+    );
+}
+
+function AboutPage() {
+    const updateChannel = useStore((s) => s.updateChannel);
+    return (
+        <SettingsPage name="about" deck="Release details, first-run guidance, and redacted runtime health.">
+            <SettingsSection
+                title="Update channel"
+                meta={updateChannel}
+                sub="Stable follows the latest signed release. Preview follows the signed moving preview release.">
+                <select
+                    className="settings-input"
+                    value={updateChannel}
+                    onChange={(event) => cmd.setUpdateChannel(event.target.value as "stable" | "preview")}>
+                    <option value="stable">stable</option>
+                    <option value="preview">preview</option>
+                </select>
+            </SettingsSection>
+            <SettingsSection title="Support deck" sub="These views are also searchable from the command deck.">
+                <div className="about-actions">
+                    <button
+                        className="settings-btn"
+                        onClick={() => {
+                            cmd.closeSettings();
+                            cmd.openWhatsNew();
+                        }}>
+                        What’s New
+                    </button>
+                    <button
+                        className="settings-btn"
+                        onClick={() => {
+                            cmd.closeSettings();
+                            cmd.openDiagnostics();
+                        }}>
+                        Runtime diagnostics
+                    </button>
+                    <button
+                        className="settings-btn"
+                        onClick={() => {
+                            cmd.closeSettings();
+                            cmd.openOnboarding();
+                        }}>
+                        Replay onboarding
+                    </button>
+                </div>
+            </SettingsSection>
+            <SettingsSection
+                title="Session transfer"
+                sub="Clipboard bundles exclude Bruno secrets, drafts, terminal history, environment values, and all startup commands. Imported agents are dormant.">
+                <div className="about-actions">
+                    <button className="settings-btn" onClick={() => void cmd.exportActiveSession().catch(reportError("session export"))}>
+                        Copy active session
+                    </button>
+                    <button className="settings-btn" onClick={() => void cmd.importSessionFromClipboard().catch(reportError("session import"))}>
+                        Import from clipboard
+                    </button>
+                </div>
+            </SettingsSection>
+        </SettingsPage>
     );
 }
 
@@ -495,6 +956,9 @@ interface ThemeEdit {
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const customThemes = useStore((s) => s.customThemes);
+    const themeMode = useStore((s) => s.themeMode);
+    const systemLightThemeId = useStore((s) => s.systemLightThemeId);
+    const systemDarkThemeId = useStore((s) => s.systemDarkThemeId);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
 
@@ -595,6 +1059,51 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     ? "Theme, window opacity and background blur. Changes apply instantly."
                     : "Theme and editor appearance. Changes apply instantly."
             }>
+            <SettingsSection
+                title="Host appearance"
+                meta={themeMode}
+                sub="Follow the operating system with Aura Day and your chosen dark cockpit, or keep one theme fixed.">
+                <ToggleSetting
+                    label="Follow system light/dark"
+                    detail="Switches immediately when the host appearance changes."
+                    checked={themeMode === "system"}
+                    onChange={(enabled) => cmd.setThemeMode(enabled ? "system" : "manual")}
+                />
+                <div className="system-theme-grid">
+                    <label>
+                        <span>Light appearance</span>
+                        <select
+                            className="settings-input"
+                            value={systemLightThemeId}
+                            onChange={(event) => cmd.setSystemLightThemeId(event.target.value)}>
+                            {[...THEMES, ...customThemes]
+                                .filter((theme) => !theme.dark || theme.id === systemLightThemeId)
+                                .map((theme) => (
+                                    <option key={theme.id} value={theme.id}>
+                                        {theme.name}
+                                        {customThemes.some((candidate) => candidate.id === theme.id) ? " · custom" : ""}
+                                    </option>
+                                ))}
+                        </select>
+                    </label>
+                    <label>
+                        <span>Dark appearance</span>
+                        <select
+                            className="settings-input"
+                            value={systemDarkThemeId}
+                            onChange={(event) => cmd.setSystemDarkThemeId(event.target.value)}>
+                            {[...THEMES, ...customThemes]
+                                .filter((theme) => theme.dark || theme.id === systemDarkThemeId)
+                                .map((theme) => (
+                                    <option key={theme.id} value={theme.id}>
+                                        {theme.name}
+                                        {customThemes.some((candidate) => candidate.id === theme.id) ? " · custom" : ""}
+                                    </option>
+                                ))}
+                        </select>
+                    </label>
+                </div>
+            </SettingsSection>
             <SettingsSection
                 title="Theme"
                 meta={`${THEMES.length} built-in · ${customThemes.length} custom`}

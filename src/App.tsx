@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -19,8 +19,13 @@ import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
 import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
+import { CommandPalette } from "./components/CommandPalette";
+import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./components/ExperienceOverlays";
+import { TerminalPane } from "./terminal/TerminalPane";
+import { AgentNotifications } from "./components/AgentNotifications";
+import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
-import { useKeymap } from "./keymap";
+import { runKeybindingAction, useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
@@ -31,6 +36,8 @@ import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
 import { dirname } from "./lib/paths";
+import type { StandaloneCommand } from "./commands/registry";
+import { agentDetectionApi } from "./api/agentDetection";
 
 interface BootInfo {
     home: string;
@@ -96,6 +103,7 @@ function resolveTreeDropTarget(at: HTMLElement | null): TreeDropTarget | null {
 
 export default function App() {
     useKeymap();
+    const [bootReady, setBootReady] = useState(false);
     const zen = useStore((s) => s.zenMode);
     const leftOpen = useStore((s) => s.leftRailOpen) && !zen;
     const rightOpen = useStore((s) => s.rightRailOpen) && !zen;
@@ -107,6 +115,16 @@ export default function App() {
     const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
     const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
+    const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
+    const commandPopup = useStore((s) => s.commandPopup);
+    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
+    const customCommands = useStore((s) => s.customCommands);
+    const recentCommandKeys = useStore((s) => s.recentCommandKeys);
+    const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
+    const activeTerminalWindowId = useStore((s) => {
+        const id = s.sessions[s.activeSessionId]?.activeWindowId;
+        return id && s.windows[id]?.role === "term" ? id : null;
+    });
     const awsAuthModal = useStore((s) => s.awsAuthModal);
     const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
     const projectRepoKey = useStore((s) =>
@@ -118,6 +136,67 @@ export default function App() {
             .filter(Boolean)
             .join("\0"),
     );
+    const runStandalone =
+        (id: string, execute: () => void): (() => void) =>
+        () => {
+            cmd.noteRecentCommand(`standalone:${id}`);
+            execute();
+        };
+    const standaloneCommands: StandaloneCommand[] = [
+        {
+            id: "support.diagnostics",
+            title: "Open runtime diagnostics",
+            detail: "Inspect redacted runtime and agent-detection health",
+            category: "Support",
+            execute: runStandalone("support.diagnostics", cmd.openDiagnostics),
+        },
+        {
+            id: "support.whats-new",
+            title: "Open What’s New",
+            detail: "Review the latest Sikemux release notes",
+            category: "Support",
+            execute: runStandalone("support.whats-new", cmd.openWhatsNew),
+        },
+        {
+            id: "support.onboarding",
+            title: "Replay onboarding",
+            detail: "Open the first-run Sikemux walkthrough",
+            category: "Support",
+            execute: runStandalone("support.onboarding", cmd.openOnboarding),
+        },
+        {
+            id: "session.export",
+            title: "Copy active session bundle",
+            detail: "Export a safe session copy to the clipboard",
+            category: "Session",
+            execute: runStandalone("session.export", () => void cmd.exportActiveSession().catch(reportError("session export"))),
+        },
+        {
+            id: "session.import",
+            title: "Import session from clipboard",
+            detail: "Validate and import a safe dormant session copy",
+            category: "Session",
+            execute: runStandalone("session.import", () => void cmd.importSessionFromClipboard().catch(reportError("session import"))),
+        },
+        ...(activeTerminalWindowId
+            ? [
+                  {
+                      id: "window.duplicate",
+                      title: "Duplicate active terminal",
+                      detail: "Clone the active window into a new terminal tab",
+                      category: "Window",
+                      execute: runStandalone("window.duplicate", () => cmd.duplicateWindow(activeTerminalWindowId)),
+                  } satisfies StandaloneCommand,
+              ]
+            : []),
+        {
+            id: "agents.reload-manifests",
+            title: "Reload agent manifests",
+            detail: "Reload agent-state detection rules from disk",
+            category: "Agents",
+            execute: runStandalone("agents.reload-manifests", () => void agentDetectionApi.reload().catch(reportError("agent manifest reload"))),
+        },
+    ];
 
     useEffect(() => {
         let disposed = false;
@@ -131,16 +210,39 @@ export default function App() {
                 registerCustomThemes(st.customThemes);
                 applyTheme(st.themeId);
                 applyWindowOpacity(st.windowOpacity);
+                if (st.themeMode === "system") cmd.applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
                 cmd.setWindowBlur(st.windowBlur);
+                if (!st.onboardingComplete) cmd.openOnboarding();
+                if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
             })
             .catch(swallow("boot_init"))
             .finally(() => {
-                if (!disposed) unsub = subscribePersist();
+                if (!disposed) {
+                    unsub = subscribePersist();
+                    setBootReady(true);
+                }
             });
         return () => {
             disposed = true;
             unsub();
         };
+    }, []);
+
+    useEffect(
+        () =>
+            useStore.subscribe((state, previous) => {
+                if (state.activeSessionId !== previous.activeSessionId && previous.sessions[previous.activeSessionId]) {
+                    cmd.setLastSessionId(previous.activeSessionId);
+                }
+            }),
+        [],
+    );
+
+    useEffect(() => {
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        const apply = () => cmd.applySystemTheme(media.matches);
+        media.addEventListener("change", apply);
+        return () => media.removeEventListener("change", apply);
     }, []);
 
     useEffect(() => {
@@ -274,7 +376,9 @@ export default function App() {
 
     return (
         <div className="shell">
+            {bootReady && <CliOpenBridge />}
             <AgentSessionSync />
+            <AgentNotifications />
             <TopBar />
             <div className="body">
                 {leftOpen && <SideRail />}
@@ -292,6 +396,49 @@ export default function App() {
             {brunoEnvPaletteOpen && <BrunoEnvPalette />}
             {awsAuthModal && <AwsAuthModal />}
             {sessionSwitcherOpen && <SessionSwitcher />}
+            {commandPaletteOpen && (
+                <CommandPalette
+                    keybindingOverrides={keybindingOverrides}
+                    customCommands={customCommands}
+                    recentCommandKeys={recentCommandKeys}
+                    standaloneCommands={standaloneCommands}
+                    context={activeKind}
+                    onClose={cmd.closeCommandPalette}
+                    onExecute={cmd.noteRecentCommand}
+                    executeBuiltin={(id) => {
+                        runKeybindingAction(id, new KeyboardEvent("keydown"), getState());
+                    }}
+                    executeCustom={(command) => {
+                        cmd.runCustomCommand(command);
+                    }}
+                />
+            )}
+            {commandPopup && (
+                <div className="experience-backdrop command-popup-backdrop" role="presentation" onMouseDown={cmd.closeCommandPopup}>
+                    <section
+                        className="command-popup"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={commandPopup.title}
+                        onMouseDown={(event) => event.stopPropagation()}>
+                        <header>
+                            <span>{commandPopup.title}</span>
+                            <button onClick={cmd.closeCommandPopup}>close</button>
+                        </header>
+                        <TerminalPane
+                            key={commandPopup.id}
+                            cwd={commandPopup.cwd || undefined}
+                            startup={commandPopup.startup}
+                            context={commandPopup.context}
+                            active
+                            visible
+                        />
+                    </section>
+                </div>
+            )}
+            <Onboarding />
+            <DiagnosticsOverlay />
+            <WhatsNewOverlay />
             <Toaster />
         </div>
     );
