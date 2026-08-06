@@ -18,6 +18,11 @@ interface AgentSessionsChanged {
     cwd: string;
 }
 
+interface PtyActivityChanged {
+    agentId: string;
+    state: "working" | "complete";
+}
+
 function groupKey(type: AgentType, cwd: string): string {
     return `${type}\0${cwd}`;
 }
@@ -57,6 +62,21 @@ function useAgentSyncKey(): string {
 
 export function AgentSessionSync() {
     const syncKey = useAgentSyncKey();
+    const visibleAgentId = useStore((s) => {
+        const session = s.sessions[s.activeSessionId];
+        return session?.view === "agent" ? session.activeAgentId : null;
+    });
+
+    useEffect(() => {
+        const unlisten = listen<PtyActivityChanged>("pty_activity", (event) => {
+            cmd.noteAgentActivity(event.payload.agentId, event.payload.state);
+        });
+        return () => void unlisten.then((off) => off());
+    }, []);
+
+    useEffect(() => {
+        if (visibleAgentId) cmd.clearAgentUnread(visibleAgentId);
+    }, [visibleAgentId]);
 
     useEffect(() => {
         if (!syncKey) return;

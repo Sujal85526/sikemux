@@ -1,20 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { agentApi, type AgentInfo } from "../api/agents";
+import type { AgentInfo } from "../api/agents";
 import * as cmd from "../state/commands";
-import { fetchResource, useResource, useResourceEnabled } from "../state/resources";
+import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { type Agent, type AgentType } from "../state/types";
-import { swallow } from "../state/toast";
 import { AgentIcon, IconClose, IconPlus, IconSearch } from "./Icons";
 
 const RECENTS_PAGE = 12;
-
-interface AgentSessionsChanged {
-    agent: AgentType;
-    cwd: string;
-}
 
 function ago(unixSecs: number): string {
     if (!unixSecs) return "";
@@ -30,6 +23,7 @@ const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 
 export function AgentRail() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
+    const activityById = useStore((s) => s.agentActivity);
     const agentsBySession = useStore((s) => s.agentsBySession);
     const agentsById = useStore((s) => s.agents);
     const catalog = useResource(agentCatalogR);
@@ -53,34 +47,6 @@ export function AgentRail() {
 
     const recents = useResourceEnabled(isProject && !!cwd && selectedType != null, agentSessionsR, selectedType ?? "claude", isProject ? cwd : "");
     const disk = isProject ? (recents.data ?? []) : [];
-
-    useEffect(() => {
-        if (!isProject || !cwd || selectedType == null) return;
-        let cancelled = false;
-        let watchId: number | null = null;
-        const sync = () => {
-            void fetchResource(agentSessionsR, selectedType, cwd).catch(swallow("agent sessions"));
-        };
-        void agentApi
-            .watchStart(selectedType, cwd)
-            .then((id) => {
-                if (cancelled) {
-                    void agentApi.watchStop(id).catch(swallow("agent sessions watch stop"));
-                } else {
-                    watchId = id;
-                }
-            })
-            .catch(swallow("agent sessions watch"));
-        const unlisten = listen<AgentSessionsChanged>("agent_sessions_changed", (event) => {
-            if (event.payload.agent !== selectedType || event.payload.cwd !== cwd) return;
-            sync();
-        });
-        return () => {
-            cancelled = true;
-            void unlisten.then((off) => off());
-            if (watchId != null) void agentApi.watchStop(watchId).catch(swallow("agent sessions watch stop"));
-        };
-    }, [isProject, cwd, selectedType]);
 
     // Reset the reveal window when the recents list switches out from under us.
     useEffect(() => {
@@ -175,6 +141,12 @@ export function AgentRail() {
                                         </span>
                                     </span>
                                     <span className="agent-title">{a.title}</span>
+                                    {activityById[a.id]?.state === "working" && (
+                                        <span className="agent-activity working" title="Agent is working" aria-label="Agent is working" />
+                                    )}
+                                    {activityById[a.id]?.state !== "working" && activityById[a.id]?.unread && (
+                                        <span className="agent-activity unread" title="New agent response" aria-label="New agent response" />
+                                    )}
                                 </button>
                             );
                         })}

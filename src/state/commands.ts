@@ -1235,6 +1235,30 @@ export function selectAgent(id: string): void {
         const sess = d.sessions[session.id];
         sess.activeAgentId = id;
         sess.view = "agent";
+        const activity = d.agentActivity[id];
+        if (activity) activity.unread = false;
+    });
+}
+
+export function noteAgentActivity(id: string, state: "working" | "complete"): void {
+    mutate((d) => {
+        if (!d.agents[id]) return;
+        const ownerId = d.sessionOrder.find((sid) => (d.agentsBySession[sid] ?? []).includes(id));
+        const owner = ownerId ? d.sessions[ownerId] : undefined;
+        const visible = !!owner && owner.id === d.activeSessionId && owner.view === "agent" && owner.activeAgentId === id;
+        const previous = d.agentActivity[id];
+        d.agentActivity[id] = {
+            state,
+            unread: state === "complete" ? (previous?.unread ?? false) || !visible : false,
+            updatedAt: Date.now(),
+        };
+    });
+}
+
+export function clearAgentUnread(id: string): void {
+    mutate((d) => {
+        const activity = d.agentActivity[id];
+        if (activity) activity.unread = false;
     });
 }
 
@@ -1246,6 +1270,7 @@ export function closeAgent(id: string): void {
         const ownedIds = (d.agentsBySession[ownerId] ?? []).filter((aid) => aid !== id);
         const wasActive = owner.activeAgentId === id;
         delete d.agents[id];
+        delete d.agentActivity[id];
         d.agentsBySession[ownerId] = ownedIds;
         if (wasActive) {
             owner.activeAgentId = ownedIds[0] ?? null;

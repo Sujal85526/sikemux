@@ -199,6 +199,7 @@ function TerminalTabsBar({ session, tabs }: { session: Session; tabs: WindowT[] 
 }
 
 function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }) {
+    const activityById = useStore((s) => s.agentActivity);
     const buildMenu = (id: string): CtxItem[] => {
         const a = agents.find((x) => x.id === id);
         if (!a) return [];
@@ -232,6 +233,7 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
                         <AgentIcon type={a.type} size={14} />
                     </span>
                 ),
+                accessory: <AgentActivityMark state={activityById[a.id]?.state} unread={activityById[a.id]?.unread ?? false} />,
             }))}
             onSelect={cmd.selectAgent}
             onClose={cmd.closeAgent}
@@ -290,13 +292,19 @@ const AgentLayer = memo(function AgentLayer({
                     height: tabsShown ? `calc(100% - ${AGENT_TABS_H}px)` : "100%",
                 }}>
                 <div className="pane pane-terminal">
-                    <TerminalPane cwd={session.cwd || undefined} startup={agent.startup} active={visible} visible={visible} />
+                    <TerminalPane cwd={session.cwd || undefined} startup={agent.startup} active={visible} visible={visible} activityKey={agent.id} />
                     {cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} />}
                 </div>
             </div>
         </div>
     );
 });
+
+function AgentActivityMark({ state, unread }: { state?: "idle" | "working" | "complete"; unread: boolean }) {
+    if (state === "working") return <span className="agent-activity working" title="Agent is working" aria-label="Agent is working" />;
+    if (unread) return <span className="agent-activity unread" title="New agent response" aria-label="New agent response" />;
+    return null;
+}
 
 const WindowLayer = memo(function WindowLayer({
     session,
@@ -384,20 +392,33 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
         const axisPx = horizontal ? bounds.width * d.rect.w : bounds.height * d.rect.h;
         const start = horizontal ? e.clientX : e.clientY;
 
+        let frame: number | null = null;
+        let pendingSizes: number[] | null = null;
+        const commitPending = () => {
+            frame = null;
+            if (!pendingSizes) return;
+            cmd.setSplitSizes(windowId, d.splitId, pendingSizes);
+            pendingSizes = null;
+        };
         const move = (ev: PointerEvent) => {
             let df = ((horizontal ? ev.clientX : ev.clientY) - start) / axisPx;
             df = Math.max(-(startSizes[i] - MIN_FRAC), Math.min(startSizes[i + 1] - MIN_FRAC, df));
             const sizes = startSizes.slice();
             sizes[i] += df;
             sizes[i + 1] -= df;
-            cmd.setSplitSizes(windowId, d.splitId, sizes);
+            pendingSizes = sizes;
+            if (frame == null) frame = window.requestAnimationFrame(commitPending);
         };
         const up = () => {
+            if (frame != null) window.cancelAnimationFrame(frame);
+            commitPending();
             handle.removeEventListener("pointermove", move);
             handle.removeEventListener("pointerup", up);
+            handle.removeEventListener("pointercancel", up);
         };
         handle.addEventListener("pointermove", move);
         handle.addEventListener("pointerup", up);
+        handle.addEventListener("pointercancel", up);
     };
 
     const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {

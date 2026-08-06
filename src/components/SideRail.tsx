@@ -37,6 +37,7 @@ export function SideRail() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agentsBySession = useStore((s) => s.agentsBySession);
     const agentsById = useStore((s) => s.agents);
+    const activityById = useStore((s) => s.agentActivity);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
@@ -66,6 +67,8 @@ export function SideRail() {
         const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
         const agentIds = agentsBySession[s.id] ?? [];
         const agents = agentIds.map((id) => agentsById[id]).filter(Boolean);
+        const agentsWorking = agents.some((agent) => activityById[agent.id]?.state === "working");
+        const agentsUnread = agents.some((agent) => activityById[agent.id]?.unread);
         const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
         if (!active) {
@@ -80,12 +83,18 @@ export function SideRail() {
                     {visible.length > 0 && (
                         <span className="proj-child-icons">
                             {visible.map((a) => (
-                                <span key={a.id} className={`proj-pip proj-pip-${a.type}`}>
+                                <span
+                                    key={a.id}
+                                    className={`proj-pip proj-pip-${a.type}${activityById[a.id]?.state === "working" ? " is-working" : ""}${activityById[a.id]?.unread ? " has-unread" : ""}`}>
                                     <AgentIcon type={a.type} size={20} />
                                 </span>
                             ))}
                             {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                         </span>
+                    )}
+                    {agentsWorking && <span className="agent-activity working" title="Agent is working" aria-label="Agent is working" />}
+                    {!agentsWorking && agentsUnread && (
+                        <span className="agent-activity unread" title="New agent response" aria-label="New agent response" />
                     )}
                     <span
                         className="sess-close"
@@ -127,7 +136,9 @@ export function SideRail() {
                   ))
                 : [];
         const agentIcons: React.ReactNode[] = agents.map((a) => (
-            <span key={a.id} className={`proj-pip proj-pip-${a.type}`}>
+            <span
+                key={a.id}
+                className={`proj-pip proj-pip-${a.type}${activityById[a.id]?.state === "working" ? " is-working" : ""}${activityById[a.id]?.unread ? " has-unread" : ""}`}>
                 <AgentIcon type={a.type} size={20} />
             </span>
         ));
@@ -199,6 +210,12 @@ export function SideRail() {
                                         {visibleIcons}
                                         {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                                     </span>
+                                )}
+                                {c.role === "agents" && agentsWorking && (
+                                    <span className="agent-activity working" title="Agent is working" aria-label="Agent is working" />
+                                )}
+                                {c.role === "agents" && !agentsWorking && agentsUnread && (
+                                    <span className="agent-activity unread" title="New agent response" aria-label="New agent response" />
                                 )}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>

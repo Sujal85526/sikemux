@@ -83,6 +83,8 @@ struct Server {
     /// evicts the smallest (least-recently-used) when too many servers pile
     /// up. See `enforce_server_cap`.
     last_used: std::sync::atomic::AtomicU64,
+    /// Invalidates a pending idle shutdown whenever a document reopens.
+    idle_generation: std::sync::atomic::AtomicU64,
 }
 
 type ServerHandle = Arc<Server>;
@@ -118,6 +120,24 @@ fn server_for(project: &str, language: &str) -> Option<ServerHandle> {
 
 pub fn server_count() -> usize {
     registry().lock().map(|r| r.len()).unwrap_or(0)
+}
+
+pub fn document_counts() -> (usize, usize) {
+    registry()
+        .lock()
+        .map(|registry| {
+            let mut open_documents = 0usize;
+            let mut idle_servers = 0usize;
+            for server in registry.values() {
+                match server.open_docs.lock() {
+                    Ok(docs) if docs.is_empty() => idle_servers += 1,
+                    Ok(docs) => open_documents += docs.len(),
+                    Err(_) => {}
+                }
+            }
+            (open_documents, idle_servers)
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(unix)]
@@ -451,6 +471,7 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
         open_docs: Mutex::new(HashMap::new()),
         shutdown: std::sync::atomic::AtomicBool::new(false),
         last_used: std::sync::atomic::AtomicU64::new(lsp_tick()),
+        idle_generation: std::sync::atomic::AtomicU64::new(0),
     });
 
     let reader_server = server.clone();
@@ -564,7 +585,41 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
 /// where something has to give and the least-recently-touched project is
 /// the least-bad victim. Keep it high enough that ordinary multi-project
 /// work never trips it.
-const MAX_LSP_SERVERS: usize = 12;
+const MAX_LSP_SERVERS: usize = 6;
+const LSP_IDLE_GRACE: Duration = Duration::from_secs(5 * 60);
+
+fn schedule_idle_shutdown(server_key: String, server: ServerHandle) {
+    let generation = server
+        .idle_generation
+        .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+        .saturating_add(1);
+    task::spawn(async move {
+        tokio::time::sleep(LSP_IDLE_GRACE).await;
+        if server.shutdown.load(std::sync::atomic::Ordering::Acquire)
+            || server
+                .idle_generation
+                .load(std::sync::atomic::Ordering::Acquire)
+                != generation
+            || server
+                .open_docs
+                .lock()
+                .map(|docs| !docs.is_empty())
+                .unwrap_or(true)
+        {
+            return;
+        }
+        let victim = registry().lock().ok().and_then(|mut reg| {
+            let current = reg.get(&server_key)?;
+            if !Arc::ptr_eq(current, &server) {
+                return None;
+            }
+            reg.remove(&server_key)
+        });
+        if let Some(victim) = victim {
+            let _ = task::spawn_blocking(move || shutdown_server(victim)).await;
+        }
+    });
+}
 
 /// SIGKILL + reap a server. Shared by `lsp_stop` and the backstop cap.
 fn shutdown_server(server: ServerHandle) {
@@ -632,7 +687,14 @@ fn enforce_server_cap(just_started: &str) {
             return;
         }
         reg.iter()
-            .filter(|(k, _)| k.as_str() != just_started)
+            .filter(|(k, server)| {
+                k.as_str() != just_started
+                    && server
+                        .open_docs
+                        .lock()
+                        .map(|docs| docs.is_empty())
+                        .unwrap_or(false)
+            })
             .min_by_key(|(_, s)| s.last_used.load(std::sync::atomic::Ordering::Relaxed))
             .map(|(k, _)| k.clone())
     };
@@ -766,6 +828,9 @@ pub async fn lsp_open(
 ) -> AppResult<()> {
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+    server
+        .idle_generation
+        .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     task::spawn_blocking(move || {
         let language_id = language_id.unwrap_or(language);
         let hash = content_hash(&content);
@@ -918,8 +983,11 @@ pub async fn lsp_close(project: String, language: String, path: String) -> AppRe
     let Some(server) = server_for(&project, &language) else {
         return Ok(());
     };
-    task::spawn_blocking(move || {
+    let server_key = key(&project, &language);
+    let idle_server = server.clone();
+    let became_idle = task::spawn_blocking(move || -> AppResult<bool> {
         let mut should_close = false;
+        let mut became_idle = false;
         {
             let mut docs = server.open_docs.lock().map_err(lsp)?;
             if let Some(doc) = docs.get_mut(&path) {
@@ -928,11 +996,12 @@ pub async fn lsp_close(project: String, language: String, path: String) -> AppRe
                 } else {
                     docs.remove(&path);
                     should_close = true;
+                    became_idle = docs.is_empty();
                 }
             }
         }
         if !should_close {
-            return Ok(());
+            return Ok(false);
         }
         if let Ok(mut last) = server.last_change.lock() {
             last.remove(&path);
@@ -941,10 +1010,15 @@ pub async fn lsp_close(project: String, language: String, path: String) -> AppRe
             &server,
             "textDocument/didClose",
             json!({ "textDocument": { "uri": path_to_uri(&path) } }),
-        )
+        )?;
+        Ok(became_idle)
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
+    if became_idle {
+        schedule_idle_shutdown(server_key, idle_server);
+    }
+    Ok(())
 }
 
 fn parse_location_like(v: &Value) -> Option<LspLocation> {

@@ -39,7 +39,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -48,7 +48,7 @@ use dashmap::DashMap;
 use portable_pty::MasterPty;
 use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 #[cfg(unix)]
 use tokio::io::unix::AsyncFd;
 
@@ -69,6 +69,7 @@ fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
 /// — see `pty_spawn` for how the lone dup keeps the child's controlling
 /// terminal alive after portable_pty's `MasterPty` is dropped.
 struct Pty {
+    app: AppHandle,
     /// The PTY master as one non-blocking fd, servicing both directions.
     /// Resize is an ioctl straight on this fd (see `pty_resize`).
     #[cfg(unix)]
@@ -98,6 +99,11 @@ struct Pty {
     /// scrollback so we don't repeatedly rebuild a parser that's already
     /// at idle size. Cleared on any new activity.
     trimmed: AtomicBool,
+    /// Present only for agent PTYs. Activity is inferred natively so it
+    /// remains observable after the heavyweight xterm renderer detaches.
+    activity_key: Option<String>,
+    activity_armed: AtomicBool,
+    activity_state: AtomicU8,
 }
 
 /// All live PTYs, keyed by an id handed back to the frontend.
@@ -171,6 +177,34 @@ impl PtyManager {
 
 static NEXT_PTY_ID: AtomicU32 = AtomicU32::new(1);
 static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(1);
+static OUTPUT_READS: AtomicU64 = AtomicU64::new(0);
+static OUTPUT_BROADCASTS: AtomicU64 = AtomicU64::new(0);
+static OUTPUT_BYTES: AtomicU64 = AtomicU64::new(0);
+
+#[derive(serde::Serialize)]
+pub struct PtyDiagnostics {
+    pub output_reads: u64,
+    pub output_broadcasts: u64,
+    pub output_bytes: u64,
+    pub working_agents: usize,
+}
+
+impl PtyManager {
+    pub fn diagnostics(&self) -> PtyDiagnostics {
+        PtyDiagnostics {
+            output_reads: OUTPUT_READS.load(Ordering::Relaxed),
+            output_broadcasts: OUTPUT_BROADCASTS.load(Ordering::Relaxed),
+            output_bytes: OUTPUT_BYTES.load(Ordering::Relaxed),
+            working_agents: self
+                .ptys
+                .iter()
+                .filter(|entry| {
+                    entry.value().activity_state.load(Ordering::Relaxed) == ACTIVITY_WORKING
+                })
+                .count(),
+        }
+    }
+}
 
 // Scrollback held in the headless vt100 parser. Must match (or exceed)
 // the frontend's xterm scrollback (`TerminalPane.tsx`'s SCROLLBACK) so a
@@ -182,6 +216,57 @@ pub const PARSER_SCROLLBACK: usize = 10_000;
 const IDLE_SCROLLBACK: usize = 2_000;
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+const ACTIVITY_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
+const ACTIVITY_IDLE: u8 = 0;
+const ACTIVITY_WORKING: u8 = 1;
+const ACTIVITY_COMPLETE: u8 = 2;
+#[cfg(unix)]
+const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
+#[cfg(unix)]
+const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtyActivityEvent<'a> {
+    agent_id: &'a str,
+    state: &'static str,
+}
+
+fn set_activity_state(pty: &Pty, next: u8, label: &'static str) {
+    let Some(agent_id) = pty.activity_key.as_deref() else {
+        return;
+    };
+    if pty.activity_state.swap(next, Ordering::AcqRel) == next {
+        return;
+    }
+    let _ = pty.app.emit(
+        "pty_activity",
+        PtyActivityEvent {
+            agent_id,
+            state: label,
+        },
+    );
+}
+
+fn arm_agent_activity(pty: &Pty) {
+    if pty.activity_key.is_none() {
+        return;
+    }
+    pty.activity_armed.store(true, Ordering::Release);
+    pty.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    set_activity_state(pty, ACTIVITY_WORKING, "working");
+}
+
+fn submits_line(data: &str) -> bool {
+    data.contains('\r') || data.contains('\n')
+}
+
+fn note_agent_output(pty: &Pty) {
+    if pty.activity_armed.load(Ordering::Acquire) {
+        set_activity_state(pty, ACTIVITY_WORKING, "working");
+    }
+}
 
 // Grace window between the SIGTERM and the SIGKILL backstop in `drain`.
 // Long enough for a foreground program (editor, agent, build) to catch
@@ -337,6 +422,29 @@ fn ensure_sweeper(app: AppHandle) {
     if SPAWNED.swap(true, Ordering::Relaxed) {
         return;
     }
+    let activity_app = app.clone();
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(ACTIVITY_POLL_INTERVAL);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticker.tick().await;
+            let Some(mgr) = activity_app.try_state::<PtyManager>() else {
+                return;
+            };
+            let now = now_ms();
+            for entry in mgr.ptys.iter() {
+                let pty = entry.value();
+                if !pty.activity_armed.load(Ordering::Acquire)
+                    || pty.activity_state.load(Ordering::Acquire) != ACTIVITY_WORKING
+                    || now.saturating_sub(pty.last_activity_ms.load(Ordering::Relaxed))
+                        < ACTIVITY_SETTLE.as_millis() as u64
+                {
+                    continue;
+                }
+                set_activity_state(pty, ACTIVITY_COMPLETE, "complete");
+            }
+        }
+    });
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(SWEEP_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -408,7 +516,10 @@ fn ensure_sweeper(app: AppHandle) {
 /// Both Unix's readiness task and Windows' ConPTY reader thread share this
 /// path, preserving the snapshot/subscription ordering invariant.
 fn broadcast_output(pty: &Pty, bytes: &[u8]) {
+    OUTPUT_BROADCASTS.fetch_add(1, Ordering::Relaxed);
+    OUTPUT_BYTES.fetch_add(bytes.len() as u64, Ordering::Relaxed);
     pty.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    note_agent_output(pty);
     let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
         let Ok(mut parser) = pty.parser.lock() else {
             return;
@@ -425,11 +536,20 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
     if snapshot.is_empty() {
         return;
     }
-    let chunk = bytes.to_vec();
-    let dead: Vec<u32> = snapshot
-        .iter()
-        .filter_map(|(sub_id, channel)| channel.send(chunk.clone()).err().map(|_| *sub_id))
-        .collect();
+    let dead: Vec<u32> = if snapshot.len() == 1 {
+        let (sub_id, channel) = &snapshot[0];
+        channel
+            .send(bytes.to_vec())
+            .err()
+            .map(|_| vec![*sub_id])
+            .unwrap_or_default()
+    } else {
+        let chunk = bytes.to_vec();
+        snapshot
+            .iter()
+            .filter_map(|(sub_id, channel)| channel.send(chunk.clone()).err().map(|_| *sub_id))
+            .collect()
+    };
     if let Ok(mut subscribers) = pty.subscribers.lock() {
         for sub_id in dead {
             subscribers.remove(&sub_id);
@@ -443,6 +563,9 @@ fn notify_process_exited(pty: &Pty) {
             let _ = channel.send(Vec::new());
         }
     }
+    if pty.activity_armed.load(Ordering::Acquire) {
+        set_activity_state(pty, ACTIVITY_COMPLETE, "complete");
+    }
 }
 
 #[tauri::command]
@@ -453,6 +576,7 @@ pub async fn pty_spawn(
     rows: u16,
     cwd: Option<String>,
     startup: Option<String>,
+    activity_key: Option<String>,
 ) -> AppResult<u32> {
     ensure_sweeper(app.clone());
     // Has to be `async fn` so the body runs inside Tauri's tokio
@@ -541,6 +665,7 @@ pub async fn pty_spawn(
     let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
 
     let pty = Arc::new(Pty {
+        app: app.clone(),
         #[cfg(unix)]
         io: AsyncFd::new(io_file).map_err(pty_err)?,
         #[cfg(unix)]
@@ -554,6 +679,9 @@ pub async fn pty_spawn(
         subscribers: Mutex::new(HashMap::new()),
         last_activity_ms: AtomicU64::new(now_ms()),
         trimmed: AtomicBool::new(false),
+        activity_key: activity_key.filter(|key| !key.is_empty()),
+        activity_armed: AtomicBool::new(false),
+        activity_state: AtomicU8::new(ACTIVITY_IDLE),
     });
 
     // Publish before starting the reader. A short-lived command can reach EOF
@@ -587,28 +715,72 @@ pub async fn pty_spawn(
     let app_reader = app.clone();
     #[cfg(unix)]
     tokio::spawn(async move {
-        let mut buf = [0u8; 65536];
-        loop {
-            // Read off the single master fd. The readiness guard is scoped
-            // tight and dropped before we touch the parser, so the same
-            // `AsyncFd`'s writable() side stays free for a concurrent write.
-            let n = {
+        let mut buf = [0u8; OUTPUT_BATCH_BYTES];
+        'reader: loop {
+            let mut batch = Vec::with_capacity(OUTPUT_BATCH_BYTES);
+            let mut eof = false;
+            // The first byte arrives without an artificial delay. Once output
+            // starts, collect the tiny writes produced by line-buffered tools
+            // for at most 2 ms before one parser pass and one Tauri delivery.
+            loop {
                 let mut guard = match pty_reader.io.readable().await {
                     Ok(g) => g,
-                    Err(_) => break,
+                    Err(_) => break 'reader,
                 };
                 match guard.try_io(|inner| {
-                    // impl Read for &File — avoids needing &mut File.
                     let mut f = inner.get_ref();
                     f.read(&mut buf)
                 }) {
-                    Ok(Ok(0)) => break, // EOF
-                    Ok(Ok(n)) => n,
-                    Ok(Err(_)) => break,           // I/O error
-                    Err(_would_block) => continue, // spurious wake; loop
+                    Ok(Ok(0)) => {
+                        eof = true;
+                        break;
+                    }
+                    Ok(Ok(n)) => {
+                        OUTPUT_READS.fetch_add(1, Ordering::Relaxed);
+                        batch.extend_from_slice(&buf[..n]);
+                        break;
+                    }
+                    Ok(Err(_)) => {
+                        eof = true;
+                        break;
+                    }
+                    Err(_would_block) => continue,
                 }
-            };
-            broadcast_output(&pty_reader, &buf[..n]);
+            }
+            if !eof && batch.len() < OUTPUT_BATCH_BYTES {
+                let deadline = tokio::time::sleep(OUTPUT_COALESCE);
+                tokio::pin!(deadline);
+                loop {
+                    tokio::select! {
+                        _ = &mut deadline => break,
+                        ready = pty_reader.io.readable() => {
+                            let mut guard = match ready {
+                                Ok(g) => g,
+                                Err(_) => { eof = true; break; }
+                            };
+                            match guard.try_io(|inner| {
+                                let mut f = inner.get_ref();
+                                f.read(&mut buf)
+                            }) {
+                                Ok(Ok(0)) => { eof = true; break; }
+                                Ok(Ok(n)) => {
+                                    OUTPUT_READS.fetch_add(1, Ordering::Relaxed);
+                                    batch.extend_from_slice(&buf[..n]);
+                                    if batch.len() >= OUTPUT_BATCH_BYTES { break; }
+                                }
+                                Ok(Err(_)) => { eof = true; break; }
+                                Err(_would_block) => continue,
+                            }
+                        }
+                    }
+                }
+            }
+            if !batch.is_empty() {
+                broadcast_output(&pty_reader, &batch);
+            }
+            if eof {
+                break;
+            }
         }
         // Notify on EOF — empty payload is the frontend's "process exited"
         // signal. Same convention as before.
@@ -638,7 +810,10 @@ pub async fn pty_spawn(
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => broadcast_output(&pty_reader, &buf[..n]),
+                    Ok(n) => {
+                        OUTPUT_READS.fetch_add(1, Ordering::Relaxed);
+                        broadcast_output(&pty_reader, &buf[..n]);
+                    }
                     Err(_) => break,
                 }
             }
@@ -839,6 +1014,9 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
         .get(&id)
         .map(|r| r.clone())
         .ok_or(AppError::BadArg("pty not found"))?;
+    if submits_line(&data) {
+        arm_agent_activity(&pty);
+    }
     #[cfg(unix)]
     // Serialise writers on the shared fd; the reader's readable() side is
     // unaffected and keeps draining concurrently.
@@ -905,9 +1083,17 @@ mod tests {
     #[cfg(unix)]
     use super::startup_bootstrap;
     use super::{
-        attach_snapshot, compact_parser_for_idle, reseed_parser, AttachResult, IDLE_SCROLLBACK,
-        PARSER_SCROLLBACK, RESET_MODES,
+        attach_snapshot, compact_parser_for_idle, reseed_parser, submits_line, AttachResult,
+        IDLE_SCROLLBACK, PARSER_SCROLLBACK, RESET_MODES,
     };
+
+    #[test]
+    fn only_submitted_input_arms_agent_activity() {
+        assert!(submits_line("ship it\r"));
+        assert!(submits_line("first\nsecond"));
+        assert!(!submits_line("still typing"));
+        assert!(!submits_line("\x1b[A"));
+    }
 
     #[test]
     fn snapshot_round_trips_visible_state() {

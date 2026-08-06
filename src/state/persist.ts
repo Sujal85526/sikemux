@@ -101,7 +101,6 @@ function mergeBrunoWorkspaces(saved: string[] | undefined, sessions: Session[]):
     return out;
 }
 
-const AGENT_TYPES = new Set<Agent["type"]>(["claude", "codex", "hermes", "pi", "opencode"]);
 const SESSION_KINDS = new Set<Session["kind"]>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
 const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "search", "aws", "rundeck", "bruno", "ssh-config", "named"]);
 const PANE_KINDS = new Set(["terminal", "editor", "git", "aws", "search", "rundeck", "bruno"]);
@@ -113,15 +112,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringRecord(value: unknown): value is Record<string, string> {
     return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
-}
-
-function isAgentType(value: unknown): value is Agent["type"] {
-    return typeof value === "string" && AGENT_TYPES.has(value as Agent["type"]);
-}
-
-function isPersistedAgent(value: unknown): value is Agent {
-    if (!isRecord(value)) return false;
-    return typeof value.id === "string" && isAgentType(value.type) && typeof value.title === "string" && typeof value.startup === "string";
 }
 
 function isLayout(value: unknown): value is Window["root"] {
@@ -247,23 +237,20 @@ function persistedSession(sess: Session, activeAgentId: string | null, view: Ses
 
 function snapshot(): string {
     const s = getState();
-    const sessionAgentIds = new Map<string, string[]>();
     const sessions = s.sessionOrder
         .map((id) => s.sessions[id])
         .filter(Boolean)
         .map((sess) => {
-            const agentIds = (s.agentsBySession[sess.id] ?? []).filter((id) => s.agents[id]);
-            sessionAgentIds.set(sess.id, agentIds);
-            const savedActiveAgentId = sess.activeAgentId && agentIds.includes(sess.activeAgentId) ? sess.activeAgentId : null;
-            const activeAgentId = savedActiveAgentId ?? (sess.view === "agent" ? (agentIds[0] ?? null) : null);
-            const view: Session["view"] = sess.view === "agent" && activeAgentId ? "agent" : "windows";
-            return persistedSession(sess, activeAgentId, view);
+            // Agent processes are runtime-only. Persisting their startup/resume
+            // commands made a restored tab silently launch an old agent merely
+            // because the user navigated to it after restart.
+            return persistedSession(sess, null, "windows");
         });
     const windowsBySession: Record<string, Window[]> = {};
     const agentsBySession: Record<string, Agent[]> = {};
     for (const sess of sessions) {
         windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).map((id) => s.windows[id]).filter(Boolean);
-        agentsBySession[sess.id] = (sessionAgentIds.get(sess.id) ?? []).map((id) => s.agents[id]).filter(Boolean);
+        agentsBySession[sess.id] = [];
     }
     const snap: PersistedSnapshot = {
         version: VERSION,
@@ -384,15 +371,9 @@ export function applyHydrate(raw: string): void {
         }
         agentsBySession[sid] = [];
     }
-    const rawAgents = isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {};
-    for (const sid of Object.keys(sessions)) {
-        const rows = Array.isArray(rawAgents[sid]) ? rawAgents[sid] : [];
-        for (const row of rows) {
-            if (!isPersistedAgent(row) || agents[row.id]) continue;
-            agents[row.id] = row;
-            agentsBySession[sid].push(row.id);
-        }
-    }
+    // Live agents intentionally do not survive an app restart. Recent agent
+    // sessions remain discoverable in the rail and require an explicit click
+    // to resume; hydration itself never executes a saved resume command.
     for (const sid of Object.keys(sessions)) {
         const session = sessions[sid];
         const agentIds = agentsBySession[sid];
@@ -436,6 +417,7 @@ export function applyHydrate(raw: string): void {
         sessionOrder,
         windowsBySession,
         agentsBySession,
+        agentActivity: {},
         activeSessionId,
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
         editorViews,

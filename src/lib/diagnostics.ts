@@ -51,6 +51,8 @@ function domSnapshot() {
             dom: document.querySelectorAll('[data-terminal-renderer="dom"]').length,
             webgl: document.querySelectorAll('[data-terminal-renderer="webgl"]').length,
         },
+        visibleTerminals: document.querySelectorAll(".window-layer.visible .xterm").length,
+        hiddenTerminals: document.querySelectorAll(".window-layer:not(.visible) .xterm").length,
         codeMirrorEditors: document.querySelectorAll(".cm-editor").length,
         visibleWindowLayers: document.querySelectorAll(".window-layer.visible").length,
     };
@@ -62,6 +64,10 @@ function storeSnapshot() {
         sessions: Object.keys(s.sessions).length,
         windows: Object.keys(s.windows).length,
         agents: Object.keys(s.agents).length,
+        agentActivity: {
+            working: Object.values(s.agentActivity).filter((activity) => activity.state === "working").length,
+            unread: Object.values(s.agentActivity).filter((activity) => activity.unread).length,
+        },
         editorViews: Object.keys(s.editorViews).length,
         gitViews: Object.keys(s.gitViews).length,
         rundeckViews: Object.keys(s.rundeckViews).length,

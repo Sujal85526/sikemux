@@ -137,7 +137,7 @@ pnpm build:mac:universal
 pnpm build:windows
 ```
 
-AI commit-message generation uses Groq's fixed `openai/gpt-oss-20b` model and streams the response directly into the commit box. Set `GROQ_API_KEY` in your environment or copy `.env.example` to `.env` and add your key. `.env` is ignored by Git.
+AI commit-message generation uses Groq's fixed `openai/gpt-oss-20b` model and streams the response directly into the commit box. Large changes are sent as zero-context diffs with budget-aware coverage across every file and hunk; noisy generated/lockfile bodies are summarized, and a 413 response triggers one tighter automatic retry. Set `GROQ_API_KEY` in your environment or copy `.env.example` to `.env` and add your key. `.env` is ignored by Git.
 
 Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY with PowerShell as its default Windows shell.
 

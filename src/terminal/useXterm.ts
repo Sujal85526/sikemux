@@ -385,10 +385,16 @@ export function useXterm(opts: {
         const fontsThenBoot = () =>
             void Promise.all([
                 document.fonts.load(`${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
-                document.fonts.load(`italic ${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
                 document.fonts.load(`${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
-                document.fonts.load(`italic ${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
-            ]).then(boot, boot);
+            ]).then(() => {
+                void boot();
+                window.setTimeout(() => {
+                    void Promise.all([
+                        document.fonts.load(`italic ${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
+                        document.fonts.load(`italic ${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
+                    ]);
+                }, 0);
+            }, boot);
         bootRef.current = fontsThenBoot;
 
         fontsThenBoot();

@@ -578,6 +578,7 @@
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+    position: relative;
 }
 .proj-child-icons .proj-pip {
     border-radius: 999px;

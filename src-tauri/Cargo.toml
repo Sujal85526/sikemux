@@ -52,9 +52,9 @@ libc = "0.2"
 objc2 = "0.6"
 
 [profile.release]
-# opt-level "z" trades a few % runtime for a meaningfully smaller binary
-# (libgit2 + rustls dominate; size-opt knocks ~3-4 MB off the 20 MB total).
-opt-level = "z"
+# Sikemux is latency-sensitive (PTY parsing, Git walks, serialization). The
+# complete app is already small enough that runtime speed wins over a few MB.
+opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "abort"

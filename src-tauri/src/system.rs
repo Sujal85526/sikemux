@@ -253,7 +253,13 @@ pub struct RuntimeDiagnostics {
     fd_limit_hard: Option<u64>,
     ptys: usize,
     pty_subscribers: usize,
+    pty_output_reads: u64,
+    pty_output_broadcasts: u64,
+    pty_output_bytes: u64,
+    agent_ptys_working: usize,
     lsp_servers: usize,
+    lsp_open_documents: usize,
+    lsp_idle_servers: usize,
     repo_watchers: usize,
     agent_session_watchers: usize,
     aws_log_tails: usize,
@@ -295,6 +301,8 @@ pub fn runtime_diagnostics(
     rundeck_logs: tauri::State<'_, RundeckLogsManager>,
 ) -> RuntimeDiagnostics {
     let (pty_count, pty_subscribers) = ptys.counts();
+    let pty_diagnostics = ptys.diagnostics();
+    let (lsp_open_documents, lsp_idle_servers) = crate::lsp::document_counts();
     let (fd_limit_soft, fd_limit_hard) = current_fd_limit();
     RuntimeDiagnostics {
         pid: std::process::id(),
@@ -303,7 +311,13 @@ pub fn runtime_diagnostics(
         fd_limit_hard,
         ptys: pty_count,
         pty_subscribers,
+        pty_output_reads: pty_diagnostics.output_reads,
+        pty_output_broadcasts: pty_diagnostics.output_broadcasts,
+        pty_output_bytes: pty_diagnostics.output_bytes,
+        agent_ptys_working: pty_diagnostics.working_agents,
         lsp_servers: crate::lsp::server_count(),
+        lsp_open_documents,
+        lsp_idle_servers,
         repo_watchers: crate::fs_watch::watch_count(),
         agent_session_watchers: crate::agents::watch_count(),
         aws_log_tails: aws_logs.count(),

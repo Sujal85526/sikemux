@@ -125,6 +125,8 @@
     transition:
         background 0.1s,
         color 0.1s;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 23px;
 }
 .tree-row:hover {
     background: var(--rail-2);

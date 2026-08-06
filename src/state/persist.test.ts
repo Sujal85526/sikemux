@@ -91,6 +91,36 @@ describe("frontend persistence", () => {
         expect(getState().keybindingOverrides).toEqual({ "project.open": "Meta+Shift+KeyO" });
     });
 
+    it("never persists or hydrates live agent commands", async () => {
+        const sid = getState().activeSessionId;
+        const agent = {
+            id: "agent-live",
+            type: "claude" as const,
+            title: "live",
+            startup: "claude --resume should-never-auto-run",
+        };
+        setState((s) => ({
+            sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", view: "agent", activeAgentId: agent.id } },
+            agents: { [agent.id]: agent },
+            agentsBySession: { ...s.agentsBySession, [sid]: [agent.id] },
+        }));
+        invoke.mockResolvedValue(undefined);
+
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.agentsBySession[sid]).toEqual([]);
+        expect(saved.sessions[0]).toMatchObject({ view: "windows", activeAgentId: null });
+        expect(JSON.stringify(saved)).not.toContain("should-never-auto-run");
+
+        saved.agentsBySession[sid] = [agent];
+        saved.sessions[0].view = "agent";
+        saved.sessions[0].activeAgentId = agent.id;
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().agentsBySession[sid]).toEqual([]);
+        expect(getState().agents).toEqual({});
+        expect(getState().sessions[sid]).toMatchObject({ view: "windows", activeAgentId: null });
+    });
+
     it("serializes writes, coalesces queued snapshots, and marks only successful writes saved", async () => {
         const first = deferred<void>();
         invoke.mockImplementationOnce(() => first.promise).mockResolvedValue(undefined);

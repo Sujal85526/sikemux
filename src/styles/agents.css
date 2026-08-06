@@ -69,6 +69,50 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.agent-activity {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+}
+.agent-activity.unread {
+    background: var(--acc);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--acc) 18%, transparent);
+}
+.agent-activity.working {
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid color-mix(in srgb, var(--live) 28%, transparent);
+    border-top-color: var(--live);
+    background: transparent;
+    animation: agent-activity-spin 0.72s linear infinite;
+}
+@keyframes agent-activity-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.proj-pip.is-working::after,
+.proj-pip.has-unread::after {
+    content: "";
+    position: absolute;
+    right: -1px;
+    top: -1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--acc);
+    box-shadow: 0 0 0 2px var(--rail);
+}
+.proj-pip.is-working::after {
+    background: transparent;
+    border: 1.5px solid color-mix(in srgb, var(--live) 30%, transparent);
+    border-top-color: var(--live);
+    box-shadow: none;
+    animation: agent-activity-spin 0.72s linear infinite;
+}
 .env-dd {
     position: relative;
 }
@@ -379,6 +423,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .agent-activity.working,
+    .proj-pip.is-working::after,
     .yolo-toggle.on::before,
     .yolo-toggle.on .yolo-label,
     .yolo-toggle.on .yolo-glyph {

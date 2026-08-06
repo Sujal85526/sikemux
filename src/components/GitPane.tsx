@@ -17,6 +17,7 @@ import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
 import { GitPanelBlock } from "./git/GitPanelBlock";
 import { GitToolbarButton } from "./git/GitToolbarButton";
+import { VirtualPanelRows } from "./git/VirtualPanelRows";
 import { GIT_HELP, GIT_PANEL_BY_KEY, GIT_PANEL_ORDER } from "./git/gitPaneConstants";
 import { filterByQuery, isInRange, rangeBadge } from "./git/gitPaneLogic";
 import type { RightView } from "./git/gitPaneTypes";
@@ -1248,10 +1249,13 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         rangeBadge={rangeBadge(filesRange)}
                         filterBadge={searchByPanel.files || null}>
                         {filteredFiles.length === 0 && <div className={`git-empty${overviewError ? " error" : ""}`}>{fileEmptyText}</div>}
-                        {filteredFiles.map((f, i) => {
-                            return (
+                        <VirtualPanelRows
+                            items={filteredFiles}
+                            selectedIndex={sel.files}
+                            focused={panelFiles}
+                            getKey={(f) => f.path}
+                            renderRow={(f, i) => (
                                 <div
-                                    key={f.path}
                                     className={`git-row${panelFiles && sel.files === i ? " sel" : ""}${isInRange(filesRange, i) ? " ranged" : ""}`}
                                     onClick={() => {
                                         setPanel("files");
@@ -1262,8 +1266,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                     <FileIcon name={basenameOf(f.path)} size={14} />
                                     <span className="git-path">{f.path}</span>
                                 </div>
-                            );
-                        })}
+                            )}
+                        />
                     </GitPanelBlock>
 
                     <GitPanelBlock
@@ -1283,10 +1287,13 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                         rangeBadge={rangeBadge(branchesRange)}
                         filterBadge={searchByPanel.branches || null}>
                         {filteredBranches.length === 0 && <div className={`git-empty${overviewError ? " error" : ""}`}>{branchEmptyText}</div>}
-                        {filteredBranches.map((b, i) => {
-                            return (
+                        <VirtualPanelRows
+                            items={filteredBranches}
+                            selectedIndex={sel.branches}
+                            focused={panel === "branches"}
+                            getKey={(b) => b.name}
+                            renderRow={(b, i) => (
                                 <div
-                                    key={b.name}
                                     className={`git-row${panel === "branches" && sel.branches === i ? " sel" : ""}${isInRange(branchesRange, i) ? " ranged" : ""}`}
                                     onClick={() => {
                                         setPanel("branches");
@@ -1301,8 +1308,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                                         </span>
                                     )}
                                 </div>
-                            );
-                        })}
+                            )}
+                        />
                     </GitPanelBlock>
 
                     <GitPanelBlock

@@ -312,9 +312,20 @@ function BatteryChip() {
     );
 }
 
-export function TopBar() {
+function ClockChip() {
     const now = useClock();
     const t = twelveHour(now);
+    return (
+        <span className="tb-clock">
+            {t.h}
+            <span className="tb-colon">:</span>
+            {time2(t.m)}
+            <span className="tb-ampm">{t.ap}</span>
+        </span>
+    );
+}
+
+export function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const win = useStore((s) => (session ? s.windows[session.activeWindowId] : undefined));
     const agent = useStore((s) => (session?.activeAgentId ? s.agents[session.activeAgentId] : undefined));
@@ -441,12 +452,7 @@ export function TopBar() {
                 {activeLoc && <span className="tb-sep" />}
                 <AwsChip />
                 <BatteryChip />
-                <span className="tb-clock">
-                    {t.h}
-                    <span className="tb-colon">:</span>
-                    {time2(t.m)}
-                    <span className="tb-ampm">{t.ap}</span>
-                </span>
+                <ClockChip />
                 <div className="tb-toggles">
                     <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} title="Focus mode — hide rails">
                         <IconFocus size={15} />

@@ -87,6 +87,16 @@ export interface ViewState {
 
     globalSearchBySession: Record<string, GlobalSearchView>;
 
+    /** Runtime-only PTY activity for live agents. Never persisted or hydrated. */
+    agentActivity: Record<
+        string,
+        {
+            state: "idle" | "working" | "complete";
+            unread: boolean;
+            updatedAt: number;
+        }
+    >;
+
     pendingUpdate: {
         version: string;
         currentVersion: string;
@@ -181,6 +191,7 @@ export const useStore = create<StoreState>(() => {
         gitCmdLog: [],
         gitCmdLogOpen: false,
         globalSearchBySession: {},
+        agentActivity: {},
         pendingUpdate: null,
     };
 });
