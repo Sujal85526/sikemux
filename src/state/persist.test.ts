@@ -283,4 +283,28 @@ describe("frontend persistence", () => {
         expect(restored.type).toBe("pane");
         if (restored.type === "pane") expect(restored.startup).not.toMatch(/[\r\n]/);
     });
+
+    it("upgrades legacy fixed project terminals to regular numbered tabs", () => {
+        const sid = getState().activeSessionId;
+        const session = getState().sessions[sid];
+        const window = getState().windows[session.activeWindowId];
+
+        applyHydrate(
+            JSON.stringify({
+                version: 4,
+                sessions: [{ ...session, kind: "project", cwd: "/work/demo" }],
+                windowsBySession: {
+                    [sid]: [{ ...window, name: "term", role: "term", fixed: true }],
+                },
+                agentsBySession: {},
+                sessionOrder: [sid],
+                activeSessionId: sid,
+                prefs: {},
+            }),
+        );
+
+        const restored = getState().windows[window.id];
+        expect(restored).toMatchObject({ name: "1", role: "term" });
+        expect(restored.fixed).toBeUndefined();
+    });
 });

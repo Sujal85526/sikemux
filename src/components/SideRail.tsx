@@ -124,7 +124,12 @@ export function SideRail() {
                 return;
             }
             const w = winByRole(role);
-            if (w) jumpToWindow(s.id, w.id);
+            if (w) {
+                jumpToWindow(s.id, w.id);
+            } else if (role === "term") {
+                if (s.id !== activeSessionId) cmd.selectSession(s.id);
+                cmd.newWindow();
+            }
         };
 
         const termIcons: React.ReactNode[] =

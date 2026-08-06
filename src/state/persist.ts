@@ -356,17 +356,23 @@ export function applyHydrate(raw: string): void {
     for (const sid of Object.keys(sessions)) {
         const rows = Array.isArray(rawWindows[sid]) ? rawWindows[sid] : [];
         windowsBySession[sid] = [];
+        let projectTerminalNumber = 0;
         for (const row of rows) {
             if (!isWindow(row) || windows[row.id]) continue;
             const ids = layoutIds(row.root);
             if (new Set(ids.all).size !== ids.all.length || ids.all.some((id) => usedLayoutIds.has(id))) continue;
             ids.all.forEach((id) => usedLayoutIds.add(id));
-            windows[row.id] = {
+            const restored: Window = {
                 ...row,
                 root: sessions[sid].kind === "ssh" ? upgradeSshStartup(row.root, sessions[sid].name) : row.root,
                 role: deriveRole(row),
                 activePaneId: ids.panes.includes(row.activePaneId) ? row.activePaneId : ids.panes[0],
             };
+            if (sessions[sid].kind === "project" && restored.role === "term") {
+                restored.name = String(++projectTerminalNumber);
+                delete restored.fixed;
+            }
+            windows[row.id] = restored;
             windowsBySession[sid].push(row.id);
         }
         agentsBySession[sid] = [];

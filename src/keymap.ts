@@ -183,13 +183,13 @@ function runKeybindingAction(action: KeybindingActionId, event: KeyboardEvent, s
             cmd.toggleActiveAgentSkipPermissions();
             return true;
         case "window.files":
-            cmd.selectWindowByIndex(0);
+            cmd.selectWindowByRole("files");
             return true;
         case "window.terminal":
-            cmd.selectWindowByIndex(1);
+            cmd.selectWindowByRole("term");
             return true;
         case "window.git":
-            cmd.selectWindowByIndex(2);
+            cmd.selectWindowByRole("git");
             return true;
         case "window.agents":
             cmd.focusAgents();

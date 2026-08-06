@@ -125,7 +125,7 @@ function makeSession(kind: SessionKind, name: string, cwd: string, activeWindowI
 function projectWindows(cwd: string): Window[] {
     return [
         makeWindow(cwd, "files", { kind: "editor", fixed: true, role: "files" }),
-        makeWindow(cwd, "term", { fixed: true, role: "term" }),
+        makeWindow(cwd, "1", { role: "term" }),
         makeWindow(cwd, "git", { kind: "git", fixed: true, role: "git" }),
         makeWindow(cwd, "search", { kind: "search", fixed: true, role: "search" }),
     ];
@@ -796,7 +796,7 @@ function closeActiveTerminalTab(): void {
 
         const winIds = d.windowsBySession[session.id] ?? [];
         const termIds = winIds.filter((id) => d.windows[id]?.role === "term");
-        if (termIds.length <= 1) {
+        if (termIds.length <= 1 && winIds.length <= 1) {
             replaceWithFreshTerminalTab(d, session, closing);
             return;
         }
@@ -910,7 +910,13 @@ export function setSplitSizes(windowId: string, splitId: string, sizes: number[]
 export function newWindow(): void {
     withActiveSession((d, session) => {
         const winIds = d.windowsBySession[session.id] ?? [];
-        const w = makeWindow(session.cwd, String(winIds.length + 1));
+        const terminalNumbers = winIds
+            .map((id) => d.windows[id])
+            .filter((win) => win?.role === "term")
+            .map((win) => Number.parseInt(win.name, 10))
+            .filter((n) => Number.isFinite(n) && n > 0);
+        const nextTerminalNumber = terminalNumbers.length === 0 ? 1 : Math.max(...terminalNumbers) + 1;
+        const w = makeWindow(session.cwd, String(nextTerminalNumber));
         d.windows[w.id] = w;
         d.windowsBySession[session.id] = [...winIds, w.id];
         const sess = d.sessions[session.id];
@@ -983,6 +989,19 @@ export function selectWindowByName(name: string): void {
     const ids = st.windowsBySession[session.id] ?? [];
     const id = ids.find((wid) => st.windows[wid]?.name === name);
     if (id) selectWindowId(id);
+}
+
+export function selectWindowByRole(role: WindowRole): void {
+    const st = getState();
+    const session = st.sessions[st.activeSessionId];
+    if (!session) return;
+    const ids = st.windowsBySession[session.id] ?? [];
+    const id = ids.find((wid) => st.windows[wid]?.role === role);
+    if (id) {
+        selectWindowId(id);
+    } else if (role === "term" && session.kind === "project") {
+        newWindow();
+    }
 }
 
 const PROJECT_SLOT_ORDER: (WindowRole | "agents")[] = ["files", "term", "git", "agents", "search"];
