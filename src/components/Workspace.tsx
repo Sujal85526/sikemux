@@ -112,7 +112,7 @@ export function Workspace() {
     const activeAgents = activeSession ? (agentsBySession[activeSession.id] ?? []).map((id) => agentsById[id]) : [];
 
     const inAgentView = !!activeSession && sessionView(activeSession) === "agent";
-    const showAgentTabs = inAgentView && activeAgents.length > 1;
+    const showAgentTabs = inAgentView && activeAgents.length > 0;
     const showAgentEmpty = inAgentView && activeAgents.length === 0;
 
     const activeWindowList = activeSession ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id]) : [];
@@ -120,7 +120,7 @@ export function Workspace() {
         activeSession && sessionView(activeSession) === "windows" && activeWindow?.role === "term"
             ? activeWindowList.filter((w) => w.role === "term")
             : [];
-    const showTermTabs = termTabs.length > 1;
+    const showTermTabs = termTabs.length > 0;
 
     return (
         <div className="window-area" ref={areaRef}>
@@ -137,8 +137,8 @@ export function Workspace() {
                 const view = sessionView(session);
                 const winIds = windowsBySession[session.id] ?? [];
                 const aIds = agentsBySession[session.id] ?? [];
-                const sessTabs = view === "agent" && aIds.length > 1;
-                const sessHasTermTabs = winIds.filter((id) => windowsById[id]?.role === "term").length > 1;
+                const sessTabs = view === "agent" && aIds.length > 0;
+                const sessHasTermTabs = winIds.some((id) => windowsById[id]?.role === "term");
                 const windowLayers = winIds.map((wid) => {
                     const win = windowsById[wid];
                     if (!win) return null;
