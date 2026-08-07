@@ -4,8 +4,6 @@ import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { rollupAgentStates } from "../state/agentStatus";
 import { useStore } from "../state/store";
-import { useResourceEnabled } from "../state/resources";
-import { gitStatusR } from "../state/resources.defs";
 import {
     AgentIcon,
     IconAgent,
@@ -46,9 +44,6 @@ export function SideRail() {
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
-    const activeProject = activeSessionId ? sessionsById[activeSessionId] : undefined;
-    const activeProjectCwd = activeProject?.kind === "project" ? activeProject.cwd : "";
-    const activeGitStatus = useResourceEnabled(!!activeProjectCwd, gitStatusR, activeProjectCwd).data;
     const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
 
@@ -192,14 +187,6 @@ export function SideRail() {
                         <IconClose size={11} />
                     </span>
                 </button>
-                {activeGitStatus && (
-                    <div className="proj-metadata" title={`Git branch ${activeGitStatus.branch}`}>
-                        <span className="proj-metadata-branch">{activeGitStatus.branch || "detached HEAD"}</span>
-                        {activeGitStatus.files.length > 0 && <span>{activeGitStatus.files.length} dirty</span>}
-                        {activeGitStatus.ahead > 0 && <span>↑{activeGitStatus.ahead}</span>}
-                        {activeGitStatus.behind > 0 && <span>↓{activeGitStatus.behind}</span>}
-                    </div>
-                )}
                 <div className="proj-children">
                     {children.map((c) => {
                         const subActive = isSubActive(c.role);

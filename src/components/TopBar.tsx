@@ -410,7 +410,7 @@ export function TopBar() {
                         zoom
                     </span>
                 )}
-                {isProject && session.cwd && !(session.view === "windows" && win.role === "git") && <GitChip repo={session.cwd} />}
+                {isProject && session.cwd && <GitChip repo={session.cwd} />}
                 {activeLoc && (
                     <div className="env-dd" data-no-window-drag>
                         <button
