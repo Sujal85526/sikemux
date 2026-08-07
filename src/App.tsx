@@ -213,7 +213,7 @@ export default function App() {
                 if (st.themeMode === "system") cmd.applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
                 cmd.setWindowBlur(st.windowBlur);
                 if (!st.onboardingComplete) cmd.openOnboarding();
-                if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
+                else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
             })
             .catch(swallow("boot_init"))
             .finally(() => {

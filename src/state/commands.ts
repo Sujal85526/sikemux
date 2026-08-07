@@ -1659,11 +1659,11 @@ export const closeAgentPalette = (): void => setState({ agentPaletteOpen: false 
 export const openCommandPalette = (): void => setState({ commandPaletteOpen: true });
 export const closeCommandPalette = (): void => setState({ commandPaletteOpen: false });
 export const toggleCommandPalette = (): void => setState((s) => ({ commandPaletteOpen: !s.commandPaletteOpen }));
-export const openOnboarding = (): void => setState({ onboardingOpen: true });
+export const openOnboarding = (): void => setState({ onboardingOpen: true, diagnosticsOpen: false, whatsNewOpen: false });
 export const closeOnboarding = (complete = true): void => setState({ onboardingOpen: false, ...(complete ? { onboardingComplete: true } : {}) });
-export const openDiagnostics = (): void => setState({ diagnosticsOpen: true });
+export const openDiagnostics = (): void => setState({ diagnosticsOpen: true, onboardingOpen: false, whatsNewOpen: false });
 export const closeDiagnostics = (): void => setState({ diagnosticsOpen: false });
-export const openWhatsNew = (): void => setState({ whatsNewOpen: true });
+export const openWhatsNew = (): void => setState({ whatsNewOpen: true, onboardingOpen: false, diagnosticsOpen: false });
 export const closeWhatsNew = (): void =>
     setState((s) => ({ whatsNewOpen: false, lastSeenVersion: s.lastReleaseNotes?.version ?? s.lastSeenVersion }));
 export const openFilePalette = (): void => setState({ filePaletteOpen: true, rundeckJobPaletteOpen: false });
