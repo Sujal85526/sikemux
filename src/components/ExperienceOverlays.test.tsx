@@ -170,4 +170,46 @@ describe("Onboarding", () => {
         act(() => cmd.openWhatsNew());
         expect(getState()).toMatchObject({ onboardingOpen: false, diagnosticsOpen: false, whatsNewOpen: true });
     });
+
+    it("answers a real binding press by opening the matching overlay in the miniature", async () => {
+        const user = userEvent.setup();
+        const { container } = openOnboarding();
+
+        await user.click(screen.getByRole("button", { name: "Go to step 2: Muscle memory" }));
+        expect(screen.queryByText("open session")).not.toBeInTheDocument();
+        expect(screen.getAllByText("press it")).toHaveLength(2);
+
+        fireEvent.keyDown(window, { code: "KeyS", key: "s", altKey: true });
+        expect(screen.getByText("open session")).toBeInTheDocument();
+        expect(screen.getByText("✓ tried")).toBeInTheDocument();
+
+        // Clicking a card is the mouse equivalent of pressing its binding.
+        await user.click(screen.getByRole("button", { name: /Open command deck/ }));
+        expect(screen.getByText("command deck")).toBeInTheDocument();
+        expect(container.querySelectorAll(".onboarding-key.is-done")).toHaveLength(2);
+    });
+
+    it("points the miniature at the region the copy column describes", async () => {
+        const user = userEvent.setup();
+        const { container } = openOnboarding();
+        const stage = container.querySelector(".onb-stage")!;
+        expect(stage).toHaveAttribute("data-region", "none");
+
+        await user.hover(screen.getByRole("button", { name: /Agent rail/ }));
+        expect(stage).toHaveAttribute("data-region", "agents");
+
+        await user.hover(screen.getByRole("button", { name: /Sessions rail/ }));
+        expect(stage).toHaveAttribute("data-region", "rail");
+    });
+
+    it("runs the first move the final scene offers and closes the tour", async () => {
+        const user = userEvent.setup();
+        openOnboarding();
+
+        await user.click(screen.getByRole("button", { name: "Go to step 4: Launch ready" }));
+        await user.click(screen.getByRole("button", { name: /Open a project/ }));
+
+        expect(getState()).toMatchObject({ onboardingOpen: false, onboardingComplete: true, pickerOpen: true, pickerMode: "projects" });
+        await expectPersistedComplete();
+    });
 });

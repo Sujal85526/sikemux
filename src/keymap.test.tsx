@@ -87,3 +87,20 @@ describe("command popup modality", () => {
         expect(getState().commandPopup).toBeNull();
     });
 });
+
+describe("onboarding modality", () => {
+    it("leaves every binding to the tour, including the ones other modals let through", () => {
+        render(<KeymapHarness />);
+        setState({ onboardingOpen: true });
+
+        // palette.commands escapes the usual modal guard; the first-run tour asks
+        // the reader to press it, so nothing behind the tour may react.
+        window.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "P", code: "KeyP", metaKey: true, shiftKey: true, bubbles: true, cancelable: true }),
+        );
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", code: "Comma", metaKey: true, bubbles: true, cancelable: true }));
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", altKey: true, bubbles: true, cancelable: true }));
+
+        expect(getState()).toMatchObject({ commandPaletteOpen: false, settingsOpen: false, pickerOpen: false, onboardingOpen: true });
+    });
+});

@@ -8,7 +8,17 @@ import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { installPendingUpdate } from "../api/updater";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
-import { getKeybindingAction, keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
+import {
+    getKeybindingAction,
+    keybindingLabelForAction,
+    matchesKeybinding,
+    resolvedKeybinding,
+    type KeybindingActionId,
+    type KeybindingOverrides,
+} from "../keybindings";
+import { OnboardingStage, type OnboardingOverlay, type OnboardingRegion } from "./OnboardingStage";
+import { Logo } from "./Icons";
+import type { AgentPresentationState } from "../state/types";
 
 interface IntegrationHealth {
     shell: string;
@@ -24,7 +34,41 @@ const ONBOARDING_STEPS = [
     { kicker: "Launch ready", title: "Your first move is already mapped" },
 ] as const;
 
-const ONBOARDING_SHORTCUTS = ["session.open", "palette.commands", "project.open", "pane.splitRow"] as const satisfies readonly KeybindingActionId[];
+/** Scene one: each entry points the miniature at the region it describes. */
+const ONBOARDING_REGIONS = [
+    { id: "rail", label: "Sessions rail", detail: "Every project, host, and cloud you have open" },
+    { id: "stage", label: "Work stage", detail: "Terminals, editors, diffs, and requests in split panes" },
+    { id: "agents", label: "Agent rail", detail: "Coding agents parked beside the code they touch" },
+] as const satisfies readonly { id: OnboardingRegion; label: string; detail: string }[];
+
+/** Scene two: the bindings the tour asks you to actually press. */
+const ONBOARDING_KEYS = [
+    { id: "session.open", overlay: "sessions" },
+    { id: "palette.commands", overlay: "commands" },
+] as const satisfies readonly { id: KeybindingActionId; overlay: OnboardingOverlay }[];
+
+/** Scene three: the three states worth reacting to, in the order they usually happen. */
+const ONBOARDING_SIGNALS = [
+    { state: "working", label: "Working", detail: "Let it cook" },
+    { state: "blocked", label: "Needs input", detail: "Unblock it" },
+    { state: "done", label: "Ready", detail: "Review the result" },
+] as const satisfies readonly { state: AgentPresentationState; label: string; detail: string }[];
+
+/** Scene four: real first moves. Picking one ends the tour and runs the action. */
+const ONBOARDING_LAUNCHES = [
+    { id: "project.open", label: "Open a project", overlay: null, region: "rail", run: () => cmd.openPicker("projects") },
+    { id: "session.open", label: "Open any session", overlay: "sessions", region: null, run: () => cmd.openPicker("all") },
+    { id: "palette.commands", label: "Open the command deck", overlay: "commands", region: null, run: cmd.openCommandPalette },
+] as const satisfies readonly {
+    id: KeybindingActionId;
+    label: string;
+    overlay: OnboardingOverlay | null;
+    region: OnboardingRegion | null;
+    run: () => void;
+}[];
+
+const SIGNAL_CYCLE_MS = 2400;
+const KEY_DEMO_MS = 4200;
 
 function Frame({ label, onClose, children }: { label: string; onClose: () => void; children: React.ReactNode }) {
     useEffect(() => {
@@ -51,6 +95,14 @@ function Frame({ label, onClose, children }: { label: string; onClose: () => voi
     );
 }
 
+function pressedOnboardingKey(event: KeyboardEvent, overrides: KeybindingOverrides): KeybindingActionId | null {
+    for (const entry of ONBOARDING_KEYS) {
+        const binding = resolvedKeybinding(overrides, entry.id);
+        if (binding && matchesKeybinding(event, binding)) return entry.id;
+    }
+    return null;
+}
+
 export function Onboarding() {
     const open = useStore((s) => s.onboardingOpen);
     const overrides = useStore((s) => s.keybindingOverrides);
@@ -59,6 +111,12 @@ export function Onboarding() {
     const [healthUnavailable, setHealthUnavailable] = useState(false);
     const [step, setStep] = useState(0);
     const [direction, setDirection] = useState<"forward" | "back">("forward");
+    const [region, setRegion] = useState<OnboardingRegion | null>(null);
+    const [tried, setTried] = useState<KeybindingActionId[]>([]);
+    const [demo, setDemo] = useState<KeybindingActionId | null>(null);
+    const [signal, setSignal] = useState<AgentPresentationState>("working");
+    const [signalPinned, setSignalPinned] = useState(false);
+    const [launch, setLaunch] = useState<number | null>(null);
     const dialogRef = useRef<HTMLElement>(null);
     const returnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -84,23 +142,83 @@ export function Onboarding() {
         returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         setStep(0);
         setDirection("forward");
-        const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+        setTried([]);
         return () => {
-            window.cancelAnimationFrame(frame);
             returnFocusRef.current?.focus();
         };
     }, [open]);
+
+    useEffect(() => {
+        if (!open) return;
+        const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+        return () => window.cancelAnimationFrame(frame);
+    }, [open]);
+
+    // Each scene starts from a clean pointer so the miniature never carries a
+    // highlight that the new copy does not explain.
+    useEffect(() => {
+        setRegion(null);
+        setDemo(null);
+        setLaunch(null);
+        setSignal("working");
+        setSignalPinned(false);
+    }, [step]);
+
+    // Scene three narrates the rail by running it: the states advance on their
+    // own until the reader takes over by pointing at one.
+    useEffect(() => {
+        if (!open || step !== 2 || signalPinned) return;
+        const timer = window.setInterval(() => {
+            setSignal((current) => {
+                const index = ONBOARDING_SIGNALS.findIndex((entry) => entry.state === current);
+                return ONBOARDING_SIGNALS[(index + 1) % ONBOARDING_SIGNALS.length].state;
+            });
+        }, SIGNAL_CYCLE_MS);
+        return () => window.clearInterval(timer);
+    }, [open, step, signalPinned]);
+
+    // The demo overlay is a preview, not a mode — it always retracts by itself.
+    useEffect(() => {
+        if (!demo) return;
+        const timer = window.setTimeout(() => setDemo(null), KEY_DEMO_MS);
+        return () => window.clearTimeout(timer);
+    }, [demo]);
+
+    const tryKey = (id: KeybindingActionId) => {
+        setDemo(id);
+        setTried((current) => (current.includes(id) ? current : [...current, id]));
+    };
+
+    // Scene two only works if the real binding does something here. The keymap
+    // suppresses every action while onboarding is open, so the tour is free to
+    // claim these presses.
+    useEffect(() => {
+        if (!open || step !== 1) return;
+        const onKey = (event: KeyboardEvent) => {
+            const id = pressedOnboardingKey(event, overrides);
+            if (!id) return;
+            event.preventDefault();
+            tryKey(id);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [open, step, overrides]);
 
     if (!open) return null;
 
     const goTo = (next: number) => {
         const bounded = Math.max(0, Math.min(ONBOARDING_STEPS.length - 1, next));
+        if (bounded === step) return;
         setDirection(bounded < step ? "back" : "forward");
         setStep(bounded);
     };
     const next = () => {
         if (step === ONBOARDING_STEPS.length - 1) cmd.closeOnboarding();
         else goTo(step + 1);
+    };
+    const runLaunch = (run: () => void) => {
+        cmd.closeOnboarding();
+        run();
     };
     const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
         event.stopPropagation();
@@ -146,8 +264,6 @@ export function Onboarding() {
         action: getKeybindingAction(id),
         label: keybindingLabelForAction(overrides, id),
     });
-    const sessionShortcut = shortcut("session.open");
-    const commandShortcut = shortcut("palette.commands");
     const detectedAgents = catalog.data?.map((agent) => agent.label) ?? [];
     const healthSignals = health
         ? [
@@ -157,6 +273,13 @@ export function Onboarding() {
               { label: "rundeck", ready: health.rnd },
           ]
         : [];
+    const commandRows = (["pane.splitRow", "pane.zoom", "settings.toggle"] as const).map((id) => ({
+        label: getKeybindingAction(id).label,
+        kbd: keybindingLabelForAction(overrides, id),
+    }));
+    const hoveredLaunch = launch === null ? null : ONBOARDING_LAUNCHES[launch];
+    const stageRegion = step === 0 ? region : step === 2 ? "agents" : (hoveredLaunch?.region ?? null);
+    const stageOverlay = step === 1 ? (ONBOARDING_KEYS.find((entry) => entry.id === demo)?.overlay ?? null) : (hoveredLaunch?.overlay ?? null);
 
     return (
         <div className="experience-backdrop onboarding-backdrop" role="presentation">
@@ -169,14 +292,13 @@ export function Onboarding() {
                 aria-describedby="onboarding-description"
                 tabIndex={-1}
                 onKeyDown={onKeyDown}>
-                <div className="onboarding-signal-rail" aria-hidden="true">
-                    <span style={{ height: `${((step + 1) / ONBOARDING_STEPS.length) * 100}%` }} />
-                </div>
-
                 <header className="onboarding-header">
                     <div>
-                        <span className="experience-kicker">Sikemux · first signal</span>
-                        <span className="onboarding-step-count">{String(step + 1).padStart(2, "0")} / 04</span>
+                        <Logo size={13} className="onboarding-mark" />
+                        <span className="experience-kicker">Sikemux · first run</span>
+                        <span className="onboarding-step-count">
+                            {String(step + 1).padStart(2, "0")} / {String(ONBOARDING_STEPS.length).padStart(2, "0")}
+                        </span>
                     </div>
                     <button className="onboarding-skip" onClick={() => cmd.closeOnboarding()} aria-label="Skip onboarding tour">
                         Skip tour <span aria-hidden="true">esc</span>
@@ -196,19 +318,31 @@ export function Onboarding() {
                     ))}
                 </div>
 
-                <div key={step} className="onboarding-scene" data-direction={direction}>
-                    <div className="onboarding-copy">
+                <div className="onboarding-scene">
+                    <div key={step} className="onboarding-copy" data-direction={direction}>
                         <span className="experience-kicker">{ONBOARDING_STEPS[step].kicker}</span>
                         <h1 id="onboarding-title">{ONBOARDING_STEPS[step].title}</h1>
 
                         {step === 0 && (
                             <>
                                 <p id="onboarding-description">
-                                    Sikemux keeps projects, terminals, cloud tools, API work, and coding agents in one keyboard-first workspace.
+                                    Projects, terminals, cloud consoles, API work, and coding agents share one keyboard-first window. Point at a
+                                    region to find it.
                                 </p>
-                                <div className="onboarding-note">
-                                    <span className="onboarding-note-mark" aria-hidden="true" />
-                                    Keep your context. Change the tool, not the window.
+                                <div className="onboarding-regions" onMouseLeave={() => setRegion(null)}>
+                                    {ONBOARDING_REGIONS.map((item) => (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            className={region === item.id ? "is-on" : ""}
+                                            onMouseEnter={() => setRegion(item.id)}
+                                            onFocus={() => setRegion(item.id)}
+                                            onBlur={() => setRegion((current) => (current === item.id ? null : current))}
+                                            onClick={() => setRegion(item.id)}>
+                                            <b>{item.label}</b>
+                                            <small>{item.detail}</small>
+                                        </button>
+                                    ))}
                                 </div>
                             </>
                         )}
@@ -216,46 +350,65 @@ export function Onboarding() {
                         {step === 1 && (
                             <>
                                 <p id="onboarding-description">
-                                    Two shortcuts do most of the heavy lifting. Your custom bindings are shown here automatically.
+                                    Two bindings carry most of the navigation. Press them now — the tour is listening, and nothing behind it will
+                                    move.
                                 </p>
-                                <div className="onboarding-shortcut-stack">
-                                    {[sessionShortcut, commandShortcut].map(({ action, label }, index) => (
-                                        <div
-                                            key={action.id}
-                                            className="onboarding-shortcut-card"
-                                            style={{ "--stagger": index } as React.CSSProperties}>
-                                            <kbd>{label}</kbd>
-                                            <span>
-                                                <b>{action.label}</b>
-                                                <small>{action.detail}</small>
-                                            </span>
-                                        </div>
-                                    ))}
+                                <div className="onboarding-keys">
+                                    {ONBOARDING_KEYS.map((entry) => {
+                                        const { action, label } = shortcut(entry.id);
+                                        const done = tried.includes(entry.id);
+                                        return (
+                                            <button
+                                                key={entry.id}
+                                                type="button"
+                                                className={`onboarding-key${done ? " is-done" : ""}${demo === entry.id ? " is-live" : ""}`}
+                                                onClick={() => tryKey(entry.id)}>
+                                                <kbd>{label}</kbd>
+                                                <span>
+                                                    <b>{action.label}</b>
+                                                    <small>{action.detail}</small>
+                                                </span>
+                                                <em>{done ? "✓ tried" : "press it"}</em>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
+                                <p className="onboarding-aside" aria-live="polite">
+                                    {tried.length === ONBOARDING_KEYS.length
+                                        ? "That is the whole navigation model. Every binding is remappable in Settings › Keybindings."
+                                        : "Prefer the mouse? Click a card to watch the same thing happen."}
+                                </p>
                             </>
                         )}
 
                         {step === 2 && (
                             <>
                                 <p id="onboarding-description">
-                                    The rail is quiet until an agent needs you. Color tells you what kind of attention to give.
+                                    The agent rail stays quiet until something needs you. Colour tells you what kind of attention to give.
                                 </p>
-                                <div className="onboarding-state-list">
-                                    <div>
-                                        <i className="is-live" />
-                                        <b>Working</b>
-                                        <span>Let it cook</span>
-                                    </div>
-                                    <div>
-                                        <i className="is-warn" />
-                                        <b>Needs input</b>
-                                        <span>Unblock it</span>
-                                    </div>
-                                    <div>
-                                        <i className="is-ready" />
-                                        <b>Ready</b>
-                                        <span>Review the result</span>
-                                    </div>
+                                <div className="onboarding-signals">
+                                    {ONBOARDING_SIGNALS.map((item) => (
+                                        <button
+                                            key={item.state}
+                                            type="button"
+                                            className={`state-${item.state}${signal === item.state ? " is-on" : ""}`}
+                                            onMouseEnter={() => {
+                                                setSignal(item.state);
+                                                setSignalPinned(true);
+                                            }}
+                                            onFocus={() => {
+                                                setSignal(item.state);
+                                                setSignalPinned(true);
+                                            }}
+                                            onClick={() => {
+                                                setSignal(item.state);
+                                                setSignalPinned(true);
+                                            }}>
+                                            <i />
+                                            <b>{item.label}</b>
+                                            <span>{item.detail}</span>
+                                        </button>
+                                    ))}
                                 </div>
                                 <div className="onboarding-detected">
                                     <span>Detected here</span>
@@ -273,24 +426,28 @@ export function Onboarding() {
                         {step === 3 && (
                             <>
                                 <p id="onboarding-description">
-                                    You can replay this tour from the command deck or Settings. For now, start with any session.
+                                    Pick a first move and the tour gets out of the way. Replay it any time from the command deck or Settings.
                                 </p>
-                                <div className="onboarding-reference">
-                                    {ONBOARDING_SHORTCUTS.map((id) => {
-                                        const { action, label } = shortcut(id);
-                                        return (
-                                            <div key={id}>
-                                                <span>{action.label}</span>
-                                                <kbd>{label}</kbd>
-                                            </div>
-                                        );
-                                    })}
+                                <div className="onboarding-launch" onMouseLeave={() => setLaunch(null)}>
+                                    {ONBOARDING_LAUNCHES.map((item, index) => (
+                                        <button
+                                            key={item.label}
+                                            type="button"
+                                            className={launch === index ? "is-on" : ""}
+                                            onMouseEnter={() => setLaunch(index)}
+                                            onFocus={() => setLaunch(index)}
+                                            onBlur={() => setLaunch((current) => (current === index ? null : current))}
+                                            onClick={() => runLaunch(item.run)}>
+                                            <b>{item.label}</b>
+                                            <kbd>{keybindingLabelForAction(overrides, item.id)}</kbd>
+                                        </button>
+                                    ))}
                                 </div>
                                 <div className="onboarding-health" aria-live="polite">
                                     {healthSignals.length ? (
-                                        healthSignals.map((signal) => (
-                                            <span key={signal.label} className={signal.ready ? "is-ready" : "is-muted"}>
-                                                {signal.label} {signal.ready ? "ready" : "missing"}
+                                        healthSignals.map((item) => (
+                                            <span key={item.label} className={item.ready ? "is-ready" : "is-muted"}>
+                                                {item.label} {item.ready ? "ready" : "missing"}
                                             </span>
                                         ))
                                     ) : (
@@ -303,23 +460,13 @@ export function Onboarding() {
                         )}
                     </div>
 
-                    <div className={`onboarding-visual onboarding-visual--${step}`} aria-hidden="true">
-                        <div className="onboarding-orbit orbit-a">
-                            <span />
-                        </div>
-                        <div className="onboarding-orbit orbit-b">
-                            <span />
-                        </div>
-                        <div className="onboarding-core">
-                            <span className="onboarding-core-mark">S</span>
-                            <small>{step === 0 ? "signal deck" : step === 1 ? "shortcut" : step === 2 ? "attention" : "ready"}</small>
-                        </div>
-                        <span className="onboarding-node node-project">project</span>
-                        <span className="onboarding-node node-agent">agent</span>
-                        <span className="onboarding-node node-cloud">cloud</span>
-                        <span className="onboarding-node node-command">command</span>
-                        <div className="onboarding-sweep" />
-                    </div>
+                    <OnboardingStage
+                        scene={step}
+                        region={stageRegion}
+                        overlay={stageOverlay}
+                        agentState={step === 2 ? signal : step === 3 ? "done" : "working"}
+                        commandRows={commandRows}
+                    />
                 </div>
 
                 <span className="onboarding-sr-only" role="status" aria-live="polite">
@@ -328,8 +475,8 @@ export function Onboarding() {
 
                 <footer className="onboarding-footer">
                     <span className="onboarding-key-hint">
-                        Use <kbd>←</kbd>
-                        <kbd>→</kbd> to explore
+                        <kbd>←</kbd>
+                        <kbd>→</kbd> to move between steps
                     </span>
                     <div>
                         {step > 0 && <button onClick={() => goTo(step - 1)}>Back</button>}

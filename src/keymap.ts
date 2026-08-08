@@ -254,6 +254,10 @@ export function useKeymap(): void {
             }
 
             if (!action) return;
+            // The first-run tour asks the reader to press real bindings, so it
+            // claims every shortcut while it is open — including the ones other
+            // modals let through.
+            if (st.onboardingOpen) return;
             if (hasOpenModal(st) && !MODAL_ACTIONS.has(action)) return;
             if (!runKeybindingAction(action, event, st)) return;
 
