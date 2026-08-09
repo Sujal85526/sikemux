@@ -4,6 +4,7 @@ import { isBuiltinTheme, isTheme } from "../themes";
 import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
+import { normalizePermissionMode } from "../agentLaunch";
 import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
 import { agentStartup } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
@@ -11,12 +12,16 @@ import { errMessage, notify } from "./toast";
 import { validatePersistedLayout } from "./persistValidation";
 import type {
     Agent,
+    AgentPermissionMode,
+    AgentProvider,
     AgentType,
     EditorPaneView,
     PersistedAgent,
     PersistedPrefs,
     PersistedSession,
     PersistedSnapshot,
+    ProviderProfile,
+    ProviderProfileSelection,
     RecentEntry,
     Session,
     Window,
@@ -84,6 +89,9 @@ const PERSISTED_KEYS = [
     "updateChannel",
     "lastReleaseNotes",
     "recentCommandKeys",
+    "providerProfiles",
+    "selectedProviderProfileIds",
+    "defaultAgentPermissionMode",
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
 type SliceShot = { [K in PersistedKey]: StoreState[K] };
@@ -101,6 +109,7 @@ function slicesEqual(a: SliceShot, b: SliceShot): boolean {
 }
 
 function packPrefs(s: StoreState): PersistedPrefs {
+    const providerProfiles = normaliseProviderProfiles(s.providerProfiles, []);
     return {
         projectRoots: s.projectRoots,
         pinnedProjects: s.pinnedProjects,
@@ -131,6 +140,9 @@ function packPrefs(s: StoreState): PersistedPrefs {
         updateChannel: s.updateChannel,
         lastReleaseNotes: s.lastReleaseNotes,
         recentCommandKeys: s.recentCommandKeys,
+        providerProfiles,
+        selectedProviderProfileIds: normaliseProviderProfileSelection(s.selectedProviderProfileIds, providerProfiles, {}),
+        defaultAgentPermissionMode: s.defaultAgentPermissionMode,
     };
 }
 
@@ -313,12 +325,99 @@ function isRecent(value: unknown): value is RecentEntry {
 }
 
 const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode"]);
+const AGENT_PROVIDERS = new Set<AgentProvider>(["claude", "codex", "gemini"]);
+const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>(["read-only", "workspace-write", "full-access", "bypass"]);
+
+function isAgentPermissionMode(value: unknown): value is AgentPermissionMode {
+    return AGENT_PERMISSION_MODES.has(value as AgentPermissionMode);
+}
+
+function normaliseProviderProfiles(value: unknown, fallback: ProviderProfile[]): ProviderProfile[] {
+    if (!Array.isArray(value)) return fallback.map((profile) => ({ ...profile }));
+    const profiles: ProviderProfile[] = [];
+    const seen = new Set<string>();
+    for (const row of value) {
+        if (!isRecord(row) || typeof row.id !== "string" || !row.id.trim() || seen.has(row.id)) continue;
+        if (typeof row.name !== "string" || !row.name.trim() || !AGENT_PROVIDERS.has(row.provider as AgentProvider)) continue;
+        if (typeof row.accent !== "string" || !/^#[\da-f]{6}$/i.test(row.accent)) continue;
+        const id = row.id.trim().slice(0, 100);
+        if (seen.has(id)) continue;
+        const profile: ProviderProfile = {
+            id,
+            name: row.name.trim().slice(0, 100),
+            provider: row.provider as AgentProvider,
+            accent: row.accent.toLowerCase(),
+        };
+        const executablePath = boundedOptionalString(row.executablePath, 4096);
+        const configPath = boundedOptionalString(row.configPath, 4096);
+        if (executablePath) profile.executablePath = executablePath;
+        if (configPath) profile.configPath = configPath;
+        if (Array.isArray(row.environmentKeys)) {
+            profile.environmentKeys = [
+                ...new Set(
+                    row.environmentKeys.filter(
+                        (key): key is string => typeof key === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && key.length <= 128,
+                    ),
+                ),
+            ].slice(0, 64);
+        }
+        seen.add(id);
+        profiles.push(profile);
+        if (profiles.length >= 50) break;
+    }
+    return profiles;
+}
+
+function normaliseProviderProfileSelection(
+    value: unknown,
+    profiles: ProviderProfile[],
+    fallback: ProviderProfileSelection,
+): ProviderProfileSelection {
+    if (!isRecord(value)) return { ...fallback };
+    const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
+    const selection: ProviderProfileSelection = {};
+    for (const type of AGENT_TYPES) {
+        const selected = value[type];
+        if (typeof selected !== "string") continue;
+        const profile = profilesById.get(selected);
+        if (profile && (type === "claude" || type === "codex") && profile.provider === type) selection[type] = selected;
+    }
+    return selection;
+}
+
+function boundedOptionalString(value: unknown, max: number): string | undefined {
+    return typeof value === "string" && value.trim() && !/[\0\r\n]/.test(value) ? value.slice(0, max) : undefined;
+}
+
+const AGENT_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max", "ultra"]);
+const AGENT_WORKSPACE_STRATEGIES = new Set(["current", "existing", "agent-decides"]);
 
 function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (!isRecord(value) || typeof value.id !== "string" || !value.id || !AGENT_TYPES.has(value.type as AgentType)) return null;
     if (typeof value.title !== "string" || !value.title.trim() || typeof value.resumeId !== "string" || !value.resumeId.trim()) return null;
     const agent: PersistedAgent = { id: value.id, type: value.type as AgentType, title: value.title.slice(0, 200), resumeId: value.resumeId };
-    if (typeof value.skipPermissions === "boolean") agent.skipPermissions = value.skipPermissions;
+    const requestedPermissionMode = isAgentPermissionMode(value.permissionMode)
+        ? value.permissionMode
+        : value.skipPermissions === true
+          ? "bypass"
+          : value.skipPermissions === false
+            ? "workspace-write"
+            : undefined;
+    const permissionMode = requestedPermissionMode ? normalizePermissionMode(value.type as AgentType, requestedPermissionMode) : undefined;
+    if (permissionMode) agent.permissionMode = permissionMode;
+    if (permissionMode === "bypass") agent.skipPermissions = true;
+    const profileId = boundedOptionalString(value.profileId, 100);
+    const cwd = boundedOptionalString(value.cwd, 4096);
+    const worktreePath = boundedOptionalString(value.worktreePath, 4096);
+    const model = boundedOptionalString(value.model, 200);
+    if (profileId) agent.profileId = profileId;
+    if (cwd) agent.cwd = cwd;
+    if (worktreePath) agent.worktreePath = worktreePath;
+    if (model) agent.model = model;
+    if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
+    if (typeof value.workspaceStrategy === "string" && AGENT_WORKSPACE_STRATEGIES.has(value.workspaceStrategy)) {
+        agent.workspaceStrategy = value.workspaceStrategy as PersistedAgent["workspaceStrategy"];
+    }
     return agent;
 }
 
@@ -350,13 +449,23 @@ function snapshot(): string {
         agentsBySession[sess.id] = (s.agentsBySession[sess.id] ?? [])
             .map((id) => s.agents[id])
             .filter((agent): agent is Agent => !!agent?.resumeId)
-            .map(({ id, type, title, resumeId, skipPermissions }) => ({
-                id,
-                type,
-                title,
-                resumeId,
-                ...(typeof skipPermissions === "boolean" ? { skipPermissions } : {}),
-            }));
+            .map((agent) => {
+                const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
+                return {
+                    id: agent.id,
+                    type: agent.type,
+                    title: agent.title,
+                    resumeId: agent.resumeId,
+                    permissionMode,
+                    ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
+                    ...(agent.profileId ? { profileId: agent.profileId } : {}),
+                    ...(agent.cwd ? { cwd: agent.cwd } : {}),
+                    ...(agent.worktreePath ? { worktreePath: agent.worktreePath } : {}),
+                    ...(agent.model ? { model: agent.model } : {}),
+                    ...(agent.effort ? { effort: agent.effort } : {}),
+                    ...(agent.workspaceStrategy ? { workspaceStrategy: agent.workspaceStrategy } : {}),
+                };
+            });
     }
     const snap: PersistedSnapshot = {
         version: VERSION,
@@ -484,6 +593,8 @@ export function applyHydrate(raw: string): void {
         agentsBySession[sid] = [];
     }
     const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    const cur = getState();
+    const providerProfiles = normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
     const autoResumeAgents = typeof prefs.autoResumeAgents === "boolean" ? prefs.autoResumeAgents : false;
     const rawAgents = isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {};
@@ -498,9 +609,23 @@ export function applyHydrate(raw: string): void {
                 const claim = `${saved.type}\0${saved.resumeId}`;
                 if (claimedResumeIds.has(claim)) continue;
                 claimedResumeIds.add(claim);
+                const permissionMode = normalizePermissionMode(
+                    saved.type,
+                    saved.permissionMode ?? (saved.skipPermissions ? "bypass" : "workspace-write"),
+                );
+                const executablePath = saved.profileId
+                    ? providerProfiles.find((profile) => profile.id === saved.profileId && profile.provider === saved.type)?.executablePath
+                    : undefined;
+                if (saved.profileId && !providerProfiles.some((profile) => profile.id === saved.profileId && profile.provider === saved.type)) {
+                    delete saved.profileId;
+                }
                 agents[saved.id] = {
                     ...saved,
-                    startup: agentStartup(saved.type, saved.resumeId, saved.skipPermissions ?? false),
+                    permissionMode,
+                    startup: agentStartup(saved.type, saved.resumeId, permissionMode, executablePath, {
+                        model: saved.model,
+                        effort: saved.effort,
+                    }),
                     launchState: autoResumeAgents ? "live" : "dormant",
                 };
                 agentsBySession[sid].push(saved.id);
@@ -540,7 +665,6 @@ export function applyHydrate(raw: string): void {
     for (const sid of Object.keys(sessions)) if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     const requestedActive = typeof decoded.activeSessionId === "string" ? decoded.activeSessionId : "";
     const activeSessionId = sessions[requestedActive] ? requestedActive : sessionOrder[0];
-    const cur = getState();
     const rundeck = isRecord(prefs.rundeck) ? prefs.rundeck : {};
     const prodEnvs = Array.isArray(rundeck.prodEnvs) ? rundeck.prodEnvs.filter((v): v is string => typeof v === "string") : cur.rundeck.prodEnvs;
 
@@ -611,6 +735,15 @@ export function applyHydrate(raw: string): void {
         recentCommandKeys: Array.isArray(prefs.recentCommandKeys)
             ? prefs.recentCommandKeys.filter((value): value is string => typeof value === "string").slice(0, 20)
             : [],
+        providerProfiles,
+        selectedProviderProfileIds: normaliseProviderProfileSelection(
+            prefs.selectedProviderProfileIds,
+            providerProfiles,
+            cur.selectedProviderProfileIds,
+        ),
+        defaultAgentPermissionMode: isAgentPermissionMode(prefs.defaultAgentPermissionMode)
+            ? prefs.defaultAgentPermissionMode
+            : cur.defaultAgentPermissionMode,
     });
     ensureSearchWindow();
     registerCustomThemes(getState().customThemes);

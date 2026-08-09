@@ -10,6 +10,14 @@ import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname, isPathWithin, joinPath } from "../lib/paths";
 import { IS_WINDOWS } from "../lib/platform";
+import {
+    agentLaunchArgs,
+    initialAgentPrompt,
+    MAX_AGENT_MODEL_LENGTH,
+    MAX_AGENT_PROMPT_LENGTH,
+    normalizePermissionMode,
+    supportsInitialPrompt,
+} from "../agentLaunch";
 import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
@@ -20,7 +28,7 @@ import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.def
 import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
-import { SKIP_PERMISSION_FLAG, agentSupportsSkipPermissions } from "./commands/agentLogic";
+import { agentSupportsSkipPermissions } from "./commands/agentLogic";
 import { parseSessionBundle } from "./sessionBundle";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
@@ -38,7 +46,10 @@ import {
 } from "./layout";
 import type {
     Agent,
+    AgentEffort,
+    AgentPermissionMode,
     AgentType,
+    AgentWorkspaceStrategy,
     AwsService,
     BrunoReqTab,
     BrunoResTab,
@@ -845,24 +856,40 @@ export function splitActivePane(dir: SplitDir): void {
     });
 }
 
-export function runCustomCommand(custom: import("../commands/registry").CustomCommand): void {
+export async function runBackgroundCommand(
+    custom: import("../commands/registry").CustomCommand,
+    cwdOverride?: string,
+    failOnNonZero = false,
+    sessionIdOverride?: string,
+): Promise<{ code: number; output: string }> {
+    const st = getState();
+    const session = st.sessions[sessionIdOverride ?? st.activeSessionId];
+    if (!session) throw new Error("No active session for project command.");
+    const commandCwd = cwdOverride || session.cwd;
+    const result = await invoke<{ code: number; output: string }>("run_background_command", {
+        command: custom.command,
+        cwd: commandCwd || null,
+        env: {
+            SIKEMUX_SESSION_ID: session.id,
+            SIKEMUX_SESSION_NAME: session.name,
+            SIKEMUX_SESSION_KIND: session.kind,
+            SIKEMUX_PROJECT: session.kind === "project" ? commandCwd : "",
+        },
+    });
+    const summary = result.output.trim() || `exit ${result.code}`;
+    notify(result.code === 0 ? "success" : "error", `${custom.title}: ${summary}`);
+    if (failOnNonZero && result.code !== 0) throw new Error(`${custom.title} failed: ${summary}`);
+    return result;
+}
+
+export function runCustomCommand(custom: import("../commands/registry").CustomCommand, cwdOverride?: string): void {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     if (!session) return;
     const startup = custom.command;
+    const commandCwd = cwdOverride || session.cwd;
     if (custom.placement === "background") {
-        void invoke<{ code: number; output: string }>("run_background_command", {
-            command: custom.command,
-            cwd: session.cwd || null,
-            env: {
-                SIKEMUX_SESSION_ID: session.id,
-                SIKEMUX_SESSION_NAME: session.name,
-                SIKEMUX_SESSION_KIND: session.kind,
-                SIKEMUX_PROJECT: session.kind === "project" ? session.cwd : "",
-            },
-        })
-            .then((result) => notify(result.code === 0 ? "success" : "error", `${custom.title}: ${result.output.trim() || `exit ${result.code}`}`))
-            .catch(reportError(custom.title));
+        void runBackgroundCommand(custom, commandCwd).catch(reportError(custom.title));
         return;
     }
     if (custom.placement === "popup") {
@@ -871,12 +898,12 @@ export function runCustomCommand(custom: import("../commands/registry").CustomCo
                 id: newId("popup"),
                 title: custom.title,
                 startup,
-                cwd: session.cwd,
+                cwd: commandCwd,
                 context: {
                     sessionId: session.id,
                     sessionName: session.name,
                     sessionKind: session.kind,
-                    ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
+                    ...(session.kind === "project" && commandCwd ? { project: commandCwd } : {}),
                 },
             },
         });
@@ -887,11 +914,11 @@ export function runCustomCommand(custom: import("../commands/registry").CustomCo
         if (!current) return;
         const window = d.windows[current.activeWindowId];
         if (!window) return;
-        const pane = makePane(current.cwd, { startup });
+        const pane = makePane(commandCwd, { startup });
         pane.title = custom.title;
         if (custom.placement === "terminal") {
             const ids = d.windowsBySession[current.id] ?? [];
-            const created = makeWindow(current.cwd, custom.title, { startup });
+            const created = makeWindow(commandCwd, custom.title, { startup });
             d.windows[created.id] = created;
             d.windowsBySession[current.id] = [...ids, created.id];
             current.activeWindowId = created.id;
@@ -1109,7 +1136,10 @@ export function closeActiveFocusTarget(): void {
     if (!session) return;
 
     if (inAgentView(session)) {
-        if (session.activeAgentId) closeAgent(session.activeAgentId);
+        // The new-agent draft is the frontmost agent tab while it is open, so
+        // ⌥W dismisses the draft before it reaches a running agent.
+        if (st.agentPaletteOpen) closeAgentPalette();
+        else if (session.activeAgentId) closeAgent(session.activeAgentId);
         return;
     }
 
@@ -1420,14 +1450,6 @@ export function cycleTabs(delta: number): void {
     setEditorView(pane.id, { activePath: tabs[(base + delta + tabs.length) % tabs.length] });
 }
 
-const AGENT_RESUME_CMD: Partial<Record<AgentType, (id: string) => string>> = {
-    claude: (id) => `claude --resume ${id}`,
-    codex: (id) => `codex resume ${id}`,
-    hermes: (id) => `hermes --resume ${id}`,
-    pi: (id) => `pi --session ${id}`,
-    opencode: (id) => `opencode --session ${id}`,
-};
-
 const FALLBACK_AGENT_TITLE_MAX = 13;
 
 function shellQuote(value: string): string {
@@ -1436,10 +1458,23 @@ function shellQuote(value: string): string {
     return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-export function agentStartup(type: AgentType, resumeId?: string, skipPermissions = false): string {
-    const cmd = resumeId ? (AGENT_RESUME_CMD[type]?.(shellQuote(resumeId)) ?? type) : type;
-    const skipFlag = SKIP_PERMISSION_FLAG[type];
-    return skipPermissions && skipFlag ? `${cmd} ${skipFlag}` : cmd;
+export function agentStartup(
+    type: AgentType,
+    resumeId?: string,
+    permissionModeOrSkip: AgentPermissionMode | boolean = "workspace-write",
+    executablePath?: string,
+    options: { model?: string; effort?: AgentEffort; initialPrompt?: string } = {},
+): string {
+    const permissionMode: AgentPermissionMode =
+        typeof permissionModeOrSkip === "boolean" ? (permissionModeOrSkip ? "bypass" : "workspace-write") : permissionModeOrSkip;
+    const executable = shellQuote(executablePath?.trim() || type);
+    const args = agentLaunchArgs(type, { resumeId, permissionMode, ...options }).map(shellQuote);
+    return [executable, ...args].join(" ");
+}
+
+function profileExecutable(profileId: string | undefined, type: AgentType): string | undefined {
+    if (!profileId) return undefined;
+    return getState().providerProfiles.find((profile) => profile.id === profileId && profile.provider === type)?.executablePath;
 }
 
 function usableAgentSessionTitle(row: AgentSession, current: string): string {
@@ -1461,9 +1496,14 @@ export function toggleAgentSkipPermissions(id: string): void {
         const a = d.agents[id];
         if (!a) return;
         if (!agentSupportsSkipPermissions(a.type)) return;
-        const next = !a.skipPermissions;
-        a.skipPermissions = next;
-        a.startup = agentStartup(a.type, a.resumeId, next);
+        if (a.firstTurnPending && !a.resumeId) return;
+        const next = a.permissionMode === "bypass" || a.skipPermissions ? normalizePermissionMode(a.type, "workspace-write") : "bypass";
+        a.permissionMode = next;
+        a.skipPermissions = next === "bypass";
+        a.startup = agentStartup(a.type, a.resumeId, next, profileExecutable(a.profileId, a.type), {
+            model: a.model,
+            effort: a.effort,
+        });
     });
 }
 
@@ -1476,8 +1516,27 @@ export function toggleActiveAgentSkipPermissions(): void {
     if (id) toggleAgentSkipPermissions(id);
 }
 
-export function addAgent(type: AgentType, resumeId?: string, title?: string): void {
-    withActiveSession((d, session) => {
+export interface AddAgentOptions {
+    permissionMode?: AgentPermissionMode;
+    profileId?: string;
+    model?: string;
+    effort?: AgentEffort;
+    initialPrompt?: string;
+    workspaceStrategy?: AgentWorkspaceStrategy;
+    baselineSessionIds?: string[];
+    cwd?: string;
+    worktreePath?: string;
+    /** Pin async launches to the project that opened the launch studio. */
+    sessionId?: string;
+}
+
+export function addAgent(type: AgentType, resumeId?: string, title?: string, options: AddAgentOptions = {}): boolean {
+    if ((options.model?.trim().length ?? 0) > MAX_AGENT_MODEL_LENGTH) return false;
+    if ((options.initialPrompt?.trim().length ?? 0) > MAX_AGENT_PROMPT_LENGTH) return false;
+    let attached = false;
+    mutate((d) => {
+        const session = d.sessions[options.sessionId ?? d.activeSessionId];
+        if (!session) return;
         if (session.kind !== "project") return;
         const ownedIds = d.agentsBySession[session.id] ?? [];
         const existing = resumeId ? ownedIds.map((id) => d.agents[id]).find((a) => a && a.type === type && a.resumeId === resumeId) : undefined;
@@ -1486,28 +1545,66 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string): vo
         if (existing) {
             sess.activeAgentId = existing.id;
             sess.view = "agent";
+            attached = true;
             return;
         }
+        const permissionMode = normalizePermissionMode(type, options.permissionMode ?? d.defaultAgentPermissionMode);
+        const requestedProfileId = options.profileId ?? d.selectedProviderProfileIds[type];
+        const profileId = requestedProfileId
+            ? d.providerProfiles.find((profile) => profile.id === requestedProfileId && profile.provider === type)?.id
+            : undefined;
+        const cwd = options.cwd || session.cwd;
+        const workspaceStrategy = options.workspaceStrategy ?? (options.worktreePath ? "existing" : "current");
+        const model = options.model?.trim() || undefined;
+        const initialPrompt = resumeId ? undefined : initialAgentPrompt(options.initialPrompt, workspaceStrategy);
+        const promptInArgv = supportsInitialPrompt(type);
+        const initialPromptSubmitted = !!initialPrompt && promptInArgv;
+        const executablePath = profileId ? d.providerProfiles.find((profile) => profile.id === profileId)?.executablePath : undefined;
         const agent: Agent = {
             id: newId("agent"),
             type,
             title: title ?? type,
-            startup: agentStartup(type, resumeId),
+            startup: agentStartup(type, resumeId, permissionMode, executablePath, {
+                model,
+                effort: options.effort,
+                initialPrompt: promptInArgv ? initialPrompt : undefined,
+            }),
             resumeId,
             createdAt: Date.now(),
+            permissionMode,
+            profileId,
+            cwd,
+            model,
+            effort: options.effort,
+            workspaceStrategy,
+            initialPromptSubmitted,
+            firstTurnPending: !!initialPrompt,
+            ...(!promptInArgv && initialPrompt ? { initialInput: initialPrompt } : {}),
+            ...(options.worktreePath ? { worktreePath: options.worktreePath } : {}),
+            ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
             launchState: "live",
         };
         // Fresh agents (no resumeId) record the sessions that already exist so
         // reconciliation never adopts the session you were just in. The rail
         // keeps this list warm; on a cold cache we fall back to an mtime check.
         if (!resumeId) {
-            const known = peekResource(agentSessionsR, type, session.cwd);
-            if (known) agent.baselineSessionIds = known.map((row) => row.id);
+            const known = options.baselineSessionIds ?? peekResource(agentSessionsR, type, cwd)?.map((row) => row.id);
+            if (known) agent.baselineSessionIds = [...new Set(known)];
         }
         d.agents[agent.id] = agent;
         d.agentsBySession[session.id] = [...ownedIds, agent.id];
         sess.activeAgentId = agent.id;
         sess.view = "agent";
+        attached = true;
+    });
+    return attached;
+}
+
+/** Prevent a fallback first message from being submitted again if its terminal is remounted. */
+export function clearAgentInitialInput(id: string): void {
+    mutate((draft) => {
+        const agent = draft.agents[id];
+        if (agent) delete agent.initialInput;
     });
 }
 
@@ -1518,10 +1615,10 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
         const matchingAgents: Agent[] = [];
         for (const sessionId of d.sessionOrder) {
             const session = d.sessions[sessionId];
-            if (session?.kind !== "project" || session.cwd !== cwd) continue;
+            if (session?.kind !== "project") continue;
             for (const agentId of d.agentsBySession[sessionId] ?? []) {
                 const agent = d.agents[agentId];
-                if (agent?.type === type) matchingAgents.push(agent);
+                if (agent?.type === type && (agent.cwd || session.cwd) === cwd) matchingAgents.push(agent);
             }
         }
         if (matchingAgents.length === 0) return;
@@ -1556,8 +1653,15 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             const [row] = candidates.splice(idx, 1);
             agent.resumeId = row.id;
             agent.title = usableAgentSessionTitle(row, agent.title);
-            agent.startup = agentStartup(agent.type, agent.resumeId, agent.skipPermissions ?? false);
+            agent.startup = agentStartup(
+                agent.type,
+                agent.resumeId,
+                agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write"),
+                profileExecutable(agent.profileId, agent.type),
+                { model: agent.model, effort: agent.effort },
+            );
             delete agent.baselineSessionIds;
+            delete agent.firstTurnPending;
             claimed.add(row.id);
         }
     });
@@ -1568,6 +1672,8 @@ export function selectAgent(id: string): void {
         const sess = d.sessions[session.id];
         sess.activeAgentId = id;
         sess.view = "agent";
+        // Picking a real agent tab replaces the draft, exactly like any other tab.
+        d.agentPaletteOpen = false;
         const activity = d.agentActivity[id];
         if (activity) {
             activity.unread = false;
@@ -1857,6 +1963,32 @@ export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreA
 export const setAutoResumeAgents = (value: boolean): void =>
     setState({ autoResumeAgents: value, restoreAgentTabs: value ? true : getState().restoreAgentTabs });
 export const setRailDensity = (value: import("./types").RailDensity): void => setState({ railDensity: value });
+export const setDefaultAgentPermissionMode = (value: import("./types").AgentPermissionMode): void => setState({ defaultAgentPermissionMode: value });
+export function selectProviderProfile(type: AgentType, profileId: string): void {
+    setState((state) => ({ selectedProviderProfileIds: { ...state.selectedProviderProfileIds, [type]: profileId } }));
+}
+export function saveProviderProfile(profile: import("./types").ProviderProfile): void {
+    setState((state) => {
+        const selectedProviderProfileIds = { ...state.selectedProviderProfileIds };
+        for (const [type, selected] of Object.entries(selectedProviderProfileIds)) {
+            if (selected === profile.id && type !== profile.provider) delete selectedProviderProfileIds[type as AgentType];
+        }
+        return {
+            providerProfiles: [...state.providerProfiles.filter((item) => item.id !== profile.id), profile],
+            selectedProviderProfileIds,
+        };
+    });
+}
+export function deleteProviderProfile(id: string): void {
+    if (id.startsWith("builtin-")) return;
+    setState((state) => {
+        const selectedProviderProfileIds = { ...state.selectedProviderProfileIds };
+        for (const [type, selected] of Object.entries(selectedProviderProfileIds)) {
+            if (selected === id) delete selectedProviderProfileIds[type as AgentType];
+        }
+        return { providerProfiles: state.providerProfiles.filter((profile) => profile.id !== id), selectedProviderProfileIds };
+    });
+}
 export const setUpdateChannel = (value: "stable" | "preview"): void => setState({ updateChannel: value, pendingUpdate: null });
 export const patchNotificationPreferences = (patch: Partial<import("./types").NotificationPreferences>): void =>
     setState((s) => ({ notificationPreferences: { ...s.notificationPreferences, ...patch } }));

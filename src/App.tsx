@@ -24,20 +24,23 @@ import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./components/Ex
 import { TerminalPane } from "./terminal/TerminalPane";
 import { AgentNotifications } from "./components/AgentNotifications";
 import { CliOpenBridge } from "./components/CliOpenBridge";
-import { git } from "./api/git";
+import { git, type GitWorktree } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, canFlushPersist, flushPersist, subscribePersist } from "./state/persist";
 import { dispatchFolder, dispatchPty } from "./state/dropRegistry";
-import { reportError, swallow } from "./state/toast";
+import { notify, reportError, swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
 import { dirname } from "./lib/paths";
 import type { StandaloneCommand } from "./commands/registry";
 import { agentDetectionApi } from "./api/agentDetection";
+import { loadProjectConfig, type ProjectConfigLoadResult } from "./projectConfig";
+import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
+import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 
 interface BootInfo {
     home: string;
@@ -121,6 +124,14 @@ export default function App() {
     const customCommands = useStore((s) => s.customCommands);
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
+    const activeProjectCwd = useStore((s) => {
+        const session = s.sessions[s.activeSessionId];
+        return session?.kind === "project" ? session.cwd : "";
+    });
+    const [projectConfigState, setProjectConfigState] = useState<{ cwd: string; result: ProjectConfigLoadResult } | null>(null);
+    const [worktreeState, setWorktreeState] = useState<{ cwd: string; items: GitWorktree[] } | null>(null);
+    const projectConfig = projectConfigState?.cwd === activeProjectCwd ? projectConfigState.result : null;
+    const activeWorktrees = worktreeState?.cwd === activeProjectCwd ? worktreeState.items : [];
     const activeTerminalWindowId = useStore((s) => {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
         return id && s.windows[id]?.role === "term" ? id : null;
@@ -142,7 +153,116 @@ export default function App() {
             cmd.noteRecentCommand(`standalone:${id}`);
             execute();
         };
+    const projectCommands: StandaloneCommand[] = [];
+    if (projectConfig?.status === "valid") {
+        for (const action of projectConfig.config.actions.filter(
+            (candidate) => candidate.contexts.length === 0 || candidate.contexts.includes("project"),
+        )) {
+            projectCommands.push({
+                id: `project.action.${action.id}`,
+                title: action.label,
+                detail: action.description || `Run from ${projectConfig.path}`,
+                category: "Project · sikemux.json",
+                execute: runStandalone(`project.action.${action.id}`, () => {
+                    if (!trustProjectConfig(projectConfig)) return;
+                    cmd.runCustomCommand(projectActionCommand(action));
+                }),
+            });
+        }
+        if (projectConfig.config.preview?.command) {
+            projectCommands.push({
+                id: "project.preview.start",
+                title: "Start project preview",
+                detail: projectConfig.config.preview.url ? `Serve ${projectConfig.config.preview.url}` : "Run the checked-in preview command",
+                category: "Project · Preview",
+                execute: runStandalone("project.preview.start", () => {
+                    if (!trustProjectConfig(projectConfig)) return;
+                    cmd.runCustomCommand({
+                        id: "project.preview.start",
+                        title: "Project preview",
+                        detail: "Checked-in preview command",
+                        command: projectConfig.config.preview!.command!,
+                        contexts: ["project"],
+                        placement: "terminal",
+                    });
+                }),
+            });
+        }
+        if (projectConfig.config.preview?.url) {
+            projectCommands.push({
+                id: "project.preview.open",
+                title: "Open project preview",
+                detail: projectConfig.config.preview.url,
+                category: "Project · Preview",
+                execute: runStandalone("project.preview.open", () => {
+                    void invoke("open_url", { url: projectConfig.config.preview!.url!, app: null, shortcut: null }).catch(
+                        reportError("open project preview"),
+                    );
+                }),
+            });
+        }
+    } else if (projectConfig?.status === "invalid") {
+        projectCommands.push({
+            id: "project.config.invalid",
+            title: "Project config needs attention",
+            detail: projectConfig.errors[0]?.message ?? "sikemux.json is invalid",
+            category: "Project · sikemux.json",
+            execute: runStandalone("project.config.invalid", () =>
+                notify("error", `sikemux.json: ${projectConfig.errors.map((error) => `${error.path} ${error.message}`).join(" · ")}`),
+            ),
+        });
+    }
+    const worktreeCommands: StandaloneCommand[] = activeWorktrees
+        .filter((worktree) => !worktree.bare)
+        .flatMap((worktree) => [
+            {
+                id: `worktree.open.${worktree.path}`,
+                title: worktree.current ? "Open current worktree" : `Open worktree: ${worktree.branch ?? "detached"}`,
+                detail: worktree.path,
+                category: "Project · Worktrees",
+                execute: runStandalone(`worktree.open.${worktree.path}`, () => cmd.createProjectSession(worktree.path)),
+            },
+            ...(!worktree.is_main && !worktree.current
+                ? [
+                      {
+                          id: `worktree.remove.${worktree.path}`,
+                          title: `Remove worktree: ${worktree.branch ?? "detached"}`,
+                          detail: "Safe removal; dirty worktrees are refused",
+                          category: "Project · Worktrees",
+                          execute: runStandalone(`worktree.remove.${worktree.path}`, () => {
+                              if (worktreeHasLiveOwners(getState(), worktree.path)) {
+                                  notify("info", "Close the worktree’s Sikemux project and agents before removing it");
+                                  return;
+                              }
+                              if (!window.confirm(`Remove worktree ${worktree.branch ?? worktree.path}?\n\nDirty worktrees will be refused.`)) return;
+                              void git
+                                  .worktreeRemove(activeProjectCwd, worktree.path)
+                                  .then(() => {
+                                      setWorktreeState((state) =>
+                                          state?.cwd === activeProjectCwd
+                                              ? { ...state, items: state.items.filter((item) => item.path !== worktree.path) }
+                                              : state,
+                                      );
+                                      notify("success", `Removed worktree ${worktree.branch ?? worktree.path}`);
+                                  })
+                                  .catch(reportError("remove worktree"));
+                          }),
+                      } satisfies StandaloneCommand,
+                  ]
+                : []),
+        ]);
     const standaloneCommands: StandaloneCommand[] = [
+        ...(activeKind === "project"
+            ? [
+                  {
+                      id: "agents.launch",
+                      title: "Launch an agent lane",
+                      detail: "Choose a provider, safety boundary, and Git worktree",
+                      category: "Agents",
+                      execute: runStandalone("agents.launch", cmd.openAgentPalette),
+                  } satisfies StandaloneCommand,
+              ]
+            : []),
         {
             id: "support.diagnostics",
             title: "Open runtime diagnostics",
@@ -196,7 +316,47 @@ export default function App() {
             category: "Agents",
             execute: runStandalone("agents.reload-manifests", () => void agentDetectionApi.reload().catch(reportError("agent manifest reload"))),
         },
+        ...worktreeCommands,
+        ...projectCommands,
     ];
+
+    useEffect(() => {
+        let cancelled = false;
+        let generation = 0;
+        if (!activeProjectCwd) {
+            setProjectConfigState(null);
+            setWorktreeState(null);
+            return;
+        }
+        const refresh = () => {
+            const requestGeneration = ++generation;
+            setProjectConfigState(null);
+            setWorktreeState(null);
+            void loadProjectConfig(activeProjectCwd).then((result) => {
+                if (!cancelled && requestGeneration === generation) setProjectConfigState({ cwd: activeProjectCwd, result });
+            });
+            void git
+                .worktrees(activeProjectCwd)
+                .then((items) => {
+                    if (!cancelled && requestGeneration === generation) setWorktreeState({ cwd: activeProjectCwd, items });
+                })
+                .catch(() => {
+                    if (!cancelled && requestGeneration === generation) setWorktreeState({ cwd: activeProjectCwd, items: [] });
+                });
+        };
+        refresh();
+        const unsubscribe = subscribe("fs-changed", (event) => {
+            if (!event.repo || event.repo === activeProjectCwd) refresh();
+        });
+        const unsubscribeGit = subscribe("git-refresh", (event) => {
+            if (!event.repo || event.repo === activeProjectCwd) refresh();
+        });
+        return () => {
+            cancelled = true;
+            unsubscribe();
+            unsubscribeGit();
+        };
+    }, [activeProjectCwd]);
 
     useEffect(() => {
         let disposed = false;

@@ -1311,29 +1311,28 @@ body.git-resizing {
     height: auto;
 }
 
-/* Unified diff. Removals read red, additions green, each hunk carrying a solid
-   edge rule so its shape is legible before you read a single character. These
-   fight @codemirror/merge's own base theme, hence the !important flags. */
+/* Unified diff. No full-line wash — a changed line is marked by the gutter rail
+   and by the highlight on the characters that actually changed, so the code
+   keeps its normal background. These fight @codemirror/merge's own base theme,
+   hence the !important flags. */
 .diff-editor .cm-editor .cm-deletedChunk {
     padding-left: 0;
-    background: color-mix(in srgb, var(--danger) 7%, transparent) !important;
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--danger) 55%, transparent);
+    background: transparent !important;
 }
 .diff-editor .cm-editor .cm-deletedChunk .cm-deletedLine {
     padding-left: 8px;
 }
 .diff-editor .cm-editor .cm-deletedText {
-    background: color-mix(in srgb, var(--danger) 26%, transparent) !important;
+    background: color-mix(in srgb, var(--danger) 14%, transparent) !important;
     color: #ffc9c9 !important;
     border-radius: 2px;
     text-decoration: none;
 }
 .diff-editor .cm-editor .cm-changedLine {
-    background: color-mix(in srgb, var(--live) 7%, transparent) !important;
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--live) 55%, transparent);
+    background: transparent !important;
 }
 .diff-editor .cm-editor .cm-changedText {
-    background: color-mix(in srgb, var(--live) 20%, transparent) !important;
+    background: color-mix(in srgb, var(--live) 12%, transparent) !important;
     border-radius: 2px;
 }
 .diff-editor .cm-editor .cm-changeGutter {

@@ -24,6 +24,8 @@ function enforceHiddenRendererBudget() {
 export function TerminalPane({
     cwd,
     startup,
+    initialInput,
+    onInitialInputDelivered,
     active,
     visible = active,
     spawnWhen = visible,
@@ -33,6 +35,9 @@ export function TerminalPane({
 }: {
     cwd?: string;
     startup?: string;
+    /** First submitted task for interactive CLIs without an argv prompt. */
+    initialInput?: string;
+    onInitialInputDelivered?: () => void;
     active: boolean;
     visible?: boolean;
     spawnWhen?: boolean;
@@ -49,7 +54,7 @@ export function TerminalPane({
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const hostRef = useRef<HTMLDivElement>(null);
     const rendererTokenRef = useRef(Symbol("terminal-renderer"));
-    const ptyReady = usePty({ cwd, startup, hostRef, spawnWhen, context });
+    const ptyReady = usePty({ cwd, startup, initialInput, onInitialInputDelivered, hostRef, spawnWhen, context });
 
     useEffect(() => {
         const token = rendererTokenRef.current;

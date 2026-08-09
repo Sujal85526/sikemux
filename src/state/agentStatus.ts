@@ -42,7 +42,7 @@ export function acknowledgeAgentState(value: AgentRuntimeState): AgentRuntimeSta
     return { ...value, state: value.state === "done" ? "idle" : value.state, unread: false };
 }
 
-const PRIORITY: Record<AgentPresentationState, number> = { blocked: 5, working: 4, done: 3, unknown: 2, idle: 1 };
+const PRIORITY: Record<AgentPresentationState, number> = { blocked: 6, working: 5, done: 4, stopped: 3, unknown: 2, idle: 1 };
 
 export function rollupAgentStates(values: Array<AgentRuntimeState | undefined>): AgentPresentationState | undefined {
     let best: AgentPresentationState | undefined;
@@ -54,6 +54,7 @@ export const AGENT_STATE_META: Record<AgentPresentationState, { label: string }>
     working: { label: "Working" },
     blocked: { label: "Needs input" },
     done: { label: "Done — unseen" },
-    idle: { label: "Idle" },
+    idle: { label: "Ready" },
+    stopped: { label: "Stopped" },
     unknown: { label: "Unknown" },
 };

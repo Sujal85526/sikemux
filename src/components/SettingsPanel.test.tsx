@@ -52,7 +52,7 @@ describe("SettingsPanel keybindings", () => {
         const user = userEvent.setup();
         setState({ restoreAgentTabs: true, autoResumeAgents: true });
         render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "AgentsRestore and status behavior" }));
+        await user.click(screen.getByRole("button", { name: "AgentsProfiles and launch safety" }));
 
         const restore = screen.getByRole("checkbox", { name: /Restore agent tabs/ });
         const autoResume = screen.getByRole("checkbox", { name: /Auto-resume restored agents/ });
@@ -62,6 +62,21 @@ describe("SettingsPanel keybindings", () => {
         expect(getState()).toMatchObject({ restoreAgentTabs: false, autoResumeAgents: false });
         expect(autoResume).not.toBeChecked();
         expect(autoResume).toBeDisabled();
+    });
+
+    it("persists an explicit launch boundary and non-secret provider path", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        await user.click(screen.getByRole("button", { name: "AgentsProfiles and launch safety" }));
+
+        await user.click(screen.getByRole("radio", { name: /Observe/ }));
+        expect(getState().defaultAgentPermissionMode).toBe("read-only");
+
+        await user.click(screen.getByRole("button", { name: /Codexcodex.*system PATH/ }));
+        await user.type(screen.getByRole("textbox", { name: "executable path" }), "/opt/codex/bin/codex");
+        await user.click(screen.getByRole("button", { name: "save profile" }));
+
+        expect(getState().providerProfiles.find((profile) => profile.id === "builtin-codex")?.executablePath).toBe("/opt/codex/bin/codex");
     });
 
     it("mutes and unmutes notifications by agent type", async () => {

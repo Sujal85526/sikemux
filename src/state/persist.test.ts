@@ -141,15 +141,123 @@ describe("frontend persistence", () => {
         const raw = invoke.mock.calls[0][1].data as string;
         expect(raw).not.toContain("malicious saved startup");
         const saved = JSON.parse(raw);
-        expect(saved.agentsBySession[sid]).toEqual([{ id: agent.id, type: "codex", title: agent.title, resumeId: agent.resumeId }]);
+        expect(saved.agentsBySession[sid]).toEqual([
+            { id: agent.id, type: "codex", title: agent.title, resumeId: agent.resumeId, permissionMode: "workspace-write" },
+        ]);
 
         saved.agentsBySession[sid][0].startup = "still malicious";
         applyHydrate(JSON.stringify(saved));
-        expect(getState().agents[agent.id]).toMatchObject({
-            startup: "codex resume session-123",
+        const restored = getState().agents[agent.id];
+        expect(restored).toMatchObject({ launchState: "dormant" });
+        expect(restored.startup).toMatch(/^codex resume\b/);
+        expect(restored.startup).toContain("session-123");
+        expect(restored.startup).not.toContain("still malicious");
+        expect(getState().sessions[sid]).toMatchObject({ view: "agent", activeAgentId: agent.id });
+    });
+
+    it("persists non-secret provider profiles and defensively hydrates selections", async () => {
+        setState({
+            providerProfiles: [
+                {
+                    id: "codex-work",
+                    name: "Codex Work",
+                    provider: "codex",
+                    accent: "#ABCDEF",
+                    executablePath: "/opt/bin/codex",
+                    configPath: "/safe/config.toml",
+                    environmentKeys: ["OPENAI_API_KEY", "OPENAI_API_KEY", "bad-key"],
+                    apiKey: "must-not-persist",
+                } as never,
+            ],
+            selectedProviderProfileIds: { codex: "codex-work", claude: "missing" },
+            defaultAgentPermissionMode: "full-access",
+        });
+        invoke.mockResolvedValue(undefined);
+
+        expect(await flushPersist()).toBe(true);
+        const raw = invoke.mock.calls[0][1].data as string;
+        expect(raw).not.toContain("must-not-persist");
+        const saved = JSON.parse(raw);
+        expect(saved.prefs.providerProfiles).toEqual([
+            {
+                id: "codex-work",
+                name: "Codex Work",
+                provider: "codex",
+                accent: "#abcdef",
+                executablePath: "/opt/bin/codex",
+                configPath: "/safe/config.toml",
+                environmentKeys: ["OPENAI_API_KEY"],
+            },
+        ]);
+        expect(saved.prefs.selectedProviderProfileIds).toEqual({ codex: "codex-work" });
+        expect(saved.prefs.defaultAgentPermissionMode).toBe("full-access");
+
+        saved.prefs.providerProfiles.push({ id: "bad", name: "Bad", provider: "unknown", accent: "red", token: "do-not-hydrate" });
+        saved.prefs.selectedProviderProfileIds = { codex: "codex-work", claude: "bad", unknown: "codex-work" };
+        saved.prefs.defaultAgentPermissionMode = "unbounded";
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().providerProfiles).toEqual(saved.prefs.providerProfiles.slice(0, 1));
+        expect(getState().selectedProviderProfileIds).toEqual({ codex: "codex-work" });
+        expect(getState().defaultAgentPermissionMode).toBe("full-access");
+        expect(JSON.stringify(getState().providerProfiles)).not.toContain("do-not-hydrate");
+    });
+
+    it("migrates legacy permission bypass and preserves non-secret worktree launch metadata", async () => {
+        const sid = getState().activeSessionId;
+        const session = getState().sessions[sid];
+        const legacy = {
+            id: "agent-worktree",
+            type: "claude" as const,
+            title: "isolated task",
+            resumeId: "resume-worktree",
+            skipPermissions: true,
+            profileId: "builtin-claude",
+            cwd: "/repo/.worktrees/isolated",
+            worktreePath: "/repo/.worktrees/isolated",
+        };
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        saved.sessions[0] = { ...session, kind: "project", view: "agent", activeAgentId: legacy.id };
+        saved.agentsBySession[sid] = [legacy];
+
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().agents[legacy.id]).toMatchObject({
+            permissionMode: "bypass",
+            skipPermissions: true,
+            profileId: "builtin-claude",
+            cwd: legacy.cwd,
+            worktreePath: legacy.worktreePath,
             launchState: "dormant",
         });
-        expect(getState().sessions[sid]).toMatchObject({ view: "agent", activeAgentId: agent.id });
+        expect(getState().agents[legacy.id].startup).toContain("--dangerously-skip-permissions");
+    });
+
+    it("discards a saved agent profile when its provider no longer matches", async () => {
+        const sid = getState().activeSessionId;
+        const session = getState().sessions[sid];
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        saved.prefs.providerProfiles = [
+            { id: "moved-profile", name: "Now Codex", provider: "codex", accent: "#abcdef", executablePath: "/opt/codex" },
+        ];
+        saved.sessions[0] = { ...session, kind: "project", view: "agent", activeAgentId: "claude-agent" };
+        saved.agentsBySession[sid] = [
+            {
+                id: "claude-agent",
+                type: "claude",
+                title: "Claude",
+                resumeId: "resume-claude",
+                permissionMode: "workspace-write",
+                profileId: "moved-profile",
+            },
+        ];
+
+        applyHydrate(JSON.stringify(saved));
+
+        expect(getState().agents["claude-agent"].profileId).toBeUndefined();
+        expect(getState().agents["claude-agent"].startup).toMatch(/^claude /);
     });
 
     it("migrates the silent v5 notification default once and preserves v6 opt-outs", async () => {

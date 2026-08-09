@@ -29,4 +29,11 @@ describe("semantic agent presentation", () => {
         const blocked = reduceAgentState(undefined, event("blocked", 2), false)!;
         expect(rollupAgentStates([idle, blocked])).toBe("blocked");
     });
+
+    it("keeps process exit distinct from ready and completion", () => {
+        const ready = reduceAgentState(undefined, event("idle", 1), true)!;
+        const stopped = reduceAgentState(ready, event("stopped", 2), false)!;
+        expect(stopped).toMatchObject({ state: "stopped", backendState: "stopped", unread: false });
+        expect(rollupAgentStates([ready, stopped])).toBe("stopped");
+    });
 });

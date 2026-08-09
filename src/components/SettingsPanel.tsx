@@ -22,7 +22,8 @@ import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type 
 import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconRefresh, IconSave, IconTrash } from "./Icons";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { requestAgentNotificationPermission } from "./AgentNotifications";
-import type { AgentType } from "../state/types";
+import type { AgentProvider, AgentType, ProviderProfile } from "../state/types";
+import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agentLaunch";
 
 type Page = "general" | "appearance" | "keybindings" | "commands" | "agents" | "notifications" | "cli" | "cloud" | "about";
 
@@ -31,7 +32,7 @@ const PAGES: { id: Page; name: string; detail: string }[] = [
     { id: "appearance", name: "Appearance", detail: "Theme and window" },
     { id: "keybindings", name: "Keybindings", detail: "Commands and navigation" },
     { id: "commands", name: "Command deck", detail: "Your contextual actions" },
-    { id: "agents", name: "Agents", detail: "Restore and status behavior" },
+    { id: "agents", name: "Agents", detail: "Profiles and launch safety" },
     { id: "notifications", name: "Notifications", detail: "Attention without noise" },
     { id: "cli", name: "CLI", detail: "Shell and editor integration" },
     { id: "cloud", name: "Cloud", detail: "Sign-in workspace" },
@@ -284,8 +285,145 @@ function AgentsPage() {
     const restore = useStore((s) => s.restoreAgentTabs);
     const auto = useStore((s) => s.autoResumeAgents);
     const density = useStore((s) => s.railDensity);
+    const profiles = useStore((s) => s.providerProfiles);
+    const selectedProfiles = useStore((s) => s.selectedProviderProfileIds);
+    const defaultPermissionMode = useStore((s) => s.defaultAgentPermissionMode);
+    const [draft, setDraft] = useState<ProviderProfile>(
+        () =>
+            profiles[0] ?? {
+                id: `profile-${Date.now().toString(36)}`,
+                name: "Local provider",
+                provider: "claude",
+                accent: "#d97757",
+            },
+    );
+    const isSaved = profiles.some((profile) => profile.id === draft.id);
+    const newProfile = () =>
+        setDraft({ id: `profile-${Date.now().toString(36)}`, name: "", provider: "claude", accent: "#d97757", environmentKeys: [] });
     return (
-        <SettingsPage name="agents" deck="Safe continuity and dense, non-color-only status signals.">
+        <SettingsPage name="agents" deck="Provider identity, visible safety boundaries, and isolated launch lanes.">
+            <SettingsSection
+                title="Default safety boundary"
+                meta={AGENT_PERMISSION_COPY[defaultPermissionMode].label}
+                sub="Every new launch shows this choice before the provider process starts. Providers without matching CLI controls visibly fall back to their own settings.">
+                <div className="agent-mode-settings" role="radiogroup" aria-label="Default agent safety boundary">
+                    {AGENT_PERMISSION_MODES.map((mode) => {
+                        const copy = AGENT_PERMISSION_COPY[mode];
+                        return (
+                            <button
+                                key={mode}
+                                type="button"
+                                role="radio"
+                                aria-checked={defaultPermissionMode === mode}
+                                className={`${defaultPermissionMode === mode ? "active" : ""} ${copy.tone}`}
+                                onClick={() => cmd.setDefaultAgentPermissionMode(mode)}>
+                                <span>{copy.label}</span>
+                                <small>{copy.detail}</small>
+                            </button>
+                        );
+                    })}
+                </div>
+            </SettingsSection>
+            <SettingsSection
+                title="Provider profiles"
+                meta={`${profiles.length} configured`}
+                sub="Profiles choose the local provider executable used at launch. Credential values are never saved by Sikemux.">
+                <div className="provider-profile-layout">
+                    <div className="provider-profile-list">
+                        {profiles.map((profile) => (
+                            <button
+                                key={profile.id}
+                                type="button"
+                                className={draft.id === profile.id ? "active" : ""}
+                                onClick={() => setDraft({ ...profile, environmentKeys: [...(profile.environmentKeys ?? [])] })}>
+                                <i style={{ background: profile.accent }} />
+                                <span>
+                                    <b>{profile.name}</b>
+                                    <small>
+                                        {profile.provider} · {profile.executablePath || "system PATH"}
+                                    </small>
+                                </span>
+                            </button>
+                        ))}
+                        <button type="button" className="provider-profile-new" onClick={newProfile}>
+                            <IconPlus size={11} /> new profile
+                        </button>
+                    </div>
+                    <div className="provider-profile-editor">
+                        <div className="provider-profile-row two">
+                            <label>
+                                <span>name</span>
+                                <input
+                                    className="settings-input"
+                                    value={draft.name}
+                                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                                />
+                            </label>
+                            <label>
+                                <span>provider</span>
+                                <select
+                                    className="settings-input"
+                                    value={draft.provider}
+                                    disabled={draft.id.startsWith("builtin-")}
+                                    onChange={(event) => setDraft({ ...draft, provider: event.target.value as AgentProvider })}>
+                                    <option value="claude">Claude</option>
+                                    <option value="codex">Codex</option>
+                                    <option value="gemini">Gemini</option>
+                                </select>
+                            </label>
+                        </div>
+                        <label>
+                            <span>executable path</span>
+                            <input
+                                className="settings-input"
+                                placeholder="Leave empty to use PATH"
+                                value={draft.executablePath ?? ""}
+                                onChange={(event) => setDraft({ ...draft, executablePath: event.target.value || undefined })}
+                            />
+                        </label>
+                        <div className="command-editor-actions">
+                            {isSaved && !draft.id.startsWith("builtin-") && (
+                                <button
+                                    className="settings-btn danger"
+                                    type="button"
+                                    onClick={() => {
+                                        cmd.deleteProviderProfile(draft.id);
+                                        setDraft(profiles.find((profile) => profile.id !== draft.id) ?? draft);
+                                    }}>
+                                    <IconTrash size={11} /> delete
+                                </button>
+                            )}
+                            <button
+                                className="settings-btn primary"
+                                type="button"
+                                disabled={!draft.name.trim()}
+                                onClick={() => cmd.saveProviderProfile({ ...draft, name: draft.name.trim() })}>
+                                <IconSave size={11} /> {isSaved ? "save profile" : "add profile"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div className="provider-defaults">
+                    {(["claude", "codex"] as const).map((type) => {
+                        const options = profiles.filter((profile) => profile.provider === type);
+                        return (
+                            <label key={type}>
+                                <span>{type} default</span>
+                                <select
+                                    className="settings-input"
+                                    value={selectedProfiles[type] ?? ""}
+                                    onChange={(event) => cmd.selectProviderProfile(type, event.target.value)}>
+                                    {options.map((profile) => (
+                                        <option key={profile.id} value={profile.id}>
+                                            {profile.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        );
+                    })}
+                </div>
+            </SettingsSection>
             <SettingsSection
                 title="Restart behavior"
                 sub="Only confirmed native agent session IDs are saved. Raw startup commands and terminal evidence never touch disk.">

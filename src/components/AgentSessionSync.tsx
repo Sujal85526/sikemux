@@ -20,7 +20,7 @@ interface AgentSessionsChanged {
 
 interface AgentStateChanged {
     agentId: string;
-    state: "unknown" | "working" | "blocked" | "idle";
+    state: "unknown" | "working" | "blocked" | "idle" | "stopped";
     sequence: number;
     source: "screen" | "activity" | "process" | "fallback";
     confidence: "high" | "medium" | "low";
@@ -45,7 +45,8 @@ function collectAgentSyncGroups(): AgentSyncGroup[] {
         for (const agentId of st.agentsBySession[sessionId] ?? []) {
             const agent = st.agents[agentId];
             if (!agent) continue;
-            groups.set(groupKey(agent.type, session.cwd), { type: agent.type, cwd: session.cwd });
+            const cwd = agent.cwd || session.cwd;
+            groups.set(groupKey(agent.type, cwd), { type: agent.type, cwd });
         }
     }
 
@@ -61,7 +62,7 @@ function useAgentSyncKey(): string {
             for (const agentId of s.agentsBySession[sessionId] ?? []) {
                 const agent = s.agents[agentId];
                 if (!agent) continue;
-                parts.push(`${agent.id}:${agent.type}:${session.cwd}:${agent.resumeId ?? ""}:${agent.createdAt ?? 0}`);
+                parts.push(`${agent.id}:${agent.type}:${agent.cwd || session.cwd}:${agent.resumeId ?? ""}:${agent.createdAt ?? 0}`);
             }
         }
         return parts.sort().join("|");
@@ -104,10 +105,10 @@ export function AgentSessionSync() {
             const state = getState();
             return state.sessionOrder.some((sessionId) => {
                 const session = state.sessions[sessionId];
-                if (session?.kind !== "project" || session.cwd !== cwd) return false;
+                if (session?.kind !== "project") return false;
                 return (state.agentsBySession[sessionId] ?? []).some((agentId) => {
                     const agent = state.agents[agentId];
-                    return agent?.type === type && cmd.agentSessionMetadataPending(agent);
+                    return agent?.type === type && (agent.cwd || session.cwd) === cwd && cmd.agentSessionMetadataPending(agent);
                 });
             });
         };

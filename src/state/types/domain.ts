@@ -35,6 +35,46 @@ export interface Window {
 
 export type AgentType = "claude" | "codex" | "hermes" | "pi" | "opencode";
 
+/** The permission boundary applied when starting an agent process. */
+export type AgentPermissionMode = "read-only" | "workspace-write" | "full-access" | "bypass";
+
+/** Provider-neutral reasoning levels; unsupported levels are normalized per CLI. */
+export type AgentEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+
+/** How the first task should treat repository isolation. */
+export type AgentWorkspaceStrategy = "current" | "existing" | "agent-decides";
+
+/** Supported profile backends. Gemini is profile-ready ahead of a dedicated agent tab. */
+export type AgentProvider = "claude" | "codex" | "gemini";
+
+/**
+ * Durable, non-secret configuration for an agent executable.
+ * `environmentKeys` stores names only; credential values remain in the user's
+ * shell, provider config, or OS credential store.
+ */
+export interface ProviderProfile {
+    id: string;
+    name: string;
+    provider: AgentProvider;
+    accent: string;
+    executablePath?: string;
+    configPath?: string;
+    environmentKeys?: string[];
+}
+
+export type ProviderProfileSelection = Partial<Record<AgentType, string>>;
+
+export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = [
+    { id: "builtin-claude", name: "Claude", provider: "claude", accent: "#d97757" },
+    { id: "builtin-codex", name: "Codex", provider: "codex", accent: "#10a37f" },
+    { id: "builtin-gemini", name: "Gemini", provider: "gemini", accent: "#4285f4" },
+];
+
+export const DEFAULT_PROVIDER_PROFILE_SELECTION: Readonly<ProviderProfileSelection> = {
+    claude: "builtin-claude",
+    codex: "builtin-codex",
+};
+
 export interface Agent {
     id: string;
     type: AgentType;
@@ -42,6 +82,27 @@ export interface Agent {
     startup: string;
     resumeId?: string;
     createdAt?: number;
+    /** Explicit launch boundary. Absent on legacy in-memory records. */
+    permissionMode?: AgentPermissionMode;
+    /** Non-secret provider profile selected for this launch. */
+    profileId?: string;
+    /** Effective launch directory, commonly a project worktree. */
+    cwd?: string;
+    /** Worktree root when this agent owns an isolated Git worktree. */
+    worktreePath?: string;
+    /** Optional provider model override selected at launch. */
+    model?: string;
+    /** Optional provider reasoning-effort override selected at launch. */
+    effort?: AgentEffort;
+    /** Launch-time repository strategy, retained for an honest session summary. */
+    workspaceStrategy?: AgentWorkspaceStrategy;
+    /** Runtime evidence that the provider received a first task in its launch argv. */
+    initialPromptSubmitted?: boolean;
+    /** Runtime guard against restarting a one-shot first turn before its session id is known. */
+    firstTurnPending?: boolean;
+    /** Runtime-only first input for CLIs that cannot accept an interactive prompt in argv. */
+    initialInput?: string;
+    /** @deprecated Compatibility bridge for snapshots and command builders. */
     skipPermissions?: boolean;
     /**
      * Session ids that already existed when this fresh agent launched. Used to
@@ -54,7 +115,7 @@ export interface Agent {
     launchState?: "live" | "dormant";
 }
 
-export type AgentBackendState = "unknown" | "working" | "blocked" | "idle";
+export type AgentBackendState = "unknown" | "working" | "blocked" | "idle" | "stopped";
 export type AgentPresentationState = AgentBackendState | "done";
 
 export interface AgentRuntimeState {
@@ -79,6 +140,7 @@ export interface PtyContext {
     paneId?: string;
     agentId?: string;
     agentType?: AgentType;
+    initialPromptSubmitted?: boolean;
 }
 
 export interface NotificationPreferences {

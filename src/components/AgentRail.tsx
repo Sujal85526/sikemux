@@ -128,25 +128,26 @@ export function AgentRail() {
                         {opens.map((a) => {
                             const active = session.view === "agent" && a.id === session.activeAgentId;
                             return (
-                                <button key={a.id} className={`agent-row closable${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
-                                    <span className={`agent-glyph ${a.type}`}>
-                                        <span className="agent-glyph-icon">
-                                            <AgentIcon type={a.type} size={20} />
+                                <div key={a.id} className="agent-row-wrap">
+                                    <button className={`agent-row closable${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
+                                        <span className={`agent-glyph ${a.type}`}>
+                                            <span className="agent-glyph-icon">
+                                                <AgentIcon type={a.type} size={20} />
+                                            </span>
                                         </span>
-                                        <span
-                                            className="agent-glyph-x"
-                                            title="Close agent"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                cmd.closeAgent(a.id);
-                                            }}>
-                                            <IconClose size={11} />
-                                        </span>
-                                    </span>
-                                    <span className="agent-title">{a.title}</span>
-                                    {activityById[a.id] && <AgentStateMark state={activityById[a.id].state} />}
-                                    {a.launchState === "dormant" && <span className="agent-dormant-label">paused</span>}
-                                </button>
+                                        <span className="agent-title">{a.title}</span>
+                                        {activityById[a.id] && <AgentStateMark state={activityById[a.id].state} />}
+                                        {a.launchState === "dormant" && <span className="agent-dormant-label">paused</span>}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="agent-glyph-x"
+                                        aria-label={`Close ${a.title}`}
+                                        title={`Close ${a.title}`}
+                                        onClick={() => cmd.closeAgent(a.id)}>
+                                        <IconClose size={11} />
+                                    </button>
+                                </div>
                             );
                         })}
                     </div>
@@ -197,9 +198,9 @@ function AgentHeader({ agents, type, setType }: { agents: AgentInfo[]; type: Age
                 <button
                     className="agent-header-btn"
                     disabled={!type}
-                    title={type ? `new ${label} agent` : "No agent CLI detected"}
+                    title={type ? `configure new ${label} agent` : "No agent CLI detected"}
                     onClick={() => {
-                        if (type) cmd.addAgent(type);
+                        if (type) cmd.openAgentPalette();
                     }}>
                     <IconPlus size={15} />
                 </button>

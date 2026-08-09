@@ -138,6 +138,14 @@
     min-height: 0;
     overflow-y: auto;
     gap: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+.settings-rail-list::-webkit-scrollbar {
+    width: 6px;
+}
+.settings-rail-list::-webkit-scrollbar-thumb {
+    background: var(--line);
 }
 .settings-rail-item {
     background: transparent;
@@ -1575,4 +1583,157 @@
 }
 .agent-rail[data-density="compact"] .agent-row {
     height: 27px;
+}
+
+.agent-mode-settings {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+}
+.agent-mode-settings button {
+    min-height: 76px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 10px;
+    color: var(--ink-dim);
+    text-align: left;
+    background: var(--s-bg-dim);
+    border: 1px solid var(--line);
+}
+.agent-mode-settings button:hover {
+    border-color: var(--ink-muted);
+}
+.agent-mode-settings button.active {
+    color: var(--acc);
+    background: color-mix(in srgb, var(--acc-soft) 74%, var(--s-bg-dim));
+    border-color: var(--acc-line);
+    box-shadow: inset 0 -2px 0 var(--acc);
+}
+.agent-mode-settings button.danger.active {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 7%, var(--s-bg-dim));
+    border-color: color-mix(in srgb, var(--danger) 58%, var(--line));
+    box-shadow: inset 0 -2px 0 var(--danger);
+}
+.agent-mode-settings span {
+    color: var(--ink);
+    font-size: 10.5px;
+    font-weight: 700;
+}
+.agent-mode-settings small {
+    color: var(--ink-muted);
+    font-size: 9px;
+    line-height: 1.45;
+}
+.provider-profile-layout {
+    display: grid;
+    grid-template-columns: minmax(170px, 0.72fr) minmax(280px, 1.4fr);
+    min-height: 300px;
+    border: 1px solid var(--line);
+    background: var(--s-bg-dim);
+}
+.provider-profile-list {
+    padding: 5px;
+    border-right: 1px solid var(--line);
+}
+.provider-profile-list > button {
+    width: 100%;
+    min-height: 49px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px;
+    color: var(--ink-dim);
+    text-align: left;
+    border: 1px solid transparent;
+}
+.provider-profile-list > button:hover,
+.provider-profile-list > button.active {
+    color: var(--ink);
+    background: var(--hl);
+    border-color: var(--line);
+}
+.provider-profile-list > button.active {
+    background: var(--acc-soft);
+    border-color: var(--acc-line);
+}
+.provider-profile-list i {
+    flex: 0 0 7px;
+    width: 7px;
+    height: 26px;
+}
+.provider-profile-list button > span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.provider-profile-list b,
+.provider-profile-list small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.provider-profile-list b {
+    color: var(--ink);
+    font-size: 10.5px;
+}
+.provider-profile-list small {
+    color: var(--ink-muted);
+    font-size: 8.5px;
+}
+.provider-profile-list .provider-profile-new {
+    min-height: 34px;
+    margin-top: 5px;
+    justify-content: center;
+    color: var(--ink-muted);
+    border-top-color: var(--line);
+}
+.provider-profile-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    background: var(--s-bg);
+}
+.provider-profile-editor > label,
+.provider-profile-row label,
+.provider-defaults label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.provider-profile-editor label > span,
+.provider-defaults label > span {
+    color: var(--ink-muted);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+.provider-profile-row.two,
+.provider-defaults {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+.provider-profile-editor .command-editor-actions {
+    margin-top: auto;
+}
+.provider-defaults {
+    margin-top: 12px;
+}
+
+@media (max-width: 800px) {
+    .agent-mode-settings {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .provider-profile-layout {
+        grid-template-columns: 1fr;
+    }
+    .provider-profile-list {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
 }

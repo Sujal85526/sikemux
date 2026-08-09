@@ -3,12 +3,14 @@ import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID, type Theme } from "../themes";
 import type { KeybindingOverrides } from "../keybindings";
 import type { CustomCommand } from "../commands/registry";
+import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
 
 enableMapSet();
 import { makePane, newId } from "./layout";
 import type { GitCmdEntry, GitModal } from "./gitTypes";
 import type {
     Agent,
+    AgentPermissionMode,
     AwsService,
     EcsLevel,
     EditorPaneView,
@@ -19,6 +21,8 @@ import type {
     PickerMode,
     PinnedProject,
     ProjectRoot,
+    ProviderProfile,
+    ProviderProfileSelection,
     RecentEntry,
     RundeckSettings,
     NotificationPreferences,
@@ -73,6 +77,10 @@ export interface DomainState {
     updateChannel: "stable" | "preview";
     lastReleaseNotes: { version: string; notes: string | null; date: string | null } | null;
     recentCommandKeys: string[];
+    /** Non-secret launch profiles and the per-agent defaults that reference them. */
+    providerProfiles: ProviderProfile[];
+    selectedProviderProfileIds: ProviderProfileSelection;
+    defaultAgentPermissionMode: AgentPermissionMode;
 }
 
 export interface ViewState {
@@ -210,6 +218,9 @@ export const useStore = create<StoreState>(() => {
         updateChannel: "stable",
         lastReleaseNotes: null,
         recentCommandKeys: [],
+        providerProfiles: DEFAULT_PROVIDER_PROFILES.map((profile) => ({ ...profile })),
+        selectedProviderProfileIds: { ...DEFAULT_PROVIDER_PROFILE_SELECTION },
+        defaultAgentPermissionMode: "workspace-write",
 
         home: "",
         pickerOpen: false,

@@ -20,6 +20,53 @@ export interface GitBranch {
     upstream: string | null;
 }
 
+export interface GitWorktree {
+    path: string;
+    head: string | null;
+    branch: string | null;
+    reference: string | null;
+    detached: boolean;
+    locked: boolean;
+    lock_reason: string | null;
+    prunable: boolean;
+    prune_reason: string | null;
+    bare: boolean;
+    current: boolean;
+    is_main: boolean;
+}
+
+export interface CreateGitWorktreeOptions {
+    path: string;
+    branch: string;
+    createBranch: boolean;
+    startPoint?: string | null;
+}
+
+export interface GitCheckpoint {
+    id: string;
+    ref: string;
+    commit: string;
+    head: string | null;
+    createdAt: number;
+    label: string;
+    fileCount: number;
+    additionCount: number;
+    deletionCount: number;
+}
+
+export interface CaptureGitCheckpointOptions {
+    agentId: string;
+    checkpointId: string;
+    label: string;
+}
+
+export interface ForkGitCheckpointOptions {
+    agentId: string;
+    checkpointId: string;
+    path: string;
+    branch: string;
+}
+
 export interface GitCommit {
     hash: string;
     full_hash: string;
@@ -96,6 +143,40 @@ export const git = {
     stageAll: (repo: string) => invoke<void>("git_stage_all", { repo }),
     unstageAll: (repo: string) => invoke<void>("git_unstage_all", { repo }),
     branches: (repo: string) => invoke<GitBranch[]>("git_branches", { repo }),
+    worktrees: (repo: string) => invoke<GitWorktree[]>("git_worktree_list", { repo }),
+    worktreeCreate: (repo: string, options: CreateGitWorktreeOptions) =>
+        invoke<GitWorktree>("git_worktree_create", {
+            repo,
+            path: options.path,
+            branch: options.branch,
+            createBranch: options.createBranch,
+            startPoint: options.startPoint ?? null,
+        }),
+    worktreeRemove: (repo: string, path: string, force = false) => invoke<GitWorktree>("git_worktree_remove", { repo, path, force }),
+    checkpointCapture: (repo: string, options: CaptureGitCheckpointOptions) =>
+        invoke<GitCheckpoint>("git_checkpoint_capture", {
+            repo,
+            agentId: options.agentId,
+            checkpointId: options.checkpointId,
+            label: options.label,
+        }),
+    checkpoints: (repo: string, agentId: string) => invoke<GitCheckpoint[]>("git_checkpoint_list", { repo, agentId }),
+    checkpointDiff: (repo: string, agentId: string, checkpointId: string, baseCheckpointId?: string | null) =>
+        invoke<string>("git_checkpoint_diff", {
+            repo,
+            agentId,
+            checkpointId,
+            baseCheckpointId: baseCheckpointId ?? null,
+        }),
+    checkpointDelete: (repo: string, agentId: string, checkpointId: string) => invoke<void>("git_checkpoint_delete", { repo, agentId, checkpointId }),
+    checkpointFork: (repo: string, options: ForkGitCheckpointOptions) =>
+        invoke<GitWorktree>("git_checkpoint_fork", {
+            repo,
+            agentId: options.agentId,
+            checkpointId: options.checkpointId,
+            path: options.path,
+            branch: options.branch,
+        }),
     checkout: (repo: string, branch: string) => invoke<void>("git_checkout", { repo, branch }),
     checkoutSmart: (repo: string, branch: string) => invoke<string>("git_checkout_smart", { repo, branch }),
     branchCreate: (repo: string, name: string, startPoint?: string) =>

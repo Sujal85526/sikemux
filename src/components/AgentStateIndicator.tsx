@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, CircleDot, CircleHelp, type LucideIcon } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleDot, CircleHelp, CircleStop, type LucideIcon } from "lucide-react";
 import { AGENT_STATE_META } from "../state/agentStatus";
 import type { AgentPresentationState } from "../state/types";
 
@@ -6,6 +6,7 @@ const STATE_ICONS: Record<Exclude<AgentPresentationState, "working">, LucideIcon
     blocked: CircleAlert,
     done: CircleCheck,
     idle: CircleDot,
+    stopped: CircleStop,
     unknown: CircleHelp,
 };
 

@@ -1,5 +1,5 @@
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use git2::{
     BranchType, DiffFormat, DiffLineType, DiffOptions, ErrorCode, Repository, Status, StatusOptions,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::async_runtime::spawn_blocking;
 
 /// Run a synchronous closure off the Tauri worker pool. Every `pub fn`
@@ -325,6 +325,876 @@ pub struct GitOverview {
     status: GitStatus,
     branches: Vec<GitBranch>,
     log: Vec<GitCommit>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitWorktree {
+    path: String,
+    head: Option<String>,
+    branch: Option<String>,
+    reference: Option<String>,
+    detached: bool,
+    locked: bool,
+    lock_reason: Option<String>,
+    prunable: bool,
+    prune_reason: Option<String>,
+    bare: bool,
+    current: bool,
+    is_main: bool,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCheckpoint {
+    id: String,
+    #[serde(rename = "ref")]
+    reference: String,
+    commit: String,
+    head: Option<String>,
+    created_at: u64,
+    label: String,
+    file_count: u64,
+    addition_count: u64,
+    deletion_count: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitCheckpointCommitMetadata {
+    version: u8,
+    agent_id: String,
+    id: String,
+    head: Option<String>,
+    created_at: u64,
+    label: String,
+    file_count: u64,
+    addition_count: u64,
+    deletion_count: u64,
+}
+
+// ---- worktrees ------------------------------------------------------------
+
+fn worktree_path(path: &str) -> Result<PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("worktree path is empty".into());
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.is_absolute() {
+        return Err("worktree path must be absolute".into());
+    }
+    if path
+        .components()
+        .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
+    {
+        return Err("worktree path must not contain '.' or '..' components".into());
+    }
+    if path.parent().is_none() {
+        return Err("the filesystem root cannot be used as a worktree".into());
+    }
+    Ok(path)
+}
+
+fn same_worktree_path(left: &Path, right: &Path) -> bool {
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
+/// Resolve every existing path component, then append the still-missing tail.
+/// This catches a target whose lexical parent is harmless but whose nearest
+/// existing parent is a symlink into a protected Git/worktree directory.
+fn resolved_path_for_containment(path: &Path) -> Result<PathBuf, String> {
+    let mut existing = path;
+    let mut missing = Vec::new();
+    while !existing.exists() {
+        let name = existing
+            .file_name()
+            .ok_or_else(|| format!("cannot resolve worktree target {}", path.display()))?;
+        missing.push(name.to_os_string());
+        existing = existing
+            .parent()
+            .ok_or_else(|| format!("cannot resolve worktree target {}", path.display()))?;
+    }
+    let mut resolved = existing
+        .canonicalize()
+        .map_err(|error| format!("resolve worktree target {}: {error}", path.display()))?;
+    for component in missing.iter().rev() {
+        resolved.push(component);
+    }
+    Ok(resolved)
+}
+
+fn validate_worktree_target(
+    repo: &str,
+    path: &Path,
+    worktrees: &[GitWorktree],
+) -> Result<(), String> {
+    let resolved_target = resolved_path_for_containment(path)?;
+    let common_dir = git_ok(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let common_dir = resolved_path_for_containment(Path::new(common_dir.trim()))?;
+    if resolved_target.starts_with(&common_dir) {
+        return Err("the target path cannot be inside Git's common directory".into());
+    }
+    for worktree in worktrees {
+        let root = resolved_path_for_containment(Path::new(&worktree.path))?;
+        if resolved_target.starts_with(&root) {
+            return Err(format!(
+                "the target path cannot be inside registered worktree {}",
+                worktree.path
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn current_worktree_path(repo: &str) -> Option<PathBuf> {
+    git_ok(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--show-toplevel"],
+    )
+    .ok()
+    .map(|path| PathBuf::from(path.trim()))
+    .or_else(|| {
+        git_ok(repo, &["rev-parse", "--path-format=absolute", "--git-dir"])
+            .ok()
+            .map(|path| PathBuf::from(path.trim()))
+    })
+}
+
+fn read_worktrees(repo: &str) -> Result<Vec<GitWorktree>, String> {
+    // `-z` makes paths and optional reason strings unambiguous. Git emits a
+    // double NUL between records; every other field is a single NUL token.
+    let output = git_ok(repo, &["worktree", "list", "--porcelain", "-z"])?;
+    let current = current_worktree_path(repo);
+    let mut worktrees = Vec::new();
+    let mut fields: Vec<&str> = Vec::new();
+
+    let finish = |fields: &mut Vec<&str>, worktrees: &mut Vec<GitWorktree>| {
+        if fields.is_empty() {
+            return;
+        }
+        let mut path = None;
+        let mut head = None;
+        let mut reference = None;
+        let mut detached = false;
+        let mut bare = false;
+        let mut lock_reason = None;
+        let mut prune_reason = None;
+        for field in fields.drain(..) {
+            if let Some(value) = field.strip_prefix("worktree ") {
+                path = Some(value.to_string());
+            } else if let Some(value) = field.strip_prefix("HEAD ") {
+                head = Some(value.to_string());
+            } else if let Some(value) = field.strip_prefix("branch ") {
+                reference = Some(value.to_string());
+            } else if field == "detached" {
+                detached = true;
+            } else if field == "bare" {
+                bare = true;
+            } else if field == "locked" {
+                lock_reason = Some(String::new());
+            } else if let Some(value) = field.strip_prefix("locked ") {
+                lock_reason = Some(value.to_string());
+            } else if field == "prunable" {
+                prune_reason = Some(String::new());
+            } else if let Some(value) = field.strip_prefix("prunable ") {
+                prune_reason = Some(value.to_string());
+            }
+        }
+        let Some(path) = path else {
+            return;
+        };
+        let branch = reference
+            .as_deref()
+            .and_then(|name| name.strip_prefix("refs/heads/"))
+            .map(ToOwned::to_owned);
+        let path_buf = PathBuf::from(&path);
+        let current = current
+            .as_deref()
+            .is_some_and(|candidate| same_worktree_path(candidate, &path_buf));
+        worktrees.push(GitWorktree {
+            path,
+            head,
+            branch,
+            reference,
+            detached,
+            locked: lock_reason.is_some(),
+            lock_reason: lock_reason.filter(|reason| !reason.is_empty()),
+            prunable: prune_reason.is_some(),
+            prune_reason: prune_reason.filter(|reason| !reason.is_empty()),
+            bare,
+            current,
+            // `git worktree list` guarantees the primary worktree first.
+            is_main: worktrees.is_empty(),
+        });
+    };
+
+    for field in output.split('\0') {
+        if field.is_empty() {
+            finish(&mut fields, &mut worktrees);
+        } else {
+            fields.push(field);
+        }
+    }
+    finish(&mut fields, &mut worktrees);
+    if worktrees.is_empty() {
+        Err("git returned no worktrees for this repository".into())
+    } else {
+        Ok(worktrees)
+    }
+}
+
+fn validate_branch_name(repo: &str, branch: &str) -> Result<String, String> {
+    let branch = branch.trim();
+    if branch.is_empty() {
+        return Err("worktree branch name is empty".into());
+    }
+    if branch.starts_with('-') {
+        return Err("worktree branch name cannot start with '-'".into());
+    }
+    git_ok(repo, &["check-ref-format", "--branch", branch])?;
+    Ok(branch.to_string())
+}
+
+fn validate_start_point(repo: &str, start_point: Option<String>) -> Result<Option<String>, String> {
+    let Some(start_point) = start_point else {
+        return Ok(None);
+    };
+    let start_point = start_point.trim();
+    if start_point.is_empty() {
+        return Ok(None);
+    }
+    if start_point.starts_with('-') {
+        return Err("worktree start point cannot start with '-'".into());
+    }
+    let commit = format!("{start_point}^{{commit}}");
+    git_ok(repo, &["rev-parse", "--verify", &commit])?;
+    Ok(Some(start_point.to_string()))
+}
+
+fn create_worktree(
+    repo: &str,
+    path: &str,
+    branch: &str,
+    create_branch: bool,
+    start_point: Option<String>,
+) -> Result<GitWorktree, String> {
+    // Discover up front so errors for non-repositories are returned before
+    // any target-path or branch processing.
+    open_repo(repo)?;
+    let path = worktree_path(path)?;
+    let path_arg = path.to_string_lossy().into_owned();
+    let branch = validate_branch_name(repo, branch)?;
+    let start_point = validate_start_point(repo, start_point)?;
+    if !create_branch && start_point.is_some() {
+        return Err("a start point is only valid when creating a new branch".into());
+    }
+    let worktrees = read_worktrees(repo)?;
+    validate_worktree_target(repo, &path, &worktrees)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "worktree path has no parent directory".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("create worktree parent {}: {error}", parent.display()))?;
+
+    let mut args = vec!["worktree", "add"];
+    if create_branch {
+        args.extend(["-b", branch.as_str()]);
+    }
+    args.extend(["--", path_arg.as_str()]);
+    if let Some(start_point) = start_point.as_deref() {
+        args.push(start_point);
+    } else if !create_branch {
+        args.push(branch.as_str());
+    }
+    git_ok(repo, &args)?;
+
+    read_worktrees(repo)?
+        .into_iter()
+        .find(|worktree| same_worktree_path(Path::new(&worktree.path), &path))
+        .ok_or_else(|| "worktree was created but could not be found in Git's registry".into())
+}
+
+fn remove_worktree(repo: &str, path: &str, force: bool) -> Result<GitWorktree, String> {
+    open_repo(repo)?;
+    let path = worktree_path(path)?;
+    let worktree = read_worktrees(repo)?
+        .into_iter()
+        .find(|worktree| same_worktree_path(Path::new(&worktree.path), &path))
+        .ok_or_else(|| "the target path is not a registered worktree".to_string())?;
+    if worktree.is_main {
+        return Err("the main worktree cannot be removed".into());
+    }
+    if worktree.bare {
+        return Err("a bare repository cannot be removed as a linked worktree".into());
+    }
+
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.extend(["--", worktree.path.as_str()]);
+    git_ok(repo, &args)?;
+    Ok(worktree)
+}
+
+#[tauri::command]
+pub async fn git_worktree_list(repo: String) -> Result<Vec<GitWorktree>, String> {
+    run_blocking(move || read_worktrees(&repo)).await
+}
+
+#[tauri::command]
+pub async fn git_worktree_create(
+    repo: String,
+    path: String,
+    branch: String,
+    create_branch: bool,
+    start_point: Option<String>,
+) -> Result<GitWorktree, String> {
+    run_blocking(move || create_worktree(&repo, &path, &branch, create_branch, start_point)).await
+}
+
+#[tauri::command]
+pub async fn git_worktree_remove(
+    repo: String,
+    path: String,
+    force: bool,
+) -> Result<GitWorktree, String> {
+    run_blocking(move || remove_worktree(&repo, &path, force)).await
+}
+
+// ---- local checkpoints ---------------------------------------------------
+
+const CHECKPOINT_REF_ROOT: &str = "refs/sikemux/checkpoints";
+const CHECKPOINT_MESSAGE_HEADER: &str = "sikemux-checkpoint-v1";
+const CHECKPOINT_COMPONENT_MAX_BYTES: usize = 80;
+const CHECKPOINT_LABEL_MAX_BYTES: usize = 160;
+const CHECKPOINT_LIST_MAX: usize = 256;
+const CHECKPOINT_METADATA_MAX_BYTES: usize = 4 * 1024;
+const CHECKPOINT_DIFF_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+fn validate_checkpoint_component(kind: &str, value: &str) -> Result<String, String> {
+    if value.is_empty() || value.len() > CHECKPOINT_COMPONENT_MAX_BYTES {
+        return Err(format!(
+            "checkpoint {kind} must be 1-{CHECKPOINT_COMPONENT_MAX_BYTES} characters"
+        ));
+    }
+    if !value.as_bytes()[0].is_ascii_alphanumeric()
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(format!(
+            "checkpoint {kind} may contain only ASCII letters, numbers, '-' and '_', and must start with a letter or number"
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn validate_checkpoint_label(label: &str) -> Result<String, String> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() || trimmed.len() > CHECKPOINT_LABEL_MAX_BYTES {
+        return Err(format!(
+            "checkpoint label must be 1-{CHECKPOINT_LABEL_MAX_BYTES} bytes"
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err("checkpoint label cannot contain control characters".into());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn checkpoint_ref(agent_id: &str, checkpoint_id: &str) -> Result<String, String> {
+    let agent_id = validate_checkpoint_component("agent id", agent_id)?;
+    let checkpoint_id = validate_checkpoint_component("id", checkpoint_id)?;
+    Ok(format!("{CHECKPOINT_REF_ROOT}/{agent_id}/{checkpoint_id}"))
+}
+
+fn checkpoint_worktree_root(repo: &str) -> Result<String, String> {
+    open_repo(repo)?;
+    let root = git_ok(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--show-toplevel"],
+    )?;
+    let root = root.trim();
+    if root.is_empty() {
+        Err("checkpoints require a non-bare Git worktree".into())
+    } else {
+        Ok(root.to_string())
+    }
+}
+
+fn git_ok_with_env(repo: &str, args: &[&str], env: &[(&str, &str)]) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .arg("-C")
+        .arg(repo)
+        .args(args);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let output = run_command_with_timeout(&mut command, None, GIT_COMMAND_TIMEOUT)?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Err(if stderr.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        })
+    }
+}
+
+fn checkpoint_counts(repo: &str, base: &str, tree: &str) -> Result<(u64, u64, u64), String> {
+    let output = git_ok(
+        repo,
+        &[
+            "diff",
+            "--numstat",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            base,
+            tree,
+            "--",
+        ],
+    )?;
+    let mut files = 0_u64;
+    let mut additions = 0_u64;
+    let mut deletions = 0_u64;
+    for line in output.lines().filter(|line| !line.is_empty()) {
+        let mut columns = line.splitn(3, '\t');
+        let added = columns
+            .next()
+            .ok_or_else(|| "invalid checkpoint numstat output".to_string())?;
+        let deleted = columns
+            .next()
+            .ok_or_else(|| "invalid checkpoint numstat output".to_string())?;
+        if columns.next().is_none() {
+            return Err("invalid checkpoint numstat output".into());
+        }
+        files = files
+            .checked_add(1)
+            .ok_or_else(|| "checkpoint file count overflow".to_string())?;
+        // Binary files use '-' for both columns and still count as one file.
+        if added != "-" {
+            additions = additions
+                .checked_add(
+                    added
+                        .parse::<u64>()
+                        .map_err(|_| "invalid checkpoint addition count".to_string())?,
+                )
+                .ok_or_else(|| "checkpoint addition count overflow".to_string())?;
+        }
+        if deleted != "-" {
+            deletions = deletions
+                .checked_add(
+                    deleted
+                        .parse::<u64>()
+                        .map_err(|_| "invalid checkpoint deletion count".to_string())?,
+                )
+                .ok_or_else(|| "checkpoint deletion count overflow".to_string())?;
+        }
+    }
+    Ok((files, additions, deletions))
+}
+
+fn checkpoint_head(repo: &str) -> Result<Option<String>, String> {
+    let (head_ok, head_out, head_err) = run_git(repo, &["rev-parse", "--verify", "HEAD^{commit}"])?;
+    if head_ok {
+        return Ok(Some(head_out.trim().to_string()));
+    }
+
+    // An unborn repository has a valid symbolic HEAD whose target ref simply
+    // does not exist yet. Detached/corrupt HEADs and missing objects are real
+    // errors and must not silently become parentless checkpoint histories.
+    let (symbolic_ok, symbolic_out, symbolic_err) = run_git(repo, &["symbolic-ref", "-q", "HEAD"])?;
+    if !symbolic_ok {
+        let detail = if head_err.trim().is_empty() {
+            symbolic_err
+        } else {
+            head_err
+        };
+        return Err(format!("resolve checkpoint HEAD: {}", detail.trim()));
+    }
+    let reference = symbolic_out.trim();
+    if reference.is_empty() {
+        return Err("resolve checkpoint HEAD: symbolic HEAD is empty".into());
+    }
+    let (reference_ok, _, reference_err) =
+        run_git(repo, &["show-ref", "--verify", "--quiet", reference])?;
+    if !reference_ok && reference_err.trim().is_empty() {
+        Ok(None)
+    } else {
+        let detail = if head_err.trim().is_empty() {
+            reference_err
+        } else {
+            head_err
+        };
+        Err(format!("resolve checkpoint HEAD: {}", detail.trim()))
+    }
+}
+
+fn capture_checkpoint(
+    repo: &str,
+    agent_id: &str,
+    checkpoint_id: &str,
+    label: &str,
+) -> Result<GitCheckpoint, String> {
+    let root = checkpoint_worktree_root(repo)?;
+    let reference = checkpoint_ref(agent_id, checkpoint_id)?;
+    let agent_id = validate_checkpoint_component("agent id", agent_id)?;
+    let checkpoint_id = validate_checkpoint_component("id", checkpoint_id)?;
+    let label = validate_checkpoint_label(label)?;
+    if run_git(&root, &["show-ref", "--verify", "--quiet", &reference])?.0 {
+        return Err("checkpoint id already exists for this agent".into());
+    }
+
+    let head = checkpoint_head(&root)?;
+    let temp = tempfile::tempdir().map_err(|error| format!("create checkpoint index: {error}"))?;
+    let index = temp.path().join("index").to_string_lossy().into_owned();
+    let index_env = [
+        ("GIT_INDEX_FILE", index.as_str()),
+        ("GIT_OPTIONAL_LOCKS", "0"),
+    ];
+
+    let empty_tree = if let Some(head) = head.as_deref() {
+        git_ok_with_env(&root, &["read-tree", head], &index_env)?;
+        None
+    } else {
+        git_ok_with_env(&root, &["read-tree", "--empty"], &index_env)?;
+        Some(
+            git_ok_with_env(&root, &["write-tree"], &index_env)?
+                .trim()
+                .to_string(),
+        )
+    };
+    // This stages the complete worktree into only the temporary index. Git's
+    // normal ignore rules still apply, so ignored untracked files stay out.
+    git_ok_with_env(&root, &["add", "-A", "--", "."], &index_env)?;
+    let tree = git_ok_with_env(&root, &["write-tree"], &index_env)?
+        .trim()
+        .to_string();
+    let base = head
+        .as_deref()
+        .or(empty_tree.as_deref())
+        .ok_or_else(|| "checkpoint base tree unavailable".to_string())?;
+    let (file_count, addition_count, deletion_count) = checkpoint_counts(&root, base, &tree)?;
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis()
+        .try_into()
+        .map_err(|_| "checkpoint timestamp overflow".to_string())?;
+    let metadata = GitCheckpointCommitMetadata {
+        version: 1,
+        agent_id,
+        id: checkpoint_id,
+        head: head.clone(),
+        created_at,
+        label,
+        file_count,
+        addition_count,
+        deletion_count,
+    };
+    let metadata_json = serde_json::to_string(&metadata).map_err(|error| error.to_string())?;
+    if metadata_json.len() > CHECKPOINT_METADATA_MAX_BYTES {
+        return Err("checkpoint metadata exceeds the safe size limit".into());
+    }
+    let message = format!("{CHECKPOINT_MESSAGE_HEADER}\n{metadata_json}");
+    let timestamp = format!("{} +0000", created_at / 1_000);
+    let commit_env = [
+        ("GIT_AUTHOR_NAME", "Sikemux"),
+        ("GIT_AUTHOR_EMAIL", "checkpoint@sikemux.local"),
+        ("GIT_COMMITTER_NAME", "Sikemux"),
+        ("GIT_COMMITTER_EMAIL", "checkpoint@sikemux.local"),
+        ("GIT_AUTHOR_DATE", timestamp.as_str()),
+        ("GIT_COMMITTER_DATE", timestamp.as_str()),
+    ];
+    let mut commit_args = vec!["commit-tree", tree.as_str()];
+    if let Some(head) = head.as_deref() {
+        commit_args.extend(["-p", head]);
+    }
+    commit_args.extend(["-m", message.as_str()]);
+    let commit = git_ok_with_env(&root, &commit_args, &commit_env)?
+        .trim()
+        .to_string();
+
+    let object_format = git_ok(&root, &["rev-parse", "--show-object-format"])?;
+    let zero_oid = match object_format.trim() {
+        "sha1" => "0".repeat(40),
+        "sha256" => "0".repeat(64),
+        value => return Err(format!("unsupported Git object format: {value}")),
+    };
+    git_ok(
+        &root,
+        &["update-ref", &reference, &commit, zero_oid.as_str()],
+    )?;
+    Ok(GitCheckpoint {
+        id: metadata.id,
+        reference,
+        commit,
+        head: metadata.head,
+        created_at: metadata.created_at,
+        label: metadata.label,
+        file_count: metadata.file_count,
+        addition_count: metadata.addition_count,
+        deletion_count: metadata.deletion_count,
+    })
+}
+
+fn resolve_checkpoint(
+    repo: &str,
+    agent_id: &str,
+    checkpoint_id: &str,
+) -> Result<GitCheckpoint, String> {
+    let root = checkpoint_worktree_root(repo)?;
+    let reference = checkpoint_ref(agent_id, checkpoint_id)?;
+    let expected_agent_id = validate_checkpoint_component("agent id", agent_id)?;
+    let expected_id = validate_checkpoint_component("id", checkpoint_id)?;
+    let commit = git_ok(
+        &root,
+        &["rev-parse", "--verify", &format!("{reference}^{{commit}}")],
+    )?
+    .trim()
+    .to_string();
+    let message = git_ok(&root, &["show", "-s", "--format=%B", &commit])?;
+    if message.len() > CHECKPOINT_METADATA_MAX_BYTES + CHECKPOINT_MESSAGE_HEADER.len() + 2 {
+        return Err("checkpoint metadata exceeds the safe size limit".into());
+    }
+    let metadata_json = message
+        .strip_prefix(&format!("{CHECKPOINT_MESSAGE_HEADER}\n"))
+        .ok_or_else(|| "ref is not a Sikemux checkpoint".to_string())?
+        .trim_end();
+    let metadata: GitCheckpointCommitMetadata = serde_json::from_str(metadata_json)
+        .map_err(|_| "invalid Sikemux checkpoint metadata".to_string())?;
+    if metadata.version != 1
+        || metadata.agent_id != expected_agent_id
+        || metadata.id != expected_id
+        || validate_checkpoint_label(&metadata.label)? != metadata.label
+    {
+        return Err("checkpoint ownership metadata does not match its ref".into());
+    }
+    let parents = git_ok(&root, &["show", "-s", "--format=%P", &commit])?;
+    let parents: Vec<&str> = parents.split_whitespace().collect();
+    let actual_head = match parents.as_slice() {
+        [] => None,
+        [parent] => Some((*parent).to_string()),
+        _ => return Err("Sikemux checkpoint has an invalid parent count".into()),
+    };
+    if actual_head != metadata.head {
+        return Err("checkpoint parent does not match its metadata".into());
+    }
+    Ok(GitCheckpoint {
+        id: metadata.id,
+        reference,
+        commit,
+        head: metadata.head,
+        created_at: metadata.created_at,
+        label: metadata.label,
+        file_count: metadata.file_count,
+        addition_count: metadata.addition_count,
+        deletion_count: metadata.deletion_count,
+    })
+}
+
+fn list_checkpoints(repo: &str, agent_id: &str) -> Result<Vec<GitCheckpoint>, String> {
+    let root = checkpoint_worktree_root(repo)?;
+    let agent_id = validate_checkpoint_component("agent id", agent_id)?;
+    let prefix = format!("{CHECKPOINT_REF_ROOT}/{agent_id}/");
+    let output = git_ok(
+        &root,
+        &[
+            "for-each-ref",
+            "--sort=-creatordate",
+            &format!("--count={}", CHECKPOINT_LIST_MAX + 1),
+            "--format=%(refname)",
+            &prefix,
+        ],
+    )?;
+    let references: Vec<&str> = output.lines().filter(|line| !line.is_empty()).collect();
+    if references.len() > CHECKPOINT_LIST_MAX {
+        return Err(format!(
+            "checkpoint list exceeds the {CHECKPOINT_LIST_MAX}-item safety limit"
+        ));
+    }
+    let mut checkpoints = Vec::with_capacity(references.len());
+    for reference in references {
+        let checkpoint_id = reference.strip_prefix(&prefix).ok_or_else(|| {
+            "Git returned a checkpoint outside the requested namespace".to_string()
+        })?;
+        checkpoints.push(resolve_checkpoint(&root, &agent_id, checkpoint_id)?);
+    }
+    checkpoints.sort_by(|left, right| {
+        right
+            .created_at
+            .cmp(&left.created_at)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    Ok(checkpoints)
+}
+
+fn checkpoint_diff(
+    repo: &str,
+    agent_id: &str,
+    checkpoint_id: &str,
+    base_checkpoint_id: Option<&str>,
+) -> Result<String, String> {
+    let root = checkpoint_worktree_root(repo)?;
+    let checkpoint = resolve_checkpoint(&root, agent_id, checkpoint_id)?;
+    let output = if let Some(base_checkpoint_id) = base_checkpoint_id {
+        let base = resolve_checkpoint(&root, agent_id, base_checkpoint_id)?;
+        git_ok(
+            &root,
+            &[
+                "diff",
+                "--patch",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                &base.commit,
+                &checkpoint.commit,
+                "--",
+            ],
+        )?
+    } else if let Some(head) = checkpoint.head.as_deref() {
+        git_ok(
+            &root,
+            &[
+                "diff",
+                "--patch",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                head,
+                &checkpoint.commit,
+                "--",
+            ],
+        )?
+    } else {
+        git_ok(
+            &root,
+            &[
+                "show",
+                "--format=",
+                "--patch",
+                "--root",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                &checkpoint.commit,
+                "--",
+            ],
+        )?
+    };
+    if output.len() > CHECKPOINT_DIFF_MAX_BYTES {
+        return Err(format!(
+            "checkpoint diff exceeds the {} MiB safety limit",
+            CHECKPOINT_DIFF_MAX_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(output)
+}
+
+fn delete_checkpoint(repo: &str, agent_id: &str, checkpoint_id: &str) -> Result<(), String> {
+    let root = checkpoint_worktree_root(repo)?;
+    let checkpoint = resolve_checkpoint(&root, agent_id, checkpoint_id)?;
+    git_ok(
+        &root,
+        &[
+            "update-ref",
+            "-d",
+            &checkpoint.reference,
+            &checkpoint.commit,
+        ],
+    )?;
+    Ok(())
+}
+
+fn fork_checkpoint(
+    repo: &str,
+    agent_id: &str,
+    checkpoint_id: &str,
+    path: &str,
+    branch: &str,
+) -> Result<GitWorktree, String> {
+    let checkpoint = resolve_checkpoint(repo, agent_id, checkpoint_id)?;
+    fork_resolved_checkpoint(repo, &checkpoint, path, branch)
+}
+
+fn fork_resolved_checkpoint(
+    repo: &str,
+    checkpoint: &GitCheckpoint,
+    path: &str,
+    branch: &str,
+) -> Result<GitWorktree, String> {
+    // Use the immutable OID that passed metadata/ownership validation. Passing
+    // the ref would reopen a TOCTOU window if another process moved it.
+    create_worktree(repo, path, branch, true, Some(checkpoint.commit.clone()))
+}
+
+#[tauri::command]
+pub async fn git_checkpoint_capture(
+    repo: String,
+    agent_id: String,
+    checkpoint_id: String,
+    label: String,
+) -> Result<GitCheckpoint, String> {
+    run_blocking(move || capture_checkpoint(&repo, &agent_id, &checkpoint_id, &label)).await
+}
+
+#[tauri::command]
+pub async fn git_checkpoint_list(
+    repo: String,
+    agent_id: String,
+) -> Result<Vec<GitCheckpoint>, String> {
+    run_blocking(move || list_checkpoints(&repo, &agent_id)).await
+}
+
+#[tauri::command]
+pub async fn git_checkpoint_diff(
+    repo: String,
+    agent_id: String,
+    checkpoint_id: String,
+    base_checkpoint_id: Option<String>,
+) -> Result<String, String> {
+    run_blocking(move || {
+        checkpoint_diff(
+            &repo,
+            &agent_id,
+            &checkpoint_id,
+            base_checkpoint_id.as_deref(),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_checkpoint_delete(
+    repo: String,
+    agent_id: String,
+    checkpoint_id: String,
+) -> Result<(), String> {
+    run_blocking(move || delete_checkpoint(&repo, &agent_id, &checkpoint_id)).await
+}
+
+#[tauri::command]
+pub async fn git_checkpoint_fork(
+    repo: String,
+    agent_id: String,
+    checkpoint_id: String,
+    path: String,
+    branch: String,
+) -> Result<GitWorktree, String> {
+    run_blocking(move || fork_checkpoint(&repo, &agent_id, &checkpoint_id, &path, &branch)).await
 }
 
 // ---- status ---------------------------------------------------------------
@@ -3370,6 +4240,519 @@ mod tests {
         fs::write(repo.join("f.txt"), "base\n").expect("write base");
         git(repo, &["add", "f.txt"]);
         git(repo, &["commit", "-m", "base"]);
+    }
+
+    #[test]
+    fn checkpoint_capture_preserves_index_and_supports_list_diff_and_delete() {
+        let td = init_repo();
+        fs::write(td.path().join(".gitignore"), "ignored.log\n").expect("write ignore");
+        commit_base(td.path());
+        git(td.path(), &["add", ".gitignore"]);
+        git(td.path(), &["commit", "-m", "ignore"]);
+
+        fs::write(td.path().join("staged.txt"), "staged\n").expect("write staged");
+        git(td.path(), &["add", "staged.txt"]);
+        fs::write(td.path().join("f.txt"), "changed\n").expect("write unstaged");
+        fs::write(td.path().join("untracked.txt"), "untracked\n").expect("write untracked");
+        fs::write(td.path().join("ignored.log"), "private\n").expect("write ignored");
+        let index_tree_before = git(td.path(), &["write-tree"]);
+        let staged_before = git(td.path(), &["diff", "--cached", "--binary"]);
+
+        let first = capture_checkpoint(
+            td.path().to_str().expect("repo"),
+            "agent-safe",
+            "cp-001",
+            "Before parser edit",
+        )
+        .expect("capture checkpoint");
+
+        assert_eq!(git(td.path(), &["write-tree"]), index_tree_before);
+        assert_eq!(
+            git(td.path(), &["diff", "--cached", "--binary"]),
+            staged_before
+        );
+        assert_eq!(first.file_count, 3);
+        assert_eq!(first.addition_count, 3);
+        assert_eq!(first.deletion_count, 1);
+        assert_eq!(
+            first.head.as_deref(),
+            Some(git(td.path(), &["rev-parse", "HEAD"]).trim())
+        );
+        let captured_files = git(td.path(), &["ls-tree", "-r", "--name-only", &first.commit]);
+        assert!(captured_files.lines().any(|path| path == "staged.txt"));
+        assert!(captured_files.lines().any(|path| path == "untracked.txt"));
+        assert!(!captured_files.lines().any(|path| path == "ignored.log"));
+
+        let diff = checkpoint_diff(
+            td.path().to_str().expect("repo"),
+            "agent-safe",
+            "cp-001",
+            None,
+        )
+        .expect("checkpoint diff");
+        assert!(diff.contains("staged.txt"));
+        assert!(diff.contains("untracked.txt"));
+        assert!(diff.contains("-base"));
+        assert!(diff.contains("+changed"));
+        assert!(!diff.contains("ignored.log"));
+
+        fs::write(td.path().join("f.txt"), "changed again\n").expect("second change");
+        let second = capture_checkpoint(
+            td.path().to_str().expect("repo"),
+            "agent-safe",
+            "cp-002",
+            "After parser edit",
+        )
+        .expect("second checkpoint");
+        let between = checkpoint_diff(
+            td.path().to_str().expect("repo"),
+            "agent-safe",
+            "cp-002",
+            Some("cp-001"),
+        )
+        .expect("between checkpoints");
+        assert!(between.contains("-changed"));
+        assert!(between.contains("+changed again"));
+
+        let listed = list_checkpoints(td.path().to_str().expect("repo"), "agent-safe")
+            .expect("list checkpoints");
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].id, second.id);
+        assert_eq!(listed[1].id, first.id);
+        delete_checkpoint(td.path().to_str().expect("repo"), "agent-safe", "cp-001")
+            .expect("delete checkpoint");
+        assert!(
+            resolve_checkpoint(td.path().to_str().expect("repo"), "agent-safe", "cp-001").is_err()
+        );
+        assert_eq!(
+            list_checkpoints(td.path().to_str().expect("repo"), "agent-safe")
+                .expect("list after delete")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn checkpoint_operations_reject_foreign_and_ambiguous_refs() {
+        let td = init_repo();
+        commit_base(td.path());
+        git(
+            td.path(),
+            &[
+                "update-ref",
+                "refs/sikemux/checkpoints/agent-safe/foreign",
+                "HEAD",
+            ],
+        );
+
+        let foreign =
+            resolve_checkpoint(td.path().to_str().expect("repo"), "agent-safe", "foreign")
+                .expect_err("ordinary commits must not become checkpoints by ref alone");
+        assert!(foreign.contains("not a Sikemux checkpoint"), "{foreign}");
+        assert!(list_checkpoints(td.path().to_str().expect("repo"), "agent-safe").is_err());
+        for (agent_id, checkpoint_id) in [
+            ("../agent", "safe"),
+            ("refs-heads-main", "../../main"),
+            ("agent/sibling", "safe"),
+            ("agent-safe", "refs/heads/main"),
+            (" agent-safe", "safe"),
+        ] {
+            let error = checkpoint_ref(agent_id, checkpoint_id)
+                .expect_err("ambiguous or foreign checkpoint components must fail");
+            assert!(error.contains("may contain only"), "{error}");
+        }
+        assert!(
+            delete_checkpoint(td.path().to_str().expect("repo"), "refs/heads/main", "safe")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn checkpoint_fork_starts_at_the_exact_snapshot() {
+        let td = init_repo();
+        commit_base(td.path());
+        fs::write(td.path().join("f.txt"), "checkpoint value\n").expect("change tracked");
+        fs::write(td.path().join("new.txt"), "new at checkpoint\n").expect("new file");
+        let checkpoint = capture_checkpoint(
+            td.path().to_str().expect("repo"),
+            "agent-fork",
+            "cp-fork",
+            "Fork source",
+        )
+        .expect("capture fork source");
+        fs::write(td.path().join("f.txt"), "later value\n").expect("later change");
+
+        let parent = tempdir().expect("fork parent");
+        let target = parent.path().join("checkpoint-fork");
+        let forked = fork_checkpoint(
+            td.path().to_str().expect("repo"),
+            "agent-fork",
+            "cp-fork",
+            target.to_str().expect("target"),
+            "checkpoint/fork",
+        )
+        .expect("fork checkpoint");
+        assert_eq!(forked.head.as_deref(), Some(checkpoint.commit.as_str()));
+        assert_eq!(
+            git(&target, &["rev-parse", "HEAD"]).trim(),
+            checkpoint.commit
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("f.txt")).expect("forked tracked file"),
+            "checkpoint value\n"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("new.txt")).expect("forked new file"),
+            "new at checkpoint\n"
+        );
+
+        // A ref can move after validation. The resolved fork path must retain
+        // the immutable commit rather than resolving that ref a second time.
+        git(
+            td.path(),
+            &[
+                "update-ref",
+                &checkpoint.reference,
+                "HEAD",
+                &checkpoint.commit,
+            ],
+        );
+        let raced_target = parent.path().join("checkpoint-fork-after-ref-race");
+        let raced = fork_resolved_checkpoint(
+            td.path().to_str().expect("repo"),
+            &checkpoint,
+            raced_target.to_str().expect("raced target"),
+            "checkpoint/fork-after-race",
+        )
+        .expect("fork immutable resolved checkpoint");
+        assert_eq!(raced.head.as_deref(), Some(checkpoint.commit.as_str()));
+        assert_eq!(
+            git(&raced_target, &["rev-parse", "HEAD"]).trim(),
+            checkpoint.commit
+        );
+    }
+
+    #[test]
+    fn checkpoint_head_allows_unborn_but_rejects_corrupt_head() {
+        let td = init_repo();
+        fs::write(td.path().join("new.txt"), "unborn\n").expect("unborn file");
+        assert_eq!(
+            checkpoint_head(td.path().to_str().expect("repo")).expect("unborn HEAD"),
+            None
+        );
+        let checkpoint = capture_checkpoint(
+            td.path().to_str().expect("repo"),
+            "agent-unborn",
+            "cp-unborn",
+            "Unborn repository",
+        )
+        .expect("capture unborn checkpoint");
+        assert!(checkpoint.head.is_none());
+        assert!(git(
+            td.path(),
+            &["show", "-s", "--format=%P", &checkpoint.commit]
+        )
+        .trim()
+        .is_empty());
+
+        fs::write(td.path().join(".git/HEAD"), "not-a-valid-head\n").expect("corrupt HEAD");
+        let error = checkpoint_head(td.path().to_str().expect("repo"))
+            .expect_err("corrupt HEAD must not be treated as unborn");
+        assert!(error.contains("resolve checkpoint HEAD"), "{error}");
+    }
+
+    #[test]
+    fn checkpoint_from_nested_linked_worktree_uses_that_worktree_and_common_refs() {
+        let td = init_repo();
+        commit_base(td.path());
+        let parent = tempdir().expect("worktree parent");
+        let linked = parent.path().join("linked");
+        create_worktree(
+            td.path().to_str().expect("repo"),
+            linked.to_str().expect("linked"),
+            "linked-checkpoint",
+            true,
+            Some("HEAD".into()),
+        )
+        .expect("create linked worktree");
+        fs::create_dir_all(linked.join("nested/deeper")).expect("nested directory");
+        fs::write(linked.join("f.txt"), "linked value\n").expect("linked change");
+        fs::write(linked.join("nested/new.txt"), "linked new\n").expect("linked new file");
+        git(&linked, &["add", "f.txt"]);
+        let linked_index_before = git(&linked, &["write-tree"]);
+
+        let checkpoint = capture_checkpoint(
+            linked.join("nested/deeper").to_str().expect("nested repo"),
+            "agent-linked",
+            "cp-linked",
+            "Linked worktree",
+        )
+        .expect("capture linked checkpoint");
+
+        assert_eq!(git(&linked, &["write-tree"]), linked_index_before);
+        assert_eq!(
+            git(td.path(), &["rev-parse", &checkpoint.reference]).trim(),
+            checkpoint.commit
+        );
+        assert_eq!(
+            git(
+                td.path(),
+                &["show", &format!("{}:f.txt", checkpoint.commit)]
+            ),
+            "linked value\n"
+        );
+        assert_eq!(
+            git(
+                td.path(),
+                &["show", &format!("{}:nested/new.txt", checkpoint.commit)]
+            ),
+            "linked new\n"
+        );
+        assert_eq!(
+            fs::read_to_string(td.path().join("f.txt")).expect("main file"),
+            "base\n"
+        );
+    }
+
+    #[test]
+    fn worktree_create_list_and_remove_new_branch() {
+        let td = init_repo();
+        commit_base(td.path());
+        let parent = tempdir().expect("worktree parent");
+        let target = parent
+            .path()
+            .join("missing")
+            .join("project")
+            .join("feature-worktree");
+
+        let created = create_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            "feature/worktrees",
+            true,
+            Some("HEAD".into()),
+        )
+        .expect("create worktree");
+
+        assert_eq!(created.branch.as_deref(), Some("feature/worktrees"));
+        assert_eq!(
+            created.reference.as_deref(),
+            Some("refs/heads/feature/worktrees")
+        );
+        assert!(!created.is_main);
+        assert!(!created.current);
+        assert!(target.join("f.txt").is_file());
+        let listed = read_worktrees(td.path().to_str().expect("repo path")).expect("list");
+        assert_eq!(listed.len(), 2);
+        assert!(listed[0].is_main);
+        assert!(listed[0].current);
+
+        let removed = remove_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            false,
+        )
+        .expect("remove worktree");
+        assert_eq!(removed.branch.as_deref(), Some("feature/worktrees"));
+        assert!(!target.exists());
+        assert_eq!(
+            read_worktrees(td.path().to_str().expect("repo path"))
+                .expect("list after removal")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn worktree_uses_existing_branch_and_tracks_current_context() {
+        let td = init_repo();
+        commit_base(td.path());
+        git(td.path(), &["branch", "existing"]);
+        let parent = tempdir().expect("worktree parent");
+        let target = parent.path().join("existing-worktree");
+        create_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            "existing",
+            false,
+            None,
+        )
+        .expect("create existing branch worktree");
+
+        let listed = read_worktrees(target.to_str().expect("target path")).expect("linked list");
+        assert_eq!(listed.len(), 2);
+        assert!(!listed[0].current);
+        assert!(listed[1].current);
+        assert_eq!(listed[1].branch.as_deref(), Some("existing"));
+    }
+
+    #[test]
+    fn worktree_remove_refuses_main_and_requires_force_for_dirty_tree() {
+        let td = init_repo();
+        commit_base(td.path());
+        let parent = tempdir().expect("worktree parent");
+        let target = parent.path().join("dirty-worktree");
+        create_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            "dirty",
+            true,
+            None,
+        )
+        .expect("create worktree");
+
+        let main_error = remove_worktree(
+            target.to_str().expect("linked repo path"),
+            td.path().to_str().expect("main path"),
+            true,
+        )
+        .expect_err("main worktree must be protected from every linked worktree");
+        assert!(main_error.contains("main worktree"), "{main_error}");
+
+        fs::write(target.join("dirty.txt"), "uncommitted\n").expect("dirty worktree");
+        let dirty_error = remove_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            false,
+        )
+        .expect_err("dirty worktree needs force");
+        assert!(
+            dirty_error.contains("modified or untracked"),
+            "{dirty_error}"
+        );
+        remove_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            true,
+        )
+        .expect("force remove dirty worktree");
+    }
+
+    #[test]
+    fn worktree_list_reports_lock_reason() {
+        let td = init_repo();
+        commit_base(td.path());
+        let parent = tempdir().expect("worktree parent");
+        let target = parent.path().join("locked-worktree");
+        create_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            "locked",
+            true,
+            None,
+        )
+        .expect("create worktree");
+        git(
+            td.path(),
+            &[
+                "worktree",
+                "lock",
+                "--reason",
+                "agent session active",
+                target.to_str().expect("target path"),
+            ],
+        );
+
+        let listed = read_worktrees(td.path().to_str().expect("repo path")).expect("list");
+        let locked = listed.iter().find(|item| !item.is_main).expect("linked");
+        assert!(locked.locked);
+        assert_eq!(locked.lock_reason.as_deref(), Some("agent session active"));
+    }
+
+    #[test]
+    fn worktree_create_rejects_ambiguous_paths_and_option_like_refs() {
+        let td = init_repo();
+        commit_base(td.path());
+
+        let relative = create_worktree(
+            td.path().to_str().expect("repo path"),
+            "relative/worktree",
+            "feature",
+            true,
+            None,
+        )
+        .expect_err("relative targets must be rejected");
+        assert!(relative.contains("must be absolute"), "{relative}");
+
+        let parent = tempdir().expect("worktree parent");
+        let target = parent.path().join("malicious-worktree");
+        let branch = create_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            "--force",
+            true,
+            None,
+        )
+        .expect_err("option-like branches must be rejected");
+        assert!(branch.contains("cannot start with '-'"), "{branch}");
+
+        let start = create_worktree(
+            td.path().to_str().expect("repo path"),
+            target.to_str().expect("target path"),
+            "safe-feature",
+            true,
+            Some("--help".into()),
+        )
+        .expect_err("option-like revisions must be rejected");
+        assert!(start.contains("cannot start with '-'"), "{start}");
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn worktree_create_rejects_protected_and_nested_targets_before_creating_dirs() {
+        let td = init_repo();
+        commit_base(td.path());
+
+        let nested = td.path().join("nested/worktree");
+        let nested_error = create_worktree(
+            td.path().to_str().expect("repo"),
+            nested.to_str().expect("nested target"),
+            "nested-target",
+            true,
+            Some("HEAD".into()),
+        )
+        .expect_err("target inside a registered worktree must fail");
+        assert!(
+            nested_error.contains("inside registered worktree"),
+            "{nested_error}"
+        );
+        assert!(!td.path().join("nested").exists());
+
+        let common = td.path().join(".git/sikemux-test/worktree");
+        let common_error = create_worktree(
+            td.path().to_str().expect("repo"),
+            common.to_str().expect("common-dir target"),
+            "common-dir-target",
+            true,
+            Some("HEAD".into()),
+        )
+        .expect_err("target inside common Git dir must fail");
+        assert!(common_error.contains("common directory"), "{common_error}");
+        assert!(!td.path().join(".git/sikemux-test").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn worktree_create_rejects_symlink_parent_escape_before_creating_dirs() {
+        use std::os::unix::fs::symlink;
+
+        let td = init_repo();
+        commit_base(td.path());
+        let outside = tempdir().expect("outside");
+        let alias = outside.path().join("apparently-external");
+        symlink(td.path(), &alias).expect("symlink into worktree");
+        let target = alias.join("escaped/worktree");
+
+        let error = create_worktree(
+            td.path().to_str().expect("repo"),
+            target.to_str().expect("symlink target"),
+            "symlink-target",
+            true,
+            Some("HEAD".into()),
+        )
+        .expect_err("symlink parent into registered worktree must fail");
+        assert!(error.contains("inside registered worktree"), "{error}");
+        assert!(!td.path().join("escaped").exists());
     }
 
     #[test]

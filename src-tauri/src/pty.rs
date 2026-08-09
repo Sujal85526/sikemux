@@ -111,7 +111,9 @@ struct Pty {
     agent_kind: Option<AgentKind>,
     activity_armed: AtomicBool,
     activity_state: AtomicU8,
-    activity_sequence: AtomicU64,
+    /// Explicit frontend teardown must not masquerade as a natural provider
+    /// exit after a replacement PTY has already started.
+    report_exit: AtomicBool,
     last_published_fingerprint: AtomicU64,
     idle_confirmations: AtomicU8,
     /// Advances whenever submitted input or parsed output changes the
@@ -202,6 +204,9 @@ impl PtyManager {
 }
 
 static NEXT_PTY_ID: AtomicU32 = AtomicU32::new(1);
+/// State events from replacement PTYs share one monotonic ordering so a late
+/// delivery from the old process can never overwrite the newer process state.
+static NEXT_ACTIVITY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(1);
 static OUTPUT_READS: AtomicU64 = AtomicU64::new(0);
 static OUTPUT_BROADCASTS: AtomicU64 = AtomicU64::new(0);
@@ -342,6 +347,7 @@ const ACTIVITY_UNKNOWN: u8 = 0;
 const ACTIVITY_IDLE: u8 = 1;
 const ACTIVITY_WORKING: u8 = 2;
 const ACTIVITY_BLOCKED: u8 = 3;
+const ACTIVITY_STOPPED: u8 = 4;
 #[cfg(unix)]
 const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
 #[cfg(unix)]
@@ -445,6 +451,9 @@ fn publish_agent_state(
     reason: impl Into<String>,
     matched_rule: Option<String>,
 ) {
+    if !pty.report_exit.load(Ordering::Acquire) {
+        return;
+    }
     let Some(agent_id) = pty.activity_key.as_deref() else {
         return;
     };
@@ -465,7 +474,7 @@ fn publish_agent_state(
         return;
     }
     pty.activity_state.store(next, Ordering::Release);
-    let sequence = pty.activity_sequence.fetch_add(1, Ordering::AcqRel) + 1;
+    let sequence = NEXT_ACTIVITY_SEQUENCE.fetch_add(1, Ordering::AcqRel);
     let _ = pty.app.emit(
         "agent_state_changed",
         AgentStateEvent {
@@ -504,8 +513,10 @@ fn submits_line(data: &str) -> bool {
 }
 
 fn note_agent_output(pty: &Pty) {
-    if pty.agent_kind.is_some() {
-        pty.activity_armed.store(true, Ordering::Release);
+    // Startup banners, model discovery, and the first TUI paint are output,
+    // but they are not work. A fresh agent stays Ready until Sikemux observes
+    // an actual submitted line. Once armed, output is meaningful activity.
+    if pty.agent_kind.is_some() && pty.activity_armed.load(Ordering::Acquire) {
         pty.idle_confirmations.store(0, Ordering::Release);
         publish_agent_state(
             pty,
@@ -886,37 +897,29 @@ fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
             let _ = channel.send(Vec::new());
         }
     }
-    if pty.activity_armed.load(Ordering::Acquire) {
-        if status.is_some_and(portable_pty::ExitStatus::success) {
-            publish_agent_state(
-                pty,
-                ACTIVITY_IDLE,
-                "idle",
-                "process",
-                "high",
-                "agent process completed successfully",
-                None,
-            );
-        } else {
-            let reason = status.map_or_else(
-                || "agent process exit status unavailable".to_string(),
-                |status| {
+    if pty.agent_kind.is_some() && pty.report_exit.load(Ordering::Acquire) {
+        let reason = status.map_or_else(
+            || "agent process stopped; exit status unavailable".to_string(),
+            |status| {
+                if status.success() {
+                    "agent process stopped".to_string()
+                } else {
                     status.signal().map_or_else(
-                        || format!("agent process exited with code {}", status.exit_code()),
-                        |signal| format!("agent process exited from signal {signal}"),
+                        || format!("agent process stopped with code {}", status.exit_code()),
+                        |signal| format!("agent process stopped from signal {signal}"),
                     )
-                },
-            );
-            publish_agent_state(
-                pty,
-                ACTIVITY_UNKNOWN,
-                "unknown",
-                "process",
-                "high",
-                reason,
-                None,
-            );
-        }
+                }
+            },
+        );
+        publish_agent_state(
+            pty,
+            ACTIVITY_STOPPED,
+            "stopped",
+            "process",
+            "high",
+            reason,
+            None,
+        );
     }
 }
 
@@ -931,6 +934,8 @@ pub struct PtyContext {
     pane_id: Option<String>,
     agent_id: Option<String>,
     agent_type: Option<String>,
+    #[serde(default)]
+    initial_prompt_submitted: bool,
 }
 
 const OPTIONAL_PTY_ENV: &[&str] = &[
@@ -1133,6 +1138,9 @@ pub async fn pty_spawn(
         .as_ref()
         .and_then(|context| context.agent_type.as_deref())
         .and_then(AgentKind::from_label);
+    let initial_prompt_submitted = context
+        .as_ref()
+        .is_some_and(|context| context.initial_prompt_submitted);
     let activity_key = context
         .and_then(|context| context.agent_id)
         .filter(|key| !key.is_empty());
@@ -1153,9 +1161,9 @@ pub async fn pty_spawn(
         trimmed: AtomicBool::new(false),
         activity_key,
         agent_kind: parsed_agent_kind,
-        activity_armed: AtomicBool::new(false),
+        activity_armed: AtomicBool::new(initial_prompt_submitted),
         activity_state: AtomicU8::new(ACTIVITY_UNKNOWN),
-        activity_sequence: AtomicU64::new(0),
+        report_exit: AtomicBool::new(true),
         last_published_fingerprint: AtomicU64::new(0),
         idle_confirmations: AtomicU8::new(0),
         activity_revision: AtomicU64::new(0),
@@ -1166,6 +1174,29 @@ pub async fn pty_spawn(
     // immediately; starting first lets its self-prune remove nothing and then
     // leaves a dead PTY inserted forever.
     manager.ptys.insert(id, pty.clone());
+    if pty.agent_kind.is_some() && pty.activity_key.is_some() {
+        if initial_prompt_submitted {
+            publish_agent_state(
+                &pty,
+                ACTIVITY_WORKING,
+                "working",
+                "activity",
+                "high",
+                "initial prompt submitted",
+                None,
+            );
+        } else {
+            publish_agent_state(
+                &pty,
+                ACTIVITY_IDLE,
+                "idle",
+                "process",
+                "high",
+                "agent ready; no prompt submitted",
+                None,
+            );
+        }
+    }
 
     // Reader — feeds parser then fans bytes out to subscribers.
     //
@@ -1596,6 +1627,7 @@ mod tests {
             pane_id: Some("pane-1".into()),
             agent_id: None,
             agent_type: None,
+            initial_prompt_submitted: false,
         };
 
         configure_pty_environment(
@@ -1712,6 +1744,7 @@ mod tests {
             pane_id: None,
             agent_id: Some("agent-1".into()),
             agent_type: Some("codex".into()),
+            initial_prompt_submitted: false,
         };
 
         configure_pty_environment(&mut command, Some(&context), "1.2.3", None, None);
@@ -2083,6 +2116,7 @@ mod tests {
 #[tauri::command]
 pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
     if let Some((_, pty)) = manager.ptys.remove(&id) {
+        pty.report_exit.store(false, Ordering::Release);
         // Notify any remaining subscribers so their xterms render
         // "[process exited]" before the unmount tears them down.
         if let Ok(subs) = pty.subscribers.lock() {

@@ -160,7 +160,7 @@ export function Workspace() {
                 const agentLayers = aIds.map((aid) => {
                     const agent = agentsById[aid];
                     if (!agent) return null;
-                    const key = `${aid}:${agent.skipPermissions ? "skip" : "safe"}`;
+                    const key = `${aid}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}`;
                     return (
                         <AgentLayer
                             key={key}
@@ -231,9 +231,15 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
         ];
         if (cmd.agentSupportsSkipPermissions(a.type)) {
             const skip = a.skipPermissions ?? false;
+            const restartBlocked = !!a.firstTurnPending && !a.resumeId;
             items.push(
                 { sep: true },
-                { label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode", hint: "⌥Y", run: () => cmd.toggleAgentSkipPermissions(id) },
+                {
+                    label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode",
+                    hint: "⌥Y",
+                    disabled: restartBlocked,
+                    run: () => cmd.toggleAgentSkipPermissions(id),
+                },
             );
         }
         return items;
@@ -266,16 +272,20 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
 }
 
 function YoloToggle({ agent }: { agent: Agent }) {
-    const on = agent.skipPermissions ?? false;
+    const on = agent.permissionMode === "bypass" || agent.skipPermissions === true;
+    const restartBlocked = !!agent.firstTurnPending && !agent.resumeId;
     return (
         <button
             type="button"
             className={`yolo-toggle${on ? " on" : ""}`}
             aria-pressed={on}
+            disabled={restartBlocked}
             title={
-                on
-                    ? `YOLO mode ON — ${agent.type} runs without approvals. Toggle with ⌥Y.`
-                    : `Guarded — ${agent.type} asks before acting. Go YOLO (skip-permissions) with ⌥Y.`
+                restartBlocked
+                    ? "Safety can be changed after the first task has a resumable session."
+                    : on
+                      ? `YOLO mode ON — ${agent.type} runs without approvals. Toggle with ⌥Y.`
+                      : `Guarded — ${agent.type} asks before acting. Go YOLO (skip-permissions) with ⌥Y.`
             }
             onClick={(e) => {
                 e.stopPropagation();
@@ -327,8 +337,10 @@ const AgentLayer = memo(function AgentLayer({
                         </div>
                     ) : (
                         <TerminalPane
-                            cwd={session.cwd || undefined}
+                            cwd={agent.cwd || session.cwd || undefined}
                             startup={agent.startup}
+                            initialInput={agent.initialInput}
+                            onInitialInputDelivered={() => cmd.clearAgentInitialInput(agent.id)}
                             active={visible}
                             visible={visible}
                             spawnWhen={visible || (autoResumeAgents && !!agent.resumeId)}
@@ -336,9 +348,10 @@ const AgentLayer = memo(function AgentLayer({
                                 sessionId: session.id,
                                 sessionName: session.name,
                                 sessionKind: session.kind,
-                                ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
+                                ...(session.kind === "project" && (agent.cwd || session.cwd) ? { project: agent.cwd || session.cwd } : {}),
                                 agentId: agent.id,
                                 agentType: agent.type,
+                                initialPromptSubmitted: agent.initialPromptSubmitted,
                             }}
                         />
                     )}
@@ -350,7 +363,7 @@ const AgentLayer = memo(function AgentLayer({
 });
 
 function AgentActivityMark({ state, unread }: { state?: import("../state/types").AgentPresentationState; unread: boolean }) {
-    if (!state || (state === "idle" && !unread)) return null;
+    if (!state) return null;
     return <AgentStateIndicator state={state} unread={unread} />;
 }
 

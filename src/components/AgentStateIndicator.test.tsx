@@ -14,7 +14,8 @@ describe("AgentStateIndicator", () => {
     it.each([
         ["blocked", "Needs input"],
         ["done", "Done — unseen"],
-        ["idle", "Idle"],
+        ["idle", "Ready"],
+        ["stopped", "Stopped"],
         ["unknown", "Unknown"],
     ] as const)("renders the %s state as an accessible SVG icon", (state, label) => {
         const { container } = render(<AgentStateIndicator state={state as AgentPresentationState} />);

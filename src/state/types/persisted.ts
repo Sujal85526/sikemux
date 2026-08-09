@@ -3,10 +3,13 @@ import type { CustomCommand } from "../../commands/registry";
 import type { KeybindingOverrides } from "../../keybindings";
 import type {
     Agent,
+    AgentPermissionMode,
     AwsService,
     NotificationPreferences,
     PinnedProject,
     ProjectRoot,
+    ProviderProfile,
+    ProviderProfileSelection,
     RailDensity,
     RecentEntry,
     RundeckSettings,
@@ -20,7 +23,21 @@ export type PersistedSession = Omit<Session, "bruno"> & {
 };
 
 /** Safe restart record. Startup commands and runtime evidence are never serialized. */
-export type PersistedAgent = Pick<Agent, "id" | "type" | "title" | "resumeId" | "skipPermissions">;
+export type PersistedAgent = Pick<
+    Agent,
+    | "id"
+    | "type"
+    | "title"
+    | "resumeId"
+    | "permissionMode"
+    | "profileId"
+    | "cwd"
+    | "worktreePath"
+    | "model"
+    | "effort"
+    | "workspaceStrategy"
+    | "skipPermissions"
+>;
 
 export interface PersistedSnapshot {
     version: number;
@@ -64,4 +81,8 @@ export interface PersistedPrefs {
     updateChannel?: "stable" | "preview";
     lastReleaseNotes?: { version: string; notes: string | null; date: string | null } | null;
     recentCommandKeys?: string[];
+    /** Non-secret provider launch profiles. Credential values are never part of this shape. */
+    providerProfiles?: ProviderProfile[];
+    selectedProviderProfileIds?: ProviderProfileSelection;
+    defaultAgentPermissionMode?: AgentPermissionMode;
 }
