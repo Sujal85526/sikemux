@@ -70,6 +70,20 @@
     color: var(--ink-faint);
 }
 
+.tb-git {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    min-width: 0;
+}
+.tb-git-copy {
+    opacity: 0;
+}
+.tb-git:hover .tb-git-copy,
+.tb-git-copy:focus-visible,
+.tb-git-copy.copied {
+    opacity: 1;
+}
 .tb-git-chip {
     display: inline-flex;
     align-items: center;
@@ -99,6 +113,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* Selectable so the branch can be dragged over and copied by hand, on top
+       of the copy button next to it. */
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
 }
 .tb-git-track {
     display: inline-flex;

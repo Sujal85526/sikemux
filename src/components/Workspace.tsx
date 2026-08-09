@@ -63,7 +63,9 @@ const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => Reac
             />
         </Suspense>
     ),
-    git: ({ pane, session, active }) => <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} />,
+    git: ({ pane, session, win, active, visible }) => (
+        <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} termContext={terminalContext(session, win, pane)} />
+    ),
     aws: ({ visible }) => (
         <Suspense fallback={<PaneFallback />}>
             <AwsPane active={visible} />

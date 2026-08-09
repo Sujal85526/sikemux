@@ -272,6 +272,18 @@
     color: var(--acc);
     font-weight: 700;
     white-space: nowrap;
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+}
+.git-tb-copy {
+    opacity: 0;
+    margin-left: -4px;
+}
+.git-toolbar:hover .git-tb-copy,
+.git-tb-copy:focus-visible,
+.git-tb-copy.copied {
+    opacity: 1;
 }
 .git-tb-changed {
     font-size: 10.5px;
@@ -1060,9 +1072,133 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    position: relative;
     padding-left: 8px;
 }
+/* Height comes from the split percentage, set inline by the pane. */
+.git-right-review {
+    position: relative;
+    flex: 0 0 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.git-term-split {
+    flex: 0 0 auto;
+    height: 7px;
+    margin-left: -8px;
+    cursor: row-resize;
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 55%), transparent);
+    transition:
+        background 0.12s,
+        border-color 0.12s;
+}
+.git-term-split::after {
+    content: "";
+    display: block;
+    width: 34px;
+    height: 2px;
+    margin: 2px auto 0;
+    border-radius: 2px;
+    background: var(--line);
+    transition: background 0.12s;
+}
+.git-term-split:hover,
+.git-term-split:focus-visible {
+    background: var(--acc-soft);
+    border-top-color: var(--acc-line);
+    outline: none;
+}
+.git-term-split:hover::after,
+.git-term-split:focus-visible::after {
+    background: var(--acc);
+}
+body.git-resizing {
+    cursor: row-resize;
+    user-select: none;
+}
+
+.git-term {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-left: -8px;
+}
+.git-term-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 24px;
+    padding: 0 6px 0 10px;
+    border-bottom: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 60%), transparent);
+}
+.git-term-label {
+    color: var(--ink-faint);
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+.git-term-cwd {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-dim);
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.git-term-grow {
+    flex: 1;
+}
+.git-term-restart {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.12s;
+}
+.git-term-restart:hover {
+    color: var(--acc);
+}
+.git-term-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    padding: 4px 0 0 6px;
+}
+.git-term-stalled {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+    color: var(--ink-dim);
+    font-size: 11px;
+}
+.git-term-stalled button {
+    padding: 4px 10px;
+    border: 1px solid var(--acc-line);
+    background: var(--acc-soft);
+    color: var(--acc);
+    font: inherit;
+    font-size: 10.5px;
+    cursor: pointer;
+}
+.git-term-stalled button:hover {
+    background: color-mix(in srgb, var(--acc) 22%, transparent);
+}
+
 .git-output {
     flex: 1;
     overflow: auto;
@@ -1113,24 +1249,41 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding-top: 8px;
 }
 .merge-section {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border-top: 1px solid var(--line-soft);
+}
+.merge-section + .merge-section {
+    border-top: 1px solid var(--line);
 }
 .merge-section-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     flex: 0 0 auto;
     height: 22px;
-    padding: 5px 10px 0;
+    padding: 0 10px;
     color: var(--ink-faint);
-    font-size: 10px;
-    letter-spacing: 0.08em;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 55%), transparent);
+}
+.merge-section-title::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.merge-section-title.staged {
+    color: var(--live);
+}
+.merge-section-title.unstaged {
+    color: var(--warn);
 }
 .diff-editor {
     flex: 1;
@@ -1158,67 +1311,79 @@
     height: auto;
 }
 
-.cm-deletedChunk {
-    background: rgba(255, 103, 103, 0.08);
+/* Unified diff. Removals read red, additions green, each hunk carrying a solid
+   edge rule so its shape is legible before you read a single character. These
+   fight @codemirror/merge's own base theme, hence the !important flags. */
+.diff-editor .cm-editor .cm-deletedChunk {
+    padding-left: 0;
+    background: color-mix(in srgb, var(--danger) 7%, transparent) !important;
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--danger) 55%, transparent);
 }
-.cm-deletedText {
-    background: rgba(255, 103, 103, 0.24);
-    color: #ffb3b3;
+.diff-editor .cm-editor .cm-deletedChunk .cm-deletedLine {
+    padding-left: 8px;
 }
-.cm-changedLine {
-    background: rgba(97, 255, 202, 0.07);
+.diff-editor .cm-editor .cm-deletedText {
+    background: color-mix(in srgb, var(--danger) 26%, transparent) !important;
+    color: #ffc9c9 !important;
+    border-radius: 2px;
+    text-decoration: none;
 }
-.cm-changedText {
-    background: rgba(97, 255, 202, 0.16) !important;
+.diff-editor .cm-editor .cm-changedLine {
+    background: color-mix(in srgb, var(--live) 7%, transparent) !important;
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--live) 55%, transparent);
 }
-.cm-deletedChunk .cm-deletedText {
-    background: rgba(255, 103, 103, 0.2) !important;
+.diff-editor .cm-editor .cm-changedText {
+    background: color-mix(in srgb, var(--live) 20%, transparent) !important;
+    border-radius: 2px;
 }
-.cm-changedLineGutter {
-    background: rgba(97, 255, 202, 0.12);
+.diff-editor .cm-editor .cm-changeGutter {
+    width: 3px;
+    padding-left: 0;
 }
-.cm-deletedLineGutter {
-    background: rgba(255, 103, 103, 0.12);
+.diff-editor .cm-editor .cm-changedLineGutter {
+    background: var(--live) !important;
 }
-
-.cm-deletedChunk .cm-chunkButtons {
-    position: absolute;
-    inset-inline-end: 8px;
-    display: flex;
-    gap: 4px;
+.diff-editor .cm-editor .cm-deletedLineGutter {
+    background: var(--danger) !important;
 }
-.cm-deletedChunk button[name="accept"],
-.cm-deletedChunk button[name="reject"] {
-    margin: 0;
-    padding: 2px 9px;
-    border-radius: 0;
-    background: transparent;
-    font-family: var(--mono);
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    cursor: pointer;
+/* The "N unchanged lines" folds that sit between hunks. */
+.diff-editor .cm-editor .cm-collapsedLines {
+    padding: 3px 10px;
+    color: var(--ink-faint) !important;
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent) !important;
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 10px;
+    letter-spacing: 0.04em;
     transition:
         color 0.12s,
-        background 0.12s,
-        border-color 0.12s;
+        background 0.12s;
 }
-.cm-deletedChunk button[name="accept"] {
-    border: 1px solid color-mix(in srgb, var(--live) 40%, transparent);
-    color: var(--live);
+.diff-editor .cm-editor .cm-collapsedLines:hover {
+    color: var(--acc) !important;
+    background: var(--acc-soft) !important;
 }
-.cm-deletedChunk button[name="accept"]:hover {
-    background: color-mix(in srgb, var(--live) 18%, transparent);
-    border-color: var(--live);
+.diff-editor .cm-editor .cm-collapsedLines::before,
+.diff-editor .cm-editor .cm-collapsedLines::after {
+    content: "⋯";
+    margin: 0 7px;
 }
-.cm-deletedChunk button[name="reject"] {
-    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-    color: var(--danger);
+/* Quiet chrome: the gutter reads as a rail, not a second column of content. */
+.diff-editor .cm-editor .cm-gutters {
+    border-right: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 45%), transparent);
 }
-.cm-deletedChunk button[name="reject"]:hover {
-    background: color-mix(in srgb, var(--danger) 18%, transparent);
-    border-color: var(--danger);
+.diff-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
+    color: var(--ink-faint);
+    font-size: 11px;
+}
+/* A touch tighter than the main editor — the review column is narrow, and
+   every wrapped line costs more here than it does in a full-width pane. */
+.diff-editor .cm-editor .cm-content {
+    font-size: 12px;
+}
+.diff-editor .cm-editor .cm-scroller {
+    line-height: 1.55;
 }
 
 .commit-review {

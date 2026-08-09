@@ -28,11 +28,11 @@ export function MergeReview({
             {staged && unstaged ? (
                 <div className="merge-sections">
                     <div className="merge-section">
-                        <div className="merge-section-title">staged</div>
+                        <div className="merge-section-title staged">staged</div>
                         <DiffEditor repo={repo} path={path} baseRev="HEAD" headRev=":index" editable={false} />
                     </div>
                     <div className="merge-section">
-                        <div className="merge-section-title">unstaged</div>
+                        <div className="merge-section-title unstaged">unstaged</div>
                         <DiffEditor repo={repo} path={path} baseRev=":index" editable onSaved={onSaved} />
                     </div>
                 </div>

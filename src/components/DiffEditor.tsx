@@ -74,7 +74,9 @@ export function DiffEditor({
                 ...(lines > HIGHLIGHT_LIMIT ? [] : languageFor(path)),
                 unifiedMergeView({
                     original: base,
-                    mergeControls: editable,
+                    // No per-chunk accept/reject: this is a review surface, and
+                    // staging/discarding belongs to the Files panel verbs.
+                    mergeControls: false,
                     collapseUnchanged: { margin: 3, minSize: 4 },
                 }),
             ];

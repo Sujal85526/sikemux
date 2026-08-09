@@ -26,6 +26,7 @@ import {
     WindowIcon,
 } from "./Icons";
 import { branchKind } from "./rundeck/branchStyle";
+import { CopyButton } from "./CopyButton";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
@@ -202,16 +203,19 @@ function GitChip({ repo }: { repo: string }) {
 
     return (
         <>
-            <button className="tb-git-chip" onClick={cmd.openGitPane} title={title}>
-                <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
-                <span className="tb-git-branch">{st.branch}</span>
-                {(ahead > 0 || behind > 0) && (
-                    <span className="tb-git-track">
-                        {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
-                        {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
-                    </span>
-                )}
-            </button>
+            <span className="tb-git" data-no-window-drag>
+                <button className="tb-git-chip" onClick={cmd.openGitPane} title={title}>
+                    <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
+                    <span className="tb-git-branch">{st.branch}</span>
+                    {(ahead > 0 || behind > 0) && (
+                        <span className="tb-git-track">
+                            {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
+                            {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
+                        </span>
+                    )}
+                </button>
+                <CopyButton className="tb-git-copy" value={st.branch} label="branch name" size={11} />
+            </span>
             <span className="tb-sep" />
         </>
     );

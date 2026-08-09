@@ -158,3 +158,34 @@ button {
     letter-spacing: 0.02em;
     white-space: nowrap;
 }
+
+/* Inline "copy this string" affordance (branch names, ids, paths). */
+.copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition:
+        color 0.12s,
+        background 0.12s,
+        opacity 0.12s;
+}
+.copy-btn:hover {
+    color: var(--acc);
+    background: var(--acc-soft);
+}
+.copy-btn.copied {
+    color: var(--live);
+}
+.copy-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}

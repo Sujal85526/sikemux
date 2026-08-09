@@ -77,6 +77,7 @@ export function useXterm(opts: {
     onFindRequest?: (seed: string) => void;
     onSearchResults?: (result: ISearchResultChangeEvent) => void;
     onTitleChange?: (title: string) => void;
+    onExit?: () => void;
 }): TerminalController {
     const { hostRef, ptyReady, shouldMount, active, visible } = opts;
     const onFindRequestRef = useRef(opts.onFindRequest);
@@ -85,6 +86,8 @@ export function useXterm(opts: {
     onSearchResultsRef.current = opts.onSearchResults;
     const onTitleChangeRef = useRef(opts.onTitleChange);
     onTitleChangeRef.current = opts.onTitleChange;
+    const onExitRef = useRef(opts.onExit);
+    onExitRef.current = opts.onExit;
     const termRef = useRef<Terminal | null>(null);
     const targetRef = useRef<TerminalTarget | null>(null);
     const controllerRef = useRef<TerminalController | null>(null);
@@ -361,6 +364,9 @@ export function useXterm(opts: {
             const writeChunk = (chunk: number[]) => {
                 if (chunk.length === 0) {
                     writeBytes(encoder.encode("\r\n\x1b[38;5;245m[process exited]\x1b[0m\r\n"));
+                    // Owners that must always keep a live shell (the Git pane)
+                    // replace this pane on exit; everyone else ignores it.
+                    if (!disposed && !closing) onExitRef.current?.();
                     return;
                 }
                 writeBytes(new Uint8Array(chunk));
@@ -373,10 +379,27 @@ export function useXterm(opts: {
                 writeChunk(chunk);
             };
 
-            const { subId, snapshot, alternateScreen } = await invoke<AttachResult>("pty_attach", {
-                id: pid,
-                onEvent: channel,
-            });
+            let attached: AttachResult;
+            try {
+                attached = await invoke<AttachResult>("pty_attach", { id: pid, onEvent: channel });
+            } catch {
+                // The backend drops the PTY entry as soon as the child exits, so a
+                // failed attach means the process died while this renderer was
+                // unmounted. Report it like a live exit instead of stranding a
+                // blank pane.
+                host.removeEventListener("wheel", onWheel);
+                searchResultsSub.dispose();
+                titleSub.dispose();
+                contextLossSub?.dispose();
+                unregisterTheme();
+                if (targetRef.current?.term === term) targetRef.current = null;
+                term.dispose();
+                delete host.dataset.terminalRenderer;
+                bootingRef.current = false;
+                if (!disposed) onExitRef.current?.();
+                return;
+            }
+            const { subId, snapshot, alternateScreen } = attached;
             if (disposed) {
                 void invoke("pty_unsubscribe", { id: pid, subId });
                 unregisterTheme();

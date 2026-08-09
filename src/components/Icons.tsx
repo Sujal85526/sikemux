@@ -164,6 +164,12 @@ export const IconFile = makeSvgIcon(
 );
 export const IconClose = makeSvgIcon(<path d="M4 4l8 8M12 4l-8 8" />);
 export const IconCheck = makeSvgIcon(<path d="M3.5 8.4 6.6 11.5 12.5 4.5" />);
+export const IconCopy = makeSvgIcon(
+    <>
+        <rect x="5.8" y="5.8" width="7.7" height="7.7" rx="1" />
+        <path d="M10.2 3.6a1 1 0 0 0-1-1.1H3.5a1 1 0 0 0-1 1v5.7a1 1 0 0 0 1.1 1" />
+    </>,
+);
 export const IconPencil = makeSvgIcon(
     <>
         <path d="M9.6 3.4 12.6 6.4" />

@@ -29,6 +29,7 @@ export function TerminalPane({
     spawnWhen = visible,
     context,
     onTitleChange,
+    onExit,
 }: {
     cwd?: string;
     startup?: string;
@@ -37,6 +38,8 @@ export function TerminalPane({
     spawnWhen?: boolean;
     context?: PtyContext;
     onTitleChange?: (title: string) => void;
+    /** Fires when the shell process ends. Remount with a fresh key to respawn. */
+    onExit?: () => void;
 }) {
     const [shouldMount, setShouldMount] = useState(visible);
     const [findOpen, setFindOpen] = useState(false);
@@ -83,6 +86,7 @@ export function TerminalPane({
         },
         onSearchResults: setFindResult,
         onTitleChange,
+        onExit,
     });
 
     useEffect(() => {
