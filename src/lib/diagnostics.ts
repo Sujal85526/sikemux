@@ -36,9 +36,73 @@ const longTasks: LongTaskEntry[] = [];
 const MAX_LONG_TASKS = 200;
 const runtimeErrors: { at: string; kind: "error" | "unhandledrejection"; message: string }[] = [];
 const MAX_RUNTIME_ERRORS = 64;
+export const MAX_RUNTIME_ERROR_MESSAGE_CHARACTERS = 512;
+
+/**
+ * Diagnostics must remain safe even when an opaque rejection has hostile
+ * getters/toString behavior or carries megabytes of terminal/request data.
+ */
+export function sanitizeRuntimeErrorMessage(value: unknown): string {
+    let raw = "Unhandled runtime error";
+    if (typeof value === "string") {
+        raw = value;
+    } else if ((typeof value === "object" || typeof value === "function") && value !== null) {
+        try {
+            const descriptor = Object.getOwnPropertyDescriptor(value, "message");
+            if (descriptor && "value" in descriptor && typeof descriptor.value === "string") raw = descriptor.value;
+        } catch {
+            // Opaque runtime failures are never enumerated or stringified.
+        }
+    }
+
+    const limit = MAX_RUNTIME_ERROR_MESSAGE_CHARACTERS;
+    const scanLimit = Math.min(raw.length, limit * 8);
+    let result = "";
+    let pendingSpace = false;
+    for (let index = 0; index < scanLimit && result.length < limit;) {
+        const code = raw.codePointAt(index) ?? 0;
+        const character = String.fromCodePoint(code);
+        index += character.length;
+        if (code === 27) {
+            const introducer = raw.charCodeAt(index);
+            if (introducer === 91) {
+                index += 1;
+                while (index < scanLimit) {
+                    const terminal = raw.charCodeAt(index);
+                    index += 1;
+                    if (terminal >= 64 && terminal <= 126) break;
+                }
+            } else if (introducer === 93) {
+                index += 1;
+                while (index < scanLimit) {
+                    const terminal = raw.charCodeAt(index);
+                    index += 1;
+                    if (terminal === 7) break;
+                    if (terminal === 27 && raw.charCodeAt(index) === 92) {
+                        index += 1;
+                        break;
+                    }
+                }
+            } else if (index < scanLimit) {
+                index += String.fromCodePoint(raw.codePointAt(index) ?? 0).length;
+            }
+            pendingSpace = result.length > 0;
+            continue;
+        }
+        if (code <= 31 || (code >= 127 && code <= 159) || /\s/u.test(character)) {
+            pendingSpace = result.length > 0;
+            continue;
+        }
+        if (pendingSpace && result.length < limit) result += " ";
+        pendingSpace = false;
+        if (result.length + character.length > limit) break;
+        result += character;
+    }
+    return result.trim() || "Unhandled runtime error";
+}
 
 function recordRuntimeError(kind: "error" | "unhandledrejection", value: unknown): void {
-    const message = value instanceof Error ? value.message : typeof value === "string" ? value : String(value);
+    const message = sanitizeRuntimeErrorMessage(value);
     runtimeErrors.push({ at: new Date().toISOString(), kind, message });
     if (runtimeErrors.length > MAX_RUNTIME_ERRORS) runtimeErrors.splice(0, runtimeErrors.length - MAX_RUNTIME_ERRORS);
 }
