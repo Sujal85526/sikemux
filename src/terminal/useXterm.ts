@@ -21,6 +21,8 @@ import { alternateScreenWheelFallbackSequence } from "./wheelNavigation";
 import { needsTerminalRedraw } from "./redraw";
 import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 import { isTerminalFindShortcut, safeWebUrl, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
+import { scheduleNextFrame } from "../lib/instrumentation";
+import { performanceTelemetry } from "../lib/performance";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_WEIGHT = 500;
@@ -263,6 +265,8 @@ export function useXterm(opts: {
             let replayScrollState = initialReplayScrollState();
             let initialReplayOutputPending = false;
             const outputPending: Uint8Array[] = [];
+            let outputPendingBytes = 0;
+            let outputQueuedAt: number | null = null;
             const encoder = new TextEncoder();
             const isAtBottom = () => {
                 const buf = term.buffer.active;
@@ -324,22 +328,39 @@ export function useXterm(opts: {
                 if ((disposed && !closing) || outputBusy || outputPending.length === 0) return;
                 const completesInitialReplay = initialReplayOutputPending;
                 initialReplayOutputPending = false;
+                const flushStarted = performance.now();
+                if (outputQueuedAt !== null) performanceTelemetry.recordLatency("terminal.output.queue", flushStarted - outputQueuedAt);
+                outputQueuedAt = null;
                 let total = 0;
                 for (const chunk of outputPending) total += chunk.length;
+                const chunkCount = outputPending.length;
                 const merged = new Uint8Array(total);
                 let offset = 0;
                 for (const chunk of outputPending.splice(0)) {
                     merged.set(chunk, offset);
                     offset += chunk.length;
                 }
+                outputPendingBytes = 0;
+                performanceTelemetry.setGauge("terminal.last-queue-bytes", 0);
+                performanceTelemetry.recordLatency("terminal.output.merge", performance.now() - flushStarted);
+                performanceTelemetry.incrementCounter("terminal.output.flushes");
+                performanceTelemetry.incrementCounter("terminal.output.chunks", chunkCount);
+                performanceTelemetry.incrementCounter("terminal.output.bytes", total);
                 outputBusy = true;
+                const writeStarted = performance.now();
                 term.write(merged, () => {
                     outputBusy = false;
+                    performanceTelemetry.recordLatency("terminal.xterm.write", performance.now() - writeStarted);
+                    const frameStarted = performance.now();
+                    scheduleNextFrame(() => {
+                        performanceTelemetry.recordLatency("terminal.output.next-frame-proxy", performance.now() - frameStarted);
+                    });
                     if (needsTerminalRedraw(merged)) {
                         // zsh-autosuggestions erases then redraws the input line.
                         // Force a complete canvas pass so transparent WKWebView
                         // terminals cannot retain the previous suggestion glyphs.
                         term.refresh(0, term.rows - 1);
+                        performanceTelemetry.incrementCounter("terminal.full-redraws");
                     }
                     if (completesInitialReplay) {
                         const completion = completeInitialReplay(replayScrollState);
@@ -359,7 +380,10 @@ export function useXterm(opts: {
             };
             const writeBytes = (bytes: Uint8Array) => {
                 if (bytes.length === 0) return;
+                if (outputPending.length === 0) outputQueuedAt = performance.now();
                 outputPending.push(bytes);
+                outputPendingBytes += bytes.length;
+                performanceTelemetry.setGauge("terminal.last-queue-bytes", outputPendingBytes);
                 scheduleOutput();
             };
             const writeChunk = (chunk: number[]) => {
@@ -515,6 +539,9 @@ export function useXterm(opts: {
                 outputFrame = null;
                 if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);
                 pending.length = 0;
+                outputPendingBytes = 0;
+                outputQueuedAt = null;
+                performanceTelemetry.setGauge("terminal.last-queue-bytes", 0);
                 channel.onmessage = () => {};
                 void invoke("pty_unsubscribe", { id: pid, subId });
                 termRef.current = null;

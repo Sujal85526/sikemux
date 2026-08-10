@@ -289,6 +289,7 @@ pub struct RuntimeDiagnostics {
     aws_log_tails: usize,
     rundeck_watchers: usize,
     rundeck_log_tails: usize,
+    observability: crate::observability::ObservabilitySnapshot,
 }
 
 #[cfg(unix)]
@@ -350,6 +351,7 @@ pub fn runtime_diagnostics(
         aws_log_tails: aws_logs.count(),
         rundeck_watchers: rundeck_watch.count(),
         rundeck_log_tails: rundeck_logs.count(),
+        observability: crate::observability::global_observability().snapshot(),
     }
 }
 

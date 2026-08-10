@@ -59,6 +59,7 @@ use crate::agent_detection::{
     DetectionInput, ManifestRegistry, ManifestReloadReport,
 };
 use crate::error::{AppError, AppResult};
+use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
 
 fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
     AppError::Pty(e.to_string())
@@ -849,18 +850,27 @@ fn ensure_sweeper(app: AppHandle) {
 /// Both Unix's readiness task and Windows' ConPTY reader thread share this
 /// path, preserving the snapshot/subscription ordering invariant.
 fn broadcast_output(pty: &Pty, bytes: &[u8]) {
+    let observer = global_observability();
+    let mut metadata = Metadata::new();
+    metadata.insert("bytes".to_owned(), ScalarValue::from(bytes.len()));
+    let operation =
+        observer.slow_operation("pty.broadcast", Duration::from_millis(8), None, metadata);
     OUTPUT_BROADCASTS.fetch_add(1, Ordering::Relaxed);
     OUTPUT_BYTES.fetch_add(bytes.len() as u64, Ordering::Relaxed);
     pty.last_activity_ms.store(now_ms(), Ordering::Relaxed);
     note_agent_output(pty);
     let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
+        let parser_started = Instant::now();
         let Ok(mut parser) = pty.parser.lock() else {
+            let _ = observer.increment_counter("pty.parser.lock_errors", 1);
+            operation.finish(SpanOutcome::Error);
             return;
         };
         if pty.trimmed.swap(false, Ordering::AcqRel) {
             reseed_parser(&mut parser, PARSER_SCROLLBACK);
         }
         parser.process(bytes);
+        observer.observe_latency("pty.parser", parser_started.elapsed());
         pty.activity_revision.fetch_add(1, Ordering::AcqRel);
         match pty.subscribers.lock() {
             Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
@@ -868,8 +878,11 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
         }
     };
     if snapshot.is_empty() {
+        operation.finish(SpanOutcome::Success);
         return;
     }
+    observer.set_gauge("pty.last_subscriber_fanout", snapshot.len() as f64);
+    let send_started = Instant::now();
     let dead: Vec<u32> = if snapshot.len() == 1 {
         let (sub_id, channel) = &snapshot[0];
         channel
@@ -884,11 +897,16 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
             .filter_map(|(sub_id, channel)| channel.send(chunk.clone()).err().map(|_| *sub_id))
             .collect()
     };
+    observer.observe_latency("pty.channel_send", send_started.elapsed());
+    if !dead.is_empty() {
+        let _ = observer.increment_counter("pty.channel_send_errors", dead.len() as u64);
+    }
     if let Ok(mut subscribers) = pty.subscribers.lock() {
         for sub_id in dead {
             subscribers.remove(&sub_id);
         }
     }
+    operation.finish(SpanOutcome::Success);
 }
 
 fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
@@ -1468,23 +1486,38 @@ pub fn pty_attach(
     id: u32,
     on_event: Channel<Vec<u8>>,
 ) -> AppResult<AttachResult> {
-    let pty = manager
-        .ptys
-        .get(&id)
-        .ok_or(AppError::BadArg("pty not found"))?;
-    let parser = pty.parser.lock().map_err(pty_err)?;
-    let alternate_screen = parser.screen().alternate_screen();
-    let snapshot = attach_snapshot(parser.screen());
-    let mut subs = pty.subscribers.lock().map_err(pty_err)?;
-    let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
-    subs.insert(sub_id, on_event);
-    drop(subs);
-    drop(parser);
-    Ok(AttachResult {
-        sub_id,
-        snapshot,
-        alternate_screen,
-    })
+    let observer = global_observability();
+    let operation = observer.slow_operation(
+        "pty.attach",
+        Duration::from_millis(16),
+        None,
+        Metadata::new(),
+    );
+    let result = (|| {
+        let pty = manager
+            .ptys
+            .get(&id)
+            .ok_or(AppError::BadArg("pty not found"))?;
+        let parser = pty.parser.lock().map_err(pty_err)?;
+        let alternate_screen = parser.screen().alternate_screen();
+        let snapshot = attach_snapshot(parser.screen());
+        let mut subs = pty.subscribers.lock().map_err(pty_err)?;
+        let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
+        subs.insert(sub_id, on_event);
+        drop(subs);
+        drop(parser);
+        Ok(AttachResult {
+            sub_id,
+            snapshot,
+            alternate_screen,
+        })
+    })();
+    operation.finish(if result.is_ok() {
+        SpanOutcome::Success
+    } else {
+        SpanOutcome::Error
+    });
+    result
 }
 
 const RESET_MODES: &[u8] = b"\x1b>\x1b[4l\x1b[?1l\x1b[?6l\x1b[?7h\x1b[?9l\x1b[?45l\x1b[?66l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?2004l\x1b[?1049l";
@@ -1522,6 +1555,9 @@ pub fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()>
 
 #[tauri::command]
 pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) -> AppResult<()> {
+    let observer = global_observability();
+    let operation =
+        observer.slow_operation("pty.write", Duration::from_millis(8), None, Metadata::new());
     // Clone the Arc out of DashMap immediately so we don't hold a shard
     // across .await points (which would risk deadlocking the manager).
     let pty = manager
@@ -1535,11 +1571,20 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
     #[cfg(unix)]
     // Serialise writers on the shared fd; the reader's readable() side is
     // unaffected and keeps draining concurrently.
-    let _guard = pty.write_lock.lock().await;
+    let _guard = {
+        let wait_started = Instant::now();
+        let guard = pty.write_lock.lock().await;
+        observer.observe_latency("pty.write_lock_wait", wait_started.elapsed());
+        guard
+    };
     #[cfg(unix)]
-    write_all_async(&pty.io, data.as_bytes())
-        .await
-        .map_err(AppError::from)?;
+    {
+        let write_started = Instant::now();
+        write_all_async(&pty.io, data.as_bytes())
+            .await
+            .map_err(AppError::from)?;
+        observer.observe_latency("pty.os_write", write_started.elapsed());
+    }
     #[cfg(windows)]
     tauri::async_runtime::spawn_blocking(move || {
         let mut writer = pty.writer.lock().map_err(pty_err)?;
@@ -1548,6 +1593,7 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
     })
     .await
     .map_err(|e| AppError::Pty(format!("pty_write join: {e}")))??;
+    operation.finish(SpanOutcome::Success);
     Ok(())
 }
 
