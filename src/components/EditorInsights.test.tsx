@@ -50,7 +50,7 @@ describe("EditorInsights", () => {
     });
 
     it("loads a hierarchical outline only after the tab opens", async () => {
-        const symbols = vi.spyOn(lsp, "documentSymbols").mockResolvedValue([
+        const symbols = vi.spyOn(lsp, "documentSymbols").mockResolvedValueOnce([
             {
                 name: "App",
                 detail: "class App",
@@ -70,7 +70,7 @@ describe("EditorInsights", () => {
             },
         ]);
         const onNavigate = vi.fn();
-        render(<EditorInsights project={PROJECT} path={PATH} controller={null} visible onNavigate={onNavigate} />);
+        const view = render(<EditorInsights project={PROJECT} path={PATH} controller={null} visible onNavigate={onNavigate} />);
         expect(symbols).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole("button", { name: "Outline" }));
@@ -79,6 +79,11 @@ describe("EditorInsights", () => {
 
         fireEvent.click(screen.getByTitle("render"));
         expect(onNavigate).toHaveBeenCalledWith(PATH, 2, 4);
+
+        symbols.mockReturnValueOnce(new Promise(() => {}));
+        view.rerender(<EditorInsights project={PROJECT} path="/repo/src/other.ts" controller={null} visible onNavigate={onNavigate} />);
+        expect(screen.queryByTitle("class App")).not.toBeInTheDocument();
+        expect(screen.getByText("Loading outline…")).toBeInTheDocument();
     });
 
     it("does not request symbols while the editor is hidden", () => {

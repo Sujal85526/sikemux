@@ -104,9 +104,14 @@ export function EditorInsights({ project, path, controller, visible, onNavigate 
         void revision;
         return controller ? Array.from(controller.selectProblems()) : [];
     }, [controller, revision]);
-    const flatSymbols = useMemo(() => flattenSymbols(outline.symbols), [outline.symbols]);
     const language = path ? languageFromPath(path) : null;
     const outlineKey = path && language ? `${project}\0${language}\0${path}` : "";
+    const outlineCurrent = outline.key === outlineKey;
+    const outlineStatus = outlineCurrent ? outline.status : "loading";
+    const flatSymbols = useMemo(
+        () => (outline.key === outlineKey ? flattenSymbols(outline.symbols) : []),
+        [outline.key, outline.symbols, outlineKey],
+    );
 
     useEffect(() => {
         if (!expanded || tab !== "outline" || !visible || !path || !language || !outlineKey) return;
@@ -190,13 +195,13 @@ export function EditorInsights({ project, path, controller, visible, onNavigate 
                     )}
 
                     {tab === "outline" && (!path || !language) && <div className="editor-insights-empty">Outline is unavailable for this file</div>}
-                    {tab === "outline" && path && language && outline.status === "loading" && flatSymbols.length === 0 && (
+                    {tab === "outline" && path && language && outlineStatus === "loading" && flatSymbols.length === 0 && (
                         <div className="editor-insights-empty">Loading outline…</div>
                     )}
-                    {tab === "outline" && path && language && outline.status === "error" && (
+                    {tab === "outline" && path && language && outlineStatus === "error" && (
                         <div className="editor-insights-empty">The language server could not provide an outline</div>
                     )}
-                    {tab === "outline" && path && language && outline.status === "ready" && flatSymbols.length === 0 && (
+                    {tab === "outline" && path && language && outlineStatus === "ready" && flatSymbols.length === 0 && (
                         <div className="editor-insights-empty">No symbols in {basename(path)}</div>
                     )}
                     {tab === "outline" && flatSymbols.length > 0 && (
