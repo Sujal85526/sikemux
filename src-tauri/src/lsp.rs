@@ -8,6 +8,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -19,6 +20,7 @@ use tokio::task;
 use url::Url;
 
 use crate::error::{AppError, AppResult};
+use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
 
 const MAX_LSP_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LSP_HEADER_BYTES: usize = 8 * 1024;
@@ -33,6 +35,14 @@ const MAX_DOCUMENT_SYMBOLS: usize = 2_000;
 const MAX_DOCUMENT_SYMBOL_DEPTH: usize = 16;
 const MAX_SYMBOL_NAME_BYTES: usize = 256;
 const MAX_SYMBOL_DETAIL_BYTES: usize = 1_024;
+const MAX_LSP_SERVERS: usize = 6;
+const MAX_OPEN_DOCUMENTS_PER_SERVER: usize = 512;
+const MAX_OPEN_DOCUMENTS_GLOBAL: usize = 2_048;
+const MAX_PENDING_REQUESTS_PER_SERVER: usize = 64;
+const MAX_PENDING_REQUESTS_GLOBAL: usize = 256;
+
+static OPEN_DOCUMENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+static PENDING_REQUEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub const LSP_DIAGNOSTICS_EVENT: &str = "lsp_diagnostics";
 
@@ -106,6 +116,7 @@ pub struct LspDocumentSymbol {
     pub children: Vec<LspDocumentSymbol>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct OpenDoc {
     refs: usize,
     version: u32,
@@ -139,15 +150,33 @@ struct Server {
     // server shutdown can emit deterministic clear events.
     diagnostic_paths: Mutex<HashMap<String, Option<i64>>>,
     shutdown: std::sync::atomic::AtomicBool,
-    /// Logical LRU stamp, bumped on every message we send. The backstop cap
-    /// evicts the smallest (least-recently-used) when too many servers pile
-    /// up. See `enforce_server_cap`.
+    /// Logical LRU stamp, bumped on every message we send. Admission may evict
+    /// the least-recently-used idle server before spawning a replacement.
     last_used: std::sync::atomic::AtomicU64,
     /// Invalidates a pending idle shutdown whenever a document reopens.
     idle_generation: std::sync::atomic::AtomicU64,
 }
 
 type ServerHandle = Arc<Server>;
+
+/// Internal registry identity. Keeping the two user-controlled fields typed
+/// avoids delimiter collisions and makes project-scoped teardown exact. This
+/// type is deliberately not serialized; public commands and event payloads
+/// retain their existing string fields.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ServerKey {
+    project: String,
+    language: String,
+}
+
+impl ServerKey {
+    fn new(project: &str, language: &str) -> Self {
+        Self {
+            project: project.to_owned(),
+            language: language.to_owned(),
+        }
+    }
+}
 
 /// Monotonic logical clock for LRU ordering — cheaper and jump-proof vs
 /// wall-clock time; we only need relative ordering, not real timestamps.
@@ -156,8 +185,8 @@ fn lsp_tick() -> u64 {
     CLOCK.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-fn registry() -> &'static Mutex<HashMap<String, ServerHandle>> {
-    static R: OnceLock<Mutex<HashMap<String, ServerHandle>>> = OnceLock::new();
+fn registry() -> &'static Mutex<HashMap<ServerKey, ServerHandle>> {
+    static R: OnceLock<Mutex<HashMap<ServerKey, ServerHandle>>> = OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -166,38 +195,177 @@ fn start_lock() -> &'static Mutex<()> {
     L.get_or_init(|| Mutex::new(()))
 }
 
-fn key(project: &str, language: &str) -> String {
-    format!("{language}::{project}")
-}
-
 fn server_for(project: &str, language: &str) -> Option<ServerHandle> {
     registry()
         .lock()
         .ok()?
-        .get(&key(project, language))
+        .get(&ServerKey::new(project, language))
+        .filter(|server| !server.shutdown.load(Ordering::Acquire))
         .cloned()
 }
 
 pub fn server_count() -> usize {
-    registry().lock().map(|r| r.len()).unwrap_or(0)
-}
-
-pub fn document_counts() -> (usize, usize) {
     registry()
         .lock()
         .map(|registry| {
-            let mut open_documents = 0usize;
+            registry
+                .values()
+                .filter(|server| !server.shutdown.load(Ordering::Acquire))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+pub fn document_counts() -> (usize, usize) {
+    let idle_servers = registry()
+        .lock()
+        .map(|registry| {
             let mut idle_servers = 0usize;
             for server in registry.values() {
+                if server.shutdown.load(Ordering::Acquire) {
+                    continue;
+                }
                 match server.open_docs.lock() {
                     Ok(docs) if docs.is_empty() => idle_servers += 1,
-                    Ok(docs) => open_documents += docs.len(),
+                    Ok(_) => {}
                     Err(_) => {}
                 }
             }
-            (open_documents, idle_servers)
+            idle_servers
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    (OPEN_DOCUMENT_COUNT.load(Ordering::Acquire), idle_servers)
+}
+
+fn validate_server_identity(project: &str, language: &str) -> AppResult<()> {
+    if project.len() > MAX_LSP_PATH_BYTES {
+        return Err(AppError::Lsp(format!(
+            "project path exceeds {MAX_LSP_PATH_BYTES} bytes"
+        )));
+    }
+    if language.len() > MAX_LSP_LANGUAGE_BYTES {
+        return Err(AppError::Lsp(format!(
+            "language identifier exceeds {MAX_LSP_LANGUAGE_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_document_path(path: &str) -> AppResult<()> {
+    if path.len() > MAX_LSP_PATH_BYTES {
+        return Err(AppError::Lsp(format!(
+            "document path exceeds {MAX_LSP_PATH_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_document_language_id(language_id: &str) -> AppResult<()> {
+    if language_id.len() > MAX_LSP_LANGUAGE_BYTES {
+        return Err(AppError::Lsp(format!(
+            "document language identifier exceeds {MAX_LSP_LANGUAGE_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn server_limit_error() -> AppError {
+    AppError::Lsp(format!(
+        "language server limit reached ({MAX_LSP_SERVERS}); close a project before starting another"
+    ))
+}
+
+fn reserve_counter_slot(
+    counter: &AtomicUsize,
+    limit: usize,
+    error: impl FnOnce() -> AppError,
+) -> AppResult<()> {
+    counter
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            (current < limit).then_some(current + 1)
+        })
+        .map(|_| ())
+        .map_err(|_| error())
+}
+
+fn release_counter_slots(counter: &AtomicUsize, count: usize) {
+    if count == 0 {
+        return;
+    }
+    let released = counter.fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+        current.checked_sub(count)
+    });
+    debug_assert!(released.is_ok(), "LSP resource counter underflow");
+}
+
+fn reserve_open_document_slot(
+    per_server_count: usize,
+    global_counter: &AtomicUsize,
+) -> AppResult<()> {
+    if per_server_count >= MAX_OPEN_DOCUMENTS_PER_SERVER {
+        return Err(AppError::Lsp(format!(
+            "open document limit reached for language server ({MAX_OPEN_DOCUMENTS_PER_SERVER})"
+        )));
+    }
+    reserve_counter_slot(global_counter, MAX_OPEN_DOCUMENTS_GLOBAL, || {
+        AppError::Lsp(format!(
+            "global open document limit reached ({MAX_OPEN_DOCUMENTS_GLOBAL})"
+        ))
+    })
+}
+
+fn insert_pending_request(
+    pending: &Mutex<HashMap<i64, mpsc::Sender<Value>>>,
+    global_counter: &AtomicUsize,
+    id: i64,
+    sender: mpsc::Sender<Value>,
+) -> AppResult<()> {
+    let mut pending = pending.lock().map_err(lsp)?;
+    if pending.len() >= MAX_PENDING_REQUESTS_PER_SERVER {
+        return Err(AppError::Lsp(format!(
+            "pending request limit reached for language server ({MAX_PENDING_REQUESTS_PER_SERVER})"
+        )));
+    }
+    if pending.contains_key(&id) {
+        return Err(AppError::Lsp("duplicate language-server request id".into()));
+    }
+    reserve_counter_slot(global_counter, MAX_PENDING_REQUESTS_GLOBAL, || {
+        AppError::Lsp(format!(
+            "global pending request limit reached ({MAX_PENDING_REQUESTS_GLOBAL})"
+        ))
+    })?;
+    pending.insert(id, sender);
+    Ok(())
+}
+
+fn take_pending_request(
+    pending: &Mutex<HashMap<i64, mpsc::Sender<Value>>>,
+    global_counter: &AtomicUsize,
+    id: i64,
+) -> Option<mpsc::Sender<Value>> {
+    let sender = pending
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&id);
+    if sender.is_some() {
+        release_counter_slots(global_counter, 1);
+    }
+    sender
+}
+
+fn clear_pending_requests(
+    pending: &Mutex<HashMap<i64, mpsc::Sender<Value>>>,
+    global_counter: &AtomicUsize,
+) {
+    let count = {
+        let mut pending = pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let count = pending.len();
+        pending.clear();
+        count
+    };
+    release_counter_slots(global_counter, count);
 }
 
 #[cfg(unix)]
@@ -468,15 +636,177 @@ fn content_hash(content: &str) -> u64 {
     hasher.finish()
 }
 
-fn next_doc_version(server: &ServerHandle, path: &str, requested: u32) -> u32 {
-    if let Ok(mut docs) = server.open_docs.lock() {
-        if let Some(doc) = docs.get_mut(path) {
-            let next = requested.max(doc.version.saturating_add(1));
-            doc.version = next;
-            return next;
-        }
+fn restore_last_change(last_change: &mut HashMap<String, u64>, path: &str, value: Option<u64>) {
+    if let Some(value) = value {
+        last_change.insert(path.to_owned(), value);
+    } else {
+        last_change.remove(path);
     }
-    requested
+}
+
+fn open_document(
+    server: &ServerHandle,
+    path: &str,
+    content: &str,
+    language_id: &str,
+) -> AppResult<()> {
+    if server.shutdown.load(Ordering::Acquire) {
+        return Err(AppError::Lsp("server shut down".into()));
+    }
+    let hash = content_hash(content);
+    let mut documents = server.open_docs.lock().map_err(lsp)?;
+
+    if documents.contains_key(path) {
+        let mut last_change = server.last_change.lock().map_err(lsp)?;
+        let previous = *documents
+            .get(path)
+            .expect("document disappeared while its map is locked");
+        let previous_hash = last_change.get(path).copied();
+        if previous.refs == usize::MAX {
+            return Err(AppError::Lsp(
+                "open document reference count exhausted".into(),
+            ));
+        }
+        if previous_hash == Some(hash) {
+            documents
+                .get_mut(path)
+                .expect("document disappeared while its map is locked")
+                .refs += 1;
+            return Ok(());
+        }
+
+        let next_version = previous.version.saturating_add(1);
+        *documents
+            .get_mut(path)
+            .expect("document disappeared while its map is locked") = OpenDoc {
+            refs: previous.refs + 1,
+            version: next_version,
+        };
+        last_change.insert(path.to_owned(), hash);
+        let result = notify(
+            server,
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": path_to_uri(path), "version": next_version },
+                "contentChanges": [{ "text": content }]
+            }),
+        );
+        if result.is_err() {
+            documents.insert(path.to_owned(), previous);
+            restore_last_change(&mut last_change, path, previous_hash);
+        }
+        return result;
+    }
+
+    reserve_open_document_slot(documents.len(), &OPEN_DOCUMENT_COUNT)?;
+    let mut last_change = match server.last_change.lock() {
+        Ok(last_change) => last_change,
+        Err(error) => {
+            release_counter_slots(&OPEN_DOCUMENT_COUNT, 1);
+            return Err(lsp(error));
+        }
+    };
+    let previous_hash = last_change.insert(path.to_owned(), hash);
+    documents.insert(
+        path.to_owned(),
+        OpenDoc {
+            refs: 1,
+            version: 1,
+        },
+    );
+    let result = notify(
+        server,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": path_to_uri(path),
+                "languageId": language_id,
+                "version": 1,
+                "text": content
+            }
+        }),
+    );
+    if result.is_err() {
+        documents.remove(path);
+        restore_last_change(&mut last_change, path, previous_hash);
+        release_counter_slots(&OPEN_DOCUMENT_COUNT, 1);
+    }
+    result
+}
+
+fn change_document(
+    server: &ServerHandle,
+    path: &str,
+    content: &str,
+    requested_version: u32,
+) -> AppResult<()> {
+    if server.shutdown.load(Ordering::Acquire) {
+        return Err(AppError::Lsp("server shut down".into()));
+    }
+    let hash = content_hash(content);
+    let mut documents = server.open_docs.lock().map_err(lsp)?;
+    let previous = *documents
+        .get(path)
+        .ok_or_else(|| AppError::Lsp("document not open".into()))?;
+    let mut last_change = server.last_change.lock().map_err(lsp)?;
+    let previous_hash = last_change.get(path).copied();
+    if previous_hash == Some(hash) {
+        return Ok(());
+    }
+    let version = requested_version.max(previous.version.saturating_add(1));
+    documents
+        .get_mut(path)
+        .expect("document disappeared while its map is locked")
+        .version = version;
+    last_change.insert(path.to_owned(), hash);
+    let result = notify(
+        server,
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": path_to_uri(path), "version": version },
+            "contentChanges": [{ "text": content }]
+        }),
+    );
+    if result.is_err() {
+        documents.insert(path.to_owned(), previous);
+        restore_last_change(&mut last_change, path, previous_hash);
+    }
+    result
+}
+
+fn change_document_incremental(
+    server: &ServerHandle,
+    path: &str,
+    changes: Vec<LspTextChange>,
+    requested_version: u32,
+) -> AppResult<()> {
+    if server.shutdown.load(Ordering::Acquire) {
+        return Err(AppError::Lsp("server shut down".into()));
+    }
+    let mut documents = server.open_docs.lock().map_err(lsp)?;
+    let previous = *documents
+        .get(path)
+        .ok_or_else(|| AppError::Lsp("document not open".into()))?;
+    let mut last_change = server.last_change.lock().map_err(lsp)?;
+    let previous_hash = last_change.remove(path);
+    let version = requested_version.max(previous.version.saturating_add(1));
+    documents
+        .get_mut(path)
+        .expect("document disappeared while its map is locked")
+        .version = version;
+    let result = notify(
+        server,
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": path_to_uri(path), "version": version },
+            "contentChanges": changes
+        }),
+    );
+    if result.is_err() {
+        documents.insert(path.to_owned(), previous);
+        restore_last_change(&mut last_change, path, previous_hash);
+    }
+    result
 }
 
 fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> AppResult<()> {
@@ -550,14 +880,16 @@ fn read_message<R: BufRead>(reader: &mut R) -> AppResult<Option<Value>> {
     Ok(Some(serde_json::from_slice(&buf)?))
 }
 
-fn next_id(server: &ServerHandle) -> i64 {
+fn next_id(server: &ServerHandle) -> AppResult<i64> {
     // If the mutex is poisoned a request thread crashed mid-allocate.
     // Recover the inner counter instead of crashing the whole LSP layer —
-    // a duplicate id is preferable to a panic taking the editor down.
+    // request IDs remain unique even after recovery.
     let mut id = server.next_id.lock().unwrap_or_else(|p| p.into_inner());
     let v = *id;
-    *id += 1;
-    v
+    *id = id
+        .checked_add(1)
+        .ok_or_else(|| AppError::Lsp("language-server request id exhausted".into()))?;
+    Ok(v)
 }
 
 fn request_with_timeout(
@@ -566,26 +898,39 @@ fn request_with_timeout(
     params: Value,
     timeout: Duration,
 ) -> AppResult<Value> {
-    let id = next_id(server);
+    let mut metadata = Metadata::new();
+    metadata.insert("method".to_owned(), ScalarValue::from(method));
+    let span = global_observability().begin_span("lsp.request", None, metadata);
+    let result = request_with_timeout_inner(server, method, params, timeout);
+    span.finish(if result.is_ok() {
+        SpanOutcome::Success
+    } else {
+        SpanOutcome::Error
+    });
+    result
+}
+
+fn request_with_timeout_inner(
+    server: &ServerHandle,
+    method: &str,
+    params: Value,
+    timeout: Duration,
+) -> AppResult<Value> {
+    let id = next_id(server)?;
     let (tx, rx) = mpsc::channel();
-    {
-        let mut pending = server.pending.lock().map_err(lsp)?;
-        pending.insert(id, tx);
-    }
+    insert_pending_request(&server.pending, &PENDING_REQUEST_COUNT, id, tx)?;
     let req = json!({
         "jsonrpc": "2.0", "id": id,
         "method": method, "params": params
     });
     if let Err(e) = send(server, &req) {
-        server.pending.lock().ok().and_then(|mut p| p.remove(&id));
+        take_pending_request(&server.pending, &PENDING_REQUEST_COUNT, id);
         return Err(e);
     }
     match rx.recv_timeout(timeout) {
         Ok(v) => Ok(v),
         Err(e) => {
-            if let Ok(mut pending) = server.pending.lock() {
-                pending.remove(&id);
-            }
+            take_pending_request(&server.pending, &PENDING_REQUEST_COUNT, id);
             Err(AppError::Lsp(format!("{method} timeout: {e}")))
         }
     }
@@ -713,11 +1058,11 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
                     let reply = json!({"jsonrpc": "2.0", "id": id_value, "result": result});
                     let _ = send(&reader_server, &reply);
                 } else if let Some(id) = id_value.as_i64() {
-                    if let Ok(mut pending) = reader_server.pending.lock() {
-                        if let Some(tx) = pending.remove(&id) {
-                            let val = msg.get("result").cloned().unwrap_or(Value::Null);
-                            let _ = tx.send(val);
-                        }
+                    if let Some(tx) =
+                        take_pending_request(&reader_server.pending, &PENDING_REQUEST_COUNT, id)
+                    {
+                        let val = msg.get("result").cloned().unwrap_or(Value::Null);
+                        let _ = tx.send(val);
                     }
                 }
             } else if let Some(method) = msg.get("method").and_then(Value::as_str) {
@@ -732,9 +1077,7 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
         // instead of timing out. It also owns teardown for malformed frames or
         // natural server exit; otherwise the registry would retain an unusable
         // server forever and later lsp_start calls would falsely succeed.
-        if let Ok(mut pending) = reader_server.pending.lock() {
-            pending.clear();
-        }
+        clear_pending_requests(&reader_server.pending, &PENDING_REQUEST_COUNT);
         shutdown_server(reader_server);
     });
 
@@ -801,20 +1144,156 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
     Ok(server)
 }
 
-/// Generous backstop on concurrent language servers. This is deliberately
-/// NOT active management: rust-analyzer / gopls re-index on restart, so
-/// evicting a server the user is about to use trades a multi-second stall
-/// for a little RAM. The frontend already stops a project's servers when
-/// the project closes (`lsp_stop`), so in normal use the live set == open
-/// projects. This cap only bites in the pathological case (a stop that
-/// never arrived, or an extreme number of simultaneously-open projects),
-/// where something has to give and the least-recently-touched project is
-/// the least-bad victim. Keep it high enough that ordinary multi-project
-/// work never trips it.
-const MAX_LSP_SERVERS: usize = 6;
 const LSP_IDLE_GRACE: Duration = Duration::from_secs(5 * 60);
 
-fn schedule_idle_shutdown(server_key: String, server: ServerHandle) {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AdmissionEntry {
+    key: ServerKey,
+    live: bool,
+    idle: bool,
+    last_used: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ServerStartAction {
+    Existing,
+    Admit { victims: Vec<ServerKey> },
+    Reject,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ServerAdmissionPlan {
+    stale: Vec<ServerKey>,
+    action: ServerStartAction,
+}
+
+/// Plan admission without mutating the registry so the all-busy rejection is
+/// atomic: we never kill a partial set of servers and then discover that too
+/// few idle victims existed. Ties use the typed key for deterministic tests
+/// and repeatable eviction behavior.
+fn plan_server_admission(
+    requested: &ServerKey,
+    entries: impl IntoIterator<Item = AdmissionEntry>,
+) -> ServerAdmissionPlan {
+    let entries = entries.into_iter().collect::<Vec<_>>();
+    let mut stale = entries
+        .iter()
+        .filter(|entry| !entry.live)
+        .map(|entry| entry.key.clone())
+        .collect::<Vec<_>>();
+    stale.sort();
+
+    if entries
+        .iter()
+        .any(|entry| entry.live && entry.key == *requested)
+    {
+        return ServerAdmissionPlan {
+            stale,
+            action: ServerStartAction::Existing,
+        };
+    }
+
+    let live_count = entries.iter().filter(|entry| entry.live).count();
+    if live_count < MAX_LSP_SERVERS {
+        return ServerAdmissionPlan {
+            stale,
+            action: ServerStartAction::Admit {
+                victims: Vec::new(),
+            },
+        };
+    }
+
+    let victims_needed = live_count - MAX_LSP_SERVERS + 1;
+    let mut idle = entries
+        .iter()
+        .filter(|entry| entry.live && entry.idle && entry.key != *requested)
+        .map(|entry| (entry.last_used, entry.key.clone()))
+        .collect::<Vec<_>>();
+    idle.sort();
+    if idle.len() < victims_needed {
+        return ServerAdmissionPlan {
+            stale,
+            action: ServerStartAction::Reject,
+        };
+    }
+
+    ServerAdmissionPlan {
+        stale,
+        action: ServerStartAction::Admit {
+            victims: idle
+                .into_iter()
+                .take(victims_needed)
+                .map(|(_, key)| key)
+                .collect(),
+        },
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PreparedServerStart {
+    Existing,
+    Admit,
+}
+
+/// Remove stale entries and any complete idle-victim set while the registry
+/// is locked. `start_lock` serializes callers across this preparation, process
+/// spawn, and insertion, so registry cardinality can never transiently exceed
+/// `MAX_LSP_SERVERS`.
+fn prepare_server_start(requested: &ServerKey) -> AppResult<PreparedServerStart> {
+    let (action, to_shutdown) = {
+        let mut registry = registry().lock().map_err(lsp)?;
+        let entries = registry
+            .iter()
+            .map(|(key, server)| AdmissionEntry {
+                key: key.clone(),
+                live: !server.shutdown.load(Ordering::Acquire),
+                idle: server
+                    .open_docs
+                    .lock()
+                    .map(|documents| documents.is_empty())
+                    .unwrap_or(false),
+                last_used: server.last_used.load(Ordering::Relaxed),
+            })
+            .collect::<Vec<_>>();
+        let plan = plan_server_admission(requested, entries);
+        let mut to_shutdown = Vec::new();
+        for key in &plan.stale {
+            if let Some(server) = registry.remove(key) {
+                to_shutdown.push(server);
+            }
+        }
+        if let ServerStartAction::Admit { victims } = &plan.action {
+            for key in victims {
+                if let Some(server) = registry.remove(key) {
+                    to_shutdown.push(server);
+                }
+            }
+        }
+        if matches!(plan.action, ServerStartAction::Existing) {
+            if let Some(server) = registry.get(requested) {
+                // A fresh start cancels any idle-shutdown timer that was
+                // scheduled before the frontend decided to reuse the server.
+                server.idle_generation.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+        (plan.action, to_shutdown)
+    };
+
+    for server in to_shutdown {
+        shutdown_server(server);
+    }
+
+    match action {
+        ServerStartAction::Existing => Ok(PreparedServerStart::Existing),
+        ServerStartAction::Admit { .. } => Ok(PreparedServerStart::Admit),
+        ServerStartAction::Reject => {
+            let _ = global_observability().increment_counter("lsp.server_limit_rejections", 1);
+            Err(server_limit_error())
+        }
+    }
+}
+
+fn schedule_idle_shutdown(server_key: ServerKey, server: ServerHandle) {
     let generation = server
         .idle_generation
         .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
@@ -834,42 +1313,88 @@ fn schedule_idle_shutdown(server_key: String, server: ServerHandle) {
         {
             return;
         }
-        let victim = registry().lock().ok().and_then(|mut reg| {
-            let current = reg.get(&server_key)?;
-            if !Arc::ptr_eq(current, &server) {
-                return None;
+        let _ = task::spawn_blocking(move || {
+            let _start_guard = start_lock()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if server.shutdown.load(Ordering::Acquire)
+                || server.idle_generation.load(Ordering::Acquire) != generation
+                || server
+                    .open_docs
+                    .lock()
+                    .map(|docs| !docs.is_empty())
+                    .unwrap_or(true)
+            {
+                return;
             }
-            reg.remove(&server_key)
-        });
-        if let Some(victim) = victim {
-            let _ = task::spawn_blocking(move || shutdown_server(victim)).await;
-        }
+            let victim = registry().lock().ok().and_then(|mut reg| {
+                let current = reg.get(&server_key)?;
+                if !Arc::ptr_eq(current, &server) {
+                    return None;
+                }
+                reg.remove(&server_key)
+            });
+            if let Some(victim) = victim {
+                shutdown_server(victim);
+            }
+        })
+        .await;
     });
 }
 
-/// SIGKILL + reap a server. Shared by `lsp_stop` and the backstop cap.
+/// Kill and reap before teardown waits on stdin or document-state locks. An
+/// LSP server that stops reading can leave a writer blocked in `write_all`
+/// while it owns both document mutexes; terminating the reader side of the
+/// pipe is what lets that writer unwind and release them.
+fn kill_and_reap_child(child: &Mutex<Option<Child>>) {
+    let child = child
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    if let Some(mut child) = child {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// SIGKILL + reap a server. Shared by `lsp_stop` and admission eviction.
 fn shutdown_server(server: ServerHandle) {
     server
         .shutdown
         .store(true, std::sync::atomic::Ordering::Release);
+
+    // This must remain ahead of stdin/open_docs/last_change acquisition. See
+    // `shutdown_kills_before_waiting_for_a_blocked_document_writer`.
+    kill_and_reap_child(&server.child);
+    server
+        .stdin
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+
+    clear_pending_requests(&server.pending, &PENDING_REQUEST_COUNT);
+    let released_documents = {
+        let mut documents = server
+            .open_docs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let count = documents.len();
+        documents.clear();
+        count
+    };
+    release_counter_slots(&OPEN_DOCUMENT_COUNT, released_documents);
+    server
+        .last_change
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
     clear_server_diagnostics(&server);
-    // Drop stdin so the server's read loop sees EOF and exits cleanly; if
-    // it doesn't, fall through to kill().
-    if let Ok(mut g) = server.stdin.lock() {
-        g.take();
-    }
-    if let Ok(mut g) = server.child.lock() {
-        if let Some(mut c) = g.take() {
-            let _ = c.kill();
-            let _ = c.wait();
-        }
-    }
 }
 
 /// Return true only for a usable registry entry. Reader-owned teardown marks
 /// failed/exited servers shut down; remove those entries so a subsequent start
 /// can actually spawn a replacement.
-fn live_server_exists(key: &str) -> AppResult<bool> {
+fn live_server_exists(key: &ServerKey) -> AppResult<bool> {
     let stale = {
         let mut registry = registry().lock().map_err(lsp)?;
         match registry.get(key) {
@@ -888,6 +1413,9 @@ fn live_server_exists(key: &str) -> AppResult<bool> {
 
 /// Application-teardown backstop for servers whose project stop never arrived.
 pub fn drain_all() {
+    let _start_guard = start_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let servers = registry()
         .lock()
         .map(|mut registry| {
@@ -902,34 +1430,12 @@ pub fn drain_all() {
     }
 }
 
-/// If we're over `MAX_LSP_SERVERS`, evict the least-recently-used server
-/// (never the one just started). The kill happens off-thread.
-fn enforce_server_cap(just_started: &str) {
-    let victim_key = {
-        let reg = match registry().lock() {
-            Ok(r) => r,
-            Err(_) => return,
-        };
-        if reg.len() <= MAX_LSP_SERVERS {
-            return;
-        }
-        reg.iter()
-            .filter(|(k, server)| {
-                k.as_str() != just_started
-                    && server
-                        .open_docs
-                        .lock()
-                        .map(|docs| docs.is_empty())
-                        .unwrap_or(false)
-            })
-            .min_by_key(|(_, s)| s.last_used.load(std::sync::atomic::Ordering::Relaxed))
-            .map(|(k, _)| k.clone())
-    };
-    let Some(key) = victim_key else { return };
-    let victim = registry().lock().ok().and_then(|mut r| r.remove(&key));
-    if let Some(server) = victim {
-        task::spawn_blocking(move || shutdown_server(server));
-    }
+fn server_keys_for_project<T>(registry: &HashMap<ServerKey, T>, project: &str) -> Vec<ServerKey> {
+    registry
+        .keys()
+        .filter(|key| key.project == project)
+        .cloned()
+        .collect()
 }
 
 fn install_output_message(stdout: &[u8], stderr: &[u8]) -> String {
@@ -988,31 +1494,59 @@ pub async fn lsp_install_server(language: String) -> AppResult<String> {
 
 #[tauri::command]
 pub async fn lsp_start(app: AppHandle, project: String, language: String) -> AppResult<()> {
-    let k = key(&project, &language);
-    if live_server_exists(&k)? {
-        return Ok(());
-    }
-    let cap_key = k.clone();
+    let span = global_observability().begin_span("lsp.start", None, Metadata::new());
+    let result = lsp_start_inner(app, project, language).await;
+    span.finish(if result.is_ok() {
+        SpanOutcome::Success
+    } else {
+        SpanOutcome::Error
+    });
+    result
+}
+
+async fn lsp_start_inner(app: AppHandle, project: String, language: String) -> AppResult<()> {
+    validate_server_identity(&project, &language)?;
+    let server_key = ServerKey::new(&project, &language);
     // The initialize handshake blocks up to 20 s on slow servers; off the
-    // Tauri worker pool so unrelated IPC isn't starved. A small start lock
-    // prevents two concurrent opens of the same language from spawning two
-    // gopls/rust-analyzer processes before either one reaches the registry.
-    let inserted = task::spawn_blocking(move || -> AppResult<bool> {
+    // Tauri worker pool so unrelated IPC isn't starved. The start lock spans
+    // admission, process initialization, and registry insertion, making the
+    // cap a hard pre-spawn admission limit rather than an eventual backstop.
+    task::spawn_blocking(move || -> AppResult<()> {
         let _guard = start_lock().lock().map_err(lsp)?;
-        if live_server_exists(&k)? {
-            return Ok(false);
+        if live_server_exists(&server_key)? {
+            let existing = registry().lock().ok().and_then(|registry| {
+                registry
+                    .get(&server_key)
+                    .filter(|server| !server.shutdown.load(Ordering::Acquire))
+                    .cloned()
+            });
+            if let Some(server) = existing {
+                server.idle_generation.fetch_add(1, Ordering::AcqRel);
+                return Ok(());
+            }
         }
+        if prepare_server_start(&server_key)? == PreparedServerStart::Existing {
+            return Ok(());
+        }
+
         let server = spawn_server(&project, &language, app)?;
-        registry().lock().map_err(lsp)?.insert(k, server);
-        Ok(true)
+        let insertion = {
+            let mut registry = registry().lock().map_err(lsp)?;
+            if registry.len() >= MAX_LSP_SERVERS {
+                Err(server_limit_error())
+            } else {
+                registry.insert(server_key, server.clone());
+                Ok(())
+            }
+        };
+        if let Err(error) = insertion {
+            shutdown_server(server);
+            return Err(error);
+        }
+        Ok(())
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
-    if inserted {
-        // Backstop: keep the concurrent-server count bounded (see the const).
-        enforce_server_cap(&cap_key);
-    }
-    Ok(())
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
 
 /// Shut every server owned by this project down. Called from the close-
@@ -1020,29 +1554,40 @@ pub async fn lsp_start(app: AppHandle, project: String, language: String) -> App
 /// 500 MB resident after the user moves on. Idempotent.
 #[tauri::command]
 pub async fn lsp_stop(project: String) -> AppResult<()> {
-    let prefix_suffix = format!("::{project}");
-    let mut to_kill: Vec<ServerHandle> = Vec::new();
-    if let Ok(mut reg) = registry().lock() {
-        let keys: Vec<String> = reg
-            .keys()
-            .filter(|k| k.ends_with(&prefix_suffix))
-            .cloned()
-            .collect();
-        for k in keys {
-            if let Some(s) = reg.remove(&k) {
-                to_kill.push(s);
-            }
-        }
+    let span = global_observability().begin_span("lsp.stop", None, Metadata::new());
+    let result = lsp_stop_inner(project).await;
+    span.finish(if result.is_ok() {
+        SpanOutcome::Success
+    } else {
+        SpanOutcome::Error
+    });
+    result
+}
+
+async fn lsp_stop_inner(project: String) -> AppResult<()> {
+    if project.len() > MAX_LSP_PATH_BYTES {
+        return Err(AppError::Lsp(format!(
+            "project path exceeds {MAX_LSP_PATH_BYTES} bytes"
+        )));
     }
-    // Actual kill is potentially slow (SIGKILL + wait); off-thread.
-    task::spawn_blocking(move || {
+    // Serialize against start so a stop racing a 20-second initialize cannot
+    // miss the process and let it appear in the registry after stop returns.
+    task::spawn_blocking(move || -> AppResult<()> {
+        let _guard = start_lock().lock().map_err(lsp)?;
+        let to_kill = {
+            let mut registry = registry().lock().map_err(lsp)?;
+            server_keys_for_project(&registry, &project)
+                .into_iter()
+                .filter_map(|key| registry.remove(&key))
+                .collect::<Vec<_>>()
+        };
         for server in to_kill {
             shutdown_server(server);
         }
+        Ok(())
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?;
-    Ok(())
+    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
 
 #[tauri::command]
@@ -1053,6 +1598,11 @@ pub async fn lsp_open(
     content: String,
     language_id: Option<String>,
 ) -> AppResult<()> {
+    validate_server_identity(&project, &language)?;
+    validate_document_path(&path)?;
+    if let Some(language_id) = language_id.as_deref() {
+        validate_document_language_id(language_id)?;
+    }
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     server
@@ -1060,60 +1610,7 @@ pub async fn lsp_open(
         .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     task::spawn_blocking(move || {
         let language_id = language_id.unwrap_or(language);
-        let hash = content_hash(&content);
-        let mut should_open = false;
-        let mut change_version: Option<u32> = None;
-        {
-            let mut docs = server.open_docs.lock().map_err(lsp)?;
-            if let Some(doc) = docs.get_mut(&path) {
-                doc.refs += 1;
-                let mut last = server.last_change.lock().map_err(lsp)?;
-                if last.get(&path) != Some(&hash) {
-                    doc.version = doc.version.saturating_add(1);
-                    change_version = Some(doc.version);
-                    last.insert(path.clone(), hash);
-                }
-            } else {
-                docs.insert(
-                    path.clone(),
-                    OpenDoc {
-                        refs: 1,
-                        version: 1,
-                    },
-                );
-                server
-                    .last_change
-                    .lock()
-                    .map_err(lsp)?
-                    .insert(path.clone(), hash);
-                should_open = true;
-            }
-        }
-        if should_open {
-            notify(
-                &server,
-                "textDocument/didOpen",
-                json!({
-                    "textDocument": {
-                        "uri": path_to_uri(&path),
-                        "languageId": language_id,
-                        "version": 1,
-                        "text": content
-                    }
-                }),
-            )
-        } else if let Some(version) = change_version {
-            notify(
-                &server,
-                "textDocument/didChange",
-                json!({
-                    "textDocument": { "uri": path_to_uri(&path), "version": version },
-                    "contentChanges": [{ "text": content }]
-                }),
-            )
-        } else {
-            Ok(())
-        }
+        open_document(&server, &path, &content, &language_id)
     })
     .await
     .map_err(|e| AppError::Lsp(format!("join: {e}")))?
@@ -1127,30 +1624,13 @@ pub async fn lsp_change(
     content: String,
     version: u32,
 ) -> AppResult<()> {
+    validate_server_identity(&project, &language)?;
+    validate_document_path(&path)?;
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
-    // Cheap content-hash dedup: if the previous full payload for this path
-    // hashed to the same value, skip the IPC + LSP reparse.
-    let h = content_hash(&content);
-    if let Ok(mut last) = server.last_change.lock() {
-        if last.get(&path) == Some(&h) {
-            return Ok(());
-        }
-        last.insert(path.clone(), h);
-    }
-    let version = next_doc_version(&server, &path, version);
-    task::spawn_blocking(move || {
-        notify(
-            &server,
-            "textDocument/didChange",
-            json!({
-                "textDocument": { "uri": path_to_uri(&path), "version": version },
-                "contentChanges": [{ "text": content }]
-            }),
-        )
-    })
-    .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+    task::spawn_blocking(move || change_document(&server, &path, &content, version))
+        .await
+        .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
 
 #[tauri::command]
@@ -1164,24 +1644,13 @@ pub async fn lsp_change_incremental(
     if changes.is_empty() {
         return Ok(());
     }
+    validate_server_identity(&project, &language)?;
+    validate_document_path(&path)?;
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
-    if let Ok(mut last) = server.last_change.lock() {
-        last.remove(&path);
-    }
-    let version = next_doc_version(&server, &path, version);
-    task::spawn_blocking(move || {
-        notify(
-            &server,
-            "textDocument/didChange",
-            json!({
-                "textDocument": { "uri": path_to_uri(&path), "version": version },
-                "contentChanges": changes
-            }),
-        )
-    })
-    .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+    task::spawn_blocking(move || change_document_incremental(&server, &path, changes, version))
+        .await
+        .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
 
 #[tauri::command]
@@ -1191,6 +1660,8 @@ pub async fn lsp_save(
     path: String,
     content: Option<String>,
 ) -> AppResult<()> {
+    validate_server_identity(&project, &language)?;
+    validate_document_path(&path)?;
     let Some(server) = server_for(&project, &language) else {
         return Ok(());
     };
@@ -1207,38 +1678,40 @@ pub async fn lsp_save(
 
 #[tauri::command]
 pub async fn lsp_close(project: String, language: String, path: String) -> AppResult<()> {
+    validate_server_identity(&project, &language)?;
+    validate_document_path(&path)?;
     let Some(server) = server_for(&project, &language) else {
         return Ok(());
     };
-    let server_key = key(&project, &language);
+    let server_key = ServerKey::new(&project, &language);
     let idle_server = server.clone();
     let became_idle = task::spawn_blocking(move || -> AppResult<bool> {
-        let mut should_close = false;
-        let mut became_idle = false;
-        {
-            let mut docs = server.open_docs.lock().map_err(lsp)?;
-            if let Some(doc) = docs.get_mut(&path) {
-                if doc.refs > 1 {
-                    doc.refs -= 1;
-                } else {
-                    docs.remove(&path);
-                    should_close = true;
-                    became_idle = docs.is_empty();
-                }
-            }
-        }
-        if !should_close {
+        let mut documents = server.open_docs.lock().map_err(lsp)?;
+        let Some(document) = documents.get(&path).copied() else {
+            return Ok(false);
+        };
+        if document.refs > 1 {
+            documents
+                .get_mut(&path)
+                .expect("document disappeared while its map is locked")
+                .refs -= 1;
             return Ok(false);
         }
-        if let Ok(mut last) = server.last_change.lock() {
-            last.remove(&path);
-        }
-        notify(
+        let mut last_change = server.last_change.lock().map_err(lsp)?;
+        let previous_hash = last_change.remove(&path);
+        documents.remove(&path);
+        let result = notify(
             &server,
             "textDocument/didClose",
             json!({ "textDocument": { "uri": path_to_uri(&path) } }),
-        )?;
-        Ok(became_idle)
+        );
+        if let Err(error) = result {
+            documents.insert(path.clone(), document);
+            restore_last_change(&mut last_change, &path, previous_hash);
+            return Err(error);
+        }
+        release_counter_slots(&OPEN_DOCUMENT_COUNT, 1);
+        Ok(documents.is_empty())
     })
     .await
     .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
@@ -1376,6 +1849,8 @@ pub async fn lsp_locations(
     character: u32,
     kind: LspKind,
 ) -> AppResult<Vec<LspLocation>> {
+    validate_server_identity(&project, &language)?;
+    validate_document_path(&path)?;
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     let (method, with_context) = match kind {
@@ -1404,6 +1879,8 @@ pub async fn lsp_document_symbols(
     language: String,
     path: String,
 ) -> AppResult<Vec<LspDocumentSymbol>> {
+    validate_server_identity(&project, &language)?;
+    validate_document_path(&path)?;
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
     let params = json!({ "textDocument": { "uri": path_to_uri(&path) } });
@@ -1421,6 +1898,341 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::io::{BufReader, Cursor};
+
+    fn admission_entry(
+        project: &str,
+        language: &str,
+        live: bool,
+        idle: bool,
+        last_used: u64,
+    ) -> AdmissionEntry {
+        AdmissionEntry {
+            key: ServerKey::new(project, language),
+            live,
+            idle,
+            last_used,
+        }
+    }
+
+    #[test]
+    fn seventh_busy_server_is_rejected_before_admission() {
+        let requested = ServerKey::new("/project/seven", "rust");
+        let entries = (0..MAX_LSP_SERVERS)
+            .map(|index| {
+                admission_entry(
+                    &format!("/project/{index}"),
+                    "rust",
+                    true,
+                    false,
+                    index as u64,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            plan_server_admission(&requested, entries),
+            ServerAdmissionPlan {
+                stale: Vec::new(),
+                action: ServerStartAction::Reject,
+            }
+        );
+        assert_eq!(
+            server_limit_error().to_string(),
+            format!(
+                "lsp: language server limit reached ({MAX_LSP_SERVERS}); close a project before starting another"
+            )
+        );
+    }
+
+    #[test]
+    fn admission_cleans_stale_entries_and_evicts_complete_lru_set() {
+        let requested = ServerKey::new("/project/new", "rust");
+        let stale = ServerKey::new("/project/stale", "go");
+        let oldest_idle = ServerKey::new("/project/idle-a", "rust");
+        let next_idle = ServerKey::new("/project/idle-b", "rust");
+        let mut entries = vec![
+            admission_entry(&stale.project, &stale.language, false, true, 0),
+            admission_entry(&oldest_idle.project, &oldest_idle.language, true, true, 1),
+            admission_entry(&next_idle.project, &next_idle.language, true, true, 2),
+        ];
+        entries.extend((0..MAX_LSP_SERVERS - 1).map(|index| {
+            admission_entry(
+                &format!("/project/busy-{index}"),
+                "rust",
+                true,
+                false,
+                10 + index as u64,
+            )
+        }));
+
+        // Seven live servers require two complete idle evictions before the
+        // requested server can be admitted under a hard cap of six.
+        assert_eq!(
+            plan_server_admission(&requested, entries),
+            ServerAdmissionPlan {
+                stale: vec![stale],
+                action: ServerStartAction::Admit {
+                    victims: vec![oldest_idle, next_idle],
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn admission_never_selects_a_partial_eviction_set() {
+        let requested = ServerKey::new("/project/new", "rust");
+        let only_idle = ServerKey::new("/project/only-idle", "rust");
+        let mut entries = vec![admission_entry(
+            &only_idle.project,
+            &only_idle.language,
+            true,
+            true,
+            0,
+        )];
+        entries.extend((0..MAX_LSP_SERVERS).map(|index| {
+            admission_entry(
+                &format!("/project/busy-{index}"),
+                "rust",
+                true,
+                false,
+                10 + index as u64,
+            )
+        }));
+
+        // Seven live entries need two victims to leave a slot for the new
+        // server. One idle candidate is insufficient, so nothing is selected.
+        assert_eq!(
+            plan_server_admission(&requested, entries).action,
+            ServerStartAction::Reject
+        );
+    }
+
+    #[test]
+    fn typed_server_keys_and_project_stop_selection_are_collision_safe() {
+        // Both pairs produced `a::b::c` with the old delimiter-composed key.
+        let nested_project = ServerKey::new("b::c", "a");
+        let delimiter_language = ServerKey::new("c", "a::b");
+        assert_ne!(nested_project, delimiter_language);
+
+        let suffix_project = ServerKey::new("folder::c", "rust");
+        let mut registry = HashMap::new();
+        registry.insert(nested_project.clone(), 1);
+        registry.insert(delimiter_language.clone(), 2);
+        registry.insert(suffix_project, 3);
+        let mut selected = server_keys_for_project(&registry, "c");
+        selected.sort();
+
+        assert_eq!(selected, vec![delimiter_language]);
+        assert!(registry.contains_key(&nested_project));
+    }
+
+    #[test]
+    fn optional_document_language_id_is_bounded_before_serialization() {
+        validate_document_language_id(&"x".repeat(MAX_LSP_LANGUAGE_BYTES))
+            .expect("boundary language id");
+        assert_eq!(
+            validate_document_language_id(&"x".repeat(MAX_LSP_LANGUAGE_BYTES + 1))
+                .expect_err("oversized language id")
+                .to_string(),
+            format!("lsp: document language identifier exceeds {MAX_LSP_LANGUAGE_BYTES} bytes")
+        );
+        assert!(
+            validate_document_language_id(&"é".repeat(MAX_LSP_LANGUAGE_BYTES / 2 + 1)).is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shutdown_kills_before_waiting_for_a_blocked_document_writer() {
+        use std::os::fd::AsRawFd;
+
+        struct ChildCleanup(Arc<Mutex<Option<Child>>>);
+
+        impl Drop for ChildCleanup {
+            fn drop(&mut self) {
+                kill_and_reap_child(&self.0);
+            }
+        }
+
+        let mut child = Command::new("/bin/sleep")
+            .arg("60")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn non-reading child");
+        let stdin = child.stdin.take().expect("child stdin");
+
+        // Fill the pipe without blocking, then restore blocking mode. The next
+        // byte written is guaranteed to wait until the child closes its reader.
+        let fd = stdin.as_raw_fd();
+        // SAFETY: `fd` is a live ChildStdin descriptor owned by this test.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        assert!(flags >= 0, "read pipe flags");
+        // SAFETY: the descriptor remains live and the flag combination keeps
+        // its existing access mode while temporarily adding O_NONBLOCK.
+        assert!(
+            unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0,
+            "set nonblocking pipe"
+        );
+        let chunk = [0_u8; 4_096];
+        loop {
+            // SAFETY: `chunk` remains valid for the full write call and `fd`
+            // still belongs to `stdin` in this scope.
+            let written = unsafe { libc::write(fd, chunk.as_ptr().cast(), chunk.len()) };
+            if written > 0 {
+                continue;
+            }
+            assert_eq!(
+                std::io::Error::last_os_error().kind(),
+                std::io::ErrorKind::WouldBlock,
+                "pipe should become full"
+            );
+            break;
+        }
+        // SAFETY: `fd` is unchanged and live; restore the exact original flags.
+        assert!(
+            unsafe { libc::fcntl(fd, libc::F_SETFL, flags) } >= 0,
+            "restore blocking pipe"
+        );
+
+        let child = Arc::new(Mutex::new(Some(child)));
+        let _cleanup = ChildCleanup(child.clone());
+        let stdin = Arc::new(Mutex::new(Some(stdin)));
+        let document_state = Arc::new(Mutex::new(()));
+        let (writer_entered_tx, writer_entered_rx) = mpsc::channel();
+        let (writer_done_tx, writer_done_rx) = mpsc::channel();
+        let writer_stdin = stdin.clone();
+        let writer_state = document_state.clone();
+        let writer = thread::spawn(move || {
+            let _documents = writer_state.lock().expect("document state");
+            let mut stdin = writer_stdin.lock().expect("stdin state");
+            writer_entered_tx.send(()).expect("writer entered");
+            let result = stdin
+                .as_mut()
+                .expect("live stdin")
+                .write_all(&[1_u8])
+                .map_err(|error| error.kind());
+            writer_done_tx.send(result).expect("writer result");
+        });
+        writer_entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("writer acquired document and stdin locks");
+
+        // The old shutdown order waited on `document_state` here forever.
+        // Killing first closes the pipe reader, so the blocked writer unwinds.
+        kill_and_reap_child(&child);
+        assert_eq!(
+            writer_done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("blocked writer released"),
+            Err(std::io::ErrorKind::BrokenPipe)
+        );
+        writer.join().expect("writer thread");
+        assert!(document_state.try_lock().is_ok());
+        stdin.lock().expect("stdin state").take();
+    }
+
+    #[test]
+    fn open_document_limits_reject_without_leaking_global_slots() {
+        let counter = AtomicUsize::new(0);
+        let per_server_error = reserve_open_document_slot(MAX_OPEN_DOCUMENTS_PER_SERVER, &counter)
+            .expect_err("per-server cap");
+        assert_eq!(
+            per_server_error.to_string(),
+            format!(
+                "lsp: open document limit reached for language server ({MAX_OPEN_DOCUMENTS_PER_SERVER})"
+            )
+        );
+        assert_eq!(counter.load(Ordering::Acquire), 0);
+
+        let counter = AtomicUsize::new(MAX_OPEN_DOCUMENTS_GLOBAL);
+        let global_error =
+            reserve_open_document_slot(0, &counter).expect_err("global document cap");
+        assert_eq!(
+            global_error.to_string(),
+            format!("lsp: global open document limit reached ({MAX_OPEN_DOCUMENTS_GLOBAL})")
+        );
+        assert_eq!(counter.load(Ordering::Acquire), MAX_OPEN_DOCUMENTS_GLOBAL);
+
+        let counter = AtomicUsize::new(0);
+        reserve_open_document_slot(0, &counter).expect("available slot");
+        assert_eq!(counter.load(Ordering::Acquire), 1);
+        release_counter_slots(&counter, 1);
+        assert_eq!(counter.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn pending_request_limits_and_cleanup_are_exact() {
+        let pending = Mutex::new(HashMap::new());
+        let counter = AtomicUsize::new(0);
+        let mut receivers = Vec::new();
+        for id in 0..MAX_PENDING_REQUESTS_PER_SERVER as i64 {
+            let (sender, receiver) = mpsc::channel();
+            insert_pending_request(&pending, &counter, id, sender).expect("pending slot");
+            receivers.push(receiver);
+        }
+        let (sender, _receiver) = mpsc::channel();
+        let error = insert_pending_request(
+            &pending,
+            &counter,
+            MAX_PENDING_REQUESTS_PER_SERVER as i64,
+            sender,
+        )
+        .expect_err("per-server pending cap");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "lsp: pending request limit reached for language server ({MAX_PENDING_REQUESTS_PER_SERVER})"
+            )
+        );
+        assert_eq!(
+            pending.lock().expect("pending map").len(),
+            MAX_PENDING_REQUESTS_PER_SERVER
+        );
+        assert_eq!(
+            counter.load(Ordering::Acquire),
+            MAX_PENDING_REQUESTS_PER_SERVER
+        );
+
+        assert!(take_pending_request(&pending, &counter, 0).is_some());
+        assert_eq!(
+            counter.load(Ordering::Acquire),
+            MAX_PENDING_REQUESTS_PER_SERVER - 1
+        );
+        clear_pending_requests(&pending, &counter);
+        assert!(pending.lock().expect("pending map").is_empty());
+        assert_eq!(counter.load(Ordering::Acquire), 0);
+        drop(receivers);
+
+        let pending = Mutex::new(HashMap::new());
+        let counter = AtomicUsize::new(MAX_PENDING_REQUESTS_GLOBAL);
+        let (sender, _receiver) = mpsc::channel();
+        let error =
+            insert_pending_request(&pending, &counter, 1, sender).expect_err("global pending cap");
+        assert_eq!(
+            error.to_string(),
+            format!("lsp: global pending request limit reached ({MAX_PENDING_REQUESTS_GLOBAL})")
+        );
+        assert!(pending.lock().expect("pending map").is_empty());
+        assert_eq!(counter.load(Ordering::Acquire), MAX_PENDING_REQUESTS_GLOBAL);
+
+        let pending = Mutex::new(HashMap::new());
+        let counter = AtomicUsize::new(0);
+        let (sender, _receiver) = mpsc::channel();
+        insert_pending_request(&pending, &counter, 7, sender).expect("first request id");
+        let (sender, _receiver) = mpsc::channel();
+        assert_eq!(
+            insert_pending_request(&pending, &counter, 7, sender)
+                .expect_err("duplicate request id")
+                .to_string(),
+            "lsp: duplicate language-server request id"
+        );
+        assert_eq!(pending.lock().expect("pending map").len(), 1);
+        assert_eq!(counter.load(Ordering::Acquire), 1);
+        clear_pending_requests(&pending, &counter);
+        assert_eq!(counter.load(Ordering::Acquire), 0);
+    }
 
     #[test]
     fn reads_bounded_lsp_frame() {
