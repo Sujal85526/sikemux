@@ -34,7 +34,7 @@
 //   pty_resize      — change rows/cols (also resizes the parser)
 //   pty_kill        — terminate the PTY process
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::Entry, HashMap, HashSet, VecDeque};
 #[cfg(unix)]
 use std::fs::File;
 use std::hash::{Hash, Hasher};
@@ -42,7 +42,7 @@ use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
@@ -134,11 +134,65 @@ struct Pty {
     /// the PTY. `TempDir` removes them automatically; user dotfiles are never
     /// written or replaced.
     _shell_integration: Option<ShellLaunchIntegration>,
+    /// Acquired before allocating an OS PTY and released only after the last
+    /// native owner drops. This counts launch and reap windows where resources
+    /// exist but no entry is currently published in the manager map.
+    _capacity_permit: PtyCapacityPermit,
+}
+
+#[derive(Debug)]
+struct PtyCapacity {
+    active: AtomicUsize,
+    limit: usize,
+}
+
+impl PtyCapacity {
+    fn new(limit: usize) -> Arc<Self> {
+        Arc::new(Self {
+            active: AtomicUsize::new(0),
+            limit,
+        })
+    }
+
+    fn try_acquire(self: &Arc<Self>) -> AppResult<PtyCapacityPermit> {
+        let mut active = self.active.load(Ordering::Acquire);
+        loop {
+            if active >= self.limit {
+                return Err(AppError::Pty("PTY capacity reached".into()));
+            }
+            match self.active.compare_exchange_weak(
+                active,
+                active + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    return Ok(PtyCapacityPermit {
+                        capacity: self.clone(),
+                    });
+                }
+                Err(current) => active = current,
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PtyCapacityPermit {
+    capacity: Arc<PtyCapacity>,
+}
+
+impl Drop for PtyCapacityPermit {
+    fn drop(&mut self) {
+        let previous = self.capacity.active.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous > 0, "PTY capacity permit underflow");
+    }
 }
 
 /// All live PTYs, keyed by an id handed back to the frontend.
 pub struct PtyManager {
     ptys: DashMap<u32, Arc<Pty>>,
+    capacity: Arc<PtyCapacity>,
     detection_registry: RwLock<ManifestRegistry>,
 }
 
@@ -146,6 +200,7 @@ impl Default for PtyManager {
     fn default() -> Self {
         Self {
             ptys: DashMap::new(),
+            capacity: PtyCapacity::new(MAX_ACTIVE_PTYS),
             detection_registry: RwLock::new(
                 ManifestRegistry::bundled().expect("bundled agent manifests must be valid"),
             ),
@@ -264,6 +319,13 @@ static OUTPUT_READS: AtomicU64 = AtomicU64::new(0);
 static OUTPUT_BROADCASTS: AtomicU64 = AtomicU64::new(0);
 static OUTPUT_BYTES: AtomicU64 = AtomicU64::new(0);
 const MAX_PTY_ID_COLLISION_PROBES: usize = 4_096;
+/// Includes launching, live, draining, and retained task PTYs. The separate
+/// retained-task cap leaves at least half this budget available for live work.
+const MAX_ACTIVE_PTYS: usize = 256;
+const MAX_PTY_SUBSCRIBERS_PER_PTY: usize = 16;
+const MAX_SUB_ID_COLLISION_PROBES: usize = MAX_PTY_SUBSCRIBERS_PER_PTY + 1;
+const MAX_ATTACH_SNAPSHOT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_PTY_DIMENSION: u16 = 1_000;
 
 const MAX_TASK_EXECUTION_ID_BYTES: usize = 8 * 1024;
 const MAX_TASK_TERMINAL_KEY_BYTES: usize = 8 * 1024;
@@ -276,7 +338,6 @@ const MAX_TASK_ENV_ENTRIES: usize = 128;
 const MAX_TASK_ENV_KEY_BYTES: usize = 256;
 const MAX_TASK_ENV_VALUE_BYTES: usize = 8 * 1024;
 const MAX_TASK_ENV_TOTAL_BYTES: usize = 64 * 1024;
-const MAX_TASK_DIMENSION: u16 = 1_000;
 const MAX_TASK_SIGNAL_BYTES: usize = 128;
 const TASK_EXIT_RETENTION: Duration = Duration::from_secs(10 * 60);
 const MAX_RETAINED_EXITED_TASK_PTYS: usize = 128;
@@ -442,6 +503,13 @@ fn validate_task_environment(
     Ok(())
 }
 
+fn validate_pty_dimensions(cols: u16, rows: u16) -> AppResult<()> {
+    if cols == 0 || cols > MAX_PTY_DIMENSION || rows == 0 || rows > MAX_PTY_DIMENSION {
+        return Err(AppError::BadArg("invalid pty terminal dimensions"));
+    }
+    Ok(())
+}
+
 fn validate_task_request(request: &TaskSpawnRequest) -> AppResult<ValidatedTaskPaths> {
     if !valid_task_text(&request.execution_id, MAX_TASK_EXECUTION_ID_BYTES, true) {
         return Err(AppError::BadArg("invalid task execution id"));
@@ -472,13 +540,7 @@ fn validate_task_request(request: &TaskSpawnRequest) -> AppResult<ValidatedTaskP
     {
         return Err(AppError::BadArg("invalid task working directory"));
     }
-    if request.cols == 0
-        || request.cols > MAX_TASK_DIMENSION
-        || request.rows == 0
-        || request.rows > MAX_TASK_DIMENSION
-    {
-        return Err(AppError::BadArg("invalid task terminal dimensions"));
-    }
+    validate_pty_dimensions(request.cols, request.rows)?;
     validate_task_environment(&request.env, cfg!(windows))?;
     let project = std::fs::canonicalize(&request.project)
         .map_err(|_| AppError::BadArg("invalid task project"))?;
@@ -2270,6 +2332,7 @@ pub async fn pty_spawn(
     startup: Option<String>,
     context: Option<PtyContext>,
 ) -> AppResult<u32> {
+    validate_pty_dimensions(cols, rows)?;
     let shell = crate::system::configured_shell();
     let mut cmd = CommandBuilder::new(&shell);
     let cli_executable = crate::cli_server::cli_executable_path();
@@ -2431,6 +2494,11 @@ async fn spawn_prepared_pty(
     manager: &PtyManager,
     launch: PreparedPtyLaunch,
 ) -> AppResult<u32> {
+    validate_pty_dimensions(launch.cols, launch.rows)?;
+    // Reclaim eligible completed tasks before applying the hard process/parser
+    // budget, then reserve capacity before any OS handle or child is created.
+    reclaim_completed_task_ptys(manager, now_ms());
+    let capacity_permit = manager.capacity.try_acquire()?;
     ensure_sweeper(app.clone());
     // Has to run inside Tauri's tokio runtime — both `AsyncFd::new` and
     // `tokio::spawn` below panic when there is no reactor.
@@ -2542,6 +2610,7 @@ async fn spawn_prepared_pty(
         task_exit,
         task_exited_at_ms: AtomicU64::new(0),
         _shell_integration: shell_integration,
+        _capacity_permit: capacity_permit,
     });
 
     // Publish before starting the reader. A short-lived command can reach EOF
@@ -2729,6 +2798,30 @@ async fn spawn_prepared_pty(
     Ok(id)
 }
 
+fn insert_subscriber(
+    subscribers: &mut HashMap<u32, Channel<Vec<u8>>>,
+    next_id: &AtomicU32,
+    on_event: Channel<Vec<u8>>,
+) -> AppResult<u32> {
+    if subscribers.len() >= MAX_PTY_SUBSCRIBERS_PER_PTY {
+        return Err(AppError::Pty("PTY subscriber capacity reached".into()));
+    }
+    // Allocation happens under the same map lock as insertion. A wrapped
+    // process-global counter can therefore skip zero and every still-live ID
+    // instead of replacing a channel that a stale unsubscribe still names.
+    for _ in 0..MAX_SUB_ID_COLLISION_PROBES {
+        let sub_id = next_id.fetch_add(1, Ordering::Relaxed);
+        if sub_id == 0 {
+            continue;
+        }
+        if let Entry::Vacant(entry) = subscribers.entry(sub_id) {
+            entry.insert(on_event);
+            return Ok(sub_id);
+        }
+    }
+    Err(AppError::Pty("PTY subscriber id capacity exhausted".into()))
+}
+
 #[tauri::command]
 pub fn pty_subscribe(
     manager: State<'_, PtyManager>,
@@ -2739,12 +2832,8 @@ pub fn pty_subscribe(
         .ptys
         .get(&id)
         .ok_or(AppError::BadArg("pty not found"))?;
-    let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
-    pty.subscribers
-        .lock()
-        .map_err(pty_err)?
-        .insert(sub_id, on_event);
-    Ok(sub_id)
+    let mut subscribers = pty.subscribers.lock().map_err(pty_err)?;
+    insert_subscriber(&mut subscribers, &NEXT_SUB_ID, on_event)
 }
 
 #[tauri::command]
@@ -2773,6 +2862,120 @@ fn screen_scrollback_len(screen: &vt100::Screen) -> usize {
     let mut s = screen.clone();
     s.set_scrollback(usize::MAX);
     s.scrollback()
+}
+
+#[derive(Debug)]
+struct BoundedAttachSnapshot {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+/// Produce a replay stream whose returned allocation never exceeds
+/// `max_bytes`. When all history cannot fit, only a contiguous newest suffix
+/// is retained; the live viewport, terminal modes, and cursor state are never
+/// selectively truncated. If that non-negotiable viewport does not fit, the
+/// caller gets an error and can leave parser/subscriber state untouched.
+fn bounded_attach_snapshot(
+    screen: &vt100::Screen,
+    max_bytes: usize,
+) -> AppResult<BoundedAttachSnapshot> {
+    const ALT_SCREEN_PREFIX: &[u8] = b"\x1b[?1049h";
+    const HISTORY_ROW_SUFFIX: &[u8] = b"\x1b[0m\r\n";
+
+    let alternate_screen = screen.alternate_screen();
+    let prefix = if alternate_screen {
+        ALT_SCREEN_PREFIX
+    } else {
+        &[]
+    };
+    let viewport = screen.state_formatted();
+    let fixed_bytes = prefix
+        .len()
+        .checked_add(viewport.len())
+        .ok_or_else(|| AppError::Pty("PTY attach snapshot size overflow".into()))?;
+    if fixed_bytes > max_bytes {
+        return Err(AppError::Pty(
+            "PTY attach viewport exceeds snapshot capacity".into(),
+        ));
+    }
+
+    let history_rows = if alternate_screen {
+        0
+    } else {
+        screen_scrollback_len(screen)
+    };
+    if history_rows == 0 {
+        let mut bytes = Vec::with_capacity(fixed_bytes);
+        bytes.extend_from_slice(prefix);
+        bytes.extend_from_slice(&viewport);
+        return Ok(BoundedAttachSnapshot {
+            bytes,
+            truncated: false,
+        });
+    }
+
+    let (rows, cols) = screen.size();
+    let separator_bytes = usize::from(rows.saturating_sub(1))
+        .checked_mul(b"\r\n".len())
+        .ok_or_else(|| AppError::Pty("PTY attach snapshot size overflow".into()))?;
+    let history_budget = max_bytes.saturating_sub(fixed_bytes.saturating_add(separator_bytes));
+    let mut retained = VecDeque::<Vec<u8>>::new();
+    let mut retained_bytes = 0usize;
+    let mut truncated = history_budget == 0;
+    let mut seen_rows = 0usize;
+    let mut scrolled = screen.clone();
+
+    // Iterate in the same oldest-to-newest page order as the full replay.
+    // The deque never retains more than the remaining byte budget; evicting
+    // from its front leaves a deterministic newest suffix.
+    let page_rows = usize::from(rows).max(1);
+    let mut start = 0usize;
+    while start < history_rows {
+        scrolled.set_scrollback(history_rows - start);
+        let take = (history_rows - start).min(page_rows);
+        for mut row in scrolled.rows_formatted(0, cols).take(take) {
+            seen_rows += 1;
+            row.extend_from_slice(HISTORY_ROW_SUFFIX);
+            if row.len() > history_budget {
+                retained.clear();
+                retained_bytes = 0;
+                truncated = true;
+                continue;
+            }
+            while retained_bytes.saturating_add(row.len()) > history_budget {
+                let Some(evicted) = retained.pop_front() else {
+                    break;
+                };
+                retained_bytes = retained_bytes.saturating_sub(evicted.len());
+                truncated = true;
+            }
+            retained_bytes += row.len();
+            retained.push_back(row);
+        }
+        start += take;
+    }
+    truncated |= seen_rows < history_rows || retained.len() < history_rows;
+
+    let include_history = !retained.is_empty();
+    let final_separator_bytes = if include_history { separator_bytes } else { 0 };
+    let final_capacity = fixed_bytes
+        .checked_add(retained_bytes)
+        .and_then(|size| size.checked_add(final_separator_bytes))
+        .ok_or_else(|| AppError::Pty("PTY attach snapshot size overflow".into()))?;
+    debug_assert!(final_capacity <= max_bytes);
+    let mut bytes = Vec::with_capacity(final_capacity);
+    bytes.extend_from_slice(prefix);
+    for row in retained {
+        bytes.extend_from_slice(&row);
+    }
+    if include_history {
+        for _ in 1..rows {
+            bytes.extend_from_slice(b"\r\n");
+        }
+    }
+    bytes.extend_from_slice(&viewport);
+    debug_assert!(bytes.len() <= max_bytes);
+    Ok(BoundedAttachSnapshot { bytes, truncated })
 }
 
 fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
@@ -2824,13 +3027,28 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
     snapshot
 }
 
-fn reseed_parser(parser: &mut SemanticParser, scrollback: usize) {
+fn reseed_parser_from_snapshot(parser: &mut SemanticParser, snapshot: &[u8], scrollback: usize) {
     let (rows, cols) = parser.screen().size();
-    let snapshot = attach_snapshot(parser.screen());
     let callbacks = std::mem::take(parser.callbacks_mut());
     let mut fresh = SemanticParser::new_with_callbacks(rows, cols, scrollback, callbacks);
-    fresh.process(&snapshot);
+    fresh.process(snapshot);
     *parser = fresh;
+}
+
+fn reseed_parser(parser: &mut SemanticParser, scrollback: usize) {
+    let snapshot = attach_snapshot(parser.screen());
+    reseed_parser_from_snapshot(parser, &snapshot, scrollback);
+}
+
+fn attach_snapshot_with_compaction(
+    parser: &mut SemanticParser,
+    max_bytes: usize,
+) -> AppResult<Vec<u8>> {
+    let snapshot = bounded_attach_snapshot(parser.screen(), max_bytes)?;
+    if snapshot.truncated {
+        reseed_parser_from_snapshot(parser, &snapshot.bytes, PARSER_SCROLLBACK);
+    }
+    Ok(snapshot.bytes)
 }
 
 fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
@@ -2850,7 +3068,9 @@ fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
 /// `snapshot` is the visible screen + scrollback plus input modes as an
 /// ANSI byte stream. Writing it to a fresh xterm reproduces the visual
 /// state and the mode state that affects input/wheel handling at the
-/// moment of the call; bounded in size by `PARSER_SCROLLBACK` rows.
+/// moment of the call. The native byte budget is authoritative: oversized
+/// history is compacted to a newest suffix under this same parser lock, while
+/// an oversized live viewport fails before a subscriber is registered.
 #[tauri::command]
 pub fn pty_attach(
     manager: State<'_, PtyManager>,
@@ -2869,17 +3089,23 @@ pub fn pty_attach(
             .ptys
             .get(&id)
             .ok_or(AppError::BadArg("pty not found"))?;
-        let parser = pty.parser.lock().map_err(pty_err)?;
+        let mut parser = pty.parser.lock().map_err(pty_err)?;
         let alternate_screen = parser.screen().alternate_screen();
-        let snapshot = attach_snapshot(parser.screen());
+        let mut subs = pty.subscribers.lock().map_err(pty_err)?;
+        if subs.len() >= MAX_PTY_SUBSCRIBERS_PER_PTY {
+            return Err(AppError::Pty("PTY subscriber capacity reached".into()));
+        }
+        // Make a bounded replay the authoritative parser state when history
+        // must be truncated, so repeated attaches do not repeatedly scan
+        // discarded history. Output cannot interleave because parser ->
+        // subscribers is the reader/broadcast lock order too.
+        let snapshot = attach_snapshot_with_compaction(&mut parser, MAX_ATTACH_SNAPSHOT_BYTES)?;
         let shell = parser
             .callbacks()
             .shell
             .as_ref()
             .map(ShellProtocolParser::snapshot);
-        let mut subs = pty.subscribers.lock().map_err(pty_err)?;
-        let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
-        subs.insert(sub_id, on_event);
+        let sub_id = insert_subscriber(&mut subs, &NEXT_SUB_ID, on_event)?;
         drop(subs);
         drop(parser);
         Ok(AttachResult {
@@ -2976,6 +3202,7 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
 
 #[tauri::command]
 pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16) -> AppResult<()> {
+    validate_pty_dimensions(cols, rows)?;
     let pty = manager
         .ptys
         .get(&id)
@@ -3021,18 +3248,21 @@ mod tests {
     #[cfg(unix)]
     use super::startup_bootstrap;
     use super::{
-        attach_snapshot, compact_parser_for_idle, configure_pty_environment,
-        configure_shell_integration, configure_task_command, detect_shell_kind, event_fingerprint,
-        parse_shell_cwd, reseed_parser, semantic_fingerprint, semantic_parser,
-        semantic_parser_with_shell, shell_integration_requested, should_signal_process_on_drain,
-        submits_line, task_process_needs_force_backstop, task_reclamation_plan,
-        task_retention_elapsed, task_shell_arguments, validate_task_environment,
-        validate_task_request, AttachResult, PtyContext, PtyShellMetadataEvent, ShellBoundary,
-        ShellKind, ShellPhase, ShellProtocolParser, TaskExitReporter, TaskProcessExit,
-        TaskRetentionCandidate, TaskShellPlatform, TaskSource, TaskSpawnRequest, TaskSpawnResult,
-        IDLE_SCROLLBACK, MAX_RETAINED_EXITED_TASK_PTYS, MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES,
-        MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES, MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK,
-        RESET_MODES, SHELL_EVENT_MIN_INTERVAL, TASK_EXIT_RETENTION,
+        attach_snapshot, attach_snapshot_with_compaction, compact_parser_for_idle,
+        configure_pty_environment, configure_shell_integration, configure_task_command,
+        detect_shell_kind, event_fingerprint, insert_subscriber, parse_shell_cwd, reseed_parser,
+        screen_scrollback_len, semantic_fingerprint, semantic_parser, semantic_parser_with_shell,
+        shell_integration_requested, should_signal_process_on_drain, submits_line,
+        task_process_needs_force_backstop, task_reclamation_plan, task_retention_elapsed,
+        task_shell_arguments, validate_pty_dimensions, validate_task_environment,
+        validate_task_request, AttachResult, PtyCapacity, PtyContext, PtyShellMetadataEvent,
+        ShellBoundary, ShellKind, ShellPhase, ShellProtocolParser, TaskExitReporter,
+        TaskProcessExit, TaskRetentionCandidate, TaskShellPlatform, TaskSource, TaskSpawnRequest,
+        TaskSpawnResult, IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES, MAX_PTY_DIMENSION,
+        MAX_PTY_SUBSCRIBERS_PER_PTY, MAX_RETAINED_EXITED_TASK_PTYS, MAX_SHELL_OSC_BYTES,
+        MAX_SHELL_PATH_BYTES, MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES,
+        MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL,
+        TASK_EXIT_RETENTION,
     };
     #[cfg(target_os = "macos")]
     use super::{
@@ -3042,12 +3272,17 @@ mod tests {
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
     use std::path::Path;
-    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Barrier, Mutex};
 
     fn env(command: &CommandBuilder, key: &str) -> Option<String> {
         command
             .get_env(key)
             .map(|value| value.to_string_lossy().into_owned())
+    }
+
+    fn output_channel() -> tauri::ipc::Channel<Vec<u8>> {
+        tauri::ipc::Channel::new(|_| Ok(()))
     }
 
     fn local_shell_context() -> PtyContext {
@@ -3079,6 +3314,96 @@ mod tests {
             cols: 120,
             rows: 40,
         }
+    }
+
+    #[test]
+    fn active_pty_capacity_is_hard_under_concurrent_admission() {
+        const LIMIT: usize = 7;
+        const CONTENDERS: usize = 64;
+        let capacity = PtyCapacity::new(LIMIT);
+        let barrier = Arc::new(Barrier::new(CONTENDERS + 1));
+        let results = std::thread::scope(|scope| {
+            let handles = (0..CONTENDERS)
+                .map(|_| {
+                    let capacity = capacity.clone();
+                    let barrier = barrier.clone();
+                    scope.spawn(move || {
+                        barrier.wait();
+                        capacity.try_acquire().ok()
+                    })
+                })
+                .collect::<Vec<_>>();
+            barrier.wait();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("capacity contender"))
+                .collect::<Vec<_>>()
+        });
+        let mut permits = results.into_iter().flatten().collect::<Vec<_>>();
+
+        assert_eq!(permits.len(), LIMIT);
+        assert_eq!(capacity.active.load(Ordering::Acquire), LIMIT);
+        assert!(capacity.try_acquire().is_err());
+
+        permits.pop();
+        let replacement = capacity.try_acquire().expect("released slot is reusable");
+        assert_eq!(capacity.active.load(Ordering::Acquire), LIMIT);
+        drop(replacement);
+        drop(permits);
+        assert_eq!(capacity.active.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn terminal_geometry_is_strict_and_shared_with_tasks() {
+        assert!(validate_pty_dimensions(1, 1).is_ok());
+        assert!(validate_pty_dimensions(MAX_PTY_DIMENSION, MAX_PTY_DIMENSION).is_ok());
+        for (cols, rows) in [
+            (0, 1),
+            (1, 0),
+            (MAX_PTY_DIMENSION + 1, 1),
+            (1, MAX_PTY_DIMENSION + 1),
+        ] {
+            assert!(validate_pty_dimensions(cols, rows).is_err());
+        }
+
+        let directory = tempfile::tempdir().expect("task cwd");
+        let mut request = task_request(directory.path());
+        request.cols = MAX_PTY_DIMENSION;
+        request.rows = MAX_PTY_DIMENSION;
+        validate_task_request(&request).expect("shared maximum is valid for tasks");
+        request.rows = MAX_PTY_DIMENSION + 1;
+        assert!(validate_task_request(&request).is_err());
+    }
+
+    #[test]
+    fn subscriber_capacity_and_wrapped_ids_never_replace_a_live_channel() {
+        let next_id = AtomicU32::new(1);
+        let mut subscribers = HashMap::new();
+        let mut live_ids = Vec::new();
+        for _ in 0..MAX_PTY_SUBSCRIBERS_PER_PTY {
+            live_ids.push(
+                insert_subscriber(&mut subscribers, &next_id, output_channel())
+                    .expect("subscriber below cap"),
+            );
+        }
+        assert_eq!(subscribers.len(), MAX_PTY_SUBSCRIBERS_PER_PTY);
+        assert!(insert_subscriber(&mut subscribers, &next_id, output_channel()).is_err());
+        assert_eq!(subscribers.len(), MAX_PTY_SUBSCRIBERS_PER_PTY);
+
+        let removed = live_ids.remove(0);
+        assert!(subscribers.remove(&removed).is_some());
+        let replacement = insert_subscriber(&mut subscribers, &next_id, output_channel())
+            .expect("released subscriber slot");
+        assert!(!live_ids.contains(&replacement));
+        assert_eq!(subscribers.len(), MAX_PTY_SUBSCRIBERS_PER_PTY);
+
+        let wrapped_next = AtomicU32::new(u32::MAX);
+        let mut wrapped = HashMap::from([(u32::MAX, output_channel())]);
+        let wrapped_id = insert_subscriber(&mut wrapped, &wrapped_next, output_channel())
+            .expect("wrap skips zero and live id");
+        assert_eq!(wrapped_id, 1);
+        assert!(wrapped.contains_key(&u32::MAX));
+        assert!(wrapped.contains_key(&wrapped_id));
     }
 
     #[test]
@@ -4030,6 +4355,65 @@ mod tests {
         assert!(!joined.lines().any(|line| line.trim().is_empty()));
         screen.set_scrollback(0);
         assert_eq!(screen.contents(), expected_viewport);
+    }
+
+    #[test]
+    fn attach_snapshot_byte_budget_compacts_only_old_history() {
+        let mut parser = semantic_parser(6, 40, PARSER_SCROLLBACK);
+        for index in 0..500 {
+            parser.process(
+                format!(
+                    "\x1b[{}mline {index:04} {}\x1b[0m\r\n",
+                    31 + index % 7,
+                    "x".repeat(32)
+                )
+                .as_bytes(),
+            );
+        }
+        parser.process(b"\x1b[?2004h");
+
+        let visible_before = parser.screen().contents();
+        let history_before = screen_scrollback_len(parser.screen());
+        let full_before = attach_snapshot(parser.screen());
+        let viewport_bytes = parser.screen().state_formatted().len();
+        let budget = viewport_bytes + 512;
+        assert!(full_before.len() > budget, "fixture must force compaction");
+
+        let snapshot = attach_snapshot_with_compaction(&mut parser, budget)
+            .expect("bounded snapshot retains viewport");
+        assert!(snapshot.len() <= budget);
+        assert_eq!(parser.screen().contents(), visible_before);
+        assert!(parser.screen().bracketed_paste());
+        assert!(screen_scrollback_len(parser.screen()) < history_before);
+
+        let mut restored = vt100::Parser::new(6, 40, PARSER_SCROLLBACK);
+        restored.process(&snapshot);
+        assert_eq!(restored.screen().contents(), visible_before);
+        assert!(restored.screen().bracketed_paste());
+        assert_eq!(MAX_ATTACH_SNAPSHOT_BYTES, 8 * 1024 * 1024);
+    }
+
+    #[test]
+    fn attach_snapshot_viewport_over_budget_fails_without_mutation() {
+        let mut parser = semantic_parser(5, 20, PARSER_SCROLLBACK);
+        for index in 0..20 {
+            parser.process(format!("line {index:02}\r\n").as_bytes());
+        }
+        parser.process(b"\x1b[?1000h\x1b[?1006h");
+        let before = attach_snapshot(parser.screen());
+        let viewport_bytes = parser.screen().state_formatted().len();
+        assert!(viewport_bytes > 0);
+
+        assert!(attach_snapshot_with_compaction(&mut parser, viewport_bytes - 1).is_err());
+        assert_eq!(attach_snapshot(parser.screen()), before);
+        assert_eq!(
+            parser.screen().mouse_protocol_mode(),
+            vt100::MouseProtocolMode::PressRelease
+        );
+        assert_eq!(
+            parser.screen().mouse_protocol_encoding(),
+            vt100::MouseProtocolEncoding::Sgr
+        );
     }
 
     #[test]
