@@ -15,12 +15,13 @@ const MAX_ITEM_COUNT: usize = 4_096;
 const MAX_ITEM_STATE_BYTES: usize = 1024 * 1024;
 const MAX_ITEM_ID_BYTES: usize = 256;
 const MAX_ITEM_KIND_BYTES: usize = 128;
+const APPLICATION_STATE_VERSION: i64 = 7;
 const CURRENT_SLOT: i64 = 0;
 const BACKUP_SLOT: i64 = 1;
 const RECOVERY_SNAPSHOT_ID: i64 = 1;
-const DATABASE_SCHEMA_VERSION: i64 = 2;
+const DATABASE_SCHEMA_VERSION: i64 = 3;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct ItemStateRow {
     ordinal: i64,
     item_id: String,
@@ -48,6 +49,13 @@ enum DatabaseLoad {
     Snapshot(String),
     Empty,
     Invalid,
+}
+
+#[derive(Debug)]
+struct WriteDelta {
+    core_changed: bool,
+    changed_items: Vec<ItemStateRow>,
+    removed_item_ids: Vec<String>,
 }
 
 /// Legacy JSON location retained as a one-way migration and recovery source.
@@ -311,6 +319,26 @@ fn open_database(path: &Path) -> AppResult<Connection> {
                  id INTEGER PRIMARY KEY CHECK (id = 1),
                  snapshot_json TEXT NOT NULL,
                  saved_at_ms INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS pending_workspace_snapshot (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 schema_version INTEGER NOT NULL CHECK (schema_version > 0),
+                 core_json TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS pending_item_states (
+                 item_id TEXT PRIMARY KEY,
+                 removed INTEGER NOT NULL CHECK (removed IN (0, 1)),
+                 ordinal INTEGER,
+                 kind TEXT,
+                 item_version INTEGER,
+                 state_json TEXT,
+                 CHECK (
+                     (removed = 1 AND ordinal IS NULL AND kind IS NULL
+                         AND item_version IS NULL AND state_json IS NULL)
+                     OR
+                     (removed = 0 AND ordinal >= 0 AND kind IS NOT NULL
+                         AND item_version > 0 AND state_json IS NOT NULL)
+                 )
              );",
         )
         .map_err(state_error)?;
@@ -328,28 +356,28 @@ fn migrate_database_schema(connection: &mut Connection, from_version: i64) -> Ap
         )));
     }
 
-    // Schema v1 stored a complete previous snapshot in a second set of item
-    // rows. Convert it once to a single sequential recovery blob so future
-    // saves only mutate changed live item rows.
-    let previous_good = match load_slot(connection, BACKUP_SLOT)? {
-        SlotLoad::Snapshot(snapshot) => Some(snapshot),
-        SlotLoad::Empty | SlotLoad::Invalid => None,
+    let v1_backup_valid = from_version == 1
+        && matches!(
+            load_slot(connection, BACKUP_SLOT)?,
+            SlotLoad::Snapshot(_) | SlotLoad::Empty
+        );
+    let v2_recovery = if from_version == 2 {
+        match load_recovery_snapshot(connection)? {
+            SlotLoad::Snapshot(snapshot) => Some(decompose_snapshot(&snapshot)?),
+            SlotLoad::Empty | SlotLoad::Invalid => None,
+        }
+    } else {
+        None
     };
     let transaction = connection.transaction().map_err(state_error)?;
-    if let Some(snapshot) = previous_good {
-        write_recovery_snapshot(&transaction, &snapshot)?;
+    if let Some(snapshot) = v2_recovery {
+        replace_slot_snapshot(&transaction, BACKUP_SLOT, &snapshot)?;
+    } else if !v1_backup_valid {
+        clear_slot(&transaction, BACKUP_SLOT)?;
     }
+    seed_pending_generation(&transaction)?;
     transaction
-        .execute(
-            "DELETE FROM item_states WHERE slot = ?1",
-            params![BACKUP_SLOT],
-        )
-        .map_err(state_error)?;
-    transaction
-        .execute(
-            "DELETE FROM workspace_snapshots WHERE slot = ?1",
-            params![BACKUP_SLOT],
-        )
+        .execute("DELETE FROM recovery_snapshots", [])
         .map_err(state_error)?;
     transaction
         .pragma_update(None, "user_version", DATABASE_SCHEMA_VERSION)
@@ -483,6 +511,12 @@ fn decompose_snapshot(data: &str) -> AppResult<DecomposedSnapshot> {
 
 fn save_database(path: &Path, data: &str) -> AppResult<()> {
     let snapshot = decompose_snapshot(data)?;
+    if snapshot.schema_version != APPLICATION_STATE_VERSION {
+        return Err(AppError::State(format!(
+            "cannot save application state version {}; expected {APPLICATION_STATE_VERSION}",
+            snapshot.schema_version
+        )));
+    }
     let observer = global_observability();
     let timer = observer.slow_operation(
         "state.sqlite_save",
@@ -492,12 +526,22 @@ fn save_database(path: &Path, data: &str) -> AppResult<()> {
     );
     let mut connection = open_database(path)?;
     let transaction = connection.transaction().map_err(state_error)?;
-    let (changed_items, removed_items) = write_transaction(&transaction, &snapshot)?;
+    let delta = write_transaction(&transaction, &snapshot)?;
     transaction.commit().map_err(state_error)?;
     secure_database_files(path)?;
     let _ = observer.increment_counter("state.sqlite_saves", 1);
-    let _ = observer.increment_counter("state.sqlite.changed_items", changed_items as u64);
-    let _ = observer.increment_counter("state.sqlite.removed_items", removed_items as u64);
+    let _ = observer.increment_counter(
+        "state.sqlite.changed_items",
+        delta.changed_items.len() as u64,
+    );
+    let _ = observer.increment_counter(
+        "state.sqlite.removed_items",
+        delta.removed_item_ids.len() as u64,
+    );
+    observer.set_gauge(
+        "state.sqlite.last_delta_items",
+        (delta.changed_items.len() + delta.removed_item_ids.len()) as f64,
+    );
     observer.set_gauge("state.sqlite.last_item_count", snapshot.items.len() as f64);
     observer.set_gauge("state.sqlite.last_snapshot_bytes", data.len() as f64);
     timer.finish(SpanOutcome::Success);
@@ -507,11 +551,32 @@ fn save_database(path: &Path, data: &str) -> AppResult<()> {
 fn write_transaction(
     transaction: &Transaction<'_>,
     snapshot: &DecomposedSnapshot,
-) -> AppResult<(usize, usize)> {
-    if let SlotLoad::Snapshot(previous_good) = load_slot(transaction, CURRENT_SLOT)? {
-        write_recovery_snapshot(transaction, &previous_good)?;
+) -> AppResult<WriteDelta> {
+    ensure_existing_state_is_compatible(transaction)?;
+    advance_recovery_generation(transaction)?;
+    let delta = write_current_snapshot(transaction, snapshot)?;
+    store_pending_generation(transaction, snapshot, &delta)?;
+    Ok(delta)
+}
+
+fn ensure_existing_state_is_compatible(transaction: &Transaction<'_>) -> AppResult<()> {
+    let version = transaction
+        .query_row(
+            "SELECT MAX(schema_version) FROM (
+                 SELECT schema_version FROM workspace_snapshots
+                 UNION ALL
+                 SELECT schema_version FROM pending_workspace_snapshot
+             )",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .map_err(state_error)?;
+    if version.is_some_and(|version| version > APPLICATION_STATE_VERSION) {
+        return Err(AppError::State(format!(
+            "existing application state is newer than supported version {APPLICATION_STATE_VERSION}"
+        )));
     }
-    write_current_snapshot(transaction, snapshot)
+    Ok(())
 }
 
 fn unix_time_millis() -> i64 {
@@ -522,22 +587,51 @@ fn unix_time_millis() -> i64 {
         .min(i64::MAX as u128) as i64
 }
 
-fn write_recovery_snapshot(transaction: &Transaction<'_>, snapshot: &str) -> AppResult<()> {
-    // Recovery is already a validated, bounded assembled snapshot from
-    // load_slot. Keeping it in one row avoids copying every item row on each
-    // save while retaining transactionally consistent previous-good state.
-    if snapshot.len() > MAX_STATE_BYTES || decompose_snapshot(snapshot).is_err() {
-        return Err(AppError::State("recovery snapshot is invalid".into()));
+fn advance_recovery_generation(transaction: &Transaction<'_>) -> AppResult<()> {
+    if !pending_generation_is_valid(transaction)? {
+        return Err(AppError::State(
+            "pending recovery generation is invalid".into(),
+        ));
     }
     transaction
         .execute(
-            "INSERT INTO recovery_snapshots(id, snapshot_json, saved_at_ms)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(id) DO UPDATE SET
-                 snapshot_json = excluded.snapshot_json,
+            "INSERT INTO workspace_snapshots(slot, schema_version, core_json, saved_at_ms)
+             SELECT ?1, schema_version, core_json, ?2
+             FROM pending_workspace_snapshot WHERE id = 1
+             ON CONFLICT(slot) DO UPDATE SET
+                 schema_version = excluded.schema_version,
+                 core_json = excluded.core_json,
                  saved_at_ms = excluded.saved_at_ms",
-            params![RECOVERY_SNAPSHOT_ID, snapshot, unix_time_millis()],
+            params![BACKUP_SLOT, unix_time_millis()],
         )
+        .map_err(state_error)?;
+    transaction
+        .execute(
+            "INSERT INTO item_states(slot, ordinal, item_id, kind, item_version, state_json)
+             SELECT ?1, ordinal, item_id, kind, item_version, state_json
+             FROM pending_item_states WHERE removed = 0
+             ON CONFLICT(slot, item_id) DO UPDATE SET
+                 ordinal = excluded.ordinal,
+                 kind = excluded.kind,
+                 item_version = excluded.item_version,
+                 state_json = excluded.state_json",
+            params![BACKUP_SLOT],
+        )
+        .map_err(state_error)?;
+    transaction
+        .execute(
+            "DELETE FROM item_states
+             WHERE slot = ?1 AND item_id IN (
+                 SELECT item_id FROM pending_item_states WHERE removed = 1
+             )",
+            params![BACKUP_SLOT],
+        )
+        .map_err(state_error)?;
+    transaction
+        .execute("DELETE FROM pending_workspace_snapshot", [])
+        .map_err(state_error)?;
+    transaction
+        .execute("DELETE FROM pending_item_states", [])
         .map_err(state_error)?;
     Ok(())
 }
@@ -545,15 +639,17 @@ fn write_recovery_snapshot(transaction: &Transaction<'_>, snapshot: &str) -> App
 fn write_current_snapshot(
     transaction: &Transaction<'_>,
     snapshot: &DecomposedSnapshot,
-) -> AppResult<(usize, usize)> {
-    transaction
+) -> AppResult<WriteDelta> {
+    let core_changed = transaction
         .execute(
             "INSERT INTO workspace_snapshots(slot, schema_version, core_json, saved_at_ms)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(slot) DO UPDATE SET
                  schema_version = excluded.schema_version,
                  core_json = excluded.core_json,
-                 saved_at_ms = excluded.saved_at_ms",
+                 saved_at_ms = excluded.saved_at_ms
+             WHERE schema_version IS NOT excluded.schema_version
+                OR core_json IS NOT excluded.core_json",
             params![
                 CURRENT_SLOT,
                 snapshot.schema_version,
@@ -561,7 +657,8 @@ fn write_current_snapshot(
                 unix_time_millis()
             ],
         )
-        .map_err(state_error)?;
+        .map_err(state_error)?
+        > 0;
     let mut existing_statement = transaction
         .prepare("SELECT item_id FROM item_states WHERE slot = ?1")
         .map_err(state_error)?;
@@ -587,9 +684,9 @@ fn write_current_snapshot(
                 OR state_json IS NOT excluded.state_json",
         )
         .map_err(state_error)?;
-    let mut changed_items = 0usize;
+    let mut changed_items = Vec::new();
     for item in &snapshot.items {
-        changed_items += statement
+        let changed = statement
             .execute(params![
                 CURRENT_SLOT,
                 item.ordinal,
@@ -599,19 +696,74 @@ fn write_current_snapshot(
                 item.state_json
             ])
             .map_err(state_error)?;
+        if changed > 0 {
+            changed_items.push(item.clone());
+        }
         stale_item_ids.remove(&item.item_id);
     }
     drop(statement);
-    let removed_items = stale_item_ids.len();
+    let mut removed_item_ids = stale_item_ids.into_iter().collect::<Vec<_>>();
+    removed_item_ids.sort_unstable();
     let mut delete_statement = transaction
         .prepare_cached("DELETE FROM item_states WHERE slot = ?1 AND item_id = ?2")
         .map_err(state_error)?;
-    for item_id in stale_item_ids {
+    for item_id in &removed_item_ids {
         delete_statement
             .execute(params![CURRENT_SLOT, item_id])
             .map_err(state_error)?;
     }
-    Ok((changed_items, removed_items))
+    Ok(WriteDelta {
+        core_changed,
+        changed_items,
+        removed_item_ids,
+    })
+}
+
+fn store_pending_generation(
+    transaction: &Transaction<'_>,
+    snapshot: &DecomposedSnapshot,
+    delta: &WriteDelta,
+) -> AppResult<()> {
+    if delta.core_changed {
+        transaction
+            .execute(
+                "INSERT INTO pending_workspace_snapshot(id, schema_version, core_json)
+                 VALUES (1, ?1, ?2)",
+                params![snapshot.schema_version, snapshot.core_json],
+            )
+            .map_err(state_error)?;
+    }
+    let mut changed_statement = transaction
+        .prepare_cached(
+            "INSERT INTO pending_item_states(
+                 item_id, removed, ordinal, kind, item_version, state_json
+             ) VALUES (?1, 0, ?2, ?3, ?4, ?5)",
+        )
+        .map_err(state_error)?;
+    for item in &delta.changed_items {
+        changed_statement
+            .execute(params![
+                item.item_id,
+                item.ordinal,
+                item.kind,
+                item.version,
+                item.state_json
+            ])
+            .map_err(state_error)?;
+    }
+    drop(changed_statement);
+    let mut removed_statement = transaction
+        .prepare_cached(
+            "INSERT INTO pending_item_states(item_id, removed)
+             VALUES (?1, 1)",
+        )
+        .map_err(state_error)?;
+    for item_id in &delta.removed_item_ids {
+        removed_statement
+            .execute(params![item_id])
+            .map_err(state_error)?;
+    }
+    Ok(())
 }
 
 fn load_database(path: &Path) -> AppResult<DatabaseLoad> {
@@ -621,17 +773,38 @@ fn load_database(path: &Path) -> AppResult<DatabaseLoad> {
         return Ok(DatabaseLoad::Snapshot(snapshot.clone()));
     }
 
-    let recovery = load_recovery_snapshot(&connection)?;
+    // The pending delta was validated before its original commit. Reapply it
+    // to the previous generation inside a transaction, validate the assembled
+    // result, and only then promote it over an invalid live snapshot.
+    let pending_valid = pending_generation_is_valid(&connection)?;
+    if pending_valid {
+        let transaction = connection.transaction().map_err(state_error)?;
+        advance_recovery_generation(&transaction)?;
+        if let SlotLoad::Snapshot(snapshot) = load_slot(&transaction, BACKUP_SLOT)? {
+            let decomposed = decompose_snapshot(&snapshot)?;
+            replace_slot_snapshot(&transaction, CURRENT_SLOT, &decomposed)?;
+            transaction.commit().map_err(state_error)?;
+            return Ok(DatabaseLoad::Snapshot(snapshot));
+        }
+    }
+
+    let recovery = load_slot(&connection, BACKUP_SLOT)?;
     if let SlotLoad::Snapshot(snapshot) = &recovery {
         let decomposed = decompose_snapshot(snapshot)?;
         let transaction = connection.transaction().map_err(state_error)?;
-        write_current_snapshot(&transaction, &decomposed)?;
+        replace_slot_snapshot(&transaction, CURRENT_SLOT, &decomposed)?;
+        transaction
+            .execute("DELETE FROM pending_workspace_snapshot", [])
+            .map_err(state_error)?;
+        transaction
+            .execute("DELETE FROM pending_item_states", [])
+            .map_err(state_error)?;
         transaction.commit().map_err(state_error)?;
         return Ok(DatabaseLoad::Snapshot(snapshot.clone()));
     }
 
-    Ok(match (current, recovery) {
-        (SlotLoad::Empty, SlotLoad::Empty) => DatabaseLoad::Empty,
+    Ok(match (current, recovery, pending_valid) {
+        (SlotLoad::Empty, SlotLoad::Empty, true) => DatabaseLoad::Empty,
         _ => DatabaseLoad::Invalid,
     })
 }
@@ -652,6 +825,181 @@ fn load_recovery_snapshot(connection: &Connection) -> AppResult<SlotLoad> {
         return Ok(SlotLoad::Invalid);
     }
     Ok(SlotLoad::Snapshot(snapshot))
+}
+
+fn pending_generation_is_valid(connection: &Connection) -> AppResult<bool> {
+    let core = connection
+        .query_row(
+            "SELECT schema_version, core_json
+             FROM pending_workspace_snapshot WHERE id = 1",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(state_error)?;
+    if let Some((schema_version, core_json)) = core {
+        if core_json.len() > MAX_STATE_BYTES {
+            return Ok(false);
+        }
+        let root = match serde_json::from_str::<Value>(&core_json) {
+            Ok(Value::Object(root)) => root,
+            _ => return Ok(false),
+        };
+        if schema_version <= 0
+            || root.get("version").and_then(Value::as_i64) != Some(schema_version)
+            || root.contains_key("itemStates")
+        {
+            return Ok(false);
+        }
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT item_id, removed, ordinal, kind, item_version, state_json
+             FROM pending_item_states",
+        )
+        .map_err(state_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })
+        .map_err(state_error)?;
+    let mut count = 0usize;
+    for row in rows {
+        count += 1;
+        if count > MAX_ITEM_COUNT * 2 {
+            return Ok(false);
+        }
+        let (item_id, removed, ordinal, kind, version, state_json) = row.map_err(state_error)?;
+        if bounded_plain_string(&Value::String(item_id), MAX_ITEM_ID_BYTES).is_none() {
+            return Ok(false);
+        }
+        match (removed, ordinal, kind, version, state_json) {
+            (1, None, None, None, None) => {}
+            (0, Some(ordinal), Some(kind), Some(version), Some(state_json))
+                if ordinal >= 0
+                    && ordinal < MAX_ITEM_COUNT as i64
+                    && bounded_plain_string(&Value::String(kind.clone()), MAX_ITEM_KIND_BYTES)
+                        .is_some()
+                    && version > 0
+                    && state_json.len() <= MAX_ITEM_STATE_BYTES
+                    && serde_json::from_str::<Value>(&state_json).is_ok() => {}
+            _ => return Ok(false),
+        }
+    }
+    Ok(true)
+}
+
+fn clear_slot(transaction: &Transaction<'_>, slot: i64) -> AppResult<()> {
+    transaction
+        .execute("DELETE FROM item_states WHERE slot = ?1", params![slot])
+        .map_err(state_error)?;
+    transaction
+        .execute(
+            "DELETE FROM workspace_snapshots WHERE slot = ?1",
+            params![slot],
+        )
+        .map_err(state_error)?;
+    Ok(())
+}
+
+fn replace_slot_snapshot(
+    transaction: &Transaction<'_>,
+    slot: i64,
+    snapshot: &DecomposedSnapshot,
+) -> AppResult<()> {
+    clear_slot(transaction, slot)?;
+    transaction
+        .execute(
+            "INSERT INTO workspace_snapshots(slot, schema_version, core_json, saved_at_ms)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                slot,
+                snapshot.schema_version,
+                snapshot.core_json,
+                unix_time_millis()
+            ],
+        )
+        .map_err(state_error)?;
+    let mut statement = transaction
+        .prepare_cached(
+            "INSERT INTO item_states(slot, ordinal, item_id, kind, item_version, state_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )
+        .map_err(state_error)?;
+    for item in &snapshot.items {
+        statement
+            .execute(params![
+                slot,
+                item.ordinal,
+                item.item_id,
+                item.kind,
+                item.version,
+                item.state_json
+            ])
+            .map_err(state_error)?;
+    }
+    Ok(())
+}
+
+fn seed_pending_generation(transaction: &Transaction<'_>) -> AppResult<()> {
+    transaction
+        .execute("DELETE FROM pending_workspace_snapshot", [])
+        .map_err(state_error)?;
+    transaction
+        .execute("DELETE FROM pending_item_states", [])
+        .map_err(state_error)?;
+    transaction
+        .execute(
+            "INSERT INTO pending_workspace_snapshot(id, schema_version, core_json)
+             SELECT 1, current.schema_version, current.core_json
+             FROM workspace_snapshots AS current
+             LEFT JOIN workspace_snapshots AS backup ON backup.slot = ?2
+             WHERE current.slot = ?1
+               AND (backup.slot IS NULL
+                    OR current.schema_version IS NOT backup.schema_version
+                    OR current.core_json IS NOT backup.core_json)",
+            params![CURRENT_SLOT, BACKUP_SLOT],
+        )
+        .map_err(state_error)?;
+    transaction
+        .execute(
+            "INSERT INTO pending_item_states(
+                 item_id, removed, ordinal, kind, item_version, state_json
+             )
+             SELECT current.item_id, 0, current.ordinal, current.kind,
+                    current.item_version, current.state_json
+             FROM item_states AS current
+             LEFT JOIN item_states AS backup
+               ON backup.slot = ?2 AND backup.item_id = current.item_id
+             WHERE current.slot = ?1
+               AND (backup.item_id IS NULL
+                    OR current.ordinal IS NOT backup.ordinal
+                    OR current.kind IS NOT backup.kind
+                    OR current.item_version IS NOT backup.item_version
+                    OR current.state_json IS NOT backup.state_json)",
+            params![CURRENT_SLOT, BACKUP_SLOT],
+        )
+        .map_err(state_error)?;
+    transaction
+        .execute(
+            "INSERT INTO pending_item_states(item_id, removed)
+             SELECT backup.item_id, 1
+             FROM item_states AS backup
+             LEFT JOIN item_states AS current
+               ON current.slot = ?1 AND current.item_id = backup.item_id
+             WHERE backup.slot = ?2 AND current.item_id IS NULL",
+            params![CURRENT_SLOT, BACKUP_SLOT],
+        )
+        .map_err(state_error)?;
+    Ok(())
 }
 
 fn load_slot(connection: &Connection, slot: i64) -> AppResult<SlotLoad> {
@@ -811,7 +1159,7 @@ mod tests {
     }
 
     #[test]
-    fn each_commit_keeps_one_transactional_previous_good_snapshot_without_backup_rows() {
+    fn each_commit_keeps_previous_good_rows_and_only_journals_the_new_delta() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("state.sqlite3");
         let first = snapshot("first", "{}");
@@ -821,17 +1169,24 @@ mod tests {
 
         let connection = open_database(&path).unwrap();
         let current = expect_slot_snapshot(load_slot(&connection, CURRENT_SLOT).unwrap());
-        let recovery = expect_slot_snapshot(load_recovery_snapshot(&connection).unwrap());
+        let recovery = expect_slot_snapshot(load_slot(&connection, BACKUP_SLOT).unwrap());
         assert_eq!(theme(&current), "second");
         assert_eq!(theme(&recovery), "first");
-        let backup_item_rows: i64 = connection
+        let pending_core: String = connection
             .query_row(
-                "SELECT COUNT(*) FROM item_states WHERE slot = ?1",
-                params![BACKUP_SLOT],
+                "SELECT core_json FROM pending_workspace_snapshot WHERE id = 1",
+                [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(backup_item_rows, 0);
+        assert_eq!(
+            serde_json::from_str::<Value>(&pending_core).unwrap()["theme"],
+            "second"
+        );
+        assert!(matches!(
+            load_recovery_snapshot(&connection).unwrap(),
+            SlotLoad::Empty
+        ));
     }
 
     #[test]
@@ -851,15 +1206,18 @@ mod tests {
         ))
         .unwrap();
         let transaction = connection.transaction().unwrap();
-        assert_eq!(write_transaction(&transaction, &unchanged).unwrap(), (0, 0));
+        let delta = write_transaction(&transaction, &unchanged).unwrap();
+        assert!(delta.core_changed);
+        assert!(delta.changed_items.is_empty());
+        assert!(delta.removed_item_ids.is_empty());
         transaction.commit().unwrap();
 
         let without_item = decompose_snapshot(&snapshot("third", "{}")).unwrap();
         let transaction = connection.transaction().unwrap();
-        assert_eq!(
-            write_transaction(&transaction, &without_item).unwrap(),
-            (0, 1)
-        );
+        let delta = write_transaction(&transaction, &without_item).unwrap();
+        assert!(delta.core_changed);
+        assert!(delta.changed_items.is_empty());
+        assert_eq!(delta.removed_item_ids, ["editor"]);
         transaction.commit().unwrap();
         assert_eq!(
             theme(&expect_snapshot(load_database(&path).unwrap())),
@@ -893,6 +1251,33 @@ mod tests {
     }
 
     #[test]
+    fn future_application_state_cannot_be_saved_or_overwritten() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.sqlite3");
+        save_database(&path, &snapshot("safe", "{}")).unwrap();
+        let future = r#"{"version":8,"theme":"future","itemStates":{}}"#;
+
+        assert!(save_database(&path, future).is_err());
+        assert_eq!(
+            theme(&expect_snapshot(load_database(&path).unwrap())),
+            "safe"
+        );
+
+        let future_snapshot = decompose_snapshot(future).unwrap();
+        let mut connection = open_database(&path).unwrap();
+        let transaction = connection.transaction().unwrap();
+        replace_slot_snapshot(&transaction, CURRENT_SLOT, &future_snapshot).unwrap();
+        transaction.commit().unwrap();
+        drop(connection);
+
+        assert!(save_database(&path, &snapshot("downgrade", "{}")).is_err());
+        assert_eq!(
+            theme(&expect_snapshot(load_database(&path).unwrap())),
+            "future"
+        );
+    }
+
+    #[test]
     fn corrupt_current_is_repaired_from_recovery_before_the_next_save() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("state.sqlite3");
@@ -908,17 +1293,17 @@ mod tests {
             .unwrap();
         drop(connection);
         let loaded = expect_snapshot(load_database(&path).unwrap());
-        assert_eq!(theme(&loaded), "backup");
+        assert_eq!(theme(&loaded), "current");
 
         let connection = open_database(&path).unwrap();
         let repaired = expect_slot_snapshot(load_slot(&connection, CURRENT_SLOT).unwrap());
-        assert_eq!(theme(&repaired), "backup");
+        assert_eq!(theme(&repaired), "current");
         drop(connection);
 
         save_database(&path, &snapshot("next", "{}")).unwrap();
         let connection = open_database(&path).unwrap();
-        let recovery = expect_slot_snapshot(load_recovery_snapshot(&connection).unwrap());
-        assert_eq!(theme(&recovery), "backup");
+        let recovery = expect_slot_snapshot(load_slot(&connection, BACKUP_SLOT).unwrap());
+        assert_eq!(theme(&recovery), "current");
     }
 
     #[test]
@@ -964,7 +1349,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_one_backup_rows_migrate_to_the_recovery_blob() {
+    fn schema_one_backup_rows_migrate_to_the_incremental_journal() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("state.sqlite3");
         let mut connection = Connection::open(&path).unwrap();
@@ -1027,7 +1412,7 @@ mod tests {
             database_user_version(&path).unwrap(),
             DATABASE_SCHEMA_VERSION
         );
-        let recovery = expect_slot_snapshot(load_recovery_snapshot(&connection).unwrap());
+        let recovery = expect_slot_snapshot(load_slot(&connection, BACKUP_SLOT).unwrap());
         assert_eq!(theme(&recovery), "backup");
         assert_eq!(
             connection
@@ -1036,6 +1421,161 @@ mod tests {
                     params![BACKUP_SLOT],
                     |row| row.get::<_, i64>(0),
                 )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pending_workspace_snapshot",
+                    [],
+                    |row| { row.get::<_, i64>(0) }
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn schema_two_recovery_blob_migrates_to_recovery_rows_once() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.sqlite3");
+        let mut connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE workspace_snapshots (
+                     slot INTEGER PRIMARY KEY CHECK (slot IN (0, 1)),
+                     schema_version INTEGER NOT NULL,
+                     core_json TEXT NOT NULL,
+                     saved_at_ms INTEGER NOT NULL
+                 );
+                 CREATE TABLE item_states (
+                     slot INTEGER NOT NULL CHECK (slot IN (0, 1)),
+                     ordinal INTEGER NOT NULL,
+                     item_id TEXT NOT NULL,
+                     kind TEXT NOT NULL,
+                     item_version INTEGER NOT NULL,
+                     state_json TEXT NOT NULL,
+                     PRIMARY KEY (slot, item_id)
+                 );
+                 CREATE TABLE recovery_snapshots (
+                     id INTEGER PRIMARY KEY CHECK (id = 1),
+                     snapshot_json TEXT NOT NULL,
+                     saved_at_ms INTEGER NOT NULL
+                 );
+                 PRAGMA user_version = 2;",
+            )
+            .unwrap();
+        let current = decompose_snapshot(&snapshot("current", "{}")).unwrap();
+        let recovery = snapshot(
+            "recovery",
+            r#"{"editor":{"itemId":"editor","kind":"editor","version":1,"state":{"value":1}}}"#,
+        );
+        let transaction = connection.transaction().unwrap();
+        write_current_snapshot(&transaction, &current).unwrap();
+        transaction
+            .execute(
+                "INSERT INTO recovery_snapshots(id, snapshot_json, saved_at_ms)
+                 VALUES (1, ?1, 1)",
+                params![recovery],
+            )
+            .unwrap();
+        transaction.commit().unwrap();
+        drop(connection);
+
+        let connection = open_database(&path).unwrap();
+        let migrated = expect_slot_snapshot(load_slot(&connection, BACKUP_SLOT).unwrap());
+        assert_eq!(theme(&migrated), "recovery");
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM recovery_snapshots", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+        assert!(pending_generation_is_valid(&connection).unwrap());
+    }
+
+    #[test]
+    fn recovery_advances_only_the_previous_item_delta() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.sqlite3");
+        let first_items = r#"{
+            "a":{"itemId":"a","kind":"editor","version":1,"state":{"value":1}},
+            "b":{"itemId":"b","kind":"editor","version":1,"state":{"value":1}}
+        }"#;
+        let changed_a = r#"{
+            "a":{"itemId":"a","kind":"editor","version":1,"state":{"value":2}},
+            "b":{"itemId":"b","kind":"editor","version":1,"state":{"value":1}}
+        }"#;
+        let changed_b = r#"{
+            "a":{"itemId":"a","kind":"editor","version":1,"state":{"value":2}},
+            "b":{"itemId":"b","kind":"editor","version":1,"state":{"value":2}}
+        }"#;
+        save_database(&path, &snapshot("same", first_items)).unwrap();
+        save_database(&path, &snapshot("same", first_items)).unwrap();
+
+        let connection = open_database(&path).unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM pending_item_states", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+        drop(connection);
+
+        save_database(&path, &snapshot("same", changed_a)).unwrap();
+        let connection = open_database(&path).unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT item_id FROM pending_item_states", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .unwrap(),
+            "a"
+        );
+        let backup_before: String = connection
+            .query_row(
+                "SELECT state_json FROM item_states WHERE slot = ?1 AND item_id = 'a'",
+                params![BACKUP_SLOT],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&backup_before).unwrap()["value"],
+            1
+        );
+        drop(connection);
+
+        save_database(&path, &snapshot("same", changed_b)).unwrap();
+        let connection = open_database(&path).unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT item_id FROM pending_item_states", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .unwrap(),
+            "b"
+        );
+        let backup_after: String = connection
+            .query_row(
+                "SELECT state_json FROM item_states WHERE slot = ?1 AND item_id = 'a'",
+                params![BACKUP_SLOT],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&backup_after).unwrap()["value"],
+            2
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM recovery_snapshots", [], |row| {
+                    row.get::<_, i64>(0)
+                })
                 .unwrap(),
             0
         );
