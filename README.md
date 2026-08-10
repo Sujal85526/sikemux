@@ -22,7 +22,7 @@
 
 A project session bundles five views (`Files`, `Term`, `Git`, `Agents`, `Search`) over a single working directory.
 
-- **Code editor** — CodeMirror 6 with syntax for JS/TS/JSX, Python, Rust, Go, HTML, CSS, JSON, YAML, Markdown (+ legacy modes), inline **LSP** hover / go-to-definition / peek, git gutter, find & replace, indentation guides, and virtualized rendering for big files.
+- **Code editor** — CodeMirror 6 with syntax for JS/TS/JSX, Python, Rust, Go, HTML, CSS, JSON, YAML, Markdown (+ legacy modes), inline **LSP** hover / go-to-definition / peek, project-scoped **Problems** and **Outline**, git gutter, find & replace, indentation guides, and virtualized rendering for big files.
 - **Diff & merge** — side-by-side diff editor and a three-way merge review for conflict resolution.
 - **File tree** — live filesystem watchers (no drift), create / rename / delete, and native drag-and-drop to move files or drop them in from Finder.
 
@@ -33,9 +33,47 @@ A project session bundles five views (`Files`, `Term`, `Git`, `Agents`, `Search`
 </tr>
 <tr>
 <td align="center"><b>Integrated terminal</b> — xterm.js with gated WebGL acceleration, real PTYs via Rust, split panes, tabs, drag-drop paths.</td>
-<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, plus local-CLI-powered commit messages.</td>
+<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, local-CLI-powered commit messages, and namespaced agent checkpoints that can be reviewed or forked into worktrees.</td>
 </tr>
 </table>
+
+### ⚙️ Project actions, tasks & previews
+
+Projects can check in a bounded `sikemux.json` file. Its actions and tasks appear in the command deck (`⌘⇧P` on macOS, `Ctrl+Shift+P` on Windows), and actions can declare contextual keyboard shortcuts. Executable project configuration is never trusted silently: Sikemux shows what can run, remembers approval only for the current process, and asks again whenever the file content changes.
+
+```json
+{
+  "version": 1,
+  "actions": [
+    {
+      "id": "quality",
+      "label": "Run quality checks",
+      "description": "Format, lint and test",
+      "command": "pnpm check",
+      "placement": "terminal",
+      "contexts": ["project"],
+      "keybinding": "Meta+Shift+KeyT"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "dev",
+      "label": "Development server",
+      "command": "pnpm dev",
+      "cwd": ".",
+      "env": { "NODE_ENV": "development" }
+    }
+  ],
+  "preview": {
+    "url": "http://localhost:5173",
+    "command": "pnpm dev"
+  }
+}
+```
+
+Project bindings use physical key codes (`Meta` on macOS, normally `Ctrl` on Windows). The `env` object is part of the checked-in file, so use it for ordinary task configuration—not secrets.
+
+Tasks run in exact, runtime-owned native PTYs rather than a second renderer-owned process. Their terminal views can detach and reattach without killing the task; restart and stop are generation-safe, and Stop remains available even if the configuration is removed or becomes invalid while a task is running. Task environment values stay out of persisted terminal state and diagnostics.
 
 ### 🤖 AI coding agents
 
@@ -102,7 +140,7 @@ Sikemux-owned terminals identify themselves with `TERM_PROGRAM=Sikemux`, `SIKEMU
 
 ### 🔄 And the glue
 
-Tiling pane splits with vim-style focus movement, fuzzy session picker, live update notifications via the built-in **auto-updater**, and persisted layout across restarts.
+Tiling pane splits with vim-style focus movement, fuzzy session picker, bounded back/forward editor navigation, live update notifications via the built-in **auto-updater**, and transactional persisted layout across restarts. Local shells can report their current directory, command phase and last exit status through bounded shell integration without modifying dotfiles. Runtime diagnostics combine redacted browser/native traces, latency percentiles, subsystem counts and an OS-thread watchdog that can preserve evidence while the WebView is stalled.
 
 ## Keyboard shortcuts
 
@@ -118,6 +156,7 @@ These are the defaults. Every command can be reassigned or cleared in **Settings
 | `⌥1`–`⌥5` | Files / Term / Git / Agents / Search |     | `⌥Tab` / `⌥⇧Tab` | Cycle session / group     |
 | `⌥[` `⌥]` | Prev / next window                   |     | `⌥Y`             | Toggle agent YOLO mode    |
 | `⌘P`      | File / request palette               |     | `⌘⇧F`            | Global search             |
+| `⌘⇧P`     | Command deck                         |     | `⌥U`             | Last-used session         |
 | `⌘,`      | Settings                             |     | `⌥T`             | Focus command terminal    |
 
 On Windows, use `Ctrl` for `⌘` shortcuts and `Alt` for `⌥` shortcuts.
