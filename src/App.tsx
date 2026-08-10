@@ -43,11 +43,32 @@ import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
 import { workbenchRuntime } from "./workbench/runtime";
 import { appTaskRuntime, clearActiveProjectTasks, getAppTaskSnapshot, replaceActiveProjectTasks, subscribeAppTasks } from "./tasks/application";
+import type { ResolvedTaskDefinition, TaskControllerSnapshot } from "./tasks/taskRegistry";
 
 interface BootInfo {
     home: string;
     state: string;
     recent: string[];
+}
+
+export interface ActiveTaskControls {
+    readonly canStop: boolean;
+    readonly restartTaskId: string | null;
+}
+
+/**
+ * Process ownership outlives task discovery. In particular, invalidating or
+ * deleting sikemux.json must not hide the only control capable of stopping its
+ * already-running PTY. Restart is stricter: it is available only while the
+ * last task still resolves through the current trusted project inventory.
+ */
+export function activeTaskControls(snapshot: TaskControllerSnapshot | null, currentTasks: readonly ResolvedTaskDefinition[]): ActiveTaskControls {
+    if (!snapshot || snapshot.disposed) return Object.freeze({ canStop: false, restartTaskId: null });
+    const restartTaskId = snapshot.task && currentTasks.some((task) => task.id === snapshot.task!.id) ? snapshot.task.id : null;
+    return Object.freeze({
+        canStop: snapshot.activeRunId !== null,
+        restartTaskId,
+    });
 }
 
 interface TreeDropTarget {
@@ -216,53 +237,59 @@ export default function App() {
             ),
         });
     }
+    const currentProjectTasks =
+        projectConfig?.status === "valid"
+            ? taskRegistrySnapshot.tasks.filter((task) => task.project === activeProjectCwd && task.source === "project")
+            : [];
     const taskCommands: StandaloneCommand[] =
         projectConfig?.status === "valid"
-            ? taskRegistrySnapshot.tasks
-                  .filter((task) => task.project === activeProjectCwd && task.source === "project")
-                  .map((task) => ({
-                      id: `task.run.${task.id}`,
-                      title: task.label,
-                      detail: `Run task from ${task.cwd}`,
-                      category: "Tasks",
-                      execute: runStandalone(`task.run.${task.id}`, () => {
-                          if (!trustProjectConfig(projectConfig)) return;
-                          const snapshot = appTaskRuntime.getSnapshot(activeProjectCwd);
-                          const operation =
-                              snapshot?.status === "running" || snapshot?.status === "stopping"
-                                  ? appTaskRuntime.restart(activeProjectCwd, task.id)
-                                  : appTaskRuntime.run(activeProjectCwd, task.id);
-                          void operation.then(() => notify("success", `Started task: ${task.label}`)).catch(reportError(`start task ${task.label}`));
-                      }),
-                  }))
+            ? currentProjectTasks.map((task) => ({
+                  id: `task.run.${task.id}`,
+                  title: task.label,
+                  detail: `Run task from ${task.cwd}`,
+                  category: "Tasks",
+                  execute: runStandalone(`task.run.${task.id}`, () => {
+                      if (!trustProjectConfig(projectConfig)) return;
+                      const snapshot = appTaskRuntime.getSnapshot(activeProjectCwd);
+                      const operation =
+                          snapshot?.status === "running" || snapshot?.status === "stopping"
+                              ? appTaskRuntime.restart(activeProjectCwd, task.id)
+                              : appTaskRuntime.run(activeProjectCwd, task.id);
+                      void operation.then(() => notify("success", `Started task: ${task.label}`)).catch(reportError(`start task ${task.label}`));
+                  }),
+              }))
             : [];
-    if (activeProjectCwd && taskCommands.length > 0) {
-        taskCommands.push(
-            {
-                id: "task.restart-active",
-                title: "Restart active task",
-                detail: "Stop the current project task and start it again",
-                category: "Tasks",
-                execute: runStandalone("task.restart-active", () => {
-                    void appTaskRuntime
-                        .restart(activeProjectCwd)
-                        .then(() => notify("success", "Restarted active task"))
-                        .catch(reportError("restart active task"));
-                }),
-            },
-            {
-                id: "task.stop-active",
-                title: "Stop active task",
-                detail: "Stop only the exact PTY owned by the current project task",
-                category: "Tasks",
-                execute: runStandalone("task.stop-active", () => {
-                    void appTaskRuntime
-                        .stop(activeProjectCwd)
-                        .then(() => notify("success", "Stopped active task"))
-                        .catch(reportError("stop active task"));
-                }),
-            },
-        );
+    const taskRuntimeSnapshot = activeProjectCwd ? appTaskRuntime.getSnapshot(activeProjectCwd) : null;
+    const taskControls = activeTaskControls(taskRuntimeSnapshot, currentProjectTasks);
+    if (activeProjectCwd && taskControls.restartTaskId) {
+        const restartTaskId = taskControls.restartTaskId;
+        taskCommands.push({
+            id: "task.restart-active",
+            title: "Restart active task",
+            detail: "Stop the current project task and start its current trusted definition",
+            category: "Tasks",
+            execute: runStandalone("task.restart-active", () => {
+                if (projectConfig?.status !== "valid" || !trustProjectConfig(projectConfig)) return;
+                void appTaskRuntime
+                    .restart(activeProjectCwd, restartTaskId)
+                    .then(() => notify("success", "Restarted active task"))
+                    .catch(reportError("restart active task"));
+            }),
+        });
+    }
+    if (activeProjectCwd && taskControls.canStop) {
+        taskCommands.push({
+            id: "task.stop-active",
+            title: "Stop active task",
+            detail: "Stop only the exact PTY owned by the current project task",
+            category: "Tasks",
+            execute: runStandalone("task.stop-active", () => {
+                void appTaskRuntime
+                    .stop(activeProjectCwd)
+                    .then(() => notify("success", "Stopped active task"))
+                    .catch(reportError("stop active task"));
+            }),
+        });
     }
     const worktreeCommands: StandaloneCommand[] = activeWorktrees
         .filter((worktree) => !worktree.bare)
