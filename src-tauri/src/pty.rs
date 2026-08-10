@@ -40,7 +40,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
@@ -76,6 +76,7 @@ fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
 /// — see `pty_spawn` for how the lone dup keeps the child's controlling
 /// terminal alive after portable_pty's `MasterPty` is dropped.
 struct Pty {
+    id: u32,
     app: AppHandle,
     /// The PTY master as one non-blocking fd, servicing both directions.
     /// Resize is an ioctl straight on this fd (see `pty_resize`).
@@ -122,6 +123,10 @@ struct Pty {
     /// settled detection edge-triggered instead of a perpetual 4 Hz rescan.
     activity_revision: AtomicU64,
     last_detection_fingerprint: AtomicU64,
+    /// Keeps any per-process shell startup files alive for exactly as long as
+    /// the PTY. `TempDir` removes them automatically; user dotfiles are never
+    /// written or replaced.
+    _shell_integration: Option<ShellLaunchIntegration>,
 }
 
 /// All live PTYs, keyed by an id handed back to the frontend.
@@ -354,9 +359,365 @@ const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
 #[cfg(unix)]
 const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
 
+/// Stable frontend event for opt-in local shell metadata. The terminal byte
+/// stream remains untouched; this is a second, typed signal derived from it.
+pub const PTY_SHELL_METADATA_EVENT: &str = "pty_shell_metadata";
+const MAX_SHELL_OSC_BYTES: usize = 8 * 1024;
+const MAX_SHELL_PATH_BYTES: usize = 4 * 1024;
+const MAX_SHELL_EXIT_CODE_BYTES: usize = 11;
+const SHELL_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellPhase {
+    #[default]
+    Unknown,
+    Prompt,
+    Input,
+    Running,
+    Finished,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellMetadataSnapshot {
+    pub revision: u64,
+    pub cwd: Option<String>,
+    pub phase: ShellPhase,
+    pub last_exit_code: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ShellBoundary {
+    Cwd,
+    PromptStart,
+    CommandStart,
+    CommandExecuted,
+    CommandFinished,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ShellProtocolUpdate {
+    boundary: ShellBoundary,
+    metadata: ShellMetadataSnapshot,
+}
+
+#[derive(Default)]
+struct ShellProtocolBatch {
+    latest: Option<ShellProtocolUpdate>,
+    coalesced: usize,
+    dropped: usize,
+}
+
+impl ShellProtocolBatch {
+    fn push(&mut self, update: ShellProtocolUpdate) {
+        if self.latest.replace(update).is_some() {
+            self.coalesced = self.coalesced.saturating_add(1);
+        }
+    }
+}
+
+#[derive(Default)]
+struct ShellEventCoalescer {
+    last_emitted_ms: Option<u64>,
+    pending: Option<ShellProtocolUpdate>,
+}
+
+struct ShellEventDecision {
+    ready: Option<ShellProtocolUpdate>,
+    replaced_pending: bool,
+}
+
+impl ShellEventCoalescer {
+    fn submit(&mut self, now_ms: u64, update: ShellProtocolUpdate) -> ShellEventDecision {
+        let replaced_pending = self.pending.replace(update).is_some();
+        ShellEventDecision {
+            ready: self.take_due(now_ms),
+            replaced_pending,
+        }
+    }
+
+    fn take_due(&mut self, now_ms: u64) -> Option<ShellProtocolUpdate> {
+        let due = self.last_emitted_ms.is_none_or(|last| {
+            now_ms.saturating_sub(last) >= SHELL_EVENT_MIN_INTERVAL.as_millis() as u64
+        });
+        if !due {
+            return None;
+        }
+        let ready = self.pending.take()?;
+        self.last_emitted_ms = Some(now_ms);
+        Some(ready)
+    }
+}
+
+#[derive(Default)]
+struct ShellProtocolOutput {
+    ready: Option<ShellProtocolUpdate>,
+    coalesced: usize,
+    dropped: usize,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtyShellMetadataEvent {
+    pty_id: u32,
+    revision: u64,
+    boundary: ShellBoundary,
+    cwd: Option<String>,
+    phase: ShellPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
+}
+
+impl PtyShellMetadataEvent {
+    fn from_update(pty_id: u32, update: ShellProtocolUpdate) -> Self {
+        let exit_code = (update.boundary == ShellBoundary::CommandFinished)
+            .then_some(update.metadata.last_exit_code)
+            .flatten();
+        Self {
+            pty_id,
+            revision: update.metadata.revision,
+            boundary: update.boundary,
+            cwd: update.metadata.cwd,
+            phase: update.metadata.phase,
+            exit_code,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum ShellScanState {
+    #[default]
+    Ground,
+    Escape,
+    Osc,
+    OscEscape,
+}
+
+enum ShellSignal {
+    Cwd(String),
+    Boundary(ShellBoundary, ShellPhase, Option<i32>),
+}
+
+struct ShellProtocolParser {
+    scan_state: ShellScanState,
+    osc: Vec<u8>,
+    osc_overflowed: bool,
+    metadata: ShellMetadataSnapshot,
+    events: ShellEventCoalescer,
+}
+
+impl Default for ShellProtocolParser {
+    fn default() -> Self {
+        Self {
+            scan_state: ShellScanState::Ground,
+            osc: Vec::with_capacity(256),
+            osc_overflowed: false,
+            metadata: ShellMetadataSnapshot {
+                revision: 0,
+                cwd: None,
+                phase: ShellPhase::Unknown,
+                last_exit_code: None,
+            },
+            events: ShellEventCoalescer::default(),
+        }
+    }
+}
+
+impl ShellProtocolParser {
+    fn snapshot(&self) -> ShellMetadataSnapshot {
+        self.metadata.clone()
+    }
+
+    fn process(&mut self, bytes: &[u8]) -> ShellProtocolBatch {
+        let mut batch = ShellProtocolBatch::default();
+        for &byte in bytes {
+            match self.scan_state {
+                ShellScanState::Ground => {
+                    if byte == b'\x1b' {
+                        self.scan_state = ShellScanState::Escape;
+                    }
+                }
+                ShellScanState::Escape => {
+                    if byte == b']' {
+                        self.osc.clear();
+                        self.osc_overflowed = false;
+                        self.scan_state = ShellScanState::Osc;
+                    } else if byte != b'\x1b' {
+                        self.scan_state = ShellScanState::Ground;
+                    }
+                }
+                ShellScanState::Osc => match byte {
+                    b'\x07' => self.finish_osc(&mut batch),
+                    b'\x1b' => self.scan_state = ShellScanState::OscEscape,
+                    _ => self.push_osc_byte(byte),
+                },
+                ShellScanState::OscEscape => match byte {
+                    b'\\' | b'\x07' => self.finish_osc(&mut batch),
+                    b'\x1b' => {
+                        self.push_osc_byte(b'\x1b');
+                    }
+                    _ => {
+                        self.push_osc_byte(b'\x1b');
+                        self.push_osc_byte(byte);
+                        self.scan_state = ShellScanState::Osc;
+                    }
+                },
+            }
+        }
+        batch
+    }
+
+    fn process_for_events(&mut self, bytes: &[u8], now_ms: u64) -> ShellProtocolOutput {
+        let mut batch = self.process(bytes);
+        let Some(latest) = batch.latest.take() else {
+            return ShellProtocolOutput {
+                ready: self.events.take_due(now_ms),
+                coalesced: batch.coalesced,
+                dropped: batch.dropped,
+            };
+        };
+        let decision = self.events.submit(now_ms, latest);
+        ShellProtocolOutput {
+            ready: decision.ready,
+            coalesced: batch
+                .coalesced
+                .saturating_add(usize::from(decision.replaced_pending)),
+            dropped: batch.dropped,
+        }
+    }
+
+    fn take_due_event(&mut self, now_ms: u64) -> Option<ShellProtocolUpdate> {
+        self.events.take_due(now_ms)
+    }
+
+    fn push_osc_byte(&mut self, byte: u8) {
+        if self.osc.len() < MAX_SHELL_OSC_BYTES {
+            self.osc.push(byte);
+        } else {
+            self.osc_overflowed = true;
+        }
+    }
+
+    fn finish_osc(&mut self, batch: &mut ShellProtocolBatch) {
+        if self.osc_overflowed {
+            batch.dropped = batch.dropped.saturating_add(1);
+        } else if let Some(signal) = parse_shell_signal(&self.osc) {
+            self.apply_signal(signal, batch);
+        }
+        self.osc.clear();
+        self.osc_overflowed = false;
+        self.scan_state = ShellScanState::Ground;
+    }
+
+    fn apply_signal(&mut self, signal: ShellSignal, batch: &mut ShellProtocolBatch) {
+        let boundary = match signal {
+            ShellSignal::Cwd(cwd) => {
+                if self.metadata.cwd.as_deref() == Some(cwd.as_str()) {
+                    return;
+                }
+                self.metadata.cwd = Some(cwd);
+                ShellBoundary::Cwd
+            }
+            ShellSignal::Boundary(boundary, phase, exit_code) => {
+                self.metadata.phase = phase;
+                if boundary == ShellBoundary::CommandFinished {
+                    self.metadata.last_exit_code = exit_code;
+                }
+                boundary
+            }
+        };
+        self.metadata.revision = self.metadata.revision.saturating_add(1);
+        let update = ShellProtocolUpdate {
+            boundary,
+            metadata: self.metadata.clone(),
+        };
+        batch.push(update);
+    }
+}
+
+fn parse_shell_signal(payload: &[u8]) -> Option<ShellSignal> {
+    if let Some(uri) = payload.strip_prefix(b"7;") {
+        return parse_shell_cwd(uri).map(ShellSignal::Cwd);
+    }
+    let payload = payload.strip_prefix(b"133;")?;
+    let mut fields = payload.split(|byte| *byte == b';');
+    let marker = fields.next()?;
+    match marker {
+        b"A" => Some(ShellSignal::Boundary(
+            ShellBoundary::PromptStart,
+            ShellPhase::Prompt,
+            None,
+        )),
+        b"B" => Some(ShellSignal::Boundary(
+            ShellBoundary::CommandStart,
+            ShellPhase::Input,
+            None,
+        )),
+        b"C" => Some(ShellSignal::Boundary(
+            ShellBoundary::CommandExecuted,
+            ShellPhase::Running,
+            None,
+        )),
+        b"D" => {
+            let exit_code = fields.next().and_then(parse_shell_exit_code);
+            Some(ShellSignal::Boundary(
+                ShellBoundary::CommandFinished,
+                ShellPhase::Finished,
+                exit_code,
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn parse_shell_exit_code(value: &[u8]) -> Option<i32> {
+    if value.is_empty() || value.len() > MAX_SHELL_EXIT_CODE_BYTES {
+        return None;
+    }
+    std::str::from_utf8(value).ok()?.parse().ok()
+}
+
+fn parse_shell_cwd(uri: &[u8]) -> Option<String> {
+    if uri.is_empty()
+        || uri.len() > MAX_SHELL_OSC_BYTES
+        || uri.iter().any(|byte| byte.is_ascii_control())
+    {
+        return None;
+    }
+    let uri = std::str::from_utf8(uri).ok()?;
+    let url = url::Url::parse(uri).ok()?;
+    if url.scheme() != "file"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return None;
+    }
+    if url
+        .host_str()
+        .is_some_and(|host| !host.eq_ignore_ascii_case("localhost"))
+    {
+        return None;
+    }
+    let path = url.to_file_path().ok()?;
+    if !path.is_absolute() {
+        return None;
+    }
+    let raw = path.to_string_lossy();
+    if raw.is_empty() || raw.len() > MAX_SHELL_PATH_BYTES || raw.chars().any(char::is_control) {
+        return None;
+    }
+    Some(raw.into_owned())
+}
+
 #[derive(Default)]
 struct SemanticCallbacks {
     window_title: String,
+    shell: Option<ShellProtocolParser>,
 }
 
 impl vt100::Callbacks for SemanticCallbacks {
@@ -372,9 +733,28 @@ impl vt100::Callbacks for SemanticCallbacks {
 }
 
 type SemanticParser = vt100::Parser<SemanticCallbacks>;
+type SubscriberSnapshot = Vec<(u32, Channel<Vec<u8>>)>;
 
+#[cfg(test)]
 fn semantic_parser(rows: u16, cols: u16, scrollback: usize) -> SemanticParser {
-    SemanticParser::new_with_callbacks(rows, cols, scrollback, SemanticCallbacks::default())
+    semantic_parser_with_shell(rows, cols, scrollback, false)
+}
+
+fn semantic_parser_with_shell(
+    rows: u16,
+    cols: u16,
+    scrollback: usize,
+    enabled: bool,
+) -> SemanticParser {
+    SemanticParser::new_with_callbacks(
+        rows,
+        cols,
+        scrollback,
+        SemanticCallbacks {
+            window_title: String::new(),
+            shell: enabled.then(ShellProtocolParser::default),
+        },
+    )
 }
 
 fn semantic_fingerprint(revision: u64, screen: &str, title: &str) -> u64 {
@@ -697,6 +1077,19 @@ fn ensure_sweeper(app: AppHandle) {
             let now = now_ms();
             for entry in mgr.ptys.iter() {
                 let pty = entry.value();
+                // A quiet prompt may leave one coalesced update after its last
+                // output chunk. Flush it from the existing bounded sweeper so
+                // rate limiting never means "latest state is never emitted".
+                let shell_update = pty.parser.lock().ok().and_then(|mut parser| {
+                    parser
+                        .callbacks_mut()
+                        .shell
+                        .as_mut()
+                        .and_then(|shell| shell.take_due_event(now))
+                });
+                if let Some(update) = shell_update {
+                    publish_shell_metadata(pty, update);
+                }
                 if !pty.activity_armed.load(Ordering::Acquire)
                     || now.saturating_sub(pty.last_activity_ms.load(Ordering::Relaxed))
                         < ACTIVITY_SETTLE.as_millis() as u64
@@ -849,6 +1242,19 @@ fn ensure_sweeper(app: AppHandle) {
 /// Update the headless terminal and fan one output chunk to live subscribers.
 /// Both Unix's readiness task and Windows' ConPTY reader thread share this
 /// path, preserving the snapshot/subscription ordering invariant.
+fn publish_shell_metadata(pty: &Pty, update: ShellProtocolUpdate) {
+    if pty
+        .app
+        .emit(
+            PTY_SHELL_METADATA_EVENT,
+            PtyShellMetadataEvent::from_update(pty.id, update),
+        )
+        .is_err()
+    {
+        let _ = global_observability().increment_counter("pty.shell_protocol.emit_errors", 1);
+    }
+}
+
 fn broadcast_output(pty: &Pty, bytes: &[u8]) {
     let observer = global_observability();
     let mut metadata = Metadata::new();
@@ -857,9 +1263,10 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
         observer.slow_operation("pty.broadcast", Duration::from_millis(8), None, metadata);
     OUTPUT_BROADCASTS.fetch_add(1, Ordering::Relaxed);
     OUTPUT_BYTES.fetch_add(bytes.len() as u64, Ordering::Relaxed);
-    pty.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    let output_now_ms = now_ms();
+    pty.last_activity_ms.store(output_now_ms, Ordering::Relaxed);
     note_agent_output(pty);
-    let snapshot: Vec<(u32, Channel<Vec<u8>>)> = {
+    let (snapshot, shell_output): (SubscriberSnapshot, ShellProtocolOutput) = {
         let parser_started = Instant::now();
         let Ok(mut parser) = pty.parser.lock() else {
             let _ = observer.increment_counter("pty.parser.lock_errors", 1);
@@ -869,14 +1276,37 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
         if pty.trimmed.swap(false, Ordering::AcqRel) {
             reseed_parser(&mut parser, PARSER_SCROLLBACK);
         }
+        // This bounded side parser observes OSC 7/133 without filtering or
+        // rewriting output. The vt100 model and every attached xterm still
+        // receive the original byte slice verbatim.
+        let shell_batch = parser
+            .callbacks_mut()
+            .shell
+            .as_mut()
+            .map(|shell| shell.process_for_events(bytes, output_now_ms))
+            .unwrap_or_default();
         parser.process(bytes);
         observer.observe_latency("pty.parser", parser_started.elapsed());
         pty.activity_revision.fetch_add(1, Ordering::AcqRel);
-        match pty.subscribers.lock() {
+        let subscribers = match pty.subscribers.lock() {
             Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
             Err(_) => Vec::new(),
-        }
+        };
+        (subscribers, shell_batch)
     };
+    if shell_output.coalesced > 0 {
+        let _ = observer.increment_counter(
+            "pty.shell_protocol.coalesced",
+            shell_output.coalesced as u64,
+        );
+    }
+    if shell_output.dropped > 0 {
+        let _ =
+            observer.increment_counter("pty.shell_protocol.dropped", shell_output.dropped as u64);
+    }
+    if let Some(update) = shell_output.ready {
+        publish_shell_metadata(pty, update);
+    }
     if snapshot.is_empty() {
         operation.finish(SpanOutcome::Success);
         return;
@@ -954,6 +1384,10 @@ pub struct PtyContext {
     agent_type: Option<String>,
     #[serde(default)]
     initial_prompt_submitted: bool,
+    /// Explicit opt-in. Absent/false preserves the exact historical shell
+    /// launch path and performs no startup-file or argv injection.
+    #[serde(default)]
+    shell_integration: bool,
 }
 
 const OPTIONAL_PTY_ENV: &[&str] = &[
@@ -968,6 +1402,12 @@ const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_AGENT_TYPE",
     "SIKEMUX_BIN_PATH",
     "SIKEMUX_CLI_ENDPOINT",
+    "SIKEMUX_SHELL_INTEGRATION",
+    "SIKEMUX_ORIGINAL_ZDOTDIR",
+    "SIKEMUX_ORIGINAL_ZDOTDIR_SET",
+    "SIKEMUX_TEMP_ZDOTDIR",
+    "SIKEMUX_ORIGINAL_XDG_CONFIG_HOME",
+    "SIKEMUX_ORIGINAL_FISH_CONFIG",
     "CODEX_THREAD_ID",
 ];
 
@@ -1048,6 +1488,299 @@ fn configure_pty_environment(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShellKind {
+    Zsh,
+    Bash,
+    Fish,
+    PowerShell,
+}
+
+/// Lifetime guard for startup files. Fish and PowerShell use argv hooks and
+/// therefore have no directory, but still return a guard to mark parsing active.
+struct ShellLaunchIntegration {
+    _files: Option<tempfile::TempDir>,
+}
+
+const ZSH_ENV_INTEGRATION: &str = r#"# Sikemux ephemeral zsh startup forwarder.
+typeset -g __sikemux_temp_zdotdir="$ZDOTDIR"
+typeset -g __sikemux_effective_zdotdir="${SIKEMUX_ORIGINAL_ZDOTDIR:-$HOME}"
+typeset -g __sikemux_effective_zdotdir_set="${SIKEMUX_ORIGINAL_ZDOTDIR_SET:-0}"
+function __sikemux_source_startup_file {
+  local startup_file="$1"
+  local startup_root="$__sikemux_effective_zdotdir"
+  if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
+    ZDOTDIR="$startup_root"
+  else
+    unset ZDOTDIR
+  fi
+  [[ -n "$startup_root" && -r "$startup_root/$startup_file" ]] && source "$startup_root/$startup_file"
+  if (( ${+ZDOTDIR} )); then
+    __sikemux_effective_zdotdir="$ZDOTDIR"
+    __sikemux_effective_zdotdir_set=1
+  else
+    __sikemux_effective_zdotdir="$HOME"
+    __sikemux_effective_zdotdir_set=0
+  fi
+}
+__sikemux_source_startup_file .zshenv
+if [[ -o RCS ]]; then
+  ZDOTDIR="$__sikemux_temp_zdotdir"
+else
+  if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
+    ZDOTDIR="$__sikemux_effective_zdotdir"
+  else
+    unset ZDOTDIR
+  fi
+  unfunction __sikemux_source_startup_file
+  unset __sikemux_temp_zdotdir __sikemux_effective_zdotdir __sikemux_effective_zdotdir_set
+  unset SIKEMUX_ORIGINAL_ZDOTDIR SIKEMUX_ORIGINAL_ZDOTDIR_SET SIKEMUX_TEMP_ZDOTDIR
+fi
+"#;
+
+const ZSH_PROFILE_INTEGRATION: &str = r#"# Sikemux ephemeral zsh startup forwarder.
+__sikemux_source_startup_file .zprofile
+if [[ -o RCS ]]; then
+  ZDOTDIR="$__sikemux_temp_zdotdir"
+else
+  if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
+    ZDOTDIR="$__sikemux_effective_zdotdir"
+  else
+    unset ZDOTDIR
+  fi
+  unfunction __sikemux_source_startup_file
+  unset __sikemux_temp_zdotdir __sikemux_effective_zdotdir __sikemux_effective_zdotdir_set
+  unset SIKEMUX_ORIGINAL_ZDOTDIR SIKEMUX_ORIGINAL_ZDOTDIR_SET SIKEMUX_TEMP_ZDOTDIR
+fi
+"#;
+
+const ZSH_INTEGRATION: &str = r#"# Sikemux ephemeral zsh integration; generated per PTY.
+__sikemux_source_startup_file .zshrc
+# Restore the effective user value before zsh evaluates .zlogin; .zlogout and
+# any later `source` operations therefore use the same path as an ordinary zsh.
+if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
+  ZDOTDIR="$__sikemux_effective_zdotdir"
+else
+  unset ZDOTDIR
+fi
+unfunction __sikemux_source_startup_file
+unset __sikemux_temp_zdotdir __sikemux_effective_zdotdir __sikemux_effective_zdotdir_set
+unset SIKEMUX_ORIGINAL_ZDOTDIR SIKEMUX_ORIGINAL_ZDOTDIR_SET SIKEMUX_TEMP_ZDOTDIR
+
+autoload -Uz add-zsh-hook
+function __sikemux_emit_cwd {
+  local path="${PWD//[[:cntrl:]]/}"
+  path="${path//\%/%25}"
+  path="${path//\\/%5C}"
+  path="${path// /%20}"
+  path="${path//\#/%23}"
+  path="${path//\?/%3F}"
+  builtin printf '\e]7;file://localhost%s\a' "$path"
+}
+function __sikemux_precmd {
+  local command_status=$?
+  builtin printf '\e]133;D;%d\a' "$command_status"
+  __sikemux_emit_cwd
+  builtin printf '\e]133;A\a'
+  return "$command_status"
+}
+function __sikemux_preexec {
+  builtin printf '\e]133;B\a\e]133;C\a'
+}
+add-zsh-hook precmd __sikemux_precmd
+add-zsh-hook preexec __sikemux_preexec
+"#;
+
+const BASH_INTEGRATION: &str = r#"# Sikemux ephemeral shell integration; generated per PTY.
+[[ -r "$HOME/.bashrc" ]] && source "$HOME/.bashrc"
+
+__sikemux_emit_cwd() {
+  local path="${PWD//[[:cntrl:]]/}"
+  path="${path//%/%25}"
+  path="${path//\\/%5C}"
+  path="${path// /%20}"
+  path="${path//#/%23}"
+  path="${path//\?/%3F}"
+  builtin printf '\e]7;file://localhost%s\a' "$path"
+}
+__sikemux_prompt() {
+  local command_status=$?
+  builtin printf '\e]133;D;%d\a' "$command_status"
+  __sikemux_emit_cwd
+  builtin printf '\e]133;A\a'
+  return "$command_status"
+}
+case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+  "declare -a"*) PROMPT_COMMAND=(__sikemux_prompt "${PROMPT_COMMAND[@]}") ;;
+  *) PROMPT_COMMAND="__sikemux_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+esac
+if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then
+  PS0="${PS0-}"$'\e]133;B\a\e]133;C\a'
+else
+  PS1="${PS1-}"'\[\e]133;B\a\]'
+fi
+"#;
+
+const FISH_INTEGRATION: &str = r#"# Sikemux post-config init command; no config paths are replaced.
+function __sikemux_emit_cwd
+    set -l path (string replace -ar '[[:cntrl:]]' '' -- "$PWD")
+    set path (string replace -a '%' '%25' -- "$path")
+    set path (string replace -a '\\' '%5C' -- "$path")
+    set path (string replace -a ' ' '%20' -- "$path")
+    set path (string replace -a '#' '%23' -- "$path")
+    set path (string replace -a '?' '%3F' -- "$path")
+    printf '\e]7;file://localhost%s\a' "$path"
+end
+function __sikemux_prompt --on-event fish_prompt
+    set -l command_status $status
+    __sikemux_emit_cwd
+    printf '\e]133;A\a'
+    return $command_status
+end
+function __sikemux_preexec --on-event fish_preexec
+    printf '\e]133;B\a\e]133;C\a'
+end
+function __sikemux_postexec --on-event fish_postexec
+    set -l command_status $status
+    printf '\e]133;D;%d\a' $command_status
+    return $command_status
+end
+"#;
+
+const POWERSHELL_INTEGRATION: &str = r#"$global:__sikemux_original_prompt = $function:global:prompt
+if ($null -eq $global:__sikemux_original_prompt) {
+    $global:__sikemux_original_prompt = { "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> " }
+}
+function global:prompt {
+    $sikemux_ok = $?
+    $sikemux_text = & $global:__sikemux_original_prompt
+    $sikemux_code = if ($sikemux_ok) { 0 } else { 1 }
+    [Console]::Write("$([char]27)]133;D;$sikemux_code$([char]7)")
+    try {
+        $sikemux_path = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.Path
+        $sikemux_encoded = [Uri]::EscapeDataString([string]$sikemux_path).Replace('%2F', '/').Replace('%5C', '/')
+        if (-not $sikemux_encoded.StartsWith('/')) { $sikemux_encoded = '/' + $sikemux_encoded }
+        [Console]::Write("$([char]27)]7;file://localhost$sikemux_encoded$([char]7)")
+    } catch {}
+    [Console]::Write("$([char]27)]133;A$([char]7)")
+    return "$sikemux_text$([char]27)]133;B$([char]7)"
+}"#;
+
+fn detect_shell_kind(shell: &str) -> Option<ShellKind> {
+    let name = shell.rsplit(['/', '\\']).next()?.to_ascii_lowercase();
+    let name = name.strip_suffix(".exe").unwrap_or(&name);
+    match name {
+        "zsh" => Some(ShellKind::Zsh),
+        "bash" => Some(ShellKind::Bash),
+        "fish" => Some(ShellKind::Fish),
+        "powershell" | "pwsh" => Some(ShellKind::PowerShell),
+        _ => None,
+    }
+}
+
+fn shell_integration_requested(
+    context: Option<&PtyContext>,
+    has_startup: bool,
+    inherited_ssh: bool,
+) -> bool {
+    let Some(context) = context else {
+        return false;
+    };
+    context.shell_integration
+        && !has_startup
+        && !inherited_ssh
+        && context.agent_id.is_none()
+        && context.agent_type.is_none()
+        && matches!(context.session_kind.as_str(), "project" | "command")
+}
+
+fn inherited_ssh_environment() -> bool {
+    ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]
+        .iter()
+        .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
+}
+
+fn temporary_shell_file(
+    relative: &Path,
+    contents: &str,
+) -> std::io::Result<(tempfile::TempDir, PathBuf)> {
+    let directory = temporary_shell_directory()?;
+    let path = write_temporary_shell_file(&directory, relative, contents)?;
+    Ok((directory, path))
+}
+
+fn temporary_shell_directory() -> std::io::Result<tempfile::TempDir> {
+    tempfile::Builder::new().prefix("sikemux-shell-").tempdir()
+}
+
+fn write_temporary_shell_file(
+    directory: &tempfile::TempDir,
+    relative: &Path,
+    contents: &str,
+) -> std::io::Result<PathBuf> {
+    let path = directory.path().join(relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, contents)?;
+    Ok(path)
+}
+
+fn configure_shell_integration(
+    cmd: &mut CommandBuilder,
+    shell: &str,
+) -> std::io::Result<Option<ShellLaunchIntegration>> {
+    let Some(kind) = detect_shell_kind(shell) else {
+        return Ok(None);
+    };
+    match kind {
+        ShellKind::Zsh => {
+            let directory = temporary_shell_directory()?;
+            write_temporary_shell_file(&directory, Path::new(".zshenv"), ZSH_ENV_INTEGRATION)?;
+            write_temporary_shell_file(
+                &directory,
+                Path::new(".zprofile"),
+                ZSH_PROFILE_INTEGRATION,
+            )?;
+            write_temporary_shell_file(&directory, Path::new(".zshrc"), ZSH_INTEGRATION)?;
+            cmd.env("SIKEMUX_SHELL_INTEGRATION", "1");
+            let original_zdotdir = std::env::var_os("ZDOTDIR").filter(|value| !value.is_empty());
+            if let Some(original) = original_zdotdir.as_ref() {
+                cmd.env("SIKEMUX_ORIGINAL_ZDOTDIR", original);
+                cmd.env("SIKEMUX_ORIGINAL_ZDOTDIR_SET", "1");
+            } else if let Some(original) = std::env::var_os("HOME") {
+                cmd.env("SIKEMUX_ORIGINAL_ZDOTDIR", original);
+            }
+            cmd.env("SIKEMUX_TEMP_ZDOTDIR", directory.path());
+            cmd.env("ZDOTDIR", directory.path());
+            Ok(Some(ShellLaunchIntegration {
+                _files: Some(directory),
+            }))
+        }
+        ShellKind::Bash => {
+            let (directory, path) = temporary_shell_file(Path::new("bashrc"), BASH_INTEGRATION)?;
+            cmd.env("SIKEMUX_SHELL_INTEGRATION", "1");
+            cmd.arg("--rcfile");
+            cmd.arg(path);
+            Ok(Some(ShellLaunchIntegration {
+                _files: Some(directory),
+            }))
+        }
+        ShellKind::Fish => {
+            cmd.env("SIKEMUX_SHELL_INTEGRATION", "1");
+            // Fish's native init command runs after its normal configuration
+            // chain, preserving user/vendor conf.d scripts and autoload paths.
+            cmd.args(["--init-command", FISH_INTEGRATION]);
+            Ok(Some(ShellLaunchIntegration { _files: None }))
+        }
+        ShellKind::PowerShell => {
+            cmd.env("SIKEMUX_SHELL_INTEGRATION", "1");
+            cmd.args(["-NoExit", "-Command", POWERSHELL_INTEGRATION]);
+            Ok(Some(ShellLaunchIntegration { _files: None }))
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn pty_spawn(
     app: AppHandle,
@@ -1082,8 +1815,28 @@ pub async fn pty_spawn(
     );
     #[cfg(windows)]
     cmd.args(["-NoLogo"]);
-    let cwd = cwd.unwrap_or_else(|| crate::system::user_home().to_string_lossy().into_owned());
     let startup = startup.filter(|s| !s.is_empty());
+    let shell_integration = if shell_integration_requested(
+        context.as_ref(),
+        startup.is_some(),
+        inherited_ssh_environment(),
+    ) {
+        match configure_shell_integration(&mut cmd, &shell) {
+            Ok(integration) => integration,
+            Err(_) => {
+                // Shell integration is an enhancement, never a reason to lose
+                // the user's terminal. Record only a count; setup errors can
+                // contain temporary paths and must not enter trace metadata.
+                let _ = global_observability()
+                    .increment_counter("pty.shell_integration.setup_errors", 1);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let shell_metadata_enabled = shell_integration.is_some();
+    let cwd = cwd.unwrap_or_else(|| crate::system::user_home().to_string_lossy().into_owned());
     cmd.cwd(cwd);
     if let Some(startup) = startup.as_deref() {
         #[cfg(unix)]
@@ -1163,6 +1916,7 @@ pub async fn pty_spawn(
         .and_then(|context| context.agent_id)
         .filter(|key| !key.is_empty());
     let pty = Arc::new(Pty {
+        id,
         app: app.clone(),
         #[cfg(unix)]
         io: AsyncFd::new(io_file).map_err(pty_err)?,
@@ -1173,7 +1927,12 @@ pub async fn pty_spawn(
         #[cfg(windows)]
         writer: Mutex::new(writer),
         child: Mutex::new(child.into_inner()),
-        parser: Mutex::new(semantic_parser(rows, cols, PARSER_SCROLLBACK)),
+        parser: Mutex::new(semantic_parser_with_shell(
+            rows,
+            cols,
+            PARSER_SCROLLBACK,
+            shell_metadata_enabled,
+        )),
         subscribers: Mutex::new(HashMap::new()),
         last_activity_ms: AtomicU64::new(now_ms()),
         trimmed: AtomicBool::new(false),
@@ -1186,6 +1945,7 @@ pub async fn pty_spawn(
         idle_confirmations: AtomicU8::new(0),
         activity_revision: AtomicU64::new(0),
         last_detection_fingerprint: AtomicU64::new(0),
+        _shell_integration: shell_integration,
     });
 
     // Publish before starting the reader. A short-lived command can reach EOF
@@ -1396,6 +2156,10 @@ pub struct AttachResult {
     pub sub_id: u32,
     pub snapshot: Vec<u8>,
     pub alternate_screen: bool,
+    /// Latest headless shell state, present only for an explicitly enabled,
+    /// supported local shell. This lets a remounted frontend recover metadata
+    /// even though historical OSC bytes are intentionally not replayed.
+    pub shell: Option<ShellMetadataSnapshot>,
 }
 
 fn screen_scrollback_len(screen: &vt100::Screen) -> usize {
@@ -1501,6 +2265,11 @@ pub fn pty_attach(
         let parser = pty.parser.lock().map_err(pty_err)?;
         let alternate_screen = parser.screen().alternate_screen();
         let snapshot = attach_snapshot(parser.screen());
+        let shell = parser
+            .callbacks()
+            .shell
+            .as_ref()
+            .map(ShellProtocolParser::snapshot);
         let mut subs = pty.subscribers.lock().map_err(pty_err)?;
         let sub_id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
         subs.insert(sub_id, on_event);
@@ -1510,6 +2279,7 @@ pub fn pty_attach(
             sub_id,
             snapshot,
             alternate_screen,
+            shell,
         })
     })();
     operation.finish(if result.is_ok() {
@@ -1644,9 +2414,18 @@ mod tests {
     #[cfg(unix)]
     use super::startup_bootstrap;
     use super::{
-        attach_snapshot, compact_parser_for_idle, configure_pty_environment, event_fingerprint,
-        reseed_parser, semantic_fingerprint, semantic_parser, submits_line, AttachResult,
-        PtyContext, IDLE_SCROLLBACK, PARSER_SCROLLBACK, RESET_MODES,
+        attach_snapshot, compact_parser_for_idle, configure_pty_environment,
+        configure_shell_integration, detect_shell_kind, event_fingerprint, parse_shell_cwd,
+        reseed_parser, semantic_fingerprint, semantic_parser, semantic_parser_with_shell,
+        shell_integration_requested, submits_line, AttachResult, PtyContext, PtyShellMetadataEvent,
+        ShellBoundary, ShellKind, ShellPhase, ShellProtocolParser, IDLE_SCROLLBACK,
+        MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES, PARSER_SCROLLBACK, RESET_MODES,
+        SHELL_EVENT_MIN_INTERVAL,
+    };
+    #[cfg(target_os = "macos")]
+    use super::{
+        temporary_shell_directory, write_temporary_shell_file, ZSH_ENV_INTEGRATION,
+        ZSH_INTEGRATION, ZSH_PROFILE_INTEGRATION,
     };
     use portable_pty::CommandBuilder;
     use std::path::Path;
@@ -1655,6 +2434,21 @@ mod tests {
         command
             .get_env(key)
             .map(|value| value.to_string_lossy().into_owned())
+    }
+
+    fn local_shell_context() -> PtyContext {
+        PtyContext {
+            session_id: "session-1".into(),
+            session_name: "repo".into(),
+            session_kind: "project".into(),
+            project: Some("/repo".into()),
+            window_id: Some("window-1".into()),
+            pane_id: Some("pane-1".into()),
+            agent_id: None,
+            agent_type: None,
+            initial_prompt_submitted: false,
+            shell_integration: true,
+        }
     }
 
     #[test]
@@ -1674,6 +2468,7 @@ mod tests {
             agent_id: None,
             agent_type: None,
             initial_prompt_submitted: false,
+            shell_integration: false,
         };
 
         configure_pty_environment(
@@ -1791,6 +2586,7 @@ mod tests {
             agent_id: Some("agent-1".into()),
             agent_type: Some("codex".into()),
             initial_prompt_submitted: false,
+            shell_integration: false,
         };
 
         configure_pty_environment(&mut command, Some(&context), "1.2.3", None, None);
@@ -1799,6 +2595,349 @@ mod tests {
         assert_eq!(env(&command, "SIKEMUX_AGENT_TYPE"), Some("codex".into()));
         assert_eq!(env(&command, "SIKEMUX_WINDOW_ID"), None);
         assert_eq!(env(&command, "SIKEMUX_PANE_ID"), None);
+    }
+
+    #[test]
+    fn shell_integration_is_strictly_opt_in_and_local_interactive_only() {
+        let mut context = local_shell_context();
+        assert!(shell_integration_requested(Some(&context), false, false));
+
+        context.shell_integration = false;
+        assert!(!shell_integration_requested(Some(&context), false, false));
+        context.shell_integration = true;
+        assert!(!shell_integration_requested(Some(&context), true, false));
+        assert!(!shell_integration_requested(Some(&context), false, true));
+
+        context.session_kind = "ssh".into();
+        assert!(!shell_integration_requested(Some(&context), false, false));
+        context.session_kind = "project".into();
+        context.agent_id = Some("agent-1".into());
+        assert!(!shell_integration_requested(Some(&context), false, false));
+        context.agent_id = None;
+        context.agent_type = Some("codex".into());
+        assert!(!shell_integration_requested(Some(&context), false, false));
+        assert!(!shell_integration_requested(None, false, false));
+    }
+
+    #[test]
+    fn shell_integration_context_flag_is_default_off_and_camel_case() {
+        let base = serde_json::json!({
+            "sessionId": "session-1",
+            "sessionName": "repo",
+            "sessionKind": "project",
+            "project": "/repo",
+            "windowId": "window-1",
+            "paneId": "pane-1"
+        });
+        let disabled: PtyContext =
+            serde_json::from_value(base.clone()).expect("deserialize default context");
+        assert!(!disabled.shell_integration);
+
+        let mut enabled_value = base;
+        enabled_value["shellIntegration"] = serde_json::Value::Bool(true);
+        let enabled: PtyContext =
+            serde_json::from_value(enabled_value).expect("deserialize opt-in context");
+        assert!(enabled.shell_integration);
+    }
+
+    #[test]
+    fn shell_detection_claims_only_exact_supported_executables() {
+        assert_eq!(detect_shell_kind("/bin/zsh"), Some(ShellKind::Zsh));
+        assert_eq!(detect_shell_kind("bash"), Some(ShellKind::Bash));
+        assert_eq!(
+            detect_shell_kind("/opt/homebrew/bin/fish"),
+            Some(ShellKind::Fish)
+        );
+        assert_eq!(
+            detect_shell_kind(r"C:\Program Files\PowerShell\7\pwsh.exe"),
+            Some(ShellKind::PowerShell)
+        );
+        assert_eq!(
+            detect_shell_kind("powershell.exe"),
+            Some(ShellKind::PowerShell)
+        );
+        assert_eq!(detect_shell_kind("/bin/sh"), None);
+        assert_eq!(detect_shell_kind("/usr/local/bin/my-zsh-wrapper"), None);
+    }
+
+    #[test]
+    fn supported_shells_receive_ephemeral_hooks_without_dotfile_writes() {
+        let mut zsh = CommandBuilder::new("/bin/zsh");
+        let zsh_guard = configure_shell_integration(&mut zsh, "/bin/zsh")
+            .expect("configure zsh")
+            .expect("supported zsh");
+        let zdotdir = env(&zsh, "ZDOTDIR").expect("temporary ZDOTDIR");
+        let zsh_hook =
+            std::fs::read_to_string(Path::new(&zdotdir).join(".zshrc")).expect("read zsh hook");
+        let zsh_env = std::fs::read_to_string(Path::new(&zdotdir).join(".zshenv"))
+            .expect("read zshenv forwarder");
+        let zsh_profile = std::fs::read_to_string(Path::new(&zdotdir).join(".zprofile"))
+            .expect("read zprofile forwarder");
+        assert!(zsh_env.contains("__sikemux_source_startup_file .zshenv"));
+        assert!(zsh_profile.contains("__sikemux_source_startup_file .zprofile"));
+        assert!(zsh_hook.contains("__sikemux_source_startup_file .zshrc"));
+        assert!(zsh_hook.contains("before zsh evaluates .zlogin"));
+        assert!(!Path::new(&zdotdir).join(".zlogin").exists());
+        assert!(zsh_hook.contains("add-zsh-hook precmd"));
+        assert!(zsh_hook.contains("133;C"));
+        assert_eq!(env(&zsh, "SIKEMUX_SHELL_INTEGRATION"), Some("1".into()));
+
+        let mut bash = CommandBuilder::new("/bin/bash");
+        let bash_guard = configure_shell_integration(&mut bash, "/bin/bash")
+            .expect("configure bash")
+            .expect("supported bash");
+        let bash_args: Vec<String> = bash
+            .get_argv()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(bash_args.get(1).map(String::as_str), Some("--rcfile"));
+        let bash_hook = std::fs::read_to_string(&bash_args[2]).expect("read bash hook");
+        assert!(bash_hook.contains("PROMPT_COMMAND"));
+        assert!(bash_hook.contains("PS0="));
+
+        let mut fish = CommandBuilder::new("fish");
+        let original_fish_xdg = env(&fish, "XDG_CONFIG_HOME");
+        let fish_guard = configure_shell_integration(&mut fish, "fish")
+            .expect("configure fish")
+            .expect("supported fish");
+        assert_eq!(env(&fish, "XDG_CONFIG_HOME"), original_fish_xdg);
+        let fish_args: Vec<String> = fish
+            .get_argv()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(fish_args.get(1).map(String::as_str), Some("--init-command"));
+        assert!(fish_args[2].contains("fish_preexec"));
+        assert!(fish_args[2].contains("fish_postexec"));
+        assert!(!fish_args[2].contains("XDG_CONFIG_HOME"));
+
+        let mut powershell = CommandBuilder::new("pwsh");
+        let powershell_guard = configure_shell_integration(&mut powershell, "pwsh")
+            .expect("configure PowerShell")
+            .expect("supported PowerShell");
+        let powershell_args: Vec<String> = powershell
+            .get_argv()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            &powershell_args[1..3],
+            &["-NoExit".to_string(), "-Command".to_string()]
+        );
+        assert!(powershell_args[3].contains("function global:prompt"));
+
+        let mut unsupported = CommandBuilder::new("/bin/sh");
+        assert!(configure_shell_integration(&mut unsupported, "/bin/sh")
+            .expect("unsupported shell is not an error")
+            .is_none());
+        assert_eq!(unsupported.get_argv().len(), 1);
+        assert_eq!(env(&unsupported, "SIKEMUX_SHELL_INTEGRATION"), None);
+
+        drop((zsh_guard, bash_guard, fish_guard, powershell_guard));
+        assert!(!Path::new(&zdotdir).exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn zsh_forwarders_preserve_the_complete_user_startup_chain() {
+        let original = tempfile::tempdir().expect("original ZDOTDIR");
+        let integration = temporary_shell_directory().expect("integration ZDOTDIR");
+        let log = original.path().join("startup.log");
+        for name in [".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout"] {
+            std::fs::write(
+                original.path().join(name),
+                format!("print -r -- {name} >> \"$SIKEMUX_ZSH_TEST_LOG\"\n"),
+            )
+            .expect("write original startup file");
+        }
+        write_temporary_shell_file(&integration, Path::new(".zshenv"), ZSH_ENV_INTEGRATION)
+            .expect("write zshenv forwarder");
+        write_temporary_shell_file(
+            &integration,
+            Path::new(".zprofile"),
+            ZSH_PROFILE_INTEGRATION,
+        )
+        .expect("write zprofile forwarder");
+        write_temporary_shell_file(&integration, Path::new(".zshrc"), ZSH_INTEGRATION)
+            .expect("write zshrc integration");
+
+        let status = std::process::Command::new("/bin/zsh")
+            .args(["-ilc", "exit 0"])
+            .env("ZDOTDIR", integration.path())
+            .env("SIKEMUX_TEMP_ZDOTDIR", integration.path())
+            .env("SIKEMUX_ORIGINAL_ZDOTDIR", original.path())
+            .env("SIKEMUX_ORIGINAL_ZDOTDIR_SET", "1")
+            .env("SIKEMUX_ZSH_TEST_LOG", &log)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("run isolated zsh startup");
+        assert!(status.success());
+        assert_eq!(
+            std::fs::read_to_string(log).expect("read startup log"),
+            ".zshenv\n.zprofile\n.zshrc\n.zlogin\n.zlogout\n"
+        );
+    }
+
+    #[test]
+    fn shell_protocol_parses_chunked_cwd_and_command_boundaries() {
+        let mut parser = ShellProtocolParser::default();
+        let first = parser.process(b"plain\x1b]7;file:///tmp/repo%20");
+        assert!(first.latest.is_none());
+
+        let second = parser
+            .process(b"root\x1b\\\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x1b\\\x1b]133;D;7\x07");
+        assert_eq!(second.dropped, 0);
+        assert_eq!(second.coalesced, 4);
+        let latest = second.latest.expect("latest coalesced update");
+        assert_eq!(latest.boundary, ShellBoundary::CommandFinished);
+        assert_eq!(latest.metadata.revision, 5);
+        assert_eq!(latest.metadata.cwd.as_deref(), Some("/tmp/repo root"));
+        assert_eq!(latest.metadata.phase, ShellPhase::Finished);
+        assert_eq!(latest.metadata.last_exit_code, Some(7));
+
+        for (signal, expected) in [
+            (b"\x1b]133;A\x07".as_slice(), ShellBoundary::PromptStart),
+            (b"\x1b]133;B\x07".as_slice(), ShellBoundary::CommandStart),
+            (b"\x1b]133;C\x07".as_slice(), ShellBoundary::CommandExecuted),
+            (
+                b"\x1b]133;D;0\x07".as_slice(),
+                ShellBoundary::CommandFinished,
+            ),
+        ] {
+            assert_eq!(
+                ShellProtocolParser::default()
+                    .process(signal)
+                    .latest
+                    .expect("boundary update")
+                    .boundary,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn shell_protocol_rejects_remote_and_bounds_untrusted_state() {
+        assert_eq!(parse_shell_cwd(b"https://localhost/tmp"), None);
+        assert_eq!(parse_shell_cwd(b"file://remote-host/tmp"), None);
+
+        assert_eq!(parse_shell_cwd(b"file:///tmp/a%0Ab"), None);
+
+        let oversized_path = format!("file:///{}", "a".repeat(MAX_SHELL_PATH_BYTES + 1));
+        assert_eq!(parse_shell_cwd(oversized_path.as_bytes()), None);
+
+        let mut parser = ShellProtocolParser::default();
+        let mut oversized_osc = b"\x1b]7;file:///".to_vec();
+        oversized_osc.extend(std::iter::repeat_n(b'a', MAX_SHELL_OSC_BYTES + 1));
+        let partial = parser.process(&oversized_osc);
+        assert!(partial.latest.is_none());
+        assert!(parser.osc.len() <= MAX_SHELL_OSC_BYTES);
+        let recovered = parser.process(b"\x07\x1b]133;A\x07");
+        assert_eq!(recovered.dropped, 1);
+        assert_eq!(
+            recovered.latest.expect("recovered update").boundary,
+            ShellBoundary::PromptStart
+        );
+    }
+
+    #[test]
+    fn shell_protocol_coalesces_hostile_batches_to_latest_headless_state() {
+        let mut parser = ShellProtocolParser::default();
+        let signal_count = 1_000usize;
+        let signals = b"\x1b]133;A\x07".repeat(signal_count);
+        let batch = parser.process(&signals);
+        assert!(batch.latest.is_some());
+        assert_eq!(batch.coalesced, signal_count - 1);
+        assert_eq!(batch.dropped, 0);
+        assert_eq!(parser.snapshot().revision, signal_count as u64);
+        assert_eq!(parser.snapshot().phase, ShellPhase::Prompt);
+    }
+
+    #[test]
+    fn shell_event_gate_rate_limits_and_flushes_one_bounded_pending_update() {
+        let mut parser = ShellProtocolParser::default();
+        let first = parser.process_for_events(b"\x1b]133;A\x07", 1_000);
+        assert_eq!(
+            first.ready.expect("first update is immediate").boundary,
+            ShellBoundary::PromptStart
+        );
+
+        let second = parser.process_for_events(b"\x1b]133;B\x07", 1_001);
+        assert!(second.ready.is_none());
+        assert_eq!(second.coalesced, 0);
+        let third = parser.process_for_events(b"\x1b]133;C\x07", 1_050);
+        assert!(third.ready.is_none());
+        assert_eq!(third.coalesced, 1, "newest update replaces one pending");
+        assert!(parser.take_due_event(1_099).is_none());
+        assert_eq!(
+            parser
+                .take_due_event(1_000 + SHELL_EVENT_MIN_INTERVAL.as_millis() as u64)
+                .expect("latest pending update becomes due")
+                .boundary,
+            ShellBoundary::CommandExecuted
+        );
+        assert!(parser.events.pending.is_none());
+    }
+
+    #[test]
+    fn hostile_osc_stream_cannot_exceed_the_per_pty_event_rate() {
+        let mut parser = ShellProtocolParser::default();
+        let mut emitted = 0usize;
+        for now in 0..1_000u64 {
+            let output = parser.process_for_events(b"\x1b]133;A\x07", now);
+            emitted += usize::from(output.ready.is_some());
+        }
+        let maximum = 1_000usize / SHELL_EVENT_MIN_INTERVAL.as_millis() as usize;
+        assert_eq!(emitted, maximum);
+        assert!(parser.events.pending.is_some());
+    }
+
+    #[test]
+    fn shell_protocol_side_parse_preserves_visible_terminal_output() {
+        let mut parser = semantic_parser_with_shell(24, 80, PARSER_SCROLLBACK, true);
+        for chunk in [
+            b"before\x1b]7;file:///tmp/pro".as_slice(),
+            b"ject\x07after".as_slice(),
+        ] {
+            let batch = parser
+                .callbacks_mut()
+                .shell
+                .as_mut()
+                .expect("enabled shell parser")
+                .process(chunk);
+            parser.process(chunk);
+            assert_eq!(batch.dropped, 0);
+        }
+        assert_eq!(parser.screen().contents().trim(), "beforeafter");
+        assert_eq!(
+            parser
+                .callbacks()
+                .shell
+                .as_ref()
+                .expect("enabled shell parser")
+                .snapshot()
+                .cwd
+                .as_deref(),
+            Some("/tmp/project")
+        );
+    }
+
+    #[test]
+    fn shell_metadata_event_is_typed_bounded_frontend_payload() {
+        let mut parser = ShellProtocolParser::default();
+        let update = parser
+            .process(b"\x1b]7;file:///tmp/project\x07")
+            .latest
+            .expect("cwd update");
+        let value = serde_json::to_value(PtyShellMetadataEvent::from_update(42, update))
+            .expect("serialize shell metadata event");
+        assert_eq!(value["ptyId"], 42);
+        assert_eq!(value["revision"], 1);
+        assert_eq!(value["boundary"], "cwd");
+        assert_eq!(value["cwd"], "/tmp/project");
+        assert_eq!(value["phase"], "unknown");
+        assert!(value.get("exitCode").is_none());
     }
 
     #[test]
@@ -2053,6 +3192,7 @@ mod tests {
             sub_id: 7,
             snapshot: Vec::new(),
             alternate_screen: true,
+            shell: None,
         })
         .expect("serialize attach result");
         assert_eq!(value["alternateScreen"], true);
