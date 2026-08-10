@@ -23,6 +23,13 @@ use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutc
 const TTL: Duration = Duration::from_secs(60);
 const MAX_INCREMENTAL_PATHS: usize = 512;
 const MAX_INCREMENTAL_FILES: usize = 4_096;
+const MAX_PROJECT_FILES: usize = 250_000;
+// Counts a conservative JSON-encoded upper bound for every relative path,
+// including quotes and separators. This bounds the retained cache, the clone
+// made for IPC, and the eventual command response before any of them are
+// allocated without limit.
+const MAX_PROJECT_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_PROJECT_ENCODED_PATH_BYTES: usize = MAX_PROJECT_SNAPSHOT_BYTES - 1024;
 pub(crate) const MAX_REPO_PATH_BYTES: usize = 4 * 1024;
 const MAX_PROJECT_CACHE_ENTRIES: usize = 128;
 const FULL_SCAN_SLOW_THRESHOLD: Duration = Duration::from_millis(100);
@@ -34,6 +41,7 @@ static NEXT_CACHE_ACCESS: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone)]
 struct Entry {
     files: Arc<Vec<String>>,
+    encoded_path_bytes: usize,
     full_scan_at: Instant,
     scan_id: u64,
 }
@@ -263,13 +271,52 @@ impl FullScanReason {
 }
 
 enum LimitedWalk {
-    Complete(Vec<String>),
+    Complete {
+        files: Vec<String>,
+        encoded_path_bytes: usize,
+    },
     LimitExceeded,
     Unreliable,
 }
 
-fn walk(repo_root: &Path, scan_root: &Path, limit: Option<usize>) -> LimitedWalk {
+#[derive(Clone, Copy)]
+struct WalkLimits {
+    max_files: usize,
+    max_encoded_path_bytes: usize,
+    strict_errors: bool,
+}
+
+fn encoded_path_upper_bound(path: &str) -> usize {
+    // serde_json can expand ASCII control characters to `\u00XX`; all other
+    // UTF-8 is emitted verbatim except quotes and backslashes. Include the two
+    // string quotes and one array separator byte.
+    path.chars().fold(3usize, |total, character| {
+        total.saturating_add(match character {
+            '\"' | '\\' => 2,
+            '\u{0}'..='\u{1f}' => 6,
+            _ => character.len_utf8(),
+        })
+    })
+}
+
+fn snapshot_encoded_path_bytes_with_limit(files: &[String], limit: usize) -> Option<usize> {
+    let mut total = 0usize;
+    for file in files {
+        total = total.checked_add(encoded_path_upper_bound(file))?;
+        if total > limit {
+            return None;
+        }
+    }
+    Some(total)
+}
+
+fn snapshot_encoded_path_bytes(files: &[String]) -> Option<usize> {
+    snapshot_encoded_path_bytes_with_limit(files, MAX_PROJECT_ENCODED_PATH_BYTES)
+}
+
+fn walk(repo_root: &Path, scan_root: &Path, limits: WalkLimits) -> LimitedWalk {
     let mut files = Vec::new();
+    let mut encoded_path_bytes = 0usize;
     let walker = WalkBuilder::new(scan_root)
         .hidden(false) // show dotfiles — .env, .vscode/, etc. are findable
         .git_ignore(false) // gitignored does not mean uninteresting
@@ -298,11 +345,11 @@ fn walk(repo_root: &Path, scan_root: &Path, limit: Option<usize>) -> LimitedWalk
     for entry in walker {
         let entry = match entry {
             Ok(entry) => entry,
-            Err(_) if limit.is_some() => return LimitedWalk::Unreliable,
+            Err(_) if limits.strict_errors => return LimitedWalk::Unreliable,
             Err(_) => continue,
         };
         let Some(file_type) = entry.file_type() else {
-            if limit.is_some() {
+            if limits.strict_errors {
                 return LimitedWalk::Unreliable;
             }
             continue;
@@ -311,7 +358,7 @@ fn walk(repo_root: &Path, scan_root: &Path, limit: Option<usize>) -> LimitedWalk
             continue;
         }
         let Ok(relative) = entry.path().strip_prefix(repo_root) else {
-            if limit.is_some() {
+            if limits.strict_errors {
                 return LimitedWalk::Unreliable;
             }
             continue;
@@ -319,15 +366,24 @@ fn walk(repo_root: &Path, scan_root: &Path, limit: Option<usize>) -> LimitedWalk
         if relative.as_os_str().is_empty() {
             continue;
         }
-        files.push(relative.to_string_lossy().into_owned());
-        if limit.is_some_and(|limit| files.len() > limit) {
+        let relative = relative.to_string_lossy().into_owned();
+        encoded_path_bytes =
+            match encoded_path_bytes.checked_add(encoded_path_upper_bound(&relative)) {
+                Some(bytes) if bytes <= limits.max_encoded_path_bytes => bytes,
+                _ => return LimitedWalk::LimitExceeded,
+            };
+        files.push(relative);
+        if files.len() > limits.max_files {
             return LimitedWalk::LimitExceeded;
         }
     }
 
     files.sort_unstable();
     files.dedup();
-    LimitedWalk::Complete(files)
+    LimitedWalk::Complete {
+        files,
+        encoded_path_bytes,
+    }
 }
 
 fn next_scan_id() -> u64 {
@@ -345,20 +401,40 @@ fn next_scan_id() -> u64 {
     }
 }
 
-fn full_scan_locked(repo: &str, slot: &mut Option<Entry>, reason: FullScanReason) -> Entry {
+fn full_scan_locked_with_limits(
+    repo: &str,
+    slot: &mut Option<Entry>,
+    reason: FullScanReason,
+    limits: WalkLimits,
+) -> Result<Entry, String> {
     let observer = global_observability();
     let mut metadata = Metadata::new();
     metadata.insert("reason".to_owned(), ScalarValue::from(reason.label()));
     let timer =
         observer.slow_operation("files.full_scan", FULL_SCAN_SLOW_THRESHOLD, None, metadata);
 
-    let files = match walk(Path::new(repo), Path::new(repo), None) {
-        LimitedWalk::Complete(files) => files,
-        // An unbounded walk never returns this variant.
-        LimitedWalk::LimitExceeded | LimitedWalk::Unreliable => Vec::new(),
+    let (files, encoded_path_bytes) = match walk(Path::new(repo), Path::new(repo), limits) {
+        LimitedWalk::Complete {
+            files,
+            encoded_path_bytes,
+        } => (files, encoded_path_bytes),
+        LimitedWalk::LimitExceeded => {
+            let _ = observer.increment_counter("files.full_scan.limit_errors", 1);
+            timer.finish(SpanOutcome::Error);
+            return Err(format!(
+                "project file snapshot exceeds its {}-file or {}-byte safety limit",
+                limits.max_files, limits.max_encoded_path_bytes
+            ));
+        }
+        LimitedWalk::Unreliable => {
+            let _ = observer.increment_counter("files.full_scan.read_errors", 1);
+            timer.finish(SpanOutcome::Error);
+            return Err("project file snapshot could not be read reliably".into());
+        }
     };
     let entry = Entry {
         files: Arc::new(files),
+        encoded_path_bytes,
         full_scan_at: Instant::now(),
         scan_id: next_scan_id(),
     };
@@ -366,8 +442,29 @@ fn full_scan_locked(repo: &str, slot: &mut Option<Entry>, reason: FullScanReason
 
     let _ = observer.increment_counter("files.full_scans", 1);
     observer.set_gauge("files.full_scan.last_file_count", entry.files.len() as f64);
+    observer.set_gauge(
+        "files.full_scan.last_encoded_path_bytes",
+        entry.encoded_path_bytes as f64,
+    );
     timer.finish(SpanOutcome::Success);
-    entry
+    Ok(entry)
+}
+
+fn full_scan_locked(
+    repo: &str,
+    slot: &mut Option<Entry>,
+    reason: FullScanReason,
+) -> Result<Entry, String> {
+    full_scan_locked_with_limits(
+        repo,
+        slot,
+        reason,
+        WalkLimits {
+            max_files: MAX_PROJECT_FILES,
+            max_encoded_path_bytes: MAX_PROJECT_ENCODED_PATH_BYTES,
+            strict_errors: false,
+        },
+    )
 }
 
 fn snapshot_for_key_blocking(repo: &str) -> Result<ProjectFilesSnapshot, String> {
@@ -378,10 +475,10 @@ fn snapshot_for_key_blocking(repo: &str) -> Result<ProjectFilesSnapshot, String>
             if entry.full_scan_at.elapsed() < TTL {
                 entry.clone()
             } else {
-                full_scan_locked(repo, &mut slot, FullScanReason::Ttl)
+                full_scan_locked(repo, &mut slot, FullScanReason::Ttl)?
             }
         } else {
-            full_scan_locked(repo, &mut slot, FullScanReason::CacheMiss)
+            full_scan_locked(repo, &mut slot, FullScanReason::CacheMiss)?
         }
     };
     // The IPC-owned Vec clone can be large; do it after releasing the
@@ -524,7 +621,12 @@ fn fallback_full_scan(
 ) {
     timer.finish(SpanOutcome::Cancelled);
     let _ = global_observability().increment_counter("files.incremental_fallbacks", 1);
-    full_scan_locked(repo, slot, FullScanReason::WatcherFallback);
+    if full_scan_locked(repo, slot, FullScanReason::WatcherFallback).is_err() {
+        // Keep the previous bounded snapshot rather than replacing it with an
+        // empty or partial view. The next explicit read retries and surfaces
+        // the stable limit/read error to the renderer.
+        let _ = global_observability().increment_counter("files.incremental_fallback_errors", 1);
+    }
 }
 
 /// Applies one debounced watcher batch to a cached sorted snapshot. Ambiguous,
@@ -613,8 +715,18 @@ pub(crate) fn apply_watcher_batch(
             remaining_files -= 1;
             additions.push(relative.to_string_lossy().into_owned());
         } else if metadata.file_type().is_dir() && !leaf_is_denied_directory(&relative) {
-            match walk(repo_root, &absolute, Some(remaining_files)) {
-                LimitedWalk::Complete(mut subtree) => {
+            match walk(
+                repo_root,
+                &absolute,
+                WalkLimits {
+                    max_files: remaining_files,
+                    max_encoded_path_bytes: MAX_PROJECT_ENCODED_PATH_BYTES,
+                    strict_errors: true,
+                },
+            ) {
+                LimitedWalk::Complete {
+                    files: mut subtree, ..
+                } => {
                     remaining_files = remaining_files.saturating_sub(subtree.len());
                     additions.append(&mut subtree);
                 }
@@ -642,9 +754,18 @@ pub(crate) fn apply_watcher_batch(
     files.append(&mut additions);
     files.sort_unstable();
     files.dedup();
+    let Some(encoded_path_bytes) = snapshot_encoded_path_bytes(&files) else {
+        fallback_full_scan(repo, &mut slot, timer);
+        return;
+    };
+    if files.len() > MAX_PROJECT_FILES {
+        fallback_full_scan(repo, &mut slot, timer);
+        return;
+    }
 
     let updated = Entry {
         files: Arc::new(files),
+        encoded_path_bytes,
         // Incremental events do not postpone the periodic full-scan backstop.
         full_scan_at: current.full_scan_at,
         scan_id: next_scan_id(),
@@ -659,6 +780,10 @@ pub(crate) fn apply_watcher_batch(
     observer.set_gauge(
         "files.incremental.last_file_count",
         updated.files.len() as f64,
+    );
+    observer.set_gauge(
+        "files.incremental.last_encoded_path_bytes",
+        updated.encoded_path_bytes as f64,
     );
     timer.finish(SpanOutcome::Success);
 }
@@ -847,5 +972,81 @@ mod tests {
 
         drop(second);
         drop(third);
+    }
+
+    #[test]
+    fn full_scan_limits_file_count_and_encoded_path_bytes_without_replacing_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        write(&temp.path().join("one.txt"), "one");
+        let (repo, _) = canonical_temp_root(&temp);
+        let mut slot = None;
+        let first = full_scan_locked_with_limits(
+            &repo,
+            &mut slot,
+            FullScanReason::CacheMiss,
+            WalkLimits {
+                max_files: 1,
+                max_encoded_path_bytes: 128,
+                strict_errors: false,
+            },
+        )
+        .unwrap();
+
+        write(&temp.path().join("two.txt"), "two");
+        let file_limit = full_scan_locked_with_limits(
+            &repo,
+            &mut slot,
+            FullScanReason::Ttl,
+            WalkLimits {
+                max_files: 1,
+                max_encoded_path_bytes: 128,
+                strict_errors: false,
+            },
+        )
+        .err()
+        .expect("file limit should reject the scan");
+        assert!(file_limit.contains("1-file"));
+        assert_eq!(slot.as_ref().unwrap().scan_id, first.scan_id);
+        assert_eq!(slot.as_ref().unwrap().files.as_slice(), ["one.txt"]);
+
+        let byte_limit = full_scan_locked_with_limits(
+            &repo,
+            &mut slot,
+            FullScanReason::WatcherFallback,
+            WalkLimits {
+                max_files: 10,
+                max_encoded_path_bytes: encoded_path_upper_bound("one.txt") - 1,
+                strict_errors: false,
+            },
+        )
+        .err()
+        .expect("byte limit should reject the scan");
+        assert!(byte_limit.contains("byte safety limit"));
+        assert_eq!(slot.as_ref().unwrap().scan_id, first.scan_id);
+    }
+
+    #[test]
+    fn encoded_path_budget_covers_json_escaping_and_incremental_rejection() {
+        let files = vec![
+            "plain.txt".to_owned(),
+            "quote\"and\\slash".to_owned(),
+            "line\nfeed".to_owned(),
+            "snowman-☃".to_owned(),
+        ];
+        let encoded = snapshot_encoded_path_bytes_with_limit(&files, usize::MAX).unwrap();
+        let serialized = serde_json::to_vec(&ProjectFilesSnapshot {
+            scan_id: u64::MAX,
+            files: files.clone(),
+        })
+        .unwrap();
+        assert!(serialized.len() <= encoded + 1024);
+        assert_eq!(
+            snapshot_encoded_path_bytes_with_limit(&files, encoded),
+            Some(encoded)
+        );
+        assert_eq!(
+            snapshot_encoded_path_bytes_with_limit(&files, encoded - 1),
+            None
+        );
     }
 }
