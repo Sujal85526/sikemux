@@ -8,6 +8,7 @@ import {
     type WorkbenchItemRef,
     type WorkbenchItemRegistry,
 } from "./registry";
+import { disposeWorkbenchItemResources } from "./itemRuntime";
 
 type LifecycleState = "active" | "inactive";
 
@@ -26,6 +27,15 @@ export interface SessionControllerSnapshot {
 
 function settle(operation: void | Promise<void>): void {
     void Promise.resolve(operation).catch(() => {});
+}
+
+function disposeItemRuntime(current: ItemRuntime): void {
+    // Ownership is removed synchronously inside this call, so a replacement
+    // item reusing the ID cannot be deleted by the older async teardown.
+    const resources = disposeWorkbenchItemResources(current.ref.id);
+    if (current.lifecycle === "active") settle(current.controller.deactivate());
+    settle(current.controller.dispose());
+    settle(resources);
 }
 
 /** Owns runtime item controllers for one durable session topology. */
@@ -50,18 +60,14 @@ export class SessionController {
                 next.set(ref.id, ref);
                 const current = this.items.get(ref.id);
                 if (current?.ref.kind === ref.kind) continue;
-                if (current) {
-                    if (current.lifecycle === "active") settle(current.controller.deactivate());
-                    settle(current.controller.dispose());
-                }
+                if (current) disposeItemRuntime(current);
                 this.items.set(ref.id, { ref, controller: this.registry.create(ref), lifecycle: "inactive" });
             }
         }
 
         for (const [id, current] of this.items) {
             if (next.has(id)) continue;
-            if (current.lifecycle === "active") settle(current.controller.deactivate());
-            settle(current.controller.dispose());
+            disposeItemRuntime(current);
             this.items.delete(id);
         }
 
@@ -92,10 +98,7 @@ export class SessionController {
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
-        for (const item of this.items.values()) {
-            if (item.lifecycle === "active") settle(item.controller.deactivate());
-            settle(item.controller.dispose());
-        }
+        for (const item of this.items.values()) disposeItemRuntime(item);
         this.items.clear();
         this.activeItemId = null;
     }
