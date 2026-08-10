@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { busStats } from "../state/bus";
 import { resourceStats } from "../state/resources";
 import { getState } from "../state/store";
+import { installInteractionTiming, startEventLoopMonitor } from "./instrumentation";
+import { performanceTelemetry } from "./performance";
 
 type LongTaskEntry = {
     name: string;
@@ -22,6 +24,7 @@ declare global {
             native: () => Promise<unknown>;
             longTasks: () => LongTaskEntry[];
             clearLongTasks: () => void;
+            resetPerformance: () => void;
         };
     }
 }
@@ -89,6 +92,11 @@ export function browserDiagnostics(): Record<string, unknown> {
         longTaskCount: longTasks.length,
         lastLongTasks: longTasks.slice(-10),
         runtimeErrors: runtimeErrors.slice(),
+        performance: performanceTelemetry.snapshot(),
+        performanceSemantics: {
+            inputLatency: "input to next animation-frame callback; compositor presentation is not observable in WKWebView",
+            eventLoopHangThresholdMs: 100,
+        },
     };
 }
 
@@ -106,7 +114,11 @@ export function installDiagnostics(): void {
         clearLongTasks: () => {
             longTasks.length = 0;
         },
+        resetPerformance: () => performanceTelemetry.reset(),
     };
+
+    installInteractionTiming();
+    startEventLoopMonitor();
 
     window.addEventListener("error", (event) => recordRuntimeError("error", event.error ?? event.message));
     window.addEventListener("unhandledrejection", (event) => recordRuntimeError("unhandledrejection", event.reason));

@@ -40,6 +40,7 @@ import { agentDetectionApi } from "./api/agentDetection";
 import { loadProjectConfig, type ProjectConfigLoadResult } from "./projectConfig";
 import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
+import { performanceTelemetry } from "./lib/performance";
 
 interface BootInfo {
     home: string;
@@ -359,29 +360,49 @@ export default function App() {
     useEffect(() => {
         let disposed = false;
         let unsub = () => {};
+        let bootFinished = false;
+        const bootSpan = performanceTelemetry.startTrace("startup.boot");
+        const finishBoot = (outcome: "success" | "error" | "cancelled") => {
+            if (bootFinished) return;
+            bootFinished = true;
+            const recorded = performanceTelemetry.endSpan(bootSpan, { outcome });
+            if (recorded) performanceTelemetry.recordLatency("startup.boot", recorded.durationMs);
+        };
         invoke<BootInfo>("boot_init")
             .then((boot) => {
                 if (disposed) return;
-                cmd.setHome(boot.home);
-                applyHydrate(boot.state);
-                const st = getState();
-                registerCustomThemes(st.customThemes);
-                applyTheme(st.themeId);
-                applyWindowOpacity(st.windowOpacity);
-                if (st.themeMode === "system") cmd.applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
-                cmd.setWindowBlur(st.windowBlur);
-                if (!st.onboardingComplete) cmd.openOnboarding();
-                else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
+                const hydrateSpan = performanceTelemetry.startSpan(bootSpan, "startup.hydrate");
+                try {
+                    cmd.setHome(boot.home);
+                    applyHydrate(boot.state);
+                    const st = getState();
+                    registerCustomThemes(st.customThemes);
+                    applyTheme(st.themeId);
+                    applyWindowOpacity(st.windowOpacity);
+                    if (st.themeMode === "system") cmd.applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
+                    cmd.setWindowBlur(st.windowBlur);
+                    if (!st.onboardingComplete) cmd.openOnboarding();
+                    else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
+                    performanceTelemetry.endSpan(hydrateSpan, { outcome: "success" });
+                } catch (error) {
+                    performanceTelemetry.endSpan(hydrateSpan, { outcome: "error" });
+                    throw error;
+                }
             })
-            .catch(swallow("boot_init"))
+            .catch((error) => {
+                finishBoot("error");
+                swallow("boot_init")(error);
+            })
             .finally(() => {
                 if (!disposed) {
                     unsub = subscribePersist();
                     setBootReady(true);
                 }
+                finishBoot(disposed ? "cancelled" : "success");
             });
         return () => {
             disposed = true;
+            finishBoot("cancelled");
             unsub();
         };
     }, []);

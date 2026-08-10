@@ -1,3 +1,5 @@
+import { performanceTelemetry } from "../lib/performance";
+
 export type Event =
     | { type: "open-file"; path: string; line?: number; character?: number }
     | { type: "fs-changed"; repo: string }
@@ -27,7 +29,18 @@ export function subscribe<T extends Event["type"]>(type: T, fn: (e: Extract<Even
 }
 
 export function emit<T extends Event["type"]>(e: Extract<Event, { type: T }>): void {
-    handlers.get(e.type)?.forEach((fn) => fn(e));
+    const listeners = handlers.get(e.type);
+    if (!listeners) return;
+    const span = performanceTelemetry.startTrace("bus.emit", { event: e.type, handlers: listeners.size });
+    try {
+        listeners.forEach((fn) => fn(e));
+        const recorded = performanceTelemetry.endSpan(span, { outcome: "success" });
+        if (recorded) performanceTelemetry.recordLatency(`bus.${e.type}`, recorded.durationMs);
+    } catch (error) {
+        const recorded = performanceTelemetry.endSpan(span, { outcome: "error" });
+        if (recorded) performanceTelemetry.recordLatency(`bus.${e.type}`, recorded.durationMs);
+        throw error;
+    }
 }
 
 export function busStats(): { eventTypes: number; handlers: number } {

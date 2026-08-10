@@ -12,6 +12,7 @@ import { useMouseActive } from "../hooks/useMouseActive";
 import { rankBy } from "../lib/fuzzy";
 import type { KeybindingOverrides } from "../keybindings";
 import { IconCommand, IconSearch } from "./Icons";
+import { runMeasuredAction } from "../lib/instrumentation";
 
 const MAX_RESULTS = 200;
 
@@ -77,7 +78,7 @@ export function CommandPalette({
         if (!entry) return;
         onClose();
         onExecute?.(entry.key);
-        entry.execute();
+        runMeasuredAction(entry.key, "command-palette", entry.execute);
     };
 
     const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {

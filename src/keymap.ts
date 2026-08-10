@@ -4,6 +4,7 @@ import * as cmd from "./state/commands";
 import { emit } from "./state/bus";
 import { getState, type StoreState } from "./state/store";
 import type { KeyModifier } from "./state/types";
+import { runMeasuredAction } from "./lib/instrumentation";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
@@ -261,7 +262,7 @@ export function useKeymap(): void {
             // modals let through.
             if (st.onboardingOpen) return;
             if (hasOpenModal(st) && !MODAL_ACTIONS.has(action)) return;
-            if (!runKeybindingAction(action, event, st)) return;
+            if (!runMeasuredAction(action, "keymap", () => runKeybindingAction(action, event, st))) return;
 
             consume(event);
         };
