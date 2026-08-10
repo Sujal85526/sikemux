@@ -129,13 +129,22 @@ fn quarantine_database(path: &Path) -> AppResult<PathBuf> {
 /// Tauri's command executor; [`state_load`] and the combined boot command both
 /// offload it through `spawn_blocking`.
 pub(crate) fn state_load_sync() -> String {
-    let Some(database) = database_path() else {
-        return String::new();
+    let observer = global_observability();
+    let timer = observer.slow_operation(
+        "state.sqlite_load",
+        Duration::from_millis(50),
+        None,
+        Default::default(),
+    );
+    let loaded = if let (Some(database), Some(legacy)) = (database_path(), state_path()) {
+        state_load_from_paths(&database, &legacy)
+    } else {
+        String::new()
     };
-    let Some(legacy) = state_path() else {
-        return String::new();
-    };
-    state_load_from_paths(&database, &legacy)
+    let _ = observer.increment_counter("state.sqlite_loads", 1);
+    observer.set_gauge("state.sqlite.last_loaded_bytes", loaded.len() as f64);
+    timer.finish(SpanOutcome::Success);
+    loaded
 }
 
 #[tauri::command]
