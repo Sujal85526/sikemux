@@ -27,12 +27,35 @@ export const appTaskRuntime = new TaskRuntime({
     surface: new WorkbenchTaskTerminalSurface(taskPtyBindings, openTaskTerminal),
 });
 
-export function replaceActiveProjectTasks(project: string, tasks: readonly ProjectTask[]): void {
-    appTaskRegistry.replaceSource("project", projectTaskDefinitions(project, tasks));
+type ActiveProjectTaskInventory = readonly [project: string, configFingerprint: string];
+
+let activeProjectTaskInventory: ActiveProjectTaskInventory | null = null;
+
+function updateActiveProjectTasks(inventory: ActiveProjectTaskInventory | null, tasks: readonly TaskDefinitionInput[]): void {
+    const previous = activeProjectTaskInventory;
+    activeProjectTaskInventory = inventory;
+    try {
+        appTaskRegistry.replaceSource("project", tasks);
+    } catch (error) {
+        activeProjectTaskInventory = previous;
+        throw error;
+    }
+}
+
+/**
+ * The registry publishes synchronously, so install its identity before the
+ * definitions. Subscribers can never observe new tasks with an old identity.
+ */
+export function replaceActiveProjectTasks(project: string, configFingerprint: string, tasks: readonly ProjectTask[]): void {
+    updateActiveProjectTasks(Object.freeze([project, configFingerprint]), projectTaskDefinitions(project, tasks));
 }
 
 export function clearActiveProjectTasks(): void {
-    appTaskRegistry.replaceSource("project", []);
+    updateActiveProjectTasks(null, []);
+}
+
+export function activeProjectTaskInventoryMatches(project: string, configFingerprint: string): boolean {
+    return activeProjectTaskInventory?.[0] === project && activeProjectTaskInventory[1] === configFingerprint;
 }
 
 export function subscribeAppTasks(listener: () => void): () => void {

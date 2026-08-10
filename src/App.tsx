@@ -36,12 +36,20 @@ import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
 import { dirname } from "./lib/paths";
 import type { StandaloneCommand } from "./commands/registry";
+import type { ProjectConfigLoadResult } from "./projectConfig";
 import { agentDetectionApi } from "./api/agentDetection";
 import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
 import { workbenchRuntime } from "./workbench/runtime";
-import { appTaskRuntime, clearActiveProjectTasks, getAppTaskSnapshot, replaceActiveProjectTasks, subscribeAppTasks } from "./tasks/application";
+import {
+    activeProjectTaskInventoryMatches,
+    appTaskRuntime,
+    clearActiveProjectTasks,
+    getAppTaskSnapshot,
+    replaceActiveProjectTasks,
+    subscribeAppTasks,
+} from "./tasks/application";
 import type { ResolvedTaskDefinition, TaskControllerSnapshot } from "./tasks/taskRegistry";
 import {
     applicationActionContext,
@@ -52,7 +60,7 @@ import {
     resolveApplicationActions,
     subscribeApplicationActions,
 } from "./actions/bridge";
-import { projectControllerRuntime } from "./projects/controllerRuntime";
+import { projectControllerBridge } from "./projects/controllerBridge";
 
 interface BootInfo {
     home: string;
@@ -85,6 +93,28 @@ interface TreeDropTarget {
     targetDir: string;
     highlightPath: string | null;
     dropEl: HTMLElement;
+}
+
+type ValidProjectConfig = Extract<ProjectConfigLoadResult, { readonly status: "valid" }>;
+
+function activeProjectConfigMatches(project: string, expected: ValidProjectConfig, requireTaskInventory = false): boolean {
+    const active = projectControllerBridge.getActiveSnapshot();
+    const current = active?.config;
+    return (
+        active?.cwd === project &&
+        current?.status === "valid" &&
+        current.path === expected.path &&
+        current.fingerprint === expected.fingerprint &&
+        (!requireTaskInventory || activeProjectTaskInventoryMatches(project, expected.fingerprint))
+    );
+}
+
+function trustCurrentProjectConfig(project: string, expected: ValidProjectConfig, requireTaskInventory = false): boolean {
+    return (
+        activeProjectConfigMatches(project, expected, requireTaskInventory) &&
+        trustProjectConfig(expected) &&
+        activeProjectConfigMatches(project, expected, requireTaskInventory)
+    );
 }
 
 function elementAtPhysicalPosition(pos: { x: number; y: number }): HTMLElement | null {
@@ -162,9 +192,9 @@ export default function App() {
         return session?.kind === "project" ? session.cwd : "";
     });
     const projectControllerSnapshot = useSyncExternalStore(
-        projectControllerRuntime.subscribe,
-        projectControllerRuntime.getActiveSnapshot,
-        projectControllerRuntime.getActiveSnapshot,
+        projectControllerBridge.subscribe,
+        projectControllerBridge.getActiveSnapshot,
+        projectControllerBridge.getActiveSnapshot,
     );
     const activeProjectSnapshot = projectControllerSnapshot?.cwd === activeProjectCwd ? projectControllerSnapshot : null;
     const projectConfig = activeProjectSnapshot?.config ?? null;
@@ -252,7 +282,7 @@ export default function App() {
         });
     }
     const currentProjectTasks =
-        projectConfig?.status === "valid"
+        projectConfig?.status === "valid" && activeProjectTaskInventoryMatches(activeProjectCwd, projectConfig.fingerprint)
             ? taskRegistrySnapshot.tasks.filter((task) => task.project === activeProjectCwd && task.source === "project")
             : [];
     const taskCommands: StandaloneCommand[] =
@@ -263,7 +293,7 @@ export default function App() {
                   detail: `Run task from ${task.cwd}`,
                   category: "Tasks",
                   execute: runStandalone(`task.run.${task.id}`, () => {
-                      if (!trustProjectConfig(projectConfig)) return;
+                      if (!trustCurrentProjectConfig(activeProjectCwd, projectConfig, true)) return;
                       const snapshot = appTaskRuntime.getSnapshot(activeProjectCwd);
                       const operation =
                           snapshot?.status === "running" || snapshot?.status === "stopping"
@@ -283,7 +313,7 @@ export default function App() {
             detail: "Stop the current project task and start its current trusted definition",
             category: "Tasks",
             execute: runStandalone("task.restart-active", () => {
-                if (projectConfig?.status !== "valid" || !trustProjectConfig(projectConfig)) return;
+                if (projectConfig?.status !== "valid" || !trustCurrentProjectConfig(activeProjectCwd, projectConfig, true)) return;
                 void appTaskRuntime
                     .restart(activeProjectCwd, restartTaskId)
                     .then(() => notify("success", "Restarted active task"))
@@ -331,7 +361,7 @@ export default function App() {
                               void git
                                   .worktreeRemove(activeProjectCwd, worktree.path)
                                   .then(async () => {
-                                      await projectControllerRuntime.refresh(activeProjectCwd);
+                                      await projectControllerBridge.refresh(activeProjectCwd);
                                       notify("success", `Removed worktree ${worktree.branch ?? worktree.path}`);
                                   })
                                   .catch(reportError("remove worktree"));
@@ -413,7 +443,7 @@ export default function App() {
 
     useEffect(() => {
         if (activeProjectCwd && projectConfig?.status === "valid") {
-            replaceActiveProjectTasks(activeProjectCwd, projectConfig.config.tasks);
+            replaceActiveProjectTasks(activeProjectCwd, projectConfig.fingerprint, projectConfig.config.tasks);
         } else {
             clearActiveProjectTasks();
         }
@@ -433,8 +463,9 @@ export default function App() {
                     projectRoot: activeProjectCwd,
                     configPath: projectConfig.path,
                     actions: projectConfig.config.actions,
+                    isCurrent: () => activeProjectConfigMatches(activeProjectCwd, projectConfig),
                     execute: (action) => {
-                        if (!trustProjectConfig(projectConfig)) return;
+                        if (!trustCurrentProjectConfig(activeProjectCwd, projectConfig)) return;
                         cmd.runCustomCommand(projectActionCommand(action));
                     },
                 });
@@ -459,15 +490,16 @@ export default function App() {
     }, [projectRepoKey]);
 
     useEffect(() => {
-        void projectControllerRuntime.start();
+        if (!bootReady) return;
+        void projectControllerBridge.start();
         return () => {
-            projectControllerRuntime.stop();
+            projectControllerBridge.stop();
         };
-    }, []);
+    }, [bootReady]);
 
     useEffect(() => {
         const roots = projectRepoKey ? projectRepoKey.split("\0") : [];
-        void projectControllerRuntime.reconcile(roots, activeProjectCwd || null);
+        void projectControllerBridge.reconcile(roots, activeProjectCwd || null);
     }, [activeProjectCwd, projectRepoKey]);
 
     useEffect(() => {

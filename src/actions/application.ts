@@ -40,7 +40,16 @@ export interface ProjectActionExtensionOptions {
     readonly projectRoot: string;
     readonly configPath: string;
     readonly actions: readonly ProjectAction[];
+    /** Revalidated during resolution and immediately before command execution. */
+    readonly isCurrent: () => boolean;
     readonly execute: (action: ProjectAction) => unknown | PromiseLike<unknown>;
+}
+
+export class StaleProjectActionConfigurationError extends Error {
+    constructor() {
+        super("Project action configuration is no longer current");
+        this.name = "StaleProjectActionConfigurationError";
+    }
 }
 
 interface ContributionMetadata {
@@ -172,6 +181,14 @@ export class ApplicationActionRuntime {
     }
 
     registerProjectActions(options: ProjectActionExtensionOptions): InternalExtensionRegistration {
+        if (typeof options.isCurrent !== "function") throw new TypeError("project action current-config guard must be a function");
+        const isCurrent = (): boolean => {
+            try {
+                return options.isCurrent() === true;
+            } catch {
+                return false;
+            }
+        };
         const actions = options.actions
             .filter((action) => action.contexts.length === 0 || action.contexts.includes("project"))
             .map(copyProjectAction);
@@ -189,8 +206,11 @@ export class ApplicationActionRuntime {
                         category: "Project · sikemux.json",
                         source: "project.config",
                         defaultBinding: action.keybinding ? normalizeProjectActionKeybinding(action.keybinding) : null,
-                        when: (context) => context.project?.root === options.projectRoot,
-                        run: () => options.execute(action),
+                        when: (context) => context.project?.root === options.projectRoot && isCurrent(),
+                        run: () => {
+                            if (!isCurrent()) throw new StaleProjectActionConfigurationError();
+                            return options.execute(action);
+                        },
                     },
                 }),
             })),

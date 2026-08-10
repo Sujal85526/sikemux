@@ -139,6 +139,7 @@ describe("contributed action keybindings", () => {
                     keybinding: "Alt+KeyZ",
                 },
             ],
+            isCurrent: () => true,
             execute,
         });
 

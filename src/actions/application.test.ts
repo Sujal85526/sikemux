@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { keybindingLabel } from "../keybindings";
 import type { ProjectAction } from "../projectConfig";
-import type { ActionContextInput } from "./registry";
-import { ApplicationActionRuntime } from "./application";
+import { ActionNotVisibleError, type ActionContextInput } from "./registry";
+import { ApplicationActionRuntime, StaleProjectActionConfigurationError } from "./application";
 
 const projectContext: ActionContextInput = {
     focusedItem: { id: "pane-1", kind: "terminal" },
@@ -99,6 +99,7 @@ describe("ApplicationActionRuntime", () => {
             projectRoot: "/workspace/project",
             configPath: "/workspace/project/sikemux.json",
             actions: [action, { ...action, id: "command-only", contexts: ["command"] }],
+            isCurrent: () => true,
             execute,
         });
         const otherExecute = vi.fn();
@@ -107,6 +108,7 @@ describe("ApplicationActionRuntime", () => {
             projectRoot: "/workspace/other",
             configPath: "/workspace/other/sikemux.json",
             actions: [{ ...action, id: "constructor" }, action],
+            isCurrent: () => true,
             execute: otherExecute,
         });
 
@@ -151,6 +153,51 @@ describe("ApplicationActionRuntime", () => {
         expect(runtime.matchKeybinding({ code: "KeyT", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }, projectContext)).toBeNull();
         expect(runtime.resolve(otherContext)).toHaveLength(2);
         otherRegistration.dispose();
+        runtime.dispose();
+    });
+
+    it("hides and rejects actions from a same-root config replaced before effect cleanup", async () => {
+        const runtime = new ApplicationActionRuntime();
+        const execute = vi.fn();
+        let activeFingerprint = "config-a";
+        let singleUseGuard = false;
+        let guardChecks = 0;
+        const registration = runtime.registerProjectActions({
+            projectId: "session-1",
+            projectRoot: "/workspace/project",
+            configPath: "/workspace/project/sikemux.json",
+            actions: [
+                {
+                    id: "deploy",
+                    label: "Deploy old config",
+                    description: "Must not survive a config replacement",
+                    command: "deploy-a",
+                    placement: "terminal",
+                    contexts: ["project"],
+                },
+            ],
+            isCurrent: () => {
+                if (singleUseGuard) return guardChecks++ === 0;
+                return activeFingerprint === "config-a";
+            },
+            execute,
+        });
+        const [action] = runtime.resolve(projectContext);
+
+        expect(action).toBeDefined();
+        activeFingerprint = "config-b";
+        expect(runtime.resolve(projectContext)).toEqual([]);
+        await expect(runtime.execute(action!.actionId, projectContext)).rejects.toBeInstanceOf(ActionNotVisibleError);
+        expect(execute).not.toHaveBeenCalled();
+
+        // Even if the current predicate changes between execution-time
+        // resolution and run, the command itself revalidates once more.
+        singleUseGuard = true;
+        guardChecks = 0;
+        await expect(runtime.execute(action!.actionId, projectContext)).rejects.toBeInstanceOf(StaleProjectActionConfigurationError);
+        expect(execute).not.toHaveBeenCalled();
+
+        registration.dispose();
         runtime.dispose();
     });
 
