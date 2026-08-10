@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addAgent, saveProviderProfile, toggleAgentSkipPermissions } from "./commands";
+import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, toggleAgentSkipPermissions } from "./commands";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -27,6 +27,29 @@ beforeEach(() => {
 });
 
 describe("agent launch commands", () => {
+    it("opens the new-agent draft when entering an empty project's agent view", () => {
+        focusAgents();
+
+        expect(getState().sessions.project.view).toBe("agent");
+        expect(getState().agentPaletteOpen).toBe(true);
+
+        closeAgentPalette();
+        expect(getState().agentPaletteOpen).toBe(false);
+    });
+
+    it("focuses an existing agent without opening a new-agent draft", () => {
+        addAgent("codex");
+        setState((state) => ({
+            sessions: { ...state.sessions, project: { ...state.sessions.project, view: "windows" } },
+        }));
+
+        focusAgents();
+
+        expect(getState().sessions.project.view).toBe("agent");
+        expect(getState().sessions.project.activeAgentId).toBe(getState().agentsBySession.project[0]);
+        expect(getState().agentPaletteOpen).toBe(false);
+    });
+
     it("clears a default selection when a custom profile changes provider", () => {
         setState({
             providerProfiles: [{ id: "local", name: "Local", provider: "claude", accent: "#abcdef" }],

@@ -12,6 +12,8 @@ use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 
 #[derive(Serialize, Deserialize)]
 pub struct AgentSession {
@@ -26,6 +28,16 @@ pub struct AgentInfo {
     kind: &'static str,
     label: &'static str,
     command: &'static str,
+    #[serde(rename = "defaultModel")]
+    default_model: Option<String>,
+    #[serde(rename = "defaultEffort")]
+    default_effort: Option<String>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+pub struct AgentModelInfo {
+    id: String,
+    label: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -121,8 +133,482 @@ pub fn available_agents() -> Vec<AgentInfo> {
             kind: def.kind,
             label: def.label,
             command: def.command,
+            default_model: configured_default_model(def.kind),
+            default_effort: configured_default_effort(def.kind),
         })
         .collect()
+}
+
+/// Full model identifiers exposed by the selected CLI. Catalog lookup is lazy
+/// because some providers build their list from local caches or provider data.
+#[tauri::command]
+pub async fn agent_models(agent: AgentKind) -> Result<Vec<AgentModelInfo>, String> {
+    match agent {
+        AgentKind::Claude => claude_models().await,
+        AgentKind::Codex => run_model_catalog("codex", &["debug", "models", "--bundled"])
+            .await
+            .and_then(|text| {
+                parse_codex_models(&text)
+                    .ok_or_else(|| "Codex returned an unreadable model catalog".to_string())
+            }),
+        AgentKind::Hermes => hermes_cached_models(),
+        AgentKind::Pi => run_model_catalog("pi", &["--list-models"])
+            .await
+            .map(|text| parse_pi_models(&text)),
+        AgentKind::Opencode => run_model_catalog("opencode", &["models"])
+            .await
+            .map(|text| parse_line_models(&text)),
+    }
+}
+
+const MODEL_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
+const MODEL_CATALOG_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
+const MODEL_CATALOG_ERROR_DETAIL_LIMIT: usize = 240;
+const CLAUDE_MODEL_CATALOG_ARGS: &[&str] = &[
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--system-prompt",
+    "",
+    "--tools",
+    "",
+    "--input-format",
+    "stream-json",
+];
+
+async fn run_model_catalog(agent: &str, args: &[&str]) -> Result<String, String> {
+    run_model_catalog_with_input(agent, args, None).await
+}
+
+async fn run_model_catalog_with_input(
+    agent: &str,
+    args: &[&str],
+    input: Option<&str>,
+) -> Result<String, String> {
+    let executable = crate::system::find_executable_matching(agent, |candidate| {
+        allowed_agent_path(agent, candidate)
+    })
+    .ok_or_else(|| format!("{agent} is not available on PATH"))?;
+    run_model_catalog_executable(agent, &executable, args, input).await
+}
+
+async fn run_model_catalog_executable(
+    agent: &str,
+    executable: &Path,
+    args: &[&str],
+    input: Option<&str>,
+) -> Result<String, String> {
+    let mut command = Command::new(executable);
+    command
+        .args(args)
+        .kill_on_drop(true)
+        .stdin(if input.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    if agent == "claude" {
+        command
+            .env_remove("CLAUDECODE")
+            .env("CLAUDE_CODE_ENTRYPOINT", "sikemux");
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|_| format!("Could not start {agent} model lookup"))?;
+    if let Some(input) = input {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| format!("Could not open {agent} model lookup input"))?;
+        stdin
+            .write_all(input.as_bytes())
+            .await
+            .map_err(|_| format!("Could not write {agent} model lookup input"))?;
+        stdin
+            .shutdown()
+            .await
+            .map_err(|_| format!("Could not finish {agent} model lookup input"))?;
+    }
+    let output = tokio::time::timeout(MODEL_CATALOG_TIMEOUT, child.wait_with_output())
+        .await
+        .map_err(|_| format!("{agent} model lookup timed out"))?
+        .map_err(|_| format!("Could not read {agent} model lookup output"))?;
+    if !output.status.success() {
+        let detail = model_catalog_error_detail(&output.stderr);
+        return Err(match detail {
+            Some(detail) => format!("{agent} model lookup exited unsuccessfully: {detail}"),
+            None => format!("{agent} model lookup exited unsuccessfully"),
+        });
+    }
+    if output.stdout.len() > MODEL_CATALOG_OUTPUT_LIMIT {
+        return Err(format!("{agent} model catalog was too large"));
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|_| format!("{agent} model catalog was not valid UTF-8"))
+}
+
+fn model_catalog_error_detail(stderr: &[u8]) -> Option<String> {
+    let normalized = String::from_utf8_lossy(stderr)
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    let mut characters = normalized.chars();
+    let detail = characters
+        .by_ref()
+        .take(MODEL_CATALOG_ERROR_DETAIL_LIMIT)
+        .collect::<String>();
+    Some(if characters.next().is_some() {
+        format!("{detail}…")
+    } else {
+        detail
+    })
+}
+
+async fn claude_models() -> Result<Vec<AgentModelInfo>, String> {
+    const REQUEST_ID: &str = "sikemux-models";
+    let request = format!(
+        "{{\"type\":\"control_request\",\"request_id\":\"{REQUEST_ID}\",\"request\":{{\"subtype\":\"initialize\",\"hooks\":null}}}}\n"
+    );
+    run_model_catalog_with_input("claude", CLAUDE_MODEL_CATALOG_ARGS, Some(&request))
+        .await
+        .and_then(|text| {
+            let models = parse_claude_models(&text, REQUEST_ID);
+            (!models.is_empty())
+                .then_some(models)
+                .ok_or_else(|| "Claude returned an empty model catalog".to_string())
+        })
+}
+
+fn parse_claude_models(text: &str, request_id: &str) -> Vec<AgentModelInfo> {
+    let Some(models) = text.lines().find_map(|line| {
+        let value: Value = serde_json::from_str(line).ok()?;
+        let response = value.get("response")?;
+        if value.get("type").and_then(Value::as_str) != Some("control_response")
+            || response.get("request_id").and_then(Value::as_str) != Some(request_id)
+        {
+            return None;
+        }
+        response.get("response")?.get("models")?.as_array().cloned()
+    }) else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    models
+        .iter()
+        // "default" is the inherited selection already rendered first by the UI.
+        .filter(|model| model.get("value").and_then(Value::as_str) != Some("default"))
+        .filter_map(|model| {
+            let id = model.get("resolvedModel")?.as_str()?;
+            let info = model_info(id, model.get("displayName").and_then(Value::as_str))?;
+            seen.insert(info.id.clone()).then_some(info)
+        })
+        .collect()
+}
+
+fn parse_codex_models(text: &str) -> Option<Vec<AgentModelInfo>> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    let models = value.get("models")?.as_array()?;
+    Some(
+        models
+            .iter()
+            .filter(|model| model.get("visibility").and_then(Value::as_str) == Some("list"))
+            .filter_map(|model| {
+                model_info(
+                    model.get("slug")?.as_str()?,
+                    model.get("display_name").and_then(Value::as_str),
+                )
+            })
+            .collect(),
+    )
+}
+
+fn parse_pi_models(text: &str) -> Vec<AgentModelInfo> {
+    text.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut columns = line.split_whitespace();
+            let provider = columns.next()?;
+            let model = columns.next()?;
+            model_info(&format!("{provider}/{model}"), None)
+        })
+        .collect()
+}
+
+fn parse_line_models(text: &str) -> Vec<AgentModelInfo> {
+    text.lines()
+        .filter_map(|line| model_info(line, None))
+        .collect()
+}
+
+fn hermes_cached_models() -> Result<Vec<AgentModelInfo>, String> {
+    let Some(home) = home_path() else {
+        return Ok(Vec::new());
+    };
+    let Ok(config) = fs::read_to_string(home.join(".hermes/config.yaml")) else {
+        return Ok(Vec::new());
+    };
+    let (provider, _) = yaml_model_section(&config);
+    let Some(provider) = provider else {
+        return Ok(Vec::new());
+    };
+    let Ok(text) = fs::read_to_string(home.join(".hermes/provider_models_cache.json")) else {
+        return Ok(Vec::new());
+    };
+    Ok(parse_hermes_models(&text, &provider).unwrap_or_default())
+}
+
+fn parse_hermes_models(text: &str, provider: &str) -> Option<Vec<AgentModelInfo>> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    Some(
+        value
+            .get(provider)?
+            .get("models")?
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .filter_map(|model| model_info(&format!("{provider}/{model}"), None))
+            .collect(),
+    )
+}
+
+fn model_info(id: &str, label: Option<&str>) -> Option<AgentModelInfo> {
+    let id = clean_model(id)?;
+    let label = label.and_then(clean_model).unwrap_or_else(|| id.clone());
+    Some(AgentModelInfo { id, label })
+}
+
+const MAX_MODEL_LENGTH: usize = 256;
+
+fn configured_default_model(kind: &str) -> Option<String> {
+    let home = home_path()?;
+    match kind {
+        "claude" => std::env::var("ANTHROPIC_MODEL")
+            .ok()
+            .and_then(|value| clean_model(&value))
+            .or_else(|| json_model(&home.join(".claude/settings.local.json"), "model"))
+            .or_else(|| json_model(&home.join(".claude/settings.json"), "model")),
+        "codex" => {
+            let root = std::env::var_os("CODEX_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".codex"));
+            fs::read_to_string(root.join("config.toml"))
+                .ok()
+                .and_then(|text| toml_model(&text))
+        }
+        "hermes" => std::env::var("HERMES_INFERENCE_MODEL")
+            .ok()
+            .and_then(|value| clean_model(&value))
+            .or_else(|| {
+                let text = fs::read_to_string(home.join(".hermes/config.yaml")).ok()?;
+                let (provider, model) = yaml_model_section(&text);
+                qualify_model(provider.as_deref(), model.as_deref())
+            }),
+        "pi" => {
+            let root = std::env::var_os("PI_CODING_AGENT_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".pi/agent"));
+            let value: Value =
+                serde_json::from_str(&fs::read_to_string(root.join("settings.json")).ok()?).ok()?;
+            qualify_model(
+                value.get("defaultProvider").and_then(Value::as_str),
+                value.get("defaultModel").and_then(Value::as_str),
+            )
+        }
+        "opencode" => {
+            let path = std::env::var_os("OPENCODE_CONFIG")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    let config = std::env::var_os("XDG_CONFIG_HOME")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| home.join(".config"));
+                    config.join("opencode/opencode.json")
+                });
+            json_model(&path, "model")
+        }
+        _ => None,
+    }
+}
+
+fn configured_default_effort(kind: &str) -> Option<String> {
+    let home = home_path()?;
+    match kind {
+        "claude" => json_effort(
+            &home.join(".claude/settings.local.json"),
+            "effortLevel",
+            kind,
+        )
+        .or_else(|| json_effort(&home.join(".claude/settings.json"), "effortLevel", kind)),
+        "codex" => {
+            let root = std::env::var_os("CODEX_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".codex"));
+            fs::read_to_string(root.join("config.toml"))
+                .ok()
+                .and_then(|text| toml_effort(&text))
+        }
+        "hermes" => fs::read_to_string(home.join(".hermes/config.yaml"))
+            .ok()
+            .and_then(|text| yaml_agent_reasoning_effort(&text))
+            .and_then(|value| clean_effort(kind, &value)),
+        "pi" => {
+            let root = std::env::var_os("PI_CODING_AGENT_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".pi/agent"));
+            json_effort(&root.join("settings.json"), "defaultThinkingLevel", kind)
+        }
+        _ => None,
+    }
+}
+
+fn clean_model(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty() && value.chars().count() <= MAX_MODEL_LENGTH).then(|| value.to_string())
+}
+
+fn clean_effort(kind: &str, value: &str) -> Option<String> {
+    let value = value.trim().to_ascii_lowercase();
+    let allowed: &[&str] = match kind {
+        "claude" => &["low", "medium", "high", "xhigh", "max"],
+        "codex" => &["minimal", "low", "medium", "high", "xhigh", "max"],
+        "hermes" => &[
+            "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+        ],
+        "pi" => &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        _ => &[],
+    };
+    allowed.contains(&value.as_str()).then_some(value)
+}
+
+fn json_model(path: &Path, key: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
+    value.get(key).and_then(Value::as_str).and_then(clean_model)
+}
+
+fn json_effort(path: &Path, key: &str, kind: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .and_then(|value| clean_effort(kind, value))
+}
+
+fn qualify_model(provider: Option<&str>, model: Option<&str>) -> Option<String> {
+    let model = clean_model(model?)?;
+    if model.contains('/') {
+        return Some(model);
+    }
+    let provider = provider.and_then(clean_model);
+    provider
+        .and_then(|provider| clean_model(&format!("{provider}/{model}")))
+        .or(Some(model))
+}
+
+fn toml_model(text: &str) -> Option<String> {
+    let value: toml::Value = toml::from_str(text).ok()?;
+    value
+        .get("model")
+        .and_then(toml::Value::as_str)
+        .and_then(clean_model)
+}
+
+fn toml_effort(text: &str) -> Option<String> {
+    let value: toml::Value = toml::from_str(text).ok()?;
+    value
+        .get("model_reasoning_effort")
+        .and_then(toml::Value::as_str)
+        .and_then(|value| clean_effort("codex", value))
+}
+
+/// Extract only `provider` and `default` from Hermes' top-level `model` map.
+/// This deliberately avoids deserializing or exposing the rest of config.yaml.
+fn yaml_model_section(text: &str) -> (Option<String>, Option<String>) {
+    let mut model_indent = None;
+    let mut provider = None;
+    let mut model = None;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        let Some(section_indent) = model_indent else {
+            if trimmed == "model:" {
+                model_indent = Some(indent);
+            }
+            continue;
+        };
+        if indent <= section_indent {
+            break;
+        }
+        if trimmed.ends_with(':') {
+            continue;
+        }
+        let Some((key, raw)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let value = yaml_scalar(raw);
+        match key.trim() {
+            "provider" => provider = value,
+            "default" => model = value,
+            _ => {}
+        }
+    }
+    (provider, model)
+}
+
+fn yaml_agent_reasoning_effort(text: &str) -> Option<String> {
+    let mut agent_indent = None;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        let Some(section_indent) = agent_indent else {
+            if trimmed == "agent:" {
+                agent_indent = Some(indent);
+            }
+            continue;
+        };
+        if indent <= section_indent {
+            break;
+        }
+        let Some((key, raw)) = trimmed.split_once(':') else {
+            continue;
+        };
+        if key.trim() == "reasoning_effort" {
+            return yaml_scalar(raw);
+        }
+    }
+    None
+}
+
+fn yaml_scalar(raw: &str) -> Option<String> {
+    let raw = raw.split(" #").next()?.trim();
+    let raw = if raw.len() >= 2
+        && ((raw.starts_with('"') && raw.ends_with('"'))
+            || (raw.starts_with('\'') && raw.ends_with('\'')))
+    {
+        &raw[1..raw.len() - 1]
+    } else {
+        raw
+    };
+    clean_model(raw)
 }
 
 /// Existing on-disk conversations for an agent.
@@ -849,7 +1335,13 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 
 #[cfg(test)]
 mod executable_tests {
-    use super::{allowed_agent_path_for_home, cached_title, codex_title, title_cache_stamp};
+    use super::{
+        allowed_agent_path_for_home, cached_title, codex_title, json_effort, parse_claude_models,
+        parse_codex_models, parse_hermes_models, parse_line_models, parse_pi_models, qualify_model,
+        run_model_catalog_executable, title_cache_stamp, toml_effort, toml_model,
+        yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo, CLAUDE_MODEL_CATALOG_ARGS,
+        MODEL_CATALOG_ERROR_DETAIL_LIMIT,
+    };
     use std::io::Write;
     use std::path::Path;
 
@@ -868,6 +1360,235 @@ mod executable_tests {
             Path::new("/usr/local/bin/opencode"),
             home,
         ));
+    }
+
+    #[test]
+    fn codex_defaults_come_only_from_the_root_config() {
+        let config = r#"
+            model = "gpt-5.6-sol" # the CLI default
+            model_reasoning_effort = "high"
+            [profiles.review]
+            model = "gpt-5.6-terra"
+            model_reasoning_effort = "xhigh"
+        "#;
+        assert_eq!(toml_model(config).as_deref(), Some("gpt-5.6-sol"));
+        assert_eq!(toml_effort(config).as_deref(), Some("high"));
+        assert_eq!(
+            toml_model(
+                r#"
+                [profiles.review]
+                model = "gpt-5.6-terra"
+                "#,
+            ),
+            None
+        );
+        assert_eq!(
+            toml_effort(
+                r#"
+                [profiles.review]
+                model_reasoning_effort = "xhigh"
+                "#,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn provider_models_are_qualified_without_rewriting_full_ids() {
+        assert_eq!(
+            qualify_model(Some("openai-codex"), Some("gpt-5.6-terra")).as_deref(),
+            Some("openai-codex/gpt-5.6-terra")
+        );
+        assert_eq!(
+            qualify_model(Some("anthropic"), Some("openrouter/claude-opus-5")).as_deref(),
+            Some("openrouter/claude-opus-5")
+        );
+    }
+
+    #[test]
+    fn json_cli_effort_defaults_use_each_providers_config_key() {
+        let mut config = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            config,
+            r#"{{"effortLevel":"xhigh","defaultThinkingLevel":"minimal"}}"#
+        )
+        .unwrap();
+
+        assert_eq!(
+            json_effort(config.path(), "effortLevel", "claude").as_deref(),
+            Some("xhigh")
+        );
+        assert_eq!(
+            json_effort(config.path(), "defaultThinkingLevel", "pi").as_deref(),
+            Some("minimal")
+        );
+        assert_eq!(
+            json_effort(config.path(), "defaultThinkingLevel", "claude"),
+            None,
+            "provider-invalid defaults must not leak into launch choices"
+        );
+    }
+
+    #[test]
+    fn hermes_default_model_comes_from_its_model_section() {
+        let config = r#"
+            model:
+              provider: deepseek
+              default: deepseek-v4-flash
+            agent:
+              reasoning_effort: high
+            compression:
+              reasoning_effort: low
+            "#;
+        let (provider, model) = yaml_model_section(config);
+        assert_eq!(provider.as_deref(), Some("deepseek"));
+        assert_eq!(model.as_deref(), Some("deepseek-v4-flash"));
+        assert_eq!(yaml_agent_reasoning_effort(config).as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn codex_catalog_keeps_only_visible_full_model_ids() {
+        let models = parse_codex_models(
+            r#"{"models":[
+                {"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","visibility":"list"},
+                {"slug":"internal-model","display_name":"Internal","visibility":"hide"}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            models,
+            vec![AgentModelInfo {
+                id: "gpt-5.6-sol".into(),
+                label: "GPT-5.6-Sol".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn claude_catalog_replaces_aliases_with_resolved_model_ids() {
+        let models = parse_claude_models(
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"test-models","response":{"models":[{"value":"default","resolvedModel":"claude-opus-5[1m]","displayName":"Default"},{"value":"opus[1m]","resolvedModel":"claude-opus-5[1m]","displayName":"Opus"},{"value":"sonnet","resolvedModel":"claude-sonnet-5","displayName":"Sonnet"},{"value":"haiku","resolvedModel":"claude-haiku-4-5-20251001","displayName":"Haiku"}]}}}"#,
+            "test-models",
+        );
+        assert_eq!(
+            models,
+            vec![
+                AgentModelInfo {
+                    id: "claude-opus-5[1m]".into(),
+                    label: "Opus".into()
+                },
+                AgentModelInfo {
+                    id: "claude-sonnet-5".into(),
+                    label: "Sonnet".into()
+                },
+                AgentModelInfo {
+                    id: "claude-haiku-4-5-20251001".into(),
+                    label: "Haiku".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn claude_catalog_enables_print_mode_for_stream_json() {
+        assert!(CLAUDE_MODEL_CATALOG_ARGS.contains(&"--print"));
+        assert!(CLAUDE_MODEL_CATALOG_ARGS
+            .windows(2)
+            .any(|args| args == ["--input-format", "stream-json"]));
+        assert!(CLAUDE_MODEL_CATALOG_ARGS
+            .windows(2)
+            .any(|args| args == ["--output-format", "stream-json"]));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn model_catalog_subprocess_captures_stdout() {
+        let output = run_model_catalog_executable(
+            "test-agent",
+            Path::new("/bin/sh"),
+            &["-c", "printf '%s' '{\"models\":[]}'"],
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(output, r#"{"models":[]}"#);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn model_catalog_subprocess_surfaces_bounded_stderr() {
+        let long_detail = "x".repeat(MODEL_CATALOG_ERROR_DETAIL_LIMIT + 20);
+        let script = format!("printf 'first\\nsecond {long_detail}' >&2; exit 7");
+        let error = run_model_catalog_executable(
+            "test-agent",
+            Path::new("/bin/sh"),
+            &["-c", &script],
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.starts_with("test-agent model lookup exited unsuccessfully: first second "));
+        assert!(error.ends_with('…'));
+        assert!(error.chars().count() <= MODEL_CATALOG_ERROR_DETAIL_LIMIT + 52);
+    }
+
+    #[test]
+    fn line_catalogs_preserve_provider_qualified_ids() {
+        assert_eq!(
+            parse_pi_models(
+                "provider model context\nopenai-codex gpt-5.6-sol 272K\nanthropic claude-opus-5 1M\n"
+            ),
+            vec![
+                AgentModelInfo {
+                    id: "openai-codex/gpt-5.6-sol".into(),
+                    label: "openai-codex/gpt-5.6-sol".into()
+                },
+                AgentModelInfo {
+                    id: "anthropic/claude-opus-5".into(),
+                    label: "anthropic/claude-opus-5".into()
+                }
+            ]
+        );
+        assert_eq!(
+            parse_line_models("opencode/big-pickle\nollama/qwen3\n"),
+            vec![
+                AgentModelInfo {
+                    id: "opencode/big-pickle".into(),
+                    label: "opencode/big-pickle".into()
+                },
+                AgentModelInfo {
+                    id: "ollama/qwen3".into(),
+                    label: "ollama/qwen3".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn hermes_catalog_uses_only_the_configured_provider() {
+        let models = parse_hermes_models(
+            r#"{
+                "deepseek":{"models":["deepseek-v4-pro","deepseek-v4-flash"]},
+                "anthropic":{"models":["claude-opus-5"]}
+            }"#,
+            "deepseek",
+        )
+        .unwrap();
+        assert_eq!(
+            models,
+            vec![
+                AgentModelInfo {
+                    id: "deepseek/deepseek-v4-pro".into(),
+                    label: "deepseek/deepseek-v4-pro".into()
+                },
+                AgentModelInfo {
+                    id: "deepseek/deepseek-v4-flash".into(),
+                    label: "deepseek/deepseek-v4-flash".into()
+                }
+            ]
+        );
     }
 
     #[test]

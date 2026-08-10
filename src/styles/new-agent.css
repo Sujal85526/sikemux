@@ -85,12 +85,23 @@
 }
 
 .new-agent-composer {
-    border: 1px solid var(--line);
-    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
+    border: 1px solid color-mix(in srgb, var(--ink-faint) 30%, var(--line));
+    background: color-mix(in srgb, var(--rail-2) 88%, transparent);
+    box-shadow:
+        0 22px 52px -30px rgba(0, 0, 0, 0.95),
+        inset 0 1px 0 color-mix(in srgb, var(--ink) 5%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(72%);
+    backdrop-filter: blur(10px) saturate(72%);
+    transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
 }
 
 .new-agent-composer:focus-within {
-    border-color: var(--acc-line);
+    border-color: color-mix(in srgb, var(--ink-faint) 48%, var(--line));
+    box-shadow:
+        0 24px 56px -30px rgba(0, 0, 0, 0.95),
+        inset 0 1px 0 color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 .new-agent-composer textarea {
@@ -282,7 +293,6 @@
 }
 
 .new-agent-page button:focus-visible,
-.new-agent-page textarea:focus-visible,
 .new-agent-page input:focus-visible,
 .new-agent-page select:focus-visible {
     outline: 1px solid var(--acc);

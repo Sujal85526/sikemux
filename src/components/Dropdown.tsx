@@ -6,7 +6,7 @@ import "../styles/dropdown.css";
 export interface DropdownOption {
     value: string;
     label: string;
-    /** Secondary line under the label — the model id behind an alias, a safety detail. */
+    /** Secondary line under the label — a display name, model id, or safety detail. */
     detail?: string;
     /** Extra class applied to the label (e.g. method colour). */
     className?: string;

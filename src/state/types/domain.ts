@@ -39,7 +39,7 @@ export type AgentType = "claude" | "codex" | "hermes" | "pi" | "opencode";
 export type AgentPermissionMode = "read-only" | "workspace-write" | "full-access" | "bypass";
 
 /** Provider-neutral reasoning levels; unsupported levels are normalized per CLI. */
-export type AgentEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type AgentEffort = "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 /** How the first task should treat repository isolation. */
 export type AgentWorkspaceStrategy = "current" | "existing" | "agent-decides";

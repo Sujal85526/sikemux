@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
     available: vi.fn(),
+    models: vi.fn(),
     sessions: vi.fn(),
     sessionResults: vi.fn(),
     worktrees: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../api/agents", () => ({
     agentApi: {
         available: mocks.available,
+        models: mocks.models,
         sessions: mocks.sessions,
         sessionResults: mocks.sessionResults,
     },
@@ -65,7 +67,12 @@ beforeEach(() => {
         agentsBySession: { [project.id]: [] },
         agentPaletteOpen: true,
     });
-    mocks.available.mockResolvedValue([{ type: "codex", label: "Codex", command: "codex" }]);
+    mocks.available.mockResolvedValue([{ type: "codex", label: "Codex", command: "codex", defaultModel: "gpt-5.6-sol", defaultEffort: "high" }]);
+    mocks.models.mockResolvedValue([
+        { id: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
+        { id: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
+        { id: "gpt-5.5", label: "GPT-5.5" },
+    ]);
     mocks.sessions.mockResolvedValue([]);
     mocks.worktrees.mockResolvedValue([
         {
@@ -98,7 +105,7 @@ beforeEach(() => {
         },
     ]);
     mocks.invoke.mockResolvedValue({ code: 0, output: "ready" });
-    invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
+    invalidate((kind) => kind === "agents.catalog" || kind === "agents.models" || kind === "agents.sessions");
 });
 
 afterEach(() => {
@@ -130,28 +137,78 @@ describe("AgentPalette new agent page", () => {
         expect(await screen.findByRole("button", { name: "Agent" })).toHaveTextContent("Codex");
         expect(screen.getByRole("button", { name: "Workspace" })).toHaveTextContent("Current checkout");
         expect(screen.getByRole("button", { name: "Safety" })).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Effort" })).toHaveTextContent("default effort");
+        expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("GPT-5.6-Sol");
+        expect(screen.getByRole("button", { name: "Effort" })).toHaveTextContent("high");
         expect(document.querySelectorAll("select")).toHaveLength(0);
         // Recent chats belong to the agent rail; the page never duplicates them.
         expect(screen.queryByRole("complementary", { name: "Recent chats" })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: /search/i })).not.toBeInTheDocument();
     });
 
-    it("offers the models the provider's own CLI takes, plus a custom escape", async () => {
+    it("shows display names while preserving the CLI's full model ids", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
         await screen.findByRole("button", { name: "Agent" });
 
         await user.click(screen.getByRole("button", { name: "Model" }));
         const menu = screen.getByRole("listbox", { name: "Model" });
-        // Codex's list, straight from what `codex --model` accepts.
-        expect(within(menu).getByRole("option", { name: /gpt-5\.6-sol/ })).toBeInTheDocument();
-        expect(within(menu).queryByRole("option", { name: /^sonnet$/ })).not.toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: /GPT-5\.6-Sol.*gpt-5\.6-sol.*CLI default/ })).toBeInTheDocument();
+        expect(await within(menu).findByRole("option", { name: /GPT-5\.6-Terra.*gpt-5\.6-terra/ })).toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: /GPT-5\.5.*gpt-5\.5/ })).toBeInTheDocument();
+        expect(within(menu).queryByRole("option", { name: /alias/i })).not.toBeInTheDocument();
 
         await user.click(within(menu).getByRole("option", { name: /Custom/ }));
         const field = screen.getByRole("textbox", { name: "Model" });
         await user.type(field, "gpt-6-experimental");
         expect(field).toHaveValue("gpt-6-experimental");
+    });
+
+    it("shows the CLI effort default without turning it into a launch override", async () => {
+        const user = userEvent.setup();
+        render(<AgentPalette />);
+        await screen.findByRole("button", { name: "Agent" });
+
+        await user.click(screen.getByRole("button", { name: "Effort" }));
+        const menu = screen.getByRole("listbox", { name: "Effort" });
+        expect(within(menu).getByRole("option", { name: /high.*CLI default/ })).toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: "xhigh" })).toBeInTheDocument();
+        await user.keyboard("{Escape}");
+
+        await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Inherit the configured effort.");
+        await user.click(screen.getByRole("button", { name: /Start task/ }));
+
+        await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
+        const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
+        expect(agent.effort).toBeUndefined();
+    });
+
+    it("keeps full Codex choices when the live CLI catalog is empty", async () => {
+        const user = userEvent.setup();
+        mocks.models.mockResolvedValueOnce([]);
+        invalidate((kind) => kind === "agents.models");
+        render(<AgentPalette />);
+
+        await user.click(await screen.findByRole("button", { name: "Model" }));
+        const menu = screen.getByRole("listbox", { name: "Model" });
+        expect(within(menu).getByRole("option", { name: /gpt-5\.6-terra/ })).toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: /gpt-5\.6-luna/ })).toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: /gpt-5\.5/ })).toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: /gpt-5\.2/ })).toBeInTheDocument();
+        expect(screen.getByText(/returned no models; showing bundled full model IDs/i)).toBeInTheDocument();
+    });
+
+    it("keeps full Codex choices and exposes a failed live lookup", async () => {
+        const user = userEvent.setup();
+        mocks.models.mockRejectedValueOnce(new Error("Codex lookup failed"));
+        invalidate((kind) => kind === "agents.models");
+        render(<AgentPalette />);
+
+        await user.click(await screen.findByRole("button", { name: "Model" }));
+        const menu = screen.getByRole("listbox", { name: "Model" });
+        expect(within(menu).getByRole("option", { name: /gpt-5\.6-terra/ })).toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: /gpt-5\.6-luna/ })).toBeInTheDocument();
+        expect(within(menu).getByRole("option", { name: /Custom.*CLI lookup failed/i })).toBeInTheDocument();
+        expect(screen.getByText(/model lookup failed; showing bundled full model IDs/i)).toBeInTheDocument();
     });
 
     it("launches a prompted agent from the recommended current checkout", async () => {
@@ -160,7 +217,7 @@ describe("AgentPalette new agent page", () => {
         await screen.findByRole("button", { name: "Agent" });
 
         await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Polish the launch experience and test it.");
-        await pickOption(user, "Model", "gpt-5.5");
+        await pickOption(user, "Model", "GPT-5.5");
         await pickOption(user, "Effort", "xhigh");
         await pickOption(user, "Safety", "Observe");
         await user.click(screen.getByRole("button", { name: /Start task/ }));
@@ -217,7 +274,9 @@ describe("AgentPalette new agent page", () => {
 
     it("reports CLI detection state and retries a failed detection", async () => {
         const user = userEvent.setup();
-        mocks.available.mockRejectedValueOnce(new Error("missing PATH")).mockResolvedValueOnce([{ type: "codex", label: "Codex", command: "codex" }]);
+        mocks.available
+            .mockRejectedValueOnce(new Error("missing PATH"))
+            .mockResolvedValueOnce([{ type: "codex", label: "Codex", command: "codex", defaultModel: "gpt-5.6-sol", defaultEffort: "high" }]);
         invalidate((kind) => kind === "agents.catalog");
         render(<AgentPalette />);
 
@@ -228,15 +287,21 @@ describe("AgentPalette new agent page", () => {
         expect(mocks.available).toHaveBeenCalledTimes(2);
     });
 
-    it("closes on Escape and guards keyboard launch against re-entry", async () => {
+    it("launches on Enter, preserves Shift-Enter newlines, and guards keyboard re-entry", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
-        const page = await screen.findByRole("region", { name: "New agent" });
-        await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Launch exactly once.");
+        await screen.findByRole("region", { name: "New agent" });
+        const composer = screen.getByRole("textbox", { name: "Task for the new agent" });
+        await user.type(composer, "Launch exactly once.");
+        await user.keyboard("{Shift>}{Enter}{/Shift}With a second line.");
+        expect(composer).toHaveValue("Launch exactly once.\nWith a second line.");
+        expect(screen.getByRole("button", { name: /Start task/ })).toHaveAttribute("aria-keyshortcuts", "Enter");
 
-        fireEvent.keyDown(page, { key: "Enter", metaKey: true });
-        fireEvent.keyDown(page, { key: "Enter", metaKey: true });
+        fireEvent.keyDown(composer, { key: "Enter" });
+        fireEvent.keyDown(composer, { key: "Enter" });
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
+        const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
+        expect(agent.startup).toContain("Launch exactly once.\nWith a second line.");
         // Attaching the agent retires the draft tab it was launched from.
         expect(getState().agentPaletteOpen).toBe(false);
 
@@ -245,5 +310,17 @@ describe("AgentPalette new agent page", () => {
         render(<AgentPalette />);
         fireEvent.keyDown(screen.getByRole("region", { name: "New agent" }), { key: "Escape" });
         expect(getState().agentPaletteOpen).toBe(false);
+    });
+
+    it("does not launch when Enter activates another control", async () => {
+        const user = userEvent.setup();
+        render(<AgentPalette />);
+        const model = await screen.findByRole("button", { name: "Model" });
+        await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Keep controls keyboard-safe.");
+
+        fireEvent.keyDown(model, { key: "Enter" });
+
+        expect(getState().agentsBySession["sess-project"]).toHaveLength(0);
+        expect(getState().agentPaletteOpen).toBe(true);
     });
 });

@@ -1751,6 +1751,10 @@ export function focusAgents(): void {
         const sess = d.sessions[session.id];
         sess.view = "agent";
         sess.activeAgentId = session.activeAgentId ?? ids[0] ?? null;
+        // An empty agent view has no useful landing state. Open the draft when
+        // the user enters it, while leaving an explicitly dismissed draft
+        // closed until they choose the Agents destination again.
+        if (ids.length === 0) d.agentPaletteOpen = true;
         d.zoomedPaneId = null;
     });
     emit({ type: "agent-focus", sessionId: getState().activeSessionId });

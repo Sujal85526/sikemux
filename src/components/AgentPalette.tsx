@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { agentApi, type AgentInfo } from "../api/agents";
+import { agentApi, type AgentInfo, type AgentModelInfo } from "../api/agents";
 import { git, type GitWorktree } from "../api/git";
 import {
     MAX_AGENT_MODEL_LENGTH,
@@ -9,11 +9,10 @@ import {
     supportedEfforts,
     supportedPermissionModes,
 } from "../agentLaunch";
-import { modelChoicesFor } from "../agentModels";
 import { basename, prettyPath } from "../lib/paths";
 import * as cmd from "../state/commands";
-import { useResource } from "../state/resources";
-import { agentCatalogR } from "../state/resources.defs";
+import { useResource, useResourceEnabled } from "../state/resources";
+import { agentCatalogR, agentModelsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { AgentEffort, AgentPermissionMode, AgentType, AgentWorkspaceStrategy } from "../state/types";
 import { notify } from "../state/toast";
@@ -23,6 +22,36 @@ import "../styles/new-agent.css";
 
 /** Sentinel for "type a model this provider's list doesn't carry". */
 const CUSTOM_MODEL = "\0custom";
+
+/**
+ * Full model IDs shipped as a last-resort floor. Live CLI discovery is merged
+ * on top, so new releases appear immediately while a failed IPC/subprocess can
+ * no longer collapse the picker to only the configured default.
+ */
+const MODEL_FALLBACKS: Partial<Record<AgentType, readonly AgentModelInfo[]>> = {
+    claude: [
+        { id: "claude-opus-5[1m]", label: "Opus (1M context)" },
+        { id: "claude-fable-5", label: "Fable" },
+        { id: "claude-sonnet-5", label: "Sonnet" },
+        { id: "claude-haiku-4-5-20251001", label: "Haiku" },
+    ],
+    codex: [
+        { id: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
+        { id: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
+        { id: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
+        { id: "gpt-5.5", label: "GPT-5.5" },
+        { id: "gpt-5.2", label: "GPT-5.2" },
+    ],
+};
+
+function mergedModels(type: AgentType | null, discovered: readonly AgentModelInfo[] | undefined): AgentModelInfo[] {
+    const seen = new Set<string>();
+    return [...(discovered ?? []), ...(type ? (MODEL_FALLBACKS[type] ?? []) : [])].filter((candidate) => {
+        if (seen.has(candidate.id)) return false;
+        seen.add(candidate.id);
+        return true;
+    });
+}
 
 const WORKSPACE_CHOICES: readonly { id: AgentWorkspaceStrategy; label: string; detail: string }[] = [
     { id: "current", label: "Current checkout", detail: "Start here. Best when this is the only task changing the project." },
@@ -63,14 +92,48 @@ export function AgentPalette() {
     const [prompt, setPrompt] = useState("");
     const [launching, setLaunching] = useState(false);
     const [error, setError] = useState("");
+    const modelCatalog = useResourceEnabled(type != null, agentModelsR, type ?? "codex");
 
     const launchRoot = originRef.current.cwd;
     const launchSessionId = originRef.current.sessionId;
     const matchingProfiles = useMemo(() => profiles.filter((profile) => profile.provider === type), [profiles, type]);
     const effortOptions = type ? supportedEfforts(type) : [];
-    // Hermes and OpenCode resolve their catalogs from live provider queries, so
-    // they list nothing here and the field stays a plain text box.
-    const modelChoices = useMemo(() => modelChoicesFor(type), [type]);
+    const selectedAgent = type ? agents.find((agent) => agent.type === type) : undefined;
+    const defaultModel = selectedAgent?.defaultModel ?? null;
+    const defaultEffort = selectedAgent?.defaultEffort ?? null;
+    const availableModels = useMemo(() => mergedModels(type, modelCatalog.data), [type, modelCatalog.data]);
+    const modelOptions = useMemo(() => {
+        const configuredDefault = availableModels.find((candidate) => candidate.id === defaultModel);
+        return [
+            {
+                value: "",
+                label: configuredDefault?.label ?? defaultModel ?? "CLI default",
+                detail:
+                    defaultModel && configuredDefault?.label !== defaultModel
+                        ? `${defaultModel} · CLI default`
+                        : defaultModel
+                          ? "CLI default"
+                          : "configured by the provider",
+            },
+            ...availableModels
+                .filter((candidate) => candidate.id !== defaultModel)
+                .map((candidate) => ({
+                    value: candidate.id,
+                    label: candidate.label,
+                    detail: candidate.label !== candidate.id ? candidate.id : undefined,
+                })),
+            {
+                value: CUSTOM_MODEL,
+                label: "Custom…",
+                detail:
+                    modelCatalog.status === "loading"
+                        ? "loading CLI models…"
+                        : modelCatalog.status === "error"
+                          ? "CLI lookup failed · manual override"
+                          : "override for this task",
+            },
+        ];
+    }, [availableModels, defaultModel, modelCatalog.status]);
 
     useEffect(() => {
         if (customModel) modelRef.current?.focus();
@@ -186,7 +249,8 @@ export function AgentPalette() {
     }
 
     // The page is a pane, not a modal: Tab flows out to the rails like it does
-    // from any other pane. Only the two page-level shortcuts are claimed here.
+    // from any other pane. Enter launches only from the task composer so it
+    // keeps its normal activation behavior on dropdowns and buttons.
     function onPageKeyDown(event: React.KeyboardEvent) {
         event.stopPropagation();
         if (event.key === "Escape") {
@@ -194,7 +258,7 @@ export function AgentPalette() {
             cmd.closeAgentPalette();
             return;
         }
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        if (event.key === "Enter" && event.target === composerRef.current && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
             void launch();
         }
@@ -209,6 +273,12 @@ export function AgentPalette() {
                 ? "No supported agent CLIs were detected on PATH."
                 : "";
     const selectedLabel = type ? labelForType(type, agents) : "an agent";
+    const modelMessage =
+        type && modelCatalog.status === "error"
+            ? `${selectedLabel} model lookup failed; showing bundled full model IDs.`
+            : type && modelCatalog.status === "ok" && modelCatalog.data?.length === 0 && (MODEL_FALLBACKS[type]?.length ?? 0) > 0
+              ? `${selectedLabel} returned no models; showing bundled full model IDs.`
+              : "";
     const permissionCopy = permissionCopyForType(type ?? "codex", permissionMode);
     const selectedWorkspace = WORKSPACE_CHOICES.find((choice) => choice.id === workspaceStrategy)!;
     const selectedWorktree = worktrees.find((item) => item.path === existingPath);
@@ -263,7 +333,7 @@ export function AgentPalette() {
                                 onChange={(next) => chooseType(next as AgentType)}
                             />
 
-                            {customModel || modelChoices.length === 0 ? (
+                            {customModel ? (
                                 <span className="na-chip na-chip-model">
                                     <input
                                         ref={modelRef}
@@ -272,21 +342,19 @@ export function AgentPalette() {
                                         value={model}
                                         onChange={(event) => setModel(event.target.value)}
                                         maxLength={MAX_AGENT_MODEL_LENGTH}
-                                        placeholder="default model"
+                                        placeholder={defaultModel || "model id"}
                                         spellCheck={false}
                                     />
-                                    {modelChoices.length > 0 && (
-                                        <button
-                                            type="button"
-                                            aria-label="Back to the listed models"
-                                            title="Back to the listed models"
-                                            onClick={() => {
-                                                setCustomModel(false);
-                                                setModel("");
-                                            }}>
-                                            <IconClose size={10} />
-                                        </button>
-                                    )}
+                                    <button
+                                        type="button"
+                                        aria-label="Use the CLI default model"
+                                        title="Use the CLI default model"
+                                        onClick={() => {
+                                            setCustomModel(false);
+                                            setModel("");
+                                        }}>
+                                        <IconClose size={10} />
+                                    </button>
                                 </span>
                             ) : (
                                 <Dropdown
@@ -294,11 +362,7 @@ export function AgentPalette() {
                                     title="Model"
                                     label="Model"
                                     value={model}
-                                    options={[
-                                        { value: "", label: "default model" },
-                                        ...modelChoices,
-                                        { value: CUSTOM_MODEL, label: "Custom…", detail: "type any model id" },
-                                    ]}
+                                    options={modelOptions}
                                     onChange={(next) => {
                                         if (next === CUSTOM_MODEL) {
                                             setCustomModel(true);
@@ -332,8 +396,14 @@ export function AgentPalette() {
                                     label="Effort"
                                     value={effort ?? ""}
                                     options={[
-                                        { value: "", label: "default effort" },
-                                        ...effortOptions.map((option) => ({ value: option, label: option })),
+                                        {
+                                            value: "",
+                                            label: defaultEffort ?? "CLI default",
+                                            detail: defaultEffort ? "CLI default" : "configured by the provider",
+                                        },
+                                        ...effortOptions
+                                            .filter((option) => option !== defaultEffort)
+                                            .map((option) => ({ value: option, label: option })),
                                     ]}
                                     onChange={(next) => setEffort((next || undefined) as AgentEffort | undefined)}
                                 />
@@ -389,9 +459,14 @@ export function AgentPalette() {
                             )}
                         </div>
 
-                        <button type="button" className="new-agent-launch" disabled={launchBlocked} onClick={() => void launch()}>
+                        <button
+                            type="button"
+                            className="new-agent-launch"
+                            aria-keyshortcuts="Enter"
+                            disabled={launchBlocked}
+                            onClick={() => void launch()}>
                             {launching ? "starting…" : "Start task"}
-                            <kbd>⌘↵</kbd>
+                            <kbd>↵</kbd>
                         </button>
                     </div>
                 </div>
@@ -410,9 +485,18 @@ export function AgentPalette() {
                                 </button>
                             )}
                         </span>
+                    ) : modelMessage ? (
+                        <span className="error" role="status">
+                            {modelMessage}
+                            {modelCatalog.status === "error" && (
+                                <button type="button" onClick={() => void modelCatalog.refresh().catch(() => {})}>
+                                    Try again
+                                </button>
+                            )}
+                        </span>
                     ) : (
                         <span>
-                            <kbd>⌘↵</kbd> start · <kbd>esc</kbd> dismiss · resume past chats from the agent rail
+                            <kbd>↵</kbd> start · <kbd>⇧↵</kbd> new line · <kbd>esc</kbd> dismiss · resume past chats from the agent rail
                         </span>
                     )}
                 </div>

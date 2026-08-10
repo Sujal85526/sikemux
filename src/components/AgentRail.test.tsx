@@ -47,7 +47,7 @@ beforeEach(() => {
         agents: {},
         agentsBySession: { "sess-project": [] },
     });
-    mocks.available.mockResolvedValue([{ type: "codex", label: "Codex", command: "codex" }]);
+    mocks.available.mockResolvedValue([{ type: "codex", label: "Codex", command: "codex", defaultModel: "gpt-5.6-sol", defaultEffort: "high" }]);
     mocks.sessions.mockResolvedValue([
         { id: "older", title: "Fix terminal focus", mtime: 100 },
         { id: "newer", title: "Build launch page", mtime: 200 },

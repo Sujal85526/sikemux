@@ -15,9 +15,9 @@ export const MAX_AGENT_PROMPT_LENGTH = 48 * 1024;
 
 const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
     claude: ["low", "medium", "high", "xhigh", "max"],
-    codex: ["low", "medium", "high", "xhigh", "max"],
-    hermes: ["low", "medium", "high", "xhigh", "max", "ultra"],
-    pi: ["low", "medium", "high", "xhigh", "max"],
+    codex: ["minimal", "low", "medium", "high", "xhigh", "max"],
+    hermes: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+    pi: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
     // The interactive OpenCode command has --model and --prompt, but its
     // provider-specific --variant effort flag belongs to `opencode run`.
     opencode: [],

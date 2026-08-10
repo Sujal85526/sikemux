@@ -1,4 +1,4 @@
-import { agentApi, type AgentInfo, type AgentSession } from "../api/agents";
+import { agentApi, type AgentInfo, type AgentModelInfo, type AgentSession } from "../api/agents";
 import {
     awsApi,
     type AwsIdentity,
@@ -130,6 +130,12 @@ export const agentCatalogR = resource({
     kind: "agents.catalog",
     fetch: (): Promise<AgentInfo[]> => agentApi.available(),
     staleAfterMs: 60_000,
+});
+
+export const agentModelsR = resource({
+    kind: "agents.models",
+    fetch: (type: AgentType): Promise<AgentModelInfo[]> => agentApi.models(type),
+    staleAfterMs: 5 * 60_000,
 });
 
 export const agentSessionsR = resource({

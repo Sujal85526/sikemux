@@ -1,10 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentType } from "../state/types";
+import type { AgentEffort, AgentType } from "../state/types";
 
 export interface AgentInfo {
     type: AgentType;
     label: string;
     command: string;
+    /** Effective model inherited from the CLI's own user configuration. */
+    defaultModel: string | null;
+    /** Effective reasoning effort inherited from the CLI's own user configuration. */
+    defaultEffort: AgentEffort | null;
+}
+
+export interface AgentModelInfo {
+    /** Full identifier accepted by the CLI's --model flag. */
+    id: string;
+    label: string;
 }
 
 export interface AgentSession {
@@ -60,6 +70,7 @@ async function fetchSessionResults(providers: readonly AgentInfo[], cwd: string)
 
 export const agentApi = {
     available: fetchAvailable,
+    models: (agent: AgentType): Promise<AgentModelInfo[]> => invoke<AgentModelInfo[]>("agent_models", { agent }),
     sessions: fetchSessions,
     sessionResults: fetchSessionResults,
     watchStart: (agent: AgentType, cwd: string): Promise<number> => invoke<number>("agent_sessions_watch_start", { agent, cwd }),
