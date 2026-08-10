@@ -96,6 +96,7 @@ export interface GitStash {
 
 export type DiscardMode = "unstaged" | "staged" | "all";
 export type StashMode = "all" | "staged" | "unstaged";
+export type RepoWatchLeaseToken = string;
 
 export interface GitRemote {
     name: string;
@@ -220,8 +221,8 @@ export const git = {
         return invoke<string>("git_ai_message", { repo, provider, model, onChunk: channel });
     },
     prOpen: (repo: string) => invoke<string>("pr_open", { repo }),
-    watchStart: (repo: string) => invoke<void>("repo_watch_start", { repo }),
-    watchStop: (repo: string) => invoke<void>("repo_watch_stop", { repo }),
+    watchStart: (repo: string, token: RepoWatchLeaseToken) => invoke<void>("repo_watch_start", { repo, token }),
+    watchStop: (token: RepoWatchLeaseToken) => invoke<void>("repo_watch_stop", { token }),
 
     discardFile: (repo: string, path: string, mode: DiscardMode) => invoke<void>("git_discard_file", { repo, path, mode }),
 

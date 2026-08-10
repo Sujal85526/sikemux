@@ -24,8 +24,9 @@ type ProjectChangeListener = (repo: string) => void;
 export interface ProjectControllerRuntimeServices {
     readonly loadConfig: (cwd: string) => Promise<ProjectConfigLoadResult>;
     readonly loadWorktrees: (cwd: string) => Promise<readonly GitWorktree[]>;
-    readonly watchStart: (cwd: string) => void | PromiseLike<void>;
-    readonly watchStop: (cwd: string) => void | PromiseLike<void>;
+    readonly newWatchLeaseToken: () => string;
+    readonly watchStart: (cwd: string, token: string) => void | PromiseLike<void>;
+    readonly watchStop: (token: string) => void | PromiseLike<void>;
     readonly subscribeFsChanged: (listener: ProjectChangeListener) => () => void;
     readonly subscribeGitRefresh: (listener: ProjectChangeListener) => () => void;
 }
@@ -55,7 +56,15 @@ function isBoundedAbsoluteRoot(value: unknown): value is string {
 
 function requireServices(services: ProjectControllerRuntimeServices): ProjectControllerRuntimeServices {
     if (typeof services !== "object" || services === null) throw new TypeError("project controller runtime services are required");
-    const keys = ["loadConfig", "loadWorktrees", "watchStart", "watchStop", "subscribeFsChanged", "subscribeGitRefresh"] as const;
+    const keys = [
+        "loadConfig",
+        "loadWorktrees",
+        "newWatchLeaseToken",
+        "watchStart",
+        "watchStop",
+        "subscribeFsChanged",
+        "subscribeGitRefresh",
+    ] as const;
     for (const key of keys) {
         if (typeof services[key] !== "function") throw new TypeError(`project controller runtime service ${key} must be a function`);
     }
@@ -80,8 +89,9 @@ function invokeService<Result>(operation: () => Result | PromiseLike<Result>): P
 const productionServices: ProjectControllerRuntimeServices = Object.freeze({
     loadConfig: (cwd: string) => loadProjectConfig(cwd),
     loadWorktrees: (cwd: string) => git.worktrees(cwd),
-    watchStart: (cwd: string) => git.watchStart(cwd),
-    watchStop: (cwd: string) => git.watchStop(cwd),
+    newWatchLeaseToken: () => globalThis.crypto.randomUUID(),
+    watchStart: (cwd: string, token: string) => git.watchStart(cwd, token),
+    watchStop: (token: string) => git.watchStop(token),
     subscribeFsChanged: (listener: ProjectChangeListener) => subscribeBus("fs-changed", (event) => listener(event.repo)),
     subscribeGitRefresh: (listener: ProjectChangeListener) => subscribeBus("git-refresh", (event) => listener(event.repo)),
 });
@@ -110,8 +120,9 @@ export class ProjectControllerRuntime {
         this.controllerServices = Object.freeze({
             loadConfig: (cwd: string) => invokeService(() => this.services.loadConfig(cwd)),
             loadWorktrees: (cwd: string) => invokeService(() => this.services.loadWorktrees(cwd)),
-            watchStart: (cwd: string) => invokeService(() => this.services.watchStart(cwd)),
-            watchStop: (cwd: string) => invokeService(() => this.services.watchStop(cwd)),
+            newWatchLeaseToken: () => this.services.newWatchLeaseToken(),
+            watchStart: (cwd: string, token: string) => invokeService(() => this.services.watchStart(cwd, token)),
+            watchStop: (token: string) => invokeService(() => this.services.watchStop(token)),
         });
     }
 
@@ -206,9 +217,16 @@ export class ProjectControllerRuntime {
     private handleProjectChange(token: object, repo: string): void {
         if (!this.isStarted || this.subscriptionToken !== token) return;
         if (repo) {
-            void this.refresh(repo);
-            return;
+            const owner = this.roots.get(repo);
+            if (owner) {
+                void this.contain(owner.controller.refresh());
+                return;
+            }
         }
+        // Native watchers may report a canonicalized path while persisted/open
+        // roots retain a symlink or other alias. An unknown non-empty key cannot
+        // be routed safely, so invalidate every bounded owner instead of leaving
+        // an aliased project stale.
         for (const owner of this.roots.values()) void this.contain(owner.controller.refresh());
     }
 

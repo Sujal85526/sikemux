@@ -23,10 +23,13 @@ use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutc
 const TTL: Duration = Duration::from_secs(60);
 const MAX_INCREMENTAL_PATHS: usize = 512;
 const MAX_INCREMENTAL_FILES: usize = 4_096;
+pub(crate) const MAX_REPO_PATH_BYTES: usize = 4 * 1024;
+const MAX_PROJECT_CACHE_ENTRIES: usize = 128;
 const FULL_SCAN_SLOW_THRESHOLD: Duration = Duration::from_millis(100);
 const INCREMENTAL_SLOW_THRESHOLD: Duration = Duration::from_millis(16);
 
 static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_CACHE_ACCESS: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 struct Entry {
@@ -37,12 +40,14 @@ struct Entry {
 
 struct ProjectCache {
     entry: Mutex<Option<Entry>>,
+    last_used: AtomicU64,
 }
 
 impl ProjectCache {
     fn new() -> Self {
         Self {
             entry: Mutex::new(None),
+            last_used: AtomicU64::new(next_cache_access()),
         }
     }
 
@@ -52,6 +57,10 @@ impl ProjectCache {
             Err(poisoned) => poisoned.into_inner(),
         }
     }
+
+    fn touch(&self) {
+        self.last_used.store(next_cache_access(), Ordering::Release);
+    }
 }
 
 fn cache() -> &'static DashMap<String, Arc<ProjectCache>> {
@@ -59,11 +68,110 @@ fn cache() -> &'static DashMap<String, Arc<ProjectCache>> {
     CACHE.get_or_init(DashMap::new)
 }
 
-fn project_cache(repo: &str) -> Arc<ProjectCache> {
-    cache()
-        .entry(repo.to_owned())
-        .or_insert_with(|| Arc::new(ProjectCache::new()))
-        .clone()
+fn cache_admission_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn next_cache_access() -> u64 {
+    NEXT_CACHE_ACCESS.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Canonical repository identity shared by snapshots and native watchers.
+/// Raw aliases remain a frontend routing concern; retaining only this key keeps
+/// symlinks, `.` components, and trailing separators from multiplying native
+/// cache/watcher ownership.
+pub(crate) fn canonical_repo_key(repo: &str) -> Result<String, String> {
+    if repo.is_empty()
+        || repo.len() > MAX_REPO_PATH_BYTES
+        || repo.contains('\0')
+        || !Path::new(repo).is_absolute()
+    {
+        return Err(format!(
+            "repository path must be an absolute path of at most {MAX_REPO_PATH_BYTES} bytes"
+        ));
+    }
+    let canonical = std::fs::canonicalize(repo)
+        .map_err(|error| format!("canonicalize repository path: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("repository path is not a directory".into());
+    }
+    let canonical = canonical
+        .into_os_string()
+        .into_string()
+        .map_err(|_| "canonical repository path is not valid UTF-8".to_string())?;
+    if canonical.len() > MAX_REPO_PATH_BYTES {
+        return Err(format!(
+            "canonical repository path exceeds {MAX_REPO_PATH_BYTES} bytes"
+        ));
+    }
+    Ok(canonical)
+}
+
+fn evict_one_idle_project_cache_from(caches: &DashMap<String, Arc<ProjectCache>>) -> bool {
+    let mut candidates = caches
+        .iter()
+        .map(|entry| {
+            (
+                entry.value().last_used.load(Ordering::Acquire),
+                entry.key().clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    for (_, key) in candidates {
+        // A concurrent lookup holds the DashMap shard while cloning the Arc.
+        // `remove_if` therefore observes its strong reference before deciding;
+        // only the map-owned, fully idle cell can be evicted.
+        if caches
+            .remove_if(&key, |_, project| Arc::strong_count(project) == 1)
+            .is_some()
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn project_cache_from(
+    caches: &DashMap<String, Arc<ProjectCache>>,
+    admission_lock: &Mutex<()>,
+    repo: &str,
+    capacity: usize,
+) -> Result<Arc<ProjectCache>, String> {
+    if let Some(project) = caches.get(repo) {
+        let project = project.clone();
+        project.touch();
+        return Ok(project);
+    }
+
+    let _admission = admission_lock
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(project) = caches.get(repo) {
+        let project = project.clone();
+        project.touch();
+        return Ok(project);
+    }
+    while caches.len() >= capacity {
+        if !evict_one_idle_project_cache_from(caches) {
+            return Err(format!(
+                "project file cache is busy at its {capacity}-project safety limit"
+            ));
+        }
+    }
+    let project = Arc::new(ProjectCache::new());
+    caches.insert(repo.to_owned(), project.clone());
+    Ok(project)
+}
+
+fn project_cache(repo: &str) -> Result<Arc<ProjectCache>, String> {
+    project_cache_from(
+        cache(),
+        cache_admission_lock(),
+        repo,
+        MAX_PROJECT_CACHE_ENTRIES,
+    )
 }
 
 /// Explicit invalidation keeps compatibility with callers that need the next
@@ -262,8 +370,8 @@ fn full_scan_locked(repo: &str, slot: &mut Option<Entry>, reason: FullScanReason
     entry
 }
 
-fn snapshot_blocking(repo: &str) -> ProjectFilesSnapshot {
-    let project = project_cache(repo);
+fn snapshot_for_key_blocking(repo: &str) -> Result<ProjectFilesSnapshot, String> {
+    let project = project_cache(repo)?;
     let entry = {
         let mut slot = project.lock();
         if let Some(entry) = slot.as_ref() {
@@ -278,7 +386,12 @@ fn snapshot_blocking(repo: &str) -> ProjectFilesSnapshot {
     };
     // The IPC-owned Vec clone can be large; do it after releasing the
     // per-project mutation lock so watcher deltas do not wait on allocation.
-    entry.snapshot()
+    Ok(entry.snapshot())
+}
+
+fn snapshot_blocking(repo: &str) -> Result<ProjectFilesSnapshot, String> {
+    let repo = canonical_repo_key(repo)?;
+    snapshot_for_key_blocking(&repo)
 }
 
 #[tauri::command]
@@ -287,6 +400,7 @@ pub async fn list_project_files_snapshot(repo: String) -> Result<ProjectFilesSna
     tauri::async_runtime::spawn_blocking(move || snapshot_blocking(&repo_for_blocking))
         .await
         .map_err(|error| format!("walk join: {error}"))
+        .and_then(|snapshot| snapshot)
 }
 
 /// Compatibility command for the current frontend. New callers can use
@@ -436,7 +550,14 @@ pub(crate) fn apply_watcher_batch(
         metadata,
     );
 
-    let project = project_cache(repo);
+    let project = match project_cache(repo) {
+        Ok(project) => project,
+        Err(_) => {
+            let _ = observer.increment_counter("files.incremental_cache_capacity_errors", 1);
+            timer.finish(SpanOutcome::Error);
+            return;
+        }
+    };
     let mut slot = project.lock();
     let Some(current) = slot.as_ref().cloned() else {
         let _ = observer.increment_counter("files.incremental_cache_misses", 1);
@@ -553,6 +674,12 @@ mod tests {
         std::fs::write(path, contents).unwrap();
     }
 
+    fn canonical_temp_root(temp: &tempfile::TempDir) -> (String, PathBuf) {
+        let repo = canonical_repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
+        let root = PathBuf::from(&repo);
+        (repo, root)
+    }
+
     #[test]
     fn snapshot_is_sorted_deduped_and_scan_ids_are_monotonic() {
         let temp = tempfile::tempdir().unwrap();
@@ -560,29 +687,29 @@ mod tests {
         write(&temp.path().join("a.txt"), "a");
         write(&temp.path().join(".DS_Store"), "junk");
         write(&temp.path().join("target/ignored.txt"), "ignored");
-        let repo = temp.path().to_string_lossy().into_owned();
+        let (repo, root) = canonical_temp_root(&temp);
 
-        let first = snapshot_blocking(&repo);
+        let first = snapshot_blocking(&repo).unwrap();
         assert_eq!(first.files, vec!["a.txt", "z.txt"]);
-        assert_eq!(snapshot_blocking(&repo).scan_id, first.scan_id);
+        assert_eq!(snapshot_blocking(&repo).unwrap().scan_id, first.scan_id);
 
         write(&temp.path().join("b.txt"), "b");
         apply_watcher_batch(
             &repo,
-            vec![WatcherChange::Reconcile(temp.path().join("b.txt"))],
+            vec![WatcherChange::Reconcile(root.join("b.txt"))],
             false,
         );
-        let second = snapshot_blocking(&repo);
+        let second = snapshot_blocking(&repo).unwrap();
         assert!(second.scan_id > first.scan_id);
         assert_eq!(second.files, vec!["a.txt", "b.txt", "z.txt"]);
 
         write(&temp.path().join("b.txt"), "modified");
         apply_watcher_batch(
             &repo,
-            vec![WatcherChange::Reconcile(temp.path().join("b.txt"))],
+            vec![WatcherChange::Reconcile(root.join("b.txt"))],
             false,
         );
-        let after_modify = snapshot_blocking(&repo);
+        let after_modify = snapshot_blocking(&repo).unwrap();
         assert!(after_modify.scan_id > second.scan_id);
         assert_eq!(after_modify.files, second.files);
     }
@@ -591,10 +718,10 @@ mod tests {
     fn incremental_create_remove_rename_and_directory_subtrees_converge() {
         let temp = tempfile::tempdir().unwrap();
         write(&temp.path().join("old.txt"), "old");
-        let repo = temp.path().to_string_lossy().into_owned();
-        let initial = snapshot_blocking(&repo);
+        let (repo, root) = canonical_temp_root(&temp);
+        let initial = snapshot_blocking(&repo).unwrap();
 
-        let directory = temp.path().join("nested");
+        let directory = root.join("nested");
         write(&directory.join("one.txt"), "one");
         write(&directory.join("deep/two.txt"), "two");
         apply_watcher_batch(
@@ -602,15 +729,15 @@ mod tests {
             vec![WatcherChange::Reconcile(directory.clone())],
             false,
         );
-        let after_directory = snapshot_blocking(&repo);
+        let after_directory = snapshot_blocking(&repo).unwrap();
         assert!(after_directory.scan_id > initial.scan_id);
         assert_eq!(
             after_directory.files,
             vec!["nested/deep/two.txt", "nested/one.txt", "old.txt"]
         );
 
-        let old = temp.path().join("old.txt");
-        let renamed = temp.path().join("renamed.txt");
+        let old = root.join("old.txt");
+        let renamed = root.join("renamed.txt");
         std::fs::rename(&old, &renamed).unwrap();
         apply_watcher_batch(
             &repo,
@@ -623,7 +750,7 @@ mod tests {
         std::fs::remove_dir_all(&directory).unwrap();
         apply_watcher_batch(&repo, vec![WatcherChange::Remove(directory)], false);
 
-        let final_snapshot = snapshot_blocking(&repo);
+        let final_snapshot = snapshot_blocking(&repo).unwrap();
         assert!(final_snapshot.scan_id > after_directory.scan_id);
         assert_eq!(final_snapshot.files, vec!["renamed.txt"]);
     }
@@ -633,8 +760,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         write(&temp.path().join("initial.txt"), "initial");
-        let repo = temp.path().to_string_lossy().into_owned();
-        let initial = snapshot_blocking(&repo);
+        let (repo, _root) = canonical_temp_root(&temp);
+        let initial = snapshot_blocking(&repo).unwrap();
 
         write(&temp.path().join("missed.txt"), "missed");
         apply_watcher_batch(
@@ -642,13 +769,13 @@ mod tests {
             vec![WatcherChange::Reconcile(outside.path().join("outside.txt"))],
             false,
         );
-        let after_outside = snapshot_blocking(&repo);
+        let after_outside = snapshot_blocking(&repo).unwrap();
         assert!(after_outside.scan_id > initial.scan_id);
         assert_eq!(after_outside.files, vec!["initial.txt", "missed.txt"]);
 
         write(&temp.path().join("forced.txt"), "forced");
         apply_watcher_batch(&repo, Vec::new(), true);
-        let after_forced = snapshot_blocking(&repo);
+        let after_forced = snapshot_blocking(&repo).unwrap();
         assert!(after_forced.scan_id > after_outside.scan_id);
         assert_eq!(
             after_forced.files,
@@ -660,16 +787,65 @@ mod tests {
     fn cache_miss_defers_work_until_the_next_snapshot() {
         let temp = tempfile::tempdir().unwrap();
         write(&temp.path().join("one.txt"), "one");
-        let repo = temp.path().to_string_lossy().into_owned();
+        let (repo, root) = canonical_temp_root(&temp);
 
         invalidate(&repo);
         apply_watcher_batch(
             &repo,
-            vec![WatcherChange::Reconcile(temp.path().join("one.txt"))],
+            vec![WatcherChange::Reconcile(root.join("one.txt"))],
             false,
         );
-        let snapshot = snapshot_blocking(&repo);
+        let snapshot = snapshot_blocking(&repo).unwrap();
         assert_eq!(snapshot.files, vec!["one.txt"]);
         assert!(snapshot.scan_id > 0);
+    }
+
+    #[test]
+    fn canonical_repo_keys_collapse_aliases_and_bound_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let canonical = canonical_repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
+        let dotted = temp.path().join(".");
+        assert_eq!(
+            canonical_repo_key(dotted.to_string_lossy().as_ref()).unwrap(),
+            canonical
+        );
+        assert!(canonical_repo_key("relative/repo").is_err());
+        assert!(canonical_repo_key(&format!("/{}", "x".repeat(MAX_REPO_PATH_BYTES))).is_err());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            let parent = tempfile::tempdir().unwrap();
+            let alias = parent.path().join("repo-alias");
+            symlink(temp.path(), &alias).unwrap();
+            assert_eq!(
+                canonical_repo_key(alias.to_string_lossy().as_ref()).unwrap(),
+                canonical
+            );
+        }
+    }
+
+    #[test]
+    fn project_cache_cap_evicts_only_idle_cells() {
+        let caches = DashMap::new();
+        let admission = Mutex::new(());
+        let first = project_cache_from(&caches, &admission, "first", 2).unwrap();
+        let second = project_cache_from(&caches, &admission, "second", 2).unwrap();
+
+        // Both cells have active borrowers, so admitting a third cannot split an
+        // in-flight scan/invalidation across a replacement lock cell.
+        assert!(project_cache_from(&caches, &admission, "third", 2).is_err());
+        assert_eq!(caches.len(), 2);
+
+        drop(first);
+        let third = project_cache_from(&caches, &admission, "third", 2).unwrap();
+        assert!(!caches.contains_key("first"));
+        assert!(caches.contains_key("second"));
+        assert!(caches.contains_key("third"));
+        assert_eq!(caches.len(), 2);
+
+        drop(second);
+        drop(third);
     }
 }

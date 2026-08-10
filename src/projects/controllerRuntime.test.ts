@@ -4,6 +4,10 @@ import { performanceTelemetry } from "../lib/performance";
 import type { ProjectConfigLoadResult } from "../projectConfig";
 import { ProjectControllerRuntime, type ProjectControllerRuntimeServices } from "./controllerRuntime";
 
+function watchToken(sequence: number): string {
+    return `00000000-0000-4000-8000-${sequence.toString().padStart(12, "0")}`;
+}
+
 function deferred<T>() {
     let resolve!: (value: T) => void;
     let reject!: (reason?: unknown) => void;
@@ -36,6 +40,7 @@ function worktree(path: string): GitWorktree {
 }
 
 function services() {
+    let watchSequence = 0;
     const fsListeners = new Set<(repo: string) => void>();
     const gitListeners = new Set<(repo: string) => void>();
     const fsHistory: ((repo: string) => void)[] = [];
@@ -43,8 +48,9 @@ function services() {
     const api = {
         loadConfig: vi.fn<(root: string) => Promise<ProjectConfigLoadResult>>().mockImplementation(async (root) => config(root)),
         loadWorktrees: vi.fn<(root: string) => Promise<readonly GitWorktree[]>>().mockImplementation(async (root) => [worktree(root)]),
-        watchStart: vi.fn<(root: string) => Promise<void>>().mockResolvedValue(undefined),
-        watchStop: vi.fn<(root: string) => Promise<void>>().mockResolvedValue(undefined),
+        newWatchLeaseToken: vi.fn(() => watchToken((watchSequence += 1))),
+        watchStart: vi.fn<ProjectControllerRuntimeServices["watchStart"]>().mockResolvedValue(undefined),
+        watchStop: vi.fn<ProjectControllerRuntimeServices["watchStop"]>().mockResolvedValue(undefined),
         subscribeFsChanged: vi.fn<(listener: (repo: string) => void) => () => void>().mockImplementation((listener) => {
             fsListeners.add(listener);
             fsHistory.push(listener);
@@ -93,7 +99,10 @@ describe("ProjectControllerRuntime", () => {
         await runtime.start();
         await runtime.reconcile(["relative", "/alpha", "/alpha", "/beta", "/ignored"], "/beta");
 
-        expect(harness.api.watchStart.mock.calls).toEqual([["/alpha"], ["/beta"]]);
+        expect(harness.api.watchStart.mock.calls).toEqual([
+            ["/alpha", watchToken(1)],
+            ["/beta", watchToken(2)],
+        ]);
         expect(harness.api.loadConfig.mock.calls).toEqual([["/alpha"], ["/beta"]]);
         expect(runtime.getActiveSnapshot()).toMatchObject({ cwd: "/beta", status: "ready", retainCount: 1, revision: 1 });
         expect(listener).toHaveBeenCalled();
@@ -105,7 +114,7 @@ describe("ProjectControllerRuntime", () => {
 
         runtime.stop();
         await flushMicrotasks();
-        expect(harness.api.watchStop.mock.calls).toEqual([["/alpha"], ["/beta"]]);
+        expect(harness.api.watchStop.mock.calls).toEqual([[watchToken(1)], [watchToken(2)]]);
         expect(runtime.getActiveSnapshot()).toBeNull();
     });
 
@@ -126,10 +135,15 @@ describe("ProjectControllerRuntime", () => {
         expect(harness.api.loadConfig.mock.calls).toEqual([["/alpha"]]);
         expect(harness.api.loadWorktrees.mock.calls).toEqual([["/alpha"]]);
 
-        harness.emitGit("");
+        harness.emitGit("/canonical/alpha");
         await flushMicrotasks();
         expect(harness.api.loadConfig.mock.calls).toEqual([["/alpha"], ["/alpha"], ["/beta"]]);
         expect(harness.api.loadWorktrees.mock.calls).toEqual([["/alpha"], ["/alpha"], ["/beta"]]);
+
+        harness.emitGit("");
+        await flushMicrotasks();
+        expect(harness.api.loadConfig.mock.calls).toEqual([["/alpha"], ["/alpha"], ["/beta"], ["/alpha"], ["/beta"]]);
+        expect(harness.api.loadWorktrees.mock.calls).toEqual([["/alpha"], ["/alpha"], ["/beta"], ["/alpha"], ["/beta"]]);
 
         runtime.stop();
         expect(harness.fsListeners.size).toBe(0);
