@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "../api/invoke";
 import { registerPtyDrop } from "../state/dropRegistry";
@@ -9,6 +9,7 @@ import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource } fr
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
 import { performanceTelemetry } from "../lib/performance";
 import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/ptyShell";
+import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
 
 type NativeChannel = Channel<number[]>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
@@ -26,6 +27,15 @@ interface PtyResourceConfiguration {
     readonly startup?: string;
     readonly initialInput?: string;
     readonly context?: PtyContext;
+    readonly externallyOwned?: boolean;
+}
+
+const NOOP = () => {};
+
+function createExternalControllerRef(binding: TaskPtyBinding | null): RefObject<NativePtyController | null> {
+    // A fresh ref identity makes useXterm restart for each immutable binding.
+    void binding;
+    return { current: null };
 }
 
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
@@ -107,7 +117,7 @@ function recordControllerError(event: PtyControllerErrorEvent): void {
 }
 
 /** Exact, content-local identity used only to prevent stale PTY reuse. */
-export function ptyResourceFingerprint(configuration: PtyResourceConfiguration): string {
+export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, taskBinding: TaskPtyBinding | null = null): string {
     const context = configuration.context;
     return JSON.stringify([
         configuration.cwd ?? null,
@@ -123,6 +133,11 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration):
         context?.agentType ?? null,
         context?.initialPromptSubmitted ?? null,
         context?.shellIntegration ?? null,
+        configuration.externallyOwned === true,
+        taskBinding?.ptyId ?? null,
+        taskBinding?.executionId ?? null,
+        taskBinding?.terminalKey ?? null,
+        taskBinding?.revision ?? null,
     ]);
 }
 
@@ -135,43 +150,73 @@ export function usePty(opts: {
     spawnWhen?: boolean;
     context?: PtyContext;
     onShellMetadata?: (event: PtyShellMetadataEvent) => void;
+    /** Borrow the task runtime's exact pane-bound PTY; never spawn a shell. */
+    externallyOwned?: boolean;
     /** Durable workbench item owner. Omit for popups, agents, and embedded shells. */
     durableItemId?: string;
 }): RefObject<NativePtyController | null> {
-    const { hostRef, spawnWhen = true } = opts;
-    const controllerRef = useRef<NativePtyController | null>(null);
+    const { hostRef, spawnWhen = true, externallyOwned = false } = opts;
+    const externalPaneId = externallyOwned ? (opts.context?.paneId ?? null) : null;
+    const subscribeTaskBinding = useCallback(
+        (listener: () => void) => (externalPaneId ? taskPtyBindings.subscribe(externalPaneId, listener) : NOOP),
+        [externalPaneId],
+    );
+    const getTaskBindingSnapshot = useCallback(() => (externalPaneId ? taskPtyBindings.getSnapshot(externalPaneId) : null), [externalPaneId]);
+    const taskBinding = useSyncExternalStore(subscribeTaskBinding, getTaskBindingSnapshot, getTaskBindingSnapshot);
+    const ordinaryControllerRef = useRef<NativePtyController | null>(null);
+    const externalControllerRef = useMemo(() => createExternalControllerRef(taskBinding), [taskBinding]);
+    const controllerRef = externallyOwned ? externalControllerRef : ordinaryControllerRef;
     const deliveredRef = useRef(opts.onInitialInputDelivered);
     deliveredRef.current = opts.onInitialInputDelivered;
     const shellMetadataRef = useRef(opts.onShellMetadata);
     shellMetadataRef.current = opts.onShellMetadata;
     const currentOptionsRef = useRef(opts);
     currentOptionsRef.current = opts;
-    const resourceFingerprint = ptyResourceFingerprint(opts);
+    const resourceFingerprint = ptyResourceFingerprint(opts, externallyOwned ? taskBinding : null);
     const durableItemId = opts.durableItemId ? createItemId(opts.durableItemId) : null;
     // Transient agent/popup terminals intentionally keep mount-time launch
     // options: clearing a delivered initial prompt must not respawn the CLI.
     const durableResourceFingerprint = durableItemId ? resourceFingerprint : null;
+    // External transient controllers must also rotate with task executions.
+    const controllerLifecycleFingerprint = externallyOwned ? resourceFingerprint : durableResourceFingerprint;
     const runtimeLease = durableItemId ? captureWorkbenchItemRuntimeLease(durableItemId) : null;
 
     useEffect(() => {
-        const initial = currentOptionsRef.current;
-        const createController = () =>
-            new PtyLifecycleController<NativeChannel, PtyContext>({
-                api: nativePtyApi,
-                channels: nativeChannels,
-                cwd: initial.cwd,
-                startup: initial.startup,
-                context: initial.context,
-                initialInput: initial.initialInput,
-                onInitialInputDelivered: () => deliveredRef.current?.(),
-                onError: recordControllerError,
-            });
         const durable = runtimeLease !== null;
         if (durableItemId && !runtimeLease) {
             performanceTelemetry.incrementCounter("terminal.durable-owner-missing");
             controllerRef.current = null;
             return;
         }
+        if (externallyOwned && !taskBinding) {
+            controllerRef.current = null;
+            if (runtimeLease) {
+                try {
+                    getOrCreateWorkbenchItemResource<NativePtyController | null>(
+                        runtimeLease,
+                        NATIVE_PTY_RESOURCE,
+                        durableResourceFingerprint!,
+                        () => ({ value: null, dispose: NOOP }),
+                    );
+                } catch {
+                    performanceTelemetry.incrementCounter("terminal.durable-owner-stale");
+                }
+            }
+            return;
+        }
+        const initial = currentOptionsRef.current;
+        const createController = () =>
+            new PtyLifecycleController<NativeChannel, PtyContext>({
+                api: nativePtyApi,
+                channels: nativeChannels,
+                existingPtyId: externallyOwned ? taskBinding!.ptyId : undefined,
+                cwd: initial.cwd,
+                startup: initial.startup,
+                context: initial.context,
+                initialInput: externallyOwned ? undefined : initial.initialInput,
+                onInitialInputDelivered: () => deliveredRef.current?.(),
+                onError: recordControllerError,
+            });
         let controller: NativePtyController;
         try {
             controller = runtimeLease
@@ -217,7 +262,16 @@ export function usePty(opts: {
             if (controllerRef.current === controller) controllerRef.current = null;
             if (!durable) void controller.dispose();
         };
-    }, [hostRef, durableItemId, durableResourceFingerprint, runtimeLease]);
+    }, [
+        hostRef,
+        durableItemId,
+        durableResourceFingerprint,
+        runtimeLease,
+        controllerLifecycleFingerprint,
+        controllerRef,
+        externallyOwned,
+        taskBinding,
+    ]);
 
     useEffect(() => {
         if (!spawnWhen) return;
@@ -246,7 +300,7 @@ export function usePty(opts: {
             disposed = true;
             unlisten();
         };
-    }, [spawnWhen, durableResourceFingerprint, runtimeLease, opts.context?.shellIntegration]);
+    }, [spawnWhen, controllerLifecycleFingerprint, controllerRef, runtimeLease, opts.context?.shellIntegration]);
 
     return controllerRef;
 }

@@ -1,17 +1,20 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { performanceTelemetry } from "../lib/performance";
 import { dispatchPty } from "../state/dropRegistry";
 import type { PtyContext } from "../state/types";
 import { claimWorkbenchItemRuntime, disposeWorkbenchItemRuntime, resetWorkbenchItemRuntimeForTests } from "../workbench/itemRuntime";
 import { createItemId } from "../workbench/registry";
 import { resetPtyShellSubscriptionsForTests, type PtyShellMetadataEvent } from "../api/ptyShell";
+import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
+import type { NativePtyController } from "./usePty";
 import { encodePosixShellLiteral, encodePowerShellLiteral, ptyResourceFingerprint, shellSemanticsForExecutable, usePty } from "./usePty";
 
-const { invoke, listen, unlisten, shellEvent } = vi.hoisted(() => ({
+const { invoke, listen, unlisten, shellEvent, nativeChannels, attachSequence } = vi.hoisted(() => ({
     invoke: vi.fn(async (command: string) => {
         if (command === "pty_spawn") return 42;
+        if (command === "pty_attach") return { subId: ++attachSequence.current, snapshot: [], alternateScreen: false };
         if (command === "integration_health") return { shell: "/bin/zsh" };
         return null;
     }),
@@ -21,25 +24,40 @@ const { invoke, listen, unlisten, shellEvent } = vi.hoisted(() => ({
     }),
     unlisten: vi.fn(),
     shellEvent: { current: null as ((event: { payload: unknown }) => void) | null },
+    nativeChannels: [] as Array<{ onmessage: (message: number[]) => void }>,
+    attachSequence: { current: 0 },
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+    invoke,
+    Channel: class TestChannel {
+        onmessage = (_message: number[]) => {};
+
+        constructor() {
+            nativeChannels.push(this);
+        }
+    },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 afterEach(async () => {
     cleanup();
+    taskPtyBindings.reset();
     await resetWorkbenchItemRuntimeForTests();
     await resetPtyShellSubscriptionsForTests();
     vi.restoreAllMocks();
     invoke.mockReset();
     invoke.mockImplementation(async (command: string) => {
         if (command === "pty_spawn") return 42;
+        if (command === "pty_attach") return { subId: ++attachSequence.current, snapshot: [], alternateScreen: false };
         if (command === "integration_health") return { shell: "/bin/zsh" };
         return null;
     });
     listen.mockClear();
     unlisten.mockClear();
     shellEvent.current = null;
+    nativeChannels.length = 0;
+    attachSequence.current = 0;
 });
 
 function Harness({
@@ -50,6 +68,8 @@ function Harness({
     cwd = "/repo",
     startup = "codex",
     onShellMetadata,
+    externallyOwned = false,
+    onController,
 }: {
     context: PtyContext;
     initialInput?: string;
@@ -58,9 +78,11 @@ function Harness({
     cwd?: string;
     startup?: string;
     onShellMetadata?: (event: PtyShellMetadataEvent) => void;
+    externallyOwned?: boolean;
+    onController?: (controller: NativePtyController | null) => void;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
-    usePty({
+    const controllerRef = usePty({
         cwd,
         startup,
         initialInput,
@@ -68,8 +90,12 @@ function Harness({
         hostRef,
         context,
         onShellMetadata,
+        externallyOwned,
         durableItemId: durable ? context.paneId : undefined,
     });
+    useEffect(() => {
+        onController?.(controllerRef.current);
+    }, [controllerRef, onController]);
     return <div ref={hostRef} />;
 }
 
@@ -109,6 +135,19 @@ describe("terminal path literal encoding", () => {
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, cwd: "/other" }));
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, startup: "bash" }));
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, context: { ...base.context, sessionName: "renamed" } }));
+
+        const taskBinding = Object.freeze({
+            paneId: createItemId("pane"),
+            ptyId: 70,
+            executionId: "execution-1",
+            terminalKey: "task",
+            revision: 1,
+        }) satisfies TaskPtyBinding;
+        const external = { ...base, externallyOwned: true };
+        expect(ptyResourceFingerprint(external, taskBinding)).not.toBe(
+            ptyResourceFingerprint(external, { ...taskBinding, executionId: "execution-2" }),
+        );
+        expect(ptyResourceFingerprint(external, taskBinding)).not.toBe(ptyResourceFingerprint(external, { ...taskBinding, revision: 2 }));
     });
 });
 
@@ -136,6 +175,158 @@ describe("usePty", () => {
                 context,
             });
         });
+    });
+
+    it("keeps an opted-in task pane controller-free while no binding exists", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-task-unbound",
+        };
+        claimWorkbenchItemRuntime(createItemId(context.paneId!));
+        const onController = vi.fn();
+
+        render(<Harness context={context} durable externallyOwned onController={onController} />);
+        await waitFor(() => expect(onController).toHaveBeenLastCalledWith(null));
+
+        expect(invoke.mock.calls.some(([command]) => command === "pty_spawn")).toBe(false);
+        expect(invoke.mock.calls.some(([command]) => command === "pty_attach")).toBe(false);
+    });
+
+    it("creates the exact externally owned controller when a binding arrives", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-task-arrival",
+        };
+        claimWorkbenchItemRuntime(createItemId(context.paneId!));
+        const controllers: Array<NativePtyController | null> = [];
+        render(<Harness context={context} durable externallyOwned onController={(controller) => controllers.push(controller)} />);
+        await waitFor(() => expect(controllers.at(-1)).toBeNull());
+
+        act(() => {
+            taskPtyBindings.bind(context.paneId!, { ptyId: 81, executionId: "execution-1", terminalKey: "task" });
+        });
+        await waitFor(() => expect(controllers.at(-1)).not.toBeNull());
+        const controller = controllers.at(-1)!;
+        await expect(controller.start()).resolves.toBe(81);
+        const attachment = await controller.attach(vi.fn());
+
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", processOwnership: "external", spawnAttempts: 0 });
+        expect(invoke.mock.calls.some(([command]) => command === "pty_spawn")).toBe(false);
+        expect(invoke).toHaveBeenCalledWith("pty_attach", { id: 81, onEvent: nativeChannels[0] });
+
+        await attachment.detach();
+        expect(invoke).toHaveBeenCalledWith("pty_unsubscribe", { id: 81, subId: 1 });
+        expect(invoke.mock.calls.some(([command]) => command === "pty_kill")).toBe(false);
+    });
+
+    it("replaces a durable task binding and detaches both external controllers without killing", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-task-replacement",
+        };
+        const runtimeLease = claimWorkbenchItemRuntime(createItemId(context.paneId!));
+        taskPtyBindings.bind(context.paneId!, { ptyId: 91, executionId: "execution-1", terminalKey: "task" });
+        const controllers: NativePtyController[] = [];
+        render(
+            <Harness
+                context={context}
+                durable
+                externallyOwned
+                onController={(controller) => {
+                    if (controller) controllers.push(controller);
+                }}
+            />,
+        );
+        await waitFor(() => expect(controllers).toHaveLength(1));
+        const first = controllers[0]!;
+        await first.attach(vi.fn());
+        expect(invoke).toHaveBeenCalledWith("pty_attach", { id: 91, onEvent: nativeChannels[0] });
+
+        act(() => {
+            taskPtyBindings.bind(context.paneId!, { ptyId: 92, executionId: "execution-2", terminalKey: "task" });
+        });
+        await waitFor(() => expect(controllers).toHaveLength(2));
+        const replacement = controllers[1]!;
+        expect(replacement).not.toBe(first);
+        await expect(replacement.start()).resolves.toBe(92);
+        await replacement.attach(vi.fn());
+
+        await waitFor(() => expect(first.getSnapshot().status).toBe("disposed"));
+        expect(invoke).toHaveBeenCalledWith("pty_unsubscribe", { id: 91, subId: 1 });
+        expect(invoke).toHaveBeenCalledWith("pty_attach", { id: 92, onEvent: nativeChannels[1] });
+        expect(invoke.mock.calls.some(([command]) => command === "pty_spawn")).toBe(false);
+        expect(invoke.mock.calls.some(([command]) => command === "pty_kill")).toBe(false);
+
+        await disposeWorkbenchItemRuntime(runtimeLease);
+        expect(invoke).toHaveBeenCalledWith("pty_unsubscribe", { id: 92, subId: 2 });
+        expect(invoke.mock.calls.some(([command]) => command === "pty_kill")).toBe(false);
+    });
+
+    it("detaches a transient externally owned controller on unmount without killing", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-task-transient",
+        };
+        taskPtyBindings.bind(context.paneId!, { ptyId: 101, executionId: "execution-1", terminalKey: "task" });
+        let controller: NativePtyController | null = null;
+        const view = render(<Harness context={context} externallyOwned onController={(value) => (controller = value)} />);
+        await waitFor(() => expect(controller).not.toBeNull());
+        await controller!.attach(vi.fn());
+
+        view.unmount();
+
+        await waitFor(() => expect(invoke).toHaveBeenCalledWith("pty_unsubscribe", { id: 101, subId: 1 }));
+        expect(invoke.mock.calls.some(([command]) => command === "pty_kill")).toBe(false);
+    });
+
+    it("ordinary terminals ignore accidental task bindings and keep spawning shells", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-ordinary-with-binding",
+        };
+        taskPtyBindings.bind(context.paneId!, { ptyId: 111, executionId: "execution-1", terminalKey: "task" });
+        const controllers: NativePtyController[] = [];
+        render(
+            <Harness
+                context={context}
+                onController={(controller) => {
+                    if (controller) controllers.push(controller);
+                }}
+            />,
+        );
+        await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1));
+        expect(controllers).toHaveLength(1);
+        expect(controllers[0]!.getSnapshot().processOwnership).toBe("controller");
+
+        act(() => {
+            taskPtyBindings.bind(context.paneId!, { ptyId: 112, executionId: "execution-2", terminalKey: "task" });
+        });
+        await Promise.resolve();
+
+        expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1);
+        const calls = invoke.mock.calls as unknown as Array<[string, { id?: number }?]>;
+        expect(calls.some(([command, args]) => command === "pty_attach" && (args?.id ?? -1) >= 111)).toBe(false);
+        expect(controllers).toHaveLength(1);
     });
 
     it("subscribes only opted-in live shells and forwards typed metadata", async () => {
