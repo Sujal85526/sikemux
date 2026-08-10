@@ -24,6 +24,7 @@
 // Commands surfaced to the frontend:
 //
 //   pty_spawn       — create a new PTY, returns ptyId
+//   task_spawn      — run one non-interactive task in a durable PTY
 //   pty_attach      — atomic snapshot + subscribe; returns { subId, snapshot }
 //   pty_subscribe   — attach a Channel to a PTY, returns subId
 //                     (kept for cases where the caller already has the
@@ -33,7 +34,7 @@
 //   pty_resize      — change rows/cols (also resizes the parser)
 //   pty_kill        — terminate the PTY process
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 #[cfg(unix)]
 use std::fs::File;
 use std::hash::{Hash, Hasher};
@@ -123,6 +124,12 @@ struct Pty {
     /// settled detection edge-triggered instead of a perpetual 4 Hz rescan.
     activity_revision: AtomicU64,
     last_detection_fingerprint: AtomicU64,
+    /// Present only for a durable task PTY. The atomic gate makes natural
+    /// exit, explicit kill, and app drain race to one channel delivery.
+    task_exit: Option<TaskExitReporter>,
+    /// Monotonic task completion timestamp. Zero means the task is still
+    /// running; completed task snapshots remain attachable for a fixed grace.
+    task_exited_at_ms: AtomicU64,
     /// Keeps any per-process shell startup files alive for exactly as long as
     /// the PTY. `TempDir` removes them automatically; user dotfiles are never
     /// written or replaced.
@@ -198,13 +205,17 @@ impl PtyManager {
         // each `pty` afterwards closes the retained master fd, which HUPs any
         // job-control children that landed in their own process groups.
         for pty in draining {
-            if let Ok(mut child) = pty.child.lock() {
-                if let Ok(Some(_)) = child.try_wait() {
-                    continue; // already exited cleanly on SIGTERM
+            let status = if let Ok(mut child) = pty.child.lock() {
+                if let Ok(Some(status)) = child.try_wait() {
+                    Some(status)
+                } else {
+                    let pid = child_process_id(&mut child);
+                    kill_and_reap_child(&mut child, pid) // SIGKILL + reap the zombie
                 }
-                let pid = child_process_id(&mut child);
-                kill_and_reap_child(&mut child, pid); // SIGKILL + reap the zombie
-            }
+            } else {
+                None
+            };
+            notify_task_process_exited(&pty, status.as_ref());
         }
     }
 }
@@ -217,6 +228,266 @@ static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(1);
 static OUTPUT_READS: AtomicU64 = AtomicU64::new(0);
 static OUTPUT_BROADCASTS: AtomicU64 = AtomicU64::new(0);
 static OUTPUT_BYTES: AtomicU64 = AtomicU64::new(0);
+const MAX_PTY_ID_COLLISION_PROBES: usize = 4_096;
+
+const MAX_TASK_EXECUTION_ID_BYTES: usize = 8 * 1024;
+const MAX_TASK_TERMINAL_KEY_BYTES: usize = 8 * 1024;
+const MAX_TASK_ID_BYTES: usize = 128;
+const MAX_TASK_LABEL_BYTES: usize = 256;
+const MAX_TASK_PROJECT_BYTES: usize = 4 * 1024;
+const MAX_TASK_COMMAND_BYTES: usize = 16 * 1024;
+const MAX_TASK_CWD_BYTES: usize = 4 * 1024;
+const MAX_TASK_ENV_ENTRIES: usize = 128;
+const MAX_TASK_ENV_KEY_BYTES: usize = 256;
+const MAX_TASK_ENV_VALUE_BYTES: usize = 8 * 1024;
+const MAX_TASK_ENV_TOTAL_BYTES: usize = 64 * 1024;
+const MAX_TASK_DIMENSION: u16 = 1_000;
+const MAX_TASK_SIGNAL_BYTES: usize = 128;
+const TASK_EXIT_RETENTION: Duration = Duration::from_secs(10 * 60);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum TaskSource {
+    BuiltIn,
+    Project,
+    Recent,
+}
+
+impl TaskSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::BuiltIn => "built-in",
+            Self::Project => "project",
+            Self::Recent => "recent",
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskSpawnRequest {
+    execution_id: String,
+    terminal_key: String,
+    task_id: String,
+    label: String,
+    project: String,
+    source: TaskSource,
+    command: String,
+    cwd: String,
+    env: HashMap<String, String>,
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskProcessExit {
+    code: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signal: Option<String>,
+}
+
+impl TaskProcessExit {
+    fn from_status(status: Option<&portable_pty::ExitStatus>) -> Self {
+        let signal = status
+            .and_then(portable_pty::ExitStatus::signal)
+            .and_then(|signal| {
+                let mut remaining = MAX_TASK_SIGNAL_BYTES;
+                let bounded = signal
+                    .chars()
+                    .filter(|character| !character.is_control())
+                    .take_while(|character| {
+                        let bytes = character.len_utf8();
+                        if bytes > remaining {
+                            return false;
+                        }
+                        remaining -= bytes;
+                        true
+                    })
+                    .collect::<String>();
+                (!bounded.is_empty()).then_some(bounded)
+            });
+        Self {
+            code: status.map_or(1, portable_pty::ExitStatus::exit_code),
+            signal,
+        }
+    }
+}
+
+struct TaskExitReporter {
+    channel: Channel<TaskProcessExit>,
+    sent: AtomicBool,
+}
+
+impl TaskExitReporter {
+    fn new(channel: Channel<TaskProcessExit>) -> Self {
+        Self {
+            channel,
+            sent: AtomicBool::new(false),
+        }
+    }
+
+    fn send_once(&self, status: Option<&portable_pty::ExitStatus>) {
+        if self.sent.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let _ = self.channel.send(TaskProcessExit::from_status(status));
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSpawnResult {
+    pty_id: u32,
+}
+
+struct ValidatedTaskPaths {
+    project: PathBuf,
+    cwd: PathBuf,
+}
+
+fn valid_task_text(value: &str, max_bytes: usize, require_trimmed: bool) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && !value.trim().is_empty()
+        && (!require_trimmed || value.trim() == value)
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_task_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_TASK_ID_BYTES
+        && value.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_alphanumeric() || (index > 0 && matches!(byte, b'.' | b'_' | b':' | b'-'))
+        })
+        && !matches!(value, "__proto__" | "constructor" | "prototype")
+}
+
+fn validate_task_environment(
+    environment: &HashMap<String, String>,
+    windows: bool,
+) -> AppResult<()> {
+    if environment.len() > MAX_TASK_ENV_ENTRIES {
+        return Err(AppError::BadArg("task environment has too many entries"));
+    }
+    let mut total_bytes = 0usize;
+    let mut normalized_keys = HashSet::with_capacity(environment.len());
+    for (key, value) in environment {
+        if key.is_empty()
+            || key.len() > MAX_TASK_ENV_KEY_BYTES
+            || key.contains('=')
+            || key.chars().any(char::is_control)
+            || matches!(key.as_str(), "__proto__" | "constructor" | "prototype")
+        {
+            return Err(AppError::BadArg("task environment contains an invalid key"));
+        }
+        if value.len() > MAX_TASK_ENV_VALUE_BYTES || value.contains('\0') {
+            return Err(AppError::BadArg(
+                "task environment contains an invalid value",
+            ));
+        }
+        let normalized = if windows {
+            key.to_lowercase()
+        } else {
+            key.clone()
+        };
+        if !normalized_keys.insert(normalized) {
+            return Err(AppError::BadArg("task environment contains duplicate keys"));
+        }
+        total_bytes = total_bytes
+            .checked_add(key.len())
+            .and_then(|total| total.checked_add(value.len()))
+            .ok_or(AppError::BadArg("task environment is too large"))?;
+        if total_bytes > MAX_TASK_ENV_TOTAL_BYTES {
+            return Err(AppError::BadArg("task environment is too large"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_task_request(request: &TaskSpawnRequest) -> AppResult<ValidatedTaskPaths> {
+    if !valid_task_text(&request.execution_id, MAX_TASK_EXECUTION_ID_BYTES, true) {
+        return Err(AppError::BadArg("invalid task execution id"));
+    }
+    if !valid_task_text(&request.terminal_key, MAX_TASK_TERMINAL_KEY_BYTES, true) {
+        return Err(AppError::BadArg("invalid task terminal key"));
+    }
+    if !valid_task_id(&request.task_id) {
+        return Err(AppError::BadArg("invalid task id"));
+    }
+    if !valid_task_text(&request.label, MAX_TASK_LABEL_BYTES, true) {
+        return Err(AppError::BadArg("invalid task label"));
+    }
+    if !valid_task_text(&request.project, MAX_TASK_PROJECT_BYTES, false)
+        || !Path::new(&request.project).is_absolute()
+    {
+        return Err(AppError::BadArg("invalid task project"));
+    }
+    if request.command.is_empty()
+        || request.command.len() > MAX_TASK_COMMAND_BYTES
+        || request.command.trim().is_empty()
+        || request.command.contains('\0')
+    {
+        return Err(AppError::BadArg("invalid task command"));
+    }
+    if !valid_task_text(&request.cwd, MAX_TASK_CWD_BYTES, false)
+        || !Path::new(&request.cwd).is_absolute()
+    {
+        return Err(AppError::BadArg("invalid task working directory"));
+    }
+    if request.cols == 0
+        || request.cols > MAX_TASK_DIMENSION
+        || request.rows == 0
+        || request.rows > MAX_TASK_DIMENSION
+    {
+        return Err(AppError::BadArg("invalid task terminal dimensions"));
+    }
+    validate_task_environment(&request.env, cfg!(windows))?;
+    let project = std::fs::canonicalize(&request.project)
+        .map_err(|_| AppError::BadArg("invalid task project"))?;
+    if !project.is_dir() {
+        return Err(AppError::BadArg("invalid task project"));
+    }
+    let cwd = std::fs::canonicalize(&request.cwd)
+        .map_err(|_| AppError::BadArg("invalid task working directory"))?;
+    if !cwd.is_dir() || !cwd.starts_with(&project) {
+        return Err(AppError::BadArg(
+            "task working directory must be inside its project",
+        ));
+    }
+    Ok(ValidatedTaskPaths { project, cwd })
+}
+
+fn allocate_pty_id(manager: &PtyManager) -> AppResult<u32> {
+    for _ in 0..MAX_PTY_ID_COLLISION_PROBES {
+        let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
+        if id != 0 && !manager.ptys.contains_key(&id) {
+            return Ok(id);
+        }
+    }
+    Err(AppError::Pty("PTY id capacity exhausted".into()))
+}
+
+fn task_retention_elapsed(exited_at_ms: u64, now_ms: u64, has_subscribers: bool) -> bool {
+    exited_at_ms != 0
+        && !has_subscribers
+        && now_ms.saturating_sub(exited_at_ms) >= TASK_EXIT_RETENTION.as_millis() as u64
+}
+
+fn task_pty_reclaimable(pty: &Pty, now: u64) -> bool {
+    if pty.task_exit.is_none() {
+        return false;
+    }
+    let has_subscribers = match pty.subscribers.lock() {
+        Ok(subscribers) => !subscribers.is_empty(),
+        Err(_) => true,
+    };
+    task_retention_elapsed(
+        pty.task_exited_at_ms.load(Ordering::Acquire),
+        now,
+        has_subscribers,
+    )
+}
 
 #[derive(serde::Serialize)]
 pub struct PtyDiagnostics {
@@ -953,27 +1224,32 @@ fn terminate_process_tree(pid: u32, force: bool) {
     let _ = command.status();
 }
 
-fn kill_and_reap_child(child: &mut Box<dyn Child + Send + Sync>, pid: Option<u32>) {
+fn kill_and_reap_child(
+    child: &mut Box<dyn Child + Send + Sync>,
+    pid: Option<u32>,
+) -> Option<portable_pty::ExitStatus> {
     let _ = child.kill();
     if let Some(pid) = pid {
         terminate_process_tree(pid, true);
     }
-    let _ = child.wait();
+    child.wait().ok()
 }
 
-fn terminate_and_reap_child(child: &mut Box<dyn Child + Send + Sync>) {
-    if let Ok(Some(_)) = child.try_wait() {
-        return;
+fn terminate_and_reap_child(
+    child: &mut Box<dyn Child + Send + Sync>,
+) -> Option<portable_pty::ExitStatus> {
+    if let Ok(Some(status)) = child.try_wait() {
+        return Some(status);
     }
     let pid = child_process_id(child);
     if let Some(pid) = pid {
         terminate_process_tree(pid, false);
     }
     std::thread::sleep(DRAIN_GRACE);
-    if let Ok(Some(_)) = child.try_wait() {
-        return;
+    if let Ok(Some(status)) = child.try_wait() {
+        return Some(status);
     }
-    kill_and_reap_child(child, pid);
+    kill_and_reap_child(child, pid)
 }
 
 /// Owns a freshly-spawned child until the fully-initialized `Pty` takes it.
@@ -995,7 +1271,7 @@ impl Drop for SpawnedChildGuard {
     fn drop(&mut self) {
         if let Some(mut child) = self.0.take() {
             let pid = child_process_id(&mut child);
-            kill_and_reap_child(&mut child, pid);
+            let _ = kill_and_reap_child(&mut child, pid);
         }
     }
 }
@@ -1182,10 +1458,20 @@ fn ensure_sweeper(app: AppHandle) {
                 return;
             };
             let now = now_ms();
-            // Snapshot ids first so we never hold a DashMap shard across
-            // the parser lock acquisition.
-            let candidates: Vec<Arc<Pty>> = mgr.ptys.iter().map(|e| e.value().clone()).collect();
-            for pty in candidates {
+            // Snapshot ids and identities first so we never hold a DashMap
+            // shard across parser/subscriber locks. Reclamation later checks
+            // the same Arc again, preventing an id-reuse race.
+            let candidates: Vec<(u32, Arc<Pty>)> = mgr
+                .ptys
+                .iter()
+                .map(|entry| (*entry.key(), entry.value().clone()))
+                .collect();
+            let mut reclaim = Vec::new();
+            for (id, pty) in candidates {
+                if task_pty_reclaimable(&pty, now) {
+                    reclaim.push((id, pty));
+                    continue;
+                }
                 if pty.trimmed.load(Ordering::Relaxed) {
                     continue;
                 }
@@ -1234,6 +1520,11 @@ fn ensure_sweeper(app: AppHandle) {
                         pty.trimmed.store(true, Ordering::Release);
                     }
                 }
+            }
+            for (id, candidate) in reclaim {
+                let _ = mgr.ptys.remove_if(&id, |_, current| {
+                    Arc::ptr_eq(current, &candidate) && task_pty_reclaimable(current, now)
+                });
             }
         }
     });
@@ -1340,6 +1631,7 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
 }
 
 fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
+    notify_task_process_exited(pty, status);
     if let Ok(subscribers) = pty.subscribers.lock() {
         for channel in subscribers.values() {
             let _ = channel.send(Vec::new());
@@ -1369,6 +1661,21 @@ fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
             None,
         );
     }
+}
+
+fn notify_task_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
+    let Some(reporter) = pty.task_exit.as_ref() else {
+        return;
+    };
+    let exited_at = now_ms().max(1);
+    if pty
+        .task_exited_at_ms
+        .compare_exchange(0, exited_at, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        pty.last_activity_ms.store(exited_at, Ordering::Release);
+    }
+    reporter.send_once(status);
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -1408,6 +1715,10 @@ const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_TEMP_ZDOTDIR",
     "SIKEMUX_ORIGINAL_XDG_CONFIG_HOME",
     "SIKEMUX_ORIGINAL_FISH_CONFIG",
+    "SIKEMUX_TASK_EXECUTION_ID",
+    "SIKEMUX_TASK_TERMINAL_KEY",
+    "SIKEMUX_TASK_ID",
+    "SIKEMUX_TASK_SOURCE",
     "CODEX_THREAD_ID",
 ];
 
@@ -1678,6 +1989,61 @@ fn detect_shell_kind(shell: &str) -> Option<ShellKind> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TaskShellPlatform {
+    Unix,
+    Windows,
+}
+
+const CURRENT_TASK_SHELL_PLATFORM: TaskShellPlatform = if cfg!(windows) {
+    TaskShellPlatform::Windows
+} else {
+    TaskShellPlatform::Unix
+};
+
+fn task_shell_arguments(
+    shell: &str,
+    command: &str,
+    platform: TaskShellPlatform,
+) -> AppResult<Vec<String>> {
+    if matches!(detect_shell_kind(shell), Some(ShellKind::PowerShell)) {
+        return Ok(vec![
+            "-NoLogo".into(),
+            "-NonInteractive".into(),
+            "-Command".into(),
+            command.into(),
+        ]);
+    }
+    if platform == TaskShellPlatform::Unix
+        || matches!(
+            detect_shell_kind(shell),
+            Some(ShellKind::Zsh | ShellKind::Bash | ShellKind::Fish)
+        )
+    {
+        return Ok(vec!["-c".into(), command.into()]);
+    }
+    let executable = shell
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if matches!(executable.as_str(), "cmd" | "cmd.exe") {
+        return Ok(vec!["/D".into(), "/S".into(), "/C".into(), command.into()]);
+    }
+    Err(AppError::BadArg(
+        "configured shell does not support task execution",
+    ))
+}
+
+fn configure_task_command(command: &mut CommandBuilder, shell: &str, task: &str) -> AppResult<()> {
+    command.args(task_shell_arguments(
+        shell,
+        task,
+        CURRENT_TASK_SHELL_PLATFORM,
+    )?);
+    Ok(())
+}
+
 fn shell_integration_requested(
     context: Option<&PtyContext>,
     has_startup: bool,
@@ -1791,14 +2157,6 @@ pub async fn pty_spawn(
     startup: Option<String>,
     context: Option<PtyContext>,
 ) -> AppResult<u32> {
-    ensure_sweeper(app.clone());
-    // Has to be `async fn` so the body runs inside Tauri's tokio
-    // runtime — both `AsyncFd::new` and `tokio::spawn` below panic
-    // ("no reactor running") when called from a sync Tauri command.
-    let pair = NativePtySystem::default()
-        .openpty(pty_size(cols, rows))
-        .map_err(pty_err)?;
-
     let shell = crate::system::configured_shell();
     let mut cmd = CommandBuilder::new(&shell);
     let cli_executable = crate::cli_server::cli_executable_path();
@@ -1832,7 +2190,6 @@ pub async fn pty_spawn(
     } else {
         None
     };
-    let shell_metadata_enabled = shell_integration.is_some();
     let cwd = cwd.unwrap_or_else(|| crate::system::user_home().to_string_lossy().into_owned());
     cmd.cwd(cwd);
     if let Some(startup) = startup.as_deref() {
@@ -1850,7 +2207,134 @@ pub async fn pty_spawn(
         }
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
+    spawn_prepared_pty(
+        app,
+        &manager,
+        PreparedPtyLaunch {
+            cols,
+            rows,
+            command: cmd,
+            context,
+            shell_integration,
+            task_exit: None,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn task_spawn(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+    request: TaskSpawnRequest,
+    on_exit: Channel<TaskProcessExit>,
+) -> AppResult<TaskSpawnResult> {
+    let paths = validate_task_request(&request)?;
+    let TaskSpawnRequest {
+        execution_id,
+        terminal_key,
+        task_id,
+        label,
+        project: _,
+        source,
+        command,
+        cwd: _,
+        env,
+        cols,
+        rows,
+    } = request;
+
+    let shell = crate::system::configured_shell();
+    let mut task_command = CommandBuilder::new(&shell);
+    let context = PtyContext {
+        session_id: execution_id.clone(),
+        session_name: label,
+        session_kind: "task".into(),
+        project: Some(paths.project.to_string_lossy().into_owned()),
+        window_id: None,
+        pane_id: None,
+        agent_id: None,
+        agent_type: None,
+        initial_prompt_submitted: false,
+        shell_integration: false,
+    };
+    let cli_executable = crate::cli_server::cli_executable_path();
+    let cli_endpoint = crate::cli_server::cli_endpoint_path();
+    configure_pty_environment(
+        &mut task_command,
+        Some(&context),
+        &app.package_info().version.to_string(),
+        cli_executable.as_deref(),
+        cli_endpoint.as_deref(),
+    );
+    task_command.env("SIKEMUX_TASK_EXECUTION_ID", execution_id);
+    task_command.env("SIKEMUX_TASK_TERMINAL_KEY", terminal_key);
+    task_command.env("SIKEMUX_TASK_ID", task_id);
+    task_command.env("SIKEMUX_TASK_SOURCE", source.as_str());
+    for (key, value) in env {
+        task_command.env(key, value);
+    }
+    task_command.cwd(paths.cwd);
+    configure_task_command(&mut task_command, &shell, &command)?;
+
+    let operation = global_observability().slow_operation(
+        "pty.task_spawn",
+        Duration::from_millis(50),
+        None,
+        Metadata::new(),
+    );
+    let result = spawn_prepared_pty(
+        app,
+        &manager,
+        PreparedPtyLaunch {
+            cols,
+            rows,
+            command: task_command,
+            context: None,
+            shell_integration: None,
+            task_exit: Some(TaskExitReporter::new(on_exit)),
+        },
+    )
+    .await;
+    operation.finish(if result.is_ok() {
+        SpanOutcome::Success
+    } else {
+        SpanOutcome::Error
+    });
+    result.map(|pty_id| TaskSpawnResult { pty_id })
+}
+
+struct PreparedPtyLaunch {
+    cols: u16,
+    rows: u16,
+    command: CommandBuilder,
+    context: Option<PtyContext>,
+    shell_integration: Option<ShellLaunchIntegration>,
+    task_exit: Option<TaskExitReporter>,
+}
+
+async fn spawn_prepared_pty(
+    app: AppHandle,
+    manager: &PtyManager,
+    launch: PreparedPtyLaunch,
+) -> AppResult<u32> {
+    ensure_sweeper(app.clone());
+    // Has to run inside Tauri's tokio runtime — both `AsyncFd::new` and
+    // `tokio::spawn` below panic when there is no reactor.
+    let pair = NativePtySystem::default()
+        .openpty(pty_size(launch.cols, launch.rows))
+        .map_err(pty_err)?;
+    let PreparedPtyLaunch {
+        cols,
+        rows,
+        command,
+        context,
+        shell_integration,
+        task_exit,
+    } = launch;
+    let shell_metadata_enabled = shell_integration.is_some();
+
+    let child = pair.slave.spawn_command(command).map_err(pty_err)?;
     let child = SpawnedChildGuard::new(child);
     drop(pair.slave);
 
@@ -1900,7 +2384,7 @@ pub async fn pty_spawn(
     let mut reader = pair.master.try_clone_reader().map_err(pty_err)?;
     #[cfg(windows)]
     let writer = pair.master.take_writer().map_err(pty_err)?;
-    let id = NEXT_PTY_ID.fetch_add(1, Ordering::Relaxed);
+    let id = allocate_pty_id(manager)?;
 
     let parsed_agent_kind = context
         .as_ref()
@@ -1942,6 +2426,8 @@ pub async fn pty_spawn(
         idle_confirmations: AtomicU8::new(0),
         activity_revision: AtomicU64::new(0),
         last_detection_fingerprint: AtomicU64::new(0),
+        task_exit,
+        task_exited_at_ms: AtomicU64::new(0),
         _shell_integration: shell_integration,
     });
 
@@ -2066,13 +2552,14 @@ pub async fn pty_spawn(
                 break;
             }
         }
-        // If the shell exits by itself, there is no frontend unmount to call
-        // `pty_kill`. Remove the manager entry here so the retained master
-        // fd is released instead of accumulating toward the process fd limit,
-        // then reap the child. Without the wait(), long sessions accumulate
-        // defunct /bin/zsh children until app quit.
-        if let Some(mgr) = app_reader.try_state::<PtyManager>() {
-            mgr.ptys.remove(&id);
+        // Interactive shells self-prune. Completed task PTYs intentionally
+        // stay addressable: a zero-duration command can reach EOF before the
+        // invoke response crosses into JS, and the frontend must still be able
+        // to attach to its bounded parser snapshot by the returned exact ID.
+        if pty_reader.task_exit.is_none() {
+            if let Some(mgr) = app_reader.try_state::<PtyManager>() {
+                mgr.ptys.remove(&id);
+            }
         }
         let reap_pty = pty_reader.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -2104,8 +2591,10 @@ pub async fn pty_spawn(
                     Err(_) => break,
                 }
             }
-            if let Some(mgr) = app_reader.try_state::<PtyManager>() {
-                mgr.ptys.remove(&id);
+            if pty_reader.task_exit.is_none() {
+                if let Some(mgr) = app_reader.try_state::<PtyManager>() {
+                    mgr.ptys.remove(&id);
+                }
             }
             let status = pty_reader
                 .child
@@ -2412,12 +2901,16 @@ mod tests {
     use super::startup_bootstrap;
     use super::{
         attach_snapshot, compact_parser_for_idle, configure_pty_environment,
-        configure_shell_integration, detect_shell_kind, event_fingerprint, parse_shell_cwd,
-        reseed_parser, semantic_fingerprint, semantic_parser, semantic_parser_with_shell,
-        shell_integration_requested, submits_line, AttachResult, PtyContext, PtyShellMetadataEvent,
-        ShellBoundary, ShellKind, ShellPhase, ShellProtocolParser, IDLE_SCROLLBACK,
-        MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES, PARSER_SCROLLBACK, RESET_MODES,
-        SHELL_EVENT_MIN_INTERVAL,
+        configure_shell_integration, configure_task_command, detect_shell_kind, event_fingerprint,
+        parse_shell_cwd, reseed_parser, semantic_fingerprint, semantic_parser,
+        semantic_parser_with_shell, shell_integration_requested, submits_line,
+        task_retention_elapsed, task_shell_arguments, validate_task_environment,
+        validate_task_request, AttachResult, PtyContext, PtyShellMetadataEvent, ShellBoundary,
+        ShellKind, ShellPhase, ShellProtocolParser, TaskExitReporter, TaskProcessExit,
+        TaskShellPlatform, TaskSource, TaskSpawnRequest, TaskSpawnResult, IDLE_SCROLLBACK,
+        MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES, MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES,
+        MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL,
+        TASK_EXIT_RETENTION,
     };
     #[cfg(target_os = "macos")]
     use super::{
@@ -2425,7 +2918,9 @@ mod tests {
         ZSH_INTEGRATION, ZSH_PROFILE_INTEGRATION,
     };
     use portable_pty::CommandBuilder;
+    use std::collections::HashMap;
     use std::path::Path;
+    use std::sync::{Arc, Mutex};
 
     fn env(command: &CommandBuilder, key: &str) -> Option<String> {
         command
@@ -2446,6 +2941,233 @@ mod tests {
             initial_prompt_submitted: false,
             shell_integration: true,
         }
+    }
+
+    fn task_request(cwd: &Path) -> TaskSpawnRequest {
+        TaskSpawnRequest {
+            execution_id: "[\"task\",1]".into(),
+            terminal_key: "[\"task\",\"/repo\",\"test\"]".into(),
+            task_id: "test:unit".into(),
+            label: "Unit tests".into(),
+            project: cwd.to_string_lossy().into_owned(),
+            source: TaskSource::Project,
+            command: "printf '%s' \"$TOKEN\"".into(),
+            cwd: cwd.to_string_lossy().into_owned(),
+            env: HashMap::from([("TOKEN".into(), "not-logged".into())]),
+            cols: 120,
+            rows: 40,
+        }
+    }
+
+    #[test]
+    fn task_request_is_camel_case_bounded_and_requires_a_real_absolute_cwd() {
+        let directory = tempfile::tempdir().expect("task cwd");
+        let value = serde_json::json!({
+            "executionId": "[\"task\",1]",
+            "terminalKey": "[\"task\",\"repo\",\"check\"]",
+            "taskId": "check:all",
+            "label": "Check all",
+            "project": directory.path(),
+            "source": "built-in",
+            "command": "cargo test\nprintf done",
+            "cwd": directory.path(),
+            "env": { "TOKEN": "secret\nvalue" },
+            "cols": 132,
+            "rows": 43
+        });
+        let request: TaskSpawnRequest =
+            serde_json::from_value(value.clone()).expect("deserialize task request");
+        validate_task_request(&request).expect("valid task request");
+        assert_eq!(request.source, TaskSource::BuiltIn);
+
+        let mut unknown = value;
+        unknown["unexpected"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<TaskSpawnRequest>(unknown).is_err());
+
+        let mut invalid = task_request(directory.path());
+        invalid.task_id = "bad/id".into();
+        assert!(validate_task_request(&invalid).is_err());
+        invalid = task_request(directory.path());
+        invalid.command = "\0".repeat(MAX_TASK_COMMAND_BYTES);
+        assert!(validate_task_request(&invalid).is_err());
+        invalid = task_request(directory.path());
+        invalid.cwd = "relative/path".into();
+        assert!(validate_task_request(&invalid).is_err());
+        invalid = task_request(directory.path());
+        invalid.cols = 0;
+        assert!(validate_task_request(&invalid).is_err());
+    }
+
+    #[test]
+    fn task_environment_caps_entries_bytes_and_windows_aliases_without_exposing_values() {
+        let too_many = (0..=MAX_TASK_ENV_ENTRIES)
+            .map(|index| (format!("KEY_{index}"), String::new()))
+            .collect();
+        assert!(validate_task_environment(&too_many, false).is_err());
+
+        let oversized = (0..9)
+            .map(|index| {
+                (
+                    format!("KEY_{index}"),
+                    "x".repeat(MAX_TASK_ENV_TOTAL_BYTES / 8),
+                )
+            })
+            .collect();
+        assert!(validate_task_environment(&oversized, false).is_err());
+
+        let aliases = HashMap::from([("Path".into(), "one".into()), ("PATH".into(), "two".into())]);
+        validate_task_environment(&aliases, false).expect("Unix keys are case-sensitive");
+        assert!(validate_task_environment(&aliases, true).is_err());
+        let unicode_aliases = HashMap::from([
+            ("Ä_KEY".into(), "one".into()),
+            ("ä_key".into(), "two".into()),
+        ]);
+        assert!(validate_task_environment(&unicode_aliases, true).is_err());
+
+        for key in ["BAD=KEY", "bad\nkey", "__proto__"] {
+            assert!(validate_task_environment(
+                &HashMap::from([(key.into(), "value".into())]),
+                false
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn completed_task_retention_has_exact_grace_and_subscriber_boundaries() {
+        let grace = TASK_EXIT_RETENTION.as_millis() as u64;
+        assert!(!task_retention_elapsed(0, u64::MAX, false));
+        assert!(!task_retention_elapsed(100, 100 + grace - 1, false));
+        assert!(task_retention_elapsed(100, 100 + grace, false));
+        assert!(!task_retention_elapsed(100, 100 + grace, true));
+        assert!(!task_retention_elapsed(500, 100, false));
+    }
+
+    #[test]
+    fn task_cwd_must_resolve_inside_the_real_project_directory() {
+        let root = tempfile::tempdir().expect("task roots");
+        let project = root.path().join("project");
+        let nested = project.join("packages/app");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(&nested).expect("nested task cwd");
+        std::fs::create_dir(&outside).expect("outside task cwd");
+
+        let mut request = task_request(&project);
+        request.cwd = nested.to_string_lossy().into_owned();
+        let paths = validate_task_request(&request).expect("nested cwd is valid");
+        assert_eq!(
+            paths.project,
+            project.canonicalize().expect("canonical project")
+        );
+        assert_eq!(paths.cwd, nested.canonicalize().expect("canonical cwd"));
+
+        request.cwd = outside.to_string_lossy().into_owned();
+        assert!(validate_task_request(&request).is_err());
+
+        let file = project.join("not-a-directory");
+        std::fs::write(&file, b"file").expect("project file");
+        request.cwd = file.to_string_lossy().into_owned();
+        assert!(validate_task_request(&request).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn task_cwd_cannot_symlink_escape_the_project() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("task roots");
+        let project = root.path().join("project");
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&project).expect("project");
+        std::fs::create_dir(&outside).expect("outside");
+        let escaped = project.join("escaped");
+        symlink(&outside, &escaped).expect("escaped cwd symlink");
+
+        let mut request = task_request(&project);
+        request.cwd = escaped.to_string_lossy().into_owned();
+        assert!(validate_task_request(&request).is_err());
+    }
+
+    #[test]
+    fn task_shell_uses_direct_arguments_without_requoting_or_interactive_flags() {
+        let task = "printf '%s' \"a b;$TOKEN\"";
+        assert_eq!(
+            task_shell_arguments("/bin/zsh", task, TaskShellPlatform::Unix).expect("zsh task args"),
+            ["-c", task]
+        );
+        assert_eq!(
+            task_shell_arguments("pwsh.exe", task, TaskShellPlatform::Windows)
+                .expect("PowerShell task args"),
+            ["-NoLogo", "-NonInteractive", "-Command", task]
+        );
+        assert_eq!(
+            task_shell_arguments("cmd.exe", task, TaskShellPlatform::Windows)
+                .expect("cmd task args"),
+            ["/D", "/S", "/C", task]
+        );
+        assert!(task_shell_arguments("custom.exe", task, TaskShellPlatform::Windows).is_err());
+
+        let mut command = CommandBuilder::new("/bin/zsh");
+        configure_task_command(&mut command, "/bin/zsh", task).expect("configure task");
+        let argv: Vec<String> = command
+            .get_argv()
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(argv, ["/bin/zsh", "-c", task]);
+        assert_eq!(env(&command, "SIKEMUX_SHELL_INTEGRATION"), None);
+        assert!(!argv
+            .iter()
+            .any(|argument| argument == "-i" || argument == "-NoExit"));
+    }
+
+    #[test]
+    fn task_exit_reporter_delivers_one_typed_exit_under_racing_completion_paths() {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let received = messages.clone();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            let value = body.deserialize::<serde_json::Value>()?;
+            received.lock().expect("messages lock").push(value);
+            Ok(())
+        });
+        let reporter = Arc::new(TaskExitReporter::new(channel));
+
+        std::thread::scope(|scope| {
+            for index in 0..16u32 {
+                let reporter = reporter.clone();
+                scope.spawn(move || {
+                    let status = portable_pty::ExitStatus::with_exit_code(index);
+                    reporter.send_once(Some(&status));
+                });
+            }
+        });
+
+        let messages = messages.lock().expect("messages lock");
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0]["code"].as_u64().is_some());
+        assert!(messages[0].get("signal").is_none());
+    }
+
+    #[test]
+    fn task_wire_results_are_exact_and_signal_is_optional() {
+        assert_eq!(
+            serde_json::to_value(TaskSpawnResult { pty_id: 42 }).expect("serialize spawn"),
+            serde_json::json!({ "ptyId": 42 })
+        );
+        assert_eq!(
+            serde_json::to_value(TaskProcessExit::from_status(Some(
+                &portable_pty::ExitStatus::with_exit_code(0)
+            )))
+            .expect("serialize success"),
+            serde_json::json!({ "code": 0 })
+        );
+        assert_eq!(
+            serde_json::to_value(TaskProcessExit::from_status(Some(
+                &portable_pty::ExitStatus::with_signal("SIGTERM")
+            )))
+            .expect("serialize signal"),
+            serde_json::json!({ "code": 1, "signal": "SIGTERM" })
+        );
     }
 
     #[test]
@@ -3239,6 +3961,55 @@ mod tests {
         assert!(!bootstrap.contains('\r'));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn task_command_runs_noninteractive_with_exact_cwd_env_output_and_status() {
+        use portable_pty::{NativePtySystem, PtySize, PtySystem};
+        use std::io::Read;
+
+        let root = tempfile::tempdir().expect("task root");
+        let cwd = root.path().join("project with spaces");
+        std::fs::create_dir(&cwd).expect("task cwd");
+        let pair = NativePtySystem::default()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open task pty");
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.cwd(&cwd);
+        command.env("TASK_TEST_VALUE", "value with spaces");
+        configure_task_command(
+            &mut command,
+            "/bin/sh",
+            "printf '%s|%s' \"$PWD\" \"$TASK_TEST_VALUE\"; exit 7",
+        )
+        .expect("configure task command");
+        let mut reader = pair.master.try_clone_reader().expect("clone task reader");
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .expect("spawn task command");
+        drop(pair.slave);
+
+        let mut bytes = Vec::new();
+        let mut chunk = [0u8; 512];
+        loop {
+            match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(read) => bytes.extend_from_slice(&chunk[..read]),
+                Err(_) => break,
+            }
+        }
+        let status = child.wait().expect("wait for task command");
+        let output = String::from_utf8_lossy(&bytes);
+        assert_eq!(status.exit_code(), 7);
+        assert!(output.contains(cwd.to_string_lossy().as_ref()));
+        assert!(output.contains("value with spaces"));
+    }
+
     // The load-bearing invariant of the single-fd PTY design: after we dup
     // the master and drop portable_pty's `MasterPty`, the dup must keep the
     // master open-file-description (and therefore the child's controlling
@@ -3311,9 +4082,12 @@ pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> 
         // SIGTERM grace + SIGKILL backstop on the blocking pool, not on the
         // async runtime worker.
         tauri::async_runtime::spawn_blocking(move || {
-            if let Ok(mut child) = pty.child.lock() {
-                terminate_and_reap_child(&mut child);
-            }
+            let status = pty
+                .child
+                .lock()
+                .ok()
+                .and_then(|mut child| terminate_and_reap_child(&mut child));
+            notify_task_process_exited(&pty, status.as_ref());
         })
         .await
         .map_err(|e| AppError::Pty(format!("pty_kill join: {e}")))?;

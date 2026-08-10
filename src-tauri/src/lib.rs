@@ -120,6 +120,7 @@ pub fn run() {
         .manage(PtyManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
+            pty::task_spawn,
             pty::pty_subscribe,
             pty::pty_unsubscribe,
             pty::pty_attach,
