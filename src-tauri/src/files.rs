@@ -366,7 +366,12 @@ fn walk(repo_root: &Path, scan_root: &Path, limits: WalkLimits) -> LimitedWalk {
         if relative.as_os_str().is_empty() {
             continue;
         }
-        let relative = relative.to_string_lossy().into_owned();
+        let Some(relative) = wire_relative_path(relative) else {
+            if limits.strict_errors {
+                return LimitedWalk::Unreliable;
+            }
+            continue;
+        };
         encoded_path_bytes =
             match encoded_path_bytes.checked_add(encoded_path_upper_bound(&relative)) {
                 Some(bytes) if bytes <= limits.max_encoded_path_bytes => bytes,
@@ -538,6 +543,26 @@ fn normalized_relative(repo_root: &Path, path: &Path) -> Result<Option<PathBuf>,
     Ok(Some(normalized))
 }
 
+/// Project file paths cross the IPC boundary and must not depend on the host
+/// separator. A stable slash-delimited representation also keeps full scans
+/// and incremental watcher updates comparable on Windows.
+fn wire_relative_path(relative: &Path) -> Option<String> {
+    let mut wire = String::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(component) => {
+                if !wire.is_empty() {
+                    wire.push('/');
+                }
+                wire.push_str(&component.to_string_lossy());
+            }
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    (!wire.is_empty()).then_some(wire)
+}
+
 fn leaf_is_denied_directory(relative: &Path) -> bool {
     relative
         .file_name()
@@ -560,16 +585,14 @@ fn collapse_prefixes(mut prefixes: Vec<PathBuf>) -> Vec<PathBuf> {
 fn removal_ranges(files: &[String], prefixes: &[PathBuf]) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
     for relative in prefixes {
-        let exact = relative.to_string_lossy();
-        if let Ok(index) = files.binary_search_by(|file| file.as_str().cmp(exact.as_ref())) {
+        let Some(exact) = wire_relative_path(relative) else {
+            continue;
+        };
+        if let Ok(index) = files.binary_search_by(|file| file.as_str().cmp(&exact)) {
             ranges.push(index..index + 1);
         }
 
-        let subtree_prefix = format!(
-            "{}{separator}",
-            exact,
-            separator = std::path::MAIN_SEPARATOR
-        );
+        let subtree_prefix = format!("{exact}/");
         let start = files.partition_point(|file| file < &subtree_prefix);
         let mut end = start;
         while end < files.len() && files[end].starts_with(&subtree_prefix) {
@@ -713,7 +736,11 @@ pub(crate) fn apply_watcher_batch(
                 return;
             }
             remaining_files -= 1;
-            additions.push(relative.to_string_lossy().into_owned());
+            let Some(relative) = wire_relative_path(&relative) else {
+                fallback_full_scan(repo, &mut slot, timer);
+                return;
+            };
+            additions.push(relative);
         } else if metadata.file_type().is_dir() && !leaf_is_denied_directory(&relative) {
             match walk(
                 repo_root,

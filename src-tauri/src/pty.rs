@@ -3271,7 +3271,7 @@ mod tests {
     };
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, Barrier, Mutex};
 
@@ -4007,17 +4007,30 @@ mod tests {
     #[test]
     fn shell_protocol_parses_chunked_cwd_and_command_boundaries() {
         let mut parser = ShellProtocolParser::default();
-        let first = parser.process(b"plain\x1b]7;file:///tmp/repo%20");
+        let cwd = if cfg!(windows) {
+            PathBuf::from(r"C:\tmp\repo root")
+        } else {
+            PathBuf::from("/tmp/repo root")
+        };
+        let cwd_uri = url::Url::from_file_path(&cwd)
+            .expect("native absolute path becomes a file URL")
+            .to_string();
+        let cwd_signal = format!("plain\x1b]7;{cwd_uri}");
+        let split = cwd_signal.len() - 2;
+        let first = parser.process(&cwd_signal.as_bytes()[..split]);
         assert!(first.latest.is_none());
 
-        let second = parser
-            .process(b"root\x1b\\\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x1b\\\x1b]133;D;7\x07");
+        let mut second_chunk = cwd_signal.as_bytes()[split..].to_vec();
+        second_chunk.extend_from_slice(
+            b"\x1b\\\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x1b\\\x1b]133;D;7\x07",
+        );
+        let second = parser.process(&second_chunk);
         assert_eq!(second.dropped, 0);
         assert_eq!(second.coalesced, 4);
         let latest = second.latest.expect("latest coalesced update");
         assert_eq!(latest.boundary, ShellBoundary::CommandFinished);
         assert_eq!(latest.metadata.revision, 5);
-        assert_eq!(latest.metadata.cwd.as_deref(), Some("/tmp/repo root"));
+        assert_eq!(latest.metadata.cwd.as_deref(), cwd.to_str());
         assert_eq!(latest.metadata.phase, ShellPhase::Finished);
         assert_eq!(latest.metadata.last_exit_code, Some(7));
 
@@ -4120,10 +4133,17 @@ mod tests {
     #[test]
     fn shell_protocol_side_parse_preserves_visible_terminal_output() {
         let mut parser = semantic_parser_with_shell(24, 80, PARSER_SCROLLBACK, true);
-        for chunk in [
-            b"before\x1b]7;file:///tmp/pro".as_slice(),
-            b"ject\x07after".as_slice(),
-        ] {
+        let cwd = if cfg!(windows) {
+            PathBuf::from(r"C:\tmp\project")
+        } else {
+            PathBuf::from("/tmp/project")
+        };
+        let cwd_uri = url::Url::from_file_path(&cwd)
+            .expect("native absolute path becomes a file URL")
+            .to_string();
+        let output = format!("before\x1b]7;{cwd_uri}\x07after");
+        let split = output.len() / 2;
+        for chunk in [&output.as_bytes()[..split], &output.as_bytes()[split..]] {
             let batch = parser
                 .callbacks_mut()
                 .shell
@@ -4143,15 +4163,23 @@ mod tests {
                 .snapshot()
                 .cwd
                 .as_deref(),
-            Some("/tmp/project")
+            cwd.to_str()
         );
     }
 
     #[test]
     fn shell_metadata_event_is_typed_bounded_frontend_payload() {
         let mut parser = ShellProtocolParser::default();
+        let cwd = if cfg!(windows) {
+            PathBuf::from(r"C:\tmp\project")
+        } else {
+            PathBuf::from("/tmp/project")
+        };
+        let cwd_uri = url::Url::from_file_path(&cwd)
+            .expect("native absolute path becomes a file URL")
+            .to_string();
         let update = parser
-            .process(b"\x1b]7;file:///tmp/project\x07")
+            .process(format!("\x1b]7;{cwd_uri}\x07").as_bytes())
             .latest
             .expect("cwd update");
         let value = serde_json::to_value(PtyShellMetadataEvent::from_update(42, update))
@@ -4159,7 +4187,7 @@ mod tests {
         assert_eq!(value["ptyId"], 42);
         assert_eq!(value["revision"], 1);
         assert_eq!(value["boundary"], "cwd");
-        assert_eq!(value["cwd"], "/tmp/project");
+        assert_eq!(value["cwd"], cwd.to_string_lossy().as_ref());
         assert_eq!(value["phase"], "unknown");
         assert!(value.get("exitCode").is_none());
     }
