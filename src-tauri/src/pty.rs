@@ -187,8 +187,18 @@ impl PtyManager {
         for id in ids {
             if let Some((_, pty)) = self.ptys.remove(&id) {
                 if let Ok(child) = pty.child.lock() {
-                    if let Some(pid) = child.process_id() {
-                        terminate_process_tree(pid, false);
+                    // Retained task snapshots outlive their reaped process.
+                    // Their numeric pid may already belong to an unrelated
+                    // process group, so never signal after the completion
+                    // stamp has been published. The natural-exit waiter sets
+                    // that stamp before releasing this same child lock.
+                    if should_signal_process_on_drain(
+                        pty.task_exit.is_some(),
+                        pty.task_exited_at_ms.load(Ordering::Acquire),
+                    ) {
+                        if let Some(pid) = child.process_id() {
+                            terminate_process_tree(pid, false);
+                        }
                     }
                 }
                 draining.push(pty);
@@ -206,7 +216,32 @@ impl PtyManager {
         // job-control children that landed in their own process groups.
         for pty in draining {
             let status = if let Ok(mut child) = pty.child.lock() {
-                if let Ok(Some(status)) = child.try_wait() {
+                let is_task = pty.task_exit.is_some();
+                let task_exited_at_ms = pty.task_exited_at_ms.load(Ordering::Acquire);
+                let task_already_exited =
+                    !should_signal_process_on_drain(is_task, task_exited_at_ms);
+                let force_task_tree = task_process_needs_force_backstop(is_task, task_exited_at_ms);
+                if task_already_exited {
+                    // `wait` has already run for a retained task. Poll only to
+                    // recover its cached status; never route a stale pid into
+                    // the force-kill fallback if that poll itself fails.
+                    child.try_wait().ok().flatten()
+                } else if force_task_tree {
+                    // The task shell may have exited while a descendant that
+                    // retained the PTY ignored SIGTERM. Force the still-owned
+                    // process group before reaping its leader; otherwise the
+                    // numeric group id could be reused and the descendant
+                    // would keep the reader and PTY alive indefinitely.
+                    let pid = child_process_id(&mut child);
+                    if let Some(pid) = pid {
+                        terminate_process_tree(pid, true);
+                    }
+                    if let Ok(Some(status)) = child.try_wait() {
+                        Some(status)
+                    } else {
+                        kill_and_reap_child(&mut child, pid)
+                    }
+                } else if let Ok(Some(status)) = child.try_wait() {
                     Some(status)
                 } else {
                     let pid = child_process_id(&mut child);
@@ -244,6 +279,7 @@ const MAX_TASK_ENV_TOTAL_BYTES: usize = 64 * 1024;
 const MAX_TASK_DIMENSION: u16 = 1_000;
 const MAX_TASK_SIGNAL_BYTES: usize = 128;
 const TASK_EXIT_RETENTION: Duration = Duration::from_secs(10 * 60);
+const MAX_RETAINED_EXITED_TASK_PTYS: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -327,11 +363,12 @@ impl TaskExitReporter {
         }
     }
 
-    fn send_once(&self, status: Option<&portable_pty::ExitStatus>) {
+    fn send_once(&self, status: Option<&portable_pty::ExitStatus>) -> bool {
         if self.sent.swap(true, Ordering::AcqRel) {
-            return;
+            return false;
         }
         let _ = self.channel.send(TaskProcessExit::from_status(status));
+        true
     }
 }
 
@@ -474,19 +511,79 @@ fn task_retention_elapsed(exited_at_ms: u64, now_ms: u64, has_subscribers: bool)
         && now_ms.saturating_sub(exited_at_ms) >= TASK_EXIT_RETENTION.as_millis() as u64
 }
 
-fn task_pty_reclaimable(pty: &Pty, now: u64) -> bool {
-    if pty.task_exit.is_none() {
-        return false;
-    }
+fn should_signal_process_on_drain(is_task: bool, task_exited_at_ms: u64) -> bool {
+    !is_task || task_exited_at_ms == 0
+}
+
+fn task_process_needs_force_backstop(is_task: bool, task_exited_at_ms: u64) -> bool {
+    is_task && task_exited_at_ms == 0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TaskRetentionCandidate {
+    id: u32,
+    exited_at_ms: u64,
+    has_subscribers: bool,
+}
+
+fn task_reclamation_plan(
+    mut candidates: Vec<TaskRetentionCandidate>,
+    now: u64,
+    max_retained: usize,
+) -> Vec<u32> {
+    candidates.retain(|candidate| candidate.exited_at_ms != 0 && !candidate.has_subscribers);
+    candidates.sort_unstable_by_key(|candidate| (candidate.exited_at_ms, candidate.id));
+    let excess = candidates.len().saturating_sub(max_retained);
+    candidates
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, candidate)| {
+            (index < excess || task_retention_elapsed(candidate.exited_at_ms, now, false))
+                .then_some(candidate.id)
+        })
+        .collect()
+}
+
+fn task_retention_candidate(pty: &Pty) -> Option<TaskRetentionCandidate> {
+    pty.task_exit.as_ref()?;
     let has_subscribers = match pty.subscribers.lock() {
         Ok(subscribers) => !subscribers.is_empty(),
-        Err(_) => true,
+        Err(_) => return None,
     };
-    task_retention_elapsed(
-        pty.task_exited_at_ms.load(Ordering::Acquire),
-        now,
+    Some(TaskRetentionCandidate {
+        id: pty.id,
+        exited_at_ms: pty.task_exited_at_ms.load(Ordering::Acquire),
         has_subscribers,
-    )
+    })
+}
+
+fn reclaim_completed_task_ptys(manager: &PtyManager, now: u64) {
+    // Clone identities out of DashMap before taking subscriber locks. The
+    // conditional removal below rechecks both the exact Arc and eligibility,
+    // so a concurrent attach or wrapped/reused PTY id always wins safely.
+    let snapshot: Vec<(u32, Arc<Pty>)> = manager
+        .ptys
+        .iter()
+        .map(|entry| (*entry.key(), entry.value().clone()))
+        .collect();
+    let mut identities = HashMap::with_capacity(snapshot.len());
+    let mut candidates = Vec::new();
+    for (id, pty) in snapshot {
+        if let Some(candidate) = task_retention_candidate(&pty) {
+            identities.insert(id, pty);
+            candidates.push(candidate);
+        }
+    }
+    for id in task_reclamation_plan(candidates, now, MAX_RETAINED_EXITED_TASK_PTYS) {
+        let Some(candidate) = identities.remove(&id) else {
+            continue;
+        };
+        let _ = manager.ptys.remove_if(&id, |_, current| {
+            Arc::ptr_eq(current, &candidate)
+                && task_retention_candidate(current)
+                    .is_some_and(|state| state.exited_at_ms != 0 && !state.has_subscribers)
+        });
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -1237,15 +1334,26 @@ fn kill_and_reap_child(
 
 fn terminate_and_reap_child(
     child: &mut Box<dyn Child + Send + Sync>,
+    force_process_tree_after_grace: bool,
 ) -> Option<portable_pty::ExitStatus> {
-    if let Ok(Some(status)) = child.try_wait() {
-        return Some(status);
+    // For a task, do not reap an exited shell until after its process group
+    // receives the force backstop: a descendant may still retain the PTY and
+    // ignore SIGTERM. Non-task callers preserve the historical fast path.
+    if !force_process_tree_after_grace {
+        if let Ok(Some(status)) = child.try_wait() {
+            return Some(status);
+        }
     }
     let pid = child_process_id(child);
     if let Some(pid) = pid {
         terminate_process_tree(pid, false);
     }
     std::thread::sleep(DRAIN_GRACE);
+    if force_process_tree_after_grace {
+        if let Some(pid) = pid {
+            terminate_process_tree(pid, true);
+        }
+    }
     if let Ok(Some(status)) = child.try_wait() {
         return Some(status);
     }
@@ -1458,20 +1566,12 @@ fn ensure_sweeper(app: AppHandle) {
                 return;
             };
             let now = now_ms();
-            // Snapshot ids and identities first so we never hold a DashMap
-            // shard across parser/subscriber locks. Reclamation later checks
-            // the same Arc again, preventing an id-reuse race.
-            let candidates: Vec<(u32, Arc<Pty>)> = mgr
-                .ptys
-                .iter()
-                .map(|entry| (*entry.key(), entry.value().clone()))
-                .collect();
-            let mut reclaim = Vec::new();
-            for (id, pty) in candidates {
-                if task_pty_reclaimable(&pty, now) {
-                    reclaim.push((id, pty));
-                    continue;
-                }
+            reclaim_completed_task_ptys(&mgr, now);
+            // Snapshot identities after reclamation so parser compaction never
+            // holds a DashMap shard across parser/subscriber locks.
+            let candidates: Vec<Arc<Pty>> =
+                mgr.ptys.iter().map(|entry| entry.value().clone()).collect();
+            for pty in candidates {
                 if pty.trimmed.load(Ordering::Relaxed) {
                     continue;
                 }
@@ -1520,11 +1620,6 @@ fn ensure_sweeper(app: AppHandle) {
                         pty.trimmed.store(true, Ordering::Release);
                     }
                 }
-            }
-            for (id, candidate) in reclaim {
-                let _ = mgr.ptys.remove_if(&id, |_, current| {
-                    Arc::ptr_eq(current, &candidate) && task_pty_reclaimable(current, now)
-                });
             }
         }
     });
@@ -1663,19 +1758,37 @@ fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
     }
 }
 
+fn stamp_task_process_exited(pty: &Pty) -> Option<u64> {
+    pty.task_exit.as_ref()?;
+    let exited_at = now_ms().max(1);
+    match pty
+        .task_exited_at_ms
+        .compare_exchange(0, exited_at, Ordering::AcqRel, Ordering::Acquire)
+    {
+        Ok(_) => {
+            pty.last_activity_ms.store(exited_at, Ordering::Release);
+            Some(exited_at)
+        }
+        Err(existing) => Some(existing),
+    }
+}
+
 fn notify_task_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
     let Some(reporter) = pty.task_exit.as_ref() else {
         return;
     };
-    let exited_at = now_ms().max(1);
-    if pty
-        .task_exited_at_ms
-        .compare_exchange(0, exited_at, Ordering::AcqRel, Ordering::Acquire)
-        .is_ok()
-    {
-        pty.last_activity_ms.store(exited_at, Ordering::Release);
+    let Some(exited_at) = stamp_task_process_exited(pty) else {
+        return;
+    };
+    let first_delivery = reporter.send_once(status);
+    // Enforce the count bound immediately rather than waiting for the periodic
+    // sweeper: a storm of zero-duration tasks must not retain one parser per
+    // completion for an entire sweep interval.
+    if first_delivery {
+        if let Some(manager) = pty.app.try_state::<PtyManager>() {
+            reclaim_completed_task_ptys(&manager, exited_at);
+        }
     }
-    reporter.send_once(status);
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -2563,11 +2676,15 @@ async fn spawn_prepared_pty(
         }
         let reap_pty = pty_reader.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let status = reap_pty
-                .child
-                .lock()
-                .ok()
-                .and_then(|mut child| child.wait().ok());
+            let status = if let Ok(mut child) = reap_pty.child.lock() {
+                let status = child.wait().ok();
+                // Publish while the child lock still proves this pid cannot be
+                // concurrently treated as live by app drain.
+                let _ = stamp_task_process_exited(&reap_pty);
+                status
+            } else {
+                None
+            };
             // Empty payload remains the frontend's "process exited" signal.
             // Waiting first lets the semantic event distinguish a successful
             // completion from a crash/signal instead of always saying unknown.
@@ -2596,11 +2713,15 @@ async fn spawn_prepared_pty(
                     mgr.ptys.remove(&id);
                 }
             }
-            let status = pty_reader
-                .child
-                .lock()
-                .ok()
-                .and_then(|mut child| child.wait().ok());
+            let status = if let Ok(mut child) = pty_reader.child.lock() {
+                let status = child.wait().ok();
+                // Keep the completion stamp ordered before a concurrent app
+                // drain can acquire the child lock and inspect the stale pid.
+                let _ = stamp_task_process_exited(&pty_reader);
+                status
+            } else {
+                None
+            };
             notify_process_exited(&pty_reader, status.as_ref());
         });
     }
@@ -2903,14 +3024,15 @@ mod tests {
         attach_snapshot, compact_parser_for_idle, configure_pty_environment,
         configure_shell_integration, configure_task_command, detect_shell_kind, event_fingerprint,
         parse_shell_cwd, reseed_parser, semantic_fingerprint, semantic_parser,
-        semantic_parser_with_shell, shell_integration_requested, submits_line,
+        semantic_parser_with_shell, shell_integration_requested, should_signal_process_on_drain,
+        submits_line, task_process_needs_force_backstop, task_reclamation_plan,
         task_retention_elapsed, task_shell_arguments, validate_task_environment,
         validate_task_request, AttachResult, PtyContext, PtyShellMetadataEvent, ShellBoundary,
         ShellKind, ShellPhase, ShellProtocolParser, TaskExitReporter, TaskProcessExit,
-        TaskShellPlatform, TaskSource, TaskSpawnRequest, TaskSpawnResult, IDLE_SCROLLBACK,
-        MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES, MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES,
-        MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL,
-        TASK_EXIT_RETENTION,
+        TaskRetentionCandidate, TaskShellPlatform, TaskSource, TaskSpawnRequest, TaskSpawnResult,
+        IDLE_SCROLLBACK, MAX_RETAINED_EXITED_TASK_PTYS, MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES,
+        MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES, MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK,
+        RESET_MODES, SHELL_EVENT_MIN_INTERVAL, TASK_EXIT_RETENTION,
     };
     #[cfg(target_os = "macos")]
     use super::{
@@ -3041,6 +3163,64 @@ mod tests {
         assert!(task_retention_elapsed(100, 100 + grace, false));
         assert!(!task_retention_elapsed(100, 100 + grace, true));
         assert!(!task_retention_elapsed(500, 100, false));
+    }
+
+    #[test]
+    fn completed_task_reclamation_is_age_and_cardinality_bounded() {
+        let grace = TASK_EXIT_RETENTION.as_millis() as u64;
+        let now = grace + 1_000;
+        let candidate = |id, exited_at_ms, has_subscribers| TaskRetentionCandidate {
+            id,
+            exited_at_ms,
+            has_subscribers,
+        };
+
+        // Running and attached tasks are never part of the reclaimable pool.
+        // Two expired entries are removed even though only one entry exceeds
+        // the cap; the remaining three exactly fill it.
+        let plan = task_reclamation_plan(
+            vec![
+                candidate(9, now - 100, false),
+                candidate(1, 1, false),
+                candidate(8, now - 200, true),
+                candidate(2, 500, false),
+                candidate(7, 0, false),
+                candidate(4, now - 300, false),
+                candidate(3, now - 400, false),
+            ],
+            now,
+            3,
+        );
+        assert_eq!(plan, vec![1, 2]);
+
+        // Equal completion times use PTY id as a deterministic tie-breaker.
+        assert_eq!(
+            task_reclamation_plan(
+                vec![candidate(9, now, false), candidate(3, now, false)],
+                now,
+                1,
+            ),
+            vec![3]
+        );
+
+        let fixed_cap = (1..=(MAX_RETAINED_EXITED_TASK_PTYS as u32 + 1))
+            .map(|id| candidate(id, now, false))
+            .collect();
+        assert_eq!(
+            task_reclamation_plan(fixed_cap, now, MAX_RETAINED_EXITED_TASK_PTYS),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn drain_never_signals_a_retained_completed_task_pid() {
+        assert!(should_signal_process_on_drain(false, 0));
+        assert!(should_signal_process_on_drain(false, 42));
+        assert!(should_signal_process_on_drain(true, 0));
+        assert!(!should_signal_process_on_drain(true, 42));
+        assert!(!task_process_needs_force_backstop(false, 0));
+        assert!(task_process_needs_force_backstop(true, 0));
+        assert!(!task_process_needs_force_backstop(true, 42));
     }
 
     #[test]
@@ -4082,11 +4262,18 @@ pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> 
         // SIGTERM grace + SIGKILL backstop on the blocking pool, not on the
         // async runtime worker.
         tauri::async_runtime::spawn_blocking(move || {
-            let status = pty
-                .child
-                .lock()
-                .ok()
-                .and_then(|mut child| terminate_and_reap_child(&mut child));
+            let status = if let Ok(mut child) = pty.child.lock() {
+                // Read the completion stamp only after taking the child lock.
+                // The natural waiter publishes it before releasing this lock,
+                // closing the stale-pid race with a concurrent explicit kill.
+                let force_task_tree = task_process_needs_force_backstop(
+                    pty.task_exit.is_some(),
+                    pty.task_exited_at_ms.load(Ordering::Acquire),
+                );
+                terminate_and_reap_child(&mut child, force_task_tree)
+            } else {
+                None
+            };
             notify_task_process_exited(&pty, status.as_ref());
         })
         .await
