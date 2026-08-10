@@ -677,6 +677,13 @@ const CHECKPOINT_LABEL_MAX_BYTES: usize = 160;
 const CHECKPOINT_LIST_MAX: usize = 256;
 const CHECKPOINT_METADATA_MAX_BYTES: usize = 4 * 1024;
 const CHECKPOINT_DIFF_MAX_BYTES: usize = 4 * 1024 * 1024;
+static CHECKPOINT_MUTATION_LOCK: Mutex<()> = Mutex::new(());
+
+fn checkpoint_mutation_guard() -> std::sync::MutexGuard<'static, ()> {
+    CHECKPOINT_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 fn validate_checkpoint_component(kind: &str, value: &str) -> Result<String, String> {
     if value.is_empty() || value.len() > CHECKPOINT_COMPONENT_MAX_BYTES {
@@ -713,6 +720,23 @@ fn checkpoint_ref(agent_id: &str, checkpoint_id: &str) -> Result<String, String>
     let agent_id = validate_checkpoint_component("agent id", agent_id)?;
     let checkpoint_id = validate_checkpoint_component("id", checkpoint_id)?;
     Ok(format!("{CHECKPOINT_REF_ROOT}/{agent_id}/{checkpoint_id}"))
+}
+
+fn checkpoint_reference_count(repo: &str, agent_id: &str) -> Result<usize, String> {
+    let prefix = format!(
+        "{CHECKPOINT_REF_ROOT}/{}/",
+        validate_checkpoint_component("agent id", agent_id)?
+    );
+    let output = git_ok(
+        repo,
+        &[
+            "for-each-ref",
+            &format!("--count={}", CHECKPOINT_LIST_MAX + 1),
+            "--format=%(refname)",
+            &prefix,
+        ],
+    )?;
+    Ok(output.lines().filter(|line| !line.is_empty()).count())
 }
 
 fn checkpoint_worktree_root(repo: &str) -> Result<String, String> {
@@ -854,8 +878,16 @@ fn capture_checkpoint(
     let agent_id = validate_checkpoint_component("agent id", agent_id)?;
     let checkpoint_id = validate_checkpoint_component("id", checkpoint_id)?;
     let label = validate_checkpoint_label(label)?;
+    // Serializing mutations makes the namespace cap exact for concurrent
+    // in-process captures and prevents capture/delete count races.
+    let _mutation = checkpoint_mutation_guard();
     if run_git(&root, &["show-ref", "--verify", "--quiet", &reference])?.0 {
         return Err("checkpoint id already exists for this agent".into());
+    }
+    if checkpoint_reference_count(&root, &agent_id)? >= CHECKPOINT_LIST_MAX {
+        return Err(format!(
+            "checkpoint namespace has reached its {CHECKPOINT_LIST_MAX}-item safety limit"
+        ));
     }
 
     let head = checkpoint_head(&root)?;
@@ -1106,6 +1138,7 @@ fn checkpoint_diff(
 
 fn delete_checkpoint(repo: &str, agent_id: &str, checkpoint_id: &str) -> Result<(), String> {
     let root = checkpoint_worktree_root(repo)?;
+    let _mutation = checkpoint_mutation_guard();
     let checkpoint = resolve_checkpoint(&root, agent_id, checkpoint_id)?;
     git_ok(
         &root,
@@ -4364,6 +4397,59 @@ mod tests {
         assert!(
             delete_checkpoint(td.path().to_str().expect("repo"), "refs/heads/main", "safe")
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn checkpoint_capture_refuses_a_full_namespace_before_mutating_git() {
+        let td = init_repo();
+        commit_base(td.path());
+        let head = git(td.path(), &["rev-parse", "HEAD"]);
+        let mut child = Command::new("git")
+            .arg("-C")
+            .arg(td.path())
+            .args(["update-ref", "--stdin"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn batched update-ref");
+        {
+            let stdin = child.stdin.as_mut().expect("update-ref stdin");
+            for index in 0..CHECKPOINT_LIST_MAX {
+                writeln!(
+                    stdin,
+                    "create {CHECKPOINT_REF_ROOT}/agent-full/existing-{index:03} {}",
+                    head.trim()
+                )
+                .expect("write ref creation");
+            }
+        }
+        assert!(child.wait().expect("wait update-ref").success());
+        assert_eq!(
+            checkpoint_reference_count(td.path().to_str().expect("repo"), "agent-full")
+                .expect("count refs"),
+            CHECKPOINT_LIST_MAX
+        );
+
+        let error = capture_checkpoint(
+            td.path().to_str().expect("repo"),
+            "agent-full",
+            "overflow",
+            "Must not be created",
+        )
+        .expect_err("a full namespace must reject another checkpoint");
+        assert!(error.contains("256-item safety limit"), "{error}");
+        assert!(
+            !run_git(
+                td.path().to_str().expect("repo"),
+                &[
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    "refs/sikemux/checkpoints/agent-full/overflow",
+                ],
+            )
+            .expect("check overflow ref")
+            .0
         );
     }
 
