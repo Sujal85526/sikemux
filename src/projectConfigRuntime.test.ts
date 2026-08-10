@@ -20,7 +20,7 @@ describe("project config runtime boundary", () => {
             status: "valid" as const,
             path: "/repo/sikemux.json",
             fingerprint: "sha256:one",
-            config: { version: 1 as const, actions: [] },
+            config: { version: 1 as const, actions: [], tasks: [] },
             trust: { requiresApproval: true, executableEntries: 1, reasons: ["a project action"] },
         };
         expect(trustProjectConfig(result, confirm)).toBe(true);
@@ -34,7 +34,7 @@ describe("project config runtime boundary", () => {
             status: "valid" as const,
             path: "/repo/sikemux.json",
             fingerprint: "sha256:two",
-            config: { version: 1 as const, actions: [] },
+            config: { version: 1 as const, actions: [], tasks: [] },
             trust: { requiresApproval: true, executableEntries: 1, reasons: ["a hook"] },
         };
         expect(trustProjectConfig(result, confirm)).toBe(false);
@@ -47,7 +47,7 @@ describe("project config runtime boundary", () => {
         const base = {
             status: "valid" as const,
             fingerprint: "sha256:same",
-            config: { version: 1 as const, actions: [] },
+            config: { version: 1 as const, actions: [], tasks: [] },
             trust: { requiresApproval: true, executableEntries: 1, reasons: ["an action"] },
         };
         expect(trustProjectConfig({ ...base, path: "/repo-a/sikemux.json" }, confirm)).toBe(true);

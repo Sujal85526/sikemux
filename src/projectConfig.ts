@@ -25,6 +25,15 @@ export interface ProjectPreview {
     command?: string;
 }
 
+export interface ProjectTask {
+    id: string;
+    label: string;
+    command: string;
+    /** Normalized project-relative directory. `.` means the project root. */
+    cwd: string;
+    env: Record<string, string>;
+}
+
 export interface ProjectWorktreeCreateHook {
     id: string;
     label: string;
@@ -38,6 +47,7 @@ export interface SikemuxProjectConfig {
     /** Project-relative image path. */
     icon?: string;
     actions: ProjectAction[];
+    tasks: ProjectTask[];
     preview?: ProjectPreview;
     worktree?: {
         onCreate: ProjectWorktreeCreateHook[];
@@ -90,8 +100,9 @@ export type ProjectConfigValidationResult = { ok: true; config: SikemuxProjectCo
 type ReadProjectFile = (path: string) => Promise<string>;
 type JsonRecord = Record<string, unknown>;
 
-const ROOT_FIELDS = new Set(["version", "$schema", "icon", "actions", "preview", "worktree"]);
+const ROOT_FIELDS = new Set(["version", "$schema", "icon", "actions", "tasks", "preview", "worktree"]);
 const ACTION_FIELDS = new Set(["id", "label", "description", "command", "placement", "contexts", "keybinding"]);
+const TASK_FIELDS = new Set(["id", "label", "command", "cwd", "env"]);
 const PREVIEW_FIELDS = new Set(["url", "command"]);
 const WORKTREE_FIELDS = new Set(["onCreate"]);
 const HOOK_FIELDS = new Set(["id", "label", "command"]);
@@ -100,10 +111,24 @@ const COMMAND_CONTEXTS = new Set<ProjectCommandContext>(["project", "command", "
 const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const MAX_CONFIG_BYTES = 256 * 1024;
 const MAX_ACTIONS = 100;
+const MAX_TASKS = 100;
 const MAX_HOOKS = 20;
+const MAX_TASK_ENV_ENTRIES = 128;
+const MAX_TASK_ENV_VALUE_LENGTH = 8_192;
+const MAX_TASK_ENV_TOTAL_LENGTH = 65_536;
+const ENVIRONMENT_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const UNSAFE_ENVIRONMENT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function containsControlCharacter(value: string): boolean {
+    for (let index = 0; index < value.length; index += 1) {
+        const code = value.charCodeAt(index);
+        if (code <= 31 || (code >= 127 && code <= 159)) return true;
+    }
+    return false;
 }
 
 function issue(path: string, code: ProjectConfigValidationCode, message: string): ProjectConfigValidationError {
@@ -227,6 +252,94 @@ function parseActions(value: unknown, errors: ProjectConfigValidationError[]): P
     return actions;
 }
 
+function parseTaskCwd(value: unknown, path: string, errors: ProjectConfigValidationError[]): string {
+    const cwd = boundedOptionalString(value, path, "Task working directory", 512, errors) ?? ".";
+    const normalized = cwd.replaceAll("\\", "/").replace(/\/+$/, "") || ".";
+    const parts = normalized.split("/");
+    if (
+        containsControlCharacter(normalized) ||
+        normalized.startsWith("/") ||
+        /^[A-Za-z]:\//.test(normalized) ||
+        normalized.startsWith("~/") ||
+        parts.some((part) => part === "" || part === ".." || (part === "." && normalized !== "."))
+    ) {
+        errors.push(issue(path, "invalid-value", "Task working directory must stay within the project and contain no dot segments."));
+        return ".";
+    }
+    return normalized;
+}
+
+function parseTaskEnv(value: unknown, path: string, errors: ProjectConfigValidationError[]): Record<string, string> {
+    if (value === undefined) return {};
+    if (!isRecord(value)) {
+        errors.push(issue(path, "invalid-type", "Task environment must be an object of string values."));
+        return {};
+    }
+    const entries = Object.entries(value);
+    if (entries.length > MAX_TASK_ENV_ENTRIES) {
+        errors.push(issue(path, "limit-exceeded", `Task environment may contain at most ${MAX_TASK_ENV_ENTRIES} entries.`));
+    }
+    let totalLength = 0;
+    const env: Record<string, string> = {};
+    for (const [key, raw] of entries.slice(0, MAX_TASK_ENV_ENTRIES)) {
+        const entryPath = `${path}.${key}`;
+        if (!ENVIRONMENT_KEY.test(key) || UNSAFE_ENVIRONMENT_KEYS.has(key)) {
+            errors.push(issue(entryPath, "invalid-value", "Environment variable names must use letters, numbers, and underscores."));
+            continue;
+        }
+        if (typeof raw !== "string") {
+            errors.push(issue(entryPath, "invalid-type", "Environment variable values must be strings."));
+            continue;
+        }
+        if (raw.includes("\0")) {
+            errors.push(issue(entryPath, "invalid-value", "Environment variable values cannot contain a null byte."));
+            continue;
+        }
+        if (raw.length > MAX_TASK_ENV_VALUE_LENGTH) {
+            errors.push(issue(entryPath, "limit-exceeded", `Environment variable values must be ${MAX_TASK_ENV_VALUE_LENGTH} characters or fewer.`));
+            continue;
+        }
+        totalLength += key.length + raw.length;
+        if (totalLength > MAX_TASK_ENV_TOTAL_LENGTH) {
+            errors.push(issue(path, "limit-exceeded", `Task environment must be ${MAX_TASK_ENV_TOTAL_LENGTH} characters or fewer in total.`));
+            break;
+        }
+        env[key] = raw;
+    }
+    return env;
+}
+
+function parseTasks(value: unknown, errors: ProjectConfigValidationError[]): ProjectTask[] {
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) {
+        errors.push(issue("$.tasks", "invalid-type", "Tasks must be an array."));
+        return [];
+    }
+    if (value.length > MAX_TASKS) errors.push(issue("$.tasks", "limit-exceeded", `At most ${MAX_TASKS} tasks are allowed.`));
+
+    const tasks: ProjectTask[] = [];
+    const ids = new Set<string>();
+    for (const [index, candidate] of value.slice(0, MAX_TASKS).entries()) {
+        const path = `$.tasks[${index}]`;
+        if (!isRecord(candidate)) {
+            errors.push(issue(path, "invalid-type", "Task must be an object."));
+            continue;
+        }
+        rejectUnknownFields(candidate, TASK_FIELDS, path, errors);
+        const id = parseId(candidate.id, `${path}.id`, errors);
+        const label = boundedRequiredString(candidate.label, `${path}.label`, "Label", 120, errors);
+        const command = parseCommand(candidate.command, `${path}.command`, errors);
+        const cwd = parseTaskCwd(candidate.cwd, `${path}.cwd`, errors);
+        const env = parseTaskEnv(candidate.env, `${path}.env`, errors);
+        if (id) {
+            if (ids.has(id)) errors.push(issue(`${path}.id`, "duplicate-id", `Task ID “${id}” is duplicated.`));
+            ids.add(id);
+        }
+        if (id && label && command) tasks.push({ id, label, command, cwd, env });
+    }
+    return tasks;
+}
+
 function parsePreview(value: unknown, errors: ProjectConfigValidationError[]): ProjectPreview | undefined {
     if (value === undefined) return undefined;
     if (!isRecord(value)) {
@@ -320,6 +433,7 @@ export function validateProjectConfig(value: unknown): ProjectConfigValidationRe
     const schema = boundedOptionalString(value.$schema, "$.$schema", "Schema URL", 2_048, errors);
     const icon = parseIcon(value.icon, errors);
     const actions = parseActions(value.actions, errors);
+    const tasks = parseTasks(value.tasks, errors);
     const preview = parsePreview(value.preview, errors);
     const worktree = parseWorktree(value.worktree, errors);
 
@@ -331,6 +445,7 @@ export function validateProjectConfig(value: unknown): ProjectConfigValidationRe
             ...(schema ? { $schema: schema } : {}),
             ...(icon ? { icon } : {}),
             actions,
+            tasks,
             ...(preview ? { preview } : {}),
             ...(worktree ? { worktree } : {}),
         },
@@ -339,13 +454,15 @@ export function validateProjectConfig(value: unknown): ProjectConfigValidationRe
 
 export function projectConfigTrustSummary(config: SikemuxProjectConfig): ProjectConfigTrustSummary {
     const actionCommands = config.actions.length;
+    const taskCommands = config.tasks.length;
     const previewCommands = config.preview?.command ? 1 : 0;
     const worktreeCommands = config.worktree?.onCreate.length ?? 0;
     const reasons: string[] = [];
     if (actionCommands) reasons.push(`${actionCommands} project ${actionCommands === 1 ? "action" : "actions"}`);
+    if (taskCommands) reasons.push(`${taskCommands} project ${taskCommands === 1 ? "task" : "tasks"}`);
     if (previewCommands) reasons.push("a preview command");
     if (worktreeCommands) reasons.push(`${worktreeCommands} worktree-create ${worktreeCommands === 1 ? "hook" : "hooks"}`);
-    const executableEntries = actionCommands + previewCommands + worktreeCommands;
+    const executableEntries = actionCommands + taskCommands + previewCommands + worktreeCommands;
     return { requiresApproval: executableEntries > 0, executableEntries, reasons };
 }
 

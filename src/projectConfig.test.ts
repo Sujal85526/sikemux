@@ -46,6 +46,15 @@ describe("project configuration", () => {
                     keybinding: "Meta+Shift+KeyT",
                 },
             ],
+            tasks: [
+                {
+                    id: "quality.watch",
+                    label: "Watch tests",
+                    command: "pnpm test --watch",
+                    cwd: "packages\\app/",
+                    env: { NODE_ENV: "test", FORCE_COLOR: "1" },
+                },
+            ],
             preview: { url: "http://localhost:4173", command: "pnpm preview" },
             worktree: { onCreate: [{ id: "deps", label: "Install dependencies", command: "pnpm install" }] },
         });
@@ -57,10 +66,19 @@ describe("project configuration", () => {
             config: {
                 icon: "assets/project.svg",
                 actions: [{ id: "quality.test", placement: "split", contexts: ["project"] }],
+                tasks: [
+                    {
+                        id: "quality.watch",
+                        label: "Watch tests",
+                        command: "pnpm test --watch",
+                        cwd: "packages/app",
+                        env: { NODE_ENV: "test", FORCE_COLOR: "1" },
+                    },
+                ],
                 preview: { url: "http://localhost:4173", command: "pnpm preview" },
                 worktree: { onCreate: [{ id: "deps", label: "Install dependencies", command: "pnpm install" }] },
             },
-            trust: { requiresApproval: true, executableEntries: 3 },
+            trust: { requiresApproval: true, executableEntries: 4 },
         });
         if (result.status === "valid") expect(result.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/);
     });
@@ -72,6 +90,7 @@ describe("project configuration", () => {
             config: {
                 version: 1,
                 actions: [{ id: "check", label: "Check", description: "", command: "pnpm check", placement: "terminal", contexts: [] }],
+                tasks: [],
             },
         });
     });
@@ -136,6 +155,10 @@ describe("project configuration", () => {
                 { id: "same", label: "One", command: "one" },
                 { id: "same", label: "Two", command: "two", contexts: ["not-a-context"], placement: "window" },
             ],
+            tasks: [
+                { id: "same", label: "One", command: "one" },
+                { id: "same", label: "Two", command: "two", cwd: "../outside", env: { "BAD-KEY": 42 } },
+            ],
             worktree: {
                 onCreate: [
                     { id: "setup", command: "one" },
@@ -146,7 +169,8 @@ describe("project configuration", () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
             expect(result.errors.map((error) => error.code)).toEqual(expect.arrayContaining(["duplicate-id", "invalid-value"]));
-            expect(result.errors.filter((error) => error.code === "duplicate-id")).toHaveLength(2);
+            expect(result.errors.filter((error) => error.code === "duplicate-id")).toHaveLength(3);
+            expect(result.errors.map((error) => error.path)).toEqual(expect.arrayContaining(["$.tasks[1].cwd", "$.tasks[1].env.BAD-KEY"]));
         }
     });
 
@@ -163,6 +187,7 @@ describe("project configuration", () => {
         const config: SikemuxProjectConfig = {
             version: 1,
             actions: [],
+            tasks: [],
             preview: { url: "http://localhost:3000" },
             worktree: { onCreate: [] },
         };
@@ -176,6 +201,6 @@ describe("project configuration", () => {
 
     it("accepts the smallest valid configuration", async () => {
         const result = await loadProjectConfig("/repo", async () => JSON.stringify(minimal));
-        expect(result).toMatchObject({ status: "valid", config: { version: 1, actions: [] }, trust: { requiresApproval: false } });
+        expect(result).toMatchObject({ status: "valid", config: { version: 1, actions: [], tasks: [] }, trust: { requiresApproval: false } });
     });
 });
