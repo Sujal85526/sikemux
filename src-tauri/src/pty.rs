@@ -1799,10 +1799,7 @@ pub async fn pty_spawn(
         .openpty(pty_size(cols, rows))
         .map_err(pty_err)?;
 
-    #[cfg(unix)]
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    #[cfg(windows)]
-    let shell = std::env::var("SIKEMUX_SHELL").unwrap_or_else(|_| "powershell.exe".into());
+    let shell = crate::system::configured_shell();
     let mut cmd = CommandBuilder::new(&shell);
     let cli_executable = crate::cli_server::cli_executable_path();
     let cli_endpoint = crate::cli_server::cli_endpoint_path();

@@ -24,7 +24,7 @@ use crate::{
 /// Standard "fix-path" pattern Electron + Tauri apps have used for years.
 #[cfg(unix)]
 pub fn fix_path_from_login_shell() {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let shell = configured_shell();
 
     // Login shell only (`-l`): sources .zprofile / .bash_profile, captures
     // the user's exported PATH without zsh interactive's terminal-CWD OSC
@@ -95,6 +95,43 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
     find_executable_matching(name, |_| true)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShellPlatform {
+    Unix,
+    Windows,
+}
+
+const CURRENT_SHELL_PLATFORM: ShellPlatform = if cfg!(windows) {
+    ShellPlatform::Windows
+} else {
+    ShellPlatform::Unix
+};
+
+fn resolve_configured_shell(
+    platform: ShellPlatform,
+    sikemux_shell: Option<&str>,
+    unix_shell: Option<&str>,
+) -> String {
+    match platform {
+        ShellPlatform::Unix => unix_shell.unwrap_or("/bin/zsh"),
+        ShellPlatform::Windows => sikemux_shell.unwrap_or("powershell.exe"),
+    }
+    .to_string()
+}
+
+/// The executable a newly spawned interactive PTY will use. Keep health
+/// reporting and PTY launch on this one platform policy so the frontend never
+/// configures integration for a different shell than native will execute.
+pub(crate) fn configured_shell() -> String {
+    let sikemux_shell = std::env::var("SIKEMUX_SHELL").ok();
+    let unix_shell = std::env::var("SHELL").ok();
+    resolve_configured_shell(
+        CURRENT_SHELL_PLATFORM,
+        sikemux_shell.as_deref(),
+        unix_shell.as_deref(),
+    )
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IntegrationHealth {
@@ -107,9 +144,7 @@ pub struct IntegrationHealth {
 #[tauri::command]
 pub fn integration_health() -> IntegrationHealth {
     IntegrationHealth {
-        shell: std::env::var("SHELL")
-            .or_else(|_| std::env::var("COMSPEC"))
-            .unwrap_or_default(),
+        shell: configured_shell(),
         git: find_executable("git").is_some(),
         aws: find_executable("aws").is_some(),
         rnd: find_executable("rnd").is_some(),
@@ -492,5 +527,37 @@ mod executable_tests {
             &|candidate| candidate != first_candidate,
         );
         assert_eq!(result, Some(second_candidate));
+    }
+
+    #[test]
+    fn configured_shell_resolver_preserves_unix_shell_and_default() {
+        assert_eq!(
+            resolve_configured_shell(
+                ShellPlatform::Unix,
+                Some("ignored-windows-override"),
+                Some("/opt/homebrew/bin/fish"),
+            ),
+            "/opt/homebrew/bin/fish"
+        );
+        assert_eq!(
+            resolve_configured_shell(ShellPlatform::Unix, None, None),
+            "/bin/zsh"
+        );
+    }
+
+    #[test]
+    fn configured_shell_resolver_gives_windows_override_precedence() {
+        assert_eq!(
+            resolve_configured_shell(
+                ShellPlatform::Windows,
+                Some(r"C:\Program Files\PowerShell\7\pwsh.exe"),
+                Some("ignored-unix-shell"),
+            ),
+            r"C:\Program Files\PowerShell\7\pwsh.exe"
+        );
+        assert_eq!(
+            resolve_configured_shell(ShellPlatform::Windows, None, Some("ignored-unix-shell")),
+            "powershell.exe"
+        );
     }
 }
