@@ -15,6 +15,12 @@ ownership outside renderers, bounded queues and caches, generation-fenced
 asynchronous work, typed registries, lazy surfaces, frame-aligned rendering,
 structured telemetry, and latency histograms.
 
+The license boundary matters: GPUI is independently Apache-2.0 and can be
+evaluated by this MIT-licensed project with the normal notice obligations. The
+Zed application is GPL-3.0-or-later; its application code must not be copied
+into Sikemux without a deliberate licensing decision. This ADR adopts
+architectural ideas, not Zed implementation code.
+
 A GPUI rewrite would replace the React/Tauri UI, CodeMirror, xterm.js, current
 component tests, accessibility work, and IPC integration simultaneously. That
 cost is justified only if the existing stack cannot meet an observed product
@@ -44,6 +50,13 @@ The accepted 2026-08-10 baseline was:
 | Reconcile a 24-pane layout | 0.0011 ms mean / 0.0015 ms p99 | Measured regression baseline |
 | Record 100 telemetry spans | 0.0723 ms mean / 0.2140 ms p99 | Measured regression baseline |
 
+These are Sikemux measurements, not an A/B benchmark against a GPUI port or the
+Zed application. No equivalent Sikemux workflow currently exists in GPUI, and
+WKWebView's compositor presentation time is not exposed to the renderer. The
+numbers therefore establish that the current stack meets its present enforced
+artifact budgets and has no demonstrated framework-level crisis; they do not
+claim performance parity with GPUI.
+
 The runtime now also records startup, React commit, workbench reconciliation,
 IPC, terminal output, and input/frame latency distributions. Native diagnostics
 include bounded slow-operation records and a WebView heartbeat watchdog. These
@@ -55,6 +68,11 @@ framework reputation as a proxy.
 Keep the React 19 + Tauri 2 architecture. Continue using the adopted Zed/GPUI
 patterns inside the current stack. Do not begin a whole-application GPUI rewrite
 and do not add a second production UI implementation.
+
+This is an evidence-based no-go pending a comparative spike, not a finding that
+React/Tauri is inherently faster than GPUI. Rewrite risk is not justified while
+the current implementation meets its available budgets and production
+diagnostics have not identified an unfixable framework limitation.
 
 The project, item, action, task, transport, and backend seams are intentionally
 toolkit-neutral enough to support a bounded GPUI prototype later without moving
@@ -84,8 +102,9 @@ the latency thresholds are not crossed.
 
 - Sikemux keeps its mature CodeMirror and xterm.js integrations and current
   macOS/Windows packaging path.
-- Performance budgets, runtime percentiles, bounded queues, and watchdog data
-  remain release gates and the evidence for future architecture changes.
+- Artifact-size budgets remain CI release gates. Runtime percentiles, bounded
+  queues, and watchdog data remain diagnostic evidence for future architecture
+  changes; they are not presently pass/fail CI thresholds.
 - New UI-heavy features should stay lazy because the aggregate JavaScript budget
   has less than one percent headroom at this baseline.
 - GPUI remains a viable, Apache-2.0-licensed prototype option, not a committed
