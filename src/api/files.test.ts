@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ProjectBackendNotRegisteredError, createProjectLocation } from "../projects/backend";
+import { LOCAL_PROJECT_FILE_SNAPSHOT_OPERATION, projectBackends } from "../projects/application";
 import { filesApi, type ProjectFilesSnapshot } from "./files";
 
 const { invokeCommand } = vi.hoisted(() => ({ invokeCommand: vi.fn() }));
@@ -26,6 +28,7 @@ describe("filesApi snapshots", () => {
         const [first, coalesced] = await Promise.all([filesApi.snapshot("/repo"), filesApi.snapshot("/repo")]);
         expect(coalesced).toBe(first);
         expect(invokeCommand).toHaveBeenCalledTimes(1);
+        expect(invokeCommand).toHaveBeenLastCalledWith("list_project_files_snapshot", { repo: "/repo" }, undefined);
 
         filesApi.invalidate("/repo");
         invokeCommand.mockResolvedValueOnce({ scanId: 1, files: ["unused.ts"] });
@@ -59,5 +62,23 @@ describe("filesApi snapshots", () => {
         await expect(filesApi.snapshot("/invalid")).rejects.toThrow("malformed");
         await expect(filesApi.list("/invalid")).resolves.toEqual(["good.ts"]);
         expect(invokeCommand).toHaveBeenCalledTimes(2);
+    });
+
+    it("routes through the registered local project backend and fails closed for ssh", async () => {
+        const localLocation = createProjectLocation({ scheme: "local", path: "/repo" });
+        const local = projectBackends.resolve(localLocation);
+        expect(local.capabilities).toMatchObject({ files: true, watch: false, pty: false, lsp: false, git: false, tasks: false });
+
+        await expect(projectBackends.files(localLocation, { operation: "files.delete" })).rejects.toThrow("Unsupported local project file operation");
+        await expect(projectBackends.files(localLocation, { operation: LOCAL_PROJECT_FILE_SNAPSHOT_OPERATION, input: null })).rejects.toThrow(
+            "do not accept request input",
+        );
+
+        await expect(
+            projectBackends.files(createProjectLocation({ scheme: "ssh", host: "example.test", path: "/repo" }), {
+                operation: LOCAL_PROJECT_FILE_SNAPSHOT_OPERATION,
+            }),
+        ).rejects.toBeInstanceOf(ProjectBackendNotRegisteredError);
+        expect(invokeCommand).not.toHaveBeenCalled();
     });
 });

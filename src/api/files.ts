@@ -1,4 +1,4 @@
-import { invokeCommand as invoke } from "./invoke";
+import { loadProjectFilesSnapshot } from "../projects/application";
 
 export interface ProjectFilesSnapshot {
     readonly scanId: number;
@@ -31,16 +31,18 @@ function nextInvalidationGeneration(): number {
     return invalidationSequence;
 }
 
-function assertSnapshot(value: ProjectFilesSnapshot): ProjectFilesSnapshot {
-    if (
-        !Number.isSafeInteger(value?.scanId) ||
-        value.scanId <= 0 ||
-        !Array.isArray(value.files) ||
-        !value.files.every((path) => typeof path === "string")
-    ) {
+function assertSnapshot(value: unknown): ProjectFilesSnapshot {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
         throw new TypeError("native project file snapshot is malformed");
     }
-    return value;
+    const scanIdDescriptor = Object.getOwnPropertyDescriptor(value, "scanId");
+    const filesDescriptor = Object.getOwnPropertyDescriptor(value, "files");
+    const scanId = scanIdDescriptor && "value" in scanIdDescriptor ? scanIdDescriptor.value : undefined;
+    const files = filesDescriptor && "value" in filesDescriptor ? filesDescriptor.value : undefined;
+    if (!Number.isSafeInteger(scanId) || (scanId as number) <= 0 || !Array.isArray(files) || !files.every((path) => typeof path === "string")) {
+        throw new TypeError("native project file snapshot is malformed");
+    }
+    return { scanId: scanId as number, files };
 }
 
 function snapshot(repo: string): Promise<ProjectFilesSnapshot> {
@@ -51,7 +53,7 @@ function snapshot(repo: string): Promise<ProjectFilesSnapshot> {
     const pending = inflight.get(repo);
     if (pending?.generation === generation) return pending.promise;
 
-    const promise = invoke<ProjectFilesSnapshot>("list_project_files_snapshot", { repo })
+    const promise = loadProjectFilesSnapshot(repo)
         .then(assertSnapshot)
         .then((incoming) => {
             const previous = cache.get(repo)?.snapshot;
