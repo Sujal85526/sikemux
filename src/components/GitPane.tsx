@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { git, hasUnstaged, isStaged } from "../api/git";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, runGitCmd, toggleGitCmdLog } from "../state/git";
@@ -103,6 +103,7 @@ export function GitPane({
     const [branchText, setBranchText] = useState("");
     const branchInputRef = useRef<HTMLInputElement>(null);
     const [checkpointsOpen, setCheckpointsOpen] = useState(false);
+    const checkpointsId = useId();
 
     const [searchByPanel, setSearchByPanel] = useState<Record<GitPanel, string>>({
         status: "",
@@ -1221,6 +1222,8 @@ export function GitPane({
                     PR
                 </GitToolbarButton>
                 <GitToolbarButton
+                    ariaControls={checkpointsId}
+                    ariaExpanded={checkpointsOpen}
                     className={checkpointsOpen ? "live" : undefined}
                     icon={<IconClock size={13} />}
                     onClick={() => setCheckpointsOpen((open) => !open)}
@@ -1352,7 +1355,7 @@ export function GitPane({
                     )}
 
                     {checkpointsOpen && (
-                        <div className="git-checkpoints">
+                        <div className="git-checkpoints" id={checkpointsId}>
                             <CheckpointPanel
                                 repo={repo}
                                 initialAgentNamespace="sikemux"

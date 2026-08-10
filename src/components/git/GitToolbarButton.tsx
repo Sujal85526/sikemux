@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 export function GitToolbarButton({
+    ariaControls,
+    ariaExpanded,
     children,
     className,
     count,
@@ -9,6 +11,8 @@ export function GitToolbarButton({
     onClick,
     title,
 }: {
+    ariaControls?: string;
+    ariaExpanded?: boolean;
     children?: ReactNode;
     className?: string;
     count?: number;
@@ -18,7 +22,13 @@ export function GitToolbarButton({
     title: string;
 }) {
     return (
-        <button className={`git-tbtn${className ? ` ${className}` : ""}`} type="button" onClick={onClick} title={title}>
+        <button
+            className={`git-tbtn${className ? ` ${className}` : ""}`}
+            type="button"
+            aria-controls={ariaControls}
+            aria-expanded={ariaExpanded}
+            onClick={onClick}
+            title={title}>
             {icon}
             {!!count && count > 0 && <span className="git-tbtn-count">{count}</span>}
             {children}
