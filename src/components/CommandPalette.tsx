@@ -75,7 +75,7 @@ export function CommandPalette({
     }, [selected]);
 
     const activate = (entry: CommandEntry | undefined) => {
-        if (!entry) return;
+        if (!entry || (entry.kind === "standalone" && entry.disabled)) return;
         onClose();
         onExecute?.(entry.key);
         runMeasuredAction(entry.key, "command-palette", entry.execute);
@@ -131,6 +131,7 @@ export function CommandPalette({
                             key={entry.key}
                             type="button"
                             role="option"
+                            disabled={entry.kind === "standalone" && entry.disabled}
                             aria-selected={index === selected}
                             className={`picker-item command-palette-item${index === selected ? " sel" : ""}`}
                             onMouseEnter={() => {

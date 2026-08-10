@@ -75,4 +75,35 @@ describe("CommandPalette", () => {
         fireEvent.keyDown(input, { key: "Escape" });
         expect(onClose).toHaveBeenCalledTimes(2);
     });
+
+    it("shows disabled contextual actions without dispatching them", async () => {
+        const user = userEvent.setup();
+        const execute = vi.fn();
+        const onClose = vi.fn();
+        render(
+            <CommandPalette
+                keybindingOverrides={{}}
+                executeBuiltin={vi.fn()}
+                standaloneCommands={[
+                    {
+                        id: "context.unavailable",
+                        title: "Unavailable contextual action",
+                        detail: "Requires another focused item",
+                        category: "Context",
+                        disabled: true,
+                        execute,
+                    },
+                ]}
+                onClose={onClose}
+            />,
+        );
+
+        const input = screen.getByRole("textbox", { name: "Search commands" });
+        await user.type(input, "unavailable contextual");
+        const action = screen.getByRole("option", { name: /Unavailable contextual action/ });
+        expect(action).toBeDisabled();
+        fireEvent.keyDown(input, { key: "Enter" });
+        expect(execute).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+    });
 });

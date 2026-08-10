@@ -95,6 +95,25 @@ describe("project configuration", () => {
         });
     });
 
+    it("normalizes safe action keybindings and rejects typing-like or malformed bindings", () => {
+        const normalized = validateProjectConfig({
+            version: 1,
+            actions: [{ id: "check", label: "Check", command: "pnpm check", keybinding: "Shift+Meta+KeyT" }],
+        });
+        expect(normalized).toMatchObject({ ok: true, config: { actions: [{ keybinding: "Meta+Shift+KeyT" }] } });
+
+        for (const keybinding of ["KeyA", "Shift+KeyA", "Meta+Garbage", "Meta+KeyA+KeyB", "Meta+Meta+KeyA"]) {
+            const result = validateProjectConfig({
+                version: 1,
+                actions: [{ id: "check", label: "Check", command: "pnpm check", keybinding }],
+            });
+            expect(result).toMatchObject({
+                ok: false,
+                errors: [expect.objectContaining({ path: "$.actions[0].keybinding", code: "invalid-value" })],
+            });
+        }
+    });
+
     it("returns actionable JSON parse errors with a fingerprint", async () => {
         const result = await loadProjectConfig("/repo", async () => '{"version":');
         expect(result).toMatchObject({ status: "invalid", path: "/repo/sikemux.json", errors: [{ code: "invalid-json", path: "$" }] });

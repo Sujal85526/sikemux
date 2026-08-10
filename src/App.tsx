@@ -44,6 +44,15 @@ import { performanceTelemetry } from "./lib/performance";
 import { workbenchRuntime } from "./workbench/runtime";
 import { appTaskRuntime, clearActiveProjectTasks, getAppTaskSnapshot, replaceActiveProjectTasks, subscribeAppTasks } from "./tasks/application";
 import type { ResolvedTaskDefinition, TaskControllerSnapshot } from "./tasks/taskRegistry";
+import {
+    applicationActionContext,
+    applicationActionContextFingerprint,
+    executeApplicationAction,
+    getApplicationActionRevision,
+    loadApplicationActions,
+    resolveApplicationActions,
+    subscribeApplicationActions,
+} from "./actions/bridge";
 
 interface BootInfo {
     home: string;
@@ -147,6 +156,7 @@ export default function App() {
     const customCommands = useStore((s) => s.customCommands);
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
+    const activeSessionId = useStore((s) => s.activeSessionId);
     const activeProjectCwd = useStore((s) => {
         const session = s.sessions[s.activeSessionId];
         return session?.kind === "project" ? session.cwd : "";
@@ -155,6 +165,9 @@ export default function App() {
     const [worktreeState, setWorktreeState] = useState<{ cwd: string; items: GitWorktree[] } | null>(null);
     const projectConfig = projectConfigState?.cwd === activeProjectCwd ? projectConfigState.result : null;
     const taskRegistrySnapshot = useSyncExternalStore(subscribeAppTasks, getAppTaskSnapshot, getAppTaskSnapshot);
+    useSyncExternalStore(subscribeApplicationActions, getApplicationActionRevision, getApplicationActionRevision);
+    useStore(applicationActionContextFingerprint);
+    const actionContext = applicationActionContext(getState());
     const activeWorktrees = worktreeState?.cwd === activeProjectCwd ? worktreeState.items : [];
     const activeTerminalWindowId = useStore((s) => {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
@@ -178,22 +191,19 @@ export default function App() {
             cmd.noteRecentCommand(`standalone:${id}`);
             execute();
         };
+    const contributedActionCommands: StandaloneCommand[] = resolveApplicationActions(actionContext).map((action) => ({
+        id: action.commandId,
+        title: action.title,
+        detail: action.detail,
+        category: action.category,
+        shortcut: action.shortcut,
+        disabled: !action.enabled,
+        execute: () => {
+            void executeApplicationAction(action.actionId, applicationActionContext(getState())).catch(reportError(`run action ${action.commandId}`));
+        },
+    }));
     const projectCommands: StandaloneCommand[] = [];
     if (projectConfig?.status === "valid") {
-        for (const action of projectConfig.config.actions.filter(
-            (candidate) => candidate.contexts.length === 0 || candidate.contexts.includes("project"),
-        )) {
-            projectCommands.push({
-                id: `project.action.${action.id}`,
-                title: action.label,
-                detail: action.description || `Run from ${projectConfig.path}`,
-                category: "Project · sikemux.json",
-                execute: runStandalone(`project.action.${action.id}`, () => {
-                    if (!trustProjectConfig(projectConfig)) return;
-                    cmd.runCustomCommand(projectActionCommand(action));
-                }),
-            });
-        }
         if (projectConfig.config.preview?.command) {
             projectCommands.push({
                 id: "project.preview.start",
@@ -397,6 +407,7 @@ export default function App() {
         },
         ...worktreeCommands,
         ...taskCommands,
+        ...contributedActionCommands,
         ...projectCommands,
     ];
 
@@ -408,6 +419,36 @@ export default function App() {
         }
         return clearActiveProjectTasks;
     }, [activeProjectCwd, projectConfig]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let dispose: (() => void) | null = null;
+        if (!activeProjectCwd || projectConfig?.status !== "valid") return;
+
+        void loadApplicationActions()
+            .then((runtime) => {
+                if (cancelled) return;
+                const registration = runtime.registerProjectActions({
+                    projectId: activeSessionId,
+                    projectRoot: activeProjectCwd,
+                    configPath: projectConfig.path,
+                    actions: projectConfig.config.actions,
+                    execute: (action) => {
+                        if (!trustProjectConfig(projectConfig)) return;
+                        cmd.runCustomCommand(projectActionCommand(action));
+                    },
+                });
+                dispose = () => registration.dispose();
+            })
+            .catch((error: unknown) => {
+                if (!cancelled) reportError("load project actions")(error);
+            });
+
+        return () => {
+            cancelled = true;
+            dispose?.();
+        };
+    }, [activeProjectCwd, activeSessionId, projectConfig]);
 
     useEffect(() => {
         const current = new Set(projectRepoKey.split("\0").filter(Boolean));

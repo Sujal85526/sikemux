@@ -34,6 +34,10 @@ export interface StandaloneCommand {
     title: string;
     detail: string;
     category: string;
+    /** Optional display-only binding; dispatch remains owned by the caller. */
+    shortcut?: string;
+    /** Disabled commands remain discoverable but cannot be dispatched. */
+    disabled?: boolean;
     execute: () => void;
 }
 
@@ -70,7 +74,8 @@ export interface StandaloneCommandEntry {
     title: string;
     detail: string;
     category: string;
-    shortcut: "";
+    shortcut: string;
+    disabled: boolean;
     searchText: string;
     execute: () => void;
 }
@@ -124,8 +129,9 @@ export function buildCommandRegistry({
         title: command.title,
         detail: command.detail,
         category: command.category,
-        shortcut: "",
-        searchText: `${command.title} ${command.detail} ${command.category} ${command.id}`,
+        shortcut: command.shortcut ?? "",
+        disabled: command.disabled ?? false,
+        searchText: `${command.title} ${command.detail} ${command.category} ${command.shortcut ?? ""} ${command.id}`,
         execute: command.execute,
     }));
     if (!executeCustom) return [...builtins, ...standalone];

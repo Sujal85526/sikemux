@@ -12,6 +12,11 @@
     gap: 10px;
 }
 
+.command-palette-item:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+}
+
 .command-palette-icon {
     color: var(--cmd);
 }

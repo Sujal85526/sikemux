@@ -113,6 +113,45 @@ const MAX_CONFIG_BYTES = 256 * 1024;
 const MAX_ACTIONS = 100;
 const MAX_TASKS = 100;
 const MAX_HOOKS = 20;
+const KEYBINDING_MODIFIERS = new Set(["Meta", "Ctrl", "Alt", "Shift"]);
+const KEYBINDING_PRIMARY_MODIFIERS = new Set(["Meta", "Ctrl", "Alt"]);
+const KEYBINDING_MODIFIER_ORDER = ["Meta", "Ctrl", "Alt", "Shift"] as const;
+const PHYSICAL_KEY_CODES = new Set([
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowUp",
+    "Backquote",
+    "Backslash",
+    "Backspace",
+    "BracketLeft",
+    "BracketRight",
+    "Comma",
+    "ContextMenu",
+    "Delete",
+    "End",
+    "Enter",
+    "Equal",
+    "Escape",
+    "Help",
+    "Home",
+    "Insert",
+    "IntlBackslash",
+    "IntlRo",
+    "IntlYen",
+    "Minus",
+    "PageDown",
+    "PageUp",
+    "Pause",
+    "Period",
+    "PrintScreen",
+    "Quote",
+    "ScrollLock",
+    "Semicolon",
+    "Slash",
+    "Space",
+    "Tab",
+]);
 const MAX_TASK_ENV_ENTRIES = 128;
 const MAX_TASK_ENV_VALUE_LENGTH = 8_192;
 const MAX_TASK_ENV_TOTAL_LENGTH = 65_536;
@@ -194,6 +233,41 @@ function parseCommand(value: unknown, path: string, errors: ProjectConfigValidat
     return boundedRequiredString(value, path, "Command", 8_000, errors);
 }
 
+function isPhysicalKeyCode(value: string): boolean {
+    return (
+        /^(?:Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/u.test(value) ||
+        /^Numpad(?:[0-9]|Add|Comma|Decimal|Divide|Enter|Equal|Multiply|Subtract)$/u.test(value) ||
+        PHYSICAL_KEY_CODES.has(value)
+    );
+}
+
+/** Returns the exact canonical form emitted by `eventToKeybinding`. */
+export function normalizeProjectActionKeybinding(value: string): string | null {
+    const parts = value.split("+");
+    const code = parts.pop();
+    if (!code || !isPhysicalKeyCode(code) || parts.length === 0) return null;
+    const modifiers = new Set<string>();
+    for (const modifier of parts) {
+        if (!KEYBINDING_MODIFIERS.has(modifier) || modifiers.has(modifier)) return null;
+        modifiers.add(modifier);
+    }
+    if (![...KEYBINDING_PRIMARY_MODIFIERS].some((modifier) => modifiers.has(modifier))) return null;
+    return [...KEYBINDING_MODIFIER_ORDER.filter((modifier) => modifiers.has(modifier)), code].join("+");
+}
+
+function parseActionKeybinding(value: unknown, path: string, errors: ProjectConfigValidationError[]): string | undefined {
+    const binding = boundedOptionalString(value, path, "Keybinding", 100, errors);
+    if (binding === undefined) return undefined;
+    const normalized = normalizeProjectActionKeybinding(binding);
+    if (!normalized) {
+        errors.push(
+            issue(path, "invalid-value", "Keybinding must contain Meta, Ctrl, or Alt plus one supported physical key code, with optional Shift."),
+        );
+        return undefined;
+    }
+    return normalized;
+}
+
 function parseActions(value: unknown, errors: ProjectConfigValidationError[]): ProjectAction[] {
     if (value === undefined) return [];
     if (!Array.isArray(value)) {
@@ -242,7 +316,7 @@ function parseActions(value: unknown, errors: ProjectConfigValidationError[]): P
             }
         }
 
-        const keybinding = boundedOptionalString(candidate.keybinding, `${path}.keybinding`, "Keybinding", 100, errors);
+        const keybinding = parseActionKeybinding(candidate.keybinding, `${path}.keybinding`, errors);
         if (id) {
             if (ids.has(id)) errors.push(issue(`${path}.id`, "duplicate-id", `Action ID “${id}” is duplicated.`));
             ids.add(id);

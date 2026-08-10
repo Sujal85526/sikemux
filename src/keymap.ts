@@ -5,6 +5,8 @@ import { emit } from "./state/bus";
 import { getState, type StoreState } from "./state/store";
 import type { KeyModifier } from "./state/types";
 import { runMeasuredAction } from "./lib/instrumentation";
+import { applicationActionContext, executeApplicationAction, matchApplicationActionKeybinding } from "./actions/bridge";
+import { reportError } from "./state/toast";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
@@ -256,11 +258,24 @@ export function useKeymap(): void {
                 return;
             }
 
-            if (!action) return;
             // The first-run tour asks the reader to press real bindings, so it
             // claims every shortcut while it is open — including the ones other
             // modals let through.
             if (st.onboardingOpen) return;
+            if (!action) {
+                if (hasOpenModal(st)) return;
+                const context = applicationActionContext(st, event.target);
+                if (context.focus?.editable && !event.metaKey && !event.ctrlKey && !event.altKey) return;
+                const contributed = matchApplicationActionKeybinding(event, context);
+                if (!contributed) return;
+                runMeasuredAction(contributed.commandId, "keymap", () => {
+                    cmd.noteRecentCommand(`standalone:${contributed.commandId}`);
+                    void executeApplicationAction(contributed.actionId, context).catch(reportError(`run action ${contributed.commandId}`));
+                    return true;
+                });
+                consume(event);
+                return;
+            }
             if (hasOpenModal(st) && !MODAL_ACTIONS.has(action)) return;
             if (!runMeasuredAction(action, "keymap", () => runKeybindingAction(action, event, st))) return;
 

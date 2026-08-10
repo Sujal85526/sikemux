@@ -1,5 +1,6 @@
-import { render } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadApplicationActions } from "./actions/bridge";
 import type { Session } from "./state/types";
 import { getState, setState } from "./state/store";
 import { useKeymap } from "./keymap";
@@ -22,6 +23,11 @@ function session(id: string, kind: Session["kind"] = "project"): Session {
 function KeymapHarness() {
     useKeymap();
     return null;
+}
+
+function EditableKeymapHarness() {
+    useKeymap();
+    return <input aria-label="Editable target" />;
 }
 
 beforeEach(() => {
@@ -102,5 +108,96 @@ describe("onboarding modality", () => {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", altKey: true, bubbles: true, cancelable: true }));
 
         expect(getState()).toMatchObject({ commandPaletteOpen: false, settingsOpen: false, pickerOpen: false, onboardingOpen: true });
+    });
+});
+
+describe("contributed action keybindings", () => {
+    it("dispatches contextual project bindings, revokes them, and keeps built-ins first", async () => {
+        const execute = vi.fn();
+        const runtime = await loadApplicationActions();
+        const registration = runtime.registerProjectActions({
+            projectId: "one",
+            projectRoot: "/tmp/one",
+            configPath: "/tmp/one/sikemux.json",
+            actions: [
+                {
+                    id: "quality",
+                    label: "Run quality checks",
+                    description: "Lint and test",
+                    command: "pnpm check",
+                    placement: "terminal",
+                    contexts: ["project"],
+                    keybinding: "Meta+Shift+KeyT",
+                },
+                {
+                    id: "zoom-collision",
+                    label: "Do not override zoom",
+                    description: "Built-ins retain priority",
+                    command: "echo no",
+                    placement: "background",
+                    contexts: ["project"],
+                    keybinding: "Alt+KeyZ",
+                },
+            ],
+            execute,
+        });
+
+        try {
+            render(<KeymapHarness />);
+
+            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", altKey: true, bubbles: true, cancelable: true }));
+            expect(getState().zoomedPaneId).toBeNull();
+            expect(execute).not.toHaveBeenCalled();
+
+            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+            await waitFor(() => expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: "quality" })));
+            expect(getState().recentCommandKeys.filter((key) => key === "standalone:project.action.quality")).toHaveLength(1);
+
+            registration.dispose();
+            execute.mockClear();
+            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+            await Promise.resolve();
+            expect(execute).not.toHaveBeenCalled();
+        } finally {
+            registration.dispose();
+        }
+    });
+
+    it("does not let a Shift-only trusted action capture editable typing", async () => {
+        const run = vi.fn();
+        const runtime = await loadApplicationActions();
+        const registration = runtime.register({
+            id: "sikemux.editable-actions",
+            actions: [
+                {
+                    id: "uppercase-a",
+                    create: () => ({
+                        commandId: "test.uppercase-a",
+                        definition: {
+                            id: "test.uppercaseA",
+                            title: "Uppercase A",
+                            detail: "Must not capture typing",
+                            category: "Test",
+                            source: "test.actions",
+                            defaultBinding: "Shift+KeyA",
+                            run,
+                        },
+                    }),
+                },
+            ],
+        });
+
+        try {
+            render(<EditableKeymapHarness />);
+            fireEvent.keyDown(screen.getByRole("textbox", { name: "Editable target" }), {
+                code: "KeyA",
+                key: "A",
+                shiftKey: true,
+            });
+            await Promise.resolve();
+            expect(run).not.toHaveBeenCalled();
+        } finally {
+            registration.dispose();
+        }
     });
 });
