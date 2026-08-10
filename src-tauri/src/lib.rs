@@ -224,6 +224,7 @@ pub fn run() {
             lsp::lsp_locations,
             diff::diff_hunks,
             files::list_project_files,
+            files::list_project_files_snapshot,
             settings::scan_project_roots,
             settings::expand_path,
             settings::is_directory,
