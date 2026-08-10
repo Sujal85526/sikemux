@@ -212,7 +212,7 @@ const keybindingActions = [
         label: "Switch to last-used session",
         detail: "Toggle back to the session you used immediately before this one",
         category: "Navigation",
-        defaultBinding: "Alt+KeyQ",
+        defaultBinding: "Alt+KeyU",
     },
     {
         id: "session.next",

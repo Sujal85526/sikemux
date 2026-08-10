@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    KEYBINDING_ACTIONS,
     actionForEvent,
     eventToKeybinding,
     findKeybindingConflict,
@@ -44,6 +45,19 @@ describe("keybindings", () => {
         expect(actionForEvent(key("KeyO", { ctrlKey: true, shiftKey: true }), overrides)).toBe("project.open");
         expect(actionForEvent(key("KeyP", { altKey: true }), overrides)).toBeNull();
         expect(findKeybindingConflict(overrides, "aws.open", "Ctrl+Shift+KeyO")?.id).toBe("project.open");
+    });
+
+    it("keeps every default binding unique and routes both session actions", () => {
+        const owners = new Map<string, string[]>();
+        for (const action of KEYBINDING_ACTIONS) {
+            const bindingOwners = owners.get(action.defaultBinding) ?? [];
+            bindingOwners.push(action.id);
+            owners.set(action.defaultBinding, bindingOwners);
+        }
+
+        expect(Array.from(owners, ([binding, ids]) => ({ binding, ids })).filter(({ ids }) => ids.length > 1)).toEqual([]);
+        expect(actionForEvent(key("KeyQ", { altKey: true }), {})).toBe("session.close");
+        expect(actionForEvent(key("KeyU", { altKey: true }), {})).toBe("session.lastUsed");
     });
 
     it("requires a modifier for user-recorded shortcuts", () => {
