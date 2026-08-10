@@ -1,0 +1,727 @@
+export type PtyOutputChunk = readonly number[] | Uint8Array;
+
+export interface PtySpawnRequest<Context = unknown> {
+    readonly cols: number;
+    readonly rows: number;
+    readonly cwd: string | null;
+    readonly startup: string | null;
+    readonly context: Context | null;
+}
+
+export interface PtyAttachResult {
+    readonly subId: number;
+    readonly snapshot: readonly number[];
+    readonly alternateScreen: boolean;
+}
+
+export interface PtyApi<ChannelTransport, Context = unknown> {
+    spawn(request: PtySpawnRequest<Context>): Promise<number>;
+    write(id: number, data: string): Promise<void>;
+    resize(id: number, cols: number, rows: number): Promise<void>;
+    kill(id: number): Promise<void>;
+    attach(id: number, channel: ChannelTransport): Promise<PtyAttachResult>;
+    detach(id: number, subId: number): Promise<void>;
+}
+
+export interface PtyChannelBinding<ChannelTransport> {
+    readonly transport: ChannelTransport;
+    close(): void;
+}
+
+export interface PtyChannelAdapter<ChannelTransport> {
+    create(onMessage: (chunk: PtyOutputChunk) => void): PtyChannelBinding<ChannelTransport>;
+}
+
+export interface PtyTimerAdapter {
+    schedule(callback: () => void, delayMs: number): unknown;
+    cancel(handle: unknown): void;
+}
+
+export type PtyControllerStatus = "idle" | "starting" | "running" | "failed" | "exited" | "disposing" | "disposed";
+export type PtyInitialInputStatus = "none" | "pending" | "scheduled" | "delivering" | "delivered" | "failed" | "cancelled";
+export type PtyOperation =
+    | "spawn"
+    | "initial-input"
+    | "initial-input-callback"
+    | "write"
+    | "resize"
+    | "attach"
+    | "detach"
+    | "kill"
+    | "exit"
+    | "output-listener"
+    | "state-listener"
+    | "channel-close";
+
+export interface PtyControllerSnapshot {
+    readonly revision: number;
+    readonly status: PtyControllerStatus;
+    readonly spawnAttempts: number;
+    readonly attachmentCount: number;
+    readonly initialInput: PtyInitialInputStatus;
+    readonly cols: number;
+    readonly rows: number;
+    readonly failureOperation: PtyOperation | null;
+}
+
+export interface PtyControllerErrorEvent {
+    readonly operation: PtyOperation;
+    readonly error: unknown;
+}
+
+export interface PtyAttachment {
+    /** Atomic native parser snapshot. Apply this before calling activate(). */
+    readonly snapshot: readonly number[];
+    readonly alternateScreen: boolean;
+    /** Release buffered post-snapshot deltas to the renderer in exact order. */
+    activate(): void;
+    /** Drop only this renderer subscription; the headless PTY keeps running. */
+    detach(): Promise<void>;
+    toJSON(): never;
+}
+
+export interface PtyLifecycleControllerOptions<ChannelTransport, Context = unknown> {
+    readonly api: PtyApi<ChannelTransport, Context>;
+    readonly channels: PtyChannelAdapter<ChannelTransport>;
+    readonly cwd?: string;
+    readonly startup?: string;
+    readonly context?: Context;
+    readonly cols?: number;
+    readonly rows?: number;
+    readonly initialInput?: string;
+    readonly initialInputDelayMs?: number;
+    readonly onInitialInputDelivered?: () => void;
+    readonly onError?: (event: PtyControllerErrorEvent) => void;
+    readonly timer?: PtyTimerAdapter;
+    readonly maxPendingChunks?: number;
+    readonly maxPendingBytes?: number;
+    readonly maxSnapshotBytes?: number;
+    readonly maxListenerErrors?: number;
+    readonly maxStateListeners?: number;
+    readonly maxAttachments?: number;
+}
+
+export class PtyControllerDisposedError extends Error {
+    constructor() {
+        super("PTY controller is disposing or disposed");
+        this.name = "PtyControllerDisposedError";
+    }
+}
+
+export class PtyControllerExitedError extends Error {
+    constructor() {
+        super("PTY process has exited; create a new controller to restart it");
+        this.name = "PtyControllerExitedError";
+    }
+}
+
+export class PtySubscriptionOverflowError extends Error {
+    constructor() {
+        super("PTY renderer fell behind before applying its atomic snapshot; reattach to resynchronize");
+        this.name = "PtySubscriptionOverflowError";
+    }
+}
+
+type StateListener = (snapshot: PtyControllerSnapshot) => void;
+
+type AttachmentState<ChannelTransport> = {
+    readonly localId: number;
+    readonly ptyId: number;
+    readonly listener: (chunk: PtyOutputChunk) => void;
+    readonly binding: PtyChannelBinding<ChannelTransport>;
+    nativeAttach: Promise<PtyAttachResult>;
+    subId: number | null;
+    queue: PtyOutputChunk[];
+    queuedBytes: number;
+    active: boolean;
+    delivering: boolean;
+    detached: boolean;
+    overflowed: boolean;
+    listenerErrors: number;
+    detachPromise: Promise<void> | null;
+};
+
+const DEFAULT_COLS = 80;
+const DEFAULT_ROWS = 24;
+const DEFAULT_INITIAL_INPUT_DELAY_MS = 800;
+const DEFAULT_MAX_PENDING_CHUNKS = 256;
+const DEFAULT_MAX_PENDING_BYTES = 1024 * 1024;
+const DEFAULT_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
+const DEFAULT_MAX_LISTENER_ERRORS = 8;
+const DEFAULT_MAX_STATE_LISTENERS = 32;
+const DEFAULT_MAX_ATTACHMENTS = 16;
+
+const defaultTimer: PtyTimerAdapter = {
+    schedule: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+    cancel: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+function requirePositiveInteger(name: string, value: number, max = Number.MAX_SAFE_INTEGER): number {
+    if (!Number.isSafeInteger(value) || value <= 0 || value > max) {
+        throw new RangeError(`${name} must be a positive integer no greater than ${max}`);
+    }
+    return value;
+}
+
+function requireNonNegativeNumber(name: string, value: number): number {
+    if (!Number.isFinite(value) || value < 0) throw new RangeError(`${name} must be a non-negative finite number`);
+    return value;
+}
+
+function isRuntimeId(value: unknown): value is number {
+    return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function callAsPromise<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+        return operation();
+    } catch (error) {
+        return Promise.reject(error);
+    }
+}
+
+function isOutputChunk(value: unknown): value is PtyOutputChunk {
+    return Array.isArray(value) || value instanceof Uint8Array;
+}
+
+function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number): void {
+    if (!isRuntimeId(result.subId)) throw new TypeError("PTY attach returned an invalid subscription ID");
+    if (!Array.isArray(result.snapshot) || result.snapshot.length > maxSnapshotBytes) {
+        throw new TypeError("PTY attach returned an invalid or oversized snapshot");
+    }
+    if (typeof result.alternateScreen !== "boolean") throw new TypeError("PTY attach returned an invalid screen mode");
+}
+
+/**
+ * Runtime-only PTY owner. Spawn failures may be retried; process exit and
+ * atomic-attach failure are terminal for this instance. Renderer attachment is
+ * independent from process lifetime, so cold views detach without killing.
+ */
+export class PtyLifecycleController<ChannelTransport, Context = unknown> {
+    private readonly api: PtyApi<ChannelTransport, Context>;
+    private readonly channels: PtyChannelAdapter<ChannelTransport>;
+    private readonly spawnRequest: PtySpawnRequest<Context>;
+    private readonly timer: PtyTimerAdapter;
+    private readonly initialInputDelayMs: number;
+    private readonly onInitialInputDelivered?: () => void;
+    private readonly onError?: (event: PtyControllerErrorEvent) => void;
+    private readonly maxPendingChunks: number;
+    private readonly maxPendingBytes: number;
+    private readonly maxSnapshotBytes: number;
+    private readonly maxListenerErrors: number;
+    private readonly maxStateListeners: number;
+    private readonly maxAttachments: number;
+    private readonly attachments = new Map<number, AttachmentState<ChannelTransport>>();
+    private readonly stateListeners = new Set<StateListener>();
+    private status: PtyControllerStatus = "idle";
+    private failureOperation: PtyOperation | null = null;
+    private initialInputStatus: PtyInitialInputStatus;
+    private initialInput: string | null;
+    private initialInputAttempted = false;
+    private initialInputTimer: unknown | null = null;
+    private ptyId: number | null = null;
+    private startPromise: Promise<number> | null = null;
+    private disposePromise: Promise<void> | null = null;
+    private killPromise: Promise<void> | null = null;
+    private disposeRequested = false;
+    private spawnAttempts = 0;
+    private revision = 0;
+    private attachmentSequence = 0;
+    private resizeSequence = 0;
+    private appliedResizeSequence = 0;
+    private cols: number;
+    private rows: number;
+
+    constructor(options: PtyLifecycleControllerOptions<ChannelTransport, Context>) {
+        this.api = options.api;
+        this.channels = options.channels;
+        this.cols = requirePositiveInteger("cols", options.cols ?? DEFAULT_COLS, 65_535);
+        this.rows = requirePositiveInteger("rows", options.rows ?? DEFAULT_ROWS, 65_535);
+        this.spawnRequest = Object.freeze({
+            cols: this.cols,
+            rows: this.rows,
+            cwd: options.cwd ?? null,
+            startup: options.startup ?? null,
+            context: options.context ?? null,
+        });
+        this.timer = options.timer ?? defaultTimer;
+        this.initialInputDelayMs = requireNonNegativeNumber("initialInputDelayMs", options.initialInputDelayMs ?? DEFAULT_INITIAL_INPUT_DELAY_MS);
+        this.maxPendingChunks = requirePositiveInteger("maxPendingChunks", options.maxPendingChunks ?? DEFAULT_MAX_PENDING_CHUNKS);
+        this.maxPendingBytes = requirePositiveInteger("maxPendingBytes", options.maxPendingBytes ?? DEFAULT_MAX_PENDING_BYTES);
+        this.maxSnapshotBytes = requirePositiveInteger("maxSnapshotBytes", options.maxSnapshotBytes ?? DEFAULT_MAX_SNAPSHOT_BYTES);
+        this.maxListenerErrors = requirePositiveInteger("maxListenerErrors", options.maxListenerErrors ?? DEFAULT_MAX_LISTENER_ERRORS);
+        this.maxStateListeners = requirePositiveInteger("maxStateListeners", options.maxStateListeners ?? DEFAULT_MAX_STATE_LISTENERS);
+        this.maxAttachments = requirePositiveInteger("maxAttachments", options.maxAttachments ?? DEFAULT_MAX_ATTACHMENTS);
+        this.onInitialInputDelivered = options.onInitialInputDelivered;
+        this.onError = options.onError;
+        const initialInput = options.initialInput?.trim() ?? "";
+        this.initialInput = initialInput || null;
+        this.initialInputStatus = this.initialInput ? "pending" : "none";
+    }
+
+    getSnapshot(): PtyControllerSnapshot {
+        return Object.freeze({
+            revision: this.revision,
+            status: this.status,
+            spawnAttempts: this.spawnAttempts,
+            attachmentCount: this.attachments.size,
+            initialInput: this.initialInputStatus,
+            cols: this.cols,
+            rows: this.rows,
+            failureOperation: this.failureOperation,
+        });
+    }
+
+    subscribe(listener: StateListener): () => void {
+        if (this.stateListeners.size >= this.maxStateListeners) throw new RangeError("PTY controller state listener limit reached");
+        this.stateListeners.add(listener);
+        if (!this.deliverState(listener)) this.stateListeners.delete(listener);
+        return () => this.stateListeners.delete(listener);
+    }
+
+    start(): Promise<number> {
+        if (this.status === "disposing" || this.status === "disposed" || this.disposeRequested) {
+            return Promise.reject(new PtyControllerDisposedError());
+        }
+        if (this.status === "exited") return Promise.reject(new PtyControllerExitedError());
+        if (this.ptyId !== null && this.status === "running") return Promise.resolve(this.ptyId);
+        if (this.startPromise) return this.startPromise;
+
+        this.status = "starting";
+        this.failureOperation = null;
+        this.spawnAttempts += 1;
+        this.emitState();
+        const spawned = callAsPromise(() => this.api.spawn(this.spawnRequest));
+        const attempt = spawned
+            .then(async (id) => {
+                if (!isRuntimeId(id)) throw new TypeError("PTY spawn returned an invalid runtime ID");
+                this.ptyId = id;
+                if (this.disposeRequested) {
+                    try {
+                        await this.killOnce(id);
+                    } catch {
+                        // killOnce already reports; disposal remains best-effort.
+                    }
+                    throw new PtyControllerDisposedError();
+                }
+                this.status = "running";
+                this.failureOperation = null;
+                this.emitState();
+                this.scheduleInitialInput(id);
+                return id;
+            })
+            .catch((error: unknown) => {
+                if (this.disposeRequested) throw new PtyControllerDisposedError();
+                this.reportError("spawn", error);
+                // Spawn failure is explicitly retryable: startPromise is cleared
+                // below, and the next start() makes a fresh native attempt.
+                this.status = "failed";
+                this.failureOperation = "spawn";
+                this.emitState();
+                throw error;
+            });
+        const tracked: Promise<number> = attempt.finally(() => {
+            if (this.startPromise === tracked) this.startPromise = null;
+        });
+        this.startPromise = tracked;
+        return tracked;
+    }
+
+    async write(data: string): Promise<void> {
+        const id = await this.readyPtyId();
+        this.assertRunning(id);
+        try {
+            await this.api.write(id, data);
+        } catch (error) {
+            this.failureOperation = "write";
+            this.reportError("write", error);
+            this.emitState();
+            throw error;
+        }
+    }
+
+    async resize(cols: number, rows: number): Promise<void> {
+        requirePositiveInteger("cols", cols, 65_535);
+        requirePositiveInteger("rows", rows, 65_535);
+        const sequence = ++this.resizeSequence;
+        const id = await this.readyPtyId();
+        this.assertRunning(id);
+        try {
+            await this.api.resize(id, cols, rows);
+            if (sequence >= this.appliedResizeSequence) {
+                this.appliedResizeSequence = sequence;
+                this.cols = cols;
+                this.rows = rows;
+            }
+            this.failureOperation = null;
+            this.emitState();
+        } catch (error) {
+            this.failureOperation = "resize";
+            this.reportError("resize", error);
+            this.emitState();
+            throw error;
+        }
+    }
+
+    async attach(listener: (chunk: PtyOutputChunk) => void): Promise<PtyAttachment> {
+        const id = await this.readyPtyId();
+        this.assertRunning(id);
+        if (this.attachments.size >= this.maxAttachments) throw new RangeError("PTY controller attachment limit reached");
+
+        let state: AttachmentState<ChannelTransport> | null = null;
+        let binding: PtyChannelBinding<ChannelTransport>;
+        try {
+            binding = this.channels.create((chunk) => {
+                if (state) this.receiveOutput(state, chunk);
+            });
+        } catch (error) {
+            this.reportError("attach", error);
+            throw error;
+        }
+        let resolveNative!: (result: PtyAttachResult) => void;
+        let rejectNative!: (error: unknown) => void;
+        const nativeAttach = new Promise<PtyAttachResult>((resolve, reject) => {
+            resolveNative = resolve;
+            rejectNative = reject;
+        });
+        state = {
+            localId: ++this.attachmentSequence,
+            ptyId: id,
+            listener,
+            binding,
+            nativeAttach,
+            subId: null,
+            queue: [],
+            queuedBytes: 0,
+            active: false,
+            delivering: false,
+            detached: false,
+            overflowed: false,
+            listenerErrors: 0,
+            detachPromise: null,
+        };
+        this.attachments.set(state.localId, state);
+        this.emitState();
+        callAsPromise(() => this.api.attach(id, binding.transport)).then(resolveNative, rejectNative);
+
+        let attached: PtyAttachResult;
+        try {
+            attached = await nativeAttach;
+            if (isRuntimeId(attached.subId)) state.subId = attached.subId;
+            validateAttachResult(attached, this.maxSnapshotBytes);
+        } catch (error) {
+            await this.abandonAttachment(state);
+            if (this.disposeRequested) throw new PtyControllerDisposedError();
+            this.markExited("attach");
+            this.reportError("attach", error);
+            throw error;
+        }
+
+        if (state.detached || this.disposeRequested) {
+            await this.detachAttachment(state).catch(() => {});
+            if (state.overflowed) throw new PtySubscriptionOverflowError();
+            throw new PtyControllerDisposedError();
+        }
+
+        const attachment: PtyAttachment = Object.freeze({
+            snapshot: attached.snapshot,
+            alternateScreen: attached.alternateScreen,
+            activate: () => this.activateAttachment(state),
+            detach: () => this.detachAttachment(state),
+            toJSON: (): never => {
+                throw new TypeError("PTY attachments contain runtime output and cannot be serialized");
+            },
+        });
+        return attachment;
+    }
+
+    dispose(): Promise<void> {
+        if (this.disposePromise) return this.disposePromise;
+        this.disposeRequested = true;
+        if (this.initialInputStatus === "pending" || this.initialInputStatus === "scheduled" || this.initialInputStatus === "delivering") {
+            this.initialInputStatus = "cancelled";
+        }
+        this.cancelInitialInput();
+        if (this.status !== "disposed") {
+            this.status = "disposing";
+            this.failureOperation = null;
+            this.emitState();
+        }
+
+        const starting = this.startPromise;
+        const detaches = Array.from(this.attachments.values(), (attachment) => this.detachAttachment(attachment));
+        const runningId = this.ptyId;
+        const immediateKill = runningId === null ? null : this.killOnce(runningId);
+        // Attach rejection handlers immediately; a slow detach must not leave a
+        // concurrently failing start/kill promise temporarily unhandled.
+        const settledDetaches = Promise.allSettled(detaches);
+        const settledStart = starting ? Promise.allSettled([starting]) : null;
+        const settledKill = immediateKill ? Promise.allSettled([immediateKill]) : null;
+        this.disposePromise = (async () => {
+            await settledDetaches;
+            if (settledStart) await settledStart;
+            if (settledKill) await settledKill;
+            else if (this.ptyId !== null) await Promise.allSettled([this.killOnce(this.ptyId)]);
+            this.ptyId = null;
+            this.initialInput = null;
+            this.status = "disposed";
+            this.failureOperation = null;
+            this.emitState();
+            this.stateListeners.clear();
+        })();
+        return this.disposePromise;
+    }
+
+    toJSON(): never {
+        throw new TypeError("PTY controllers own runtime processes and cannot be serialized");
+    }
+
+    private async readyPtyId(): Promise<number> {
+        if (this.status === "exited") throw new PtyControllerExitedError();
+        if (this.status === "disposing" || this.status === "disposed" || this.disposeRequested) throw new PtyControllerDisposedError();
+        return this.ptyId ?? this.start();
+    }
+
+    private assertRunning(id: number): void {
+        if (this.status === "exited") throw new PtyControllerExitedError();
+        if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) throw new PtyControllerDisposedError();
+    }
+
+    private scheduleInitialInput(id: number): void {
+        if (!this.initialInput || this.initialInputAttempted || this.disposeRequested) return;
+        this.initialInputStatus = "scheduled";
+        this.emitState();
+        try {
+            this.initialInputTimer = this.timer.schedule(() => {
+                this.initialInputTimer = null;
+                void this.deliverInitialInput(id);
+            }, this.initialInputDelayMs);
+        } catch (error) {
+            this.initialInput = null;
+            this.initialInputStatus = "failed";
+            this.failureOperation = "initial-input";
+            this.reportError("initial-input", error);
+            this.emitState();
+        }
+    }
+
+    private async deliverInitialInput(id: number): Promise<void> {
+        if (this.initialInputAttempted || !this.initialInput) return;
+        if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) {
+            this.initialInput = null;
+            return;
+        }
+        this.initialInputAttempted = true;
+        this.initialInputStatus = "delivering";
+        const input = this.initialInput;
+        this.initialInput = null;
+        this.emitState();
+        try {
+            await this.api.write(id, `\x1b[200~${input}\x1b[201~\r`);
+            if (this.disposeRequested) {
+                this.initialInputStatus = "cancelled";
+                this.emitState();
+                return;
+            }
+            if (this.getSnapshot().status === "exited") {
+                this.initialInputStatus = "failed";
+                this.emitState();
+                return;
+            }
+            this.initialInputStatus = "delivered";
+            this.failureOperation = null;
+            if (!this.disposeRequested) {
+                try {
+                    this.onInitialInputDelivered?.();
+                } catch (error) {
+                    this.reportError("initial-input-callback", error);
+                }
+            }
+        } catch (error) {
+            // At-most-once policy: a rejected bridge response is ambiguous, so
+            // automatic retry could submit the user's first task twice.
+            this.initialInputStatus = "failed";
+            this.failureOperation = "initial-input";
+            this.reportError("initial-input", error);
+        }
+        this.emitState();
+    }
+
+    private cancelInitialInput(): void {
+        if (this.initialInputTimer !== null) {
+            try {
+                this.timer.cancel(this.initialInputTimer);
+            } catch (error) {
+                this.reportError("initial-input", error);
+            }
+            this.initialInputTimer = null;
+        }
+        this.initialInput = null;
+    }
+
+    private activateAttachment(state: AttachmentState<ChannelTransport>): void {
+        if (state.overflowed) throw new PtySubscriptionOverflowError();
+        if (state.detached) return;
+        state.active = true;
+        this.drainOutput(state);
+    }
+
+    private receiveOutput(state: AttachmentState<ChannelTransport>, chunk: PtyOutputChunk): void {
+        if (state.detached) return;
+        if (!isOutputChunk(chunk)) {
+            this.reportError("attach", new TypeError("PTY channel emitted an invalid output chunk"));
+            void this.detachAttachment(state).catch(() => {});
+            return;
+        }
+        if (chunk.length > this.maxPendingBytes) {
+            state.overflowed = true;
+            this.reportError("attach", new PtySubscriptionOverflowError());
+            void this.detachAttachment(state).catch(() => {});
+            return;
+        }
+        if (chunk.length === 0) this.markExited("exit");
+        if (state.active && !state.delivering && state.queue.length === 0) {
+            this.deliverOutput(state, chunk);
+            this.drainOutput(state);
+            return;
+        }
+        if (state.queue.length >= this.maxPendingChunks || state.queuedBytes + chunk.length > this.maxPendingBytes) {
+            state.overflowed = true;
+            state.queue = [];
+            state.queuedBytes = 0;
+            this.reportError("attach", new PtySubscriptionOverflowError());
+            void this.detachAttachment(state).catch(() => {});
+            return;
+        }
+        state.queue.push(chunk);
+        state.queuedBytes += chunk.length;
+    }
+
+    private drainOutput(state: AttachmentState<ChannelTransport>): void {
+        while (state.active && !state.detached && !state.delivering && state.queue.length > 0) {
+            const chunk = state.queue.shift();
+            if (!chunk) continue;
+            state.queuedBytes -= chunk.length;
+            this.deliverOutput(state, chunk);
+        }
+    }
+
+    private deliverOutput(state: AttachmentState<ChannelTransport>, chunk: PtyOutputChunk): void {
+        if (state.detached) return;
+        state.delivering = true;
+        try {
+            state.listener(chunk);
+        } catch (error) {
+            state.listenerErrors += 1;
+            this.reportError("output-listener", error);
+            if (state.listenerErrors >= this.maxListenerErrors) void this.detachAttachment(state).catch(() => {});
+        } finally {
+            state.delivering = false;
+        }
+    }
+
+    private detachAttachment(state: AttachmentState<ChannelTransport>): Promise<void> {
+        if (state.detachPromise) return state.detachPromise;
+        state.detached = true;
+        state.active = false;
+        state.queue = [];
+        state.queuedBytes = 0;
+        this.attachments.delete(state.localId);
+        try {
+            state.binding.close();
+        } catch (error) {
+            this.reportError("channel-close", error);
+        }
+        this.emitState();
+        state.detachPromise = state.nativeAttach.then(
+            async (attached) => {
+                if (!isRuntimeId(attached.subId)) return;
+                state.subId = attached.subId;
+                try {
+                    await this.api.detach(state.ptyId, attached.subId);
+                } catch (error) {
+                    this.reportError("detach", error);
+                    throw error;
+                }
+            },
+            () => {},
+        );
+        return state.detachPromise;
+    }
+
+    private async abandonAttachment(state: AttachmentState<ChannelTransport>): Promise<void> {
+        if (state.detached) {
+            if (state.detachPromise) await state.detachPromise.catch(() => {});
+            return;
+        }
+        state.detached = true;
+        state.active = false;
+        state.queue = [];
+        state.queuedBytes = 0;
+        this.attachments.delete(state.localId);
+        try {
+            state.binding.close();
+        } catch (error) {
+            this.reportError("channel-close", error);
+        }
+        if (state.subId !== null) {
+            try {
+                await this.api.detach(state.ptyId, state.subId);
+            } catch (error) {
+                this.reportError("detach", error);
+            }
+        }
+        this.emitState();
+    }
+
+    private markExited(operation: "attach" | "exit"): void {
+        if (this.status !== "running") return;
+        this.cancelInitialInput();
+        if (this.initialInputStatus === "pending" || this.initialInputStatus === "scheduled" || this.initialInputStatus === "delivering") {
+            this.initialInputStatus = "failed";
+        }
+        this.status = "exited";
+        this.failureOperation = operation;
+        this.emitState();
+    }
+
+    private killOnce(id: number): Promise<void> {
+        if (this.killPromise) return this.killPromise;
+        this.killPromise = callAsPromise(() => this.api.kill(id))
+            .catch((error) => {
+                this.failureOperation = "kill";
+                this.reportError("kill", error);
+                throw error;
+            })
+            .finally(() => {
+                if (this.ptyId === id) this.ptyId = null;
+            });
+        return this.killPromise;
+    }
+
+    private emitState(): void {
+        this.revision += 1;
+        const snapshot = this.getSnapshot();
+        for (const listener of Array.from(this.stateListeners)) {
+            if (!this.deliverState(listener, snapshot)) this.stateListeners.delete(listener);
+        }
+    }
+
+    private deliverState(listener: StateListener, snapshot = this.getSnapshot()): boolean {
+        try {
+            listener(snapshot);
+            return true;
+        } catch (error) {
+            this.reportError("state-listener", error);
+            return false;
+        }
+    }
+
+    private reportError(operation: PtyOperation, error: unknown): void {
+        try {
+            this.onError?.({ operation, error });
+        } catch {
+            // Observability must never break PTY ownership or channel delivery.
+        }
+    }
+}
