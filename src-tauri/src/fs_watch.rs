@@ -24,13 +24,111 @@ struct WatchHandle {
     _watcher: RecommendedWatcher,
 }
 
-fn registry() -> &'static Mutex<HashMap<String, Arc<WatchHandle>>> {
-    static R: OnceLock<Mutex<HashMap<String, Arc<WatchHandle>>>> = OnceLock::new();
-    R.get_or_init(|| Mutex::new(HashMap::new()))
+const MAX_WATCH_LEASES: u16 = 1_024;
+const WATCH_LEASE_LIMIT_ERROR: &str = "repo watcher lease limit reached";
+
+struct WatchEntry<H> {
+    _handle: H,
+    leases: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LeaseAcquire {
+    Created,
+    Acquired(u16),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum LeaseAcquireError<E> {
+    Limit,
+    Create(E),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LeaseRelease {
+    Unknown,
+    Retained(u16),
+    Removed,
+}
+
+struct WatchRegistry<H> {
+    entries: HashMap<String, WatchEntry<H>>,
+}
+
+impl<H> Default for WatchRegistry<H> {
+    fn default() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+}
+
+impl<H> WatchRegistry<H> {
+    fn acquire_or_insert<E>(
+        &mut self,
+        repo: String,
+        create: impl FnOnce() -> Result<H, E>,
+    ) -> Result<LeaseAcquire, LeaseAcquireError<E>> {
+        match self.entries.entry(repo) {
+            std::collections::hash_map::Entry::Occupied(mut occupied) => {
+                let entry = occupied.get_mut();
+                if entry.leases >= MAX_WATCH_LEASES {
+                    return Err(LeaseAcquireError::Limit);
+                }
+                entry.leases += 1;
+                Ok(LeaseAcquire::Acquired(entry.leases))
+            }
+            std::collections::hash_map::Entry::Vacant(vacant) => {
+                let handle = create().map_err(LeaseAcquireError::Create)?;
+                vacant.insert(WatchEntry {
+                    _handle: handle,
+                    leases: 1,
+                });
+                Ok(LeaseAcquire::Created)
+            }
+        }
+    }
+
+    fn release(&mut self, repo: &str) -> LeaseRelease {
+        let Some(entry) = self.entries.get_mut(repo) else {
+            return LeaseRelease::Unknown;
+        };
+        if entry.leases > 1 {
+            entry.leases -= 1;
+            return LeaseRelease::Retained(entry.leases);
+        }
+        self.entries.remove(repo);
+        LeaseRelease::Removed
+    }
+
+    fn counts(&self) -> (usize, u64) {
+        let leases = self.entries.values().fold(0_u64, |total, entry| {
+            total.saturating_add(u64::from(entry.leases))
+        });
+        (self.entries.len(), leases)
+    }
+}
+
+fn registry() -> &'static Mutex<WatchRegistry<WatchHandle>> {
+    static R: OnceLock<Mutex<WatchRegistry<WatchHandle>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(WatchRegistry::default()))
 }
 
 pub fn watch_count() -> usize {
-    registry().lock().map(|r| r.len()).unwrap_or(0)
+    registry()
+        .lock()
+        .map(|registry| registry.entries.len())
+        .unwrap_or(0)
+}
+
+fn record_registry_gauges(watchers: usize, leases: u64) {
+    let observer = crate::observability::global_observability();
+    observer.set_gauge("fs_watch.active_watchers", watchers as f64);
+    observer.set_gauge("fs_watch.active_leases", leases as f64);
+}
+
+fn increment_watch_counter(name: &'static str) {
+    let _ = crate::observability::global_observability().increment_counter(name, 1);
 }
 
 #[derive(Serialize, Clone)]
@@ -262,20 +360,9 @@ fn try_send_message(
     }
 }
 
-#[tauri::command]
-pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
-    {
-        let reg = registry().lock().map_err(watch_err)?;
-        if reg.contains_key(&repo) {
-            return Ok(());
-        }
-    }
-
+fn create_watch(app: AppHandle, repo: String) -> AppResult<WatchHandle> {
     let (tx, rx) = tokio::sync::mpsc::channel::<WatchMessage>(EVENT_CHANNEL_CAPACITY);
     let rescan_requested = Arc::new(AtomicBool::new(false));
-    spawn_debouncer(app.clone(), repo.clone(), rx, rescan_requested.clone());
-
-    let tx_events = tx.clone();
     let callback_repo = PathBuf::from(&repo);
     let callback_rescan = rescan_requested.clone();
 
@@ -285,7 +372,7 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
             Err(_) => Some(WatchMessage::Rescan),
         };
         if let Some(message) = message {
-            try_send_message(&tx_events, &callback_rescan, message);
+            try_send_message(&tx, &callback_rescan, message);
         }
     })
     .map_err(watch_err)?;
@@ -294,10 +381,44 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
         .watch(Path::new(&repo), RecursiveMode::Recursive)
         .map_err(watch_err)?;
 
-    registry()
-        .lock()
-        .map_err(watch_err)?
-        .insert(repo.clone(), Arc::new(WatchHandle { _watcher: watcher }));
+    // Start the consumer only after the OS watcher is live. Events produced
+    // during `watch` remain bounded in the channel; a failed setup drops both
+    // ends without publishing a registry entry or leaking a background task.
+    spawn_debouncer(app, repo, rx, rescan_requested);
+    Ok(WatchHandle { _watcher: watcher })
+}
+
+#[tauri::command]
+pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
+    // The registry lock deliberately covers construction. Starts are rare,
+    // and serializing them closes the check/create/insert race that could
+    // otherwise produce two native event streams for one repo.
+    let mut registry = registry().lock().map_err(watch_err)?;
+    let acquisition =
+        registry.acquire_or_insert(repo.clone(), || create_watch(app.clone(), repo.clone()));
+    let counts = registry.counts();
+    drop(registry);
+
+    match acquisition {
+        Ok(LeaseAcquire::Acquired(_)) => {
+            increment_watch_counter("fs_watch.lease_acquires");
+            record_registry_gauges(counts.0, counts.1);
+            return Ok(());
+        }
+        Ok(LeaseAcquire::Created) => {
+            increment_watch_counter("fs_watch.lease_acquires");
+            increment_watch_counter("fs_watch.watcher_starts");
+            record_registry_gauges(counts.0, counts.1);
+        }
+        Err(LeaseAcquireError::Limit) => {
+            increment_watch_counter("fs_watch.lease_overflows");
+            return Err(AppError::Watch(WATCH_LEASE_LIMIT_ERROR.to_owned()));
+        }
+        Err(LeaseAcquireError::Create(error)) => {
+            increment_watch_counter("fs_watch.start_errors");
+            return Err(error);
+        }
+    }
 
     // First repo-scoped synthetic emit so the frontend refreshes this project
     // after subscribing. Keep it scoped; an empty repo means "invalidate all"
@@ -309,7 +430,27 @@ pub fn repo_watch_start(app: AppHandle, repo: String) -> AppResult<()> {
 
 #[tauri::command]
 pub fn repo_watch_stop(repo: String) -> AppResult<()> {
-    registry().lock().map_err(watch_err)?.remove(&repo);
+    let mut registry = registry().lock().map_err(watch_err)?;
+    let release = registry.release(&repo);
+    let counts = registry.counts();
+    drop(registry);
+
+    match release {
+        LeaseRelease::Unknown => {
+            // Cleanup paths may race or retry, so stopping an unknown repo is
+            // explicitly idempotent. Count it for lifecycle diagnostics.
+            increment_watch_counter("fs_watch.stop_unknown");
+        }
+        LeaseRelease::Retained(_) => {
+            increment_watch_counter("fs_watch.lease_releases");
+            record_registry_gauges(counts.0, counts.1);
+        }
+        LeaseRelease::Removed => {
+            increment_watch_counter("fs_watch.lease_releases");
+            increment_watch_counter("fs_watch.watcher_stops");
+            record_registry_gauges(counts.0, counts.1);
+        }
+    }
     Ok(())
 }
 
@@ -317,6 +458,63 @@ pub fn repo_watch_stop(repo: String) -> AppResult<()> {
 mod tests {
     use super::*;
     use notify::event::Flag;
+
+    #[test]
+    fn watcher_registry_leases_reuse_one_handle_and_remove_only_at_zero() {
+        let mut registry = WatchRegistry::<u8>::default();
+        assert_eq!(
+            registry.acquire_or_insert("repo".to_owned(), || Ok::<_, &'static str>(7)),
+            Ok(LeaseAcquire::Created)
+        );
+        assert_eq!(
+            registry.acquire_or_insert::<&'static str>("repo".to_owned(), || {
+                panic!("existing watcher must not be recreated")
+            }),
+            Ok(LeaseAcquire::Acquired(2))
+        );
+        assert_eq!(registry.counts(), (1, 2));
+        assert_eq!(registry.entries.get("repo").unwrap()._handle, 7);
+
+        assert_eq!(registry.release("repo"), LeaseRelease::Retained(1));
+        assert_eq!(registry.counts(), (1, 1));
+        assert_eq!(registry.release("repo"), LeaseRelease::Removed);
+        assert_eq!(registry.counts(), (0, 0));
+        assert_eq!(registry.release("repo"), LeaseRelease::Unknown);
+        assert_eq!(registry.release("repo"), LeaseRelease::Unknown);
+    }
+
+    #[test]
+    fn failed_first_watcher_start_does_not_publish_a_lease() {
+        let mut registry = WatchRegistry::<u8>::default();
+        assert_eq!(
+            registry.acquire_or_insert("repo".to_owned(), || Err("setup failed")),
+            Err(LeaseAcquireError::Create("setup failed"))
+        );
+        assert_eq!(registry.counts(), (0, 0));
+
+        assert_eq!(
+            registry.acquire_or_insert("repo".to_owned(), || Ok::<_, &'static str>(9)),
+            Ok(LeaseAcquire::Created)
+        );
+        assert_eq!(registry.counts(), (1, 1));
+    }
+
+    #[test]
+    fn watcher_lease_overflow_is_rejected_without_mutation() {
+        let mut registry = WatchRegistry::<u8>::default();
+        registry
+            .acquire_or_insert("repo".to_owned(), || Ok::<_, &'static str>(11))
+            .unwrap();
+        registry.entries.get_mut("repo").unwrap().leases = MAX_WATCH_LEASES;
+
+        assert_eq!(
+            registry.acquire_or_insert("repo".to_owned(), || Ok::<_, &'static str>(12)),
+            Err(LeaseAcquireError::Limit)
+        );
+        let entry = registry.entries.get("repo").unwrap();
+        assert_eq!(entry.leases, MAX_WATCH_LEASES);
+        assert_eq!(entry._handle, 11);
+    }
 
     #[test]
     fn paired_rename_preserves_source_remove_and_target_reconcile() {
