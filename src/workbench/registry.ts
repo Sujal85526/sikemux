@@ -188,14 +188,18 @@ type BuiltinDefinitionMap = {
 
 /** This keyed shape intentionally makes additions to PaneKind a compile-time exhaustiveness error. */
 export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
-    terminal: builtinDefinition("terminal", "Shell", NULL_CODEC),
-    editor: builtinDefinition("editor", "Editor", EDITOR_CODEC),
-    git: builtinDefinition("git", "Git", NULL_CODEC),
-    aws: builtinDefinition("aws", "AWS", NULL_CODEC),
-    search: builtinDefinition("search", "Search", NULL_CODEC),
-    rundeck: builtinDefinition("rundeck", "Rundeck", NULL_CODEC),
-    bruno: builtinDefinition("bruno", "Bruno", NULL_CODEC),
+    terminal: builtinDefinition("terminal", "shell", NULL_CODEC),
+    editor: builtinDefinition("editor", "editor", EDITOR_CODEC),
+    git: builtinDefinition("git", "git", NULL_CODEC),
+    aws: builtinDefinition("aws", "aws", NULL_CODEC),
+    search: builtinDefinition("search", "search", NULL_CODEC),
+    rundeck: builtinDefinition("rundeck", "rundeck", NULL_CODEC),
+    bruno: builtinDefinition("bruno", "bruno", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
+
+export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {
+    return kind === "terminal" && startup ? startup : BUILTIN_WORKBENCH_ITEM_MANIFEST[kind].defaultTitle;
+}
 
 const BUILTIN_KIND_SET = new Set<PaneKind>(Object.keys(BUILTIN_WORKBENCH_ITEM_MANIFEST) as PaneKind[]);
 

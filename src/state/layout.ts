@@ -1,4 +1,5 @@
 import type { Divider, FocusDir, LayoutNode, PaneKind, PaneNode, Rect, SplitDir, SplitNode } from "./types";
+import { defaultWorkbenchItemTitle } from "../workbench/registry";
 
 const MIN_FRAC = 0.05; // a pane can't shrink below 5% of its split axis
 
@@ -10,18 +11,7 @@ export function newId(prefix: string): string {
 
 export function makePane(cwd = "", opts: { kind?: PaneKind; startup?: string } = {}): PaneNode {
     const kind = opts.kind ?? "terminal";
-    const title =
-        kind === "editor"
-            ? "editor"
-            : kind === "git"
-              ? "git"
-              : kind === "search"
-                ? "search"
-                : kind === "aws"
-                  ? "aws"
-                  : kind === "bruno"
-                    ? "bruno"
-                    : opts.startup || "shell";
+    const title = defaultWorkbenchItemTitle(kind, opts.startup);
     return {
         type: "pane",
         id: newId("pane"),

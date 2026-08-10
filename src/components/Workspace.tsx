@@ -1,17 +1,17 @@
-import { lazy, memo, Suspense, useMemo, useRef } from "react";
-import type { PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
-import type { Agent, Divider, PaneNode, PtyContext, Rect, Session, Window as WindowT } from "../state/types";
+import { memo, useMemo, useRef } from "react";
+import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
+import type { Agent, Divider, Rect, Session, Window as WindowT } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { GitPane } from "./GitPane";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentPalette } from "./AgentPalette";
 import { AgentIcon, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
+import { renderWorkbenchItem } from "../workbench/renderers";
 
 const AGENT_TABS_H = 32;
 const TERM_TABS_H = 32;
@@ -21,86 +21,9 @@ export const DRAFT_AGENT_TAB_ID = "draft:new-agent";
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
-const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
-const terminalContext = (session: Session, win: WindowT, pane: PaneNode): PtyContext => ({
-    sessionId: session.id,
-    sessionName: session.name,
-    sessionKind: session.kind,
-    ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
-    windowId: win.id,
-    paneId: pane.id,
-});
-
 // Agents only exist in project sessions; every other group is always in
 // "windows" view, so stale agent state can never strand a non-project session.
 const sessionView = (s: Session): "windows" | "agent" => (s.kind === "project" ? s.view : "windows");
-
-type PaneRendererProps = {
-    pane: PaneNode;
-    session: Session;
-    win: WindowT;
-    active: boolean;
-    visible: boolean;
-};
-
-const EditorPane = lazy(() => import("./EditorPane").then((mod) => ({ default: mod.EditorPane })));
-const AwsPane = lazy(() => import("./aws/AwsPane").then((mod) => ({ default: mod.AwsPane })));
-const RundeckPane = lazy(() => import("./rundeck/RundeckPane").then((mod) => ({ default: mod.RundeckPane })));
-const BrunoPane = lazy(() => import("./bruno/BrunoPane").then((mod) => ({ default: mod.BrunoPane })));
-const SearchPane = lazy(() => import("./SearchPane").then((mod) => ({ default: mod.SearchPane })));
-
-function PaneFallback() {
-    return <div style={{ width: "100%", height: "100%" }} />;
-}
-
-const PANE_RENDERER: Record<PaneNode["kind"], (props: PaneRendererProps) => ReactNode> = {
-    editor: ({ pane, session, win, active, visible }) => (
-        <Suspense fallback={<PaneFallback />}>
-            <EditorPane
-                paneId={pane.id}
-                cwd={paneCwd(pane, session)}
-                active={active}
-                visible={visible}
-                showTree={win.role !== "ssh-config"}
-                onCloseWindow={win.role === "ssh-config" ? () => cmd.closeSession(session.id) : undefined}
-                languageHint={win.role === "ssh-config" ? "ssh-config" : undefined}
-            />
-        </Suspense>
-    ),
-    git: ({ pane, session, win, active, visible }) => (
-        <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} termContext={terminalContext(session, win, pane)} />
-    ),
-    aws: ({ visible }) => (
-        <Suspense fallback={<PaneFallback />}>
-            <AwsPane active={visible} />
-        </Suspense>
-    ),
-    rundeck: ({ pane, visible }) => (
-        <Suspense fallback={<PaneFallback />}>
-            <RundeckPane paneId={pane.id} active={visible} />
-        </Suspense>
-    ),
-    bruno: ({ pane, session, visible }) => (
-        <Suspense fallback={<PaneFallback />}>
-            <BrunoPane paneId={pane.id} sessionId={session.id} active={visible} />
-        </Suspense>
-    ),
-    search: ({ pane, session, active, visible }) => (
-        <Suspense fallback={<PaneFallback />}>
-            <SearchPane sessionId={session.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
-        </Suspense>
-    ),
-    terminal: ({ pane, session, win, active, visible }) => (
-        <TerminalPane
-            cwd={paneCwd(pane, session) || undefined}
-            startup={pane.startup}
-            active={active}
-            visible={visible}
-            context={terminalContext(session, win, pane)}
-            onTitleChange={(title) => cmd.setTerminalTitle(pane.id, title)}
-        />
-    ),
-};
 
 export function Workspace() {
     const sessionsById = useStore((s) => s.sessions);
@@ -446,7 +369,7 @@ const WindowLayer = memo(function WindowLayer({
                         }}>
                         <div className={`pane pane-${p.kind}`} onMouseDown={() => visible && cmd.focusPane(p.id)}>
                             <ErrorBoundary label={`${p.kind} pane`}>
-                                {PANE_RENDERER[p.kind]({ pane: p, session, win, active: paneActive, visible: paneVisible })}
+                                {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible })}
                             </ErrorBoundary>
                         </div>
                     </div>
