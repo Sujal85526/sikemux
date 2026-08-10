@@ -8,8 +8,10 @@
 
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 const DEFAULT_EVENT_CAPACITY: usize = 512;
@@ -17,6 +19,10 @@ const DEFAULT_LATENCY_SAMPLE_CAPACITY: usize = 512;
 const DEFAULT_METRIC_SERIES_CAPACITY: usize = 256;
 const DEFAULT_METADATA_ENTRIES: usize = 16;
 const DEFAULT_STRING_BYTES: usize = 256;
+const DEFAULT_WATCHDOG_SAMPLE_INTERVAL_MS: u64 = 25;
+const DEFAULT_WATCHDOG_HANG_THRESHOLD_MS: u64 = 100;
+
+static GLOBAL_OBSERVABILITY: OnceLock<Observability> = OnceLock::new();
 
 /// Runtime limits for an [`Observability`] instance.
 #[derive(Clone, Debug, Serialize)]
@@ -342,6 +348,15 @@ impl Default for Observability {
     fn default() -> Self {
         Self::new(ObservabilityConfig::default())
     }
+}
+
+/// Returns the lazily initialized process-global observability store.
+///
+/// The store's epoch begins on first use and remains stable until process
+/// exit. Calling [`Observability::reset`] clears samples, not this epoch or the
+/// monotonic trace, span, and event ID allocators.
+pub fn global_observability() -> &'static Observability {
+    GLOBAL_OBSERVABILITY.get_or_init(Observability::default)
 }
 
 impl Observability {
@@ -769,6 +784,405 @@ impl Drop for SlowOperationGuard {
     }
 }
 
+/// Snapshot of a heartbeat shared with a watchdog thread.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeartbeatSnapshot {
+    pub sequence: u64,
+    pub last_beat_us: u64,
+    pub armed: bool,
+    pub visible: bool,
+}
+
+#[derive(Debug)]
+struct HeartbeatInner {
+    sequence: AtomicU64,
+    last_beat_us: AtomicU64,
+    armed: AtomicBool,
+    visible: AtomicBool,
+}
+
+/// A cheap, monotonic heartbeat that may be updated from any thread.
+///
+/// UI code should call [`Heartbeat::beat`] after it proves forward progress,
+/// for example after handling an input or presenting a frame. Arming and
+/// visibility are separate so expected startup work or a hidden window does
+/// not produce a false hang report.
+#[derive(Clone, Debug)]
+pub struct Heartbeat {
+    inner: Arc<HeartbeatInner>,
+}
+
+impl Default for Heartbeat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Heartbeat {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(HeartbeatInner {
+                sequence: AtomicU64::new(0),
+                last_beat_us: AtomicU64::new(global_observability().now_us()),
+                armed: AtomicBool::new(true),
+                visible: AtomicBool::new(true),
+            }),
+        }
+    }
+
+    /// Marks forward progress and returns the new monotonic heartbeat number.
+    pub fn beat(&self) -> u64 {
+        let now_us = global_observability().now_us();
+        // Multiple producers may race. `fetch_max` prevents an older producer
+        // from moving the observed heartbeat timestamp backwards.
+        self.inner.last_beat_us.fetch_max(now_us, Ordering::Release);
+        increment_monotonic(&self.inner.sequence)
+    }
+
+    pub fn set_armed(&self, armed: bool) {
+        if armed {
+            // Re-arming starts a fresh deadline instead of immediately
+            // reporting time intentionally spent disarmed as a hang.
+            self.inner
+                .last_beat_us
+                .fetch_max(global_observability().now_us(), Ordering::Release);
+        }
+        self.inner.armed.store(armed, Ordering::Release);
+    }
+
+    pub fn set_visible(&self, visible: bool) {
+        if visible {
+            // Likewise, returning from a hidden state starts a fresh deadline.
+            self.inner
+                .last_beat_us
+                .fetch_max(global_observability().now_us(), Ordering::Release);
+        }
+        self.inner.visible.store(visible, Ordering::Release);
+    }
+
+    pub fn snapshot(&self) -> HeartbeatSnapshot {
+        HeartbeatSnapshot {
+            sequence: self.inner.sequence.load(Ordering::Acquire),
+            last_beat_us: self.inner.last_beat_us.load(Ordering::Acquire),
+            armed: self.inner.armed.load(Ordering::Acquire),
+            visible: self.inner.visible.load(Ordering::Acquire),
+        }
+    }
+}
+
+/// Sampling policy for the process hang watchdog.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HangWatchdogConfig {
+    /// Low-cardinality label used in metric names and event metadata.
+    pub name: String,
+    /// Delay between samples. Zero is normalized to one millisecond.
+    pub sample_interval_ms: u64,
+    /// A delay equal to or greater than this value is a hang.
+    pub hang_threshold_ms: u64,
+    /// When false, an invisible heartbeat is treated as intentionally idle.
+    pub monitor_hidden: bool,
+}
+
+impl Default for HangWatchdogConfig {
+    fn default() -> Self {
+        Self {
+            name: "ui".to_owned(),
+            sample_interval_ms: DEFAULT_WATCHDOG_SAMPLE_INTERVAL_MS,
+            hang_threshold_ms: DEFAULT_WATCHDOG_HANG_THRESHOLD_MS,
+            monitor_hidden: false,
+        }
+    }
+}
+
+impl HangWatchdogConfig {
+    fn normalized(mut self, observer: &Observability) -> Self {
+        self.name = observer.sanitize_text(self.name);
+        if self.name.is_empty() {
+            self.name = "ui".to_owned();
+        }
+        self.sample_interval_ms = self.sample_interval_ms.max(1);
+        self.hang_threshold_ms = self.hang_threshold_ms.max(1);
+        self
+    }
+}
+
+/// Result of classifying one watchdog sample.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeartbeatDelayClassification {
+    Inactive,
+    Healthy,
+    HangStarted,
+    HangOngoing,
+    Recovered,
+}
+
+/// Pure watchdog state transition used by the production sampler and tests.
+pub fn classify_heartbeat_delay(
+    delay: Duration,
+    threshold: Duration,
+    previously_hung: bool,
+    monitored: bool,
+) -> HeartbeatDelayClassification {
+    if !monitored {
+        return HeartbeatDelayClassification::Inactive;
+    }
+
+    if delay >= threshold {
+        if previously_hung {
+            HeartbeatDelayClassification::HangOngoing
+        } else {
+            HeartbeatDelayClassification::HangStarted
+        }
+    } else if previously_hung {
+        HeartbeatDelayClassification::Recovered
+    } else {
+        HeartbeatDelayClassification::Healthy
+    }
+}
+
+#[derive(Debug)]
+struct WatchdogSignal {
+    stopped: Mutex<bool>,
+    wake: Condvar,
+}
+
+impl WatchdogSignal {
+    fn new() -> Self {
+        Self {
+            stopped: Mutex::new(false),
+            wake: Condvar::new(),
+        }
+    }
+
+    fn stop(&self) {
+        {
+            let mut stopped = self.lock_stopped();
+            *stopped = true;
+        }
+        self.wake.notify_all();
+    }
+
+    fn is_stopped(&self) -> bool {
+        *self.lock_stopped()
+    }
+
+    /// Returns true when stopped. The predicate closes the notify-before-wait
+    /// race, allowing shutdown to interrupt even a very long sample interval.
+    fn wait_until_stopped(&self, timeout: Duration) -> bool {
+        let stopped = self.lock_stopped();
+        if *stopped {
+            return true;
+        }
+
+        let stopped = match self
+            .wake
+            .wait_timeout_while(stopped, timeout, |stopped| !*stopped)
+        {
+            Ok((stopped, _)) => stopped,
+            Err(poisoned) => poisoned.into_inner().0,
+        };
+        *stopped
+    }
+
+    fn lock_stopped(&self) -> MutexGuard<'_, bool> {
+        match self.stopped.lock() {
+            Ok(stopped) => stopped,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct WatchdogMetricNames {
+    samples: String,
+    hangs: String,
+    recoveries: String,
+    delay_gauge: String,
+    delay_histogram: String,
+}
+
+impl WatchdogMetricNames {
+    fn new(name: &str) -> Self {
+        let prefix = format!("watchdog.{name}");
+        Self {
+            samples: format!("{prefix}.samples"),
+            hangs: format!("{prefix}.hangs"),
+            recoveries: format!("{prefix}.recoveries"),
+            delay_gauge: format!("{prefix}.heartbeat_delay_us"),
+            delay_histogram: format!("{prefix}.heartbeat_delay"),
+        }
+    }
+}
+
+/// Error returned when the dedicated watchdog OS thread panics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WatchdogJoinError;
+
+impl fmt::Display for WatchdogJoinError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("hang watchdog thread panicked")
+    }
+}
+
+impl std::error::Error for WatchdogJoinError {}
+
+/// Owner of a running watchdog thread.
+///
+/// Calling [`HangWatchdogHandle::stop`] interrupts its condition-variable wait
+/// and joins it. Dropping the handle provides the same clean shutdown fallback.
+#[must_use = "dropping the handle immediately stops the watchdog"]
+pub struct HangWatchdogHandle {
+    signal: Arc<WatchdogSignal>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl HangWatchdogHandle {
+    pub fn is_finished(&self) -> bool {
+        self.thread
+            .as_ref()
+            .map(JoinHandle::is_finished)
+            .unwrap_or(true)
+    }
+
+    pub fn stop(mut self) -> Result<(), WatchdogJoinError> {
+        self.signal.stop();
+        self.join()
+    }
+
+    fn join(&mut self) -> Result<(), WatchdogJoinError> {
+        match self.thread.take() {
+            Some(thread) => thread.join().map_err(|_| WatchdogJoinError),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Drop for HangWatchdogHandle {
+    fn drop(&mut self) {
+        self.signal.stop();
+        // Drop cannot surface a panic. Explicit `stop` remains available when
+        // the caller wants to distinguish a clean join from a panicked thread.
+        let _ = self.join();
+    }
+}
+
+/// Starts a dedicated OS thread which samples `heartbeat` and writes bounded
+/// diagnostics to [`global_observability`].
+pub fn start_hang_watchdog(
+    heartbeat: Heartbeat,
+    config: HangWatchdogConfig,
+) -> std::io::Result<HangWatchdogHandle> {
+    let observer = global_observability();
+    let config = config.normalized(observer);
+    let signal = Arc::new(WatchdogSignal::new());
+    let thread_signal = signal.clone();
+    let thread = thread::Builder::new()
+        .name("sikemux-hang-watchdog".to_owned())
+        .spawn(move || run_watchdog(heartbeat, config, thread_signal))?;
+
+    Ok(HangWatchdogHandle {
+        signal,
+        thread: Some(thread),
+    })
+}
+
+fn run_watchdog(heartbeat: Heartbeat, config: HangWatchdogConfig, signal: Arc<WatchdogSignal>) {
+    let observer = global_observability();
+    let metric_names = WatchdogMetricNames::new(&config.name);
+    let sample_interval = Duration::from_millis(config.sample_interval_ms);
+    let threshold = Duration::from_millis(config.hang_threshold_ms);
+    let mut previously_hung = false;
+
+    while !signal.is_stopped() {
+        let heartbeat_snapshot = heartbeat.snapshot();
+        let now_us = observer.now_us();
+        let delay_us = now_us.saturating_sub(heartbeat_snapshot.last_beat_us);
+        let monitored =
+            heartbeat_snapshot.armed && (config.monitor_hidden || heartbeat_snapshot.visible);
+        let classification = classify_heartbeat_delay(
+            Duration::from_micros(delay_us),
+            threshold,
+            previously_hung,
+            monitored,
+        );
+
+        record_watchdog_sample(
+            observer,
+            &config,
+            &metric_names,
+            heartbeat_snapshot,
+            delay_us,
+            classification,
+        );
+        previously_hung = matches!(
+            classification,
+            HeartbeatDelayClassification::HangStarted | HeartbeatDelayClassification::HangOngoing
+        );
+
+        if signal.wait_until_stopped(sample_interval) {
+            break;
+        }
+    }
+}
+
+fn record_watchdog_sample(
+    observer: &Observability,
+    config: &HangWatchdogConfig,
+    metric_names: &WatchdogMetricNames,
+    heartbeat: HeartbeatSnapshot,
+    delay_us: u64,
+    classification: HeartbeatDelayClassification,
+) {
+    if classification == HeartbeatDelayClassification::Inactive {
+        return;
+    }
+
+    let _ = observer.increment_counter(metric_names.samples.clone(), 1);
+    observer.set_gauge(metric_names.delay_gauge.clone(), delay_us as f64);
+    observer.observe_latency(
+        metric_names.delay_histogram.clone(),
+        Duration::from_micros(delay_us),
+    );
+
+    let (event_name, counter_name) = match classification {
+        HeartbeatDelayClassification::HangStarted => {
+            (Some("watchdog.hang_started"), Some(&metric_names.hangs))
+        }
+        HeartbeatDelayClassification::Recovered => (
+            Some("watchdog.hang_recovered"),
+            Some(&metric_names.recoveries),
+        ),
+        HeartbeatDelayClassification::Inactive
+        | HeartbeatDelayClassification::Healthy
+        | HeartbeatDelayClassification::HangOngoing => (None, None),
+    };
+
+    if let Some(counter_name) = counter_name {
+        let _ = observer.increment_counter(counter_name.clone(), 1);
+    }
+    if let Some(event_name) = event_name {
+        let mut metadata = Metadata::new();
+        metadata.insert(
+            "watchdog".to_owned(),
+            ScalarValue::String(config.name.clone()),
+        );
+        metadata.insert("delay_us".to_owned(), ScalarValue::U64(delay_us));
+        metadata.insert(
+            "threshold_us".to_owned(),
+            ScalarValue::U64(config.hang_threshold_ms.saturating_mul(1_000)),
+        );
+        metadata.insert(
+            "heartbeat_sequence".to_owned(),
+            ScalarValue::U64(heartbeat.sequence),
+        );
+        metadata.insert("visible".to_owned(), ScalarValue::Bool(heartbeat.visible));
+        observer.record_event(event_name, None, metadata);
+    }
+}
+
 fn duration_us(duration: Duration) -> u64 {
     u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
@@ -787,6 +1201,22 @@ fn next_monotonic_id(counter: &AtomicU64) -> u64 {
             .is_ok()
         {
             return current;
+        }
+    }
+}
+
+fn increment_monotonic(counter: &AtomicU64) -> u64 {
+    loop {
+        let current = counter.load(Ordering::Relaxed);
+        let next = match current.checked_add(1) {
+            Some(next) => next,
+            None => std::process::abort(),
+        };
+        if counter
+            .compare_exchange_weak(current, next, Ordering::Release, Ordering::Relaxed)
+            .is_ok()
+        {
+            return next;
         }
     }
 }
@@ -968,6 +1398,118 @@ mod tests {
         assert_eq!(slow_events.len(), 2);
         assert_eq!(slow_events[0].outcome, Some(SpanOutcome::Success));
         assert_eq!(slow_events[1].outcome, Some(SpanOutcome::Dropped));
+    }
+
+    #[test]
+    fn heartbeat_delay_classification_has_deterministic_boundaries() {
+        let threshold = Duration::from_millis(100);
+        assert_eq!(
+            classify_heartbeat_delay(Duration::from_secs(1), threshold, true, false),
+            HeartbeatDelayClassification::Inactive
+        );
+        assert_eq!(
+            classify_heartbeat_delay(Duration::from_millis(99), threshold, false, true),
+            HeartbeatDelayClassification::Healthy
+        );
+        assert_eq!(
+            classify_heartbeat_delay(Duration::from_millis(100), threshold, false, true),
+            HeartbeatDelayClassification::HangStarted
+        );
+        assert_eq!(
+            classify_heartbeat_delay(Duration::from_millis(101), threshold, true, true),
+            HeartbeatDelayClassification::HangOngoing
+        );
+        assert_eq!(
+            classify_heartbeat_delay(Duration::from_millis(1), threshold, true, true),
+            HeartbeatDelayClassification::Recovered
+        );
+    }
+
+    #[test]
+    fn heartbeat_sequence_is_monotonic_and_state_is_explicit() {
+        let heartbeat = Heartbeat::new();
+        assert_eq!(heartbeat.beat(), 1);
+        assert_eq!(heartbeat.beat(), 2);
+        heartbeat.set_armed(false);
+        heartbeat.set_visible(false);
+
+        let snapshot = heartbeat.snapshot();
+        assert_eq!(snapshot.sequence, 2);
+        assert!(!snapshot.armed);
+        assert!(!snapshot.visible);
+
+        heartbeat.set_visible(true);
+        heartbeat.set_armed(true);
+        let reactivated = heartbeat.snapshot();
+        assert!(reactivated.visible);
+        assert!(reactivated.armed);
+        assert!(reactivated.last_beat_us >= snapshot.last_beat_us);
+    }
+
+    #[test]
+    fn watchdog_sample_records_bounded_observability_data() {
+        let observer = Observability::new(ObservabilityConfig {
+            event_capacity: 8,
+            latency_sample_capacity: 8,
+            metric_series_capacity: 16,
+            max_metadata_entries: 8,
+            max_string_bytes: 128,
+        });
+        let watchdog_config = HangWatchdogConfig {
+            name: "ui".to_owned(),
+            sample_interval_ms: 25,
+            hang_threshold_ms: 100,
+            monitor_hidden: false,
+        };
+        let metric_names = WatchdogMetricNames::new(&watchdog_config.name);
+        let heartbeat = HeartbeatSnapshot {
+            sequence: 7,
+            last_beat_us: 1,
+            armed: true,
+            visible: true,
+        };
+
+        record_watchdog_sample(
+            &observer,
+            &watchdog_config,
+            &metric_names,
+            heartbeat,
+            125_000,
+            HeartbeatDelayClassification::HangStarted,
+        );
+
+        let snapshot = observer.snapshot();
+        assert_eq!(snapshot.counters.get("watchdog.ui.samples"), Some(&1));
+        assert_eq!(snapshot.counters.get("watchdog.ui.hangs"), Some(&1));
+        assert_eq!(
+            snapshot.gauges.get("watchdog.ui.heartbeat_delay_us"),
+            Some(&125_000.0)
+        );
+        assert_eq!(
+            snapshot
+                .latency_histograms
+                .get("watchdog.ui.heartbeat_delay")
+                .unwrap()
+                .buckets
+                .at_least_100_ms,
+            1
+        );
+        assert_eq!(snapshot.events.len(), 1);
+        assert_eq!(snapshot.events[0].name, "watchdog.hang_started");
+    }
+
+    #[test]
+    fn watchdog_stop_interrupts_a_long_wait_without_sleeping() {
+        let heartbeat = Heartbeat::new();
+        let handle = start_hang_watchdog(
+            heartbeat,
+            HangWatchdogConfig {
+                sample_interval_ms: 60_000,
+                ..HangWatchdogConfig::default()
+            },
+        )
+        .unwrap();
+        handle.stop().unwrap();
     }
 
     #[test]
