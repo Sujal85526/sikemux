@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { invokeCommand as invoke } from "./api/invoke";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -42,6 +42,7 @@ import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
 import { workbenchRuntime } from "./workbench/runtime";
+import { appTaskRuntime, clearActiveProjectTasks, getAppTaskSnapshot, replaceActiveProjectTasks, subscribeAppTasks } from "./tasks/application";
 
 interface BootInfo {
     home: string;
@@ -132,6 +133,7 @@ export default function App() {
     const [projectConfigState, setProjectConfigState] = useState<{ cwd: string; result: ProjectConfigLoadResult } | null>(null);
     const [worktreeState, setWorktreeState] = useState<{ cwd: string; items: GitWorktree[] } | null>(null);
     const projectConfig = projectConfigState?.cwd === activeProjectCwd ? projectConfigState.result : null;
+    const taskRegistrySnapshot = useSyncExternalStore(subscribeAppTasks, getAppTaskSnapshot, getAppTaskSnapshot);
     const activeWorktrees = worktreeState?.cwd === activeProjectCwd ? worktreeState.items : [];
     const activeTerminalWindowId = useStore((s) => {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
@@ -212,6 +214,54 @@ export default function App() {
                 notify("error", `sikemux.json: ${projectConfig.errors.map((error) => `${error.path} ${error.message}`).join(" · ")}`),
             ),
         });
+    }
+    const taskCommands: StandaloneCommand[] =
+        projectConfig?.status === "valid"
+            ? taskRegistrySnapshot.tasks
+                  .filter((task) => task.project === activeProjectCwd && task.source === "project")
+                  .map((task) => ({
+                      id: `task.run.${task.id}`,
+                      title: task.label,
+                      detail: `Run task from ${task.cwd}`,
+                      category: "Tasks",
+                      execute: runStandalone(`task.run.${task.id}`, () => {
+                          if (!trustProjectConfig(projectConfig)) return;
+                          const snapshot = appTaskRuntime.getSnapshot(activeProjectCwd);
+                          const operation =
+                              snapshot?.status === "running" || snapshot?.status === "stopping"
+                                  ? appTaskRuntime.restart(activeProjectCwd, task.id)
+                                  : appTaskRuntime.run(activeProjectCwd, task.id);
+                          void operation.then(() => notify("success", `Started task: ${task.label}`)).catch(reportError(`start task ${task.label}`));
+                      }),
+                  }))
+            : [];
+    if (activeProjectCwd && taskCommands.length > 0) {
+        taskCommands.push(
+            {
+                id: "task.restart-active",
+                title: "Restart active task",
+                detail: "Stop the current project task and start it again",
+                category: "Tasks",
+                execute: runStandalone("task.restart-active", () => {
+                    void appTaskRuntime
+                        .restart(activeProjectCwd)
+                        .then(() => notify("success", "Restarted active task"))
+                        .catch(reportError("restart active task"));
+                }),
+            },
+            {
+                id: "task.stop-active",
+                title: "Stop active task",
+                detail: "Stop only the exact PTY owned by the current project task",
+                category: "Tasks",
+                execute: runStandalone("task.stop-active", () => {
+                    void appTaskRuntime
+                        .stop(activeProjectCwd)
+                        .then(() => notify("success", "Stopped active task"))
+                        .catch(reportError("stop active task"));
+                }),
+            },
+        );
     }
     const worktreeCommands: StandaloneCommand[] = activeWorktrees
         .filter((worktree) => !worktree.bare)
@@ -318,8 +368,18 @@ export default function App() {
             execute: runStandalone("agents.reload-manifests", () => void agentDetectionApi.reload().catch(reportError("agent manifest reload"))),
         },
         ...worktreeCommands,
+        ...taskCommands,
         ...projectCommands,
     ];
+
+    useEffect(() => {
+        if (activeProjectCwd && projectConfig?.status === "valid") {
+            replaceActiveProjectTasks(activeProjectCwd, projectConfig.config.tasks);
+        } else {
+            clearActiveProjectTasks();
+        }
+        return clearActiveProjectTasks;
+    }, [activeProjectCwd, projectConfig]);
 
     useEffect(() => {
         let cancelled = false;
