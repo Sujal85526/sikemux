@@ -166,7 +166,7 @@ fn state_load_from_paths(database: &Path, legacy: &Path) -> String {
             }
         }
     }
-    migrate_legacy_snapshot(database, legacy).unwrap_or_default()
+    migrate_legacy_snapshot(database, legacy)
 }
 
 fn legacy_snapshot_exists(legacy: &Path) -> bool {
@@ -188,20 +188,32 @@ fn quarantine_authoritative_database(database: &Path, legacy: &Path) -> AppResul
     quarantine_database(database)
 }
 
-fn migrate_legacy_snapshot(database: &Path, legacy: &Path) -> AppResult<String> {
+fn migrate_legacy_snapshot(database: &Path, legacy: &Path) -> String {
     // Once migration succeeded, stale JSON is retained only for manual
     // recovery and must never silently replace a newer corrupt database.
     if migration_marker_path(database).is_file() {
-        return Ok(String::new());
+        return String::new();
     }
     let recovered = read_valid_json(legacy)
         .or_else(|| read_valid_json(&backup_path(legacy)))
         .unwrap_or_default();
     if !recovered.is_empty() {
-        save_database(database, &recovered)?;
-        write_migration_marker(database)?;
+        let observer = global_observability();
+        match save_database(database, &recovered) {
+            Ok(()) => {
+                if write_migration_marker(database).is_err() {
+                    let _ = observer.increment_counter("state.legacy_marker_failures", 1);
+                }
+            }
+            Err(_) => {
+                // The recovered payload is still the safest boot state. The
+                // regular persistence retry can establish SQLite and its
+                // migration marker without replacing the UI with defaults.
+                let _ = observer.increment_counter("state.legacy_migration_failures", 1);
+            }
+        }
     }
-    Ok(recovered)
+    recovered
 }
 
 #[tauri::command]
@@ -917,10 +929,7 @@ mod tests {
         let legacy_snapshot = snapshot("legacy", "{}");
         fs::write(&legacy, &legacy_snapshot).unwrap();
 
-        assert_eq!(
-            migrate_legacy_snapshot(&database, &legacy).unwrap(),
-            legacy_snapshot
-        );
+        assert_eq!(migrate_legacy_snapshot(&database, &legacy), legacy_snapshot);
         assert!(database.exists());
         assert!(migration_marker_path(&database).exists());
         assert_eq!(
@@ -1073,6 +1082,22 @@ mod tests {
         fs::remove_dir(&marker).unwrap();
         save_database_and_mark_legacy(&database, &legacy, &snapshot("current", "{}")).unwrap();
         assert!(marker.is_file());
+    }
+
+    #[test]
+    fn migration_returns_recovered_state_when_the_marker_is_unavailable() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("state.sqlite3");
+        let legacy = directory.path().join("state.json");
+        let recovered = snapshot("recovered", "{}");
+        fs::write(&legacy, &recovered).unwrap();
+        fs::create_dir(migration_marker_path(&database)).unwrap();
+
+        assert_eq!(migrate_legacy_snapshot(&database, &legacy), recovered);
+        assert_eq!(
+            theme(&expect_snapshot(load_database(&database).unwrap())),
+            "recovered"
+        );
     }
 
     #[test]
