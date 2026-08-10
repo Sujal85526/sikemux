@@ -30,6 +30,7 @@ import { IconClose, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { TabBar } from "./TabBar";
 import { EditorFindBar } from "./EditorFindBar";
+import { EditorInsights } from "./EditorInsights";
 import { basename, isPathWithin, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 
@@ -245,7 +246,7 @@ export function EditorPane({
         return () => cmd.setEditorDirtyPaths(paneId, []);
     }, [paneId]);
 
-    const { openDoc, scheduleChange, saveDoc, closeDoc } = useLspBridge(cwd);
+    const { openDoc, scheduleChange, saveDoc, closeDoc, diagnostics } = useLspBridge(cwd);
 
     const nav = useNavHistory({
         project: cwd,
@@ -889,6 +890,15 @@ export function EditorPane({
                     )}
                     {activeImage && <ImageViewer image={activeImage} onReload={reloadImage} />}
                 </div>
+                {showTree && cwd && (
+                    <EditorInsights
+                        project={cwd}
+                        path={activePath}
+                        controller={diagnostics}
+                        visible={visible}
+                        onNavigate={(path, line, character) => nav.push({ path, line, character })}
+                    />
+                )}
                 {tabs.length === 0 && (
                     <div className="ed-empty">
                         <IconFile size={22} />

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { documentLanguageIdFromPath, languageFromPath, lsp, type LspTextChange } from "../api/lsp";
 import { dismissToast, errCategory, errMessage, notify, swallow } from "../state/toast";
+import { projectDiagnosticsRuntime, type ProjectDiagnosticsLease } from "../workbench/projectDiagnostics";
 
 const CHANGE_DEBOUNCE_MS = 120;
 const MAX_INCREMENTAL_BATCH = 80;
@@ -29,6 +30,44 @@ export function useLspBridge(cwd: string) {
     const chains = useRef<Map<string, Promise<void>>>(new Map());
     const reportedErrors = useRef<Set<string>>(new Set());
     const installing = useRef<Set<string>>(new Set());
+    const [diagnosticsLease, setDiagnosticsLease] = useState<ProjectDiagnosticsLease | null>(null);
+    const startedServers = useRef<{ project: string; epoch: number; languages: Set<string> }>({ project: cwd, epoch: 1, languages: new Set() });
+    if (startedServers.current.project !== cwd) {
+        startedServers.current = { project: cwd, epoch: startedServers.current.epoch + 1, languages: new Set() };
+    }
+
+    useEffect(() => {
+        if (!cwd) return;
+        let lease: ProjectDiagnosticsLease;
+        try {
+            lease = projectDiagnosticsRuntime.acquire(cwd);
+        } catch (error) {
+            swallow("LSP diagnostics acquire")(error);
+            return;
+        }
+        const epoch = startedServers.current.epoch;
+        setDiagnosticsLease(lease);
+        void lease.ready.catch(swallow("LSP diagnostics listener"));
+        for (const language of startedServers.current.project === cwd ? startedServers.current.languages : []) {
+            projectDiagnosticsRuntime.noteServerStarted(cwd, language);
+        }
+        return () => {
+            lease.release();
+            if (startedServers.current.project === cwd && startedServers.current.epoch === epoch) startedServers.current.epoch += 1;
+        };
+    }, [cwd]);
+
+    const startServer = useCallback(
+        async (lang: string): Promise<boolean> => {
+            const epoch = startedServers.current.epoch;
+            await lsp.start(cwd, lang);
+            if (startedServers.current.project !== cwd || startedServers.current.epoch !== epoch) return false;
+            startedServers.current.languages.add(lang);
+            projectDiagnosticsRuntime.noteServerStarted(cwd, lang);
+            return true;
+        },
+        [cwd],
+    );
 
     const nextVersion = useCallback((path: string): number => {
         const v = (versions.current.get(path) ?? 1) + 1;
@@ -96,7 +135,7 @@ export function useLspBridge(cwd: string) {
 
     const openOrSyncDoc = useCallback(
         async (lang: string, path: string, content: string, key: string): Promise<void> => {
-            await lsp.start(cwd, lang);
+            if (!(await startServer(lang))) return;
             if (!opened.current.has(key)) {
                 await lsp.open(cwd, lang, path, content, documentLanguageIdFromPath(path) ?? lang);
                 versions.current.set(path, 1);
@@ -106,7 +145,7 @@ export function useLspBridge(cwd: string) {
             const v = nextVersion(path);
             await lsp.change(cwd, lang, path, content, v);
         },
-        [cwd, nextVersion],
+        [cwd, nextVersion, startServer],
     );
 
     const openDoc = useCallback(
@@ -157,7 +196,7 @@ export function useLspBridge(cwd: string) {
 
                 void enqueue(path, async () => {
                     try {
-                        await lsp.start(cwd, lang);
+                        if (!(await startServer(lang))) return;
                         const key = openKey(lang, path);
                         if (!opened.current.has(key)) {
                             // If a user edits before the didOpen handshake settles, open with
@@ -184,7 +223,7 @@ export function useLspBridge(cwd: string) {
             }, CHANGE_DEBOUNCE_MS);
             timers.current.set(path, id);
         },
-        [cwd, enqueue, nextVersion, reportLspError],
+        [cwd, enqueue, nextVersion, reportLspError, startServer],
     );
 
     const saveDoc = useCallback(
@@ -198,7 +237,7 @@ export function useLspBridge(cwd: string) {
             pendingFull.current.delete(path);
             return enqueue(path, async () => {
                 try {
-                    await lsp.start(cwd, lang);
+                    if (!(await startServer(lang))) return;
                     const key = openKey(lang, path);
                     if (content != null) {
                         if (!opened.current.has(key)) {
@@ -216,7 +255,7 @@ export function useLspBridge(cwd: string) {
                 }
             });
         },
-        [cwd, enqueue, nextVersion],
+        [cwd, enqueue, nextVersion, startServer],
     );
 
     const closeDoc = useCallback(
@@ -266,5 +305,6 @@ export function useLspBridge(cwd: string) {
         };
     }, [cwd]);
 
-    return { openDoc, scheduleChange, saveDoc, closeDoc };
+    const activeDiagnosticsLease = diagnosticsLease?.project === cwd && !diagnosticsLease.released ? diagnosticsLease : null;
+    return { openDoc, scheduleChange, saveDoc, closeDoc, diagnostics: activeDiagnosticsLease?.controller ?? null };
 }
