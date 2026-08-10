@@ -204,6 +204,43 @@ export function capCheckpointDiffForRender(value: unknown): RenderedDiff {
     });
 }
 
+function skipControlSequence(value: string, index: number, limit: number): number {
+    while (index < limit) {
+        const byte = value.charCodeAt(index);
+        index += 1;
+        if (byte >= 0x40 && byte <= 0x7e) break;
+    }
+    return index;
+}
+
+function skipOperatingSystemCommand(value: string, index: number, limit: number): number {
+    while (index < limit) {
+        const byte = value.charCodeAt(index);
+        index += 1;
+        if (byte === 0x07) break;
+        if (byte === 0x1b && index < limit && value.charCodeAt(index) === 0x5c) {
+            index += 1;
+            break;
+        }
+    }
+    return index;
+}
+
+function skipEscapeSequence(value: string, index: number, limit: number): number {
+    if (index >= limit) return index;
+    const introducer = value.charCodeAt(index);
+    index += 1;
+    if (introducer === 0x5b) return skipControlSequence(value, index, limit);
+    if (introducer === 0x5d) return skipOperatingSystemCommand(value, index, limit);
+    if (introducer < 0x20 || introducer > 0x2f) return index;
+    while (index < limit) {
+        const byte = value.charCodeAt(index);
+        index += 1;
+        if (byte >= 0x30 && byte <= 0x7e) break;
+    }
+    return index;
+}
+
 export function sanitizeCheckpointError(error: unknown): string {
     let raw = "Checkpoint operation failed";
     if (typeof error === "string") raw = error;
@@ -225,11 +262,17 @@ export function sanitizeCheckpointError(error: unknown): string {
         const character = String.fromCodePoint(code);
         index += character.length;
         if (code === 27) {
-            while (index < scanLimit) {
-                const terminal = raw.charCodeAt(index);
-                index += 1;
-                if ((terminal >= 64 && terminal <= 126) || terminal === 7) break;
-            }
+            index = skipEscapeSequence(raw, index, scanLimit);
+            pendingSpace = sanitized.length > 0;
+            continue;
+        }
+        if (code === 0x9b) {
+            index = skipControlSequence(raw, index, scanLimit);
+            pendingSpace = sanitized.length > 0;
+            continue;
+        }
+        if (code === 0x9d) {
+            index = skipOperatingSystemCommand(raw, index, scanLimit);
             pendingSpace = sanitized.length > 0;
             continue;
         }
@@ -572,7 +615,10 @@ export function CheckpointPanel({
     const controlsBusy = mutation !== null;
 
     return (
-        <section className="git-panel focused" aria-labelledby={titleId} aria-busy={refreshingKey !== null || diffLoading || controlsBusy}>
+        <section
+            className="git-panel focused git-commit-panel"
+            aria-labelledby={titleId}
+            aria-busy={refreshingKey !== null || diffLoading || controlsBusy}>
             <div className="git-panel-head">
                 <span className="git-panel-n" aria-hidden="true">
                     C

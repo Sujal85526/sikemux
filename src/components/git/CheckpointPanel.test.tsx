@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CaptureGitCheckpointOptions, GitCheckpoint, GitWorktree } from "../../api/git";
 import { IS_WINDOWS } from "../../lib/platform";
-import { CHECKPOINT_PANEL_LIMITS, CheckpointPanel, type CheckpointPanelApi } from "./CheckpointPanel";
+import { CHECKPOINT_PANEL_LIMITS, CheckpointPanel, sanitizeCheckpointError, type CheckpointPanelApi } from "./CheckpointPanel";
 
 interface Deferred<Value> {
     readonly promise: Promise<Value>;
@@ -74,6 +74,13 @@ const ROOT_FORK_PATH = IS_WINDOWS ? "C:\\" : "/";
 afterEach(cleanup);
 
 describe("CheckpointPanel", () => {
+    it("removes complete terminal escape sequences from bounded errors", () => {
+        const error = new Error("\u001b[31mred\u001b[0m plain \u001b]8;;https://secret.invalid\u0007linked\u001b]8;;\u0007");
+
+        expect(sanitizeCheckpointError(error)).toBe("red plain linked");
+        expect(sanitizeCheckpointError("\u009b32mgreen\u009b0m \u009d0;hidden\u0007safe")).toBe("green safe");
+    });
+
     it("loads a bounded namespace and reviews a checkpoint optionally against its predecessor", async () => {
         const user = userEvent.setup();
         const newest = checkpoint("cp-002", "Newest snapshot", 1_700_000_000_200);
@@ -96,7 +103,10 @@ describe("CheckpointPanel", () => {
         await user.click(screen.getByRole("checkbox", { name: "Compare with previous checkpoint" }));
         await waitFor(() => expect(screen.getByLabelText("Checkpoint diff")).toHaveTextContent("diff versus previous"));
         expect(vi.mocked(api.checkpointDiff)).toHaveBeenLastCalledWith(REPO, AGENT, "cp-002", "cp-001");
-        expect(screen.getByRole("region", { name: "Checkpoints" })).toHaveAttribute("aria-busy", "false");
+        const region = screen.getByRole("region", { name: "Checkpoints" });
+        screen.getByLabelText("Agent namespace").focus();
+        expect(document.activeElement?.closest(".git-commit-panel")).toBe(region);
+        expect(region).toHaveAttribute("aria-busy", "false");
     });
 
     it("ignores stale namespace refreshes and suppresses duplicate refreshes", async () => {
@@ -291,6 +301,7 @@ describe("CheckpointPanel", () => {
         rerender(<CheckpointPanel repo={REPO} initialAgentNamespace="agent-other" api={api} />);
         alert = await screen.findByRole("alert");
         expect(alert.textContent).not.toContain("\u001b");
+        expect(alert.textContent).not.toContain("31m");
         expect(alert.textContent).not.toContain("\n");
         expect((alert.textContent ?? "").length).toBeLessThanOrEqual(CHECKPOINT_PANEL_LIMITS.maxErrorCharacters + 40);
     });
