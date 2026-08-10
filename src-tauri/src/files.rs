@@ -1,37 +1,78 @@
-// Project-wide file listing for the Cmd-P palette.
+// Project-wide file snapshots for the Cmd-P palette.
 //
 // Why we don't respect .gitignore:
 //   .env, local.properties, *.local.json — these are exactly the files the
 //   user often needs to jump to, but they're gitignored. Honouring gitignore
 //   would hide them. Instead we use a fixed denylist of well-known build /
-//   dependency / cache directories — the same trick Zed (file_scan_exclusions)
-//   and VSCode (search.exclude) use by default.
+//   dependency / cache directories.
 
-use std::sync::Arc;
-use std::sync::OnceLock;
+use std::ops::Range;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use ignore::WalkBuilder;
+use serde::Serialize;
 
-// TTL backstop for repos that aren't being fs-watched. With a watcher the
-// cache is invalidated immediately on disk change; without one (e.g. closed
-// project) the entry would otherwise live forever. 60s matches the resource
-// cache's staleness on the frontend.
+use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
+
+// Watcher deltas keep a snapshot current, while this TTL remains a periodic
+// correctness backstop for missed platform events and repos without a watcher.
 const TTL: Duration = Duration::from_secs(60);
+const MAX_INCREMENTAL_PATHS: usize = 512;
+const MAX_INCREMENTAL_FILES: usize = 4_096;
+const FULL_SCAN_SLOW_THRESHOLD: Duration = Duration::from_millis(100);
+const INCREMENTAL_SLOW_THRESHOLD: Duration = Duration::from_millis(16);
 
+static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone)]
 struct Entry {
     files: Arc<Vec<String>>,
-    fetched_at: Instant,
+    full_scan_at: Instant,
+    scan_id: u64,
 }
 
-fn cache() -> &'static DashMap<String, Entry> {
-    static C: OnceLock<DashMap<String, Entry>> = OnceLock::new();
-    C.get_or_init(DashMap::new)
+struct ProjectCache {
+    entry: Mutex<Option<Entry>>,
 }
 
+impl ProjectCache {
+    fn new() -> Self {
+        Self {
+            entry: Mutex::new(None),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Option<Entry>> {
+        match self.entry.lock() {
+            Ok(entry) => entry,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+
+fn cache() -> &'static DashMap<String, Arc<ProjectCache>> {
+    static CACHE: OnceLock<DashMap<String, Arc<ProjectCache>>> = OnceLock::new();
+    CACHE.get_or_init(DashMap::new)
+}
+
+fn project_cache(repo: &str) -> Arc<ProjectCache> {
+    cache()
+        .entry(repo.to_owned())
+        .or_insert_with(|| Arc::new(ProjectCache::new()))
+        .clone()
+}
+
+/// Explicit invalidation keeps compatibility with callers that need the next
+/// read to be a complete scan. The per-project lock object is retained so an
+/// in-flight scan and invalidation cannot split across different cache cells.
 pub fn invalidate(repo: &str) {
-    cache().remove(repo);
+    if let Some(project) = cache().get(repo) {
+        *project.lock() = None;
+    }
 }
 
 // Directories we never descend into. Keep this list conservative — anything
@@ -71,70 +112,564 @@ pub fn should_skip_dir(name: &str) -> bool {
     )
 }
 
-fn walk(repo: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let walker = WalkBuilder::new(repo)
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFilesSnapshot {
+    pub scan_id: u64,
+    pub files: Vec<String>,
+}
+
+impl Entry {
+    fn snapshot(&self) -> ProjectFilesSnapshot {
+        ProjectFilesSnapshot {
+            scan_id: self.scan_id,
+            files: (*self.files).clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum WatcherChange {
+    /// Reconcile the current on-disk type: insert a file, replace a directory
+    /// subtree, or remove a path which no longer exists.
+    Reconcile(PathBuf),
+    /// Remove the exact path and any cached descendants without consulting a
+    /// potentially reused on-disk rename source.
+    Remove(PathBuf),
+}
+
+enum FullScanReason {
+    CacheMiss,
+    Ttl,
+    WatcherFallback,
+}
+
+impl FullScanReason {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::CacheMiss => "cache_miss",
+            Self::Ttl => "ttl",
+            Self::WatcherFallback => "watcher_fallback",
+        }
+    }
+}
+
+enum LimitedWalk {
+    Complete(Vec<String>),
+    LimitExceeded,
+    Unreliable,
+}
+
+fn walk(repo_root: &Path, scan_root: &Path, limit: Option<usize>) -> LimitedWalk {
+    let mut files = Vec::new();
+    let walker = WalkBuilder::new(scan_root)
         .hidden(false) // show dotfiles — .env, .vscode/, etc. are findable
-        .git_ignore(false) // gitignored ≠ uninteresting (env files, secrets)
+        .git_ignore(false) // gitignored does not mean uninteresting
         .git_exclude(false)
         .git_global(false)
         .ignore(false)
         .parents(false)
         .follow_links(false)
         .filter_entry(|entry| {
-            // Filter applies to every entry the walker considers — for a
-            // directory, returning false prunes the whole subtree.
-            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
-            if !is_dir {
+            // Always allow the explicit scan root. For descendants, returning
+            // false for a denied directory prunes its complete subtree.
+            if entry.depth() == 0 {
                 return true;
             }
-            let name = entry.file_name().to_string_lossy();
-            !should_skip_dir(&name)
+            if entry.file_name() == ".DS_Store" {
+                return false;
+            }
+            let is_dir = entry
+                .file_type()
+                .map(|file_type| file_type.is_dir())
+                .unwrap_or(false);
+            !is_dir || !should_skip_dir(&entry.file_name().to_string_lossy())
         })
         .build();
-    let root_len = repo.len() + 1;
-    for entry in walker.flatten() {
-        let ft = match entry.file_type() {
-            Some(t) => t,
-            None => continue,
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) if limit.is_some() => return LimitedWalk::Unreliable,
+            Err(_) => continue,
         };
-        if !ft.is_file() {
+        let Some(file_type) = entry.file_type() else {
+            if limit.is_some() {
+                return LimitedWalk::Unreliable;
+            }
+            continue;
+        };
+        if !file_type.is_file() {
             continue;
         }
-        let path_str = entry.path().to_string_lossy();
-        if path_str.len() <= root_len {
+        let Ok(relative) = entry.path().strip_prefix(repo_root) else {
+            if limit.is_some() {
+                return LimitedWalk::Unreliable;
+            }
+            continue;
+        };
+        if relative.as_os_str().is_empty() {
             continue;
         }
-        out.push(path_str[root_len..].to_string());
+        files.push(relative.to_string_lossy().into_owned());
+        if limit.is_some_and(|limit| files.len() > limit) {
+            return LimitedWalk::LimitExceeded;
+        }
     }
-    out.sort();
-    out
+
+    files.sort_unstable();
+    files.dedup();
+    LimitedWalk::Complete(files)
+}
+
+fn next_scan_id() -> u64 {
+    loop {
+        let current = NEXT_SCAN_ID.load(Ordering::Relaxed);
+        let Some(next) = current.checked_add(1) else {
+            std::process::abort();
+        };
+        if NEXT_SCAN_ID
+            .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return current;
+        }
+    }
+}
+
+fn full_scan_locked(repo: &str, slot: &mut Option<Entry>, reason: FullScanReason) -> Entry {
+    let observer = global_observability();
+    let mut metadata = Metadata::new();
+    metadata.insert("reason".to_owned(), ScalarValue::from(reason.label()));
+    let timer =
+        observer.slow_operation("files.full_scan", FULL_SCAN_SLOW_THRESHOLD, None, metadata);
+
+    let files = match walk(Path::new(repo), Path::new(repo), None) {
+        LimitedWalk::Complete(files) => files,
+        // An unbounded walk never returns this variant.
+        LimitedWalk::LimitExceeded | LimitedWalk::Unreliable => Vec::new(),
+    };
+    let entry = Entry {
+        files: Arc::new(files),
+        full_scan_at: Instant::now(),
+        scan_id: next_scan_id(),
+    };
+    *slot = Some(entry.clone());
+
+    let _ = observer.increment_counter("files.full_scans", 1);
+    observer.set_gauge("files.full_scan.last_file_count", entry.files.len() as f64);
+    timer.finish(SpanOutcome::Success);
+    entry
+}
+
+fn snapshot_blocking(repo: &str) -> ProjectFilesSnapshot {
+    let project = project_cache(repo);
+    let entry = {
+        let mut slot = project.lock();
+        if let Some(entry) = slot.as_ref() {
+            if entry.full_scan_at.elapsed() < TTL {
+                entry.clone()
+            } else {
+                full_scan_locked(repo, &mut slot, FullScanReason::Ttl)
+            }
+        } else {
+            full_scan_locked(repo, &mut slot, FullScanReason::CacheMiss)
+        }
+    };
+    // The IPC-owned Vec clone can be large; do it after releasing the
+    // per-project mutation lock so watcher deltas do not wait on allocation.
+    entry.snapshot()
 }
 
 #[tauri::command]
+pub async fn list_project_files_snapshot(repo: String) -> Result<ProjectFilesSnapshot, String> {
+    let repo_for_blocking = repo;
+    tauri::async_runtime::spawn_blocking(move || snapshot_blocking(&repo_for_blocking))
+        .await
+        .map_err(|error| format!("walk join: {error}"))
+}
+
+/// Compatibility command for the current frontend. New callers can use
+/// [`list_project_files_snapshot`] to avoid processing unchanged scan IDs.
+#[tauri::command]
 pub async fn list_project_files(repo: String) -> Result<Vec<String>, String> {
-    if let Some(hit) = cache().get(&repo) {
-        if hit.fetched_at.elapsed() < TTL {
-            // One clone here is unavoidable because the IPC layer will
-            // serialise the Vec into JSON; but we deliberately did NOT
-            // also `arc = Arc::new(files.clone())` on insert — see below.
-            return Ok((*hit.files).clone());
+    list_project_files_snapshot(repo)
+        .await
+        .map(|snapshot| snapshot.files)
+}
+
+fn normalized_relative(repo_root: &Path, path: &Path) -> Result<Option<PathBuf>, ()> {
+    let relative = path.strip_prefix(repo_root).map_err(|_| ())?;
+    let mut normalized = PathBuf::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(component) => normalized.push(component),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return Err(()),
         }
     }
-    // The walk itself is CPU-bound (parallel ignore::Walk + sort). It used
-    // to run synchronously on a tokio runtime thread, which on big repos
-    // ties up an executor and stalls unrelated IPC.
-    let repo_for_blocking = repo.clone();
-    let files: Vec<String> = tauri::async_runtime::spawn_blocking(move || walk(&repo_for_blocking))
-        .await
-        .map_err(|e| format!("walk join: {e}"))?;
-    let arc = Arc::new(files);
-    cache().insert(
-        repo,
-        Entry {
-            files: arc.clone(),
-            fetched_at: Instant::now(),
-        },
+    if normalized.as_os_str().is_empty() {
+        return Err(());
+    }
+
+    // The final component might be an ordinary file named `target` or
+    // `vendor`, which the full walker includes. Only ancestors are known to be
+    // directories without consulting the filesystem.
+    let mut components = normalized.components().peekable();
+    while let Some(component) = components.next() {
+        if components.peek().is_none() {
+            break;
+        }
+        if should_skip_dir(&component.as_os_str().to_string_lossy()) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(normalized))
+}
+
+fn leaf_is_denied_directory(relative: &Path) -> bool {
+    relative
+        .file_name()
+        .is_some_and(|name| should_skip_dir(&name.to_string_lossy()))
+}
+
+fn collapse_prefixes(mut prefixes: Vec<PathBuf>) -> Vec<PathBuf> {
+    prefixes.sort_unstable();
+    prefixes.dedup();
+    let mut collapsed: Vec<PathBuf> = Vec::with_capacity(prefixes.len());
+    for prefix in prefixes {
+        if collapsed.iter().any(|parent| prefix.starts_with(parent)) {
+            continue;
+        }
+        collapsed.push(prefix);
+    }
+    collapsed
+}
+
+fn removal_ranges(files: &[String], prefixes: &[PathBuf]) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    for relative in prefixes {
+        let exact = relative.to_string_lossy();
+        if let Ok(index) = files.binary_search_by(|file| file.as_str().cmp(exact.as_ref())) {
+            ranges.push(index..index + 1);
+        }
+
+        let subtree_prefix = format!(
+            "{}{separator}",
+            exact,
+            separator = std::path::MAIN_SEPARATOR
+        );
+        let start = files.partition_point(|file| file < &subtree_prefix);
+        let mut end = start;
+        while end < files.len() && files[end].starts_with(&subtree_prefix) {
+            end += 1;
+        }
+        if start < end {
+            ranges.push(start..end);
+        }
+    }
+
+    ranges.sort_unstable_by_key(|range| range.start);
+    let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+    for range in ranges {
+        if let Some(last) = merged.last_mut() {
+            if range.start <= last.end {
+                last.end = last.end.max(range.end);
+                continue;
+            }
+        }
+        merged.push(range);
+    }
+    merged
+}
+
+fn remove_ranges(files: &mut Vec<String>, ranges: &[Range<usize>]) {
+    if ranges.is_empty() {
+        return;
+    }
+    let previous = std::mem::take(files);
+    files.reserve(previous.len());
+    let mut range_index = 0;
+    for (index, file) in previous.into_iter().enumerate() {
+        while range_index < ranges.len() && ranges[range_index].end <= index {
+            range_index += 1;
+        }
+        let removed = range_index < ranges.len()
+            && ranges[range_index].start <= index
+            && index < ranges[range_index].end;
+        if !removed {
+            files.push(file);
+        }
+    }
+}
+
+fn fallback_full_scan(
+    repo: &str,
+    slot: &mut Option<Entry>,
+    timer: crate::observability::SlowOperationGuard,
+) {
+    timer.finish(SpanOutcome::Cancelled);
+    let _ = global_observability().increment_counter("files.incremental_fallbacks", 1);
+    full_scan_locked(repo, slot, FullScanReason::WatcherFallback);
+}
+
+/// Applies one debounced watcher batch to a cached sorted snapshot. Ambiguous,
+/// outside-root, oversized, or unreadable changes fall back to one full scan.
+/// A missing cache remains missing so the next command performs its normal
+/// complete scan rather than doing duplicate work in the watcher task.
+pub(crate) fn apply_watcher_batch(
+    repo: &str,
+    changes: Vec<WatcherChange>,
+    force_full_rescan: bool,
+) {
+    let observer = global_observability();
+    let mut metadata = Metadata::new();
+    metadata.insert("change_count".to_owned(), ScalarValue::from(changes.len()));
+    metadata.insert(
+        "forced_rescan".to_owned(),
+        ScalarValue::Bool(force_full_rescan),
     );
-    Ok((*arc).clone())
+    let timer = observer.slow_operation(
+        "files.incremental_update",
+        INCREMENTAL_SLOW_THRESHOLD,
+        None,
+        metadata,
+    );
+
+    let project = project_cache(repo);
+    let mut slot = project.lock();
+    let Some(current) = slot.as_ref().cloned() else {
+        let _ = observer.increment_counter("files.incremental_cache_misses", 1);
+        timer.finish(SpanOutcome::Cancelled);
+        return;
+    };
+
+    if force_full_rescan || changes.len() > MAX_INCREMENTAL_PATHS {
+        fallback_full_scan(repo, &mut slot, timer);
+        return;
+    }
+
+    let repo_root = Path::new(repo);
+    let mut removals = Vec::new();
+    let mut additions = Vec::new();
+    let mut relevant_changes = 0usize;
+    let mut remaining_files = MAX_INCREMENTAL_FILES;
+
+    for change in changes {
+        let path = match &change {
+            WatcherChange::Reconcile(path) | WatcherChange::Remove(path) => path,
+        };
+        let relative = match normalized_relative(repo_root, path) {
+            Ok(Some(relative)) => relative,
+            Ok(None) => continue,
+            Err(()) => {
+                fallback_full_scan(repo, &mut slot, timer);
+                return;
+            }
+        };
+        relevant_changes = relevant_changes.saturating_add(1);
+        removals.push(relative.clone());
+
+        if matches!(change, WatcherChange::Remove(_)) {
+            continue;
+        }
+
+        let absolute = repo_root.join(&relative);
+        let metadata = match std::fs::symlink_metadata(&absolute) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                fallback_full_scan(repo, &mut slot, timer);
+                return;
+            }
+        };
+
+        if metadata.file_type().is_file() {
+            if remaining_files == 0 {
+                fallback_full_scan(repo, &mut slot, timer);
+                return;
+            }
+            remaining_files -= 1;
+            additions.push(relative.to_string_lossy().into_owned());
+        } else if metadata.file_type().is_dir() && !leaf_is_denied_directory(&relative) {
+            match walk(repo_root, &absolute, Some(remaining_files)) {
+                LimitedWalk::Complete(mut subtree) => {
+                    remaining_files = remaining_files.saturating_sub(subtree.len());
+                    additions.append(&mut subtree);
+                }
+                LimitedWalk::LimitExceeded | LimitedWalk::Unreliable => {
+                    fallback_full_scan(repo, &mut slot, timer);
+                    return;
+                }
+            }
+        }
+    }
+
+    if relevant_changes == 0 {
+        timer.finish(SpanOutcome::Success);
+        return;
+    }
+
+    let removals = collapse_prefixes(removals);
+    let ranges = removal_ranges(&current.files, &removals);
+    if ranges.is_empty() && additions.is_empty() {
+        timer.finish(SpanOutcome::Success);
+        return;
+    }
+    let mut files = (*current.files).clone();
+    remove_ranges(&mut files, &ranges);
+    files.append(&mut additions);
+    files.sort_unstable();
+    files.dedup();
+
+    let updated = Entry {
+        files: Arc::new(files),
+        // Incremental events do not postpone the periodic full-scan backstop.
+        full_scan_at: current.full_scan_at,
+        scan_id: next_scan_id(),
+    };
+    *slot = Some(updated.clone());
+
+    let _ = observer.increment_counter("files.incremental_updates", 1);
+    observer.set_gauge(
+        "files.incremental.last_change_count",
+        relevant_changes as f64,
+    );
+    observer.set_gauge(
+        "files.incremental.last_file_count",
+        updated.files.len() as f64,
+    );
+    timer.finish(SpanOutcome::Success);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn snapshot_is_sorted_deduped_and_scan_ids_are_monotonic() {
+        let temp = tempfile::tempdir().unwrap();
+        write(&temp.path().join("z.txt"), "z");
+        write(&temp.path().join("a.txt"), "a");
+        write(&temp.path().join(".DS_Store"), "junk");
+        write(&temp.path().join("target/ignored.txt"), "ignored");
+        let repo = temp.path().to_string_lossy().into_owned();
+
+        let first = snapshot_blocking(&repo);
+        assert_eq!(first.files, vec!["a.txt", "z.txt"]);
+        assert_eq!(snapshot_blocking(&repo).scan_id, first.scan_id);
+
+        write(&temp.path().join("b.txt"), "b");
+        apply_watcher_batch(
+            &repo,
+            vec![WatcherChange::Reconcile(temp.path().join("b.txt"))],
+            false,
+        );
+        let second = snapshot_blocking(&repo);
+        assert!(second.scan_id > first.scan_id);
+        assert_eq!(second.files, vec!["a.txt", "b.txt", "z.txt"]);
+
+        write(&temp.path().join("b.txt"), "modified");
+        apply_watcher_batch(
+            &repo,
+            vec![WatcherChange::Reconcile(temp.path().join("b.txt"))],
+            false,
+        );
+        let after_modify = snapshot_blocking(&repo);
+        assert!(after_modify.scan_id > second.scan_id);
+        assert_eq!(after_modify.files, second.files);
+    }
+
+    #[test]
+    fn incremental_create_remove_rename_and_directory_subtrees_converge() {
+        let temp = tempfile::tempdir().unwrap();
+        write(&temp.path().join("old.txt"), "old");
+        let repo = temp.path().to_string_lossy().into_owned();
+        let initial = snapshot_blocking(&repo);
+
+        let directory = temp.path().join("nested");
+        write(&directory.join("one.txt"), "one");
+        write(&directory.join("deep/two.txt"), "two");
+        apply_watcher_batch(
+            &repo,
+            vec![WatcherChange::Reconcile(directory.clone())],
+            false,
+        );
+        let after_directory = snapshot_blocking(&repo);
+        assert!(after_directory.scan_id > initial.scan_id);
+        assert_eq!(
+            after_directory.files,
+            vec!["nested/deep/two.txt", "nested/one.txt", "old.txt"]
+        );
+
+        let old = temp.path().join("old.txt");
+        let renamed = temp.path().join("renamed.txt");
+        std::fs::rename(&old, &renamed).unwrap();
+        apply_watcher_batch(
+            &repo,
+            vec![
+                WatcherChange::Remove(old),
+                WatcherChange::Reconcile(renamed),
+            ],
+            false,
+        );
+        std::fs::remove_dir_all(&directory).unwrap();
+        apply_watcher_batch(&repo, vec![WatcherChange::Remove(directory)], false);
+
+        let final_snapshot = snapshot_blocking(&repo);
+        assert!(final_snapshot.scan_id > after_directory.scan_id);
+        assert_eq!(final_snapshot.files, vec!["renamed.txt"]);
+    }
+
+    #[test]
+    fn outside_path_and_forced_batches_use_full_scan_fallback() {
+        let temp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        write(&temp.path().join("initial.txt"), "initial");
+        let repo = temp.path().to_string_lossy().into_owned();
+        let initial = snapshot_blocking(&repo);
+
+        write(&temp.path().join("missed.txt"), "missed");
+        apply_watcher_batch(
+            &repo,
+            vec![WatcherChange::Reconcile(outside.path().join("outside.txt"))],
+            false,
+        );
+        let after_outside = snapshot_blocking(&repo);
+        assert!(after_outside.scan_id > initial.scan_id);
+        assert_eq!(after_outside.files, vec!["initial.txt", "missed.txt"]);
+
+        write(&temp.path().join("forced.txt"), "forced");
+        apply_watcher_batch(&repo, Vec::new(), true);
+        let after_forced = snapshot_blocking(&repo);
+        assert!(after_forced.scan_id > after_outside.scan_id);
+        assert_eq!(
+            after_forced.files,
+            vec!["forced.txt", "initial.txt", "missed.txt"]
+        );
+    }
+
+    #[test]
+    fn cache_miss_defers_work_until_the_next_snapshot() {
+        let temp = tempfile::tempdir().unwrap();
+        write(&temp.path().join("one.txt"), "one");
+        let repo = temp.path().to_string_lossy().into_owned();
+
+        invalidate(&repo);
+        apply_watcher_batch(
+            &repo,
+            vec![WatcherChange::Reconcile(temp.path().join("one.txt"))],
+            false,
+        );
+        let snapshot = snapshot_blocking(&repo);
+        assert_eq!(snapshot.files, vec!["one.txt"]);
+        assert!(snapshot.scan_id > 0);
+    }
 }
