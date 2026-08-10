@@ -141,6 +141,15 @@ type AttachmentState<ChannelTransport> = {
     detachPromise: Promise<void> | null;
 };
 
+type PendingResize = {
+    generation: number;
+    cols: number;
+    rows: number;
+    readonly promise: Promise<void>;
+    readonly resolve: () => void;
+    readonly reject: (error: unknown) => void;
+};
+
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const DEFAULT_INITIAL_INPUT_DELAY_MS = 800;
@@ -180,6 +189,17 @@ function callAsPromise<T>(operation: () => Promise<T>): Promise<T> {
     }
 }
 
+/**
+ * Public controller methods are deliberately safe to fire-and-forget. Attaching
+ * a rejection observer here prevents an ignored operation from surfacing as a
+ * global unhandled rejection while preserving the original promise (and its
+ * rejection) for callers that await it.
+ */
+function containRejection<T>(promise: Promise<T>): Promise<T> {
+    void promise.catch(() => {});
+    return promise;
+}
+
 function isOutputChunk(value: unknown): value is PtyOutputChunk {
     return Array.isArray(value) || value instanceof Uint8Array;
 }
@@ -192,10 +212,27 @@ function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number)
     if (typeof result.alternateScreen !== "boolean") throw new TypeError("PTY attach returned an invalid screen mode");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+/** Only native errors that explicitly identify a gone PTY end process ownership. */
+function isTerminalAttachFailure(error: unknown): boolean {
+    if (error instanceof PtyControllerExitedError) return true;
+    if (!isRecord(error) || typeof error.category !== "string") return false;
+    if (error.category === "not-found" || error.category === "pty-not-found" || error.category === "exited" || error.category === "pty-exited") {
+        return true;
+    }
+    // Current native `pty_attach` reports its exact lookup miss as AppError::BadArg.
+    // Match the complete typed wire pair so unrelated bad arguments stay retryable.
+    return error.category === "bad-arg" && error.message === "invalid argument: pty not found";
+}
+
 /**
- * Runtime-only PTY owner. Spawn failures may be retried; process exit and
- * atomic-attach failure are terminal for this instance. Renderer attachment is
- * independent from process lifetime, so cold views detach without killing.
+ * Runtime-only PTY owner. Spawn and renderer-attach failures may be retried;
+ * only an explicit process exit or native PTY lookup miss is terminal for this
+ * instance. Renderer attachment is independent from process lifetime, so cold
+ * views detach without killing.
  */
 export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private readonly api: PtyApi<ChannelTransport, Context>;
@@ -228,7 +265,8 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private revision = 0;
     private attachmentSequence = 0;
     private resizeSequence = 0;
-    private appliedResizeSequence = 0;
+    private pendingResize: PendingResize | null = null;
+    private resizeDrainPromise: Promise<void> | null = null;
     private cols: number;
     private rows: number;
 
@@ -281,9 +319,9 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
 
     start(): Promise<number> {
         if (this.status === "disposing" || this.status === "disposed" || this.disposeRequested) {
-            return Promise.reject(new PtyControllerDisposedError());
+            return containRejection(Promise.reject(new PtyControllerDisposedError()));
         }
-        if (this.status === "exited") return Promise.reject(new PtyControllerExitedError());
+        if (this.status === "exited") return containRejection(Promise.reject(new PtyControllerExitedError()));
         if (this.ptyId !== null && this.status === "running") return Promise.resolve(this.ptyId);
         if (this.startPromise) return this.startPromise;
 
@@ -320,14 +358,20 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                 this.emitState();
                 throw error;
             });
-        const tracked: Promise<number> = attempt.finally(() => {
-            if (this.startPromise === tracked) this.startPromise = null;
-        });
+        const tracked: Promise<number> = containRejection(
+            attempt.finally(() => {
+                if (this.startPromise === tracked) this.startPromise = null;
+            }),
+        );
         this.startPromise = tracked;
         return tracked;
     }
 
-    async write(data: string): Promise<void> {
+    write(data: string): Promise<void> {
+        return containRejection(this.performWrite(data));
+    }
+
+    private async performWrite(data: string): Promise<void> {
         const id = await this.readyPtyId();
         this.assertRunning(id);
         try {
@@ -340,30 +384,40 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         }
     }
 
-    async resize(cols: number, rows: number): Promise<void> {
-        requirePositiveInteger("cols", cols, 65_535);
-        requirePositiveInteger("rows", rows, 65_535);
-        const sequence = ++this.resizeSequence;
-        const id = await this.readyPtyId();
-        this.assertRunning(id);
+    resize(cols: number, rows: number): Promise<void> {
         try {
-            await this.api.resize(id, cols, rows);
-            if (sequence >= this.appliedResizeSequence) {
-                this.appliedResizeSequence = sequence;
-                this.cols = cols;
-                this.rows = rows;
-            }
-            this.failureOperation = null;
-            this.emitState();
+            requirePositiveInteger("cols", cols, 65_535);
+            requirePositiveInteger("rows", rows, 65_535);
         } catch (error) {
-            this.failureOperation = "resize";
-            this.reportError("resize", error);
-            this.emitState();
-            throw error;
+            return containRejection(Promise.reject(error));
         }
+
+        const generation = ++this.resizeSequence;
+        if (this.pendingResize) {
+            this.pendingResize.generation = generation;
+            this.pendingResize.cols = cols;
+            this.pendingResize.rows = rows;
+            return this.pendingResize.promise;
+        }
+
+        let resolve!: () => void;
+        let reject!: (error: unknown) => void;
+        const promise = containRejection(
+            new Promise<void>((resolvePromise, rejectPromise) => {
+                resolve = resolvePromise;
+                reject = rejectPromise;
+            }),
+        );
+        this.pendingResize = { generation, cols, rows, promise, resolve, reject };
+        this.ensureResizeDrain();
+        return promise;
     }
 
-    async attach(listener: (chunk: PtyOutputChunk) => void): Promise<PtyAttachment> {
+    attach(listener: (chunk: PtyOutputChunk) => void): Promise<PtyAttachment> {
+        return containRejection(this.performAttach(listener));
+    }
+
+    private async performAttach(listener: (chunk: PtyOutputChunk) => void): Promise<PtyAttachment> {
         const id = await this.readyPtyId();
         this.assertRunning(id);
         if (this.attachments.size >= this.maxAttachments) throw new RangeError("PTY controller attachment limit reached");
@@ -412,7 +466,12 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         } catch (error) {
             await this.abandonAttachment(state);
             if (this.disposeRequested) throw new PtyControllerDisposedError();
-            this.markExited("attach");
+            if (isTerminalAttachFailure(error)) {
+                this.markExited("attach");
+            } else if (this.status === "running") {
+                this.failureOperation = "attach";
+                this.emitState();
+            }
             this.reportError("attach", error);
             throw error;
         }
@@ -421,6 +480,11 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             await this.detachAttachment(state).catch(() => {});
             if (state.overflowed) throw new PtySubscriptionOverflowError();
             throw new PtyControllerDisposedError();
+        }
+
+        if (this.failureOperation === "attach") {
+            this.failureOperation = null;
+            this.emitState();
         }
 
         const attachment: PtyAttachment = Object.freeze({
@@ -447,6 +511,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             this.failureOperation = null;
             this.emitState();
         }
+        this.rejectPendingResizes(new PtyControllerDisposedError());
 
         const starting = this.startPromise;
         const detaches = Array.from(this.attachments.values(), (attachment) => this.detachAttachment(attachment));
@@ -457,18 +522,20 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         const settledDetaches = Promise.allSettled(detaches);
         const settledStart = starting ? Promise.allSettled([starting]) : null;
         const settledKill = immediateKill ? Promise.allSettled([immediateKill]) : null;
-        this.disposePromise = (async () => {
-            await settledDetaches;
-            if (settledStart) await settledStart;
-            if (settledKill) await settledKill;
-            else if (this.ptyId !== null) await Promise.allSettled([this.killOnce(this.ptyId)]);
-            this.ptyId = null;
-            this.initialInput = null;
-            this.status = "disposed";
-            this.failureOperation = null;
-            this.emitState();
-            this.stateListeners.clear();
-        })();
+        this.disposePromise = containRejection(
+            (async () => {
+                await settledDetaches;
+                if (settledStart) await settledStart;
+                if (settledKill) await settledKill;
+                else if (this.ptyId !== null) await Promise.allSettled([this.killOnce(this.ptyId)]);
+                this.ptyId = null;
+                this.initialInput = null;
+                this.status = "disposed";
+                this.failureOperation = null;
+                this.emitState();
+                this.stateListeners.clear();
+            })(),
+        );
         return this.disposePromise;
     }
 
@@ -485,6 +552,79 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private assertRunning(id: number): void {
         if (this.status === "exited") throw new PtyControllerExitedError();
         if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) throw new PtyControllerDisposedError();
+    }
+
+    private ensureResizeDrain(): void {
+        if (this.resizeDrainPromise) return;
+        // Start on the next microtask so same-turn ResizeObserver bursts reduce
+        // to one native call before any IPC is dispatched.
+        const drain = containRejection(Promise.resolve().then(() => this.drainResizeQueue()));
+        this.resizeDrainPromise = drain;
+        void drain
+            .finally(() => {
+                if (this.resizeDrainPromise === drain) this.resizeDrainPromise = null;
+                // A request can arrive after the drain observes an empty queue but
+                // before this completion callback runs.
+                if (this.pendingResize) this.ensureResizeDrain();
+            })
+            .catch(() => {});
+    }
+
+    private async drainResizeQueue(): Promise<void> {
+        while (this.pendingResize) {
+            const request = this.pendingResize;
+            this.pendingResize = null;
+
+            let id: number;
+            try {
+                id = await this.readyPtyId();
+                this.assertRunning(id);
+            } catch (error) {
+                request.reject(error);
+                this.rejectPendingResizes(error);
+                return;
+            }
+
+            try {
+                // Native resize calls are strictly serialized. New requests
+                // replace one pending value and run only after this call ends.
+                await callAsPromise(() => this.api.resize(id, request.cols, request.rows));
+            } catch (error) {
+                // A failed obsolete resize is observable to its direct caller,
+                // but must not overwrite state or telemetry for a newer size.
+                if (request.generation === this.resizeSequence && !this.disposeRequested && this.status === "running" && this.ptyId === id) {
+                    this.failureOperation = "resize";
+                    this.emitState();
+                    if (request.generation === this.resizeSequence && !this.disposeRequested && this.status === "running" && this.ptyId === id) {
+                        this.reportError("resize", error);
+                    }
+                }
+                request.reject(error);
+                continue;
+            }
+
+            try {
+                this.assertRunning(id);
+            } catch (error) {
+                request.reject(error);
+                this.rejectPendingResizes(error);
+                return;
+            }
+
+            if (request.generation === this.resizeSequence) {
+                this.cols = request.cols;
+                this.rows = request.rows;
+                if (this.failureOperation === "resize") this.failureOperation = null;
+                this.emitState();
+            }
+            request.resolve();
+        }
+    }
+
+    private rejectPendingResizes(error: unknown): void {
+        const pending = this.pendingResize;
+        this.pendingResize = null;
+        pending?.reject(error);
     }
 
     private scheduleInitialInput(id: number): void {
@@ -633,18 +773,20 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             this.reportError("channel-close", error);
         }
         this.emitState();
-        state.detachPromise = state.nativeAttach.then(
-            async (attached) => {
-                if (!isRuntimeId(attached.subId)) return;
-                state.subId = attached.subId;
-                try {
-                    await this.api.detach(state.ptyId, attached.subId);
-                } catch (error) {
-                    this.reportError("detach", error);
-                    throw error;
-                }
-            },
-            () => {},
+        state.detachPromise = containRejection(
+            state.nativeAttach.then(
+                async (attached) => {
+                    if (!isRuntimeId(attached.subId)) return;
+                    state.subId = attached.subId;
+                    try {
+                        await this.api.detach(state.ptyId, attached.subId);
+                    } catch (error) {
+                        this.reportError("detach", error);
+                        throw error;
+                    }
+                },
+                () => {},
+            ),
         );
         return state.detachPromise;
     }
@@ -687,15 +829,17 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
 
     private killOnce(id: number): Promise<void> {
         if (this.killPromise) return this.killPromise;
-        this.killPromise = callAsPromise(() => this.api.kill(id))
-            .catch((error) => {
-                this.failureOperation = "kill";
-                this.reportError("kill", error);
-                throw error;
-            })
-            .finally(() => {
-                if (this.ptyId === id) this.ptyId = null;
-            });
+        this.killPromise = containRejection(
+            callAsPromise(() => this.api.kill(id))
+                .catch((error) => {
+                    this.failureOperation = "kill";
+                    this.reportError("kill", error);
+                    throw error;
+                })
+                .finally(() => {
+                    if (this.ptyId === id) this.ptyId = null;
+                }),
+        );
         return this.killPromise;
     }
 

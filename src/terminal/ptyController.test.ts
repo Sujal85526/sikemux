@@ -126,25 +126,68 @@ describe("PtyLifecycleController process ownership", () => {
         expect(controller.getSnapshot()).toMatchObject({ status: "running", spawnAttempts: 1, cols: 120, rows: 40 });
     });
 
-    it("keeps the newest requested size when concurrent native resizes finish out of order", async () => {
+    it("serializes native resizes and coalesces queued requests to the newest size", async () => {
         const firstResize = deferred<void>();
-        const secondResize = deferred<void>();
+        const latestResize = deferred<void>();
         const { fakes, options } = controllerOptions();
-        fakes.resize.mockReturnValueOnce(firstResize.promise).mockReturnValueOnce(secondResize.promise);
+        fakes.resize.mockReturnValueOnce(firstResize.promise).mockReturnValueOnce(latestResize.promise);
         const controller = new PtyLifecycleController(options);
         await controller.start();
 
         const first = controller.resize(100, 30);
-        const second = controller.resize(140, 50);
-        await vi.waitFor(() => expect(fakes.resize).toHaveBeenCalledTimes(2));
-        secondResize.resolve();
-        await second;
+        await vi.waitFor(() => expect(fakes.resize).toHaveBeenCalledOnce());
+        const superseded = controller.resize(120, 40);
+        const latest = controller.resize(140, 50);
+
+        expect(superseded).toBe(latest);
+        expect(fakes.resize).toHaveBeenCalledOnce();
         firstResize.resolve();
         await first;
+        await vi.waitFor(() => expect(fakes.resize).toHaveBeenCalledTimes(2));
+        expect(fakes.resize).toHaveBeenNthCalledWith(2, 42, 140, 50);
+        latestResize.resolve();
+        await latest;
 
         expect(controller.getSnapshot()).toMatchObject({ cols: 140, rows: 50 });
         expect(fakes.resize).toHaveBeenNthCalledWith(1, 42, 100, 30);
-        expect(fakes.resize).toHaveBeenNthCalledWith(2, 42, 140, 50);
+    });
+
+    it("does not publish a stale resize failure when a newer resize is queued", async () => {
+        const firstResize = deferred<void>();
+        const latestResize = deferred<void>();
+        const staleError = new Error("obsolete resize failed");
+        const { fakes, errors, options } = controllerOptions();
+        fakes.resize.mockReturnValueOnce(firstResize.promise).mockReturnValueOnce(latestResize.promise);
+        const controller = new PtyLifecycleController(options);
+        await controller.start();
+
+        const first = controller.resize(100, 30);
+        await vi.waitFor(() => expect(fakes.resize).toHaveBeenCalledOnce());
+        const latest = controller.resize(140, 50);
+        firstResize.reject(staleError);
+
+        await expect(first).rejects.toBe(staleError);
+        await vi.waitFor(() => expect(fakes.resize).toHaveBeenCalledTimes(2));
+        expect(controller.getSnapshot().failureOperation).toBeNull();
+        expect(errors).not.toContainEqual({ operation: "resize", error: staleError });
+
+        latestResize.resolve();
+        await latest;
+        expect(controller.getSnapshot()).toMatchObject({ cols: 140, rows: 50, failureOperation: null });
+    });
+
+    it("publishes the latest resize failure and preserves it for awaiters", async () => {
+        const resizeError = new Error("native resize failed");
+        const { fakes, errors, options } = controllerOptions();
+        fakes.resize.mockRejectedValue(resizeError);
+        const controller = new PtyLifecycleController(options);
+        await controller.start();
+
+        const resizing = controller.resize(110, 35);
+        await vi.waitFor(() => expect(errors).toContainEqual({ operation: "resize", error: resizeError }));
+
+        expect(controller.getSnapshot()).toMatchObject({ cols: 80, rows: 24, failureOperation: "resize" });
+        await expect(resizing).rejects.toBe(resizeError);
     });
 
     it("retries a failed spawn without killing a process that never existed", async () => {
@@ -313,7 +356,8 @@ describe("PtyLifecycleController renderer subscriptions", () => {
         await expect(controller.attach(vi.fn())).rejects.toThrow("oversized snapshot");
         expect(fakes.detach).toHaveBeenCalledOnce();
         expect(fakes.detach).toHaveBeenCalledWith(42, 23);
-        expect(controller.getSnapshot()).toMatchObject({ status: "exited", attachmentCount: 0, failureOperation: "attach" });
+        expect(fakes.kill).not.toHaveBeenCalled();
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", attachmentCount: 0, failureOperation: "attach" });
     });
 
     it("contains listener failures and detaches after a bounded error budget", async () => {
@@ -351,8 +395,27 @@ describe("PtyLifecycleController renderer subscriptions", () => {
         expect(fakes.spawn).toHaveBeenCalledOnce();
     });
 
-    it("makes attach failure terminal so a fresh controller owns any restart", async () => {
-        const attachError = Object.freeze({ category: "bad-argument", message: "pty not found" });
+    it("retries a typed attach failure without respawning or killing the live PTY", async () => {
+        const attachError = Object.freeze({ category: "pty", message: "temporary attach failure" });
+        const { fakes, errors, options } = controllerOptions();
+        fakes.attach.mockRejectedValueOnce(attachError).mockResolvedValueOnce({ subId: 19, snapshot: [4, 5], alternateScreen: false });
+        const controller = new PtyLifecycleController(options);
+
+        await expect(controller.attach(vi.fn())).rejects.toBe(attachError);
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", failureOperation: "attach", attachmentCount: 0 });
+
+        const attachment = await controller.attach(vi.fn());
+        expect(attachment.snapshot).toEqual([4, 5]);
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", failureOperation: null, attachmentCount: 1 });
+        expect(fakes.spawn).toHaveBeenCalledOnce();
+        expect(fakes.attach).toHaveBeenCalledTimes(2);
+        expect(fakes.kill).not.toHaveBeenCalled();
+        expect(fakes.detach).not.toHaveBeenCalled();
+        expect(errors).toContainEqual({ operation: "attach", error: attachError });
+    });
+
+    it("makes an explicit native PTY lookup miss terminal", async () => {
+        const attachError = Object.freeze({ category: "bad-arg", message: "invalid argument: pty not found" });
         const { fakes, errors, options } = controllerOptions();
         fakes.attach.mockRejectedValue(attachError);
         const controller = new PtyLifecycleController(options);
@@ -360,6 +423,8 @@ describe("PtyLifecycleController renderer subscriptions", () => {
         await expect(controller.attach(vi.fn())).rejects.toBe(attachError);
         expect(controller.getSnapshot()).toMatchObject({ status: "exited", failureOperation: "attach", attachmentCount: 0 });
         await expect(controller.start()).rejects.toBeInstanceOf(PtyControllerExitedError);
+        expect(fakes.spawn).toHaveBeenCalledOnce();
+        expect(fakes.kill).not.toHaveBeenCalled();
         expect(errors).toContainEqual({ operation: "attach", error: attachError });
     });
 
