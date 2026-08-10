@@ -95,6 +95,25 @@ describe("project configuration", () => {
         });
     });
 
+    it("rejects session contexts that project actions cannot execute in", () => {
+        for (const context of ["command", "ssh", "aws", "rundeck", "bruno"]) {
+            const result = validateProjectConfig({
+                version: 1,
+                actions: [{ id: "check", label: "Check", command: "pnpm check", contexts: [context] }],
+            });
+            expect(result).toEqual({
+                ok: false,
+                errors: [
+                    {
+                        path: "$.actions[0].contexts[0]",
+                        code: "invalid-value",
+                        message: 'Project action context must be "project".',
+                    },
+                ],
+            });
+        }
+    });
+
     it("normalizes safe action keybindings and rejects typing-like or malformed bindings", () => {
         const normalized = validateProjectConfig({
             version: 1,

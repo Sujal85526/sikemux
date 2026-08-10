@@ -39,7 +39,7 @@ A project session bundles five views (`Files`, `Term`, `Git`, `Agents`, `Search`
 
 ### ⚙️ Project actions, tasks & previews
 
-Projects can check in a bounded `sikemux.json` file. Its actions and tasks appear in the command deck (`⌘⇧P` on macOS, `Ctrl+Shift+P` on Windows), and actions can declare contextual keyboard shortcuts. Executable project configuration is never trusted silently: Sikemux shows what can run, remembers approval only for the current process, and asks again whenever the file content changes.
+Projects can check in a bounded `sikemux.json` file. Its actions and tasks appear in the command deck (`⌘⇧P` on macOS, `Ctrl+Shift+P` on Windows), and actions can declare project-scoped keyboard shortcuts. The only accepted action context is `"project"`; an empty context list also means throughout the owning project. Executable project configuration is never trusted silently: Sikemux shows what can run, remembers approval only for the current process, and asks again whenever the file content changes.
 
 ```json
 {

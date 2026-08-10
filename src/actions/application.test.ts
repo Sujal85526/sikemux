@@ -98,7 +98,7 @@ describe("ApplicationActionRuntime", () => {
             projectId: "session-1",
             projectRoot: "/workspace/project",
             configPath: "/workspace/project/sikemux.json",
-            actions: [action, { ...action, id: "command-only", contexts: ["command"] }],
+            actions: [action],
             isCurrent: () => true,
             execute,
         });

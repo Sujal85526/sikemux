@@ -5,7 +5,7 @@ export const PROJECT_CONFIG_FILE = "sikemux.json";
 export const PROJECT_CONFIG_VERSION = 1 as const;
 
 export type ProjectActionPlacement = "background" | "terminal" | "split" | "popup" | "replace";
-export type ProjectCommandContext = "project" | "command" | "ssh" | "aws" | "rundeck" | "bruno";
+export type ProjectCommandContext = "project";
 
 export interface ProjectAction {
     id: string;
@@ -13,7 +13,7 @@ export interface ProjectAction {
     description: string;
     command: string;
     placement: ProjectActionPlacement;
-    /** An empty list makes the action available in every session context. */
+    /** An empty list makes the action available throughout its owning project. */
     contexts: ProjectCommandContext[];
     keybinding?: string;
 }
@@ -107,7 +107,7 @@ const PREVIEW_FIELDS = new Set(["url", "command"]);
 const WORKTREE_FIELDS = new Set(["onCreate"]);
 const HOOK_FIELDS = new Set(["id", "label", "command"]);
 const ACTION_PLACEMENTS = new Set<ProjectActionPlacement>(["background", "terminal", "split", "popup", "replace"]);
-const COMMAND_CONTEXTS = new Set<ProjectCommandContext>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
+const COMMAND_CONTEXTS = new Set<ProjectCommandContext>(["project"]);
 const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const MAX_CONFIG_BYTES = 256 * 1024;
 const MAX_ACTIONS = 100;
@@ -307,7 +307,7 @@ function parseActions(value: unknown, errors: ProjectConfigValidationError[]): P
                 const contextSet = new Set<ProjectCommandContext>();
                 for (const [contextIndex, context] of candidate.contexts.entries()) {
                     if (typeof context !== "string" || !COMMAND_CONTEXTS.has(context as ProjectCommandContext)) {
-                        errors.push(issue(`${path}.contexts[${contextIndex}]`, "invalid-value", "Unknown command context."));
+                        errors.push(issue(`${path}.contexts[${contextIndex}]`, "invalid-value", 'Project action context must be "project".'));
                     } else if (!contextSet.has(context as ProjectCommandContext)) {
                         contextSet.add(context as ProjectCommandContext);
                         contexts.push(context as ProjectCommandContext);
