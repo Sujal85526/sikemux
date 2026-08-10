@@ -14,6 +14,7 @@ mod fs;
 mod fs_watch;
 mod git;
 mod lsp;
+pub mod observability;
 mod pty;
 mod rundeck;
 mod search;
