@@ -26,6 +26,7 @@ mod transparency;
 mod updates;
 
 use aws::LogsTailManager;
+use observability::UiWatchdogState;
 use pty::PtyManager;
 use rundeck::{RundeckLogsManager, RundeckWatchManager};
 use tauri::Manager;
@@ -72,6 +73,9 @@ pub fn run() {
             // "still using AI tokens" surprise from a backgrounded agent.
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 use tauri::Manager;
+                if let Some(watchdog) = window.try_state::<UiWatchdogState>() {
+                    watchdog.suspend();
+                }
                 if let Some(mgr) = window.try_state::<PtyManager>() {
                     mgr.drain();
                 }
@@ -84,6 +88,9 @@ pub fn run() {
             // kill PTYs. Initial startup has no PTYs yet; reload does.
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 use tauri::Manager;
+                if let Some(watchdog) = webview.try_state::<UiWatchdogState>() {
+                    watchdog.suspend();
+                }
                 if let Some(mgr) = webview.try_state::<PtyManager>() {
                     mgr.drain();
                 }
@@ -91,6 +98,7 @@ pub fn run() {
             }
         })
         .setup(|_app| {
+            _app.manage(UiWatchdogState::start()?);
             let cli_broker = match cli_server::CliBroker::start(_app.handle().clone()) {
                 Ok(cli_broker) => Some(cli_broker),
                 Err(error) => {
@@ -137,6 +145,7 @@ pub fn run() {
             system::battery_status,
             system::runtime_diagnostics,
             system::integration_health,
+            observability::observability_ui_heartbeat,
             updates::update_check,
             updates::update_install,
             state::state_load,
@@ -295,6 +304,9 @@ pub fn run() {
             // and restart — and runs before the process is actually replaced.
             if let tauri::RunEvent::Exit = event {
                 use tauri::Manager;
+                if let Some(watchdog) = app_handle.try_state::<UiWatchdogState>() {
+                    watchdog.suspend();
+                }
                 if let Some(state) = app_handle.try_state::<cli_server::CliBrokerState>() {
                     if let Some(broker) = &state.0 {
                         broker.shutdown();
