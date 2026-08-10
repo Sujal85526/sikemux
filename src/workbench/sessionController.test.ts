@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { performanceTelemetry } from "../lib/performance";
 import type { Session, Window } from "../state/types";
-import { getOrCreateWorkbenchItemResource, resetWorkbenchItemRuntimeForTests } from "./itemRuntime";
+import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource, resetWorkbenchItemRuntimeForTests } from "./itemRuntime";
 import { createItemId, type WorkbenchItemController, type WorkbenchItemRef, type WorkbenchItemRegistry } from "./registry";
 import { SESSION_ITEM_LIFECYCLE_FAILURE_CAPACITY, SESSION_ITEM_LIFECYCLE_MAX_ATTEMPTS, SessionController } from "./sessionController";
 
@@ -249,7 +249,9 @@ describe("SessionController removal failures", () => {
         );
         controller.reconcile(session(), [window("pane-1")], "session-1");
         await controller.whenIdle();
-        getOrCreateWorkbenchItemResource(createItemId("pane-1"), "test.resource", () => ({
+        const runtimeLease = captureWorkbenchItemRuntimeLease(createItemId("pane-1"));
+        expect(runtimeLease).not.toBeNull();
+        getOrCreateWorkbenchItemResource(runtimeLease!, "test.resource", "test:v1", () => ({
             value: {},
             dispose: () => Promise.reject(resourceError),
         }));

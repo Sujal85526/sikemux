@@ -5,7 +5,7 @@ import { registerPtyDrop } from "../state/dropRegistry";
 import { IS_WINDOWS } from "../lib/platform";
 import type { PtyContext } from "../state/types";
 import { createItemId } from "../workbench/registry";
-import { getOrCreateWorkbenchItemResource } from "../workbench/itemRuntime";
+import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource } from "../workbench/itemRuntime";
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
 import { performanceTelemetry } from "../lib/performance";
 
@@ -18,6 +18,13 @@ const DEFAULT_SHELL_SEMANTICS: TerminalShellSemantics = IS_WINDOWS ? "powershell
 
 interface IntegrationHealthShell {
     readonly shell?: unknown;
+}
+
+interface PtyResourceConfiguration {
+    readonly cwd?: string;
+    readonly startup?: string;
+    readonly initialInput?: string;
+    readonly context?: PtyContext;
 }
 
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
@@ -98,6 +105,25 @@ function recordControllerError(event: PtyControllerErrorEvent): void {
     performanceTelemetry.incrementCounter(`terminal.controller.errors.${event.operation}`);
 }
 
+/** Exact, content-local identity used only to prevent stale PTY reuse. */
+export function ptyResourceFingerprint(configuration: PtyResourceConfiguration): string {
+    const context = configuration.context;
+    return JSON.stringify([
+        configuration.cwd ?? null,
+        configuration.startup ?? null,
+        configuration.initialInput ?? null,
+        context?.sessionId ?? null,
+        context?.sessionName ?? null,
+        context?.sessionKind ?? null,
+        context?.project ?? null,
+        context?.windowId ?? null,
+        context?.paneId ?? null,
+        context?.agentId ?? null,
+        context?.agentType ?? null,
+        context?.initialPromptSubmitted ?? null,
+    ]);
+}
+
 export function usePty(opts: {
     cwd?: string;
     startup?: string;
@@ -113,10 +139,17 @@ export function usePty(opts: {
     const controllerRef = useRef<NativePtyController | null>(null);
     const deliveredRef = useRef(opts.onInitialInputDelivered);
     deliveredRef.current = opts.onInitialInputDelivered;
-    const initialOptionsRef = useRef(opts);
+    const currentOptionsRef = useRef(opts);
+    currentOptionsRef.current = opts;
+    const resourceFingerprint = ptyResourceFingerprint(opts);
+    const durableItemId = opts.durableItemId ? createItemId(opts.durableItemId) : null;
+    // Transient agent/popup terminals intentionally keep mount-time launch
+    // options: clearing a delivered initial prompt must not respawn the CLI.
+    const durableResourceFingerprint = durableItemId ? resourceFingerprint : null;
+    const runtimeLease = durableItemId ? captureWorkbenchItemRuntimeLease(durableItemId) : null;
 
     useEffect(() => {
-        const initial = initialOptionsRef.current;
+        const initial = currentOptionsRef.current;
         const createController = () =>
             new PtyLifecycleController<NativeChannel, PtyContext>({
                 api: nativePtyApi,
@@ -128,14 +161,25 @@ export function usePty(opts: {
                 onInitialInputDelivered: () => deliveredRef.current?.(),
                 onError: recordControllerError,
             });
-        const durableItemId = initial.durableItemId;
-        const durable = !!durableItemId;
-        const controller = durableItemId
-            ? getOrCreateWorkbenchItemResource(createItemId(durableItemId), NATIVE_PTY_RESOURCE, () => {
-                  const value = createController();
-                  return { value, dispose: () => value.dispose() };
-              })
-            : createController();
+        const durable = runtimeLease !== null;
+        if (durableItemId && !runtimeLease) {
+            performanceTelemetry.incrementCounter("terminal.durable-owner-missing");
+            controllerRef.current = null;
+            return;
+        }
+        let controller: NativePtyController;
+        try {
+            controller = runtimeLease
+                ? getOrCreateWorkbenchItemResource(runtimeLease, NATIVE_PTY_RESOURCE, durableResourceFingerprint!, () => {
+                      const value = createController();
+                      return { value, dispose: () => value.dispose() };
+                  })
+                : createController();
+        } catch {
+            performanceTelemetry.incrementCounter("terminal.durable-owner-stale");
+            controllerRef.current = null;
+            return;
+        }
         controllerRef.current = controller;
 
         const host = hostRef.current;
@@ -168,13 +212,13 @@ export function usePty(opts: {
             if (controllerRef.current === controller) controllerRef.current = null;
             if (!durable) void controller.dispose();
         };
-    }, [hostRef]);
+    }, [hostRef, durableItemId, durableResourceFingerprint, runtimeLease]);
 
     useEffect(() => {
         if (!spawnWhen) return;
         const controller = controllerRef.current;
         if (controller) void controller.start().catch(() => {});
-    }, [spawnWhen]);
+    }, [spawnWhen, durableResourceFingerprint, runtimeLease]);
 
     return controllerRef;
 }

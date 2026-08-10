@@ -9,7 +9,7 @@ import {
     type WorkbenchItemRef,
     type WorkbenchItemRegistry,
 } from "./registry";
-import { disposeWorkbenchItemResources } from "./itemRuntime";
+import { claimWorkbenchItemRuntime, closeWorkbenchItemRuntime, disposeWorkbenchItemRuntime, type WorkbenchItemRuntimeLease } from "./itemRuntime";
 
 export type ItemLifecycleState = "inactive" | "activating" | "active" | "deactivating" | "failed";
 export type ItemLifecycleOperation = "activate" | "deactivate" | "dispose" | "resources";
@@ -63,6 +63,7 @@ export interface SessionControllerSnapshot {
 interface ItemRuntime {
     readonly ref: WorkbenchItemRef;
     readonly controller: WorkbenchItemController;
+    readonly runtimeLease: WorkbenchItemRuntimeLease;
     desired: DesiredLifecycleState;
     settled: SettledLifecycleState;
     state: ItemLifecycleState;
@@ -76,6 +77,7 @@ interface ItemRuntime {
     retired: boolean;
     disposeStarted: boolean;
     controllerDisposed: boolean;
+    resourcesStarted: boolean;
     resourcesSettled: boolean;
 }
 
@@ -110,10 +112,11 @@ function transitionState(operation: TransitionOperation): ItemLifecycleState {
     return operation === "activate" ? "activating" : "deactivating";
 }
 
-function createItemRuntime(ref: WorkbenchItemRef, controller: WorkbenchItemController): ItemRuntime {
+function createItemRuntime(ref: WorkbenchItemRef, controller: WorkbenchItemController, runtimeLease: WorkbenchItemRuntimeLease): ItemRuntime {
     return {
         ref,
         controller,
+        runtimeLease,
         desired: "inactive",
         settled: "inactive",
         state: "inactive",
@@ -127,8 +130,19 @@ function createItemRuntime(ref: WorkbenchItemRef, controller: WorkbenchItemContr
         retired: false,
         disposeStarted: false,
         controllerDisposed: false,
+        resourcesStarted: false,
         resourcesSettled: false,
     };
+}
+
+function createOwnedItemRuntime(ref: WorkbenchItemRef, registry: Pick<WorkbenchItemRegistry, "create">): ItemRuntime {
+    const runtimeLease = claimWorkbenchItemRuntime(ref.id);
+    try {
+        return createItemRuntime(ref, registry.create(ref), runtimeLease);
+    } catch (error) {
+        void disposeWorkbenchItemRuntime(runtimeLease);
+        throw error;
+    }
 }
 
 /** Owns runtime item controllers for one durable session topology. */
@@ -161,7 +175,7 @@ export class SessionController {
                     this.items.delete(ref.id);
                     this.retire(current);
                 }
-                this.items.set(ref.id, createItemRuntime(ref, this.registry.create(ref)));
+                this.items.set(ref.id, createOwnedItemRuntime(ref, this.registry));
             }
         }
 
@@ -367,7 +381,7 @@ export class SessionController {
         if (runtime.retired) return;
         runtime.retired = true;
         this.retiring.add(runtime);
-        this.startResourceDisposal(runtime);
+        closeWorkbenchItemRuntime(runtime.runtimeLease);
         this.setDesired(runtime, "disposed");
     }
 
@@ -391,6 +405,7 @@ export class SessionController {
                 runtime.pendingGeneration = null;
                 runtime.controllerDisposed = true;
                 this.finishObservedOperation("dispose", span, "success");
+                this.startResourceDisposal(runtime);
                 this.finalizeRetired(runtime);
             },
             (error: unknown) => {
@@ -403,6 +418,7 @@ export class SessionController {
                 runtime.error = sanitizedErrorMessage(error);
                 this.finishObservedOperation("dispose", span, "error");
                 this.recordFailure(runtime, "dispose", runtime.generation, 1, false, error);
+                this.startResourceDisposal(runtime);
                 this.finalizeRetired(runtime);
             },
         );
@@ -411,9 +427,11 @@ export class SessionController {
     }
 
     private startResourceDisposal(runtime: ItemRuntime): void {
+        if (runtime.resourcesStarted) return;
+        runtime.resourcesStarted = true;
         const generation = runtime.generation + 1;
         const span = this.startObservedOperation(runtime, "resources", generation, 1);
-        const pending = disposeWorkbenchItemResources(runtime.ref.id).then(
+        const pending = disposeWorkbenchItemRuntime(runtime.runtimeLease).then(
             () => {
                 runtime.resourcesSettled = true;
                 this.finishObservedOperation("resources", span, "success");

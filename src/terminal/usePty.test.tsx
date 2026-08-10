@@ -4,9 +4,9 @@ import { useRef } from "react";
 import { performanceTelemetry } from "../lib/performance";
 import { dispatchPty } from "../state/dropRegistry";
 import type { PtyContext } from "../state/types";
-import { disposeWorkbenchItemResources, resetWorkbenchItemRuntimeForTests } from "../workbench/itemRuntime";
+import { claimWorkbenchItemRuntime, disposeWorkbenchItemRuntime, resetWorkbenchItemRuntimeForTests } from "../workbench/itemRuntime";
 import { createItemId } from "../workbench/registry";
-import { encodePosixShellLiteral, encodePowerShellLiteral, shellSemanticsForExecutable, usePty } from "./usePty";
+import { encodePosixShellLiteral, encodePowerShellLiteral, ptyResourceFingerprint, shellSemanticsForExecutable, usePty } from "./usePty";
 
 const { invoke } = vi.hoisted(() => ({
     invoke: vi.fn(async (command: string) => {
@@ -35,16 +35,20 @@ function Harness({
     initialInput,
     onInitialInputDelivered,
     durable = false,
+    cwd = "/repo",
+    startup = "codex",
 }: {
     context: PtyContext;
     initialInput?: string;
     onInitialInputDelivered?: () => void;
     durable?: boolean;
+    cwd?: string;
+    startup?: string;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
     usePty({
-        cwd: "/repo",
-        startup: "codex",
+        cwd,
+        startup,
         initialInput,
         onInitialInputDelivered,
         hostRef,
@@ -78,6 +82,18 @@ describe("terminal path literal encoding", () => {
         expect(shellSemanticsForExecutable('"C:\\Program Files\\PowerShell\\7\\pwsh.exe"')).toBe("powershell");
         expect(shellSemanticsForExecutable("/opt/microsoft/powershell/7/PWSH")).toBe("powershell");
         expect(shellSemanticsForExecutable("/bin/custom-shell")).toBeNull();
+    });
+
+    it("fingerprints every launch field that can change PTY identity", () => {
+        const base = {
+            cwd: "/repo",
+            startup: "zsh",
+            context: { sessionId: "s", sessionName: "repo", sessionKind: "project" as const, paneId: "pane" },
+        };
+        expect(ptyResourceFingerprint(base)).toBe(ptyResourceFingerprint({ ...base }));
+        expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, cwd: "/other" }));
+        expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, startup: "bash" }));
+        expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, context: { ...base.context, sessionName: "renamed" } }));
     });
 });
 
@@ -143,6 +159,7 @@ describe("usePty", () => {
             windowId: "window-1",
             paneId: "pane-durable",
         };
+        const runtimeLease = claimWorkbenchItemRuntime(createItemId(context.paneId!));
         const first = render(<Harness context={context} durable />);
         await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1));
         first.unmount();
@@ -151,8 +168,71 @@ describe("usePty", () => {
         const second = render(<Harness context={context} durable />);
         await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1));
         second.unmount();
-        await disposeWorkbenchItemResources(createItemId(context.paneId!));
+        await disposeWorkbenchItemRuntime(runtimeLease);
         expect(invoke.mock.calls.filter(([command]) => command === "pty_kill")).toHaveLength(1);
+    });
+
+    it("replaces a durable PTY instead of reusing stale launch configuration", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-reconfigured",
+        };
+        const runtimeLease = claimWorkbenchItemRuntime(createItemId(context.paneId!));
+        const view = render(<Harness context={context} durable cwd="/repo/old" startup="zsh" />);
+        await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1));
+
+        view.rerender(<Harness context={context} durable cwd="/repo/new" startup="bash" />);
+        await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(2));
+        await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_kill")).toHaveLength(1));
+        const spawnCalls = invoke.mock.calls.filter(([command]) => command === "pty_spawn") as unknown as Array<[string, unknown]>;
+        expect(spawnCalls.at(-1)?.[1]).toMatchObject({
+            cwd: "/repo/new",
+            startup: "bash",
+        });
+
+        await disposeWorkbenchItemRuntime(runtimeLease);
+    });
+
+    it("does not respawn a transient CLI when delivered initial input is cleared", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            agentId: "agent-1",
+            agentType: "hermes",
+        };
+        const view = render(<Harness context={context} initialInput="one shot" />);
+        await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1));
+
+        view.rerender(<Harness context={{ ...context, initialPromptSubmitted: true }} />);
+        await Promise.resolve();
+
+        expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1);
+        expect(invoke.mock.calls.filter(([command]) => command === "pty_kill")).toHaveLength(0);
+    });
+
+    it("refuses a late durable renderer after its ownership generation closes", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-retired",
+        };
+        const runtimeLease = claimWorkbenchItemRuntime(createItemId(context.paneId!));
+        await disposeWorkbenchItemRuntime(runtimeLease);
+
+        render(<Harness context={context} durable />);
+        await Promise.resolve();
+
+        expect(invoke.mock.calls.some(([command]) => command === "pty_spawn")).toBe(false);
+        expect(performanceTelemetry.snapshot().counters["terminal.durable-owner-missing"]).toBe(1);
     });
 
     it("quotes every dropped path with the semantics of the configured POSIX shell", async () => {
