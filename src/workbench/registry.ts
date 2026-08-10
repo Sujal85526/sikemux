@@ -92,6 +92,7 @@ const CODEC_FAILURE = Object.freeze({ ok: false }) as PersistedCodecResult<never
 const ITEM_ID_MAX_LENGTH = 256;
 const KIND_PATTERN = /^[a-z][a-z0-9._:-]*$/;
 const ENVELOPE_KEYS = new Set<PropertyKey>(["itemId", "kind", "version", "state"]);
+const UNSAFE_RECORD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -105,12 +106,13 @@ function containsControlCharacter(value: string): boolean {
     return false;
 }
 
-function isValidItemId(value: unknown): value is string {
+export function isValidWorkbenchItemId(value: unknown): value is string {
     return (
         typeof value === "string" &&
         value.length > 0 &&
         value.length <= ITEM_ID_MAX_LENGTH &&
         value === value.trim() &&
+        !UNSAFE_RECORD_KEYS.has(value) &&
         !containsControlCharacter(value)
     );
 }
@@ -120,7 +122,9 @@ function isValidKind(value: unknown): value is string {
 }
 
 export function createItemId(value: string): ItemId {
-    if (!isValidItemId(value)) throw new TypeError("workbench item IDs must be non-empty, trimmed, and free of control characters");
+    if (!isValidWorkbenchItemId(value)) {
+        throw new TypeError("workbench item IDs must be bounded, non-empty, trimmed, record-safe, and free of control characters");
+    }
     return value as ItemId;
 }
 
@@ -257,7 +261,7 @@ function readEnvelope(encoded: unknown): PersistedWorkbenchItemEnvelope | null {
                 return [key, descriptor.value];
             }),
         );
-        if (!isValidItemId(values.itemId)) return null;
+        if (!isValidWorkbenchItemId(values.itemId)) return null;
         if (typeof values.kind !== "string") return null;
         if (!Number.isSafeInteger(values.version) || (values.version as number) <= 0) return null;
         return {
@@ -337,7 +341,7 @@ export class WorkbenchItemRegistry {
     }
 
     create<Kind extends string>(ref: WorkbenchItemRef<Kind>): WorkbenchItemController {
-        if (!isValidItemId(ref.id)) throw new TypeError("Invalid workbench item ID");
+        if (!isValidWorkbenchItemId(ref.id)) throw new TypeError("Invalid workbench item ID");
         const controller = this.get(ref.kind).create(ref);
         if (!isController(controller)) throw new TypeError(`Controller factory for ${ref.kind} returned an invalid controller`);
         return controller;
@@ -352,7 +356,7 @@ export class WorkbenchItemRegistry {
         ref: WorkbenchItemRef<Kind>,
         state: BuiltinWorkbenchItemState[Kind],
     ): PersistedWorkbenchItemEnvelope<Kind> {
-        if (!isValidItemId(ref.id)) throw new TypeError("Invalid workbench item ID");
+        if (!isValidWorkbenchItemId(ref.id)) throw new TypeError("Invalid workbench item ID");
         if (!isBuiltinWorkbenchItemKind(ref.kind)) throw new UnknownWorkbenchItemKindError(ref.kind);
         const definition = builtinDefinitionFor(ref.kind);
         return Object.freeze({
@@ -364,7 +368,7 @@ export class WorkbenchItemRegistry {
     }
 
     decodePersisted<Kind extends PaneKind>(expected: WorkbenchItemRef<Kind>, encoded: unknown): DecodePersistedItemResult<Kind> {
-        if (!isValidItemId(expected.id)) return decodeFailure("invalid-envelope");
+        if (!isValidWorkbenchItemId(expected.id)) return decodeFailure("invalid-envelope");
         if (!isBuiltinWorkbenchItemKind(expected.kind)) return decodeFailure("unknown-kind");
         const envelope = readEnvelope(encoded);
         if (!envelope) return decodeFailure("invalid-envelope");

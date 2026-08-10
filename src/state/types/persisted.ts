@@ -17,6 +17,7 @@ import type {
     Window,
 } from "./domain";
 import type { EditorPaneView } from "./view";
+import type { PersistedWorkbenchItemEnvelope } from "../../workbench/registry";
 
 export type PersistedSession = Omit<Session, "bruno"> & {
     bruno?: Pick<NonNullable<Session["bruno"]>, "collectionPath" | "selectedEnvs"> | null;
@@ -48,7 +49,10 @@ export interface PersistedSnapshot {
     activeSessionId: string;
     recent: RecentEntry[];
     prefs: PersistedPrefs;
-    editorViews: Record<string, EditorPaneView>;
+    /** Versioned item-owned state. Live processes, buffers, and credentials are excluded. */
+    itemStates: Record<string, PersistedWorkbenchItemEnvelope>;
+    /** v3-v6 compatibility input; v7 writers only emit itemStates. */
+    editorViews?: Record<string, EditorPaneView>;
 }
 
 export interface PersistedPrefs {

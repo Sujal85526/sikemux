@@ -52,6 +52,9 @@ describe("built-in workbench item manifest", () => {
         expect(createItemId("pane-1")).toBe("pane-1");
         expect(() => createItemId(" pane-1 ")).toThrow(TypeError);
         expect(() => createItemId("pane\n1")).toThrow(TypeError);
+        expect(() => createItemId("x".repeat(257))).toThrow(TypeError);
+        expect(() => createItemId("__proto__")).toThrow(TypeError);
+        expect(() => createItemId("constructor")).toThrow(TypeError);
     });
 });
 

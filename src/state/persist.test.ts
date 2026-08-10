@@ -260,7 +260,7 @@ describe("frontend persistence", () => {
         expect(getState().agents["claude-agent"].startup).toMatch(/^claude /);
     });
 
-    it("migrates the silent v5 notification default once and preserves v6 opt-outs", async () => {
+    it("migrates the silent v5 notification default once and preserves v6+ opt-outs", async () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
@@ -272,6 +272,66 @@ describe("frontend persistence", () => {
         saved.version = 6;
         applyHydrate(JSON.stringify(saved));
         expect(getState().notificationPreferences.enabled).toBe(false);
+    });
+
+    it("writes v7 item envelopes and migrates bounded v6 editor views", async () => {
+        const sid = getState().activeSessionId;
+        const window = getState().windows[getState().sessions[sid].activeWindowId];
+        const editorPane = { type: "pane", id: "editor-v7", cwd: "/repo", kind: "editor", title: "editor" } as const;
+        setState((state) => ({
+            windows: { ...state.windows, [window.id]: { ...window, root: editorPane, activePaneId: editorPane.id } },
+            editorViews: {
+                [editorPane.id]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts", treeWidth: 240 },
+                orphan: { openTabs: ["/secret"], activePath: "/secret", treeWidth: 240 },
+            },
+        }));
+        invoke.mockResolvedValue(undefined);
+
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.version).toBe(7);
+        expect(saved.editorViews).toBeUndefined();
+        expect(saved.itemStates).toEqual({
+            [editorPane.id]: {
+                itemId: editorPane.id,
+                kind: "editor",
+                version: 1,
+                state: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts", treeWidth: 240 },
+            },
+        });
+        expect(JSON.stringify(saved)).not.toContain("/secret");
+
+        const legacy = {
+            ...saved,
+            version: 6,
+            editorViews: { [editorPane.id]: saved.itemStates[editorPane.id].state },
+        };
+        delete legacy.itemStates;
+        applyHydrate(JSON.stringify(legacy));
+        expect(getState().editorViews[editorPane.id]).toEqual(saved.itemStates[editorPane.id].state);
+    });
+
+    it("rejects v7 item envelopes with mismatched identity, kind, version, or state", async () => {
+        const sid = getState().activeSessionId;
+        const window = getState().windows[getState().sessions[sid].activeWindowId];
+        const editorPane = { type: "pane", id: "editor-strict", cwd: "/repo", kind: "editor", title: "editor" } as const;
+        setState((state) => ({
+            windows: { ...state.windows, [window.id]: { ...window, root: editorPane, activePaneId: editorPane.id } },
+            editorViews: { [editorPane.id]: { openTabs: [], activePath: null, treeWidth: 210 } },
+        }));
+        invoke.mockResolvedValue(undefined);
+        await flushPersist();
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+
+        for (const envelope of [
+            { ...saved.itemStates[editorPane.id], itemId: "another" },
+            { ...saved.itemStates[editorPane.id], kind: "terminal", state: null },
+            { ...saved.itemStates[editorPane.id], version: 999 },
+            { ...saved.itemStates[editorPane.id], state: { openTabs: ["/a"], activePath: "/missing", treeWidth: 210 } },
+        ]) {
+            applyHydrate(JSON.stringify({ ...saved, itemStates: { [editorPane.id]: envelope } }));
+            expect(getState().editorViews[editorPane.id]).toBeUndefined();
+        }
     });
 
     it("serializes writes, coalesces queued snapshots, and marks only successful writes saved", async () => {
@@ -373,7 +433,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(6);
+        expect(JSON.parse(migrated).version).toBe(7);
     });
 
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {

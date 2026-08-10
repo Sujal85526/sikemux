@@ -10,6 +10,7 @@ import { agentStartup } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { validatePersistedLayout } from "./persistValidation";
+import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane } from "../workbench/registry";
 import type {
     Agent,
     AgentPermissionMode,
@@ -39,8 +40,10 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-const VERSION = 6;
+const VERSION = 7;
 const MIN_SUPPORTED_VERSION = 3;
+const NOTIFICATION_DEFAULT_MIGRATION_VERSION = 6;
+const ONBOARDING_MIGRATION_VERSION = 6;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -309,17 +312,6 @@ function toSession(value: unknown): Session | null {
     return session;
 }
 
-function isEditorView(value: unknown): value is EditorPaneView {
-    return (
-        isRecord(value) &&
-        Array.isArray(value.openTabs) &&
-        value.openTabs.every((p) => typeof p === "string") &&
-        (value.activePath === null || typeof value.activePath === "string") &&
-        typeof value.treeWidth === "number" &&
-        Number.isFinite(value.treeWidth)
-    );
-}
-
 function isRecent(value: unknown): value is RecentEntry {
     return isRecord(value) && SESSION_KINDS.has(value.kind as Session["kind"]) && typeof value.name === "string" && typeof value.cwd === "string";
 }
@@ -444,8 +436,28 @@ function snapshot(): string {
         });
     const windowsBySession: Record<string, Window[]> = {};
     const agentsBySession: Record<string, PersistedAgent[]> = {};
+    const itemStates: PersistedSnapshot["itemStates"] = {};
     for (const sess of sessions) {
         windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).map((id) => s.windows[id]).filter(Boolean);
+        for (const window of windowsBySession[sess.id]) {
+            const pending = [window.root];
+            while (pending.length > 0) {
+                const node = pending.pop()!;
+                if (node.type === "split") {
+                    pending.push(...node.children);
+                    continue;
+                }
+                if (node.kind !== "editor") continue;
+                const ref = createWorkbenchItemRef(node.id, "editor");
+                const state = s.editorViews[node.id] ?? { openTabs: [], activePath: null, treeWidth: 210 };
+                try {
+                    itemStates[node.id] = workbenchItemRegistry.encodePersisted(ref, state);
+                } catch {
+                    // One malformed runtime item must not block the durable
+                    // topology and every other valid item from being saved.
+                }
+            }
+        }
         agentsBySession[sess.id] = (s.agentsBySession[sess.id] ?? [])
             .map((id) => s.agents[id])
             .filter((agent): agent is Agent => !!agent?.resumeId)
@@ -476,7 +488,7 @@ function snapshot(): string {
         activeSessionId: s.activeSessionId,
         recent: s.recent,
         prefs: packPrefs(s),
-        editorViews: s.editorViews,
+        itemStates,
     };
     // Defense in depth: these runtime-only Bruno fields must never reach disk,
     // even if a malformed record introduced them outside the typed session shape.
@@ -648,17 +660,34 @@ export function applyHydrate(raw: string): void {
         };
     }
 
-    const validPaneIds = new Set<string>();
+    const panesById = new Map<string, ReturnType<typeof workbenchItemRefFromPane>>();
     for (const w of Object.values(windows)) {
         const walk = (n: Window["root"]): void => {
-            if (n.type === "pane") validPaneIds.add(n.id);
+            if (n.type === "pane") panesById.set(n.id, workbenchItemRefFromPane(n));
             else n.children.forEach(walk);
         };
         walk(w.root);
     }
     const editorViews: Record<string, EditorPaneView> = {};
-    const rawEditorViews = isRecord(decoded.editorViews) ? decoded.editorViews : {};
-    for (const [pid, value] of Object.entries(rawEditorViews)) if (validPaneIds.has(pid) && isEditorView(value)) editorViews[pid] = value;
+    if (decoded.version >= 7) {
+        const rawItemStates = isRecord(decoded.itemStates) ? decoded.itemStates : {};
+        for (const [itemId, ref] of panesById) {
+            const result = workbenchItemRegistry.decodePersisted(ref, rawItemStates[itemId]);
+            if (result.ok && result.ref.kind === "editor") editorViews[itemId] = result.state as EditorPaneView;
+        }
+    } else {
+        const rawEditorViews = isRecord(decoded.editorViews) ? decoded.editorViews : {};
+        for (const [itemId, ref] of panesById) {
+            if (ref.kind !== "editor" || !(itemId in rawEditorViews)) continue;
+            const result = workbenchItemRegistry.decodePersisted(ref, {
+                itemId,
+                kind: "editor",
+                version: 1,
+                state: rawEditorViews[itemId],
+            });
+            if (result.ok) editorViews[itemId] = result.state as EditorPaneView;
+        }
+    }
 
     const requestedOrder = Array.isArray(decoded.sessionOrder) ? decoded.sessionOrder.filter((id): id is string => typeof id === "string") : [];
     const sessionOrder = [...new Set(requestedOrder.filter((id) => sessions[id]))];
@@ -716,11 +745,15 @@ export function applyHydrate(raw: string): void {
         notificationPreferences: normaliseNotificationPreferences(
             prefs.notificationPreferences,
             cur.notificationPreferences,
-            decoded.version < VERSION,
+            decoded.version < NOTIFICATION_DEFAULT_MIGRATION_VERSION,
         ),
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         onboardingComplete:
-            typeof prefs.onboardingComplete === "boolean" ? prefs.onboardingComplete : decoded.version < VERSION ? true : cur.onboardingComplete,
+            typeof prefs.onboardingComplete === "boolean"
+                ? prefs.onboardingComplete
+                : decoded.version < ONBOARDING_MIGRATION_VERSION
+                  ? true
+                  : cur.onboardingComplete,
         lastSeenVersion: typeof prefs.lastSeenVersion === "string" ? prefs.lastSeenVersion : cur.lastSeenVersion,
         customCommands: normaliseCustomCommands(prefs.customCommands),
         updateChannel: prefs.updateChannel === "preview" || prefs.updateChannel === "stable" ? prefs.updateChannel : cur.updateChannel,
@@ -748,7 +781,7 @@ export function applyHydrate(raw: string): void {
     ensureSearchWindow();
     registerCustomThemes(getState().customThemes);
     // Preserve the actual disk payload as the saved marker. The subscription
-    // rewrites migrations and sanitized legacy credentials in canonical v6 form.
+    // rewrites migrations and sanitized legacy credentials in canonical v7 form.
     lastSaved = raw;
     lastSlices = takeSlices(getState());
 }

@@ -1,6 +1,6 @@
-import type { LayoutNode, PaneKind, Window, WindowRole } from "./types";
+import { isBuiltinWorkbenchItemKind, isValidWorkbenchItemId } from "../workbench/registry";
+import type { LayoutNode, Window, WindowRole } from "./types";
 
-export const PERSISTED_PANE_KINDS = new Set<PaneKind>(["terminal", "editor", "git", "aws", "search", "rundeck", "bruno"]);
 export const PERSISTED_WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "search", "aws", "rundeck", "bruno", "ssh-config", "named"]);
 
 export interface LayoutValidationLimits {
@@ -48,7 +48,9 @@ export function validatePersistedLayout(value: unknown, limits: LayoutValidation
         const current = pending.pop()!;
         if (current.depth > limits.maxDepth) return { ok: false, reason: `layout exceeds maximum depth (${limits.maxDepth})` };
         if (!isRecord(current.value)) return { ok: false, reason: "layout node is not an object" };
-        if (!boundedString(current.value.id, limits.maxStringLength)) return { ok: false, reason: "layout node has an invalid id" };
+        if (!boundedString(current.value.id, limits.maxStringLength) || !isValidWorkbenchItemId(current.value.id)) {
+            return { ok: false, reason: "layout node has an invalid id" };
+        }
         if (seen.has(current.value.id)) return { ok: false, reason: `duplicate layout id: ${current.value.id}` };
         seen.add(current.value.id);
         ids.push(current.value.id);
@@ -56,8 +58,7 @@ export function validatePersistedLayout(value: unknown, limits: LayoutValidation
 
         if (current.value.type === "pane") {
             if (!boundedString(current.value.cwd, limits.maxStringLength, true)) return { ok: false, reason: "pane has an invalid cwd" };
-            if (!PERSISTED_PANE_KINDS.has(current.value.kind as PaneKind))
-                return { ok: false, reason: `unsupported pane kind: ${String(current.value.kind)}` };
+            if (!isBuiltinWorkbenchItemKind(current.value.kind)) return { ok: false, reason: `unsupported pane kind: ${String(current.value.kind)}` };
             if (!boundedString(current.value.title, limits.maxStringLength, true)) return { ok: false, reason: "pane has an invalid title" };
             if (current.value.startup !== undefined && !boundedString(current.value.startup, limits.maxStringLength, true))
                 return { ok: false, reason: "pane startup is invalid" };
