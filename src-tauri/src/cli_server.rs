@@ -115,8 +115,9 @@ impl CliBroker {
     }
 
     fn serve(&self, mut stream: TcpStream) {
-        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-        let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+        if configure_client_stream(&stream).is_err() {
+            return;
+        }
         let cloned = match stream.try_clone() {
             Ok(value) => value,
             Err(_) => return,
@@ -466,6 +467,17 @@ impl CliBroker {
     }
 }
 
+fn configure_client_stream(stream: &TcpStream) -> std::io::Result<()> {
+    // The listening socket is nonblocking so the broker thread can observe
+    // shutdown promptly. Accepted sockets can inherit that flag on supported
+    // platforms; a larger JSON frame may then lose a race and make the first
+    // read return WouldBlock before the client finishes writing. Each client
+    // already has its own thread, so restore blocking reads with a hard timeout.
+    stream.set_nonblocking(false)?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))
+}
+
 fn validate_request(request: &CliOpenRequest) -> Result<(), String> {
     if request.id.trim().is_empty() || request.targets.is_empty() {
         return Err("CLI open request has no targets".into());
@@ -643,6 +655,7 @@ pub fn cli_runtime_info(state: tauri::State<'_, CliBrokerState>) -> CliRuntimeIn
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Shutdown;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
@@ -699,5 +712,36 @@ mod tests {
             fs::metadata(path).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+
+    #[test]
+    fn accepted_client_waits_for_a_delayed_complete_frame() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let writer = std::thread::spawn(move || {
+            let mut client = TcpStream::connect(address).unwrap();
+            std::thread::sleep(Duration::from_millis(40));
+            client.write_all(br#"{"command":"ping"}"#).unwrap();
+            client.write_all(b"\n").unwrap();
+            client.shutdown(Shutdown::Write).unwrap();
+        });
+
+        let started = std::time::Instant::now();
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(started.elapsed() < Duration::from_secs(1));
+                    std::thread::yield_now();
+                }
+                Err(error) => panic!("accept test client: {error}"),
+            }
+        };
+        configure_client_stream(&stream).unwrap();
+        let mut frame = String::new();
+        BufReader::new(stream).read_line(&mut frame).unwrap();
+        assert_eq!(frame, "{\"command\":\"ping\"}\n");
+        writer.join().unwrap();
     }
 }
