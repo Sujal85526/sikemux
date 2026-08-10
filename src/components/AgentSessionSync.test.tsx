@@ -1,0 +1,74 @@
+import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { agentApi } from "../api/agents";
+import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
+import * as resources from "../state/resources";
+import { getState, setState } from "../state/store";
+import { AgentSessionSync } from "./AgentSessionSync";
+
+const initial = getState();
+let transport: MemoryIpcTransport;
+
+beforeEach(() => {
+    setState(initial, true);
+    const state = getState();
+    const sessionId = state.activeSessionId;
+    setState({
+        sessions: {
+            ...state.sessions,
+            [sessionId]: {
+                ...state.sessions[sessionId],
+                kind: "project",
+                cwd: "/repo",
+                view: "windows",
+                activeAgentId: "agent-1",
+            },
+        },
+        agents: {
+            "agent-1": { id: "agent-1", type: "codex", title: "Codex", startup: "codex", cwd: "/repo" },
+        },
+        agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-1"] },
+    });
+    resetIpcTransportForTests();
+    transport = new MemoryIpcTransport();
+    installIpcTransportForTests(transport);
+    vi.spyOn(resources, "fetchResource").mockImplementation(() => new Promise<never>(() => {}));
+    vi.spyOn(agentApi, "watchStart").mockResolvedValue(17);
+    vi.spyOn(agentApi, "watchStop").mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+    cleanup();
+    resetIpcTransportForTests();
+    vi.restoreAllMocks();
+    setState(initial, true);
+});
+
+describe("AgentSessionSync IPC events", () => {
+    it("routes both agent event streams and aborts their transport subscriptions", async () => {
+        const view = render(<AgentSessionSync />);
+        await waitFor(() => expect(transport.eventListenerCount).toBe(2));
+        await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledOnce());
+
+        act(() => {
+            transport.emit("agent_state_changed", {
+                agentId: "agent-1",
+                state: "working",
+                sequence: 1,
+                source: "process",
+                confidence: "high",
+                reason: "process is running",
+            });
+        });
+        expect(getState().agentActivity["agent-1"]).toMatchObject({ backendState: "working", sequence: 1 });
+
+        act(() => {
+            transport.emit("agent_sessions_changed", { agent: "codex", cwd: "/repo" });
+        });
+        await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledTimes(2));
+
+        view.unmount();
+        expect(transport.eventListenerCount).toBe(0);
+        await waitFor(() => expect(agentApi.watchStop).toHaveBeenCalledWith(17));
+    });
+});

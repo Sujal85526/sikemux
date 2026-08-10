@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
-import { listen } from "@tauri-apps/api/event";
+import { getIpcTransport } from "../api/transport";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -18,6 +18,7 @@ export function CliOpenBridge() {
         let claiming = false;
         let claimAgain = false;
         let readyPending = false;
+        const listenerController = new AbortController();
         let retryTimer: ReturnType<typeof setTimeout> | null = null;
         let retryDelay = 100;
 
@@ -79,16 +80,13 @@ export function CliOpenBridge() {
             }
         };
 
-        let unlisten = () => {};
         void (async () => {
-            const registered = await listen("cli-open-available", () => void claim());
-            if (disposed) {
-                registered();
-                return;
-            }
-            unlisten = registered;
+            await getIpcTransport().subscribe("cli-open-available", () => void claim(), { signal: listenerController.signal });
+            if (disposed) return;
             await claim(true);
-        })().catch(swallow("CLI open listener"));
+        })().catch((error: unknown) => {
+            if (!listenerController.signal.aborted) swallow("CLI open listener")(error);
+        });
 
         const unsubscribeStore = useStore.subscribe((state, previous) => {
             for (const [paneId, previousView] of Object.entries(previous.editorViews)) {
@@ -102,8 +100,8 @@ export function CliOpenBridge() {
 
         return () => {
             disposed = true;
+            listenerController.abort();
             if (retryTimer !== null) clearTimeout(retryTimer);
-            unlisten();
             unsubscribeStore();
         };
     }, []);

@@ -1,6 +1,6 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { performanceTelemetry } from "../lib/performance";
 import { parsePtyShellMetadataSnapshot, type PtyShellMetadataSnapshot, type PtyShellPhase } from "../terminal/ptyController";
+import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 
 export type PtyShellBoundary = "cwd" | "prompt_start" | "command_start" | "command_executed" | "command_finished";
 
@@ -21,7 +21,7 @@ export const PTY_SHELL_SUBSCRIPTION_LIMITS = Object.freeze({ maxPtys: 512, maxLi
 const EVENT_KEYS = new Set(["ptyId", "revision", "boundary", "cwd", "phase", "exitCode"]);
 const BOUNDARIES = new Set<PtyShellBoundary>(["cwd", "prompt_start", "command_start", "command_executed", "command_finished"]);
 const listeners = new Map<number, Set<PtyShellMetadataListener>>();
-let nativeUnlisten: UnlistenFn | null = null;
+let nativeUnlisten: IpcUnsubscribe | null = null;
 let nativeListenPromise: Promise<void> | null = null;
 
 function ownDataRecord(value: unknown): Record<string, unknown> | null {
@@ -122,23 +122,25 @@ function stopNativeListenerIfIdle(): void {
 function ensureNativeListener(): Promise<void> {
     if (nativeUnlisten) return Promise.resolve();
     if (nativeListenPromise) return nativeListenPromise;
-    nativeListenPromise = listen<unknown>(PTY_SHELL_METADATA_EVENT, (event) => dispatch(event.payload)).then(
-        (unlisten) => {
-            nativeListenPromise = null;
-            nativeUnlisten = unlisten;
-            stopNativeListenerIfIdle();
-        },
-        (error: unknown) => {
-            nativeListenPromise = null;
-            throw error;
-        },
-    );
+    nativeListenPromise = getIpcTransport()
+        .subscribe<unknown>(PTY_SHELL_METADATA_EVENT, (event) => dispatch(event.payload))
+        .then(
+            (unlisten) => {
+                nativeListenPromise = null;
+                nativeUnlisten = unlisten;
+                stopNativeListenerIfIdle();
+            },
+            (error: unknown) => {
+                nativeListenPromise = null;
+                throw error;
+            },
+        );
     void nativeListenPromise.catch(() => {});
     return nativeListenPromise;
 }
 
 /** Shares one native listener across all live PTYs and filters by runtime ID. */
-export async function subscribePtyShellMetadata(ptyId: number, listener: PtyShellMetadataListener): Promise<UnlistenFn> {
+export async function subscribePtyShellMetadata(ptyId: number, listener: PtyShellMetadataListener): Promise<IpcUnsubscribe> {
     if (!validPtyId(ptyId)) throw new TypeError("PTY shell subscription requires a valid runtime ID");
     if (typeof listener !== "function") throw new TypeError("PTY shell subscription requires a listener");
     let group = listeners.get(ptyId);

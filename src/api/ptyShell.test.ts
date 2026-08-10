@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { performanceTelemetry } from "../lib/performance";
+import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "./transport";
 import {
     applyPtyShellMetadataEvent,
     parsePtyShellMetadataEvent,
@@ -8,23 +9,18 @@ import {
     subscribePtyShellMetadata,
 } from "./ptyShell";
 
-const mocks = vi.hoisted(() => ({
-    handler: null as ((event: { payload: unknown }) => void) | null,
-    unlisten: vi.fn(),
-    listen: vi.fn(async (_name: string, handler: (event: { payload: unknown }) => void) => {
-        mocks.handler = handler;
-        return mocks.unlisten;
-    }),
-}));
+let transport: MemoryIpcTransport;
 
-vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+beforeEach(() => {
+    resetIpcTransportForTests();
+    transport = new MemoryIpcTransport();
+    installIpcTransportForTests(transport);
+});
 
 afterEach(async () => {
     await resetPtyShellSubscriptionsForTests();
+    resetIpcTransportForTests();
     performanceTelemetry.reset();
-    mocks.handler = null;
-    mocks.listen.mockClear();
-    mocks.unlisten.mockClear();
 });
 
 const event = (overrides: Record<string, unknown> = {}) => ({
@@ -66,30 +62,31 @@ describe("PTY shell metadata adapter", () => {
         expect(applyPtyShellMetadataEvent(second, prompt)).toBe(second);
     });
 
-    it("shares one native listener, routes by PTY, and tears down at zero subscribers", async () => {
+    it("shares one transport listener, routes by PTY, and tears down at zero subscribers", async () => {
         const first = vi.fn();
         const second = vi.fn();
         const unsubscribeFirst = await subscribePtyShellMetadata(42, first);
         const unsubscribeSecond = await subscribePtyShellMetadata(7, second);
 
-        expect(mocks.listen).toHaveBeenCalledOnce();
-        expect(mocks.listen).toHaveBeenCalledWith(PTY_SHELL_METADATA_EVENT, expect.any(Function));
-        mocks.handler?.({ payload: event() });
+        expect(transport.eventListenerCount).toBe(1);
+        expect(transport.emit(PTY_SHELL_METADATA_EVENT, event())).toEqual({ delivered: 1, listenerErrors: 0 });
         expect(first).toHaveBeenCalledOnce();
         expect(second).not.toHaveBeenCalled();
 
         unsubscribeFirst();
-        expect(mocks.unlisten).not.toHaveBeenCalled();
+        expect(transport.eventListenerCount).toBe(1);
         unsubscribeSecond();
-        expect(mocks.unlisten).toHaveBeenCalledOnce();
+        expect(transport.eventListenerCount).toBe(0);
+        unsubscribeSecond();
+        expect(transport.eventListenerCount).toBe(0);
     });
 
     it("contains invalid payloads and listener failures", async () => {
         const unsubscribe = await subscribePtyShellMetadata(42, () => {
             throw new Error("consumer failed");
         });
-        mocks.handler?.({ payload: event({ cwd: "bad\0path" }) });
-        mocks.handler?.({ payload: event() });
+        transport.emit(PTY_SHELL_METADATA_EVENT, event({ cwd: "bad\0path" }));
+        transport.emit(PTY_SHELL_METADATA_EVENT, event());
 
         expect(performanceTelemetry.snapshot().counters).toMatchObject({
             "terminal.shell-metadata.invalid-events": 1,

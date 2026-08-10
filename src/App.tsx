@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invokeCommand as invoke } from "./api/invoke";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate } from "./api/updater";
@@ -61,6 +60,7 @@ import {
     subscribeApplicationActions,
 } from "./actions/bridge";
 import { projectControllerBridge } from "./projects/controllerBridge";
+import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
 
 interface BootInfo {
     home: string;
@@ -86,6 +86,23 @@ export function activeTaskControls(snapshot: TaskControllerSnapshot | null, curr
         canStop: snapshot.activeRunId !== null,
         restartTaskId,
     });
+}
+
+export function subscribeGitChanged(signal?: AbortSignal): Promise<IpcUnsubscribe> {
+    return getIpcTransport().subscribe<{ repo: string }>(
+        "git_changed",
+        (event) => {
+            const repo = event.payload.repo || "";
+            filesApi.invalidate(repo || undefined);
+            invalidate((kind, args) => {
+                if (!kind.startsWith("git.") && kind !== "files.list") return false;
+                if (!repo) return true;
+                return args[0] === repo;
+            });
+            emit({ type: "fs-changed", repo });
+        },
+        { signal },
+    );
 }
 
 interface TreeDropTarget {
@@ -616,18 +633,12 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        const handle = listen<{ repo: string }>("git_changed", (e) => {
-            const repo = e.payload.repo || "";
-            filesApi.invalidate(repo || undefined);
-            invalidate((kind, args) => {
-                if (!kind.startsWith("git.") && kind !== "files.list") return false;
-                if (!repo) return true;
-                return args[0] === repo;
-            });
-            emit({ type: "fs-changed", repo });
+        const controller = new AbortController();
+        void subscribeGitChanged(controller.signal).catch((error: unknown) => {
+            if (!controller.signal.aborted) swallow("git change listener")(error);
         });
         return () => {
-            void handle.then((u) => u());
+            controller.abort();
         };
     }, []);
 

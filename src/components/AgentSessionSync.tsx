@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { agentApi } from "../api/agents";
+import { getIpcTransport } from "../api/transport";
 import { fetchResource } from "../state/resources";
 import { agentSessionsR } from "../state/resources.defs";
 import { getState, useStore } from "../state/store";
@@ -77,10 +77,19 @@ export function AgentSessionSync() {
     });
 
     useEffect(() => {
-        const unlisten = listen<AgentStateChanged>("agent_state_changed", (event) => {
-            cmd.noteAgentActivity(event.payload.agentId, event.payload);
-        });
-        return () => void unlisten.then((off) => off());
+        const controller = new AbortController();
+        void getIpcTransport()
+            .subscribe<AgentStateChanged>(
+                "agent_state_changed",
+                (event) => {
+                    cmd.noteAgentActivity(event.payload.agentId, event.payload);
+                },
+                { signal: controller.signal },
+            )
+            .catch((error: unknown) => {
+                if (!controller.signal.aborted) swallow("agent state listener")(error);
+            });
+        return () => controller.abort();
     }, []);
 
     useEffect(() => {
@@ -91,6 +100,7 @@ export function AgentSessionSync() {
         if (!syncKey) return;
 
         let cancelled = false;
+        const listenerController = new AbortController();
         const watchIds: number[] = [];
         const groups = collectAgentSyncGroups();
         const activeGroups = new Set(groups.map((group) => groupKey(group.type, group.cwd)));
@@ -127,11 +137,19 @@ export function AgentSessionSync() {
                 .catch(swallow("agent sessions watch"));
         }
 
-        const unlisten = listen<AgentSessionsChanged>("agent_sessions_changed", (event) => {
-            const { agent, cwd } = event.payload;
-            if (!activeGroups.has(groupKey(agent, cwd))) return;
-            syncGroup(agent, cwd);
-        });
+        void getIpcTransport()
+            .subscribe<AgentSessionsChanged>(
+                "agent_sessions_changed",
+                (event) => {
+                    const { agent, cwd } = event.payload;
+                    if (!activeGroups.has(groupKey(agent, cwd))) return;
+                    syncGroup(agent, cwd);
+                },
+                { signal: listenerController.signal },
+            )
+            .catch((error: unknown) => {
+                if (!listenerController.signal.aborted) swallow("agent sessions listener")(error);
+            });
 
         // Filesystem events can land while a brand-new transcript contains
         // only session metadata, before the first user prompt that supplies a
@@ -154,8 +172,8 @@ export function AgentSessionSync() {
 
         return () => {
             cancelled = true;
+            listenerController.abort();
             window.clearInterval(titleRetryTimer);
-            void unlisten.then((off) => off());
             for (const id of watchIds) {
                 void agentApi.watchStop(id).catch(swallow("agent sessions watch stop"));
             }

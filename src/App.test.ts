@@ -1,6 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { activeTaskControls } from "./App";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { activeTaskControls, subscribeGitChanged } from "./App";
+import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "./api/transport";
+import { subscribe } from "./state/bus";
 import type { ResolvedTaskDefinition, TaskControllerSnapshot, TaskLifecycleState } from "./tasks/taskRegistry";
+
+let transport: MemoryIpcTransport;
+
+beforeEach(() => {
+    resetIpcTransportForTests();
+    transport = new MemoryIpcTransport();
+    installIpcTransportForTests(transport);
+});
+
+afterEach(() => resetIpcTransportForTests());
 
 function task(id: string): ResolvedTaskDefinition {
     return Object.freeze({
@@ -50,5 +62,24 @@ describe("active task command reachability", () => {
             canStop: false,
             restartTaskId: null,
         });
+    });
+});
+
+describe("Git change IPC subscription", () => {
+    it("routes through the installed transport and aborts idempotently", async () => {
+        const changed = vi.fn();
+        const unsubscribeBus = subscribe("fs-changed", changed);
+        const controller = new AbortController();
+        const unsubscribe = await subscribeGitChanged(controller.signal);
+
+        expect(transport.eventListenerCount).toBe(1);
+        transport.emit("git_changed", { repo: "/repo" });
+        expect(changed).toHaveBeenCalledWith({ type: "fs-changed", repo: "/repo" });
+
+        controller.abort();
+        controller.abort();
+        unsubscribe();
+        expect(transport.eventListenerCount).toBe(0);
+        unsubscribeBus();
     });
 });
