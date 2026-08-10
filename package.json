@@ -18,6 +18,7 @@
     "test": "NODE_ENV=test vitest run",
     "test:watch": "NODE_ENV=test vitest",
     "test:coverage": "NODE_ENV=test vitest run --coverage",
+    "test:e2e:desktop": "node scripts/build-cli-sidecar.mjs && CARGO_TARGET_DIR=\"$PWD/src-tauri/target/e2e\" tauri build --debug --no-bundle --ci --config src-tauri/tauri.e2e.conf.json && node scripts/smoke-desktop-e2e.mjs",
     "bench:perf": "NODE_ENV=test vitest bench --run src/performance.bench.ts",
     "perf:budget": "node scripts/check-performance-budget.mjs",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
