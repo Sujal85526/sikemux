@@ -26,6 +26,7 @@ const terminalContext = (session: Session, win: WindowT, pane: PaneNode): PtyCon
     ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
     windowId: win.id,
     paneId: pane.id,
+    shellIntegration: session.kind === "project" || session.kind === "command",
 });
 
 function ItemFallback() {

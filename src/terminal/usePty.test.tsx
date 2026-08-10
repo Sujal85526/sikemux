@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef } from "react";
 import { performanceTelemetry } from "../lib/performance";
@@ -6,21 +6,30 @@ import { dispatchPty } from "../state/dropRegistry";
 import type { PtyContext } from "../state/types";
 import { claimWorkbenchItemRuntime, disposeWorkbenchItemRuntime, resetWorkbenchItemRuntimeForTests } from "../workbench/itemRuntime";
 import { createItemId } from "../workbench/registry";
+import { resetPtyShellSubscriptionsForTests, type PtyShellMetadataEvent } from "../api/ptyShell";
 import { encodePosixShellLiteral, encodePowerShellLiteral, ptyResourceFingerprint, shellSemanticsForExecutable, usePty } from "./usePty";
 
-const { invoke } = vi.hoisted(() => ({
+const { invoke, listen, unlisten, shellEvent } = vi.hoisted(() => ({
     invoke: vi.fn(async (command: string) => {
         if (command === "pty_spawn") return 42;
         if (command === "integration_health") return { shell: "/bin/zsh" };
         return null;
     }),
+    listen: vi.fn(async (_name: string, handler: (event: { payload: unknown }) => void) => {
+        shellEvent.current = handler;
+        return unlisten;
+    }),
+    unlisten: vi.fn(),
+    shellEvent: { current: null as ((event: { payload: unknown }) => void) | null },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 afterEach(async () => {
     cleanup();
     await resetWorkbenchItemRuntimeForTests();
+    await resetPtyShellSubscriptionsForTests();
     vi.restoreAllMocks();
     invoke.mockReset();
     invoke.mockImplementation(async (command: string) => {
@@ -28,6 +37,9 @@ afterEach(async () => {
         if (command === "integration_health") return { shell: "/bin/zsh" };
         return null;
     });
+    listen.mockClear();
+    unlisten.mockClear();
+    shellEvent.current = null;
 });
 
 function Harness({
@@ -37,6 +49,7 @@ function Harness({
     durable = false,
     cwd = "/repo",
     startup = "codex",
+    onShellMetadata,
 }: {
     context: PtyContext;
     initialInput?: string;
@@ -44,6 +57,7 @@ function Harness({
     durable?: boolean;
     cwd?: string;
     startup?: string;
+    onShellMetadata?: (event: PtyShellMetadataEvent) => void;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
     usePty({
@@ -53,6 +67,7 @@ function Harness({
         onInitialInputDelivered,
         hostRef,
         context,
+        onShellMetadata,
         durableItemId: durable ? context.paneId : undefined,
     });
     return <div ref={hostRef} />;
@@ -121,6 +136,38 @@ describe("usePty", () => {
                 context,
             });
         });
+    });
+
+    it("subscribes only opted-in live shells and forwards typed metadata", async () => {
+        const onShellMetadata = vi.fn();
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            windowId: "window-1",
+            paneId: "pane-1",
+            shellIntegration: true,
+        };
+        const view = render(<Harness context={context} onShellMetadata={onShellMetadata} />);
+        await waitFor(() => expect(listen).toHaveBeenCalledWith("pty_shell_metadata", expect.any(Function)));
+
+        act(() => {
+            shellEvent.current?.({
+                payload: { ptyId: 42, revision: 1, boundary: "prompt_start", cwd: "/repo", phase: "prompt" },
+            });
+        });
+        expect(onShellMetadata).toHaveBeenCalledWith({
+            ptyId: 42,
+            revision: 1,
+            boundary: "prompt_start",
+            cwd: "/repo",
+            phase: "prompt",
+            exitCode: null,
+        });
+
+        view.unmount();
+        expect(unlisten).toHaveBeenCalledOnce();
     });
 
     it("bracket-pastes and submits a provider fallback first message exactly once", async () => {

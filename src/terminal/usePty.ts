@@ -8,6 +8,7 @@ import { createItemId } from "../workbench/registry";
 import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource } from "../workbench/itemRuntime";
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
 import { performanceTelemetry } from "../lib/performance";
+import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/ptyShell";
 
 type NativeChannel = Channel<number[]>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
@@ -121,6 +122,7 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration):
         context?.agentId ?? null,
         context?.agentType ?? null,
         context?.initialPromptSubmitted ?? null,
+        context?.shellIntegration ?? null,
     ]);
 }
 
@@ -132,6 +134,7 @@ export function usePty(opts: {
     hostRef: RefObject<HTMLDivElement | null>;
     spawnWhen?: boolean;
     context?: PtyContext;
+    onShellMetadata?: (event: PtyShellMetadataEvent) => void;
     /** Durable workbench item owner. Omit for popups, agents, and embedded shells. */
     durableItemId?: string;
 }): RefObject<NativePtyController | null> {
@@ -139,6 +142,8 @@ export function usePty(opts: {
     const controllerRef = useRef<NativePtyController | null>(null);
     const deliveredRef = useRef(opts.onInitialInputDelivered);
     deliveredRef.current = opts.onInitialInputDelivered;
+    const shellMetadataRef = useRef(opts.onShellMetadata);
+    shellMetadataRef.current = opts.onShellMetadata;
     const currentOptionsRef = useRef(opts);
     currentOptionsRef.current = opts;
     const resourceFingerprint = ptyResourceFingerprint(opts);
@@ -217,8 +222,31 @@ export function usePty(opts: {
     useEffect(() => {
         if (!spawnWhen) return;
         const controller = controllerRef.current;
-        if (controller) void controller.start().catch(() => {});
-    }, [spawnWhen, durableResourceFingerprint, runtimeLease]);
+        if (!controller) return;
+        let disposed = false;
+        let unlisten = () => {};
+        void controller
+            .start()
+            .then(
+                (ptyId) => {
+                    if (disposed || !currentOptionsRef.current.context?.shellIntegration || !shellMetadataRef.current) return;
+                    return subscribePtyShellMetadata(ptyId, (event) => shellMetadataRef.current?.(event));
+                },
+                () => undefined,
+            )
+            .then((nextUnlisten) => {
+                if (!nextUnlisten) return;
+                if (disposed) nextUnlisten();
+                else unlisten = nextUnlisten;
+            })
+            .catch(() => {
+                if (!disposed) performanceTelemetry.incrementCounter("terminal.shell-metadata.subscribe-errors");
+            });
+        return () => {
+            disposed = true;
+            unlisten();
+        };
+    }, [spawnWhen, durableResourceFingerprint, runtimeLease, opts.context?.shellIntegration]);
 
     return controllerRef;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ISearchResultChangeEvent } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
@@ -8,6 +8,9 @@ import type { TerminalSearchOptions } from "./interactions";
 import { TerminalFindBar } from "./TerminalFindBar";
 import { TerminalContextMenu } from "./TerminalContextMenu";
 import type { PtyContext } from "../state/types";
+import { applyPtyShellMetadataEvent, type PtyShellMetadataEvent } from "../api/ptyShell";
+import type { PtyShellMetadataSnapshot } from "./ptyController";
+import { basename } from "../lib/paths";
 
 const SWITCH_KEEPALIVE_MS = 30_000;
 const MAX_HIDDEN_RENDERERS = 4;
@@ -55,8 +58,21 @@ export function TerminalPane({
     const [findOptions, setFindOptions] = useState<TerminalSearchOptions>({ caseSensitive: false, regex: false, wholeWord: false });
     const [findResult, setFindResult] = useState<ISearchResultChangeEvent>({ resultIndex: -1, resultCount: 0 });
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+    const [shellMetadata, setShellMetadata] = useState<PtyShellMetadataSnapshot | null>(null);
     const hostRef = useRef<HTMLDivElement>(null);
     const rendererTokenRef = useRef(Symbol("terminal-renderer"));
+    const titleChangeRef = useRef(onTitleChange);
+    titleChangeRef.current = onTitleChange;
+    const shellIntegration = context?.shellIntegration === true;
+    const applyShellEvent = useCallback((event: PtyShellMetadataEvent) => {
+        setShellMetadata((current) => applyPtyShellMetadataEvent(current, event));
+    }, []);
+    const applyShellSnapshot = useCallback((metadata: PtyShellMetadataSnapshot | null) => {
+        setShellMetadata((current) => {
+            if (!metadata) return null;
+            return current && current.revision > metadata.revision ? current : metadata;
+        });
+    }, []);
     const ptyController = usePty({
         cwd,
         startup,
@@ -65,8 +81,18 @@ export function TerminalPane({
         hostRef,
         spawnWhen,
         context,
+        onShellMetadata: shellIntegration ? applyShellEvent : undefined,
         durableItemId: retainPtyOnUnmount ? context?.paneId : undefined,
     });
+
+    useEffect(() => {
+        if (!shellIntegration) setShellMetadata(null);
+    }, [shellIntegration]);
+
+    useEffect(() => {
+        if (!shellIntegration || !shellMetadata?.cwd) return;
+        titleChangeRef.current?.(basename(shellMetadata.cwd));
+    }, [shellIntegration, shellMetadata?.cwd]);
 
     useEffect(() => {
         const token = rendererTokenRef.current;
@@ -103,8 +129,17 @@ export function TerminalPane({
         },
         onSearchResults: setFindResult,
         onTitleChange,
+        onShellMetadata: shellIntegration ? applyShellSnapshot : undefined,
         onExit,
     });
+
+    const shellPhaseLabel =
+        shellMetadata?.phase === "finished" && shellMetadata.lastExitCode !== null
+            ? shellMetadata.lastExitCode === 0
+                ? "done"
+                : `exit ${shellMetadata.lastExitCode}`
+            : shellMetadata?.phase;
+    const shellDirectoryLabel = shellMetadata?.cwd ? basename(shellMetadata.cwd) : null;
 
     useEffect(() => {
         if (visible) return;
@@ -133,6 +168,17 @@ export function TerminalPane({
                 setMenu({ x: event.clientX, y: event.clientY });
             }}>
             <div ref={hostRef} className="terminal-host" />
+            {shellIntegration && shellMetadata && (
+                <div
+                    className="terminal-shell-metadata"
+                    data-phase={shellMetadata.phase}
+                    title={shellMetadata.cwd ? `Shell-reported directory: ${shellMetadata.cwd}` : "Shell-reported command state"}
+                    aria-label={`Shell reported ${shellDirectoryLabel ? `${shellDirectoryLabel}, ` : ""}${shellPhaseLabel ?? "unknown"}`}>
+                    <span className="terminal-shell-metadata-dot" aria-hidden="true" />
+                    {shellDirectoryLabel && <span className="terminal-shell-metadata-cwd">{shellDirectoryLabel}</span>}
+                    {shellPhaseLabel && <span className="terminal-shell-metadata-phase">{shellPhaseLabel}</span>}
+                </div>
+            )}
             {findOpen && (
                 <TerminalFindBar
                     controller={controller}

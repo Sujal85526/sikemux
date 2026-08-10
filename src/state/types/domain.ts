@@ -141,6 +141,8 @@ export interface PtyContext {
     agentId?: string;
     agentType?: AgentType;
     initialPromptSubmitted?: boolean;
+    /** Opt-in local shell metadata; never an authorization signal. */
+    shellIntegration?: boolean;
 }
 
 export interface NotificationPreferences {

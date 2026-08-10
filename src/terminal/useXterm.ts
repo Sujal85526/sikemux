@@ -22,7 +22,7 @@ import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 import { isTerminalFindShortcut, safeWebUrl, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
 import { scheduleNextFrame } from "../lib/instrumentation";
 import { performanceTelemetry } from "../lib/performance";
-import type { PtyAttachment, PtyOutputChunk } from "./ptyController";
+import type { PtyAttachment, PtyOutputChunk, PtyShellMetadataSnapshot } from "./ptyController";
 import { RendererRestartBackoff } from "./restartBackoff";
 import type { NativePtyController } from "./usePty";
 
@@ -85,6 +85,7 @@ export function useXterm(opts: {
     onFindRequest?: (seed: string) => void;
     onSearchResults?: (result: ISearchResultChangeEvent) => void;
     onTitleChange?: (title: string) => void;
+    onShellMetadata?: (metadata: PtyShellMetadataSnapshot | null) => void;
     onExit?: () => void;
 }): TerminalController {
     const { hostRef, ptyController, shouldMount, active, visible } = opts;
@@ -94,6 +95,8 @@ export function useXterm(opts: {
     onSearchResultsRef.current = opts.onSearchResults;
     const onTitleChangeRef = useRef(opts.onTitleChange);
     onTitleChangeRef.current = opts.onTitleChange;
+    const onShellMetadataRef = useRef(opts.onShellMetadata);
+    onShellMetadataRef.current = opts.onShellMetadata;
     const onExitRef = useRef(opts.onExit);
     onExitRef.current = opts.onExit;
     const termRef = useRef<Terminal | null>(null);
@@ -527,6 +530,7 @@ export function useXterm(opts: {
                 };
                 resourceDisposers.push(detachAttachment);
                 const { snapshot, alternateScreen } = attached;
+                onShellMetadataRef.current?.(attached.shell);
                 if (disposed) {
                     cleanup();
                     return;
