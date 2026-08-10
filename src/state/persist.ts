@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../api/invoke";
 import { sshStartup } from "../terminal/sshStartup";
 import { isBuiltinTheme, isTheme } from "../themes";
 import { normaliseKeybindingOverrides } from "../keybindings";

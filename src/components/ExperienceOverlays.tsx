@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../api/invoke";
 import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
 import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";

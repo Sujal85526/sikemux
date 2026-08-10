@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../../api/invoke";
 import * as cmd from "../../state/commands";
 import { useStore } from "../../state/store";
 import { IconClose } from "../Icons";

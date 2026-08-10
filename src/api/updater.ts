@@ -1,5 +1,5 @@
 import { relaunch } from "@tauri-apps/plugin-process";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 import { getState, setState } from "../state/store";
 import { swallow } from "../state/toast";
 

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../api/invoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { AgentSession } from "../api/agents";
 import { awsApi } from "../api/aws";

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 
 const inflight = new Map<string, Promise<string[]>>();
 const cache = new Map<string, string[]>();

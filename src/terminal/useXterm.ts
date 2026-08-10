@@ -5,7 +5,8 @@ import { SearchAddon, type ISearchOptions, type ISearchResultChangeEvent } from 
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { WebglAddon } from "@xterm/addon-webgl";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../api/invoke";
 import { currentTheme, registerTerminal } from "../themes/bus";
 import { IS_MACOS } from "../lib/platform";
 import {

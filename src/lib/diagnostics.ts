@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../api/invoke";
 import { save } from "@tauri-apps/plugin-dialog";
 import { fsapi } from "../api/fs";
 import { busStats } from "../state/bus";

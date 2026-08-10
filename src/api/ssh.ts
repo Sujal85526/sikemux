@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 
 export interface SshHost {
     alias: string;

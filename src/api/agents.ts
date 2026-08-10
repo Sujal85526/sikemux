@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 import type { AgentEffort, AgentType } from "../state/types";
 
 export interface AgentInfo {

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 
 export interface ManifestReport {
     manifests: Array<{ agent: string; version: string; source: { kind: string; path?: string }; warning?: string }>;

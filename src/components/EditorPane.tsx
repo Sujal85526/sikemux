@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../api/invoke";
 import { EditorState, Prec, type Text } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";

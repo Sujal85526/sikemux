@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../../api/invoke";
 import { awsApi } from "../../api/aws";
 import { reportError } from "../../state/toast";
 import { VirtualLogList } from "../VirtualLogList";

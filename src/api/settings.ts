@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { PinnedProject, ProjectRoot } from "../state/types";
 

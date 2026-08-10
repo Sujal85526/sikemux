@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "../api/invoke";
 import { registerPtyDrop } from "../state/dropRegistry";
 import { IS_WINDOWS } from "../lib/platform";
 import type { PtyContext } from "../state/types";

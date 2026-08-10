@@ -1,4 +1,5 @@
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 
 export interface SearchOptions {
     caseSensitive: boolean;

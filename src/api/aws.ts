@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 import { emit } from "../state/bus";
 
 async function awsInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {

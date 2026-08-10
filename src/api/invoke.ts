@@ -45,7 +45,9 @@ function settleInvocation<T>(command: string, args: InvokeArgs | undefined, opti
     try {
         // Args are deliberately passed through by identity. In particular, do not
         // clone or enumerate them: Tauri Channel instances carry serialization hooks.
-        pending = invoke<T>(command, args, options?.invokeOptions);
+        if (options?.invokeOptions !== undefined) pending = invoke<T>(command, args, options.invokeOptions);
+        else if (args !== undefined) pending = invoke<T>(command, args);
+        else pending = invoke<T>(command);
     } catch (error) {
         return Promise.resolve({ kind: "error", error });
     }

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCommand as invoke } from "./invoke";
 import { Channel } from "@tauri-apps/api/core";
 import { emit } from "../state/bus";
 
