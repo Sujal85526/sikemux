@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::task;
 use url::Url;
 
@@ -22,18 +22,31 @@ use crate::error::{AppError, AppResult};
 
 const MAX_LSP_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LSP_HEADER_BYTES: usize = 8 * 1024;
+const MAX_DIAGNOSTIC_FILES_PER_SERVER: usize = 512;
+const MAX_DIAGNOSTICS_PER_PUBLISH: usize = 500;
+const MAX_DIAGNOSTIC_MESSAGE_BYTES: usize = 2_048;
+const MAX_DIAGNOSTIC_SOURCE_BYTES: usize = 128;
+const MAX_DIAGNOSTIC_CODE_BYTES: usize = 128;
+const MAX_LSP_PATH_BYTES: usize = 4_096;
+const MAX_LSP_LANGUAGE_BYTES: usize = 128;
+const MAX_DOCUMENT_SYMBOLS: usize = 2_000;
+const MAX_DOCUMENT_SYMBOL_DEPTH: usize = 16;
+const MAX_SYMBOL_NAME_BYTES: usize = 256;
+const MAX_SYMBOL_DETAIL_BYTES: usize = 1_024;
+
+pub const LSP_DIAGNOSTICS_EVENT: &str = "lsp_diagnostics";
 
 fn lsp<E: std::fmt::Display>(e: E) -> AppError {
     AppError::Lsp(e.to_string())
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LspPos {
     pub line: u32,
     pub character: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LspRange {
     pub start: LspPos,
     pub end: LspPos,
@@ -53,6 +66,46 @@ pub struct LspTextChange {
     pub text: String,
 }
 
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LspDiagnosticSeverity {
+    Error,
+    Warning,
+    Information,
+    Hint,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LspDiagnostic {
+    pub range: LspRange,
+    pub severity: Option<LspDiagnosticSeverity>,
+    pub code: Option<String>,
+    pub source: Option<String>,
+    pub message: String,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LspDiagnosticsPayload {
+    pub project: String,
+    pub language: String,
+    pub path: String,
+    pub version: Option<i64>,
+    pub diagnostics: Vec<LspDiagnostic>,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LspDocumentSymbol {
+    pub name: String,
+    pub detail: Option<String>,
+    pub kind: u32,
+    pub range: LspRange,
+    pub selection_range: LspRange,
+    pub children: Vec<LspDocumentSymbol>,
+}
+
 struct OpenDoc {
     refs: usize,
     version: u32,
@@ -66,6 +119,9 @@ struct OpenDoc {
 // `shutdown` flips true once a stop has been issued — readers and writers
 // check it so they bail without spamming errors as the child dies.
 struct Server {
+    app: AppHandle,
+    project: String,
+    language: String,
     child: Mutex<Option<Child>>,
     stdin: Mutex<Option<ChildStdin>>,
     next_id: Mutex<i64>,
@@ -78,6 +134,10 @@ struct Server {
     // versions. The frontend can have several editor panes pointed at the same
     // URI; the server must still see exactly one didOpen and one didClose.
     open_docs: Mutex<HashMap<String, OpenDoc>>,
+    // Paths with a currently published non-empty diagnostic set. The UI owns
+    // the diagnostic values; native retains only bounded keys/versions so a
+    // server shutdown can emit deterministic clear events.
+    diagnostic_paths: Mutex<HashMap<String, Option<i64>>>,
     shutdown: std::sync::atomic::AtomicBool,
     /// Logical LRU stamp, bumped on every message we send. The backstop cap
     /// evicts the smallest (least-recently-used) when too many servers pile
@@ -246,6 +306,159 @@ fn path_to_uri(path: &str) -> String {
     Url::from_file_path(path)
         .map(|u| u.to_string())
         .unwrap_or_else(|_| format!("file://{}", path))
+}
+
+fn bounded_string(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+    let mut boundary = max_bytes;
+    while boundary > 0 && !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value[..boundary].to_owned()
+}
+
+fn uri_to_bounded_path(uri: &str) -> Option<String> {
+    let url = Url::parse(uri).ok()?;
+    if url.scheme() != "file" {
+        return None;
+    }
+    let path = url.to_file_path().ok()?.to_string_lossy().into_owned();
+    (path.len() <= MAX_LSP_PATH_BYTES).then_some(path)
+}
+
+fn parse_lsp_range(value: &Value) -> Option<LspRange> {
+    serde_json::from_value(value.clone()).ok()
+}
+
+fn parse_diagnostic_code(value: Option<&Value>) -> Option<String> {
+    let code = match value? {
+        Value::String(code) => code.clone(),
+        Value::Number(code) => code.to_string(),
+        _ => return None,
+    };
+    Some(bounded_string(&code, MAX_DIAGNOSTIC_CODE_BYTES))
+}
+
+fn parse_diagnostic(value: &Value) -> Option<LspDiagnostic> {
+    let range = parse_lsp_range(value.get("range")?)?;
+    let message = bounded_string(
+        value.get("message")?.as_str()?,
+        MAX_DIAGNOSTIC_MESSAGE_BYTES,
+    );
+    let severity = match value.get("severity").and_then(Value::as_u64) {
+        Some(1) => Some(LspDiagnosticSeverity::Error),
+        Some(2) => Some(LspDiagnosticSeverity::Warning),
+        Some(3) => Some(LspDiagnosticSeverity::Information),
+        Some(4) => Some(LspDiagnosticSeverity::Hint),
+        _ => None,
+    };
+    let source = value
+        .get("source")
+        .and_then(Value::as_str)
+        .map(|source| bounded_string(source, MAX_DIAGNOSTIC_SOURCE_BYTES));
+    Some(LspDiagnostic {
+        range,
+        severity,
+        code: parse_diagnostic_code(value.get("code")),
+        source,
+        message,
+    })
+}
+
+fn parse_diagnostics_payload(
+    project: &str,
+    language: &str,
+    params: &Value,
+) -> Option<LspDiagnosticsPayload> {
+    if project.len() > MAX_LSP_PATH_BYTES || language.len() > MAX_LSP_LANGUAGE_BYTES {
+        return None;
+    }
+    let path = uri_to_bounded_path(params.get("uri")?.as_str()?)?;
+    let values = params.get("diagnostics")?.as_array()?;
+    let diagnostics = values
+        .iter()
+        .take(MAX_DIAGNOSTICS_PER_PUBLISH)
+        .filter_map(parse_diagnostic)
+        .collect();
+    Some(LspDiagnosticsPayload {
+        project: project.to_owned(),
+        language: language.to_owned(),
+        path,
+        version: params.get("version").and_then(Value::as_i64),
+        diagnostics,
+    })
+}
+
+fn track_diagnostic_publish(
+    tracked: &mut HashMap<String, Option<i64>>,
+    path: &str,
+    version: Option<i64>,
+    has_diagnostics: bool,
+) -> bool {
+    if !has_diagnostics {
+        tracked.remove(path);
+        return true;
+    }
+    if !tracked.contains_key(path) && tracked.len() >= MAX_DIAGNOSTIC_FILES_PER_SERVER {
+        return false;
+    }
+    tracked.insert(path.to_owned(), version);
+    true
+}
+
+fn publish_diagnostics(server: &Server, params: &Value) {
+    let Some(payload) = parse_diagnostics_payload(&server.project, &server.language, params) else {
+        return;
+    };
+    let mut tracked = match server.diagnostic_paths.lock() {
+        Ok(tracked) => tracked,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if server.shutdown.load(std::sync::atomic::Ordering::Acquire)
+        || !track_diagnostic_publish(
+            &mut tracked,
+            &payload.path,
+            payload.version,
+            !payload.diagnostics.is_empty(),
+        )
+    {
+        return;
+    }
+
+    // Keep the tracking lock through emission. Shutdown flips its atomic flag
+    // before taking this lock, guaranteeing that a non-empty publish racing
+    // teardown is always followed by the corresponding clear event.
+    let _ = server.app.emit(LSP_DIAGNOSTICS_EVENT, payload);
+}
+
+fn clear_server_diagnostics(server: &Server) {
+    let tracked = {
+        let mut tracked = match server.diagnostic_paths.lock() {
+            Ok(tracked) => tracked,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        tracked.drain().collect::<Vec<_>>()
+    };
+    for (path, version) in tracked {
+        let _ = server.app.emit(
+            LSP_DIAGNOSTICS_EVENT,
+            LspDiagnosticsPayload {
+                project: server.project.clone(),
+                language: server.language.clone(),
+                path,
+                version,
+                diagnostics: Vec::new(),
+            },
+        );
+    }
+}
+
+fn handle_server_notification(server: &Server, method: &str, params: &Value) {
+    if method == "textDocument/publishDiagnostics" {
+        publish_diagnostics(server, params);
+    }
 }
 
 fn content_hash(content: &str) -> u64 {
@@ -463,19 +676,22 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
     let child = child.into_inner();
 
     let server = Arc::new(Server {
+        app,
+        project: project.to_owned(),
+        language: language.to_owned(),
         child: Mutex::new(Some(child)),
         stdin: Mutex::new(Some(stdin)),
         next_id: Mutex::new(1),
         pending: Mutex::new(HashMap::new()),
         last_change: Mutex::new(HashMap::new()),
         open_docs: Mutex::new(HashMap::new()),
+        diagnostic_paths: Mutex::new(HashMap::new()),
         shutdown: std::sync::atomic::AtomicBool::new(false),
         last_used: std::sync::atomic::AtomicU64::new(lsp_tick()),
         idle_generation: std::sync::atomic::AtomicU64::new(0),
     });
 
     let reader_server = server.clone();
-    let _ = app;
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         while let Ok(Some(msg)) = read_message(&mut reader) {
@@ -504,6 +720,12 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
                         }
                     }
                 }
+            } else if let Some(method) = msg.get("method").and_then(Value::as_str) {
+                handle_server_notification(
+                    &reader_server,
+                    method,
+                    msg.get("params").unwrap_or(&Value::Null),
+                );
             }
         }
         // Reader exit unblocks any pending RPC waiters so they fail fast
@@ -557,7 +779,11 @@ fn spawn_server(project: &str, language: &str, app: AppHandle) -> AppResult<Serv
                 "references": {},
                 "hover": { "contentFormat": ["markdown", "plaintext"] },
                 "completion": { "completionItem": { "snippetSupport": false } },
-                "publishDiagnostics": { "relatedInformation": false }
+                "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
+                "publishDiagnostics": {
+                    "relatedInformation": false,
+                    "versionSupport": true
+                }
             },
             "workspace": {
                 "workspaceFolders": true,
@@ -625,7 +851,8 @@ fn schedule_idle_shutdown(server_key: String, server: ServerHandle) {
 fn shutdown_server(server: ServerHandle) {
     server
         .shutdown
-        .store(true, std::sync::atomic::Ordering::Relaxed);
+        .store(true, std::sync::atomic::Ordering::Release);
+    clear_server_diagnostics(&server);
     // Drop stdin so the server's read loop sees EOF and exits cleanly; if
     // it doesn't, fall through to kill().
     if let Ok(mut g) = server.stdin.lock() {
@@ -1048,6 +1275,88 @@ fn parse_locations(result: &Value) -> Vec<LspLocation> {
     parse_location_like(result).into_iter().collect()
 }
 
+fn parse_symbol_kind(value: &Value) -> Option<u32> {
+    u32::try_from(value.as_u64()?).ok()
+}
+
+fn parse_document_symbol(
+    value: &Value,
+    depth: usize,
+    remaining: &mut usize,
+) -> Option<LspDocumentSymbol> {
+    if depth >= MAX_DOCUMENT_SYMBOL_DEPTH || *remaining == 0 {
+        return None;
+    }
+
+    let name = bounded_string(value.get("name")?.as_str()?, MAX_SYMBOL_NAME_BYTES);
+    let kind = parse_symbol_kind(value.get("kind")?)?;
+    let (detail, range, selection_range, child_values) =
+        if let Some(location) = value.get("location") {
+            // SymbolInformation[] is the legacy flat response. containerName is
+            // the only useful detail; the location range is also its selection.
+            let range = parse_lsp_range(location.get("range")?)?;
+            let detail = value
+                .get("containerName")
+                .and_then(Value::as_str)
+                .map(|detail| bounded_string(detail, MAX_SYMBOL_DETAIL_BYTES));
+            (detail, range.clone(), range, None)
+        } else {
+            let range = parse_lsp_range(value.get("range")?)?;
+            let selection_range = value
+                .get("selectionRange")
+                .and_then(parse_lsp_range)
+                .unwrap_or_else(|| range.clone());
+            let detail = value
+                .get("detail")
+                .and_then(Value::as_str)
+                .map(|detail| bounded_string(detail, MAX_SYMBOL_DETAIL_BYTES));
+            (
+                detail,
+                range,
+                selection_range,
+                value.get("children").and_then(Value::as_array),
+            )
+        };
+
+    *remaining -= 1;
+    let mut children = Vec::new();
+    if let Some(child_values) = child_values {
+        for child in child_values {
+            if *remaining == 0 {
+                break;
+            }
+            if let Some(child) = parse_document_symbol(child, depth + 1, remaining) {
+                children.push(child);
+            }
+        }
+    }
+    Some(LspDocumentSymbol {
+        name,
+        detail,
+        kind,
+        range,
+        selection_range,
+        children,
+    })
+}
+
+fn parse_document_symbols(result: &Value) -> Vec<LspDocumentSymbol> {
+    let Some(values) = result.as_array() else {
+        return Vec::new();
+    };
+    let mut remaining = MAX_DOCUMENT_SYMBOLS;
+    let mut symbols = Vec::new();
+    for value in values {
+        if remaining == 0 {
+            break;
+        }
+        if let Some(symbol) = parse_document_symbol(value, 0, &mut remaining) {
+            symbols.push(symbol);
+        }
+    }
+    symbols
+}
+
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub enum LspKind {
@@ -1089,9 +1398,27 @@ pub async fn lsp_locations(
     Ok(parse_locations(&result))
 }
 
+#[tauri::command]
+pub async fn lsp_document_symbols(
+    project: String,
+    language: String,
+    path: String,
+) -> AppResult<Vec<LspDocumentSymbol>> {
+    let server =
+        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+    let params = json!({ "textDocument": { "uri": path_to_uri(&path) } });
+    // Use the same bounded blocking request path as locations: shutdown drops
+    // the response sender, and timeout removes the pending request in 4 s.
+    let result =
+        task::spawn_blocking(move || request(&server, "textDocument/documentSymbol", params))
+            .await
+            .map_err(|error| AppError::Lsp(format!("join: {error}")))??;
+    Ok(parse_document_symbols(&result))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{read_message, MAX_LSP_FRAME_BYTES, MAX_LSP_HEADER_BYTES};
+    use super::*;
     use serde_json::json;
     use std::io::{BufReader, Cursor};
 
@@ -1124,5 +1451,164 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(frame.into_bytes()));
         let error = read_message(&mut reader).expect_err("oversized headers");
         assert!(error.to_string().contains("headers exceed"));
+    }
+
+    fn test_range() -> Value {
+        json!({
+            "start": { "line": 1, "character": 2 },
+            "end": { "line": 3, "character": 4 }
+        })
+    }
+
+    #[test]
+    fn diagnostics_payload_is_typed_bounded_and_empty_publish_clears() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("main.rs");
+        let uri = Url::from_file_path(&path).unwrap().to_string();
+        let mut diagnostics = vec![json!({
+            "range": test_range(),
+            "severity": 1,
+            "code": 42,
+            "source": "s".repeat(MAX_DIAGNOSTIC_SOURCE_BYTES + 20),
+            "message": "é".repeat(MAX_DIAGNOSTIC_MESSAGE_BYTES)
+        })];
+        diagnostics.extend((1..MAX_DIAGNOSTICS_PER_PUBLISH + 10).map(|index| {
+            json!({
+                "range": test_range(),
+                "severity": 2,
+                "message": format!("warning {index}")
+            })
+        }));
+
+        let payload = parse_diagnostics_payload(
+            temp.path().to_string_lossy().as_ref(),
+            "rust",
+            &json!({ "uri": uri, "version": 7, "diagnostics": diagnostics }),
+        )
+        .unwrap();
+        assert_eq!(payload.path, path.to_string_lossy());
+        assert_eq!(payload.version, Some(7));
+        assert_eq!(payload.diagnostics.len(), MAX_DIAGNOSTICS_PER_PUBLISH);
+        assert_eq!(
+            payload.diagnostics[0].severity,
+            Some(LspDiagnosticSeverity::Error)
+        );
+        assert_eq!(payload.diagnostics[0].code.as_deref(), Some("42"));
+        assert!(payload.diagnostics[0].message.len() <= MAX_DIAGNOSTIC_MESSAGE_BYTES);
+        assert!(payload.diagnostics[0]
+            .message
+            .is_char_boundary(payload.diagnostics[0].message.len()));
+        assert!(payload.diagnostics[0]
+            .source
+            .as_ref()
+            .is_some_and(|source| source.len() == MAX_DIAGNOSTIC_SOURCE_BYTES));
+
+        let cleared = parse_diagnostics_payload(
+            temp.path().to_string_lossy().as_ref(),
+            "rust",
+            &json!({ "uri": Url::from_file_path(&path).unwrap(), "diagnostics": [] }),
+        )
+        .unwrap();
+        assert!(cleared.diagnostics.is_empty());
+        assert!(parse_diagnostics_payload(
+            temp.path().to_string_lossy().as_ref(),
+            "rust",
+            &json!({ "uri": "https://example.com/main.rs", "diagnostics": [] })
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn diagnostic_tracking_replaces_clears_and_caps_paths() {
+        let mut tracked = HashMap::new();
+        assert!(track_diagnostic_publish(
+            &mut tracked,
+            "main.rs",
+            Some(1),
+            true
+        ));
+        assert!(track_diagnostic_publish(
+            &mut tracked,
+            "main.rs",
+            Some(2),
+            true
+        ));
+        assert_eq!(tracked.get("main.rs"), Some(&Some(2)));
+        assert!(track_diagnostic_publish(
+            &mut tracked,
+            "main.rs",
+            Some(2),
+            false
+        ));
+        assert!(!tracked.contains_key("main.rs"));
+
+        for index in 0..MAX_DIAGNOSTIC_FILES_PER_SERVER {
+            assert!(track_diagnostic_publish(
+                &mut tracked,
+                &format!("file-{index}"),
+                None,
+                true
+            ));
+        }
+        assert!(!track_diagnostic_publish(
+            &mut tracked,
+            "one-too-many",
+            None,
+            true
+        ));
+        assert_eq!(tracked.len(), MAX_DIAGNOSTIC_FILES_PER_SERVER);
+    }
+
+    fn hierarchical_symbol(name: &str, children: Vec<Value>) -> Value {
+        json!({
+            "name": name,
+            "detail": "d".repeat(MAX_SYMBOL_DETAIL_BYTES + 20),
+            "kind": 12,
+            "range": test_range(),
+            "selectionRange": test_range(),
+            "children": children
+        })
+    }
+
+    fn symbol_depth(symbol: &LspDocumentSymbol) -> usize {
+        1 + symbol.children.iter().map(symbol_depth).max().unwrap_or(0)
+    }
+
+    #[test]
+    fn document_symbols_support_both_shapes_and_bound_depth_strings_and_count() {
+        let mut nested = hierarchical_symbol("leaf", Vec::new());
+        for _ in 0..MAX_DOCUMENT_SYMBOL_DEPTH + 5 {
+            nested = hierarchical_symbol(&"é".repeat(MAX_SYMBOL_NAME_BYTES), vec![nested]);
+        }
+        let symbols = parse_document_symbols(&json!([nested]));
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbol_depth(&symbols[0]), MAX_DOCUMENT_SYMBOL_DEPTH);
+        assert!(symbols[0].name.len() <= MAX_SYMBOL_NAME_BYTES);
+        assert!(symbols[0]
+            .detail
+            .as_ref()
+            .is_some_and(|detail| detail.len() == MAX_SYMBOL_DETAIL_BYTES));
+
+        let flat = parse_document_symbols(&json!([{
+            "name": "legacy",
+            "kind": 5,
+            "containerName": "Container",
+            "location": {
+                "uri": "file:///tmp/main.rs",
+                "range": test_range()
+            }
+        }]));
+        assert_eq!(flat.len(), 1);
+        assert_eq!(flat[0].detail.as_deref(), Some("Container"));
+        assert_eq!(flat[0].range, flat[0].selection_range);
+        assert!(flat[0].children.is_empty());
+
+        let many = (0..MAX_DOCUMENT_SYMBOLS + 10)
+            .map(|index| hierarchical_symbol(&format!("symbol-{index}"), Vec::new()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            parse_document_symbols(&Value::Array(many)).len(),
+            MAX_DOCUMENT_SYMBOLS
+        );
     }
 }

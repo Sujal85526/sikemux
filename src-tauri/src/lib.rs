@@ -222,6 +222,7 @@ pub fn run() {
             lsp::lsp_save,
             lsp::lsp_close,
             lsp::lsp_locations,
+            lsp::lsp_document_symbols,
             diff::diff_hunks,
             files::list_project_files,
             files::list_project_files_snapshot,
