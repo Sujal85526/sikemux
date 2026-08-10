@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { EditorView } from "@codemirror/view";
+import { NavigationHistory, type NavigationLocation } from "../workbench/navigationHistory";
 
 export interface NavEntry {
     path: string;
@@ -8,6 +9,7 @@ export interface NavEntry {
 }
 
 interface NavOptions {
+    project: string;
     getView: () => EditorView | null;
     getCurrentPath: () => string | null;
     scrollLiveTo: (line: number, character: number) => void;
@@ -15,54 +17,73 @@ interface NavOptions {
 }
 
 export function useNavHistory(opts: NavOptions) {
-    const historyRef = useRef<NavEntry[]>([]);
-    const idxRef = useRef(-1);
+    const optionsRef = useRef(opts);
+    optionsRef.current = opts;
+    const ownerRef = useRef<{ project: string; history: NavigationHistory } | null>(null);
+    if (!ownerRef.current || ownerRef.current.project !== opts.project) {
+        const project = opts.project;
+        ownerRef.current = {
+            project,
+            history: new NavigationHistory({
+                isLocationCurrent: (location) => location.project === project,
+            }),
+        };
+    }
 
     const captureCurrentPos = useCallback((): NavEntry | null => {
-        const view = opts.getView();
-        const path = opts.getCurrentPath();
+        const current = optionsRef.current;
+        const view = current.getView();
+        const path = current.getCurrentPath();
         if (!view || !path) return null;
         const head = view.state.selection.main.head;
         const line = view.state.doc.lineAt(head);
         return { path, line: line.number - 1, character: head - line.from };
-    }, [opts]);
+    }, []);
 
-    const navigateTo = useCallback(
-        (entry: NavEntry) => {
-            if (entry.path === opts.getCurrentPath() && opts.getView()) {
-                opts.scrollLiveTo(entry.line, entry.character);
-            } else {
-                opts.openOther(entry);
-            }
-        },
-        [opts],
-    );
+    const navigateTo = useCallback((location: NavigationLocation) => {
+        const current = optionsRef.current;
+        const entry = { path: location.path, line: location.line ?? 0, character: location.column ?? 0 };
+        if (entry.path === current.getCurrentPath() && current.getView()) {
+            current.scrollLiveTo(entry.line, entry.character);
+        } else {
+            current.openOther(entry);
+        }
+    }, []);
 
     const push = useCallback(
         (target: NavEntry) => {
             const origin = captureCurrentPos();
-            if (origin && historyRef.current.length === 0) {
-                historyRef.current = [origin];
-                idxRef.current = 0;
+            const owner = ownerRef.current;
+            if (!owner) return;
+            if (origin) {
+                owner.history.push({ project: owner.project, path: origin.path, line: origin.line, column: origin.character });
             }
-            const next = historyRef.current.slice(0, idxRef.current + 1).concat(target);
-            historyRef.current = next;
-            idxRef.current = next.length - 1;
-            navigateTo(target);
+            const result = owner.history.push({
+                project: owner.project,
+                path: target.path,
+                line: target.line,
+                column: target.character,
+            });
+            if (result === "pushed" || result === "duplicate") {
+                navigateTo({
+                    project: owner.project,
+                    path: target.path,
+                    line: target.line,
+                    column: target.character,
+                });
+            }
         },
         [captureCurrentPos, navigateTo],
     );
 
     const back = useCallback(() => {
-        if (idxRef.current <= 0) return;
-        idxRef.current -= 1;
-        navigateTo(historyRef.current[idxRef.current]);
+        const target = ownerRef.current?.history.back();
+        if (target) navigateTo(target);
     }, [navigateTo]);
 
     const forward = useCallback(() => {
-        if (idxRef.current >= historyRef.current.length - 1) return;
-        idxRef.current += 1;
-        navigateTo(historyRef.current[idxRef.current]);
+        const target = ownerRef.current?.history.forward();
+        if (target) navigateTo(target);
     }, [navigateTo]);
 
     return { push, back, forward };

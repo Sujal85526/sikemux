@@ -248,6 +248,7 @@ export function EditorPane({
     const { openDoc, scheduleChange, saveDoc, closeDoc } = useLspBridge(cwd);
 
     const nav = useNavHistory({
+        project: cwd,
         getView: () => viewRef.current,
         getCurrentPath: () => currentRef.current,
         scrollLiveTo: (l, c) => viewRef.current && scrollToLine(viewRef.current, l, c),
