@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { MAX_RUNTIME_ERROR_MESSAGE_CHARACTERS, sanitizeRuntimeErrorMessage } from "./diagnostics";
+import { MemoryIpcTransport, installIpcTransportForTests } from "../api/transport";
+import { MAX_RUNTIME_ERROR_MESSAGE_CHARACTERS, NATIVE_UI_HEARTBEAT_COMMAND, sanitizeRuntimeErrorMessage, sendNativeUiHeartbeat } from "./diagnostics";
 
 describe("runtime diagnostics error capture", () => {
     it("bounds and sanitizes strings before retaining them", () => {
@@ -22,5 +23,25 @@ describe("runtime diagnostics error capture", () => {
         expect(messageGetter).not.toHaveBeenCalled();
         expect(toString).not.toHaveBeenCalled();
         expect(sanitizeRuntimeErrorMessage(Object.assign(new Error(), { message: "safe message" }))).toBe("safe message");
+    });
+});
+
+describe("native UI heartbeat transport", () => {
+    it("sends only the exact scalar watchdog contract without traced invoke metadata", async () => {
+        const transport = new MemoryIpcTransport();
+        const received: unknown[] = [];
+        transport.register(NATIVE_UI_HEARTBEAT_COMMAND, (args) => {
+            received.push(args);
+        });
+        const restore = installIpcTransportForTests(transport);
+        try {
+            await sendNativeUiHeartbeat(false, 17);
+            expect(received).toEqual([{ visible: false, heartbeat: 17 }]);
+            await expect(sendNativeUiHeartbeat(true, 0)).rejects.toThrow("positive u32");
+            await expect(sendNativeUiHeartbeat(true, 0x1_0000_0000)).rejects.toThrow("positive u32");
+            expect(received).toHaveLength(1);
+        } finally {
+            restore();
+        }
     });
 });

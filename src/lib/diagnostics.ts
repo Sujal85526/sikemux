@@ -1,11 +1,12 @@
 import { invokeCommand as invoke } from "../api/invoke";
+import { getIpcTransport } from "../api/transport";
 import { save } from "@tauri-apps/plugin-dialog";
 import { fsapi } from "../api/fs";
 import { busStats } from "../state/bus";
 import { resourceStats } from "../state/resources";
 import { getState } from "../state/store";
 import { workbenchRuntime } from "../workbench/runtime";
-import { installInteractionTiming, startEventLoopMonitor } from "./instrumentation";
+import { installInteractionTiming, startEventLoopMonitor, startNativeUiHeartbeat } from "./instrumentation";
 import { performanceTelemetry } from "./performance";
 
 type LongTaskEntry = {
@@ -37,6 +38,15 @@ const MAX_LONG_TASKS = 200;
 const runtimeErrors: { at: string; kind: "error" | "unhandledrejection"; message: string }[] = [];
 const MAX_RUNTIME_ERRORS = 64;
 export const MAX_RUNTIME_ERROR_MESSAGE_CHARACTERS = 512;
+export const NATIVE_UI_HEARTBEAT_COMMAND = "observability_ui_heartbeat";
+
+export function sendNativeUiHeartbeat(visible: boolean, heartbeat: number): Promise<void> {
+    if (typeof visible !== "boolean") return Promise.reject(new TypeError("native heartbeat visibility must be boolean"));
+    if (!Number.isInteger(heartbeat) || heartbeat < 1 || heartbeat > 0xffff_ffff) {
+        return Promise.reject(new RangeError("native heartbeat sequence must be a positive u32"));
+    }
+    return getIpcTransport().invoke<void>(NATIVE_UI_HEARTBEAT_COMMAND, { visible, heartbeat });
+}
 
 /**
  * Diagnostics must remain safe even when an opaque rejection has hostile
@@ -199,6 +209,10 @@ export function installDiagnostics(): void {
 
     installInteractionTiming();
     startEventLoopMonitor();
+    startNativeUiHeartbeat({
+        send: sendNativeUiHeartbeat,
+        onError: () => performanceTelemetry.incrementCounter("watchdog.heartbeat.send_errors"),
+    });
 
     window.addEventListener("error", (event) => recordRuntimeError("error", event.error ?? event.message));
     window.addEventListener("unhandledrejection", (event) => recordRuntimeError("unhandledrejection", event.reason));
