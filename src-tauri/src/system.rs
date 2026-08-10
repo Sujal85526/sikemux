@@ -5,11 +5,12 @@ use std::process::Command;
 
 use serde::Serialize;
 
-use crate::state::state_load;
 use crate::{
     aws::LogsTailManager,
+    error::{AppError, AppResult},
     pty::PtyManager,
     rundeck::{RundeckLogsManager, RundeckWatchManager},
+    state::state_load_sync,
 };
 
 /// macOS GUI apps launched from Finder/Dock inherit launchd's minimal PATH
@@ -483,17 +484,18 @@ fn parse_pmset(text: &str) -> BatteryStatus {
 }
 
 /// Single round-trip the renderer uses on boot — home dir + persisted state
-/// + zoxide recents in one IPC instead of three. `state_load` validates the
-/// primary snapshot and falls back to the previous-good backup when needed.
+/// + zoxide recents in one IPC instead of three. State validation, SQLite's
+/// bounded busy wait, recovery I/O, and the zoxide subprocess all run on the
+/// blocking pool so a locked database cannot stall unrelated Tauri commands.
 #[tauri::command]
-pub fn boot_init() -> BootInfo {
-    let home = home_dir();
-    let state = state_load();
-    BootInfo {
-        home,
-        state,
+pub async fn boot_init() -> AppResult<BootInfo> {
+    tauri::async_runtime::spawn_blocking(|| BootInfo {
+        home: home_dir(),
+        state: state_load_sync(),
         recent: zoxide_dirs(),
-    }
+    })
+    .await
+    .map_err(|error| AppError::Other(format!("boot_init join: {error}")))
 }
 
 #[cfg(test)]

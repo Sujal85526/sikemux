@@ -122,8 +122,13 @@ fn quarantine_database(path: &Path) -> AppResult<PathBuf> {
 /// Load the transactional SQLite snapshot, repairing it from the previous-good
 /// recovery snapshot when necessary. Legacy JSON is considered only when no
 /// authoritative database snapshot exists and migration has not been marked.
-#[tauri::command]
-pub fn state_load() -> String {
+/// Perform the complete state load on a blocking thread.
+///
+/// SQLite recovery can wait for its bounded busy timeout and can also perform
+/// migration, quarantine, and repair I/O. Keep this synchronous helper out of
+/// Tauri's command executor; [`state_load`] and the combined boot command both
+/// offload it through `spawn_blocking`.
+pub(crate) fn state_load_sync() -> String {
     let Some(database) = database_path() else {
         return String::new();
     };
@@ -131,6 +136,13 @@ pub fn state_load() -> String {
         return String::new();
     };
     state_load_from_paths(&database, &legacy)
+}
+
+#[tauri::command]
+pub async fn state_load() -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(state_load_sync)
+        .await
+        .map_err(|error| AppError::Other(format!("state_load join: {error}")))
 }
 
 fn state_load_from_paths(database: &Path, legacy: &Path) -> String {
