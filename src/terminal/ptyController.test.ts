@@ -4,6 +4,7 @@ import {
     PtyControllerExitedError,
     PtyLifecycleController,
     PtySubscriptionOverflowError,
+    parsePtyShellMetadataSnapshot,
     type PtyApi,
     type PtyAttachResult,
     type PtyChannelAdapter,
@@ -311,6 +312,37 @@ describe("PtyLifecycleController renderer subscriptions", () => {
         expect(controller.getSnapshot()).toMatchObject({ status: "running", attachmentCount: 0 });
     });
 
+    it("validates and freezes the opt-in shell snapshot returned by attach", async () => {
+        const { fakes, options } = controllerOptions();
+        fakes.attach.mockResolvedValue({
+            subId: 18,
+            snapshot: [],
+            alternateScreen: false,
+            shell: { revision: 7, cwd: "/repo", phase: "prompt", lastExitCode: 0 },
+        });
+        const controller = new PtyLifecycleController(options);
+
+        const attachment = await controller.attach(vi.fn());
+
+        expect(attachment.shell).toEqual({ revision: 7, cwd: "/repo", phase: "prompt", lastExitCode: 0 });
+        expect(Object.isFrozen(attachment.shell)).toBe(true);
+    });
+
+    it("rejects invalid shell metadata without ending the live process", async () => {
+        const { fakes, options } = controllerOptions();
+        fakes.attach.mockResolvedValue({
+            subId: 18,
+            snapshot: [],
+            alternateScreen: false,
+            shell: { revision: 7, cwd: "/repo\nforged", phase: "prompt", lastExitCode: null },
+        });
+        const controller = new PtyLifecycleController(options);
+
+        await expect(controller.attach(vi.fn())).rejects.toThrow("invalid shell metadata");
+        expect(fakes.detach).toHaveBeenCalledWith(42, 18);
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", failureOperation: "attach" });
+    });
+
     it("bounds pre-activation events and forces snapshot resynchronization", async () => {
         const attached = deferred<PtyAttachResult>();
         const { fakes, channels, errors, options } = controllerOptions({ maxPendingChunks: 2, maxPendingBytes: 4 });
@@ -465,6 +497,27 @@ describe("PtyLifecycleController renderer subscriptions", () => {
 });
 
 describe("PtyLifecycleController safety boundaries", () => {
+    it("strictly parses scalar shell metadata without invoking accessors", () => {
+        expect(parsePtyShellMetadataSnapshot({ revision: 1, cwd: null, phase: "unknown", lastExitCode: null })).toEqual({
+            revision: 1,
+            cwd: null,
+            phase: "unknown",
+            lastExitCode: null,
+        });
+        expect(parsePtyShellMetadataSnapshot({ revision: -1, cwd: "/repo", phase: "prompt", lastExitCode: null })).toBeNull();
+        expect(parsePtyShellMetadataSnapshot({ revision: 1, cwd: "/repo", phase: "forged", lastExitCode: null })).toBeNull();
+        expect(
+            parsePtyShellMetadataSnapshot(
+                Object.defineProperty({ revision: 1, cwd: "/repo", lastExitCode: null }, "phase", {
+                    enumerable: true,
+                    get: () => {
+                        throw new Error("must not run");
+                    },
+                }),
+            ),
+        ).toBeNull();
+    });
+
     it("exposes content-free runtime snapshots and rejects persistence", async () => {
         const timer = new FakeTimer();
         const { options } = controllerOptions({ initialInput: "secret first task", timer });

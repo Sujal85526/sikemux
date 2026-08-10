@@ -1,4 +1,12 @@
 export type PtyOutputChunk = readonly number[] | Uint8Array;
+export type PtyShellPhase = "unknown" | "prompt" | "input" | "running" | "finished";
+
+export interface PtyShellMetadataSnapshot {
+    readonly revision: number;
+    readonly cwd: string | null;
+    readonly phase: PtyShellPhase;
+    readonly lastExitCode: number | null;
+}
 
 export interface PtySpawnRequest<Context = unknown> {
     readonly cols: number;
@@ -12,6 +20,7 @@ export interface PtyAttachResult {
     readonly subId: number;
     readonly snapshot: readonly number[];
     readonly alternateScreen: boolean;
+    readonly shell?: PtyShellMetadataSnapshot | null;
 }
 
 export interface PtyApi<ChannelTransport, Context = unknown> {
@@ -73,6 +82,8 @@ export interface PtyAttachment {
     /** Atomic native parser snapshot. Apply this before calling activate(). */
     readonly snapshot: readonly number[];
     readonly alternateScreen: boolean;
+    /** Untrusted display hint parsed from opt-in shell integration. */
+    readonly shell: PtyShellMetadataSnapshot | null;
     /** Release buffered post-snapshot deltas to the renderer in exact order. */
     activate(): void;
     /** Drop only this renderer subscription; the headless PTY keeps running. */
@@ -159,6 +170,10 @@ const DEFAULT_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_LISTENER_ERRORS = 8;
 const DEFAULT_MAX_STATE_LISTENERS = 32;
 const DEFAULT_MAX_ATTACHMENTS = 16;
+const MAX_SHELL_CWD_BYTES = 4_096;
+const UTF8_ENCODER = new TextEncoder();
+const SHELL_PHASES = new Set<PtyShellPhase>(["unknown", "prompt", "input", "running", "finished"]);
+const SHELL_SNAPSHOT_KEYS = new Set(["revision", "cwd", "phase", "lastExitCode"]);
 
 const defaultTimer: PtyTimerAdapter = {
     schedule: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
@@ -204,12 +219,71 @@ function isOutputChunk(value: unknown): value is PtyOutputChunk {
     return Array.isArray(value) || value instanceof Uint8Array;
 }
 
-function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number): void {
+function containsControlCharacter(value: string): boolean {
+    for (let index = 0; index < value.length; index += 1) {
+        const code = value.charCodeAt(index);
+        if (code <= 31 || (code >= 127 && code <= 159)) return true;
+    }
+    return false;
+}
+
+function ownDataRecord(value: unknown, allowed: ReadonlySet<string>): Record<string, unknown> | null {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    try {
+        const descriptors = Object.getOwnPropertyDescriptors(value);
+        const result: Record<string, unknown> = {};
+        for (const key of Reflect.ownKeys(descriptors)) {
+            if (typeof key !== "string" || !allowed.has(key)) return null;
+            const descriptor = descriptors[key];
+            if (!descriptor || !("value" in descriptor)) return null;
+            result[key] = descriptor.value;
+        }
+        return result;
+    } catch {
+        return null;
+    }
+}
+
+export function parsePtyShellMetadataSnapshot(value: unknown): PtyShellMetadataSnapshot | null {
+    const record = ownDataRecord(value, SHELL_SNAPSHOT_KEYS);
+    if (!record) return null;
+    const { revision, cwd, phase, lastExitCode } = record;
+    if (!Number.isSafeInteger(revision) || (revision as number) < 0) return null;
+    if (typeof phase !== "string" || !SHELL_PHASES.has(phase as PtyShellPhase)) return null;
+    if (
+        cwd !== null &&
+        (typeof cwd !== "string" ||
+            cwd.length === 0 ||
+            cwd.length > MAX_SHELL_CWD_BYTES ||
+            containsControlCharacter(cwd) ||
+            UTF8_ENCODER.encode(cwd).byteLength > MAX_SHELL_CWD_BYTES)
+    ) {
+        return null;
+    }
+    if (
+        lastExitCode !== null &&
+        (!Number.isInteger(lastExitCode) || (lastExitCode as number) < -2_147_483_648 || (lastExitCode as number) > 2_147_483_647)
+    ) {
+        return null;
+    }
+    return Object.freeze({
+        revision: revision as number,
+        cwd: cwd as string | null,
+        phase: phase as PtyShellPhase,
+        lastExitCode: lastExitCode as number | null,
+    });
+}
+
+function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number): PtyShellMetadataSnapshot | null {
     if (!isRuntimeId(result.subId)) throw new TypeError("PTY attach returned an invalid subscription ID");
     if (!Array.isArray(result.snapshot) || result.snapshot.length > maxSnapshotBytes) {
         throw new TypeError("PTY attach returned an invalid or oversized snapshot");
     }
     if (typeof result.alternateScreen !== "boolean") throw new TypeError("PTY attach returned an invalid screen mode");
+    if (result.shell === undefined || result.shell === null) return null;
+    const shell = parsePtyShellMetadataSnapshot(result.shell);
+    if (!shell) throw new TypeError("PTY attach returned invalid shell metadata");
+    return shell;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -459,10 +533,11 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         callAsPromise(() => this.api.attach(id, binding.transport)).then(resolveNative, rejectNative);
 
         let attached: PtyAttachResult;
+        let shell: PtyShellMetadataSnapshot | null;
         try {
             attached = await nativeAttach;
             if (isRuntimeId(attached.subId)) state.subId = attached.subId;
-            validateAttachResult(attached, this.maxSnapshotBytes);
+            shell = validateAttachResult(attached, this.maxSnapshotBytes);
         } catch (error) {
             await this.abandonAttachment(state);
             if (this.disposeRequested) throw new PtyControllerDisposedError();
@@ -490,6 +565,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         const attachment: PtyAttachment = Object.freeze({
             snapshot: attached.snapshot,
             alternateScreen: attached.alternateScreen,
+            shell,
             activate: () => this.activateAttachment(state),
             detach: () => this.detachAttachment(state),
             toJSON: (): never => {
