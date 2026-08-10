@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { browserDiagnostics, nativeDiagnostics } from "../lib/diagnostics";
+import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
 import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
@@ -558,6 +558,13 @@ export function DiagnosticsOverlay() {
                 </button>
                 <button onClick={() => void refresh()}>Refresh</button>
                 <button onClick={() => void navigator.clipboard.writeText(text)}>Copy JSON</button>
+                <button
+                    disabled={snapshot == null}
+                    onClick={() =>
+                        void exportDiagnosticsSnapshot(snapshot).catch((value) => setError(value instanceof Error ? value.message : String(value)))
+                    }>
+                    Save JSON
+                </button>
             </footer>
         </Frame>
     );

@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import { fsapi } from "../api/fs";
 import { busStats } from "../state/bus";
 import { resourceStats } from "../state/resources";
 import { getState } from "../state/store";
@@ -102,6 +104,18 @@ export function browserDiagnostics(): Record<string, unknown> {
 
 export function nativeDiagnostics(): Promise<unknown> {
     return invoke("runtime_diagnostics");
+}
+
+export async function exportDiagnosticsSnapshot(snapshot: unknown): Promise<string | null> {
+    const stamp = new Date().toISOString().replaceAll(":", "-");
+    const path = await save({
+        title: "Save Sikemux diagnostics",
+        defaultPath: `sikemux-diagnostics-${stamp}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!path) return null;
+    await fsapi.writeFile(path, `${JSON.stringify(snapshot, null, 2)}\n`);
+    return path;
 }
 
 export function installDiagnostics(): void {
