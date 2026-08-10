@@ -51,6 +51,9 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
+      - name: Enforce frontend performance budgets
+        run: pnpm perf:budget
+
       - name: Check release tooling without credentials
         run: pnpm release:check
 
