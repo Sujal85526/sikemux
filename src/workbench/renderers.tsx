@@ -2,7 +2,6 @@ import { lazy, Suspense, type ReactNode } from "react";
 import type { PaneKind, PaneNode, PtyContext, Session, Window as WindowT } from "../state/types";
 import * as cmd from "../state/commands";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { GitPane } from "../components/GitPane";
 
 export interface WorkbenchItemRendererProps {
     pane: PaneNode;
@@ -13,6 +12,7 @@ export interface WorkbenchItemRendererProps {
 }
 
 const EditorPane = lazy(() => import("../components/EditorPane").then((module) => ({ default: module.EditorPane })));
+const GitPane = lazy(() => import("../components/GitPane").then((module) => ({ default: module.GitPane })));
 const AwsPane = lazy(() => import("../components/aws/AwsPane").then((module) => ({ default: module.AwsPane })));
 const RundeckPane = lazy(() => import("../components/rundeck/RundeckPane").then((module) => ({ default: module.RundeckPane })));
 const BrunoPane = lazy(() => import("../components/bruno/BrunoPane").then((module) => ({ default: module.BrunoPane })));
@@ -48,7 +48,15 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<PaneKind, (props: Workbench
         </Suspense>
     ),
     git: ({ pane, session, win, active, visible }) => (
-        <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} termContext={terminalContext(session, win, pane)} />
+        <Suspense fallback={<ItemFallback />}>
+            <GitPane
+                paneId={pane.id}
+                cwd={paneCwd(pane, session)}
+                active={active}
+                visible={visible}
+                termContext={terminalContext(session, win, pane)}
+            />
+        </Suspense>
     ),
     aws: ({ visible }) => (
         <Suspense fallback={<ItemFallback />}>
