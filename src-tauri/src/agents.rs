@@ -1338,10 +1338,11 @@ mod executable_tests {
     use super::{
         allowed_agent_path_for_home, cached_title, codex_title, json_effort, parse_claude_models,
         parse_codex_models, parse_hermes_models, parse_line_models, parse_pi_models, qualify_model,
-        run_model_catalog_executable, title_cache_stamp, toml_effort, toml_model,
-        yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo, CLAUDE_MODEL_CATALOG_ARGS,
-        MODEL_CATALOG_ERROR_DETAIL_LIMIT,
+        title_cache_stamp, toml_effort, toml_model, yaml_agent_reasoning_effort,
+        yaml_model_section, AgentModelInfo, CLAUDE_MODEL_CATALOG_ARGS,
     };
+    #[cfg(unix)]
+    use super::{run_model_catalog_executable, MODEL_CATALOG_ERROR_DETAIL_LIMIT};
     use std::io::Write;
     use std::path::Path;
 

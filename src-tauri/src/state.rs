@@ -283,6 +283,8 @@ fn prepare_parent(path: &Path) -> AppResult<()> {
 }
 
 fn secure_database_files(path: &Path) -> AppResult<()> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

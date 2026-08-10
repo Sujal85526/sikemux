@@ -69,6 +69,9 @@ function buildFor(target, explicitTarget) {
 }
 
 const requestedTarget = option("--target") || hostTriple();
+if (requestedTarget.includes("apple-darwin")) {
+  run("bash", [join(root, "scripts", "icons.sh")]);
+}
 mkdirSync(binariesDir, { recursive: true });
 
 let source;
