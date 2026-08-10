@@ -30,6 +30,7 @@ export function TerminalPane({
     visible = active,
     spawnWhen = visible,
     context,
+    retainPtyOnUnmount = false,
     onTitleChange,
     onExit,
 }: {
@@ -42,6 +43,8 @@ export function TerminalPane({
     visible?: boolean;
     spawnWhen?: boolean;
     context?: PtyContext;
+    /** Item controllers set this; transient/embedded terminals remain local. */
+    retainPtyOnUnmount?: boolean;
     onTitleChange?: (title: string) => void;
     /** Fires when the shell process ends. Remount with a fresh key to respawn. */
     onExit?: () => void;
@@ -54,7 +57,16 @@ export function TerminalPane({
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const hostRef = useRef<HTMLDivElement>(null);
     const rendererTokenRef = useRef(Symbol("terminal-renderer"));
-    const ptyReady = usePty({ cwd, startup, initialInput, onInitialInputDelivered, hostRef, spawnWhen, context });
+    const ptyController = usePty({
+        cwd,
+        startup,
+        initialInput,
+        onInitialInputDelivered,
+        hostRef,
+        spawnWhen,
+        context,
+        durableItemId: retainPtyOnUnmount ? context?.paneId : undefined,
+    });
 
     useEffect(() => {
         const token = rendererTokenRef.current;
@@ -80,7 +92,7 @@ export function TerminalPane({
 
     const controller = useXterm({
         hostRef,
-        ptyReady,
+        ptyController,
         shouldMount,
         active,
         visible,

@@ -5,7 +5,6 @@ import { SearchAddon, type ISearchOptions, type ISearchResultChangeEvent } from 
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { WebglAddon } from "@xterm/addon-webgl";
-import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "../api/invoke";
 import { currentTheme, registerTerminal } from "../themes/bus";
 import { IS_MACOS } from "../lib/platform";
@@ -23,11 +22,15 @@ import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 import { isTerminalFindShortcut, safeWebUrl, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
 import { scheduleNextFrame } from "../lib/instrumentation";
 import { performanceTelemetry } from "../lib/performance";
+import { PtySubscriptionOverflowError, type PtyAttachment, type PtyOutputChunk } from "./ptyController";
+import type { NativePtyController } from "./usePty";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_WEIGHT = 500;
 const FONT_WEIGHT_BOLD = 700;
 const SCROLLBACK = 10_000;
+const MAX_RENDERER_BACKLOG_BYTES = 8 * 1024 * 1024;
+const MAX_RENDERER_BACKLOG_CHUNKS = 512;
 const WEBGL_REQUESTED = terminalWebglRequested(import.meta.env.VITE_TERMINAL_WEBGL);
 
 const META_CHORDS: Record<string, string> = {
@@ -40,12 +43,6 @@ const ALT_CHORDS: Record<string, string> = {
     "Alt+ArrowRight": "\x1bf", // Esc-f: forward one word
     "Alt+Backspace": "\x1b\x7f", // Esc-DEL: delete previous word
 };
-
-interface AttachResult {
-    subId: number;
-    snapshot: number[];
-    alternateScreen: boolean;
-}
 
 export interface TerminalController {
     find(query: string, direction: "next" | "previous", options: TerminalSearchOptions, incremental?: boolean): boolean;
@@ -73,7 +70,7 @@ const SEARCH_DECORATIONS: NonNullable<ISearchOptions["decorations"]> = {
 
 export function useXterm(opts: {
     hostRef: RefObject<HTMLDivElement | null>;
-    ptyReady: RefObject<Promise<number> | null>;
+    ptyController: RefObject<NativePtyController | null>;
     shouldMount: boolean;
     active: boolean;
     visible: boolean;
@@ -82,7 +79,7 @@ export function useXterm(opts: {
     onTitleChange?: (title: string) => void;
     onExit?: () => void;
 }): TerminalController {
-    const { hostRef, ptyReady, shouldMount, active, visible } = opts;
+    const { hostRef, ptyController, shouldMount, active, visible } = opts;
     const onFindRequestRef = useRef(opts.onFindRequest);
     onFindRequestRef.current = opts.onFindRequest;
     const onSearchResultsRef = useRef(opts.onSearchResults);
@@ -165,12 +162,12 @@ export function useXterm(opts: {
         const boot = async () => {
             if (disposed || termRef.current || bootingRef.current) return;
             bootingRef.current = true;
-            const ready = ptyReady.current;
-            if (!ready) {
+            const pty = ptyController.current;
+            if (!pty) {
                 bootingRef.current = false;
                 return;
             }
-            const pid = await ready.catch(() => null);
+            const pid = await pty.start().catch(() => null);
             if (disposed || pid === null) {
                 bootingRef.current = false;
                 return;
@@ -249,15 +246,8 @@ export function useXterm(opts: {
             }
             fit.fit();
 
-            await invoke("pty_resize", {
-                id: pid,
-                cols: term.cols,
-                rows: term.rows,
-            });
+            await pty.resize(term.cols, term.rows);
 
-            let snapshotApplied = false;
-            const pending: number[][] = [];
-            const channel = new Channel<number[]>();
             let outputFrame: number | null = null;
             let outputBusy = false;
             let closing = false;
@@ -267,6 +257,8 @@ export function useXterm(opts: {
             const outputPending: Uint8Array[] = [];
             let outputPendingBytes = 0;
             let outputQueuedAt: number | null = null;
+            let resyncing = false;
+            let attached: PtyAttachment | null = null;
             const encoder = new TextEncoder();
             const isAtBottom = () => {
                 const buf = term.buffer.active;
@@ -294,7 +286,7 @@ export function useXterm(opts: {
                 // wheel gestures into cursor keys, but tiny trackpad deltas can
                 // round down to zero; guarantee movement in that fallback case.
                 event.preventDefault();
-                void invoke("pty_write", { id: pid, data: sequence });
+                void pty.write(sequence);
             };
             host.addEventListener("wheel", onWheel, { passive: false });
             const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
@@ -314,14 +306,22 @@ export function useXterm(opts: {
                 contextLossSub = null;
                 searchResultsSub.dispose();
                 titleSub.dispose();
-                try {
-                    serializedNormalRef.current = serializeNormalBuffer(serializer, pid, SCROLLBACK);
-                } catch (error) {
+                if (resyncing) {
                     serializedNormalRef.current = null;
-                    console.warn("terminal normal-buffer serialization failed", error);
+                } else {
+                    try {
+                        serializedNormalRef.current = serializeNormalBuffer(serializer, pid, SCROLLBACK);
+                    } catch (error) {
+                        serializedNormalRef.current = null;
+                        console.warn("terminal normal-buffer serialization failed", error);
+                    }
                 }
                 term.dispose();
                 delete host.dataset.terminalRenderer;
+                if (resyncing && !disposed) {
+                    bootingRef.current = false;
+                    window.setTimeout(() => bootRef.current(), 0);
+                }
             };
             const flushOutput = () => {
                 outputFrame = null;
@@ -378,15 +378,32 @@ export function useXterm(opts: {
             const scheduleOutput = () => {
                 if (!outputBusy && outputFrame == null) outputFrame = window.requestAnimationFrame(flushOutput);
             };
+            const requestRendererResync = () => {
+                if (resyncing || closing || disposed) return;
+                resyncing = true;
+                outputPending.length = 0;
+                outputPendingBytes = 0;
+                outputQueuedAt = null;
+                performanceTelemetry.setGauge("terminal.last-queue-bytes", 0);
+                performanceTelemetry.incrementCounter("terminal.renderer-resyncs");
+                // cleanup is installed later in this boot. A microtask keeps
+                // snapshot activation synchronous while still guaranteeing the
+                // overflowing attachment is released before more frames queue.
+                queueMicrotask(() => cleanup());
+            };
             const writeBytes = (bytes: Uint8Array) => {
-                if (bytes.length === 0) return;
+                if (bytes.length === 0 || resyncing) return;
+                if (outputPending.length >= MAX_RENDERER_BACKLOG_CHUNKS || outputPendingBytes + bytes.length > MAX_RENDERER_BACKLOG_BYTES) {
+                    requestRendererResync();
+                    return;
+                }
                 if (outputPending.length === 0) outputQueuedAt = performance.now();
                 outputPending.push(bytes);
                 outputPendingBytes += bytes.length;
                 performanceTelemetry.setGauge("terminal.last-queue-bytes", outputPendingBytes);
                 scheduleOutput();
             };
-            const writeChunk = (chunk: number[]) => {
+            const writeChunk = (chunk: PtyOutputChunk) => {
                 if (chunk.length === 0) {
                     writeBytes(encoder.encode("\r\n\x1b[38;5;245m[process exited]\x1b[0m\r\n"));
                     // Owners that must always keep a live shell (the Git pane)
@@ -394,20 +411,12 @@ export function useXterm(opts: {
                     if (!disposed && !closing) onExitRef.current?.();
                     return;
                 }
-                writeBytes(new Uint8Array(chunk));
-            };
-            channel.onmessage = (chunk) => {
-                if (!snapshotApplied) {
-                    pending.push(chunk);
-                    return;
-                }
-                writeChunk(chunk);
+                writeBytes(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk));
             };
 
-            let attached: AttachResult;
             try {
-                attached = await invoke<AttachResult>("pty_attach", { id: pid, onEvent: channel });
-            } catch {
+                attached = await pty.attach(writeChunk);
+            } catch (error) {
                 // The backend drops the PTY entry as soon as the child exits, so a
                 // failed attach means the process died while this renderer was
                 // unmounted. Report it like a live exit instead of stranding a
@@ -421,12 +430,12 @@ export function useXterm(opts: {
                 term.dispose();
                 delete host.dataset.terminalRenderer;
                 bootingRef.current = false;
-                if (!disposed) onExitRef.current?.();
+                if (!disposed && !(error instanceof PtySubscriptionOverflowError)) onExitRef.current?.();
                 return;
             }
-            const { subId, snapshot, alternateScreen } = attached;
+            const { snapshot, alternateScreen } = attached;
             if (disposed) {
-                void invoke("pty_unsubscribe", { id: pid, subId });
+                void attached.detach();
                 unregisterTheme();
                 if (targetRef.current?.term === term) targetRef.current = null;
                 term.dispose();
@@ -436,9 +445,7 @@ export function useXterm(opts: {
             const serializedNormal = replaySerializedNormalBuffer(serializedNormalRef.current, pid, alternateScreen);
             if (serializedNormal !== null) writeBytes(encoder.encode(serializedNormal));
             if (snapshot.length > 0) writeChunk(snapshot);
-            snapshotApplied = true;
-            for (const chunk of pending) writeChunk(chunk);
-            pending.length = 0;
+            attached.activate();
             initialReplayOutputPending = outputPending.length > 0;
             if (!initialReplayOutputPending) replayScrollState = completeInitialReplay(replayScrollState).state;
 
@@ -449,7 +456,7 @@ export function useXterm(opts: {
                 if (!pendingInput) return;
                 const data = pendingInput;
                 pendingInput = "";
-                void invoke("pty_write", { id: pid, data });
+                void pty.write(data);
             };
             const dataSub = term.onData((data) => {
                 pendingInput += data;
@@ -474,7 +481,7 @@ export function useXterm(opts: {
                     return false;
                 }
                 if (e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-                    void invoke("pty_write", { id: pid, data: "\x1b[13;2u" });
+                    void pty.write("\x1b[13;2u");
                     e.preventDefault();
                     e.stopPropagation();
                     return false;
@@ -488,7 +495,7 @@ export function useXterm(opts: {
                 const sig = `${keyParts.join("+")}+${e.key}`;
                 const seq = META_CHORDS[sig] ?? ALT_CHORDS[sig];
                 if (seq === undefined) return true;
-                void invoke("pty_write", { id: pid, data: seq });
+                void pty.write(seq);
                 e.preventDefault();
                 e.stopPropagation();
                 return false;
@@ -506,11 +513,7 @@ export function useXterm(opts: {
                 if (term.cols === lastCols && term.rows === lastRows) return;
                 lastCols = term.cols;
                 lastRows = term.rows;
-                void invoke("pty_resize", {
-                    id: pid,
-                    cols: term.cols,
-                    rows: term.rows,
-                });
+                void pty.resize(term.cols, term.rows);
             };
             const resize = () => {
                 if (resizeFrame == null) resizeFrame = window.requestAnimationFrame(resizeNow);
@@ -538,12 +541,10 @@ export function useXterm(opts: {
                 if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
                 outputFrame = null;
                 if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);
-                pending.length = 0;
                 outputPendingBytes = 0;
                 outputQueuedAt = null;
                 performanceTelemetry.setGauge("terminal.last-queue-bytes", 0);
-                channel.onmessage = () => {};
-                void invoke("pty_unsubscribe", { id: pid, subId });
+                void attached?.detach();
                 termRef.current = null;
                 if (targetRef.current?.term === term) targetRef.current = null;
                 if (outputBusy) return;
@@ -574,7 +575,7 @@ export function useXterm(opts: {
             bootRef.current = () => {};
             cleanup();
         };
-    }, [shouldMount, hostRef, ptyReady]);
+    }, [shouldMount, hostRef, ptyController]);
 
     useEffect(() => {
         if (!visible) return;
