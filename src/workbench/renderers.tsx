@@ -77,6 +77,7 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<PaneKind, (props: Workbench
             active={active}
             visible={visible}
             context={terminalContext(session, win, pane)}
+            externallyOwned={pane.externalPty === true}
             retainPtyOnUnmount
             onTitleChange={(title) => cmd.setTerminalTitle(pane.id, title)}
         />
