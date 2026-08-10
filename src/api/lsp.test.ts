@@ -1,12 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => ({
-    invoke: vi.fn(),
-    listen: vi.fn(),
-}));
-
-vi.mock("./invoke", () => ({ invokeCommand: mocks.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { performanceTelemetry } from "../lib/performance";
 
 import {
     LSP_DIAGNOSTICS_EVENT,
@@ -20,8 +13,7 @@ import {
     type LspDiagnosticsPayload,
     type LspLocationKind,
 } from "./lsp";
-
-type DiagnosticsEventHandler = (event: { readonly payload: unknown }) => void;
+import { MemoryIpcTransport, installIpcTransportForTests, resetIpcTransportForTests } from "./transport";
 
 const position = (line = 1, character = 2) => ({ line, character });
 const range = (start = position(), end = position(3, 4)) => ({ start, end });
@@ -60,10 +52,17 @@ function symbol(name: string, children: unknown[] = [], overrides: Record<string
     };
 }
 
+let transport: MemoryIpcTransport;
+
 beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.invoke.mockResolvedValue([]);
-    mocks.listen.mockResolvedValue(() => {});
+    resetIpcTransportForTests();
+    transport = new MemoryIpcTransport();
+    installIpcTransportForTests(transport);
+    performanceTelemetry.reset();
+});
+
+afterEach(() => {
+    resetIpcTransportForTests();
 });
 
 describe("existing LSP API", () => {
@@ -83,10 +82,11 @@ describe("existing LSP API", () => {
         ["references", "references"],
     ] as const)("preserves the %s location adapter", async (method, kind: LspLocationKind) => {
         const locations = [{ uri: "file:///project/main.ts", range: range() }];
-        mocks.invoke.mockResolvedValueOnce(locations);
+        const handler = vi.fn((_args: unknown) => locations);
+        transport.register("lsp_locations", handler);
 
         await expect(lsp[method]("/project", "typescript", "/project/main.ts", 4, 8)).resolves.toBe(locations);
-        expect(mocks.invoke).toHaveBeenLastCalledWith("lsp_locations", {
+        expect(handler.mock.calls[0]![0]).toEqual({
             project: "/project",
             language: "typescript",
             path: "/project/main.ts",
@@ -98,22 +98,16 @@ describe("existing LSP API", () => {
 });
 
 describe("LSP diagnostics subscription", () => {
-    it("subscribes to the native event and delivers immutable typed replacements and clears", async () => {
-        let handler: DiagnosticsEventHandler | undefined;
-        const unlisten = vi.fn();
-        mocks.listen.mockImplementationOnce(async (_event, callback) => {
-            handler = callback as DiagnosticsEventHandler;
-            return unlisten;
-        });
+    it("routes memory-transport events into immutable typed replacements and clears", async () => {
         const listener = vi.fn<(payload: LspDiagnosticsPayload) => void>();
 
-        await expect(lsp.subscribeDiagnostics(listener)).resolves.toBe(unlisten);
-        expect(mocks.listen).toHaveBeenCalledWith(LSP_DIAGNOSTICS_EVENT, expect.any(Function));
+        const unsubscribe = await lsp.subscribeDiagnostics(listener);
+        expect(transport.eventListenerCount).toBe(1);
 
         const published = diagnosticsPayload();
-        handler?.({ payload: published });
-        handler?.({ payload: diagnosticsPayload({ version: 6 }) });
-        handler?.({ payload: diagnosticsPayload({ version: null, diagnostics: [] }) });
+        expect(transport.emit(LSP_DIAGNOSTICS_EVENT, published)).toEqual({ delivered: 1, listenerErrors: 0 });
+        transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload({ version: 6 }));
+        transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload({ version: null, diagnostics: [] }));
 
         expect(listener).toHaveBeenCalledTimes(3);
         expect(listener.mock.calls.map(([payload]) => payload.version)).toEqual([7, 6, null]);
@@ -123,14 +117,15 @@ describe("LSP diagnostics subscription", () => {
         expect(Object.isFrozen(received)).toBe(true);
         expect(Object.isFrozen(received.diagnostics)).toBe(true);
         expect(Object.isFrozen(received.diagnostics[0].range.start)).toBe(true);
+
+        unsubscribe();
+        unsubscribe();
+        expect(transport.eventListenerCount).toBe(0);
+        expect(transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload())).toEqual({ delivered: 0, listenerErrors: 0 });
+        expect(listener).toHaveBeenCalledTimes(3);
     });
 
     it("ignores malformed payloads atomically without blocking later valid events", async () => {
-        let handler: DiagnosticsEventHandler | undefined;
-        mocks.listen.mockImplementationOnce(async (_event, callback) => {
-            handler = callback as DiagnosticsEventHandler;
-            return () => {};
-        });
         const listener = vi.fn();
         await lsp.subscribeDiagnostics(listener);
 
@@ -144,10 +139,10 @@ describe("LSP diagnostics subscription", () => {
             diagnosticsPayload({ diagnostics: [diagnostic({ range: range(position(3, 0), position(2, 0)) })] }),
             Object.defineProperty({}, "project", { enumerable: true, get: () => "/unsafe" }),
         ];
-        for (const payload of invalidPayloads) handler?.({ payload });
+        for (const payload of invalidPayloads) transport.emit(LSP_DIAGNOSTICS_EVENT, payload);
         expect(listener).not.toHaveBeenCalled();
 
-        handler?.({ payload: diagnosticsPayload({ diagnostics: [] }) });
+        transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload({ diagnostics: [] }));
         expect(listener).toHaveBeenCalledOnce();
     });
 
@@ -201,7 +196,20 @@ describe("LSP diagnostics subscription", () => {
 
     it("rejects non-function listeners before installing a global subscription", () => {
         expect(() => lsp.subscribeDiagnostics("listener" as never)).toThrow(TypeError);
-        expect(mocks.listen).not.toHaveBeenCalled();
+        expect(transport.eventListenerCount).toBe(0);
+    });
+
+    it("cancels a diagnostics subscription through the shared transport signal", async () => {
+        const controller = new AbortController();
+        const listener = vi.fn();
+        const unsubscribe = await lsp.subscribeDiagnostics(listener, { signal: controller.signal });
+        expect(transport.eventListenerCount).toBe(1);
+
+        controller.abort(new Error("project closed"));
+        unsubscribe();
+        expect(transport.eventListenerCount).toBe(0);
+        transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload());
+        expect(listener).not.toHaveBeenCalled();
     });
 });
 
@@ -215,11 +223,12 @@ describe("LSP document symbols", () => {
                 }),
             ]),
         ];
-        mocks.invoke.mockResolvedValueOnce(response);
+        const handler = vi.fn((_args: unknown) => response);
+        transport.register("lsp_document_symbols", handler);
 
         const symbols = await lsp.documentSymbols("/project", "typescript", "/project/main.ts");
 
-        expect(mocks.invoke).toHaveBeenCalledWith("lsp_document_symbols", {
+        expect(handler.mock.calls[0]![0]).toEqual({
             project: "/project",
             language: "typescript",
             path: "/project/main.ts",
@@ -291,11 +300,14 @@ describe("LSP document symbols", () => {
     });
 
     it("rejects malformed IPC responses while preserving native errors", async () => {
-        mocks.invoke.mockResolvedValueOnce([{ name: "missing fields" }]);
+        const nativeError = { category: "lsp", message: "server not started" };
+        const handler = vi
+            .fn()
+            .mockReturnValueOnce([{ name: "missing fields" }])
+            .mockRejectedValueOnce(nativeError);
+        transport.register("lsp_document_symbols", handler);
         await expect(lsp.documentSymbols("/project", "rust", "/project/main.rs")).rejects.toThrow(TypeError);
 
-        const nativeError = { category: "lsp", message: "server not started" };
-        mocks.invoke.mockRejectedValueOnce(nativeError);
         await expect(lsp.documentSymbols("/project", "rust", "/project/main.rs")).rejects.toBe(nativeError);
     });
 });

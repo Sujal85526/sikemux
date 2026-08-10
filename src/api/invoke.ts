@@ -1,5 +1,6 @@
-import { invoke, type InvokeArgs, type InvokeOptions } from "@tauri-apps/api/core";
+import type { InvokeArgs, InvokeOptions } from "@tauri-apps/api/core";
 import { performanceTelemetry } from "../lib/performance";
+import { getIpcTransport, type IpcInvokeOptions } from "./transport";
 
 export const IPC_INVOKE_METRIC = "ipc.invoke";
 export const IPC_INVOKE_SUCCESS_COUNTER = "ipc.invoke.success";
@@ -45,9 +46,15 @@ function settleInvocation<T>(command: string, args: InvokeArgs | undefined, opti
     try {
         // Args are deliberately passed through by identity. In particular, do not
         // clone or enumerate them: Tauri Channel instances carry serialization hooks.
-        if (options?.invokeOptions !== undefined) pending = invoke<T>(command, args, options.invokeOptions);
-        else if (args !== undefined) pending = invoke<T>(command, args);
-        else pending = invoke<T>(command);
+        const transport = getIpcTransport();
+        if (options?.signal !== undefined || options?.invokeOptions !== undefined) {
+            const transportOptions: IpcInvokeOptions = {
+                ...(options.signal === undefined ? {} : { signal: options.signal }),
+                ...(options.invokeOptions === undefined ? {} : { native: options.invokeOptions }),
+            };
+            pending = transport.invoke<T>(command, args, transportOptions);
+        } else if (args !== undefined) pending = transport.invoke<T>(command, args);
+        else pending = transport.invoke<T>(command);
     } catch (error) {
         return Promise.resolve({ kind: "error", error });
     }

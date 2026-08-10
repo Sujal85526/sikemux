@@ -1,5 +1,5 @@
 import type { InvokeArgs, InvokeOptions } from "@tauri-apps/api/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { performanceTelemetry } from "../lib/performance";
 import {
     IPC_INVOKE_ACTIVE_GAUGE,
@@ -9,10 +9,13 @@ import {
     IPC_INVOKE_SUCCESS_COUNTER,
     invokeCommand,
 } from "./invoke";
-
-const { rawInvoke } = vi.hoisted(() => ({ rawInvoke: vi.fn() }));
-
-vi.mock("@tauri-apps/api/core", () => ({ invoke: rawInvoke }));
+import {
+    MemoryIpcTransport,
+    installIpcTransportForTests,
+    resetIpcTransportForTests,
+    type IpcInvokeArguments,
+    type MemoryInvokeContext,
+} from "./transport";
 
 function deferred<T>() {
     let resolve!: (value: T | PromiseLike<T>) => void;
@@ -24,21 +27,36 @@ function deferred<T>() {
     return { promise, resolve, reject };
 }
 
+let transport: MemoryIpcTransport;
+
 beforeEach(() => {
-    rawInvoke.mockReset();
+    resetIpcTransportForTests();
+    transport = new MemoryIpcTransport();
+    installIpcTransportForTests(transport);
     performanceTelemetry.reset();
+});
+
+afterEach(() => {
+    resetIpcTransportForTests();
 });
 
 describe("invokeCommand", () => {
     it("tracks deterministic concurrent success and categorized error outcomes", async () => {
         const success = deferred<{ readonly marker: "result" }>();
         const failure = deferred<never>();
-        rawInvoke.mockImplementationOnce(() => success.promise).mockImplementationOnce(() => failure.promise);
+        const successHandler = vi.fn((_args: IpcInvokeArguments | undefined, _context: MemoryInvokeContext) => success.promise);
+        const failureHandler = vi.fn((_args: IpcInvokeArguments | undefined, _context: MemoryInvokeContext) => failure.promise);
+        transport.register("project_read", successHandler);
+        transport.register("git_status", failureHandler);
 
-        const successful = invokeCommand<{ readonly marker: "result" }>("project_read", { path: "/project/file" });
-        const failed = invokeCommand<never>("git_status", { repo: "/project" });
+        const readArgs = { path: "/project/file" };
+        const statusArgs = { repo: "/project" };
+        const successful = invokeCommand<{ readonly marker: "result" }>("project_read", readArgs);
+        const failed = invokeCommand<never>("git_status", statusArgs);
 
         expect(performanceTelemetry.snapshot().gauges[IPC_INVOKE_ACTIVE_GAUGE]).toBe(2);
+        expect(successHandler.mock.calls[0]![0]).toBe(readArgs);
+        expect(failureHandler.mock.calls[0]![0]).toBe(statusArgs);
 
         const result = { marker: "result" } as const;
         success.resolve(result);
@@ -91,11 +109,11 @@ describe("invokeCommand", () => {
                 throw new Error("adapter inspected result");
             },
         });
-        rawInvoke.mockImplementation((_command, receivedArgs, receivedOptions) => {
+        transport.register("pty_attach", (receivedArgs, context) => {
             expect(receivedArgs).toBe(args);
-            expect(receivedOptions).toBe(invokeOptions);
+            expect(context.native).toBe(invokeOptions);
             expect((receivedArgs as Record<string, unknown>).channel).toBe(channel);
-            return Promise.resolve(result);
+            return result;
         });
 
         await expect(invokeCommand("pty_attach", args, { invokeOptions })).resolves.toBe(result);
@@ -111,14 +129,19 @@ describe("invokeCommand", () => {
         const pending = deferred<{ secretResult: string }>();
         const controller = new AbortController();
         const args = { channel: Object.freeze({ id: 7 }) };
-        rawInvoke.mockReturnValue(pending.promise);
+        const handler = vi.fn((receivedArgs, context) => {
+            expect(receivedArgs).toBe(args);
+            expect(context.signal).toBe(controller.signal);
+            return pending.promise;
+        });
+        transport.register("logs_tail", handler);
         const invocation = invokeCommand("logs_tail", args, { signal: controller.signal });
         const reason = Object.freeze({ privateCancellationReason: true });
 
         controller.abort(reason);
         await expect(invocation).rejects.toBe(reason);
 
-        expect(rawInvoke.mock.calls[0][1]).toBe(args);
+        expect(handler).toHaveBeenCalledOnce();
         expect(performanceTelemetry.snapshot()).toMatchObject({
             counters: { [IPC_INVOKE_CANCEL_COUNTER]: 1 },
             gauges: { [IPC_INVOKE_ACTIVE_GAUGE]: 0 },
@@ -133,12 +156,14 @@ describe("invokeCommand", () => {
 
     it("does not derive categories from ordinary errors and never reuses request IDs", async () => {
         const firstError = new Error("private failure detail");
-        rawInvoke.mockRejectedValueOnce(firstError);
+        transport.register("first_command", async () => {
+            throw firstError;
+        });
         await expect(invokeCommand("first_command")).rejects.toBe(firstError);
         const firstRequestId = performanceTelemetry.snapshot().spans[0].metadata.requestId as number;
 
         performanceTelemetry.reset();
-        rawInvoke.mockResolvedValueOnce(null);
+        transport.register("second_command", async () => null);
         await invokeCommand<null>("second_command");
 
         const snapshot = performanceTelemetry.snapshot();

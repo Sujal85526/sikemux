@@ -1,5 +1,5 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invokeCommand as invoke } from "./invoke";
+import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 
 export interface LspPos {
     line: number;
@@ -55,6 +55,10 @@ export interface LspDocumentSymbol {
 }
 
 export type LspDiagnosticsListener = (payload: LspDiagnosticsPayload) => void;
+
+export interface LspDiagnosticsSubscriptionOptions {
+    readonly signal?: AbortSignal;
+}
 
 export const LSP_DIAGNOSTICS_EVENT = "lsp_diagnostics";
 
@@ -330,11 +334,15 @@ export const lsp = {
         if (!symbols) throw new TypeError("Invalid lsp_document_symbols response");
         return symbols;
     },
-    subscribeDiagnostics: (listener: LspDiagnosticsListener): Promise<UnlistenFn> => {
+    subscribeDiagnostics: (listener: LspDiagnosticsListener, options: LspDiagnosticsSubscriptionOptions = {}): Promise<IpcUnsubscribe> => {
         if (typeof listener !== "function") throw new TypeError("LSP diagnostics listener must be a function");
-        return listen<unknown>(LSP_DIAGNOSTICS_EVENT, (event) => {
-            const payload = parseLspDiagnosticsPayload(event.payload);
-            if (payload) listener(payload);
-        });
+        return getIpcTransport().subscribe<unknown>(
+            LSP_DIAGNOSTICS_EVENT,
+            (event) => {
+                const payload = parseLspDiagnosticsPayload(event.payload);
+                if (payload) listener(payload);
+            },
+            options,
+        );
     },
 };
