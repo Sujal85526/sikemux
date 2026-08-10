@@ -239,8 +239,19 @@ body.bruno-resizing {
     padding: 8px 10px;
     flex: 0 0 auto;
 }
-.bruno-urlbar .bruno-dd-btn {
+.bruno-urlbar .dd-btn {
     height: 29px;
+}
+/* Bruno's two flavours of the shared dropdown. */
+.bruno-method-dd {
+    min-width: 86px;
+}
+.bruno-method-dd .dd-val {
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+.bruno-mode-dd .dd-val {
+    text-transform: lowercase;
 }
 .bruno-urlbar .bruno-url {
     align-self: stretch;
@@ -888,115 +899,6 @@ body.bruno-resizing {
     gap: 2px;
 }
 
-/* ── custom dropdown (sharp, scrim + floating menu) ──── */
-.bruno-dd {
-    position: relative;
-    flex: 0 0 auto;
-}
-.bruno-dd-btn {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    height: 27px;
-    padding: 0 8px;
-    border: 1px solid var(--line);
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 11.5px;
-    cursor: pointer;
-    transition:
-        border-color 0.12s,
-        color 0.12s;
-}
-.bruno-dd-btn:hover {
-    border-color: var(--acc-line);
-}
-.bruno-dd-val {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: left;
-}
-.bruno-method-dd {
-    min-width: 86px;
-}
-.bruno-method-dd .bruno-dd-val {
-    font-weight: 800;
-    letter-spacing: 0.04em;
-}
-.bruno-mode-dd .bruno-dd-val {
-    text-transform: lowercase;
-}
-.bruno-dd-chev {
-    flex: 0 0 auto;
-    color: var(--ink-faint);
-    transform: rotate(90deg);
-}
-.bruno-dd-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-}
-.bruno-dd-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    z-index: 41;
-    min-width: 100%;
-    max-height: 280px;
-    overflow-y: auto;
-    background: var(--rail-2);
-    border: 1px solid var(--line);
-    box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.7);
-    padding: 3px;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-.bruno-dd-menu.right {
-    left: auto;
-    right: 0;
-}
-.bruno-dd-item {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    width: 100%;
-    padding: 5px 8px;
-    border: 0;
-    background: transparent;
-    color: var(--ink-dim);
-    font-family: var(--mono);
-    font-size: 11.5px;
-    text-align: left;
-    white-space: nowrap;
-    cursor: pointer;
-    transition:
-        background 0.1s,
-        color 0.1s;
-}
-.bruno-dd-item:hover {
-    background: var(--rail);
-    color: var(--ink);
-}
-.bruno-dd-item.active {
-    color: var(--acc);
-}
-.bruno-dd-check {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 12px;
-    flex: 0 0 auto;
-    color: var(--acc);
-}
-.bruno-dd-item-label {
-    flex: 1 1 auto;
-}
-
 /* ── custom checkbox ─────────────────────────────────── */
 .bruno-check {
     display: inline-flex;
@@ -1117,7 +1019,7 @@ body.bruno-resizing {
 html.is-transparent .bruno-head,
 html.is-transparent .bruno-tree,
 html.is-transparent .tabbar.v-bruno,
-html.is-transparent .bruno-dd-btn,
+html.is-transparent .dd-btn,
 html.is-transparent .bruno-save,
 html.is-transparent .bruno-icon-btn,
 html.is-transparent .bruno-secrets-btn:not(.active) {

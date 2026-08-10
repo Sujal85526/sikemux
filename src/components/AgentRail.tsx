@@ -25,6 +25,7 @@ const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 export function AgentRail() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
+    const paletteOpen = useStore((s) => s.agentPaletteOpen);
     const density = useStore((s) => s.railDensity);
     const agentsBySession = useStore((s) => s.agentsBySession);
     const agentsById = useStore((s) => s.agents);
@@ -34,6 +35,10 @@ export function AgentRail() {
 
     const [type, setType] = useState<AgentType | null>(null);
     const [visibleRecents, setVisibleRecents] = useState(RECENTS_PAGE);
+    // Recent chats live here and nowhere else, so the search for them does too.
+    const [query, setQuery] = useState("");
+    const [searchOpen, setSearchOpen] = useState(false);
+    const searchRef = useRef<HTMLInputElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const selectedType = useMemo(() => {
         if (type && availableAgents.some((a) => a.type === type)) return type;
@@ -44,6 +49,10 @@ export function AgentRail() {
         if (selectedType !== type) setType(selectedType);
     }, [selectedType, type]);
 
+    useEffect(() => {
+        if (searchOpen) searchRef.current?.focus();
+    }, [searchOpen]);
+
     const isProject = session?.kind === "project";
     const cwd = session?.cwd ?? "";
 
@@ -53,7 +62,7 @@ export function AgentRail() {
     // Reset the reveal window when the recents list switches out from under us.
     useEffect(() => {
         setVisibleRecents(RECENTS_PAGE);
-    }, [selectedType, cwd]);
+    }, [selectedType, cwd, query]);
 
     // onRailScroll only reveals more once the list overflows. If the first page
     // doesn't reach the bottom there's no scrollbar, so the rest would never load
@@ -80,8 +89,10 @@ export function AgentRail() {
     );
 
     const activeOpenKeys = new Set(opens.map((a) => sessionKey(a.type, persistedSessionIdOf(a))));
+    const needle = query.trim().toLowerCase();
     const recentAll = disk.filter((d) => {
         if (!selectedType) return false;
+        if (needle && !d.title.toLowerCase().includes(needle)) return false;
         const k = sessionKey(selectedType, d.id);
         return !activeOpenKeys.has(k);
     });
@@ -97,28 +108,79 @@ export function AgentRail() {
         }
     };
 
+    const toggleSearch = () => {
+        setQuery("");
+        setSearchOpen((open) => !open);
+    };
+
     if (!isProject) {
         return (
             <aside className="agent-rail" data-density={density}>
-                <AgentHeader agents={availableAgents} type={selectedType} setType={setType} />
+                <AgentHeader agents={availableAgents} type={selectedType} setType={setType} searchOpen={false} onToggleSearch={toggleSearch} />
                 <div className="agent-empty">agents are project-scoped</div>
             </aside>
         );
     }
 
-    const noContent = opens.length === 0 && recentDisplay.length === 0;
+    // The unlaunched new-agent page is a draft lane: it owns the selection in
+    // the rail until it either starts an agent or is dismissed.
+    const draftOpen = paletteOpen && session.view === "agent";
+    const noContent = opens.length === 0 && recentDisplay.length === 0 && !draftOpen;
 
     return (
         <aside className="agent-rail" data-density={density}>
-            <AgentHeader agents={availableAgents} type={selectedType} setType={setType} />
+            <AgentHeader agents={availableAgents} type={selectedType} setType={setType} searchOpen={searchOpen} onToggleSearch={toggleSearch} />
+            {searchOpen && (
+                <div className="rail-search">
+                    <IconSearch size={12} />
+                    <input
+                        ref={searchRef}
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Escape") toggleSearch();
+                            e.stopPropagation();
+                        }}
+                        placeholder="filter recent chats…"
+                        aria-label="Filter recent chats"
+                        spellCheck={false}
+                    />
+                </div>
+            )}
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
+                {draftOpen && (
+                    <div className="agent-group">
+                        <div className="rail-group-label">Drafting</div>
+                        <div className="agent-row-wrap">
+                            <button className="agent-row draft active" onClick={cmd.openAgentPalette}>
+                                <span className="agent-glyph draft">
+                                    <span className="agent-glyph-icon">
+                                        <IconPlus size={18} />
+                                    </span>
+                                </span>
+                                <span className="agent-title">New agent</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="agent-glyph-x"
+                                aria-label="Close new agent"
+                                title="Close new agent"
+                                onClick={cmd.closeAgentPalette}>
+                                <IconClose size={11} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"
                             ? "detecting agent CLIs..."
                             : availableAgents.length === 0
                               ? "no agent CLIs detected on PATH"
-                              : "no agents yet — start one above"}
+                              : needle
+                                ? "no recent chats match this filter"
+                                : "no agents yet — start one above"}
                     </div>
                 )}
 
@@ -126,7 +188,7 @@ export function AgentRail() {
                     <div className="agent-group">
                         <div className="rail-group-label">Open</div>
                         {opens.map((a) => {
-                            const active = session.view === "agent" && a.id === session.activeAgentId;
+                            const active = !draftOpen && session.view === "agent" && a.id === session.activeAgentId;
                             return (
                                 <div key={a.id} className="agent-row-wrap">
                                     <button className={`agent-row closable${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
@@ -176,7 +238,19 @@ function AgentStateMark({ state }: { state: import("../state/types").AgentPresen
     return <AgentStateIndicator state={state} />;
 }
 
-function AgentHeader({ agents, type, setType }: { agents: AgentInfo[]; type: AgentType | null; setType: (t: AgentType) => void }) {
+function AgentHeader({
+    agents,
+    type,
+    setType,
+    searchOpen,
+    onToggleSearch,
+}: {
+    agents: AgentInfo[];
+    type: AgentType | null;
+    setType: (t: AgentType) => void;
+    searchOpen: boolean;
+    onToggleSearch: () => void;
+}) {
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
@@ -192,13 +266,17 @@ function AgentHeader({ agents, type, setType }: { agents: AgentInfo[]; type: Age
                 ))}
             </div>
             <div className="agent-header-actions">
-                <button className="agent-header-btn" title="Search agent sessions" onClick={cmd.openAgentPalette}>
+                <button
+                    className={`agent-header-btn${searchOpen ? " active" : ""}`}
+                    aria-pressed={searchOpen}
+                    title="Filter recent chats"
+                    onClick={onToggleSearch}>
                     <IconSearch size={15} />
                 </button>
                 <button
                     className="agent-header-btn"
                     disabled={!type}
-                    title={type ? `configure new ${label} agent` : "No agent CLI detected"}
+                    title={type ? `new ${label} agent — ⌥N` : "No agent CLI detected"}
                     onClick={() => {
                         if (type) cmd.openAgentPalette();
                     }}>

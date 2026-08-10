@@ -425,7 +425,7 @@ export function TopBar() {
                             onClick={() => locations.length > 1 && setEnvOpen((v) => !v)}
                             title={locations.length > 1 ? "Switch deploy location" : activeLoc.label}>
                             <span className={`env-dot ${envDotKind(activeLoc.folder)}`} />
-                            {activeLoc.label}
+                            <span className="env-dd-label">{activeLoc.label}</span>
                             {locations.length > 1 && <IconChevron size={10} className="env-dd-chev" />}
                         </button>
                         {envOpen && locations.length > 1 && (

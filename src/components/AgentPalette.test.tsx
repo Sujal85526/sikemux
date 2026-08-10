@@ -32,6 +32,18 @@ import { AgentPalette } from "./AgentPalette";
 
 const initial = getState();
 
+/**
+ * Open one of the composer bar's dropdowns and choose an option by label. An
+ * option's accessible name also carries its detail line, so a string matches on
+ * the leading label rather than the whole name.
+ */
+async function pickOption(user: ReturnType<typeof userEvent.setup>, control: string, option: string | RegExp) {
+    const name = typeof option === "string" ? new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) : option;
+    await user.click(screen.getByRole("button", { name: control }));
+    const menu = screen.getByRole("listbox", { name: control });
+    await user.click(within(menu).getByRole("option", { name }));
+}
+
 beforeEach(() => {
     setState(initial, true);
     const project = {
@@ -55,15 +67,6 @@ beforeEach(() => {
     });
     mocks.available.mockResolvedValue([{ type: "codex", label: "Codex", command: "codex" }]);
     mocks.sessions.mockResolvedValue([]);
-    mocks.sessionResults.mockImplementation(async (providers: Array<{ type: string }>, cwd: string) =>
-        Promise.all(
-            providers.map(async (provider) => ({
-                provider,
-                status: "success" as const,
-                sessions: await mocks.sessions(provider.type, cwd),
-            })),
-        ),
-    );
     mocks.worktrees.mockResolvedValue([
         {
             path: "/code/sikemux",
@@ -104,40 +107,62 @@ afterEach(() => {
 });
 
 describe("AgentPalette new agent page", () => {
-    it("keeps focus inside the page, restores the opener, and supports radio arrow keys", async () => {
+    it("focuses the composer and restores the opener without trapping focus", async () => {
         const opener = document.createElement("button");
         document.body.append(opener);
         opener.focus();
         const view = render(<AgentPalette />);
 
-        const current = await screen.findByRole("radio", { name: /Current checkout/ });
-        current.focus();
-        fireEvent.keyDown(current, { key: "ArrowRight" });
-        await waitFor(() => expect(screen.getByRole("radio", { name: /Agent decides/ })).toHaveAttribute("aria-checked", "true"));
-
-        const page = screen.getByRole("dialog", { name: "New agent" });
-        const close = screen.getByRole("button", { name: "Close new agent" });
-        close.focus();
-        fireEvent.keyDown(page, { key: "Tab", shiftKey: true });
-        expect(page).toContainElement(document.activeElement as HTMLElement);
+        await waitFor(() => expect(screen.getByRole("textbox", { name: "Task for the new agent" })).toHaveFocus());
+        // The page is a pane, not a modal — no focus trap holds Tab inside it.
+        expect(screen.getByRole("region", { name: "New agent" })).not.toHaveAttribute("aria-modal");
 
         view.unmount();
         expect(opener).toHaveFocus();
         opener.remove();
     });
 
+    it("keeps every launch choice in one compact bar with no chat history of its own", async () => {
+        render(<AgentPalette />);
+
+        expect(await screen.findByRole("region", { name: "New agent" })).toHaveClass("new-agent-page");
+        // Every control is the app's own dropdown — no native <select> anywhere.
+        expect(await screen.findByRole("button", { name: "Agent" })).toHaveTextContent("Codex");
+        expect(screen.getByRole("button", { name: "Workspace" })).toHaveTextContent("Current checkout");
+        expect(screen.getByRole("button", { name: "Safety" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Effort" })).toHaveTextContent("default effort");
+        expect(document.querySelectorAll("select")).toHaveLength(0);
+        // Recent chats belong to the agent rail; the page never duplicates them.
+        expect(screen.queryByRole("complementary", { name: "Recent chats" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: /search/i })).not.toBeInTheDocument();
+    });
+
+    it("offers the models the provider's own CLI takes, plus a custom escape", async () => {
+        const user = userEvent.setup();
+        render(<AgentPalette />);
+        await screen.findByRole("button", { name: "Agent" });
+
+        await user.click(screen.getByRole("button", { name: "Model" }));
+        const menu = screen.getByRole("listbox", { name: "Model" });
+        // Codex's list, straight from what `codex --model` accepts.
+        expect(within(menu).getByRole("option", { name: /gpt-5\.6-sol/ })).toBeInTheDocument();
+        expect(within(menu).queryByRole("option", { name: /^sonnet$/ })).not.toBeInTheDocument();
+
+        await user.click(within(menu).getByRole("option", { name: /Custom/ }));
+        const field = screen.getByRole("textbox", { name: "Model" });
+        await user.type(field, "gpt-6-experimental");
+        expect(field).toHaveValue("gpt-6-experimental");
+    });
+
     it("launches a prompted agent from the recommended current checkout", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
-
-        expect(await screen.findByRole("dialog", { name: "New agent" })).toHaveClass("new-agent-page");
-        expect(await screen.findByRole("radio", { name: /Codex/ })).toHaveAttribute("aria-checked", "true");
-        expect(screen.getByRole("radio", { name: /Current checkout/ })).toHaveAttribute("aria-checked", "true");
+        await screen.findByRole("button", { name: "Agent" });
 
         await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Polish the launch experience and test it.");
-        await user.type(screen.getByRole("combobox", { name: "Model" }), "gpt-5.6");
-        await user.click(screen.getByRole("radio", { name: "xhigh" }));
-        await user.click(screen.getByRole("radio", { name: /Observe/ }));
+        await pickOption(user, "Model", "gpt-5.5");
+        await pickOption(user, "Effort", "xhigh");
+        await pickOption(user, "Safety", "Observe");
         await user.click(screen.getByRole("button", { name: /Start task/ }));
 
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
@@ -146,7 +171,7 @@ describe("AgentPalette new agent page", () => {
             type: "codex",
             cwd: "/code/sikemux",
             permissionMode: "read-only",
-            model: "gpt-5.6",
+            model: "gpt-5.5",
             effort: "xhigh",
             workspaceStrategy: "current",
         });
@@ -156,11 +181,12 @@ describe("AgentPalette new agent page", () => {
     it("uses an existing worktree without exposing branch or path creation fields", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
-        await screen.findByRole("radio", { name: /Codex/ });
+        await screen.findByRole("button", { name: "Agent" });
 
-        await user.click(screen.getByRole("radio", { name: /Existing worktree/ }));
-        const chooser = await screen.findByRole("combobox", { name: "Worktree" });
-        await user.selectOptions(chooser, "/code/sikemux-review");
+        await pickOption(user, "Workspace", "Existing worktree");
+        const chooser = await screen.findByRole("button", { name: "Worktree" });
+        await waitFor(() => expect(chooser).toBeEnabled());
+        await pickOption(user, "Worktree", "review/ui");
         expect(screen.queryByRole("textbox", { name: /branch/i })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: /path/i })).not.toBeInTheDocument();
 
@@ -172,14 +198,15 @@ describe("AgentPalette new agent page", () => {
         expect(agent).toMatchObject({ cwd: "/code/sikemux-review", workspaceStrategy: "existing" });
     });
 
-    it("offers lazy agent-decided isolation with no eager worktree form", async () => {
+    it("offers lazy agent-decided isolation with no eager worktree lookup", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
-        await screen.findByRole("radio", { name: /Codex/ });
+        await screen.findByRole("button", { name: "Agent" });
 
-        await user.click(screen.getByRole("radio", { name: /Agent decides/ }));
-        expect(screen.queryByRole("textbox", { name: /branch/i })).not.toBeInTheDocument();
-        expect(screen.queryByRole("textbox", { name: /path/i })).not.toBeInTheDocument();
+        await pickOption(user, "Workspace", "Agent decides");
+        expect(screen.queryByRole("button", { name: "Worktree" })).not.toBeInTheDocument();
+        expect(mocks.worktrees).not.toHaveBeenCalled();
+
         await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Handle isolation only if it becomes necessary.");
         await user.click(screen.getByRole("button", { name: /Start task/ }));
 
@@ -188,86 +215,35 @@ describe("AgentPalette new agent page", () => {
         expect(agent).toMatchObject({ cwd: "/code/sikemux", workspaceStrategy: "agent-decides" });
     });
 
-    it("shows detection, history loading, empty, and history error states", async () => {
-        const provider = { type: "codex" as const, label: "Codex", command: "codex" };
-        let resolveCatalog!: (value: Array<{ type: "codex"; label: string; command: string }>) => void;
-        let resolveHistory!: (value: Array<{ provider: typeof provider; status: "success"; sessions: [] }>) => void;
-        mocks.available.mockReturnValueOnce(
-            new Promise((resolve) => {
-                resolveCatalog = resolve;
-            }),
-        );
-        mocks.sessionResults.mockReturnValueOnce(
-            new Promise((resolve) => {
-                resolveHistory = resolve;
-            }),
-        );
-        render(<AgentPalette />);
-        expect(screen.getByText("Detecting agent CLIs…")).toBeInTheDocument();
-        resolveCatalog([provider]);
-        expect(await screen.findByText("Loading chat history…")).toBeInTheDocument();
-        resolveHistory([{ provider, status: "success", sessions: [] }]);
-        expect(await screen.findByText("No recent chats in this project.")).toBeInTheDocument();
-
-        cleanup();
-        mocks.sessionResults.mockImplementation(async (providers: Array<{ type: string }>) =>
-            providers.map((provider) => ({ provider, status: "error" as const, sessions: [] })),
-        );
-        invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
-        render(<AgentPalette />);
-        expect(await screen.findByRole("alert")).toHaveTextContent("Recent chats could not be loaded.");
-    });
-
-    it("retries failed CLI detection instead of replaying the same error state", async () => {
+    it("reports CLI detection state and retries a failed detection", async () => {
         const user = userEvent.setup();
         mocks.available.mockRejectedValueOnce(new Error("missing PATH")).mockResolvedValueOnce([{ type: "codex", label: "Codex", command: "codex" }]);
         invalidate((kind) => kind === "agents.catalog");
         render(<AgentPalette />);
 
-        expect((await screen.findAllByText("missing PATH")).length).toBeGreaterThan(0);
+        expect(await screen.findByText(/missing PATH/)).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Try again" }));
 
-        expect(await screen.findByRole("radio", { name: /Codex/ })).toHaveAttribute("aria-checked", "true");
+        expect(await screen.findByRole("button", { name: "Agent" })).toHaveTextContent("Codex");
         expect(mocks.available).toHaveBeenCalledTimes(2);
-    });
-
-    it("searches and resumes recent chats from the same page", async () => {
-        const user = userEvent.setup();
-        mocks.sessions.mockImplementation(async (_provider: string, cwd: string) =>
-            cwd === "/code/sikemux"
-                ? [
-                      { id: "older", title: "Fix terminal focus", mtime: 100 },
-                      { id: "newer", title: "Build launch page", mtime: 200 },
-                  ]
-                : [],
-        );
-        render(<AgentPalette />);
-
-        const history = await screen.findByRole("complementary", { name: "Recent chats" });
-        await user.type(within(history).getByRole("textbox", { name: "Search recent chats" }), "terminal");
-        expect(within(history).getByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
-        expect(within(history).queryByRole("button", { name: /Build launch page/ })).not.toBeInTheDocument();
-        await user.click(within(history).getByRole("button", { name: /Fix terminal focus/ }));
-
-        await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
-        const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
-        expect(agent).toMatchObject({ resumeId: "older", title: "Fix terminal focus", cwd: "/code/sikemux" });
     });
 
     it("closes on Escape and guards keyboard launch against re-entry", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
-        const dialog = await screen.findByRole("dialog", { name: "New agent" });
+        const page = await screen.findByRole("region", { name: "New agent" });
         await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Launch exactly once.");
 
-        fireEvent.keyDown(dialog, { key: "Enter", metaKey: true });
-        fireEvent.keyDown(dialog, { key: "Enter", metaKey: true });
+        fireEvent.keyDown(page, { key: "Enter", metaKey: true });
+        fireEvent.keyDown(page, { key: "Enter", metaKey: true });
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
+        // Attaching the agent retires the draft tab it was launched from.
+        expect(getState().agentPaletteOpen).toBe(false);
 
         setState({ agentPaletteOpen: true });
         cleanup();
         render(<AgentPalette />);
-        fireEvent.keyDown(screen.getByRole("dialog", { name: "New agent" }), { key: "Escape" });
+        fireEvent.keyDown(screen.getByRole("region", { name: "New agent" }), { key: "Escape" });
         expect(getState().agentPaletteOpen).toBe(false);
     });
 });

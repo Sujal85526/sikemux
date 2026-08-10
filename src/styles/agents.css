@@ -65,6 +65,14 @@
 .agent-glyph.opencode {
     color: var(--brand-opencode);
 }
+/* The unlaunched new-agent lane — accent, no provider brand yet. */
+.agent-glyph.draft {
+    color: var(--acc);
+}
+.agent-row.draft .agent-title {
+    color: var(--ink);
+    font-style: italic;
+}
 .agent-title {
     flex: 1;
     text-align: left;
@@ -201,18 +209,31 @@
 }
 .env-dd {
     position: relative;
+    flex: 0 1 auto;
+    min-width: 0;
 }
 .env-dd-btn {
     display: flex;
     align-items: center;
     gap: 6px;
     height: 24px;
+    max-width: 100%;
+    min-width: 0;
     padding: 0 8px;
     border: 1px solid var(--line);
     border-radius: 0;
     background: var(--rail-2);
     color: var(--ink-dim);
     font-size: 11px;
+}
+.env-dd-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.env-dd-btn > .env-dd-chev {
+    flex: 0 0 auto;
 }
 .env-dd-btn:hover {
     color: var(--ink);
@@ -345,6 +366,30 @@
 .agent-header-btn.active {
     color: var(--acc);
     background: var(--acc-soft);
+}
+
+/* Recent-chat filter — the rail is the only place chats are resumed from. */
+.rail-search {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 10px;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--line);
+}
+.rail-search input {
+    width: 100%;
+    min-width: 0;
+    color: var(--ink);
+    border: 0;
+    outline: 0;
+    background: transparent;
+    font: 400 11px var(--mono);
+}
+.rail-search input::placeholder {
+    color: var(--ink-faint);
 }
 
 /* Agent launch studio — a compact route from provider to isolated workspace. */

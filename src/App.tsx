@@ -8,7 +8,6 @@ import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
 import { AgentSessionSync } from "./components/AgentSessionSync";
-import { AgentPalette } from "./components/AgentPalette";
 import { FilePalette } from "./components/FilePalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
@@ -112,7 +111,6 @@ export default function App() {
     const rightOpen = useStore((s) => s.rightRailOpen) && !zen;
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
     const pickerOpen = useStore((s) => s.pickerOpen);
-    const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const rundeckJobPaletteOpen = useStore((s) => s.rundeckJobPaletteOpen);
     const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
@@ -549,7 +547,6 @@ export default function App() {
                 {rightOpen && activeSessionIsProject && <AgentRail />}
             </div>
             {pickerOpen && <SeshPicker />}
-            {agentPaletteOpen && <AgentPalette />}
             {filePaletteOpen && <FilePalette />}
             {rundeckJobPaletteOpen && <RundeckJobPalette />}
             {brunoReqPaletteOpen && <BrunoRequestPalette />}

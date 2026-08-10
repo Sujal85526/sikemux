@@ -18,9 +18,9 @@ export function BrunoEnvSelect({ sessionId, envs, showCollection, selected, secr
 
     return (
         <div className="bruno-env">
-            <button type="button" className="bruno-dd-btn bruno-env-dd" title="Environment (⌥E)" onClick={() => cmd.openBrunoEnvPalette()}>
-                <span className="bruno-dd-val">{label}</span>
-                <IconChevron size={9} className="bruno-dd-chev" />
+            <button type="button" className="dd-btn bruno-env-dd" title="Environment (⌥E)" onClick={() => cmd.openBrunoEnvPalette()}>
+                <span className="dd-val">{label}</span>
+                <IconChevron size={9} className="dd-chev" />
             </button>
             {secretNames.length > 0 && (
                 <button

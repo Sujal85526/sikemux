@@ -11,10 +11,35 @@ vi.mock("../terminal/TerminalPane", () => ({
     ),
 }));
 
+vi.mock("./AgentPalette", () => ({ AgentPalette: () => <div data-testid="new-agent-page" /> }));
+
 const initial = getState();
 
 beforeEach(() => setState(initial, true));
 afterEach(cleanup);
+
+function projectWithAgent(): string {
+    const state = getState();
+    const sessionId = state.activeSessionId;
+    const session = state.sessions[sessionId];
+    setState({
+        sessions: {
+            ...state.sessions,
+            [sessionId]: { ...session, kind: "project", view: "agent", activeAgentId: "agent-only", cwd: "/repo" },
+        },
+        agents: {
+            "agent-only": {
+                id: "agent-only",
+                type: "codex",
+                title: "only agent",
+                startup: "codex",
+                launchState: "live",
+            },
+        },
+        agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-only"] },
+    });
+    return sessionId;
+}
 
 describe("workspace tab bars", () => {
     it("keeps the terminal tab bar and new-terminal action visible with one terminal", () => {
@@ -26,25 +51,7 @@ describe("workspace tab bars", () => {
     });
 
     it("keeps the agent tab bar and new-agent action visible with one agent", () => {
-        const state = getState();
-        const sessionId = state.activeSessionId;
-        const session = state.sessions[sessionId];
-        setState({
-            sessions: {
-                ...state.sessions,
-                [sessionId]: { ...session, kind: "project", view: "agent", activeAgentId: "agent-only", cwd: "/repo" },
-            },
-            agents: {
-                "agent-only": {
-                    id: "agent-only",
-                    type: "codex",
-                    title: "only agent",
-                    startup: "codex",
-                    launchState: "live",
-                },
-            },
-            agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-only"] },
-        });
+        projectWithAgent();
 
         const { container } = render(<Workspace />);
 
@@ -55,5 +62,44 @@ describe("workspace tab bars", () => {
 
         fireEvent.click(addAgent);
         expect(getState().agentPaletteOpen).toBe(true);
+    });
+
+    it("renders the new agent page as a draft tab in the stage instead of an overlay", () => {
+        projectWithAgent();
+        setState({ agentPaletteOpen: true });
+
+        const { container } = render(<Workspace />);
+
+        const draftTab = screen.getByRole("tab", { name: /New agent/ });
+        expect(draftTab).toHaveAttribute("aria-selected", "true");
+        expect(screen.getByRole("tab", { name: /only agent/ })).toHaveAttribute("aria-selected", "false");
+        expect(screen.getByTestId("new-agent-page")).toBeInTheDocument();
+        expect(container.querySelector(".new-agent-layer")).toHaveStyle({ top: "32px" });
+        // The agent behind the draft backgrounds instead of painting through it.
+        expect(screen.getByTestId("terminal-agent-only")).toHaveAttribute("data-visible", "false");
+
+        fireEvent.click(screen.getByRole("tab", { name: /only agent/ }));
+        expect(getState().agentPaletteOpen).toBe(false);
+    });
+
+    it("shows the draft tab instead of the empty stage when no agent is open yet", () => {
+        const state = getState();
+        const sessionId = state.activeSessionId;
+        setState({
+            sessions: {
+                ...state.sessions,
+                [sessionId]: { ...state.sessions[sessionId], kind: "project", view: "agent", activeAgentId: null, cwd: "/repo" },
+            },
+            agentsBySession: { ...state.agentsBySession, [sessionId]: [] },
+            agentPaletteOpen: true,
+        });
+
+        render(<Workspace />);
+
+        expect(screen.getByRole("tab", { name: /New agent/ })).toBeInTheDocument();
+        expect(screen.queryByText("no agents in this project")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByTitle("Close"));
+        expect(getState().agentPaletteOpen).toBe(false);
     });
 });

@@ -1542,6 +1542,8 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         const existing = resumeId ? ownedIds.map((id) => d.agents[id]).find((a) => a && a.type === type && a.resumeId === resumeId) : undefined;
         const sess = d.sessions[session.id];
         d.zoomedPaneId = null;
+        // An attached agent takes over the draft tab it was launched from.
+        d.agentPaletteOpen = false;
         if (existing) {
             sess.activeAgentId = existing.id;
             sess.view = "agent";
@@ -1760,7 +1762,18 @@ export const setTerminalTitle = (paneId: string, title: string): void =>
     setState((s) => ({ terminalTitles: { ...s.terminalTitles, [paneId]: title } }));
 export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, rundeckJobPaletteOpen: false });
 export const closePicker = (): void => setState({ pickerOpen: false });
-export const openAgentPalette = (): void => setState({ agentPaletteOpen: true, rundeckJobPaletteOpen: false });
+// The new-agent page is a draft tab inside the agent view, not an overlay, so
+// opening it also puts the project session into that view. Agents are
+// project-scoped; anywhere else the draft would have nowhere to render.
+export const openAgentPalette = (): void =>
+    mutate((d) => {
+        const session = d.sessions[d.activeSessionId];
+        if (session?.kind !== "project") return;
+        d.agentPaletteOpen = true;
+        d.rundeckJobPaletteOpen = false;
+        d.zoomedPaneId = null;
+        session.view = "agent";
+    });
 export const closeAgentPalette = (): void => setState({ agentPaletteOpen: false });
 export const openCommandPalette = (): void => setState({ commandPaletteOpen: true });
 export const closeCommandPalette = (): void => setState({ commandPaletteOpen: false });

@@ -3,6 +3,8 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
+    flex: 0 1 auto;
+    min-width: 0;
 }
 .tb-deploy-chip,
 .tb-deploy-checkout {
@@ -12,6 +14,8 @@
     height: 24px;
     padding: 0 4px;
     max-width: 320px;
+    min-width: 0;
+    overflow: hidden;
     background: transparent;
     border: 0;
     color: var(--ink-dim);
@@ -74,6 +78,7 @@
     display: inline-flex;
     align-items: center;
     gap: 1px;
+    flex: 0 1 auto;
     min-width: 0;
 }
 .tb-git-copy {
@@ -91,6 +96,10 @@
     height: 24px;
     padding: 0 4px;
     max-width: 200px;
+    /* Without min-width:0 the chip's automatic minimum size is the full branch
+       name, so it refuses to shrink and paints over the clock/battery. */
+    min-width: 0;
+    overflow: hidden;
     background: transparent;
     border: 0;
     color: var(--ink-dim);

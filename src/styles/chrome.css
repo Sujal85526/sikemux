@@ -73,7 +73,9 @@
 }
 
 .tb-center {
-    flex: 1;
+    /* Basis auto (not 0) so a narrow window shrinks the crumb and the right
+       cluster proportionally, instead of starving the crumb. */
+    flex: 1 1 auto;
     display: flex;
     justify-content: flex-start;
     align-items: center;
@@ -131,10 +133,15 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    width: 238px;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
     justify-content: flex-end;
     padding-right: 14px;
+}
+/* Status readouts and toggles keep their size; only the branch chips
+   (.tb-git, .tb-deploy-actions, .env-dd) give up width as the bar narrows. */
+.tb-right > * {
+    flex: 0 0 auto;
 }
 
 .zoom-pill {
