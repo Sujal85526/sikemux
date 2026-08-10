@@ -41,6 +41,7 @@ import { loadProjectConfig, type ProjectConfigLoadResult } from "./projectConfig
 import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
+import { workbenchRuntime } from "./workbench/runtime";
 
 interface BootInfo {
     home: string;
@@ -395,6 +396,7 @@ export default function App() {
             })
             .finally(() => {
                 if (!disposed) {
+                    workbenchRuntime.start();
                     unsub = subscribePersist();
                     setBootReady(true);
                 }
@@ -404,6 +406,7 @@ export default function App() {
             disposed = true;
             finishBoot("cancelled");
             unsub();
+            workbenchRuntime.stop();
         };
     }, []);
 

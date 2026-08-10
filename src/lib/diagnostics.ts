@@ -4,6 +4,7 @@ import { fsapi } from "../api/fs";
 import { busStats } from "../state/bus";
 import { resourceStats } from "../state/resources";
 import { getState } from "../state/store";
+import { workbenchRuntime } from "../workbench/runtime";
 import { installInteractionTiming, startEventLoopMonitor } from "./instrumentation";
 import { performanceTelemetry } from "./performance";
 
@@ -89,6 +90,7 @@ export function browserDiagnostics(): Record<string, unknown> {
         memory: memorySnapshot(),
         dom: domSnapshot(),
         store: storeSnapshot(),
+        workbench: workbenchRuntime.getSnapshot(),
         resources: resourceStats(),
         bus: busStats(),
         longTaskCount: longTasks.length,

@@ -30,12 +30,15 @@ describe("WorkbenchRuntime", () => {
             windowsBySession: { [session.id]: [window.id] },
         });
         runtime.start();
-        expect(runtime.getSnapshot()).toEqual({ sessions: 1, items: 1, started: true });
+        expect(runtime.getSnapshot()).toEqual({ sessions: 1, items: 1, reconciliations: 1, started: true });
         expect(runtime.getSession(session.id)?.getSnapshot().activeItemId).toBe(pane.id);
 
+        setState({ diagnosticsOpen: true });
+        expect(runtime.getSnapshot().reconciliations).toBe(1);
+
         setState({ sessions: {}, sessionOrder: [], windows: {}, windowsBySession: {} });
-        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, started: true });
+        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, reconciliations: 2, started: true });
         runtime.stop();
-        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, started: false });
+        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, reconciliations: 2, started: false });
     });
 });
