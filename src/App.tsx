@@ -28,7 +28,7 @@ import { runKeybindingAction, useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
-import { applyHydrate, canFlushPersist, flushPersist, subscribePersist } from "./state/persist";
+import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import { dispatchFolder, dispatchPty } from "./state/dropRegistry";
 import { notify, reportError, swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
@@ -108,6 +108,7 @@ function resolveTreeDropTarget(at: HTMLElement | null): TreeDropTarget | null {
 export default function App() {
     useKeymap();
     const [bootReady, setBootReady] = useState(false);
+    const [bootIssue, setBootIssue] = useState<string | null>(null);
     const zen = useStore((s) => s.zenMode);
     const leftOpen = useStore((s) => s.leftRailOpen) && !zen;
     const rightOpen = useStore((s) => s.rightRailOpen) && !zen;
@@ -362,6 +363,7 @@ export default function App() {
         let disposed = false;
         let unsub = () => {};
         let bootFinished = false;
+        let hydrationResult: HydrationResult | null = null;
         const bootSpan = performanceTelemetry.startTrace("startup.boot");
         const finishBoot = (outcome: "success" | "error" | "cancelled") => {
             if (bootFinished) return;
@@ -375,32 +377,43 @@ export default function App() {
                 const hydrateSpan = performanceTelemetry.startSpan(bootSpan, "startup.hydrate");
                 try {
                     cmd.setHome(boot.home);
-                    applyHydrate(boot.state);
+                    hydrationResult = applyHydrate(boot.state);
                     const st = getState();
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
                     applyWindowOpacity(st.windowOpacity);
                     if (st.themeMode === "system") cmd.applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
                     cmd.setWindowBlur(st.windowBlur);
-                    if (!st.onboardingComplete) cmd.openOnboarding();
-                    else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
-                    performanceTelemetry.endSpan(hydrateSpan, { outcome: "success" });
+                    if (hydrationAllowsPersistence(hydrationResult)) {
+                        if (!st.onboardingComplete) cmd.openOnboarding();
+                        else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
+                        performanceTelemetry.endSpan(hydrateSpan, { outcome: "success" });
+                    } else {
+                        setBootIssue(
+                            hydrationResult === "unsupported-future"
+                                ? "This workspace was saved by a newer Sikemux version. It has not been opened or modified. Update Sikemux, then reload."
+                                : "Saved workspace state could not be validated. Persistence is disabled so the original data is not overwritten.",
+                        );
+                        performanceTelemetry.endSpan(hydrateSpan, { outcome: "error" });
+                    }
                 } catch (error) {
                     performanceTelemetry.endSpan(hydrateSpan, { outcome: "error" });
                     throw error;
                 }
             })
             .catch((error) => {
+                if (!disposed) setBootIssue("Sikemux could not load workspace state. Nothing has been written; reload to retry.");
                 finishBoot("error");
                 swallow("boot_init")(error);
             })
             .finally(() => {
-                if (!disposed) {
+                const writable = hydrationResult !== null && hydrationAllowsPersistence(hydrationResult);
+                if (!disposed && writable) {
                     workbenchRuntime.start();
                     unsub = subscribePersist();
                     setBootReady(true);
                 }
-                finishBoot(disposed ? "cancelled" : "success");
+                finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
             });
         return () => {
             disposed = true;
@@ -556,9 +569,29 @@ export default function App() {
         };
     }, []);
 
+    if (!bootReady) {
+        return (
+            <div className="shell boot-shell">
+                <section className="boot-state" role={bootIssue ? "alert" : "status"} aria-live="polite">
+                    <span className="boot-state-mark" aria-hidden="true">
+                        S
+                    </span>
+                    <h1>{bootIssue ? "Workspace protected" : "Opening workspace"}</h1>
+                    <p>{bootIssue ?? "Hydrating sessions and preparing terminal ownership…"}</p>
+                    {bootIssue && (
+                        <button type="button" onClick={() => window.location.reload()}>
+                            Reload safely
+                        </button>
+                    )}
+                </section>
+                <Toaster />
+            </div>
+        );
+    }
+
     return (
         <div className="shell">
-            {bootReady && <CliOpenBridge />}
+            <CliOpenBridge />
             <AgentSessionSync />
             <AgentNotifications />
             <TopBar />

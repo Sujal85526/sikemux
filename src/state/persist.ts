@@ -556,23 +556,31 @@ export function flushPersist(): Promise<boolean> {
     return startSaveLoop();
 }
 
-export function applyHydrate(raw: string): void {
-    if (!raw) return;
+export type HydrationResult = "empty" | "applied" | "invalid" | "unsupported-future";
+
+export function hydrationAllowsPersistence(result: HydrationResult): boolean {
+    return result === "empty" || result === "applied";
+}
+
+export function applyHydrate(raw: string): HydrationResult {
+    if (!raw) return "empty";
     let decoded: unknown;
     try {
         decoded = JSON.parse(raw);
     } catch {
-        return;
+        return "invalid";
     }
-    if (!isRecord(decoded) || typeof decoded.version !== "number" || decoded.version < MIN_SUPPORTED_VERSION || decoded.version > VERSION) return;
-    if (!Array.isArray(decoded.sessions)) return;
+    if (!isRecord(decoded) || typeof decoded.version !== "number" || !Number.isSafeInteger(decoded.version)) return "invalid";
+    if (decoded.version > VERSION) return "unsupported-future";
+    if (decoded.version < MIN_SUPPORTED_VERSION) return "invalid";
+    if (!Array.isArray(decoded.sessions)) return "invalid";
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
         const session = toSession(row);
         if (session && !sessions[session.id]) sessions[session.id] = session;
     }
-    if (Object.keys(sessions).length === 0) return;
+    if (Object.keys(sessions).length === 0) return "invalid";
 
     const windows: Record<string, Window> = {};
     const agents: Record<string, Agent> = {};
@@ -784,6 +792,7 @@ export function applyHydrate(raw: string): void {
     // rewrites migrations and sanitized legacy credentials in canonical v7 form.
     lastSaved = raw;
     lastSlices = takeSlices(getState());
+    return "applied";
 }
 
 export function canFlushPersist(): boolean {

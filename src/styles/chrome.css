@@ -6,6 +6,65 @@
     background: transparent;
 }
 
+.boot-shell {
+    align-items: center;
+    justify-content: center;
+    background:
+        radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--acc) 12%, transparent), transparent 34%),
+        color-mix(in srgb, var(--bg, var(--void)) calc(var(--window-opacity, 1) * 100%), transparent);
+}
+
+.boot-state {
+    width: min(440px, calc(100vw - 48px));
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+    color: var(--ink);
+    text-align: center;
+}
+
+.boot-state-mark {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid color-mix(in srgb, var(--acc) 52%, var(--line));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--acc) 14%, var(--bg-raised, var(--rail-2)));
+    color: var(--acc);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    box-shadow: 0 12px 36px color-mix(in srgb, var(--acc) 12%, transparent);
+}
+
+.boot-state h1 {
+    margin: 4px 0 0;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+}
+
+.boot-state p {
+    max-width: 420px;
+    margin: 0;
+    color: var(--ink-muted);
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+.boot-state button {
+    margin-top: 4px;
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--acc) 48%, var(--line));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--acc) 12%, var(--bg-raised, var(--rail-2)));
+    color: var(--ink);
+    cursor: pointer;
+}
+
+.boot-state button:hover {
+    background: color-mix(in srgb, var(--acc) 20%, var(--bg-raised, var(--rail-2)));
+}
+
 .body {
     display: flex;
     flex: 1;

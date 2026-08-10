@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-import { applyHydrate, flushPersist, resetPersistenceForTests, subscribePersist } from "./persist";
+import { applyHydrate, flushPersist, hydrationAllowsPersistence, resetPersistenceForTests, subscribePersist } from "./persist";
 import { getState, setState } from "./store";
 import { useToasts } from "./toast";
 
@@ -28,6 +28,27 @@ beforeEach(() => {
 });
 
 describe("frontend persistence", () => {
+    it("classifies hydration before persistence can overwrite protected state", () => {
+        setState({ themeId: "unchanged" });
+
+        expect(applyHydrate("")).toBe("empty");
+        expect(hydrationAllowsPersistence("empty")).toBe(true);
+        expect(applyHydrate("{")).toBe("invalid");
+        expect(hydrationAllowsPersistence("invalid")).toBe(false);
+        expect(
+            applyHydrate(
+                JSON.stringify({
+                    version: 8,
+                    sessions: [],
+                    itemStates: {},
+                }),
+            ),
+        ).toBe("unsupported-future");
+        expect(hydrationAllowsPersistence("unsupported-future")).toBe(false);
+        expect(getState().themeId).toBe("unchanged");
+        expect(invoke).not.toHaveBeenCalled();
+    });
+
     it("omits Bruno secrets and drafts while preserving non-secret Bruno and Rundeck state", async () => {
         const sid = getState().activeSessionId;
         setState((s) => ({
