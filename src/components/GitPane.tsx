@@ -11,9 +11,10 @@ import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { CopyButton } from "./CopyButton";
-import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
+import { IconClock, IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
+import { CheckpointPanel } from "./git/CheckpointPanel";
 import { GitTerminal } from "./git/GitTerminal";
 import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
@@ -101,6 +102,7 @@ export function GitPane({
     const [branchInput, setBranchInput] = useState<{ startPoint: string } | null>(null);
     const [branchText, setBranchText] = useState("");
     const branchInputRef = useRef<HTMLInputElement>(null);
+    const [checkpointsOpen, setCheckpointsOpen] = useState(false);
 
     const [searchByPanel, setSearchByPanel] = useState<Record<GitPanel, string>>({
         status: "",
@@ -1218,6 +1220,13 @@ export function GitPane({
                 <GitToolbarButton icon={<IconPullRequest size={13} />} onClick={() => openPullRequest(true)} title="Open pull request (⌃P)">
                     PR
                 </GitToolbarButton>
+                <GitToolbarButton
+                    className={checkpointsOpen ? "live" : undefined}
+                    icon={<IconClock size={13} />}
+                    onClick={() => setCheckpointsOpen((open) => !open)}
+                    title={`${checkpointsOpen ? "Hide" : "Show"} agent checkpoints`}>
+                    checkpoints
+                </GitToolbarButton>
                 <GitToolbarButton className="icon" icon={<IconRefresh size={14} />} onClick={refreshRepoState} title="Refresh (r)" />
             </div>
             <div className="git-body">
@@ -1338,6 +1347,17 @@ export function GitPane({
                                     }
                                     e.stopPropagation();
                                 }}
+                            />
+                        </div>
+                    )}
+
+                    {checkpointsOpen && (
+                        <div className="git-checkpoints">
+                            <CheckpointPanel
+                                repo={repo}
+                                initialAgentNamespace="sikemux"
+                                confirmDelete={(checkpoint) => window.confirm(`Delete checkpoint \"${checkpoint.label}\"? This cannot be undone.`)}
+                                onForked={(worktree) => cmd.createProjectSession(worktree.path)}
                             />
                         </div>
                     )}

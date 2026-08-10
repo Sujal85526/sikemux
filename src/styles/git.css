@@ -21,6 +21,23 @@
     border-right: 1px solid var(--line);
 }
 
+.git-checkpoints {
+    display: flex;
+    flex: 3 1 0;
+    min-height: 180px;
+    max-height: 58%;
+    overflow: hidden;
+}
+
+.git-checkpoints > .git-panel {
+    flex: 1;
+}
+
+.git-checkpoints .git-output {
+    min-height: 72px;
+    max-height: 240px;
+}
+
 .git-commit-bar {
     flex: 0 0 auto;
 }
