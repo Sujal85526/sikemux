@@ -83,16 +83,31 @@ export class ProjectController<Config, Worktree> {
     refresh(): Promise<void> {
         if (this.disposed || !this.started) return Promise.resolve();
         if (this.refreshPromise) {
-            this.refreshQueued = true;
+            if (!this.refreshQueued) {
+                this.refreshQueued = true;
+                performanceTelemetry.incrementCounter("project.refresh.queued");
+            }
             return this.refreshPromise;
         }
 
-        const generation = ++this.generation;
-        this.patch({ status: "loading", error: null });
-        const span = performanceTelemetry.startTrace("project.refresh");
-        this.refreshPromise = Promise.allSettled([this.services.loadConfig(this.cwd), this.services.loadWorktrees(this.cwd)])
-            .then(([configResult, worktreeResult]) => {
-                if (this.disposed || !this.started || generation !== this.generation) return;
+        const drain = async () => {
+            do {
+                this.refreshQueued = false;
+                const generation = ++this.generation;
+                this.patch({ status: "loading", error: null });
+                const span = performanceTelemetry.startTrace("project.refresh");
+                const [configResult, worktreeResult] = await Promise.allSettled([
+                    this.services.loadConfig(this.cwd),
+                    this.services.loadWorktrees(this.cwd),
+                ]);
+
+                if (this.disposed || !this.started || generation !== this.generation) {
+                    const recorded = performanceTelemetry.endSpan(span, { outcome: "cancelled" });
+                    if (recorded) performanceTelemetry.recordLatency("project.refresh", recorded.durationMs);
+                    performanceTelemetry.incrementCounter("project.refresh.cancelled");
+                    continue;
+                }
+
                 const config = configResult.status === "fulfilled" ? configResult.value : this.snapshotValue.config;
                 const worktrees = worktreeResult.status === "fulfilled" ? worktreeResult.value : this.snapshotValue.worktrees;
                 const error =
@@ -110,19 +125,14 @@ export class ProjectController<Config, Worktree> {
                 });
                 const recorded = performanceTelemetry.endSpan(span, { outcome: error ? "error" : "success" });
                 if (recorded) performanceTelemetry.recordLatency("project.refresh", recorded.durationMs);
-            })
-            .finally(() => {
-                if (generation === this.generation) {
-                    const queued = this.refreshQueued;
-                    this.refreshPromise = null;
-                    this.refreshQueued = false;
-                    if (queued && this.started && !this.disposed) void this.refresh();
-                } else {
-                    performanceTelemetry.endSpan(span, { outcome: "cancelled" });
-                    this.refreshPromise = null;
-                }
-            });
-        return this.refreshPromise;
+            } while (this.refreshQueued && this.started && !this.disposed);
+        };
+
+        const refreshPromise = drain().finally(() => {
+            if (this.refreshPromise === refreshPromise) this.refreshPromise = null;
+        });
+        this.refreshPromise = refreshPromise;
+        return refreshPromise;
     }
 
     dispose(): void {
