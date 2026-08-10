@@ -20,7 +20,7 @@ import {
 } from "../agentLaunch";
 import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
-import type { TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
+import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
 import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
 import { emit } from "./bus";
 import { reduceAgentState } from "./agentStatus";
@@ -714,7 +714,16 @@ export function selectLastSession(): void {
 
 export function closeSession(id: string): void {
     if (!confirmDiscardDirty(dirtyPathsForSession(getState(), id), "close session")) return;
-    const closingCwd = getState().sessions[id]?.cwd;
+    const beforeClose = getState();
+    const closingCwd = beforeClose.sessions[id]?.cwd;
+    const taskPaneIds = (beforeClose.windowsBySession[id] ?? []).flatMap((windowId) => {
+        const window = beforeClose.windows[windowId];
+        return window
+            ? collectPanes(window.root)
+                  .filter((pane) => pane.externalPty)
+                  .map((pane) => pane.id)
+            : [];
+    });
     mutate((d) => {
         if (d.sessionOrder.length <= 1) return;
         const closed = d.sessions[id];
@@ -753,6 +762,9 @@ export function closeSession(id: string): void {
         }
         d.zoomedPaneId = null;
     });
+    if (!getState().sessions[id]) {
+        for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
+    }
     if (closingCwd) {
         const stillOpen = Object.values(getState().sessions).some((s) => s.cwd === closingCwd);
         if (!stillOpen) {
@@ -1104,8 +1116,10 @@ export async function importSessionFromClipboard(): Promise<void> {
 }
 
 function closeActivePane(): void {
+    let taskPaneId: string | null = null;
     withActiveWindow((d, w, session) => {
         const closingPaneId = w.activePaneId;
+        if (collectPanes(w.root).some((pane) => pane.id === closingPaneId && pane.externalPty)) taskPaneId = closingPaneId;
         if (d.gitModal?.ownerPaneId === closingPaneId) d.gitModal = null;
         const root = removePane(w.root, closingPaneId);
         if (root === null && w.fixed) return;
@@ -1140,6 +1154,7 @@ function closeActivePane(): void {
         win.root = root;
         win.activePaneId = remaining[0].id;
     });
+    if (taskPaneId) taskPtyBindings.release(taskPaneId);
 }
 
 function pruneWindowViews(d: StoreState, win: Window): void {
@@ -1341,6 +1356,9 @@ export function closeWindowById(id: string): void {
     const closing = st.windows[id];
     if (!closing || closing.fixed) return;
     if (!confirmDiscardDirty(dirtyPathsForWindow(st, closing), "close window")) return;
+    const taskPaneIds = collectPanes(closing.root)
+        .filter((pane) => pane.externalPty)
+        .map((pane) => pane.id);
     withActiveSession((d, session) => {
         const winIds = d.windowsBySession[session.id] ?? [];
         if (!winIds.includes(id) || winIds.length <= 1) return;
@@ -1364,6 +1382,9 @@ export function closeWindowById(id: string): void {
         d.windowsBySession[session.id] = remaining;
         d.zoomedPaneId = null;
     });
+    if (!getState().windows[id]) {
+        for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
+    }
 }
 
 export function closeActiveWindow(): void {

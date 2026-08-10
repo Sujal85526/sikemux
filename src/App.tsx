@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invokeCommand as invoke } from "./api/invoke";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -150,6 +150,7 @@ export default function App() {
             .filter(Boolean)
             .join("\0"),
     );
+    const taskProjectRootsRef = useRef<Set<string>>(new Set());
     const runStandalone =
         (id: string, execute: () => void): (() => void) =>
         () => {
@@ -380,6 +381,14 @@ export default function App() {
         }
         return clearActiveProjectTasks;
     }, [activeProjectCwd, projectConfig]);
+
+    useEffect(() => {
+        const current = new Set(projectRepoKey.split("\0").filter(Boolean));
+        for (const project of taskProjectRootsRef.current) {
+            if (!current.has(project)) void appTaskRuntime.disposeProject(project).catch(reportError("stop closed-project task"));
+        }
+        taskProjectRootsRef.current = current;
+    }, [projectRepoKey]);
 
     useEffect(() => {
         let cancelled = false;

@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as cmd from "../commands";
 import { getState, setState } from "../store";
 import type { TaskTerminalPresentationRequest } from "../../tasks/nativeRuntime";
+import { taskPtyBindings } from "../../tasks/nativeRuntime";
 
 const initial = getState();
 
-beforeEach(() => setState(initial, true));
+beforeEach(() => {
+    taskPtyBindings.reset();
+    setState(initial, true);
+});
 
 function presentation(overrides: Partial<TaskTerminalPresentationRequest> = {}): TaskTerminalPresentationRequest {
     return {
@@ -61,5 +65,20 @@ describe("task terminal presentation", () => {
         const abort = new AbortController();
         abort.abort(new Error("cancelled"));
         expect(() => cmd.openTaskTerminal(presentation({ signal: abort.signal }))).toThrow("cancelled");
+    });
+
+    it("releases runtime bindings when the task pane or project closes", () => {
+        cmd.createProjectSession("/work/demo");
+        const sessionId = getState().activeSessionId;
+        const firstPane = cmd.openTaskTerminal(presentation());
+        taskPtyBindings.bind(firstPane, { ptyId: 7, executionId: "one", terminalKey: "task:test:/work/demo" });
+
+        cmd.closeActiveFocusTarget();
+        expect(taskPtyBindings.getSnapshot(firstPane)).toBeNull();
+
+        const secondPane = cmd.openTaskTerminal(presentation({ executionId: "two" }));
+        taskPtyBindings.bind(secondPane, { ptyId: 8, executionId: "two", terminalKey: "task:test:/work/demo" });
+        cmd.closeSession(sessionId);
+        expect(taskPtyBindings.getSnapshot(secondPane)).toBeNull();
     });
 });
