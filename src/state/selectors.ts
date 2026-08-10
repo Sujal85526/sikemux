@@ -1,0 +1,59 @@
+import type { PaneKind, Session, Window } from "./types";
+import type { StoreState } from "./store";
+
+export const selectSessionIds = (state: StoreState): readonly string[] => state.sessionOrder;
+export const selectActiveSessionId = (state: StoreState): string => state.activeSessionId;
+export const selectActiveSession = (state: StoreState): Session | undefined => state.sessions[state.activeSessionId];
+
+export const selectSession =
+    (sessionId: string) =>
+    (state: StoreState): Session | undefined =>
+        state.sessions[sessionId];
+export const selectWindow =
+    (windowId: string) =>
+    (state: StoreState): Window | undefined =>
+        state.windows[windowId];
+export const selectAgent = (agentId: string) => (state: StoreState) => state.agents[agentId];
+
+export const selectWindowIds =
+    (sessionId: string) =>
+    (state: StoreState): readonly string[] =>
+        state.windowsBySession[sessionId] ?? EMPTY_IDS;
+export const selectAgentIds =
+    (sessionId: string) =>
+    (state: StoreState): readonly string[] =>
+        state.agentsBySession[sessionId] ?? EMPTY_IDS;
+
+export const selectActiveWindow = (state: StoreState): Window | undefined => {
+    const session = selectActiveSession(state);
+    return session ? state.windows[session.activeWindowId] : undefined;
+};
+
+export type WorkbenchItemState =
+    | StoreState["editorViews"][string]
+    | StoreState["gitViews"][string]
+    | StoreState["rundeckViews"][string]
+    | StoreState["brunoViews"][string]
+    | StoreState["globalSearchBySession"][string]
+    | undefined;
+
+/** Migration adapter until every item owns its runtime state in a controller. */
+export function selectItemState(state: StoreState, kind: PaneKind, itemId: string, sessionId?: string): WorkbenchItemState {
+    switch (kind) {
+        case "editor":
+            return state.editorViews[itemId];
+        case "git":
+            return state.gitViews[itemId];
+        case "rundeck":
+            return state.rundeckViews[itemId];
+        case "bruno":
+            return state.brunoViews[itemId];
+        case "search":
+            return sessionId ? state.globalSearchBySession[sessionId] : undefined;
+        case "terminal":
+        case "aws":
+            return undefined;
+    }
+}
+
+const EMPTY_IDS: readonly string[] = Object.freeze([]);
