@@ -23,7 +23,7 @@ import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./components/Ex
 import { TerminalPane } from "./terminal/TerminalPane";
 import { AgentNotifications } from "./components/AgentNotifications";
 import { CliOpenBridge } from "./components/CliOpenBridge";
-import { git, type GitWorktree } from "./api/git";
+import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
@@ -37,7 +37,6 @@ import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/b
 import { dirname } from "./lib/paths";
 import type { StandaloneCommand } from "./commands/registry";
 import { agentDetectionApi } from "./api/agentDetection";
-import { loadProjectConfig, type ProjectConfigLoadResult } from "./projectConfig";
 import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
@@ -53,6 +52,7 @@ import {
     resolveApplicationActions,
     subscribeApplicationActions,
 } from "./actions/bridge";
+import { projectControllerRuntime } from "./projects/controllerRuntime";
 
 interface BootInfo {
     home: string;
@@ -161,14 +161,18 @@ export default function App() {
         const session = s.sessions[s.activeSessionId];
         return session?.kind === "project" ? session.cwd : "";
     });
-    const [projectConfigState, setProjectConfigState] = useState<{ cwd: string; result: ProjectConfigLoadResult } | null>(null);
-    const [worktreeState, setWorktreeState] = useState<{ cwd: string; items: GitWorktree[] } | null>(null);
-    const projectConfig = projectConfigState?.cwd === activeProjectCwd ? projectConfigState.result : null;
+    const projectControllerSnapshot = useSyncExternalStore(
+        projectControllerRuntime.subscribe,
+        projectControllerRuntime.getActiveSnapshot,
+        projectControllerRuntime.getActiveSnapshot,
+    );
+    const activeProjectSnapshot = projectControllerSnapshot?.cwd === activeProjectCwd ? projectControllerSnapshot : null;
+    const projectConfig = activeProjectSnapshot?.config ?? null;
     const taskRegistrySnapshot = useSyncExternalStore(subscribeAppTasks, getAppTaskSnapshot, getAppTaskSnapshot);
     useSyncExternalStore(subscribeApplicationActions, getApplicationActionRevision, getApplicationActionRevision);
     useStore(applicationActionContextFingerprint);
     const actionContext = applicationActionContext(getState());
-    const activeWorktrees = worktreeState?.cwd === activeProjectCwd ? worktreeState.items : [];
+    const activeWorktrees = activeProjectSnapshot?.worktrees ?? [];
     const activeTerminalWindowId = useStore((s) => {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
         return id && s.windows[id]?.role === "term" ? id : null;
@@ -326,12 +330,8 @@ export default function App() {
                               if (!window.confirm(`Remove worktree ${worktree.branch ?? worktree.path}?\n\nDirty worktrees will be refused.`)) return;
                               void git
                                   .worktreeRemove(activeProjectCwd, worktree.path)
-                                  .then(() => {
-                                      setWorktreeState((state) =>
-                                          state?.cwd === activeProjectCwd
-                                              ? { ...state, items: state.items.filter((item) => item.path !== worktree.path) }
-                                              : state,
-                                      );
+                                  .then(async () => {
+                                      await projectControllerRuntime.refresh(activeProjectCwd);
                                       notify("success", `Removed worktree ${worktree.branch ?? worktree.path}`);
                                   })
                                   .catch(reportError("remove worktree"));
@@ -459,42 +459,16 @@ export default function App() {
     }, [projectRepoKey]);
 
     useEffect(() => {
-        let cancelled = false;
-        let generation = 0;
-        if (!activeProjectCwd) {
-            setProjectConfigState(null);
-            setWorktreeState(null);
-            return;
-        }
-        const refresh = () => {
-            const requestGeneration = ++generation;
-            setProjectConfigState(null);
-            setWorktreeState(null);
-            void loadProjectConfig(activeProjectCwd).then((result) => {
-                if (!cancelled && requestGeneration === generation) setProjectConfigState({ cwd: activeProjectCwd, result });
-            });
-            void git
-                .worktrees(activeProjectCwd)
-                .then((items) => {
-                    if (!cancelled && requestGeneration === generation) setWorktreeState({ cwd: activeProjectCwd, items });
-                })
-                .catch(() => {
-                    if (!cancelled && requestGeneration === generation) setWorktreeState({ cwd: activeProjectCwd, items: [] });
-                });
-        };
-        refresh();
-        const unsubscribe = subscribe("fs-changed", (event) => {
-            if (!event.repo || event.repo === activeProjectCwd) refresh();
-        });
-        const unsubscribeGit = subscribe("git-refresh", (event) => {
-            if (!event.repo || event.repo === activeProjectCwd) refresh();
-        });
+        void projectControllerRuntime.start();
         return () => {
-            cancelled = true;
-            unsubscribe();
-            unsubscribeGit();
+            projectControllerRuntime.stop();
         };
-    }, [activeProjectCwd]);
+    }, []);
+
+    useEffect(() => {
+        const roots = projectRepoKey ? projectRepoKey.split("\0") : [];
+        void projectControllerRuntime.reconcile(roots, activeProjectCwd || null);
+    }, [activeProjectCwd, projectRepoKey]);
 
     useEffect(() => {
         let disposed = false;
@@ -624,18 +598,6 @@ export default function App() {
             void handle.then((u) => u());
         };
     }, []);
-
-    useEffect(() => {
-        const repos = projectRepoKey ? projectRepoKey.split("\0") : [];
-        for (const repo of repos) {
-            git.watchStart(repo).catch(reportError("repo watch"));
-        }
-        return () => {
-            for (const repo of repos) {
-                git.watchStop(repo).catch(swallow("repo watch stop"));
-            }
-        };
-    }, [projectRepoKey]);
 
     useEffect(() => {
         return subscribe("rnd-auth-expired", () => {
