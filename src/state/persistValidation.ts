@@ -57,6 +57,9 @@ export function validatePersistedLayout(value: unknown, limits: LayoutValidation
         if (ids.length > limits.maxNodes) return { ok: false, reason: `layout exceeds maximum node count (${limits.maxNodes})` };
 
         if (current.value.type === "pane") {
+            if (current.value.externalPty !== undefined || current.value.taskTerminalKey !== undefined) {
+                return { ok: false, reason: "pane contains runtime-only process metadata" };
+            }
             if (!boundedString(current.value.cwd, limits.maxStringLength, true)) return { ok: false, reason: "pane has an invalid cwd" };
             if (!isBuiltinWorkbenchItemKind(current.value.kind)) return { ok: false, reason: `unsupported pane kind: ${String(current.value.kind)}` };
             if (!boundedString(current.value.title, limits.maxStringLength, true)) return { ok: false, reason: "pane has an invalid title" };
@@ -94,6 +97,7 @@ export function validatePersistedWindow(
     if (!boundedString(value.id, limits.maxStringLength) || !boundedString(value.name, limits.maxStringLength, true)) return null;
     if (!PERSISTED_WINDOW_ROLES.has(value.role as WindowRole)) return null;
     if (!boundedString(value.activePaneId, limits.maxStringLength)) return null;
+    if (value.transient !== undefined) return null;
     if (value.fixed !== undefined && typeof value.fixed !== "boolean") return null;
     const layout = validatePersistedLayout(value.root, limits);
     if (!layout.ok || !layout.value.paneIds.includes(value.activePaneId)) return null;

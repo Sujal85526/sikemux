@@ -432,13 +432,17 @@ function snapshot(): string {
         .map((sess) => {
             const safeAgentIds = (s.agentsBySession[sess.id] ?? []).filter((id) => !!s.agents[id]?.resumeId);
             const activeAgentId = sess.activeAgentId && safeAgentIds.includes(sess.activeAgentId) ? sess.activeAgentId : null;
-            return persistedSession(sess, activeAgentId, sess.view === "agent" && activeAgentId ? "agent" : "windows");
+            const durableWindowIds = (s.windowsBySession[sess.id] ?? []).filter((id) => !!s.windows[id] && !s.windows[id].transient);
+            const activeWindowId = durableWindowIds.includes(sess.activeWindowId) ? sess.activeWindowId : (durableWindowIds[0] ?? "");
+            return persistedSession({ ...sess, activeWindowId }, activeAgentId, sess.view === "agent" && activeAgentId ? "agent" : "windows");
         });
     const windowsBySession: Record<string, Window[]> = {};
     const agentsBySession: Record<string, PersistedAgent[]> = {};
     const itemStates: PersistedSnapshot["itemStates"] = {};
     for (const sess of sessions) {
-        windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).map((id) => s.windows[id]).filter(Boolean);
+        windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? [])
+            .map((id) => s.windows[id])
+            .filter((window): window is Window => !!window && !window.transient);
         for (const window of windowsBySession[sess.id]) {
             const pending = [window.root];
             while (pending.length > 0) {
@@ -492,7 +496,9 @@ function snapshot(): string {
     };
     // Defense in depth: these runtime-only Bruno fields must never reach disk,
     // even if a malformed record introduced them outside the typed session shape.
-    return JSON.stringify(snap, (key, value) => (key === "secretVars" || key === "drafts" ? undefined : value));
+    return JSON.stringify(snap, (key, value) =>
+        key === "secretVars" || key === "drafts" || key === "transient" || key === "externalPty" || key === "taskTerminalKey" ? undefined : value,
+    );
 }
 
 function scheduleRetry(): void {

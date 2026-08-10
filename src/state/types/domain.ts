@@ -8,6 +8,10 @@ export interface PaneNode {
     kind: PaneKind;
     title: string;
     startup?: string;
+    /** Runtime-only marker: this pane borrows a process owned outside its renderer. */
+    externalPty?: true;
+    /** Runtime-only stable task identity used to reuse its presentation window. */
+    taskTerminalKey?: string;
 }
 
 export interface SplitNode {
@@ -31,6 +35,8 @@ export interface Window {
     root: LayoutNode;
     activePaneId: string;
     fixed?: boolean;
+    /** Runtime-only windows are deliberately omitted from persistence. */
+    transient?: true;
 }
 
 export type AgentType = "claude" | "codex" | "hermes" | "pi" | "opencode";

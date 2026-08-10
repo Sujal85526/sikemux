@@ -4,6 +4,7 @@ const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { applyHydrate, flushPersist, hydrationAllowsPersistence, resetPersistenceForTests, subscribePersist } from "./persist";
+import * as cmd from "./commands";
 import { getState, setState } from "./store";
 import { useToasts } from "./toast";
 
@@ -28,6 +29,36 @@ beforeEach(() => {
 });
 
 describe("frontend persistence", () => {
+    it("omits transient task terminals and restores a durable active window", async () => {
+        cmd.createProjectSession("/work/demo");
+        const paneId = cmd.openTaskTerminal({
+            executionId: "execution-secret-free",
+            terminalKey: "task:test:/work/demo",
+            taskId: "test",
+            label: "Test",
+            project: "/work/demo",
+            source: "project",
+            cwd: "/work/demo",
+            signal: new AbortController().signal,
+        });
+        const state = getState();
+        const session = state.sessions[state.activeSessionId];
+        expect(state.windows[session.activeWindowId]).toMatchObject({ transient: true, activePaneId: paneId });
+        invoke.mockResolvedValue(undefined);
+
+        await expect(flushPersist()).resolves.toBe(true);
+        const raw = invoke.mock.calls[0][1].data as string;
+        const saved = JSON.parse(raw);
+        const savedSession = saved.sessions.find((candidate: { id: string }) => candidate.id === session.id);
+        const savedWindows = saved.windowsBySession[session.id];
+
+        expect(savedWindows.length).toBeGreaterThan(0);
+        expect(savedWindows.every((window: { transient?: unknown }) => window.transient === undefined)).toBe(true);
+        expect(savedWindows.some((window: { id: string }) => window.id === savedSession.activeWindowId)).toBe(true);
+        expect(raw).not.toContain("task:test:/work/demo");
+        expect(raw).not.toContain("externalPty");
+    });
+
     it("classifies hydration before persistence can overwrite protected state", () => {
         setState({ themeId: "unchanged" });
 
