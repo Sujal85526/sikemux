@@ -11,8 +11,14 @@ import { performanceTelemetry } from "../lib/performance";
 
 type NativeChannel = Channel<number[]>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
+export type TerminalShellSemantics = "posix" | "powershell";
 
 const NATIVE_PTY_RESOURCE = "core.terminal.pty";
+const DEFAULT_SHELL_SEMANTICS: TerminalShellSemantics = IS_WINDOWS ? "powershell" : "posix";
+
+interface IntegrationHealthShell {
+    readonly shell?: unknown;
+}
 
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
     spawn: (request) => invoke<number>("pty_spawn", { ...request }),
@@ -36,8 +42,56 @@ const nativeChannels: PtyChannelAdapter<NativeChannel> = {
     },
 };
 
-function shellPathArgument(path: string): string {
-    return IS_WINDOWS ? `'${path.replaceAll("'", "''")}'` : path.replace(/([\s'"\\])/g, "\\$1");
+function requireLiteralPath(path: string): void {
+    if (path.includes("\0")) throw new TypeError("terminal drop paths cannot contain NUL bytes");
+}
+
+/** Encode one path as a single POSIX shell word without evaluating any of it. */
+export function encodePosixShellLiteral(path: string): string {
+    requireLiteralPath(path);
+    return `'${path.replaceAll("'", "'\\''")}'`;
+}
+
+/** Encode one path as a PowerShell single-quoted string literal. */
+export function encodePowerShellLiteral(path: string): string {
+    requireLiteralPath(path);
+    return `'${path.replaceAll("'", "''")}'`;
+}
+
+/** Determine quoting rules from the configured executable, independent of host OS. */
+export function shellSemanticsForExecutable(shell: string): TerminalShellSemantics | null {
+    const trimmed = shell.trim();
+    const unquoted =
+        trimmed.length >= 2 && ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'")))
+            ? trimmed.slice(1, -1)
+            : trimmed;
+    const executable =
+        unquoted
+            .split(/[\\/]/)
+            .at(-1)
+            ?.toLowerCase()
+            .replace(/\.exe$/, "") ?? "";
+    if (executable === "powershell" || executable === "pwsh") return "powershell";
+    if (["sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "fish"].includes(executable)) return "posix";
+    return null;
+}
+
+async function configuredShellSemantics(): Promise<TerminalShellSemantics> {
+    try {
+        const health = await invoke<IntegrationHealthShell>("integration_health");
+        if (health && typeof health.shell === "string") {
+            return shellSemanticsForExecutable(health.shell) ?? DEFAULT_SHELL_SEMANTICS;
+        }
+    } catch {
+        // invokeCommand already records the failed IPC. Keep drag/drop usable
+        // with the same default the native PTY launcher uses on this platform.
+    }
+    return DEFAULT_SHELL_SEMANTICS;
+}
+
+function encodeDroppedPaths(paths: readonly string[], semantics: TerminalShellSemantics): string {
+    const encode = semantics === "powershell" ? encodePowerShellLiteral : encodePosixShellLiteral;
+    return paths.map(encode).join(" ");
 }
 
 function recordControllerError(event: PtyControllerErrorEvent): void {
@@ -85,15 +139,31 @@ export function usePty(opts: {
         controllerRef.current = controller;
 
         const host = hostRef.current;
+        let active = true;
+        let shellSemanticsPromise: Promise<TerminalShellSemantics> | null = null;
+        const resolveShellSemantics = () => (shellSemanticsPromise ??= configuredShellSemantics());
         const unregisterDrop = host
             ? registerPtyDrop(host, (paths) => {
                   if (paths.length === 0) return;
-                  const body = paths.map(shellPathArgument).join(" ");
-                  void controller.write(`\x1b[200~${body}\x1b[201~`).catch((error) => recordControllerError({ operation: "write", error }));
+                  const droppedPaths = [...paths];
+                  if (droppedPaths.some((path) => path.includes("\0"))) {
+                      performanceTelemetry.incrementCounter("terminal.drop.rejected.nul");
+                      return;
+                  }
+                  void resolveShellSemantics()
+                      .then((semantics) => {
+                          if (!active) return;
+                          const body = encodeDroppedPaths(droppedPaths, semantics);
+                          return controller.write(`\x1b[200~${body}\x1b[201~`);
+                      })
+                      // PtyLifecycleController is the sole reporter for write
+                      // failures; this catch only prevents an unhandled promise.
+                      .catch(() => {});
               })
             : () => {};
 
         return () => {
+            active = false;
             unregisterDrop();
             if (controllerRef.current === controller) controllerRef.current = null;
             if (!durable) void controller.dispose();
