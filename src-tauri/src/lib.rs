@@ -319,3 +319,117 @@ pub fn run() {
             }
         });
 }
+
+#[cfg(all(test, feature = "ipc-command-tests"))]
+mod ipc_command_boundary_tests {
+    //! Command-boundary smoke tests for native Tauri IPC.
+    //!
+    //! These tests dispatch real [`tauri::webview::InvokeRequest`] values
+    //! through macro-generated command handlers on Tauri's
+    //! [`tauri::test::MockRuntime`]. They deliberately cover native
+    //! serialization, dispatch, async work, errors, and managed-state
+    //! injection; they are not packaged-WebView E2E tests.
+
+    use serde_json::{json, Value};
+    use tauri::ipc::{CallbackFn, InvokeBody};
+    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+    use tauri::webview::InvokeRequest;
+    use tauri::WebviewWindowBuilder;
+
+    use crate::observability::UiWatchdogState;
+
+    fn request(command: &str, body: Value) -> InvokeRequest {
+        InvokeRequest {
+            cmd: command.to_owned(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: if cfg!(any(windows, target_os = "android")) {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            }
+            .parse()
+            .expect("test invoke URL must be valid"),
+            body: InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        }
+    }
+
+    /// Smoke-tests the real native command boundary, not a packaged WebView.
+    #[test]
+    fn command_boundary_smoke_dispatches_async_filesystem_work_and_managed_state() {
+        let repo = tempfile::tempdir().expect("temporary project root");
+        std::fs::create_dir(repo.path().join("src")).expect("create source directory");
+        std::fs::write(repo.path().join("README.md"), "# smoke\n").expect("write project file");
+        std::fs::write(repo.path().join("src").join("main.rs"), "fn main() {}\n")
+            .expect("write nested project file");
+
+        let app = mock_builder()
+            .manage(UiWatchdogState::start().expect("start managed watchdog state"))
+            .invoke_handler(tauri::generate_handler![
+                crate::files::list_project_files_snapshot,
+                crate::observability::observability_ui_heartbeat,
+            ])
+            .build(mock_context(noop_assets()))
+            .expect("build MockRuntime application");
+        let webview = WebviewWindowBuilder::new(&app, "command-boundary", Default::default())
+            .build()
+            .expect("build mock webview");
+
+        let snapshot = get_ipc_response(
+            &webview,
+            request(
+                "list_project_files_snapshot",
+                json!({ "repo": repo.path().to_string_lossy() }),
+            ),
+        )
+        .expect("filesystem command must cross the IPC boundary successfully")
+        .deserialize::<Value>()
+        .expect("filesystem response must be JSON");
+
+        let scan_id = snapshot
+            .get("scanId")
+            .and_then(Value::as_u64)
+            .expect("response must expose the frontend camelCase scanId field");
+        assert!(scan_id > 0);
+        assert!(snapshot.get("scan_id").is_none());
+        let mut files = snapshot["files"]
+            .as_array()
+            .expect("response files must be an array")
+            .iter()
+            .map(|path| {
+                path.as_str()
+                    .expect("response paths must be strings")
+                    .replace('\\', "/")
+            })
+            .collect::<Vec<_>>();
+        files.sort_unstable();
+        assert_eq!(files, ["README.md", "src/main.rs"]);
+
+        let error = get_ipc_response(
+            &webview,
+            request(
+                "list_project_files_snapshot",
+                json!({ "repo": "relative-path-is-rejected" }),
+            ),
+        )
+        .expect_err("command errors must cross the IPC error callback");
+        assert_eq!(
+            error,
+            json!("repository path must be an absolute path of at most 4096 bytes")
+        );
+
+        let heartbeat = get_ipc_response(
+            &webview,
+            request(
+                "observability_ui_heartbeat",
+                json!({ "visible": true, "heartbeat": 1 }),
+            ),
+        )
+        .expect("managed-state command must resolve its injected state")
+        .deserialize::<Value>()
+        .expect("unit response must serialize as JSON");
+        assert_eq!(heartbeat, Value::Null);
+    }
+}
