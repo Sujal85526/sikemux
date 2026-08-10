@@ -43,6 +43,19 @@ export interface BuiltinWorkbenchItemState {
     bruno: null;
 }
 
+/**
+ * Persisted editor state is intentionally bounded. Paths use UTF-16 code-unit
+ * length (JavaScript's string length), must be non-blank, unique, and free of
+ * C0/C1 controls. A selection must name an open tab. Finite legacy tree widths
+ * are clamped without rounding to FileTree's live range; non-finite values fail.
+ */
+export const EDITOR_PERSISTENCE_LIMITS = Object.freeze({
+    maxOpenTabs: 128,
+    maxPathLength: 4_096,
+    minTreeWidth: 160,
+    maxTreeWidth: 600,
+});
+
 export interface PersistedWorkbenchItemEnvelope<Kind extends PaneKind = PaneKind> {
     readonly itemId: string;
     readonly kind: Kind;
@@ -87,7 +100,7 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
 function containsControlCharacter(value: string): boolean {
     for (let index = 0; index < value.length; index += 1) {
         const code = value.charCodeAt(index);
-        if (code <= 31 || code === 127) return true;
+        if (code <= 31 || (code >= 127 && code <= 159)) return true;
     }
     return false;
 }
@@ -140,18 +153,35 @@ function nullCodec(): VersionedPersistedCodec<null> {
     });
 }
 
+function isValidPersistedEditorPath(value: unknown): value is string {
+    return (
+        typeof value === "string" &&
+        value.length > 0 &&
+        value.length <= EDITOR_PERSISTENCE_LIMITS.maxPathLength &&
+        value.trim().length > 0 &&
+        !containsControlCharacter(value)
+    );
+}
+
 function decodeEditorView(encoded: unknown): PersistedCodecResult<EditorPaneView> {
     if (!isRecord(encoded)) return CODEC_FAILURE;
     const { openTabs, activePath, treeWidth } = encoded;
-    if (!Array.isArray(openTabs) || !openTabs.every((path) => typeof path === "string")) return CODEC_FAILURE;
-    if (activePath !== null && typeof activePath !== "string") return CODEC_FAILURE;
+    if (!Array.isArray(openTabs) || openTabs.length > EDITOR_PERSISTENCE_LIMITS.maxOpenTabs) return CODEC_FAILURE;
+    const uniquePaths = new Set<string>();
+    for (const path of openTabs) {
+        if (!isValidPersistedEditorPath(path) || uniquePaths.has(path)) return CODEC_FAILURE;
+        uniquePaths.add(path);
+    }
+    if (activePath !== null && (!isValidPersistedEditorPath(activePath) || !uniquePaths.has(activePath))) return CODEC_FAILURE;
     if (typeof treeWidth !== "number" || !Number.isFinite(treeWidth)) return CODEC_FAILURE;
     return {
         ok: true,
         value: {
             openTabs: openTabs.slice(),
             activePath,
-            treeWidth,
+            // Match pointer and keyboard resizing: accept legacy finite values,
+            // but normalize them into the currently reachable UI range.
+            treeWidth: Math.min(EDITOR_PERSISTENCE_LIMITS.maxTreeWidth, Math.max(EDITOR_PERSISTENCE_LIMITS.minTreeWidth, treeWidth)),
         },
     };
 }

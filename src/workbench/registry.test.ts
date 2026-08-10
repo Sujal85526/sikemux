@@ -3,6 +3,7 @@ import type { PaneKind, PaneNode } from "../state/types/domain";
 import {
     BUILTIN_WORKBENCH_ITEM_MANIFEST,
     DuplicateWorkbenchItemKindError,
+    EDITOR_PERSISTENCE_LIMITS,
     UnknownWorkbenchItemKindError,
     WorkbenchItemRegistry,
     createItemId,
@@ -17,6 +18,10 @@ const BUILTIN_KINDS = ["terminal", "editor", "git", "aws", "search", "rundeck", 
 
 function nullEnvelope(itemId: string, kind: PaneKind, overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return { itemId, kind, version: 1, state: null, ...overrides };
+}
+
+function editorEnvelope(state: unknown): Record<string, unknown> {
+    return { itemId: "pane-editor", kind: "editor", version: 1, state };
 }
 
 describe("built-in workbench item manifest", () => {
@@ -139,6 +144,85 @@ describe("workbench item persistence", () => {
             },
         });
         if (decoded.ok) expect(decoded.state).not.toBe(encoded.state);
+    });
+
+    it("preserves valid Windows paths, spaces, limit-sized paths, and nullable selection", () => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-editor", "editor");
+        const longestPath = `/${"a".repeat(EDITOR_PERSISTENCE_LIMITS.maxPathLength - 1)}`;
+        const state = {
+            openTabs: ["C:\\Project Files\\hello world.ts", "/project/file with spaces.ts", longestPath],
+            activePath: null,
+            treeWidth: 210,
+        };
+
+        expect(registry.decodePersisted(ref, editorEnvelope(state))).toEqual({ ok: true, ref, state });
+    });
+
+    it("accepts the tab-count boundary and rejects one tab beyond it", () => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-editor", "editor");
+        const openTabs = Array.from({ length: EDITOR_PERSISTENCE_LIMITS.maxOpenTabs }, (_value, index) => `/project/${index}.ts`);
+        const state = { openTabs, activePath: openTabs.at(-1) ?? null, treeWidth: 210 };
+
+        expect(registry.decodePersisted(ref, editorEnvelope(state))).toMatchObject({ ok: true, state });
+        expect(
+            registry.decodePersisted(
+                ref,
+                editorEnvelope({ ...state, openTabs: [...openTabs, "/project/overflow.ts"], activePath: "/project/overflow.ts" }),
+            ),
+        ).toEqual({ ok: false, reason: "invalid-state" });
+    });
+
+    it.each([
+        ["empty path", [""], null],
+        ["blank path", ["   "], null],
+        ["oversized path", [`/${"a".repeat(EDITOR_PERSISTENCE_LIMITS.maxPathLength)}`], null],
+        ["C0 control character", [`/project/bad${String.fromCharCode(10)}path.ts`], null],
+        ["C1 control character", [`/project/bad${String.fromCharCode(159)}path.ts`], null],
+        ["duplicate path", ["/project/a.ts", "/project/a.ts"], "/project/a.ts"],
+        ["non-string path", ["/project/a.ts", 7], "/project/a.ts"],
+        ["active path is not open", ["/project/a.ts"], "/project/missing.ts"],
+        ["empty active path", ["/project/a.ts"], ""],
+    ])("rejects bounded editor path violation: %s", (_label, openTabs, activePath) => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-editor", "editor");
+        expect(registry.decodePersisted(ref, editorEnvelope({ openTabs, activePath, treeWidth: 210 }))).toEqual({
+            ok: false,
+            reason: "invalid-state",
+        });
+    });
+
+    it("clamps finite tree widths to the live 160-600 px range without rounding", () => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-editor", "editor");
+        const decodeWidth = (treeWidth: number) => registry.decodePersisted(ref, editorEnvelope({ openTabs: [], activePath: null, treeWidth }));
+
+        expect(decodeWidth(-10)).toMatchObject({ ok: true, state: { treeWidth: EDITOR_PERSISTENCE_LIMITS.minTreeWidth } });
+        expect(decodeWidth(160)).toMatchObject({ ok: true, state: { treeWidth: 160 } });
+        expect(decodeWidth(240.5)).toMatchObject({ ok: true, state: { treeWidth: 240.5 } });
+        expect(decodeWidth(600)).toMatchObject({ ok: true, state: { treeWidth: 600 } });
+        expect(decodeWidth(100_000)).toMatchObject({ ok: true, state: { treeWidth: EDITOR_PERSISTENCE_LIMITS.maxTreeWidth } });
+        expect(decodeWidth(Number.NaN)).toEqual({ ok: false, reason: "invalid-state" });
+        expect(decodeWidth(Number.POSITIVE_INFINITY)).toEqual({ ok: false, reason: "invalid-state" });
+    });
+
+    it("applies the same bounds while encoding live editor state", () => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-editor", "editor");
+
+        expect(registry.encodePersisted(ref, { openTabs: [], activePath: null, treeWidth: 99 }).state).toEqual({
+            openTabs: [],
+            activePath: null,
+            treeWidth: EDITOR_PERSISTENCE_LIMITS.minTreeWidth,
+        });
+        expect(() =>
+            registry.encodePersisted(ref, {
+                openTabs: ["/project/a.ts", "/project/a.ts"],
+                activePath: "/project/a.ts",
+                treeWidth: 210,
+            }),
+        ).toThrow(TypeError);
     });
 
     it("round-trips null state for every non-editor built-in kind", () => {
