@@ -48,6 +48,7 @@ export interface PtyTimerAdapter {
 
 export type PtyControllerStatus = "idle" | "starting" | "running" | "failed" | "exited" | "disposing" | "disposed";
 export type PtyInitialInputStatus = "none" | "pending" | "scheduled" | "delivering" | "delivered" | "failed" | "cancelled";
+export type PtyProcessOwnership = "controller" | "external";
 export type PtyOperation =
     | "spawn"
     | "initial-input"
@@ -71,6 +72,7 @@ export interface PtyControllerSnapshot {
     readonly cols: number;
     readonly rows: number;
     readonly failureOperation: PtyOperation | null;
+    readonly processOwnership: PtyProcessOwnership;
 }
 
 export interface PtyControllerErrorEvent {
@@ -94,6 +96,8 @@ export interface PtyAttachment {
 export interface PtyLifecycleControllerOptions<ChannelTransport, Context = unknown> {
     readonly api: PtyApi<ChannelTransport, Context>;
     readonly channels: PtyChannelAdapter<ChannelTransport>;
+    /** Existing native PTY retained and stopped by another runtime owner. */
+    readonly existingPtyId?: number;
     readonly cwd?: string;
     readonly startup?: string;
     readonly context?: Context;
@@ -121,7 +125,7 @@ export class PtyControllerDisposedError extends Error {
 
 export class PtyControllerExitedError extends Error {
     constructor() {
-        super("PTY process has exited; create a new controller to restart it");
+        super("PTY process has exited; adopt a replacement or create a new controller to restart it");
         this.name = "PtyControllerExitedError";
     }
 }
@@ -133,11 +137,19 @@ export class PtySubscriptionOverflowError extends Error {
     }
 }
 
+export class PtyControllerReplacedError extends Error {
+    constructor() {
+        super("PTY controller moved to a replacement externally owned process");
+        this.name = "PtyControllerReplacedError";
+    }
+}
+
 type StateListener = (snapshot: PtyControllerSnapshot) => void;
 
 type AttachmentState<ChannelTransport> = {
     readonly localId: number;
     readonly ptyId: number;
+    readonly ptyGeneration: number;
     readonly listener: (chunk: PtyOutputChunk) => void;
     readonly binding: PtyChannelBinding<ChannelTransport>;
     nativeAttach: Promise<PtyAttachResult>;
@@ -170,6 +182,7 @@ const DEFAULT_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_LISTENER_ERRORS = 8;
 const DEFAULT_MAX_STATE_LISTENERS = 32;
 const DEFAULT_MAX_ATTACHMENTS = 16;
+const MAX_RUNTIME_ID = 0xffff_ffff;
 const MAX_SHELL_CWD_BYTES = 4_096;
 const UTF8_ENCODER = new TextEncoder();
 const SHELL_PHASES = new Set<PtyShellPhase>(["unknown", "prompt", "input", "running", "finished"]);
@@ -193,7 +206,12 @@ function requireNonNegativeNumber(name: string, value: number): number {
 }
 
 function isRuntimeId(value: unknown): value is number {
-    return Number.isSafeInteger(value) && (value as number) >= 0;
+    return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_RUNTIME_ID;
+}
+
+function requireRuntimeId(name: string, value: unknown): number {
+    if (!isRuntimeId(value)) throw new RangeError(`${name} must be an unsigned 32-bit integer`);
+    return value;
 }
 
 function callAsPromise<T>(operation: () => Promise<T>): Promise<T> {
@@ -303,15 +321,16 @@ function isTerminalAttachFailure(error: unknown): boolean {
 }
 
 /**
- * Runtime-only PTY owner. Spawn and renderer-attach failures may be retried;
- * only an explicit process exit or native PTY lookup miss is terminal for this
- * instance. Renderer attachment is independent from process lifetime, so cold
- * views detach without killing.
+ * Runtime-only PTY lifecycle. Controller-owned spawns are killed on disposal;
+ * externally owned processes only lose their renderer subscriptions. Spawn and
+ * renderer-attach failures may be retried, while external replacements use a
+ * monotonic generation so stale attachment completions cannot affect the new PTY.
  */
 export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private readonly api: PtyApi<ChannelTransport, Context>;
     private readonly channels: PtyChannelAdapter<ChannelTransport>;
     private readonly spawnRequest: PtySpawnRequest<Context>;
+    private readonly processOwnership: PtyProcessOwnership;
     private readonly timer: PtyTimerAdapter;
     private readonly initialInputDelayMs: number;
     private readonly onInitialInputDelivered?: () => void;
@@ -330,7 +349,9 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private initialInput: string | null;
     private initialInputAttempted = false;
     private initialInputTimer: unknown | null = null;
+    private externalPtyId: number | null;
     private ptyId: number | null = null;
+    private ptyGeneration = 0;
     private startPromise: Promise<number> | null = null;
     private disposePromise: Promise<void> | null = null;
     private killPromise: Promise<void> | null = null;
@@ -347,6 +368,9 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     constructor(options: PtyLifecycleControllerOptions<ChannelTransport, Context>) {
         this.api = options.api;
         this.channels = options.channels;
+        this.externalPtyId = options.existingPtyId === undefined ? null : requireRuntimeId("existingPtyId", options.existingPtyId);
+        this.processOwnership = this.externalPtyId === null ? "controller" : "external";
+        if (this.externalPtyId !== null) this.ptyGeneration = 1;
         this.cols = requirePositiveInteger("cols", options.cols ?? DEFAULT_COLS, 65_535);
         this.rows = requirePositiveInteger("rows", options.rows ?? DEFAULT_ROWS, 65_535);
         this.spawnRequest = Object.freeze({
@@ -381,6 +405,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             cols: this.cols,
             rows: this.rows,
             failureOperation: this.failureOperation,
+            processOwnership: this.processOwnership,
         });
     }
 
@@ -398,6 +423,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         if (this.status === "exited") return containRejection(Promise.reject(new PtyControllerExitedError()));
         if (this.ptyId !== null && this.status === "running") return Promise.resolve(this.ptyId);
         if (this.startPromise) return this.startPromise;
+        if (this.processOwnership === "external") return this.startExternalPty();
 
         this.status = "starting";
         this.failureOperation = null;
@@ -407,6 +433,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         const attempt = spawned
             .then(async (id) => {
                 if (!isRuntimeId(id)) throw new TypeError("PTY spawn returned an invalid runtime ID");
+                this.ptyGeneration += 1;
                 this.ptyId = id;
                 if (this.disposeRequested) {
                     try {
@@ -441,6 +468,78 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         return tracked;
     }
 
+    private startExternalPty(): Promise<number> {
+        const id = this.externalPtyId;
+        if (id === null) return containRejection(Promise.reject(new TypeError("external PTY target is missing")));
+        const generation = this.ptyGeneration;
+        this.status = "starting";
+        this.failureOperation = null;
+        this.emitState();
+
+        const attempt = Promise.resolve().then(() => {
+            if (this.disposeRequested) throw new PtyControllerDisposedError();
+            if (generation !== this.ptyGeneration || id !== this.externalPtyId) throw new PtyControllerReplacedError();
+            this.ptyId = id;
+            this.status = "running";
+            this.failureOperation = null;
+            this.emitState();
+            this.scheduleInitialInput(id);
+            return id;
+        });
+        const tracked: Promise<number> = containRejection(
+            attempt.finally(() => {
+                if (this.startPromise === tracked) this.startPromise = null;
+            }),
+        );
+        this.startPromise = tracked;
+        return tracked;
+    }
+
+    /**
+     * Point an external controller at a replacement PTY without taking process
+     * ownership. Old renderer subscriptions detach from their exact PTY ID.
+     */
+    adoptExistingPty(idInput: number): Promise<number> {
+        let id: number;
+        try {
+            id = requireRuntimeId("existingPtyId", idInput);
+        } catch (error) {
+            return containRejection(Promise.reject(error));
+        }
+        if (this.processOwnership !== "external") {
+            return containRejection(Promise.reject(new TypeError("a controller-owned PTY cannot adopt an external process")));
+        }
+        if (this.disposeRequested || this.status === "disposing" || this.status === "disposed") {
+            return containRejection(Promise.reject(new PtyControllerDisposedError()));
+        }
+        if (this.externalPtyId === id && (this.status === "starting" || (this.status === "running" && this.ptyId === id))) {
+            return this.start();
+        }
+        if (this.ptyGeneration >= Number.MAX_SAFE_INTEGER) {
+            return containRejection(Promise.reject(new RangeError("PTY ownership generation space is exhausted")));
+        }
+
+        const lifecycleStarted = this.status !== "idle";
+        this.ptyGeneration += 1;
+        this.externalPtyId = id;
+        this.ptyId = null;
+        this.startPromise = null;
+        this.resizeSequence += 1;
+        this.rejectPendingResizes(new PtyControllerReplacedError());
+        if (
+            lifecycleStarted &&
+            (this.initialInputStatus === "pending" || this.initialInputStatus === "scheduled" || this.initialInputStatus === "delivering")
+        ) {
+            this.initialInputStatus = "cancelled";
+            this.cancelInitialInput();
+        }
+        for (const attachment of Array.from(this.attachments.values())) void this.detachAttachment(attachment).catch(() => {});
+        this.status = "idle";
+        this.failureOperation = null;
+        this.emitState();
+        return this.start();
+    }
+
     write(data: string): Promise<void> {
         return containRejection(this.performWrite(data));
     }
@@ -451,9 +550,11 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         try {
             await this.api.write(id, data);
         } catch (error) {
-            this.failureOperation = "write";
-            this.reportError("write", error);
-            this.emitState();
+            if (!this.disposeRequested && this.status === "running" && this.ptyId === id) {
+                this.failureOperation = "write";
+                this.reportError("write", error);
+                this.emitState();
+            }
             throw error;
         }
     }
@@ -515,6 +616,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         state = {
             localId: ++this.attachmentSequence,
             ptyId: id,
+            ptyGeneration: this.ptyGeneration,
             listener,
             binding,
             nativeAttach,
@@ -539,8 +641,10 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             if (isRuntimeId(attached.subId)) state.subId = attached.subId;
             shell = validateAttachResult(attached, this.maxSnapshotBytes);
         } catch (error) {
+            const stale = this.isStaleAttachment(state);
             await this.abandonAttachment(state);
             if (this.disposeRequested) throw new PtyControllerDisposedError();
+            if (stale) throw new PtyControllerReplacedError();
             if (isTerminalAttachFailure(error)) {
                 this.markExited("attach");
             } else if (this.status === "running") {
@@ -551,9 +655,11 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             throw error;
         }
 
-        if (state.detached || this.disposeRequested) {
+        const stale = this.isStaleAttachment(state);
+        if (state.detached || this.disposeRequested || stale) {
             await this.detachAttachment(state).catch(() => {});
             if (state.overflowed) throw new PtySubscriptionOverflowError();
+            if (stale && !this.disposeRequested) throw new PtyControllerReplacedError();
             throw new PtyControllerDisposedError();
         }
 
@@ -592,7 +698,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         const starting = this.startPromise;
         const detaches = Array.from(this.attachments.values(), (attachment) => this.detachAttachment(attachment));
         const runningId = this.ptyId;
-        const immediateKill = runningId === null ? null : this.killOnce(runningId);
+        const immediateKill = this.processOwnership === "controller" && runningId !== null ? this.killOnce(runningId) : null;
         // Attach rejection handlers immediately; a slow detach must not leave a
         // concurrently failing start/kill promise temporarily unhandled.
         const settledDetaches = Promise.allSettled(detaches);
@@ -603,7 +709,9 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                 await settledDetaches;
                 if (settledStart) await settledStart;
                 if (settledKill) await settledKill;
-                else if (this.ptyId !== null) await Promise.allSettled([this.killOnce(this.ptyId)]);
+                else if (this.processOwnership === "controller" && this.ptyId !== null) {
+                    await Promise.allSettled([this.killOnce(this.ptyId)]);
+                }
                 this.ptyId = null;
                 this.initialInput = null;
                 this.status = "disposed";
@@ -616,7 +724,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     toJSON(): never {
-        throw new TypeError("PTY controllers own runtime processes and cannot be serialized");
+        throw new TypeError("PTY controllers hold runtime process handles and cannot be serialized");
     }
 
     private async readyPtyId(): Promise<number> {
@@ -627,6 +735,9 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
 
     private assertRunning(id: number): void {
         if (this.status === "exited") throw new PtyControllerExitedError();
+        if (!this.disposeRequested && this.processOwnership === "external" && this.ptyId !== id) {
+            throw new PtyControllerReplacedError();
+        }
         if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) throw new PtyControllerDisposedError();
     }
 
@@ -734,7 +845,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.emitState();
         try {
             await this.api.write(id, `\x1b[200~${input}\x1b[201~\r`);
-            if (this.disposeRequested) {
+            if (this.disposeRequested || this.ptyId !== id) {
                 this.initialInputStatus = "cancelled";
                 this.emitState();
                 return;
@@ -754,6 +865,11 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                 }
             }
         } catch (error) {
+            if (this.disposeRequested || this.ptyId !== id) {
+                this.initialInputStatus = "cancelled";
+                this.emitState();
+                return;
+            }
             // At-most-once policy: a rejected bridge response is ambiguous, so
             // automatic retry could submit the user's first task twice.
             this.initialInputStatus = "failed";
@@ -834,6 +950,10 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         } finally {
             state.delivering = false;
         }
+    }
+
+    private isStaleAttachment(state: AttachmentState<ChannelTransport>): boolean {
+        return state.ptyGeneration !== this.ptyGeneration || state.ptyId !== this.ptyId;
     }
 
     private detachAttachment(state: AttachmentState<ChannelTransport>): Promise<void> {

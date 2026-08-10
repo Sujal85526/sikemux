@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
     PtyControllerDisposedError,
     PtyControllerExitedError,
+    PtyControllerReplacedError,
     PtyLifecycleController,
     PtySubscriptionOverflowError,
     parsePtyShellMetadataSnapshot,
@@ -124,7 +125,133 @@ describe("PtyLifecycleController process ownership", () => {
         expect(fakes.write).toHaveBeenCalledWith(42, "echo hi\r");
         expect(fakes.resize).toHaveBeenCalledTimes(1);
         expect(fakes.resize).toHaveBeenCalledWith(42, 120, 40);
-        expect(controller.getSnapshot()).toMatchObject({ status: "running", spawnAttempts: 1, cols: 120, rows: 40 });
+        expect(controller.getSnapshot()).toMatchObject({
+            status: "running",
+            spawnAttempts: 1,
+            cols: 120,
+            rows: 40,
+            processOwnership: "controller",
+        });
+    });
+
+    it("adopts an existing PTY without spawning or taking kill ownership", async () => {
+        const { fakes, options } = controllerOptions({ existingPtyId: 73 });
+        const controller = new PtyLifecycleController(options);
+
+        const first = controller.start();
+        const second = controller.start();
+        expect(first).toBe(second);
+        await expect(first).resolves.toBe(73);
+        await controller.write("input");
+        await controller.resize(132, 43);
+        const attachment = await controller.attach(vi.fn());
+        await attachment.detach();
+        await controller.dispose();
+
+        expect(fakes.spawn).not.toHaveBeenCalled();
+        expect(fakes.write).toHaveBeenCalledWith(73, "input");
+        expect(fakes.resize).toHaveBeenCalledWith(73, 132, 43);
+        expect(fakes.attach).toHaveBeenCalledWith(73, expect.anything());
+        expect(fakes.detach).toHaveBeenCalledWith(73, 7);
+        expect(fakes.kill).not.toHaveBeenCalled();
+        expect(controller.getSnapshot()).toMatchObject({
+            status: "disposed",
+            spawnAttempts: 0,
+            attachmentCount: 0,
+            processOwnership: "external",
+        });
+    });
+
+    it("retries renderer attachment to an externally owned PTY", async () => {
+        const attachError = Object.freeze({ category: "pty", message: "temporary attach failure" });
+        const { fakes, errors, options } = controllerOptions({ existingPtyId: 74 });
+        fakes.attach.mockRejectedValueOnce(attachError).mockResolvedValueOnce({ subId: 19, snapshot: [4, 5], alternateScreen: false });
+        const controller = new PtyLifecycleController(options);
+
+        await expect(controller.attach(vi.fn())).rejects.toBe(attachError);
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", failureOperation: "attach", processOwnership: "external" });
+
+        const attachment = await controller.attach(vi.fn());
+        expect(attachment.snapshot).toEqual([4, 5]);
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", failureOperation: null });
+        expect(fakes.spawn).not.toHaveBeenCalled();
+        expect(fakes.attach).toHaveBeenCalledTimes(2);
+        expect(fakes.attach.mock.calls.every(([id]) => id === 74)).toBe(true);
+        expect(fakes.kill).not.toHaveBeenCalled();
+        expect(errors).toContainEqual({ operation: "attach", error: attachError });
+
+        await controller.dispose();
+        expect(fakes.detach).toHaveBeenCalledWith(74, 19);
+        expect(fakes.kill).not.toHaveBeenCalled();
+    });
+
+    it("detaches a late external attachment when disposal wins without killing", async () => {
+        const nativeAttach = deferred<PtyAttachResult>();
+        const { fakes, channels, options } = controllerOptions({ existingPtyId: 75 });
+        fakes.attach.mockReturnValue(nativeAttach.promise);
+        const controller = new PtyLifecycleController(options);
+        const attaching = controller.attach(vi.fn());
+        await vi.waitFor(() => expect(channels.bindings).toHaveLength(1));
+
+        const disposing = controller.dispose();
+        nativeAttach.resolve({ subId: 20, snapshot: [1], alternateScreen: false });
+
+        await expect(attaching).rejects.toBeInstanceOf(PtyControllerDisposedError);
+        await disposing;
+        expect(fakes.detach).toHaveBeenCalledOnce();
+        expect(fakes.detach).toHaveBeenCalledWith(75, 20);
+        expect(fakes.kill).not.toHaveBeenCalled();
+        expect(channels.bindings[0].close).toHaveBeenCalledOnce();
+    });
+
+    it("replaces an external PTY and quarantines its stale attachment generation", async () => {
+        const oldNativeAttach = deferred<PtyAttachResult>();
+        const { fakes, channels, options } = controllerOptions({ existingPtyId: 76 });
+        fakes.attach.mockReturnValueOnce(oldNativeAttach.promise).mockResolvedValueOnce({ subId: 22, snapshot: [7, 8], alternateScreen: false });
+        const controller = new PtyLifecycleController(options);
+        const oldListener = vi.fn();
+        const oldAttaching = controller.attach(oldListener);
+        await vi.waitFor(() => expect(fakes.attach).toHaveBeenCalledWith(76, expect.anything()));
+
+        await expect(controller.adoptExistingPty(77)).resolves.toBe(77);
+        expect(channels.bindings[0].close).toHaveBeenCalledOnce();
+        channels.bindings[0].emit([99]);
+        expect(oldListener).not.toHaveBeenCalled();
+
+        const newListener = vi.fn();
+        const replacement = await controller.attach(newListener);
+        replacement.activate();
+        channels.bindings[1].emit([10]);
+        expect(newListener).toHaveBeenCalledWith([10]);
+        expect(fakes.attach).toHaveBeenNthCalledWith(2, 77, expect.anything());
+
+        oldNativeAttach.resolve({ subId: 21, snapshot: [1, 2], alternateScreen: false });
+        await expect(oldAttaching).rejects.toBeInstanceOf(PtyControllerReplacedError);
+        expect(fakes.detach).toHaveBeenCalledWith(76, 21);
+
+        await controller.resize(140, 50);
+        expect(fakes.resize).toHaveBeenCalledWith(77, 140, 50);
+        await controller.dispose();
+        expect(fakes.detach).toHaveBeenCalledWith(77, 22);
+        expect(fakes.kill).not.toHaveBeenCalled();
+    });
+
+    it("recovers an exited external controller only through explicit replacement", async () => {
+        const missing = Object.freeze({ category: "pty-not-found", message: "gone" });
+        const { fakes, options } = controllerOptions({ existingPtyId: 78 });
+        fakes.attach.mockRejectedValueOnce(missing).mockResolvedValueOnce({ subId: 23, snapshot: [3], alternateScreen: false });
+        const controller = new PtyLifecycleController(options);
+
+        await expect(controller.attach(vi.fn())).rejects.toBe(missing);
+        await expect(controller.start()).rejects.toBeInstanceOf(PtyControllerExitedError);
+        await expect(controller.adoptExistingPty(79)).resolves.toBe(79);
+        const recovered = await controller.attach(vi.fn());
+
+        expect(recovered.snapshot).toEqual([3]);
+        expect(fakes.attach).toHaveBeenNthCalledWith(2, 79, expect.anything());
+        expect(fakes.spawn).not.toHaveBeenCalled();
+        await controller.dispose();
+        expect(fakes.kill).not.toHaveBeenCalled();
     });
 
     it("serializes native resizes and coalesces queued requests to the newest size", async () => {
@@ -550,12 +677,15 @@ describe("PtyLifecycleController safety boundaries", () => {
         expect(errors).toContainEqual({ operation: "state-listener", error: observerError });
     });
 
-    it("validates native dimensions before spawning", async () => {
+    it("validates native dimensions and externally supplied runtime IDs", async () => {
         const { fakes, options } = controllerOptions();
         const controller = new PtyLifecycleController(options);
 
+        expect(() => new PtyLifecycleController({ ...options, existingPtyId: -1 })).toThrow(RangeError);
+        expect(() => new PtyLifecycleController({ ...options, existingPtyId: 0x1_0000_0000 })).toThrow(RangeError);
         await expect(controller.resize(0, 24)).rejects.toThrow(RangeError);
         await expect(controller.resize(80, 65_536)).rejects.toThrow(RangeError);
+        await expect(controller.adoptExistingPty(42)).rejects.toThrow("controller-owned PTY");
         expect(fakes.spawn).not.toHaveBeenCalled();
         expect(fakes.resize).not.toHaveBeenCalled();
     });
