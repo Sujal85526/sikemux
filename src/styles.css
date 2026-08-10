@@ -2,6 +2,7 @@
 @import "./styles/chrome.css";
 @import "./styles/picker.css";
 @import "./styles/editor.css";
+@import "./styles/editor-insights.css";
 @import "./styles/git.css";
 @import "./styles/agents.css";
 @import "./styles/codemirror.css";
