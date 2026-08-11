@@ -43,31 +43,6 @@ export interface CreateGitWorktreeOptions {
     startPoint?: string | null;
 }
 
-export interface GitCheckpoint {
-    id: string;
-    ref: string;
-    commit: string;
-    head: string | null;
-    createdAt: number;
-    label: string;
-    fileCount: number;
-    additionCount: number;
-    deletionCount: number;
-}
-
-export interface CaptureGitCheckpointOptions {
-    agentId: string;
-    checkpointId: string;
-    label: string;
-}
-
-export interface ForkGitCheckpointOptions {
-    agentId: string;
-    checkpointId: string;
-    path: string;
-    branch: string;
-}
-
 export interface GitCommit {
     hash: string;
     full_hash: string;
@@ -155,30 +130,6 @@ export const git = {
             startPoint: options.startPoint ?? null,
         }),
     worktreeRemove: (repo: string, path: string, force = false) => invoke<GitWorktree>("git_worktree_remove", { repo, path, force }),
-    checkpointCapture: (repo: string, options: CaptureGitCheckpointOptions) =>
-        invoke<GitCheckpoint>("git_checkpoint_capture", {
-            repo,
-            agentId: options.agentId,
-            checkpointId: options.checkpointId,
-            label: options.label,
-        }),
-    checkpoints: (repo: string, agentId: string) => invoke<GitCheckpoint[]>("git_checkpoint_list", { repo, agentId }),
-    checkpointDiff: (repo: string, agentId: string, checkpointId: string, baseCheckpointId?: string | null) =>
-        invoke<string>("git_checkpoint_diff", {
-            repo,
-            agentId,
-            checkpointId,
-            baseCheckpointId: baseCheckpointId ?? null,
-        }),
-    checkpointDelete: (repo: string, agentId: string, checkpointId: string) => invoke<void>("git_checkpoint_delete", { repo, agentId, checkpointId }),
-    checkpointFork: (repo: string, options: ForkGitCheckpointOptions) =>
-        invoke<GitWorktree>("git_checkpoint_fork", {
-            repo,
-            agentId: options.agentId,
-            checkpointId: options.checkpointId,
-            path: options.path,
-            branch: options.branch,
-        }),
     checkout: (repo: string, branch: string) => invoke<void>("git_checkout", { repo, branch }),
     checkoutSmart: (repo: string, branch: string) => invoke<string>("git_checkout_smart", { repo, branch }),
     branchCreate: (repo: string, name: string, startPoint?: string) =>

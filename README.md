@@ -33,7 +33,7 @@ A project session bundles five views (`Files`, `Term`, `Git`, `Agents`, `Search`
 </tr>
 <tr>
 <td align="center"><b>Integrated terminal</b> — xterm.js with gated WebGL acceleration, real PTYs via Rust, split panes, tabs, drag-drop paths.</td>
-<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, local-CLI-powered commit messages, and namespaced agent checkpoints that can be reviewed or forked into worktrees.</td>
+<td align="center"><b>lazygit-style git</b> — branches, staging, commits, diffs, merge, pull/push, worktrees, and local-CLI-powered commit messages.</td>
 </tr>
 </table>
 
