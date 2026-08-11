@@ -27,6 +27,8 @@ export type GitModal =
           confirmLabel?: string;
           cancelLabel?: string;
           destructive?: boolean;
+          initialFocus?: "confirm" | "cancel";
+          confirmKey?: string;
           onConfirm: () => void | Promise<void>;
       }
     | {

@@ -3,6 +3,14 @@ import { closeGitModal, dispatchGitMenuKey } from "../../state/git";
 import { getState, useStore } from "../../state/store";
 import { PRIMARY_SHORTCUT } from "../../lib/platform";
 
+type ConfirmModal = Extract<NonNullable<ReturnType<typeof useStore.getState>["gitModal"]>, { kind: "confirm" }>;
+
+function submitConfirmation(modal: ConfirmModal): void {
+    if (getState().gitModal !== modal) return;
+    closeGitModal();
+    void modal.onConfirm();
+}
+
 export function GitModalRenderer({ paneId, active }: { paneId: string; active: boolean }) {
     const modal = useStore((s) => s.gitModal);
     const ownsModal = !!modal && modal.ownerPaneId === paneId;
@@ -24,6 +32,12 @@ export function GitModalRenderer({ paneId, active }: { paneId: string; active: b
                 e.preventDefault();
                 e.stopPropagation();
                 closeGitModal();
+                return;
+            }
+            if (modal.kind === "confirm" && modal.confirmKey === e.key && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                submitConfirmation(modal);
                 return;
             }
             if (modal.kind === "menu" && dispatchGitMenuKey(e.key)) {
@@ -81,12 +95,13 @@ function MenuBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof useS
     );
 }
 
-function ConfirmBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof useStore.getState>["gitModal"]>, { kind: "confirm" }> }) {
+function ConfirmBody({ modal }: { modal: ConfirmModal }) {
     const confirmRef = useRef<HTMLButtonElement>(null);
     const cancelRef = useRef<HTMLButtonElement>(null);
     useEffect(() => {
-        (modal.destructive ? cancelRef : confirmRef).current?.focus();
-    }, [modal.destructive]);
+        const target = modal.initialFocus ?? (modal.destructive ? "cancel" : "confirm");
+        (target === "confirm" ? confirmRef : cancelRef).current?.focus();
+    }, [modal.destructive, modal.initialFocus]);
     return (
         <>
             <div className="git-modal-h">{modal.title}</div>
@@ -99,10 +114,7 @@ function ConfirmBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof u
                     ref={confirmRef}
                     type="button"
                     className={`git-modal-btn primary${modal.destructive ? " danger" : ""}`}
-                    onClick={() => {
-                        closeGitModal();
-                        void modal.onConfirm();
-                    }}>
+                    onClick={() => submitConfirmation(modal)}>
                     {modal.confirmLabel ?? "confirm"}
                 </button>
             </div>

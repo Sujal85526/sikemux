@@ -20,6 +20,8 @@ export function openGitConfirm(opts: {
     confirmLabel?: string;
     cancelLabel?: string;
     destructive?: boolean;
+    initialFocus?: "confirm" | "cancel";
+    confirmKey?: string;
     onConfirm: () => void | Promise<void>;
 }): void {
     setState({
@@ -31,6 +33,8 @@ export function openGitConfirm(opts: {
             confirmLabel: opts.confirmLabel,
             cancelLabel: opts.cancelLabel,
             destructive: opts.destructive,
+            initialFocus: opts.initialFocus,
+            confirmKey: opts.confirmKey,
             onConfirm: opts.onConfirm,
         },
     });

@@ -484,7 +484,7 @@ export function GitPane({
         const r = rangeFor("files");
         const targets = r ? filteredFiles.slice(r[0], r[1] + 1) : [f];
         const label = r ? `Discard ${targets.length} files` : `Discard changes — ${basenameOf(f.path)}`;
-        const apply = (mode: "all" | "unstaged" | "staged") => () => {
+        const apply = (mode: "all" | "unstaged" | "staged", confirmKey: "d" | "u" | "s") => () => {
             openGitConfirm({
                 title: label,
                 body:
@@ -494,7 +494,9 @@ export function GitPane({
                           ? `Discard unstaged changes in ${targets.length} file${targets.length > 1 ? "s" : ""}? (staged changes preserved)`
                           : `Unstage ${targets.length} file${targets.length > 1 ? "s" : ""} from the index? (worktree preserved)`,
                 destructive: true,
-                confirmLabel: "discard",
+                confirmLabel: mode === "staged" ? "unstage" : "discard",
+                initialFocus: "confirm",
+                confirmKey,
                 onConfirm: async () => {
                     await run(r ? `discarding ${targets.length} files (${mode})` : `discarding ${f.path}`, async () => {
                         for (const t of targets) await git.discardFile(repo, t.path, mode);
@@ -508,18 +510,18 @@ export function GitPane({
                 label: "discard all changes",
                 hint: "staged + worktree",
                 destructive: true,
-                run: apply("all"),
+                run: apply("all", "d"),
             },
             {
                 key: "u",
                 label: "discard unstaged changes",
                 destructive: true,
-                run: apply("unstaged"),
+                run: apply("unstaged", "u"),
             },
             {
                 key: "s",
                 label: "unstage changes",
-                run: apply("staged"),
+                run: apply("staged", "s"),
             },
         ]);
     };
