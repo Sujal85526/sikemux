@@ -34,7 +34,7 @@ export function GitModalRenderer({ paneId, active }: { paneId: string; active: b
                 closeGitModal();
                 return;
             }
-            if (modal.kind === "confirm" && modal.confirmKey === e.key && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            if (modal.kind === "confirm" && modal.confirmKey === e.key && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
                 e.preventDefault();
                 e.stopPropagation();
                 submitConfirmation(modal);

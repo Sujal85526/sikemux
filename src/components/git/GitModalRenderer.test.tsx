@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GitModalRenderer } from "./GitModalRenderer";
 import { getState, setState } from "../../state/store";
@@ -55,6 +55,10 @@ describe("GitModalRenderer confirmations", () => {
 
         render(<GitModalRenderer paneId="git-pane" active />);
         await waitFor(() => expect(screen.getByRole("button", { name: "cancel" })).toHaveFocus());
+
+        fireEvent.keyDown(window, { key: "d", repeat: true });
+        expect(onConfirm).not.toHaveBeenCalled();
+        expect(getState().gitModal).not.toBeNull();
 
         await user.keyboard("d");
         await user.keyboard("d");
