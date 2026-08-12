@@ -66,6 +66,9 @@ pub enum AppError {
     #[error("fs: {0}")]
     Fs(String),
 
+    #[error("file conflict: {0}")]
+    FileConflict(String),
+
     #[error("watch: {0}")]
     Watch(String),
 
@@ -150,6 +153,7 @@ impl AppError {
             AppError::Pty(_) => "pty",
             AppError::Search(_) => "search",
             AppError::Fs(_) => "fs",
+            AppError::FileConflict(_) => "file-conflict",
             AppError::Watch(_) => "watch",
             AppError::State(_) => "state",
             AppError::Window(_) => "window",

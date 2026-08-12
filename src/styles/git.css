@@ -1477,8 +1477,8 @@ body.git-resizing {
         opacity 0.12s,
         color 0.12s;
 }
-.sess-row:hover .sess-close,
-.proj-row:hover .sess-close {
+.session-row-shell:hover .sess-close,
+.session-row-shell .sess-close:focus-visible {
     opacity: 1;
 }
 .sess-close:hover {

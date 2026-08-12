@@ -29,12 +29,14 @@ export interface RundeckStatus {
     ok: boolean;
     auth_failed: boolean;
     message: string | null;
+    allow_insecure_private_http: boolean;
 }
 
 export interface RundeckLoginRequest {
     url: string;
     user: string;
     password: string;
+    allow_insecure_private_http: boolean;
 }
 
 export interface RundeckLoginResult {

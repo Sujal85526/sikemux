@@ -1,3 +1,5 @@
+import type { PtyDirectCommand } from "../state/types";
+
 export type PtyOutputChunk = readonly number[] | Uint8Array;
 export type PtyShellPhase = "unknown" | "prompt" | "input" | "running" | "finished";
 
@@ -13,6 +15,7 @@ export interface PtySpawnRequest<Context = unknown> {
     readonly rows: number;
     readonly cwd: string | null;
     readonly startup: string | null;
+    readonly directCommand: PtyDirectCommand | null;
     readonly context: Context | null;
 }
 
@@ -100,6 +103,7 @@ export interface PtyLifecycleControllerOptions<ChannelTransport, Context = unkno
     readonly existingPtyId?: number;
     readonly cwd?: string;
     readonly startup?: string;
+    readonly directCommand?: PtyDirectCommand;
     readonly context?: Context;
     readonly cols?: number;
     readonly rows?: number;
@@ -377,7 +381,8 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             cols: this.cols,
             rows: this.rows,
             cwd: options.cwd ?? null,
-            startup: options.startup ?? null,
+            startup: options.directCommand ? null : (options.startup ?? null),
+            directCommand: options.directCommand ?? null,
             context: options.context ?? null,
         });
         this.timer = options.timer ?? defaultTimer;

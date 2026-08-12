@@ -86,6 +86,8 @@ export interface Agent {
     type: AgentType;
     title: string;
     startup: string;
+    /** Runtime-only structured launch; avoids shell parsing and argv prompt exposure. */
+    directCommand?: PtyDirectCommand;
     resumeId?: string;
     createdAt?: number;
     /** Explicit launch boundary. Absent on legacy in-memory records. */
@@ -102,7 +104,7 @@ export interface Agent {
     effort?: AgentEffort;
     /** Launch-time repository strategy, retained for an honest session summary. */
     workspaceStrategy?: AgentWorkspaceStrategy;
-    /** Runtime evidence that the provider received a first task in its launch argv. */
+    /** Runtime evidence that a first task is scheduled for delivery to the provider PTY. */
     initialPromptSubmitted?: boolean;
     /** Runtime guard against restarting a one-shot first turn before its session id is known. */
     firstTurnPending?: boolean;
@@ -119,6 +121,11 @@ export interface Agent {
     baselineSessionIds?: string[];
     /** Restored tabs stay dormant until the user explicitly resumes them. */
     launchState?: "live" | "dormant";
+}
+
+export interface PtyDirectCommand {
+    program: string;
+    args: string[];
 }
 
 export type AgentBackendState = "unknown" | "working" | "blocked" | "idle" | "stopped";

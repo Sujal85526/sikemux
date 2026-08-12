@@ -1872,6 +1872,48 @@ pub struct PtyContext {
     shell_integration: bool,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyDirectCommand {
+    program: String,
+    args: Vec<String>,
+}
+
+fn validate_direct_command(
+    command: &PtyDirectCommand,
+    context: Option<&PtyContext>,
+) -> AppResult<()> {
+    if context
+        .and_then(|value| value.agent_id.as_deref())
+        .is_none()
+        || context
+            .and_then(|value| value.agent_type.as_deref())
+            .is_none()
+    {
+        return Err(AppError::BadArg(
+            "direct PTY commands require an explicit agent context",
+        ));
+    }
+    if command.program.is_empty()
+        || command.program.len() > 4_096
+        || command.program.contains('\0')
+        || command.args.len() > 128
+    {
+        return Err(AppError::BadArg("invalid direct PTY command"));
+    }
+    let mut total = command.program.len();
+    for argument in &command.args {
+        if argument.len() > 8_192 || argument.contains('\0') {
+            return Err(AppError::BadArg("invalid direct PTY command argument"));
+        }
+        total = total.saturating_add(argument.len());
+    }
+    if total > 64 * 1_024 {
+        return Err(AppError::BadArg("direct PTY command is too large"));
+    }
+    Ok(())
+}
+
 const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_SHELL",
     "SIKEMUX_SESSION_ID",
@@ -2323,6 +2365,7 @@ fn configure_shell_integration(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn pty_spawn(
     app: AppHandle,
     manager: State<'_, PtyManager>,
@@ -2330,11 +2373,27 @@ pub async fn pty_spawn(
     rows: u16,
     cwd: Option<String>,
     startup: Option<String>,
+    direct_command: Option<PtyDirectCommand>,
     context: Option<PtyContext>,
 ) -> AppResult<u32> {
     validate_pty_dimensions(cols, rows)?;
+    let startup = startup.filter(|value| !value.is_empty());
+    if startup.is_some() && direct_command.is_some() {
+        return Err(AppError::BadArg(
+            "PTY startup and direct command are mutually exclusive",
+        ));
+    }
+    if let Some(command) = direct_command.as_ref() {
+        validate_direct_command(command, context.as_ref())?;
+    }
     let shell = crate::system::configured_shell();
-    let mut cmd = CommandBuilder::new(&shell);
+    let mut cmd = if let Some(command) = direct_command {
+        let mut builder = CommandBuilder::new(command.program);
+        builder.args(command.args);
+        builder
+    } else {
+        CommandBuilder::new(&shell)
+    };
     let cli_executable = crate::cli_server::cli_executable_path();
     let cli_endpoint = crate::cli_server::cli_endpoint_path();
     configure_pty_environment(
@@ -2346,7 +2405,6 @@ pub async fn pty_spawn(
     );
     #[cfg(windows)]
     cmd.args(["-NoLogo"]);
-    let startup = startup.filter(|s| !s.is_empty());
     let shell_integration = if shell_integration_requested(
         context.as_ref(),
         startup.is_some(),

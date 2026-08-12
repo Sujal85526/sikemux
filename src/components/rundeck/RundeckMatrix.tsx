@@ -173,22 +173,25 @@ function DeployRow({ paneId, project, cell }: { paneId: string; project: string;
     };
 
     return (
-        <div
-            className="rnd-list-row"
-            title={cell.error ?? undefined}
-            onClick={(e) => {
-                if (e.metaKey || e.ctrlKey) deploy(e);
-                else open();
-            }}>
-            <span className={`rnd-row-glyph rnd-branch-${k}`}>{BRANCH_GLYPH[k]}</span>
-            <span className="rnd-row-svc">{cell.name}</span>
-            <span className={`rnd-row-branch rnd-branch-${k}`} title={branch ?? ""}>
-                {branch ?? "—"}
-            </span>
-            <span className={`rnd-row-status rnd-status-${sk}`}>{cell.status ?? "—"}</span>
-            <span className="rnd-row-user">{cell.user ?? "—"}</span>
-            <span className="rnd-row-when">{cell.ended_at ? relativeTime(cell.ended_at) : "—"}</span>
-            <span className="rnd-row-actions" onClick={(e) => e.stopPropagation()}>
+        <div className="rnd-list-row" title={cell.error ?? undefined}>
+            <button
+                type="button"
+                className="rnd-row-open"
+                aria-label={`Open ${cell.name} in ${env}`}
+                onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey) deploy(event);
+                    else open();
+                }}>
+                <span className={`rnd-row-glyph rnd-branch-${k}`}>{BRANCH_GLYPH[k]}</span>
+                <span className="rnd-row-svc">{cell.name}</span>
+                <span className={`rnd-row-branch rnd-branch-${k}`} title={branch ?? ""}>
+                    {branch ?? "—"}
+                </span>
+                <span className={`rnd-row-status rnd-status-${sk}`}>{cell.status ?? "—"}</span>
+                <span className="rnd-row-user">{cell.user ?? "—"}</span>
+                <span className="rnd-row-when">{cell.ended_at ? relativeTime(cell.ended_at) : "—"}</span>
+            </button>
+            <span className="rnd-row-actions">
                 {cell.execution_id != null && (
                     <button className="rnd-row-action" onClick={openLast} title="View last execution">
                         last

@@ -12,9 +12,10 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+use crate::bounded_process::ProcessCancellation;
 use crate::error::AppResult;
 
-use super::common::{classify_cli_err, run_aws_cli_async};
+use super::common::{classify_cli_err, run_aws_cli_async, run_aws_cli_cancellable_async};
 
 // ============================================================
 // profile discovery
@@ -189,6 +190,7 @@ fn id_cache() -> &'static Mutex<HashMap<String, (Instant, AwsIdentity)>> {
 }
 
 const ID_TTL: Duration = Duration::from_secs(60);
+const ID_CACHE_CAPACITY: usize = 128;
 
 #[tauri::command]
 pub async fn aws_caller_identity(profile: String, force: bool) -> AwsIdentity {
@@ -258,6 +260,16 @@ pub async fn aws_caller_identity(profile: String, force: bool) -> AwsIdentity {
     };
 
     if let Ok(mut cache) = id_cache().lock() {
+        cache.retain(|_, (created, _)| created.elapsed() < ID_TTL);
+        if cache.len() >= ID_CACHE_CAPACITY && !cache.contains_key(&profile) {
+            if let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, (created, _))| *created)
+                .map(|(profile, _)| profile.clone())
+            {
+                cache.remove(&oldest);
+            }
+        }
         cache.insert(profile, (Instant::now(), id.clone()));
     }
     id
@@ -274,9 +286,30 @@ pub struct AwsLoginResult {
     stderr: String,
 }
 
+fn sso_operations() -> &'static Mutex<HashMap<String, ProcessCancellation>> {
+    static OPERATIONS: OnceLock<Mutex<HashMap<String, ProcessCancellation>>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 #[tauri::command]
-pub async fn aws_sso_login(profile: String) -> AppResult<AwsLoginResult> {
-    let r = run_aws_cli_async(&["sso", "login"], Some(&profile)).await;
+pub async fn aws_sso_login(profile: String, operation_id: String) -> AppResult<AwsLoginResult> {
+    if operation_id.is_empty() || operation_id.len() > 128 {
+        return Err(crate::error::AppError::BadArg("invalid AWS operation ID"));
+    }
+    let cancellation = ProcessCancellation::new();
+    {
+        let mut operations = sso_operations()
+            .lock()
+            .map_err(|_| crate::error::AppError::Other("AWS operation registry poisoned".into()))?;
+        if operations.contains_key(&operation_id) {
+            return Err(crate::error::AppError::BadArg("duplicate AWS operation ID"));
+        }
+        operations.insert(operation_id.clone(), cancellation.clone());
+    }
+    let r = run_aws_cli_cancellable_async(&["sso", "login"], Some(&profile), cancellation).await;
+    if let Ok(mut operations) = sso_operations().lock() {
+        operations.remove(&operation_id);
+    }
     // Drop the cached "expired" identity so the next aws_caller_identity
     // call doesn't lie about state.
     if let Ok(mut cache) = id_cache().lock() {
@@ -293,5 +326,19 @@ pub async fn aws_sso_login(profile: String) -> AppResult<AwsLoginResult> {
             stdout: String::new(),
             stderr: e.to_string(),
         }),
+    }
+}
+
+#[tauri::command]
+pub fn aws_sso_cancel(operation_id: String) -> bool {
+    let cancellation = sso_operations()
+        .lock()
+        .ok()
+        .and_then(|operations| operations.get(&operation_id).cloned());
+    if let Some(cancellation) = cancellation {
+        cancellation.cancel();
+        true
+    } else {
+        false
     }
 }

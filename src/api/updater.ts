@@ -34,18 +34,21 @@ export async function checkForUpdate(): Promise<void> {
 
 export async function installPendingUpdate(): Promise<void> {
     if (!getState().pendingUpdate) await checkForUpdate();
-    if (!getState().pendingUpdate) return;
+    const pending = getState().pendingUpdate;
+    if (!pending) return;
 
     setState((st) => ({
         pendingUpdate: st.pendingUpdate ? { ...st.pendingUpdate, state: "installing", error: null } : null,
-        lastReleaseNotes: st.pendingUpdate
-            ? { version: st.pendingUpdate.version, notes: st.pendingUpdate.notes, date: st.pendingUpdate.date }
-            : st.lastReleaseNotes,
     }));
 
     try {
-        await invoke("update_install", { channel: getState().updateChannel });
-        setState({ pendingUpdate: null });
+        const installed = await invoke<UpdateInfo>("update_install", { channel: getState().updateChannel });
+        // Commit release bookkeeping only after the signed artifact was
+        // installed successfully. A failed install keeps the previous version.
+        setState({
+            pendingUpdate: null,
+            lastReleaseNotes: { version: installed.version, notes: installed.notes, date: installed.date },
+        });
         await relaunch();
     } catch (e) {
         setState((st) => ({

@@ -4,6 +4,7 @@ import * as cmd from "../../state/commands";
 import { useStore } from "../../state/store";
 import { IconClose } from "../Icons";
 import { swallow } from "../../state/toast";
+import { awsApi } from "../../api/aws";
 
 export function AwsAuthModal() {
     const modal = useStore((s) => s.awsAuthModal);
@@ -13,13 +14,19 @@ export function AwsAuthModal() {
     const [phase, setPhase] = useState<"idle" | "running" | "ok" | "fail">("idle");
     const [errOut, setErrOut] = useState("");
     const cancelledRef = useRef(false);
+    const operationRef = useRef<string | null>(null);
 
     useEffect(() => {
-        if (modal) {
-            cancelledRef.current = false;
-            setPhase("idle");
-            setErrOut("");
-        }
+        if (!modal) return;
+        cancelledRef.current = false;
+        setPhase("idle");
+        setErrOut("");
+        return () => {
+            cancelledRef.current = true;
+            const operationId = operationRef.current;
+            operationRef.current = null;
+            if (operationId) void awsApi.ssoCancel(operationId).catch(swallow("cancel AWS sign-in"));
+        };
     }, [modal]);
 
     if (!modal) return null;
@@ -33,6 +40,9 @@ export function AwsAuthModal() {
 
     const onCancel = () => {
         cancelledRef.current = true;
+        const operationId = operationRef.current;
+        operationRef.current = null;
+        if (operationId) void awsApi.ssoCancel(operationId).catch(swallow("cancel AWS sign-in"));
         cmd.closeAwsAuthModal();
     };
 
@@ -41,13 +51,16 @@ export function AwsAuthModal() {
         setPhase("running");
         setErrOut("");
         try {
+            const operationId = crypto.randomUUID();
+            operationRef.current = operationId;
             if (cloudBrowser) {
                 await invoke("macos_focus_app", {
                     app: cloudBrowser,
                     shortcut: cloudBrowserShortcut || null,
                 }).catch(swallow("macos_focus_app"));
             }
-            const ok = await cmd.runAwsSsoLogin(modal.profile);
+            const ok = await cmd.runAwsSsoLogin(modal.profile, operationId);
+            if (operationRef.current === operationId) operationRef.current = null;
             if (cancelledRef.current) return;
             setPhase(ok ? "ok" : "fail");
             if (ok) {
@@ -57,17 +70,19 @@ export function AwsAuthModal() {
             if (cancelledRef.current) return;
             setPhase("fail");
             setErrOut(String(e));
+        } finally {
+            operationRef.current = null;
         }
     };
 
     return (
-        <div className="settings-backdrop" onMouseDown={cmd.closeAwsAuthModal}>
+        <div className="settings-backdrop" onMouseDown={onCancel}>
             <div className="aws-auth-modal" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="settings-head">
                     <span className="settings-title">
                         <strong>·</strong>aws sign-in
                     </span>
-                    <button className="settings-close" onClick={cmd.closeAwsAuthModal} title="Close">
+                    <button className="settings-close" onClick={onCancel} title="Close">
                         <IconClose size={11} />
                     </button>
                 </div>

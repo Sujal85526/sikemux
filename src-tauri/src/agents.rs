@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -864,7 +864,15 @@ fn text_from_content(content: &Value) -> Option<String> {
 }
 
 /// Cached title per transcript: `path -> (high-resolution stamp, title)`.
-type TitleCache = HashMap<PathBuf, (TitleCacheStamp, Option<String>)>;
+type TitleCache = HashMap<PathBuf, (TitleCacheStamp, Option<String>, u64)>;
+const MAX_TITLE_CACHE_ENTRIES: usize = 2_048;
+const MAX_AGENT_TRANSCRIPT_PATHS: usize = 20_000;
+const MAX_AGENT_TRANSCRIPTS_INSPECTED: usize = 5_000;
+
+fn next_title_cache_access() -> u64 {
+    static ACCESS: AtomicU64 = AtomicU64::new(1);
+    ACCESS.fetch_add(1, Ordering::Relaxed)
+}
 
 /// Per-file title cache keyed by a high-resolution file stamp. Titles are derived from transcript
 /// content that only ever grows, so an unchanged nanosecond timestamp and file
@@ -884,16 +892,29 @@ fn cached_title<F>(path: &Path, stamp: TitleCacheStamp, compute: F) -> Option<St
 where
     F: FnOnce() -> Option<String>,
 {
-    if let Ok(cache) = title_cache().lock() {
-        if let Some((cached_stamp, title)) = cache.get(path) {
+    if let Ok(mut cache) = title_cache().lock() {
+        if let Some((cached_stamp, title, access)) = cache.get_mut(path) {
             if *cached_stamp == stamp {
+                *access = next_title_cache_access();
                 return title.clone();
             }
         }
     }
     let title = compute();
     if let Ok(mut cache) = title_cache().lock() {
-        cache.insert(path.to_path_buf(), (stamp, title.clone()));
+        if cache.len() >= MAX_TITLE_CACHE_ENTRIES && !cache.contains_key(path) {
+            if let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, (_, _, access))| *access)
+                .map(|(path, _)| path.clone())
+            {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(
+            path.to_path_buf(),
+            (stamp, title.clone(), next_title_cache_access()),
+        );
     }
     title
 }
@@ -925,11 +946,13 @@ fn claude_sessions(cwd: &str) -> Vec<AgentSession> {
     let Ok(entries) = fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let paths: Vec<PathBuf> = entries
+    let mut paths: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("jsonl"))
         .collect();
+    paths.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    paths.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
     // Titles come from reading each transcript, so fan the per-file work out
     // across rayon's pool instead of scanning sessions one at a time.
     let mut out: Vec<AgentSession> = paths
@@ -1020,13 +1043,16 @@ fn claude_title(path: &Path) -> Option<String> {
 
 // ---- codex — ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl ----------------
 fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth > 6 {
+    if depth > 6 || out.len() >= MAX_AGENT_TRANSCRIPT_PATHS {
         return;
     }
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
+        if out.len() >= MAX_AGENT_TRANSCRIPT_PATHS {
+            break;
+        }
         let path = entry.path();
         if path.is_dir() {
             collect_jsonl(&path, out, depth + 1);
@@ -1042,6 +1068,8 @@ fn codex_sessions(cwd: &str) -> Vec<AgentSession> {
     };
     let mut files = Vec::new();
     collect_jsonl(&PathBuf::from(&home).join(".codex/sessions"), &mut files, 0);
+    files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
     let mut out: Vec<AgentSession> = files
         .par_iter()
@@ -1115,6 +1143,8 @@ fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
     };
     let mut files = Vec::new();
     collect_jsonl(&root, &mut files, 0);
+    files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
     let mut out: Vec<AgentSession> = files
         .par_iter()

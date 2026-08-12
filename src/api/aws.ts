@@ -140,7 +140,8 @@ export interface S3Bucket {
 export const awsApi = {
     profiles: () => invoke<AwsProfile[]>("aws_profiles"),
     identity: (profile: string, force = false) => invoke<AwsIdentity>("aws_caller_identity", { profile, force }),
-    ssoLogin: (profile: string) => invoke<AwsLoginResult>("aws_sso_login", { profile }),
+    ssoLogin: (profile: string, operationId: string) => invoke<AwsLoginResult>("aws_sso_login", { profile, operationId }),
+    ssoCancel: (operationId: string) => invoke<boolean>("aws_sso_cancel", { operationId }),
     ecsClusters: (profile: string) => awsInvoke<EcsCluster[]>("aws_ecs_clusters", { profile }),
     ecsServices: (profile: string, cluster: string) => awsInvoke<EcsService[]>("aws_ecs_services", { profile, cluster }),
     ecsTasks: (profile: string, cluster: string, service: string) => awsInvoke<EcsTask[]>("aws_ecs_tasks", { profile, cluster, service }),

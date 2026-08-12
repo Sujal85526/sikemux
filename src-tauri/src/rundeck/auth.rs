@@ -47,6 +47,8 @@ pub struct LoginRequest {
     pub url: String,
     pub user: String,
     pub password: String,
+    #[serde(default)]
+    pub allow_insecure_private_http: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -70,8 +72,9 @@ fn short_hostname() -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
-fn fresh_session_client() -> AppResult<Client> {
-    Ok(Client::builder()
+fn fresh_session_client(transport: &config::ValidatedTransport) -> AppResult<Client> {
+    Ok(transport
+        .pin_dns(Client::builder())
         .cookie_provider(Arc::new(reqwest::cookie::Jar::default()))
         .timeout(Duration::from_secs(20))
         .user_agent("sikemux-rundeck-auth/0.1")
@@ -97,8 +100,8 @@ fn fresh_session_client() -> AppResult<Client> {
 /// Drive the j_security_check → /tokens/{user} flow. Returns the bearer token.
 pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
     let url = req.url.trim_end_matches('/');
-    config::validate_base_url(url)?;
-    let client = fresh_session_client()?;
+    let transport = config::validate_transport(url, req.allow_insecure_private_http).await?;
+    let client = fresh_session_client(&transport)?;
 
     // Step 1: session login
     let form = [
@@ -200,6 +203,7 @@ pub struct RundeckStatus {
     pub ok: bool,
     pub auth_failed: bool,
     pub message: Option<String>,
+    pub allow_insecure_private_http: bool,
 }
 
 fn is_auth_failure(e: &AppError) -> bool {
@@ -232,6 +236,21 @@ pub async fn rnd_status() -> RundeckStatus {
             ok: false,
             auth_failed: false,
             message: None,
+            allow_insecure_private_http: cfg.allow_insecure_private_http,
+        };
+    }
+
+    if cfg.url.starts_with("http://") && !cfg.allow_insecure_private_http {
+        return RundeckStatus {
+            configured: true,
+            url: cfg.url,
+            user: cfg.user,
+            token_present: true,
+            rundeck_version: None,
+            ok: false,
+            auth_failed: true,
+            message: Some("Private-subnet HTTP now requires explicit acknowledgement before credentials are sent".into()),
+            allow_insecure_private_http: false,
         };
     }
 
@@ -249,6 +268,7 @@ pub async fn rnd_status() -> RundeckStatus {
             ok: true,
             auth_failed: false,
             message: None,
+            allow_insecure_private_http: cfg.allow_insecure_private_http,
         },
         Err(e) => RundeckStatus {
             configured: true,
@@ -259,6 +279,7 @@ pub async fn rnd_status() -> RundeckStatus {
             ok: false,
             auth_failed: is_auth_failure(&e),
             message: Some(e.to_string()),
+            allow_insecure_private_http: cfg.allow_insecure_private_http,
         },
     }
 }
@@ -270,6 +291,7 @@ pub async fn rnd_login(req: LoginRequest) -> AppResult<LoginResult> {
         url: url.clone(),
         user: req.user.clone(),
         password: req.password.clone(),
+        allow_insecure_private_http: req.allow_insecure_private_http,
     })
     .await?;
     let cfg = RundeckConfig {
@@ -277,6 +299,7 @@ pub async fn rnd_login(req: LoginRequest) -> AppResult<LoginResult> {
         user: req.user.clone(),
         password: String::new(),
         token: token.clone(),
+        allow_insecure_private_http: req.allow_insecure_private_http,
     };
     config::save(cfg).await?;
 

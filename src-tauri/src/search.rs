@@ -21,9 +21,9 @@ use rayon::prelude::*;
 use regex::bytes::RegexBuilder as BytesRegexBuilder;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use crate::error::{AppError, AppResult};
@@ -41,6 +41,18 @@ const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
 /// size by 2-3 orders of magnitude.
 const MAX_MATCH_TEXT_BYTES: usize = 400;
 const MAX_WINDOW_CONTEXT_LINES: u32 = 500;
+const MAX_REPLACE_SCANNED_FILES: usize = 250_000;
+const MAX_REPLACE_CANDIDATES: usize = 10_000;
+
+fn read_replace_file(path: &Path) -> std::io::Result<Vec<u8>> {
+    let file = fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(file.metadata()?.len().min(MAX_FILE_BYTES) as usize);
+    file.take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(std::io::Error::other("file grew beyond the replace limit"));
+    }
+    Ok(bytes)
+}
 
 // ---- wire types --------------------------------------------------------
 
@@ -326,9 +338,15 @@ fn is_current(repo: &str, gen: u64) -> bool {
         .unwrap_or(false)
 }
 
+fn clear_generation(repo: &str, generation: u64) {
+    let _ = generations().remove_if(repo, |_, current| {
+        current.load(Ordering::Acquire) == generation
+    });
+}
+
 #[tauri::command]
 pub fn project_search_cancel(repo: String) {
-    let _ = bump_generation(&repo);
+    generations().remove(&repo);
 }
 
 // ---- walker construction (shared by search + replace) ------------------
@@ -381,6 +399,7 @@ pub async fn project_search(
     let gen = bump_generation(&repo);
 
     if query.is_empty() {
+        clear_generation(&repo, gen);
         return Ok(SearchResults {
             files: vec![],
             file_count: 0,
@@ -391,9 +410,14 @@ pub async fn project_search(
         });
     }
 
-    tauri::async_runtime::spawn_blocking(move || run_search(repo, query, options, on_file, gen))
-        .await
-        .map_err(|e| AppError::Search(format!("join: {e}")))?
+    let cleanup_repo = repo.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        run_search(repo, query, options, on_file, gen)
+    })
+    .await
+    .map_err(|e| AppError::Search(format!("join: {e}")))?;
+    clear_generation(&cleanup_repo, gen);
+    result
 }
 
 fn run_search(
@@ -629,12 +653,16 @@ fn run_replace(
 
     // ---- pass 1: find candidate paths in parallel ----
     let candidates: Mutex<Vec<std::path::PathBuf>> = Mutex::new(Vec::new());
+    let scanned_files = AtomicUsize::new(0);
+    let limit_exceeded = AtomicBool::new(false);
 
     struct CBuilder<'a> {
         include: &'a Option<GlobMatcher>,
         exclude: &'a Option<GlobMatcher>,
         candidates: &'a Mutex<Vec<std::path::PathBuf>>,
         rewrite_re: &'a regex::bytes::Regex,
+        scanned_files: &'a AtomicUsize,
+        limit_exceeded: &'a AtomicBool,
     }
     impl<'s, 'a: 's> ParallelVisitorBuilder<'s> for CBuilder<'a> {
         fn build(&mut self) -> Box<dyn ParallelVisitor + 's> {
@@ -643,6 +671,8 @@ fn run_replace(
                 exclude: self.exclude,
                 candidates: self.candidates,
                 rewrite_re: self.rewrite_re,
+                scanned_files: self.scanned_files,
+                limit_exceeded: self.limit_exceeded,
             })
         }
     }
@@ -651,6 +681,8 @@ fn run_replace(
         exclude: &'a Option<GlobMatcher>,
         candidates: &'a Mutex<Vec<std::path::PathBuf>>,
         rewrite_re: &'a regex::bytes::Regex,
+        scanned_files: &'a AtomicUsize,
+        limit_exceeded: &'a AtomicBool,
     }
     impl<'a> ParallelVisitor for CVisitor<'a> {
         fn visit(&mut self, entry: Result<DirEntry, ignore::Error>) -> WalkState {
@@ -664,6 +696,10 @@ fn run_replace(
             };
             if !ft.is_file() {
                 return WalkState::Continue;
+            }
+            if self.scanned_files.fetch_add(1, Ordering::AcqRel) >= MAX_REPLACE_SCANNED_FILES {
+                self.limit_exceeded.store(true, Ordering::Release);
+                return WalkState::Quit;
             }
             let path = entry.path();
             let cand = Candidate::new(path);
@@ -682,12 +718,21 @@ fn run_replace(
                     return WalkState::Continue;
                 }
             }
-            // Pre-flight: only enroll files that actually match. Reading
-            // here would force two reads per file; instead defer to pass 2
-            // and let it skip via `is_match` cheaply.
-            let _ = self.rewrite_re;
-            if let Ok(mut g) = self.candidates.lock() {
-                g.push(path.to_path_buf());
+            // Read once during enrollment so only actual matches enter the
+            // retained candidate vector. Matching files are intentionally
+            // re-read during rewrite to avoid retaining repository contents.
+            let Ok(bytes) = read_replace_file(path) else {
+                return WalkState::Continue;
+            };
+            if std::str::from_utf8(&bytes).is_err() || !self.rewrite_re.is_match(&bytes) {
+                return WalkState::Continue;
+            }
+            if let Ok(mut candidates) = self.candidates.lock() {
+                if candidates.len() >= MAX_REPLACE_CANDIDATES {
+                    self.limit_exceeded.store(true, Ordering::Release);
+                    return WalkState::Quit;
+                }
+                candidates.push(path.to_path_buf());
             }
             WalkState::Continue
         }
@@ -698,8 +743,16 @@ fn run_replace(
         exclude: &exclude,
         candidates: &candidates,
         rewrite_re: &rewrite_re,
+        scanned_files: &scanned_files,
+        limit_exceeded: &limit_exceeded,
     };
     build_walker(&repo).visit(&mut b);
+
+    if limit_exceeded.load(Ordering::Acquire) {
+        return Err(AppError::Search(format!(
+            "replace scope exceeds the safety limit of {MAX_REPLACE_SCANNED_FILES} scanned files or {MAX_REPLACE_CANDIDATES} matching files; narrow the path or glob"
+        )));
+    }
 
     let candidates = candidates.into_inner().unwrap_or_default();
     let root_len = repo.len() + 1;
@@ -717,7 +770,7 @@ fn run_replace(
                 .unwrap_or_default()
                 .to_string();
 
-            let original = fs::read(path).map_err(|e| ReplaceError {
+            let original = read_replace_file(path).map_err(|e| ReplaceError {
                 path: rel.clone(),
                 reason: format!("read failed: {e}"),
             })?;
@@ -821,7 +874,7 @@ fn persist_rewrite(
 
     // Search/replace is a read-modify-write. Never clobber an editor/save or
     // build that changed the path while this worker prepared its tempfile.
-    let current = fs::read(path).map_err(|e| ReplaceError {
+    let current = read_replace_file(path).map_err(|e| ReplaceError {
         path: rel.to_string(),
         reason: format!("concurrent-change check failed: {e}"),
     })?;

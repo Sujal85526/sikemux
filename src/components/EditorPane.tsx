@@ -9,6 +9,7 @@ import { auraExtensions, editorThemeOnlyExtensions, isLargeDoc, isSshConfigPath,
 import { isImagePath } from "../editor/media";
 import { gitDiffGutter } from "../editor/gitGutter";
 import { gitInlineBlame } from "../editor/gitBlame";
+import { DocumentIO } from "../editor/documentIO";
 import { lspNav, setLspContext } from "../editor/lspNav";
 import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
 import { lspPeek } from "../editor/lspPeek";
@@ -18,7 +19,7 @@ import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { invalidate } from "../state/resources";
 import { useStore } from "../state/store";
-import { errMessage, notify, reportError, swallow } from "../state/toast";
+import { errCategory, errMessage, notify, reportError, swallow } from "../state/toast";
 import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
@@ -205,6 +206,11 @@ export function EditorPane({
     const saveRef = useRef<() => boolean>(() => false);
     const openRequestRef = useRef(0);
     const processingCliOpenRef = useRef<string | null>(null);
+    const documentIORef = useRef(new DocumentIO());
+    const saveSequenceRef = useRef<Map<string, number>>(new Map());
+    const conflictedRef = useRef<Set<string>>(new Set());
+    const showConflictRef = useRef<(path: string, detail: string) => void>(() => {});
+    const reloadFromDiskRef = useRef<(path: string) => Promise<void>>(async () => {});
 
     const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
     const dirtyRef = useRef(dirty);
@@ -282,13 +288,16 @@ export function EditorPane({
         const view = viewRef.current;
         if (!path || !view || isImagePath(path)) return false;
         const text = view.state.doc.toString();
-        void fsapi
-            .writeFile(path, text)
+        const sequence = (saveSequenceRef.current.get(path) ?? 0) + 1;
+        saveSequenceRef.current.set(path, sequence);
+        void documentIORef.current
+            .save(path, text)
             .then(() => {
                 savedRef.current.set(path, text);
+                conflictedRef.current.delete(path);
                 const latest =
                     currentRef.current === path && viewRef.current ? viewRef.current.state.doc.toString() : states.current.get(path)?.doc.toString();
-                if (latest !== text) return;
+                if (latest !== text || saveSequenceRef.current.get(path) !== sequence) return;
                 setDirty((d) => {
                     if (!d.has(path)) return d;
                     const next = new Set(d);
@@ -301,7 +310,13 @@ export function EditorPane({
                 }
                 if (isSshConfigPath(path)) invalidate((kind) => kind === "ssh.hosts");
             })
-            .catch(reportError("save"));
+            .catch((error: unknown) => {
+                if (errCategory(error) === "file-conflict") {
+                    showConflictRef.current(path, errMessage(error));
+                    return;
+                }
+                reportError("save")(error);
+            });
         return true;
     }, [cwd, saveDoc]);
     saveRef.current = save;
@@ -391,6 +406,42 @@ export function EditorPane({
         [languageHint, scheduleChange],
     );
 
+    reloadFromDiskRef.current = async (path: string) => {
+        const snapshot = await documentIORef.current.read(path);
+        saveSequenceRef.current.set(path, (saveSequenceRef.current.get(path) ?? 0) + 1);
+        savedRef.current.set(path, snapshot.content);
+        conflictedRef.current.delete(path);
+        const activeView = currentRef.current === path ? viewRef.current : null;
+        if (activeView) {
+            const head = Math.min(activeView.state.selection.main.head, snapshot.content.length);
+            activeView.dispatch({
+                changes: { from: 0, to: activeView.state.doc.length, insert: snapshot.content },
+                selection: { anchor: head },
+            });
+        } else {
+            states.current.set(path, makeState(path, snapshot.content));
+        }
+        setDirty((dirtyPaths) => {
+            if (!dirtyPaths.has(path)) return dirtyPaths;
+            const next = new Set(dirtyPaths);
+            next.delete(path);
+            return next;
+        });
+        notify("success", `reloaded ${basename(path)} from disk`);
+    };
+
+    showConflictRef.current = (path, detail) => {
+        conflictedRef.current.add(path);
+        notify("error", `${basename(path)} has an external change. Your editor buffer was preserved. ${detail}`, {
+            timeoutMs: null,
+            action: {
+                label: "Reload disk",
+                dismissOnClick: true,
+                run: () => reloadFromDiskRef.current(path).catch(reportError("reload file")),
+            },
+        });
+    };
+
     useEffect(() => {
         const view = new EditorView({ parent: hostRef.current!, state: makeState("", "") });
         viewRef.current = view;
@@ -472,7 +523,8 @@ export function EditorPane({
             switchTo(path);
             return;
         }
-        const content = await fsapi.readFile(path);
+        const snapshot = await documentIORef.current.read(path);
+        const content = snapshot.content;
         const latest = request === openRequestRef.current;
         // Two rapid opens of the same path can resolve out of order. Do not
         // replace the state created by the newer request with the stale read.
@@ -555,7 +607,8 @@ export function EditorPane({
         let cancelled = false;
         (async () => {
             try {
-                const content = await fsapi.readFile(activePath);
+                const snapshot = await documentIORef.current.read(activePath);
+                const content = snapshot.content;
                 if (cancelled) return;
                 const st = makeState(activePath, content);
                 states.current.set(activePath, st);
@@ -579,7 +632,8 @@ export function EditorPane({
             const load = async (path: string) => {
                 if (isImagePath(path) || states.current.has(path)) return true;
                 try {
-                    const content = await fsapi.readFile(path);
+                    const snapshot = await documentIORef.current.read(path);
+                    const content = snapshot.content;
                     if (cancelled) return false;
                     const st = makeState(path, content);
                     states.current.set(path, st);
@@ -627,8 +681,11 @@ export function EditorPane({
                 }
                 let fresh: string;
                 try {
-                    fresh = await fsapi.readFile(path);
-                } catch {
+                    const snapshot = await documentIORef.current.read(path);
+                    fresh = snapshot.content;
+                } catch (error) {
+                    setDirty((dirtyPaths) => new Set(dirtyPaths).add(path));
+                    if (!conflictedRef.current.has(path)) showConflictRef.current(path, errMessage(error));
                     continue;
                 }
                 if (cancelled) return;
@@ -671,17 +728,30 @@ export function EditorPane({
             try {
                 const tabsNow = useStore.getState().editorViews[paneId]?.openTabs ?? [];
                 for (const path of tabsNow) {
-                    if (dirtyRef.current.has(path)) continue;
                     if (isImagePath(path)) {
                         imagesRef.current.delete(path);
                         if (currentRef.current === path) showImage(path, true);
                         continue;
                     }
+                    if (dirtyRef.current.has(path)) {
+                        try {
+                            const snapshot = await documentIORef.current.peek(path);
+                            if (documentIORef.current.changedSinceObserved(path, snapshot) && !conflictedRef.current.has(path)) {
+                                showConflictRef.current(path, "The disk version changed while this editor had unsaved work.");
+                            }
+                        } catch (error) {
+                            if (!conflictedRef.current.has(path)) showConflictRef.current(path, errMessage(error));
+                        }
+                        continue;
+                    }
                     let fresh: string;
                     try {
-                        fresh = await fsapi.readFile(path);
-                    } catch {
-                        continue; // file was deleted / renamed — silently skip
+                        const snapshot = await documentIORef.current.read(path);
+                        fresh = snapshot.content;
+                    } catch (error) {
+                        setDirty((dirtyPaths) => new Set(dirtyPaths).add(path));
+                        if (!conflictedRef.current.has(path)) showConflictRef.current(path, errMessage(error));
+                        continue;
                     }
                     const isActive = currentRef.current === path;
                     const view = viewRef.current;
@@ -786,6 +856,10 @@ export function EditorPane({
         for (const p of closing) {
             states.current.delete(p);
             imagesRef.current.delete(p);
+            savedRef.current.delete(p);
+            saveSequenceRef.current.delete(p);
+            conflictedRef.current.delete(p);
+            documentIORef.current.forget(p);
             void closeDoc(p);
         }
         setDirty((d) => {

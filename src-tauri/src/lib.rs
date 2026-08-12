@@ -1,6 +1,7 @@
 mod agent_detection;
 mod agents;
 mod aws;
+mod bounded_process;
 mod bruno;
 pub mod cli_client;
 mod cli_install;
@@ -157,9 +158,11 @@ pub fn run() {
             agents::agent_sessions_watch_stop,
             fs::read_dir,
             fs::read_file,
+            fs::read_file_versioned,
             fs::read_text_file_limited,
             fs::read_file_base64,
             fs::write_file,
+            fs::write_file_versioned,
             fs::write_file_new,
             fs::create_file,
             fs::create_dir,
@@ -243,6 +246,7 @@ pub fn run() {
             aws::auth::aws_profiles,
             aws::auth::aws_caller_identity,
             aws::auth::aws_sso_login,
+            aws::auth::aws_sso_cancel,
             aws::ecs::aws_ecs_clusters,
             aws::ecs::aws_ecs_services,
             aws::ecs::aws_ecs_tasks,

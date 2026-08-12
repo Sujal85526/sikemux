@@ -99,7 +99,20 @@ function EcsResourceTable<T>({
                 </thead>
                 <tbody>
                     {rows.map((row) => (
-                        <tr key={rowKey(row)} onClick={() => onPick(row)} className="aws-row" title={rowTitle?.(row)}>
+                        <tr
+                            key={rowKey(row)}
+                            onClick={() => onPick(row)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    onPick(row);
+                                }
+                            }}
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Open ${rowKey(row)}`}
+                            className="aws-row"
+                            title={rowTitle?.(row)}>
                             {columns.map((c) => (
                                 <td key={c.header} className={c.className}>
                                     {c.render(row)}

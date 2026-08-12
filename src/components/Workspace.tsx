@@ -300,6 +300,7 @@ const AgentLayer = memo(function AgentLayer({
                         <TerminalPane
                             cwd={agent.cwd || session.cwd || undefined}
                             startup={agent.startup}
+                            directCommand={agent.directCommand}
                             initialInput={agent.initialInput}
                             onInitialInputDelivered={() => cmd.clearAgentInitialInput(agent.id)}
                             active={visible}

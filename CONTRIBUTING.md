@@ -36,6 +36,8 @@ pnpm build            # production frontend build
 
 Release tooling supports two explicit modes. The default community mode requires the Tauri updater private key but no Apple membership and produces an updater-signed, ad-hoc code-signed release. `RELEASE_NOTARIZED=1` additionally requires a Developer ID and Apple notarization credentials and enforces Gatekeeper and stapled-ticket verification.
 
+`pnpm perf:budget` checks the production bundle after `pnpm build`. Every startup, lazy-feature, total-JavaScript, and CSS ceiling must retain at least 10% reserve; reaching the nominal ceiling is already a failure. When adding substantial UI, prefer a feature-level dynamic import and only rebaseline a ceiling alongside measured bundle output and a documented reason.
+
 - **Scope** — keep PRs focused. One feature or fix per PR is much easier to review.
 - **No regressions** — keep things efficient and performant; if a change touches the editor, terminal, or git panes, verify the affected views still behave.
 

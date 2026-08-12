@@ -7,10 +7,17 @@
 //     picker). Dotfile dirs are skipped at every level.
 //   - expand_path: resolves `~` against $HOME on the Rust side.
 
+use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
+
+const MAX_PROJECT_ROOTS: usize = 32;
+const MAX_PROJECT_DEPTH: i64 = 8;
+const MAX_VISITED_DIRECTORIES: usize = 50_000;
+const MAX_DISCOVERED_PROJECTS: usize = 4_096;
 
 #[derive(Serialize)]
 pub struct ProjectEntry {
@@ -90,48 +97,89 @@ pub fn is_directory(path: String) -> bool {
 // one.
 fn walk(
     root: &Path,
-    dir: &Path,
-    remaining: i64,
+    depth: i64,
     out: &mut Vec<ProjectEntry>,
-    seen: &mut std::collections::HashSet<String>,
-) {
-    if remaining <= 0 {
-        return;
-    }
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if !p.is_dir() {
+    seen_projects: &mut HashSet<String>,
+    visited: &mut HashSet<PathBuf>,
+) -> AppResult<()> {
+    let mut pending = VecDeque::from([(root.to_path_buf(), depth)]);
+    while let Some((dir, remaining)) = pending.pop_front() {
+        if remaining <= 0 {
             continue;
         }
-        let name = name_of(&p);
-        if name.starts_with('.') {
+        let Ok(canonical) = fs::canonicalize(&dir) else {
+            continue;
+        };
+        if !visited.insert(canonical) {
             continue;
         }
-        if is_repo(&p) {
-            let path = p.to_string_lossy().into_owned();
-            if seen.insert(path.clone()) {
-                out.push(ProjectEntry {
-                    name: relative_name(root, &p),
-                    path,
-                });
+        if visited.len() > MAX_VISITED_DIRECTORIES {
+            return Err(AppError::BadArg(
+                "project discovery visited too many directories; narrow the roots or depth",
+            ));
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() && !file_type.is_symlink() {
+                continue;
             }
-            // Terminal — repos don't get their innards scanned.
-            continue;
+            let name = name_of(&p);
+            if name.starts_with('.') {
+                continue;
+            }
+            let Ok(canonical) = fs::canonicalize(&p) else {
+                continue;
+            };
+            if !canonical.is_dir() {
+                continue;
+            }
+            if is_repo(&canonical) {
+                let path = canonical.to_string_lossy().into_owned();
+                if seen_projects.insert(path.clone()) {
+                    if out.len() >= MAX_DISCOVERED_PROJECTS {
+                        return Err(AppError::BadArg("project discovery found too many repositories; narrow the roots or depth"));
+                    }
+                    out.push(ProjectEntry {
+                        name: relative_name(root, &p),
+                        path,
+                    });
+                }
+                continue;
+            }
+            pending.push_back((p, remaining - 1));
         }
-        walk(root, &p, remaining - 1, out, seen);
     }
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn scan_project_roots(
     pinned_projects: Vec<PinnedProject>,
     roots: Vec<ProjectRoot>,
-) -> Vec<ProjectEntry> {
+) -> AppResult<Vec<ProjectEntry>> {
+    tauri::async_runtime::spawn_blocking(move || scan_project_roots_sync(pinned_projects, roots))
+        .await
+        .map_err(|error| AppError::Other(format!("scan_project_roots join: {error}")))?
+}
+
+fn scan_project_roots_sync(
+    pinned_projects: Vec<PinnedProject>,
+    roots: Vec<ProjectRoot>,
+) -> AppResult<Vec<ProjectEntry>> {
+    if roots.len() > MAX_PROJECT_ROOTS || pinned_projects.len() > MAX_DISCOVERED_PROJECTS {
+        return Err(AppError::BadArg(
+            "too many project discovery roots or pinned projects",
+        ));
+    }
     let mut out: Vec<ProjectEntry> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut visited: HashSet<PathBuf> = HashSet::new();
 
     for p in pinned_projects {
         let project = expand(&p.path);
@@ -164,9 +212,15 @@ pub async fn scan_project_roots(
             // insides — it's already the project.
             continue;
         }
-        walk(&root, &root, r.depth.max(0), &mut out, &mut seen);
+        walk(
+            &root,
+            r.depth.clamp(0, MAX_PROJECT_DEPTH),
+            &mut out,
+            &mut seen,
+            &mut visited,
+        )?;
     }
 
     out.sort_by_key(|profile| profile.name.to_lowercase());
-    out
+    Ok(out)
 }

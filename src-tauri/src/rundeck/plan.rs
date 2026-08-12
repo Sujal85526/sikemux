@@ -5,7 +5,9 @@
 
 use git2::{BranchType, Repository};
 use serde::Serialize;
+use std::time::Duration;
 
+use crate::bounded_process;
 use crate::error::AppResult;
 
 use super::client::get_json;
@@ -130,11 +132,19 @@ pub async fn rnd_plan(
     plan.git_root = repo.workdir().map(|p| p.to_string_lossy().to_string());
 
     // Best-effort fetch — we want fresh refs but tolerate offline machines.
-    let _ = std::process::Command::new("git")
+    let mut fetch = std::process::Command::new("git");
+    fetch
         .arg("-C")
         .arg(&repo_path)
         .args(["fetch", "origin", "--quiet"])
-        .output();
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let _ = bounded_process::run(
+        &mut fetch,
+        None,
+        Duration::from_secs(30),
+        4 * 1024 * 1024,
+        None,
+    );
 
     // HEAD info
     if let Ok(head) = repo.head() {

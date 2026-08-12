@@ -47,14 +47,21 @@ pub async fn update_check(app: AppHandle, channel: String) -> AppResult<Option<U
 }
 
 #[tauri::command]
-pub async fn update_install(app: AppHandle, channel: String) -> AppResult<()> {
+pub async fn update_install(app: AppHandle, channel: String) -> AppResult<UpdateInfo> {
     let update = updater(&app, &channel)?
         .check()
         .await
         .map_err(|error| AppError::Other(format!("update check: {error}")))?
         .ok_or_else(|| AppError::Other("no update is available".into()))?;
+    let installed = UpdateInfo {
+        version: update.version.clone(),
+        current_version: update.current_version.clone(),
+        notes: update.body.clone(),
+        date: update.date.map(|date| date.to_string()),
+    };
     update
         .download_and_install(|_, _| {}, || {})
         .await
-        .map_err(|error| AppError::Other(format!("update install: {error}")))
+        .map_err(|error| AppError::Other(format!("update install: {error}")))?;
+    Ok(installed)
 }

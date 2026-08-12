@@ -1,4 +1,5 @@
 import { invokeCommand as invoke } from "./invoke";
+import { IS_WINDOWS } from "../lib/platform";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 
 export interface LspPos {
@@ -287,12 +288,18 @@ export function documentLanguageIdFromPath(path: string): string | null {
 }
 
 export const uriToPath = (uri: string): string => {
-    if (!uri.startsWith("file://")) return uri;
+    if (!uri.toLowerCase().startsWith("file:")) return uri;
     try {
         const url = new URL(uri);
-        return decodeURIComponent(url.pathname);
+        if (url.protocol !== "file:") return uri;
+        const pathname = decodeURIComponent(url.pathname);
+        if (IS_WINDOWS) {
+            if (url.hostname && url.hostname.toLowerCase() !== "localhost") return `//${url.hostname}${pathname}`;
+            return /^\/[A-Za-z]:\//u.test(pathname) ? pathname.slice(1) : pathname;
+        }
+        return pathname;
     } catch {
-        return decodeURIComponent(uri.slice("file://".length));
+        return uri;
     }
 };
 

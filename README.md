@@ -104,6 +104,8 @@ A built-in AWS panel for the things you check all day, with one-click refresh so
 
 Drive Rundeck without leaving the app: browse projects, fire jobs from a palette, and watch deployments stream **step-by-step progress and per-step output** in real time.
 
+HTTPS is the default. Private-subnet Rundeck installations may explicitly opt into HTTP at sign-in; Sikemux accepts it only while every resolved address is private, loopback, or link-local, pins the verified addresses into the credential/token client to prevent DNS rebinding, and persists the acknowledgement alongside the chmod-600 token configuration.
+
 ![Rundeck](public/screenshots/cicd-rundeck-projects-view.png)
 
 ### 🔌 API — Bruno workspace

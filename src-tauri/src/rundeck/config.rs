@@ -9,6 +9,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::SystemTime;
@@ -26,6 +27,10 @@ pub struct RundeckConfig {
     /// disk and is cleared from the returned/saved configuration.
     pub password: String,
     pub token: String,
+    /// Explicit user acknowledgement for plaintext HTTP. Even when enabled,
+    /// every request must resolve exclusively to private or loopback addresses.
+    #[serde(default)]
+    pub allow_insecure_private_http: bool,
 }
 
 impl RundeckConfig {
@@ -112,6 +117,9 @@ fn read_file() -> AppResult<RundeckConfig> {
             "RD_USER" => cfg.user = val,
             "RD_PASSWORD" => cfg.password = val,
             "RD_TOKEN" => cfg.token = val,
+            "RD_ALLOW_INSECURE_PRIVATE_HTTP" => {
+                cfg.allow_insecure_private_http = matches!(val.as_str(), "1" | "true" | "yes")
+            }
             _ => {}
         }
     }
@@ -126,7 +134,7 @@ fn write_file(cfg: &RundeckConfig) -> AppResult<()> {
 }
 
 fn write_file_at(path: &Path, cfg: &RundeckConfig) -> AppResult<()> {
-    validate_base_url(&cfg.url)?;
+    validate_base_url_with_policy(&cfg.url, cfg.allow_insecure_private_http)?;
     let parent = path
         .parent()
         .ok_or_else(|| AppError::Rundeck("invalid config path".into()))?;
@@ -144,6 +152,15 @@ fn write_file_at(path: &Path, cfg: &RundeckConfig) -> AppResult<()> {
     // the user to log in again rather than retaining a reusable password.
     writeln!(temp, "RD_PASSWORD={}", quote(""))?;
     writeln!(temp, "RD_TOKEN={}", quote(&cfg.token))?;
+    writeln!(
+        temp,
+        "RD_ALLOW_INSECURE_PRIVATE_HTTP={}",
+        quote(if cfg.allow_insecure_private_http {
+            "1"
+        } else {
+            "0"
+        })
+    )?;
     temp.as_file_mut().sync_all()?;
     temp.persist(path).map_err(|e| AppError::Io(e.error))?;
     #[cfg(unix)]
@@ -154,7 +171,15 @@ fn write_file_at(path: &Path, cfg: &RundeckConfig) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub fn validate_base_url(raw: &str) -> AppResult<()> {
+    validate_base_url_with_policy(raw, false)
+}
+
+pub fn validate_base_url_with_policy(
+    raw: &str,
+    allow_insecure_private_http: bool,
+) -> AppResult<()> {
     let url = url::Url::parse(raw).map_err(|_| AppError::BadArg("invalid Rundeck URL"))?;
     if url.username() != "" || url.password().is_some() {
         return Err(AppError::BadArg(
@@ -164,7 +189,89 @@ pub fn validate_base_url(raw: &str) -> AppResult<()> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(AppError::BadArg("Rundeck URL must use HTTP or HTTPS"));
     }
+    if url.host_str().is_none() {
+        return Err(AppError::BadArg("Rundeck URL must include a host"));
+    }
+    if url.scheme() == "http" && !allow_insecure_private_http {
+        return Err(AppError::BadArg(
+            "plaintext HTTP requires explicit private-network acknowledgement",
+        ));
+    }
     Ok(())
+}
+
+fn is_allowed_private_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
+        IpAddr::V6(ip) => {
+            ip.to_ipv4_mapped()
+                .is_some_and(|mapped| is_allowed_private_ip(mapped.into()))
+                || ip.is_loopback()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidatedTransport {
+    host: String,
+    private_http_addresses: Vec<std::net::SocketAddr>,
+}
+
+impl ValidatedTransport {
+    pub fn pins_private_dns(&self) -> bool {
+        !self.private_http_addresses.is_empty()
+    }
+
+    pub fn pin_dns(&self, builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+        if self.private_http_addresses.is_empty() {
+            builder
+        } else {
+            builder.resolve_to_addrs(&self.host, &self.private_http_addresses)
+        }
+    }
+}
+
+/// Validate transport policy immediately before sending credentials or a
+/// bearer token. HTTP is supported for private Rundeck installations only
+/// after explicit acknowledgement and only while DNS remains private.
+pub async fn validate_transport(
+    raw: &str,
+    allow_insecure_private_http: bool,
+) -> AppResult<ValidatedTransport> {
+    validate_base_url_with_policy(raw, allow_insecure_private_http)?;
+    let url = url::Url::parse(raw).map_err(|_| AppError::BadArg("invalid Rundeck URL"))?;
+    let host = url
+        .host_str()
+        .ok_or(AppError::BadArg("Rundeck URL must include a host"))?
+        .to_string();
+    if url.scheme() == "https" {
+        return Ok(ValidatedTransport {
+            host,
+            private_http_addresses: Vec::new(),
+        });
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or(AppError::BadArg("Rundeck URL must include a valid port"))?;
+    let addresses: Vec<_> = tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .map_err(|_| AppError::BadArg("Rundeck HTTP host could not be resolved"))?
+        .collect();
+    if addresses.is_empty()
+        || addresses
+            .iter()
+            .any(|address| !is_allowed_private_ip(address.ip()))
+    {
+        return Err(AppError::BadArg(
+            "plaintext Rundeck HTTP is allowed only when every resolved address is private or loopback",
+        ));
+    }
+    Ok(ValidatedTransport {
+        host,
+        private_http_addresses: addresses,
+    })
 }
 
 struct CacheEntry {

@@ -3188,16 +3188,36 @@ pub async fn git_stash_rename(
     sha: String,
     new_message: String,
 ) -> Result<(), String> {
-    // No native `git stash rename` — drop + stash store with the new
-    // message preserves the stash content while replacing its label.
+    // No native `git stash rename`. Store the replacement first, then remove
+    // the now-shifted original. A failure can leave a harmless duplicate but
+    // can never remove the only ordinary stash reference.
     let r = resolve_stash_ref(&repo, &refname, &sha)?;
     // Grab the underlying commit SHA for the stash so we can re-store.
     let sha = git_ok(&repo, &["rev-parse", &r])?.trim().to_string();
     if sha.is_empty() {
         return Err(format!("could not resolve {r}"));
     }
-    git_ok(&repo, &["stash", "drop", &r])?;
     git_ok(&repo, &["stash", "store", "-m", &new_message, &sha])?;
+    let original_index = r
+        .strip_prefix("stash@{")
+        .and_then(|value| value.strip_suffix('}'))
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| {
+            format!(
+                "unexpected stash reference {r}; replacement was stored but the original was kept"
+            )
+        })?;
+    let shifted_original = format!("stash@{{{}}}", original_index + 1);
+    let shifted_sha = git_ok(&repo, &["rev-parse", &shifted_original])?
+        .trim()
+        .to_string();
+    if shifted_sha != sha {
+        return Err(
+            "stash list changed during rename; replacement was stored and the original was kept"
+                .to_string(),
+        );
+    }
+    git_ok(&repo, &["stash", "drop", &shifted_original])?;
     Ok(())
 }
 

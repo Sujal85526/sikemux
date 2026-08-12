@@ -3,6 +3,7 @@ import { gzipSync } from "node:zlib";
 
 const assetDir = new URL("../dist/assets/", import.meta.url);
 const files = await readdir(assetDir);
+const requiredHeadroom = 0.1;
 
 async function size(name) {
   const bytes = await readFile(new URL(name, assetDir));
@@ -23,27 +24,27 @@ const budgets = [
   {
     label: "startup JS",
     pattern: /^index-.*\.js$/,
-    raw: 470_000,
-    gzip: 150_000,
+    raw: 520_000,
+    gzip: 165_000,
   },
   {
     label: "CodeMirror lazy chunk",
     pattern: /^codemirror-.*\.js$/,
-    raw: 900_000,
-    gzip: 320_000,
+    raw: 950_000,
+    gzip: 340_000,
   },
   {
     label: "xterm core lazy chunk",
     pattern: /^xterm-(?!webgl).*\.js$/,
-    raw: 430_000,
-    gzip: 115_000,
+    raw: 450_000,
+    gzip: 120_000,
   },
-  { label: "all JavaScript", pattern: /\.js$/, raw: 2_350_000, gzip: 750_000 },
+  { label: "all JavaScript", pattern: /\.js$/, raw: 2_650_000, gzip: 840_000 },
   {
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 220_000,
-    gzip: 37_000,
+    raw: 235_000,
+    gzip: 40_000,
   },
 ];
 
@@ -55,8 +56,11 @@ for (const budget of budgets) {
     failed = true;
     continue;
   }
-  const withinBudget = actual.raw <= budget.raw && actual.gzip <= budget.gzip;
-  const summary = `${budget.label}: raw ${actual.raw}/${budget.raw}, gzip ${actual.gzip}/${budget.gzip}`;
+  const rawHeadroom = 1 - actual.raw / budget.raw;
+  const gzipHeadroom = 1 - actual.gzip / budget.gzip;
+  const withinBudget =
+    rawHeadroom >= requiredHeadroom && gzipHeadroom >= requiredHeadroom;
+  const summary = `${budget.label}: raw ${actual.raw}/${budget.raw} (${(rawHeadroom * 100).toFixed(1)}% reserve), gzip ${actual.gzip}/${budget.gzip} (${(gzipHeadroom * 100).toFixed(1)}% reserve)`;
   if (withinBudget) console.log(`performance budget ok: ${summary}`);
   else {
     console.error(

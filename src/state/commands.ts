@@ -9,15 +9,7 @@ import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname, isPathWithin, joinPath } from "../lib/paths";
-import { IS_WINDOWS } from "../lib/platform";
-import {
-    agentLaunchArgs,
-    initialAgentPrompt,
-    MAX_AGENT_MODEL_LENGTH,
-    MAX_AGENT_PROMPT_LENGTH,
-    normalizePermissionMode,
-    supportsInitialPrompt,
-} from "../agentLaunch";
+import { initialAgentPrompt, MAX_AGENT_MODEL_LENGTH, MAX_AGENT_PROMPT_LENGTH, normalizePermissionMode } from "../agentLaunch";
 import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
@@ -30,6 +22,7 @@ import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
 import { agentSupportsSkipPermissions } from "./commands/agentLogic";
+import { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
 import { parseSessionBundle } from "./sessionBundle";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
@@ -73,6 +66,7 @@ import type {
 } from "./types";
 
 export { agentSupportsSkipPermissions } from "./commands/agentLogic";
+export { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
 export { normalisePinnedProjects, normaliseProjectRoots } from "./commands/settingsLogic";
 
 const patchSession = (id: string, fn: (s: Session) => Session): void =>
@@ -738,19 +732,20 @@ export function closeSession(id: string): void {
             if (w) {
                 for (const p of collectPanes(w.root as unknown as Window["root"])) {
                     if (d.gitModal?.ownerPaneId === p.id) d.gitModal = null;
-                    delete d.editorViews[p.id];
-                    delete d.pendingEditorOpens[p.id];
-                    delete d.dirtyEditorPaths[p.id];
-                    delete d.gitViews[p.id];
-                    delete d.ecsViews[p.id];
+                    disposePaneState(d, p.id);
                 }
             }
             delete d.windows[wid];
         }
-        for (const aid of agentIds) delete d.agents[aid];
+        for (const aid of agentIds) {
+            delete d.agents[aid];
+            delete d.agentActivity[aid];
+        }
         delete d.windowsBySession[id];
         delete d.agentsBySession[id];
         delete d.brunoViews[id];
+        delete d.rundeckViews[id];
+        delete d.globalSearchBySession[id];
         delete d.sessions[id];
         d.sessionOrder = d.sessionOrder.filter((x) => x !== id);
 
@@ -1107,6 +1102,7 @@ export async function importSessionFromClipboard(): Promise<void> {
                 title: row.title,
                 resumeId: row.resumeId,
                 startup: agentStartup(row.type, row.resumeId),
+                directCommand: agentDirectCommand(row.type, row.resumeId),
                 launchState: "dormant",
             };
             d.agentsBySession[sessionId].push(id);
@@ -1124,12 +1120,7 @@ function closeActivePane(): void {
         const root = removePane(w.root, closingPaneId);
         if (root === null && w.fixed) return;
         d.zoomedPaneId = null;
-        delete d.editorViews[closingPaneId];
-        delete d.pendingEditorOpens[closingPaneId];
-        delete d.dirtyEditorPaths[closingPaneId];
-        delete d.gitViews[closingPaneId];
-        delete d.ecsViews[closingPaneId];
-        delete d.rundeckViews[closingPaneId];
+        disposePaneState(d, closingPaneId);
         if (root === null) {
             const winIds = d.windowsBySession[session.id] ?? [];
             if (winIds.length <= 1) {
@@ -1157,15 +1148,20 @@ function closeActivePane(): void {
     if (taskPaneId) taskPtyBindings.release(taskPaneId);
 }
 
+function disposePaneState(d: StoreState, paneId: string): void {
+    if (d.gitModal?.ownerPaneId === paneId) d.gitModal = null;
+    delete d.editorViews[paneId];
+    delete d.pendingEditorOpens[paneId];
+    delete d.dirtyEditorPaths[paneId];
+    delete d.gitViews[paneId];
+    delete d.ecsViews[paneId];
+    delete d.rundeckViews[paneId];
+    delete d.terminalTitles[paneId];
+}
+
 function pruneWindowViews(d: StoreState, win: Window): void {
     for (const p of collectPanes(win.root)) {
-        if (d.gitModal?.ownerPaneId === p.id) d.gitModal = null;
-        delete d.editorViews[p.id];
-        delete d.pendingEditorOpens[p.id];
-        delete d.dirtyEditorPaths[p.id];
-        delete d.gitViews[p.id];
-        delete d.ecsViews[p.id];
-        delete d.rundeckViews[p.id];
+        disposePaneState(d, p.id);
     }
 }
 
@@ -1547,26 +1543,6 @@ export function cycleTabs(delta: number): void {
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
 
-function shellQuote(value: string): string {
-    if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;
-    if (IS_WINDOWS) return `'${value.replace(/'/g, "''")}'`;
-    return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-export function agentStartup(
-    type: AgentType,
-    resumeId?: string,
-    permissionModeOrSkip: AgentPermissionMode | boolean = "workspace-write",
-    executablePath?: string,
-    options: { model?: string; effort?: AgentEffort; initialPrompt?: string } = {},
-): string {
-    const permissionMode: AgentPermissionMode =
-        typeof permissionModeOrSkip === "boolean" ? (permissionModeOrSkip ? "bypass" : "workspace-write") : permissionModeOrSkip;
-    const executable = shellQuote(executablePath?.trim() || type);
-    const args = agentLaunchArgs(type, { resumeId, permissionMode, ...options }).map(shellQuote);
-    return [executable, ...args].join(" ");
-}
-
 function profileExecutable(profileId: string | undefined, type: AgentType): string | undefined {
     if (!profileId) return undefined;
     return getState().providerProfiles.find((profile) => profile.id === profileId && profile.provider === type)?.executablePath;
@@ -1596,6 +1572,10 @@ export function toggleAgentSkipPermissions(id: string): void {
         a.permissionMode = next;
         a.skipPermissions = next === "bypass";
         a.startup = agentStartup(a.type, a.resumeId, next, profileExecutable(a.profileId, a.type), {
+            model: a.model,
+            effort: a.effort,
+        });
+        a.directCommand = agentDirectCommand(a.type, a.resumeId, next, profileExecutable(a.profileId, a.type), {
             model: a.model,
             effort: a.effort,
         });
@@ -1654,8 +1634,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         const workspaceStrategy = options.workspaceStrategy ?? (options.worktreePath ? "existing" : "current");
         const model = options.model?.trim() || undefined;
         const initialPrompt = resumeId ? undefined : initialAgentPrompt(options.initialPrompt, workspaceStrategy);
-        const promptInArgv = supportsInitialPrompt(type);
-        const initialPromptSubmitted = !!initialPrompt && promptInArgv;
+        const initialPromptSubmitted = !!initialPrompt;
         const executablePath = profileId ? d.providerProfiles.find((profile) => profile.id === profileId)?.executablePath : undefined;
         const agent: Agent = {
             id: newId("agent"),
@@ -1664,7 +1643,10 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             startup: agentStartup(type, resumeId, permissionMode, executablePath, {
                 model,
                 effort: options.effort,
-                initialPrompt: promptInArgv ? initialPrompt : undefined,
+            }),
+            directCommand: agentDirectCommand(type, resumeId, permissionMode, executablePath, {
+                model,
+                effort: options.effort,
             }),
             resumeId,
             createdAt: Date.now(),
@@ -1676,7 +1658,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             workspaceStrategy,
             initialPromptSubmitted,
             firstTurnPending: !!initialPrompt,
-            ...(!promptInArgv && initialPrompt ? { initialInput: initialPrompt } : {}),
+            ...(initialPrompt ? { initialInput: initialPrompt } : {}),
             ...(options.worktreePath ? { worktreePath: options.worktreePath } : {}),
             ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
             launchState: "live",
@@ -1751,6 +1733,13 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             agent.resumeId = row.id;
             agent.title = usableAgentSessionTitle(row, agent.title);
             agent.startup = agentStartup(
+                agent.type,
+                agent.resumeId,
+                agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write"),
+                profileExecutable(agent.profileId, agent.type),
+                { model: agent.model, effort: agent.effort },
+            );
+            agent.directCommand = agentDirectCommand(
                 agent.type,
                 agent.resumeId,
                 agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write"),
@@ -2120,7 +2109,8 @@ export function resetKeybinding(id: import("../keybindings").KeybindingActionId)
 export const resetAllKeybindings = (): void => setState({ keybindingOverrides: {} });
 
 export function addProjectRoot(path: string, depth = 1): void {
-    setState((s) => (s.projectRoots.some((r) => r.path === path) ? {} : { projectRoots: [...s.projectRoots, { path, depth }] }));
+    const boundedDepth = Math.max(0, Math.min(8, Math.round(Number.isFinite(depth) ? depth : 1)));
+    setState((s) => (s.projectRoots.some((r) => r.path === path) ? {} : { projectRoots: [...s.projectRoots, { path, depth: boundedDepth }] }));
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
@@ -2154,7 +2144,7 @@ export function removeProjectRoot(path: string): void {
 }
 
 export function setProjectRootDepth(path: string, depth: number): void {
-    const d = Math.max(0, Math.round(Number.isFinite(depth) ? depth : 1));
+    const d = Math.max(0, Math.min(8, Math.round(Number.isFinite(depth) ? depth : 1)));
     setState((s) => ({
         projectRoots: s.projectRoots.map((r) => (r.path === path ? { ...r, depth: d } : r)),
     }));
@@ -2166,8 +2156,8 @@ export const setAwsService = (s: AwsService): void => setState({ awsService: s }
 export const openAwsAuthModal = (profile: string, ssoStartUrl: string | null): void => setState({ awsAuthModal: { profile, ssoStartUrl } });
 export const closeAwsAuthModal = (): void => setState({ awsAuthModal: null });
 
-export async function runAwsSsoLogin(profile: string): Promise<boolean> {
-    const result = await awsApi.ssoLogin(profile);
+export async function runAwsSsoLogin(profile: string, operationId: string): Promise<boolean> {
+    const result = await awsApi.ssoLogin(profile, operationId);
     if (result.success) {
         invalidate((kind, args) => kind === awsIdentityR.kind && args[0] === profile);
         await fetchResource(awsIdentityR, profile, true).catch(swallow("awsIdentityR refetch"));

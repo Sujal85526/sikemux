@@ -34,11 +34,21 @@ const defsByKind = new Map<string, AnyDef>();
 const MAX_CACHE_ENTRIES = 256;
 const UNUSED_ENTRY_TTL_MS = 15 * 60_000;
 
+function releaseKeyIfUnused(key: string): void {
+    if (cache.has(key) || inflight.has(key) || subs.has(key)) return;
+    generations.delete(key);
+}
+
+function deleteCacheEntry(key: string): void {
+    cache.delete(key);
+    releaseKeyIfUnused(key);
+}
+
 function pruneCache(): void {
     const now = Date.now();
     for (const [key, entry] of cache) {
         if (subs.has(key) || inflight.has(key) || entry.status === "loading") continue;
-        if (now - entry.fetchedAt > UNUSED_ENTRY_TTL_MS) cache.delete(key);
+        if (now - entry.fetchedAt > UNUSED_ENTRY_TTL_MS) deleteCacheEntry(key);
     }
     if (cache.size <= MAX_CACHE_ENTRIES) return;
     const evictable = [...cache]
@@ -46,7 +56,7 @@ function pruneCache(): void {
         .sort((a, b) => a[1].fetchedAt - b[1].fetchedAt);
     for (const [key] of evictable) {
         if (cache.size <= MAX_CACHE_ENTRIES) break;
-        cache.delete(key);
+        deleteCacheEntry(key);
     }
 }
 
@@ -172,6 +182,7 @@ function trigger<Args extends unknown[], T>(def: ResourceDef<Args, T>, key: stri
         })
         .finally(() => {
             if (inflight.get(key)?.promise === p) inflight.delete(key);
+            releaseKeyIfUnused(key);
         });
     inflight.set(key, { generation, promise: p });
     return p;
@@ -213,7 +224,10 @@ export function useResourceEnabled<Args extends unknown[], T>(enabled: boolean, 
             set.add(cb);
             return () => {
                 set!.delete(cb);
-                if (set!.size === 0) subs.delete(key);
+                if (set!.size === 0) {
+                    subs.delete(key);
+                    releaseKeyIfUnused(key);
+                }
             };
         },
         () => (enabled ? (cache.get(key) as Entry<T> | undefined) : undefined),
@@ -250,11 +264,11 @@ export function invalidate(predicate: (kind: string, args: unknown[]) => boolean
             if (def) {
                 void trigger(def, key, entry.args).catch(() => {});
             } else {
-                cache.delete(key);
+                deleteCacheEntry(key);
                 notify(key);
             }
         } else {
-            cache.delete(key);
+            deleteCacheEntry(key);
             notify(key);
         }
     }

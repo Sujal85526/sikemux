@@ -7,18 +7,31 @@
 //                         chunks (AWS describe-* commands cap at 10/100/etc)
 
 use std::process::Command;
+use std::time::Duration;
 
 use futures::future::try_join_all;
 use serde::de::DeserializeOwned;
 use tokio::task;
 
+use crate::bounded_process::{self, ProcessCancellation, ProcessRunError};
 use crate::error::{AppError, AppResult};
 
 const DESCRIBE_CHUNK_CONCURRENCY: usize = 4;
+const AWS_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+const AWS_SSO_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const AWS_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 pub(super) fn run_aws_cli(
     args: &[&str],
     profile: Option<&str>,
+) -> AppResult<(bool, String, String)> {
+    run_aws_cli_with_cancel(args, profile, None)
+}
+
+pub(super) fn run_aws_cli_with_cancel(
+    args: &[&str],
+    profile: Option<&str>,
+    cancellation: Option<&ProcessCancellation>,
 ) -> AppResult<(bool, String, String)> {
     let bin = std::env::var("AWS_CLI").unwrap_or_else(|_| "aws".to_string());
     let mut cmd = Command::new(&bin);
@@ -27,11 +40,16 @@ pub(super) fn run_aws_cli(
     }
     cmd.env("AWS_PAGER", "").env("NO_COLOR", "1");
     cmd.args(args);
-    let out = cmd.output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
+    let timeout = if args.starts_with(&["sso", "login"]) {
+        AWS_SSO_TIMEOUT
+    } else {
+        AWS_COMMAND_TIMEOUT
+    };
+    let out = bounded_process::run(&mut cmd, None, timeout, AWS_MAX_OUTPUT_BYTES, cancellation).map_err(|error| {
+        if matches!(&error, ProcessRunError::Spawn(cause) if cause.kind() == std::io::ErrorKind::NotFound) {
             AppError::AwsCliMissing(bin.clone())
         } else {
-            AppError::Io(e)
+            AppError::Aws(error.to_string())
         }
     })?;
     Ok((
@@ -39,6 +57,21 @@ pub(super) fn run_aws_cli(
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
     ))
+}
+
+pub(super) async fn run_aws_cli_cancellable_async(
+    args: &[&str],
+    profile: Option<&str>,
+    cancellation: ProcessCancellation,
+) -> AppResult<(bool, String, String)> {
+    let profile = profile.map(String::from);
+    let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+    task::spawn_blocking(move || {
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_aws_cli_with_cancel(&refs, profile.as_deref(), Some(&cancellation))
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("join error: {e}")))?
 }
 
 /// Map AWS CLI stderr text into a typed AppError.

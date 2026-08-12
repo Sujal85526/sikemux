@@ -63,6 +63,17 @@ export function SideRail() {
         cmd.focusAgents();
     };
 
+    const SessionCloseButton = ({ session }: { session: Session }) => (
+        <button
+            type="button"
+            className="sess-close"
+            title={`Close ${session.name}`}
+            aria-label={`Close ${session.name}`}
+            onClick={() => cmd.closeSession(session.id)}>
+            <IconClose size={11} />
+        </button>
+    );
+
     const ProjectBlock = ({ s }: { s: Session }) => {
         const active = s.id === activeSessionId;
         const winIds = windowsBySession[s.id] ?? [];
@@ -76,34 +87,28 @@ export function SideRail() {
             const visible = agents.slice(0, MAX_BADGE_ICONS);
             const overflow = agents.length - visible.length;
             return (
-                <button className="proj-row collapsed" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
-                    <span className="proj-folder">
-                        <IconFolder size={12} />
-                    </span>
-                    <span className="proj-name">{s.name}</span>
-                    {visible.length > 0 && (
-                        <span className="proj-child-icons">
-                            {visible.map((a) => (
-                                <span
-                                    key={a.id}
-                                    className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-                                    <AgentIcon type={a.type} size={20} />
-                                </span>
-                            ))}
-                            {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                <div className="session-row-shell project-row-shell">
+                    <button className="proj-row collapsed" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
+                        <span className="proj-folder">
+                            <IconFolder size={12} />
                         </span>
-                    )}
-                    {rollup && <AgentStateIndicator state={rollup} />}
-                    <span
-                        className="sess-close"
-                        title="Close session"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            cmd.closeSession(s.id);
-                        }}>
-                        <IconClose size={11} />
-                    </span>
-                </button>
+                        <span className="proj-name">{s.name}</span>
+                        {visible.length > 0 && (
+                            <span className="proj-child-icons">
+                                {visible.map((a) => (
+                                    <span
+                                        key={a.id}
+                                        className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
+                                        <AgentIcon type={a.type} size={20} />
+                                    </span>
+                                ))}
+                                {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                            </span>
+                        )}
+                        {rollup && <AgentStateIndicator state={rollup} />}
+                    </button>
+                    <SessionCloseButton session={s} />
+                </div>
             );
         }
 
@@ -172,21 +177,15 @@ export function SideRail() {
         ];
         return (
             <div className="proj-tree active">
-                <button className="proj-row expanded" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
-                    <span className="proj-folder">
-                        <IconFolder size={12} />
-                    </span>
-                    <span className="proj-name">{s.name}</span>
-                    <span
-                        className="sess-close"
-                        title="Close session"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            cmd.closeSession(s.id);
-                        }}>
-                        <IconClose size={11} />
-                    </span>
-                </button>
+                <div className="session-row-shell project-row-shell">
+                    <button className="proj-row expanded" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
+                        <span className="proj-folder">
+                            <IconFolder size={12} />
+                        </span>
+                        <span className="proj-name">{s.name}</span>
+                    </button>
+                    <SessionCloseButton session={s} />
+                </div>
                 <div className="proj-children">
                     {children.map((c) => {
                         const subActive = isSubActive(c.role);
@@ -225,21 +224,15 @@ export function SideRail() {
     const SimpleRow = ({ s }: { s: Session }) => {
         const active = s.id === activeSessionId;
         return (
-            <button className={`sess-row${active ? " active" : ""}`} onClick={() => cmd.selectSession(s.id)}>
-                <span className={`sess-icon ${s.kind}`}>
-                    <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
-                </span>
-                <span className="sess-name">{s.name}</span>
-                <span
-                    className="sess-close"
-                    title="Close session"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        cmd.closeSession(s.id);
-                    }}>
-                    <IconClose size={11} />
-                </span>
-            </button>
+            <div className="session-row-shell">
+                <button className={`sess-row${active ? " active" : ""}`} onClick={() => cmd.selectSession(s.id)}>
+                    <span className={`sess-icon ${s.kind}`}>
+                        <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
+                    </span>
+                    <span className="sess-name">{s.name}</span>
+                </button>
+                <SessionCloseButton session={s} />
+            </div>
         );
     };
 

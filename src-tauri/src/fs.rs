@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::async_runtime::spawn_blocking;
 
 use crate::error::{AppError, AppResult};
@@ -21,6 +24,43 @@ pub struct FileBlob {
     mime: String,
     data: String,
     size: u64,
+}
+
+#[derive(Serialize)]
+pub struct FileSnapshot {
+    content: String,
+    version: String,
+}
+
+#[derive(Serialize)]
+pub struct FileWriteResult {
+    version: String,
+}
+
+type FileWriteLock = Arc<Mutex<()>>;
+type WeakFileWriteLock = Weak<Mutex<()>>;
+
+fn file_write_locks() -> &'static Mutex<HashMap<PathBuf, WeakFileWriteLock>> {
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, WeakFileWriteLock>>> = OnceLock::new();
+    LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn write_lock_for(path: &Path) -> AppResult<FileWriteLock> {
+    let key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut locks = file_write_locks()
+        .lock()
+        .map_err(|_| AppError::Other("file write lock registry poisoned".into()))?;
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(key, Arc::downgrade(&lock));
+    Ok(lock)
+}
+
+fn content_version(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 /// List a directory, directories first then files, both alphabetical.
@@ -63,6 +103,27 @@ pub async fn read_file(path: String) -> AppResult<String> {
     })
     .await
     .map_err(|e| AppError::Other(format!("read_file join: {e}")))?
+}
+
+/// Read editor text together with an opaque content version. The version is
+/// subsequently required by `write_file_versioned`, so external edits cannot
+/// be silently replaced by a stale editor buffer.
+#[tauri::command]
+pub async fn read_file_versioned(path: String) -> AppResult<FileSnapshot> {
+    spawn_blocking(move || {
+        let path = PathBuf::from(path);
+        let lock = write_lock_for(&path)?;
+        let _guard = lock
+            .lock()
+            .map_err(|_| AppError::Other("file write lock poisoned".into()))?;
+        let bytes = read_bounded(&path, EDITOR_TEXT_MAX_BYTES)?;
+        let version = content_version(&bytes);
+        let content = String::from_utf8(bytes)
+            .map_err(|_| AppError::Fs(format!("{} is not UTF-8 text", path.display())))?;
+        Ok(FileSnapshot { content, version })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("read_file_versioned join: {e}")))?
 }
 
 const INLINE_TEXT_MAX_BYTES: u64 = 1024 * 1024;
@@ -172,6 +233,99 @@ pub async fn write_file(path: String, content: String) -> AppResult<()> {
         .map_err(|e| AppError::Other(format!("write_file join: {e}")))?
 }
 
+/// Atomically replace an editor file only when its current content still
+/// matches the version the editor opened or most recently saved.
+#[tauri::command]
+pub async fn write_file_versioned(
+    path: String,
+    content: String,
+    expected_version: String,
+) -> AppResult<FileWriteResult> {
+    spawn_blocking(move || {
+        if expected_version.len() != 64
+            || !expected_version
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(AppError::BadArg(
+                "expected_version must be a SHA-256 hex digest",
+            ));
+        }
+        let path = PathBuf::from(path);
+        let lock = write_lock_for(&path)?;
+        let _guard = lock
+            .lock()
+            .map_err(|_| AppError::Other("file write lock poisoned".into()))?;
+        write_file_versioned_sync(path, content.as_bytes(), &expected_version)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("write_file_versioned join: {e}")))?
+}
+
+fn version_or_conflict(path: &Path) -> AppResult<String> {
+    match read_bounded(path, EDITOR_TEXT_MAX_BYTES) {
+        Ok(bytes) => Ok(content_version(&bytes)),
+        Err(AppError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err(AppError::FileConflict(format!(
+                "{} was deleted or moved outside Sikemux",
+                path.display()
+            )))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn write_file_versioned_sync(
+    path: PathBuf,
+    content: &[u8],
+    expected_version: &str,
+) -> AppResult<FileWriteResult> {
+    let target = fs::canonicalize(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            AppError::FileConflict(format!(
+                "{} was deleted or moved outside Sikemux",
+                path.display()
+            ))
+        } else {
+            AppError::from(error)
+        }
+    })?;
+    let actual_version = version_or_conflict(&target)?;
+    if actual_version != expected_version {
+        return Err(AppError::FileConflict(format!(
+            "{} changed outside Sikemux; reload it before saving",
+            path.display()
+        )));
+    }
+
+    let parent = target
+        .parent()
+        .ok_or_else(|| AppError::Fs("invalid file path".into()))?;
+    let existing_permissions = fs::metadata(&target)?.permissions();
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    temp.as_file().set_permissions(existing_permissions)?;
+    temp.write_all(content)?;
+    temp.flush()?;
+    temp.as_file().sync_all()?;
+
+    // Re-check after the temporary file is durable. This narrows the external
+    // writer race to the final atomic replacement rather than the full write.
+    let latest_version = version_or_conflict(&target)?;
+    if latest_version != expected_version {
+        return Err(AppError::FileConflict(format!(
+            "{} changed while Sikemux was saving; no editor bytes were written",
+            path.display()
+        )));
+    }
+
+    temp.persist(&target).map_err(|e| AppError::from(e.error))?;
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(FileWriteResult {
+        version: content_version(content),
+    })
+}
+
 pub(crate) fn write_file_atomic(path: PathBuf, content: &[u8]) -> AppResult<()> {
     // Preserve an existing symlink by replacing its resolved target instead
     // of replacing the symlink itself with a regular file.
@@ -229,13 +383,21 @@ pub async fn create_file(path: String) -> AppResult<()> {
 
 fn create_file_sync(path: String) -> AppResult<()> {
     let p = std::path::PathBuf::from(&path);
-    if p.exists() {
-        return Err(AppError::Fs(format!("already exists: {}", path)));
-    }
     if let Some(parent) = p.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::File::create(&p).map(|_| ()).map_err(AppError::from)
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&p)
+        .map(|_| ())
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                AppError::Fs(format!("already exists: {path}"))
+            } else {
+                AppError::from(error)
+            }
+        })
 }
 
 /// Create a directory (and any missing parents). Idempotent — succeeds if
@@ -263,16 +425,29 @@ fn rename_path_sync(src: String, dest: String) -> AppResult<()> {
     if !src_p.exists() {
         return Err(AppError::Fs(format!("source missing: {}", src)));
     }
-    if dest_p.exists() {
-        return Err(AppError::Fs(format!(
-            "destination already exists: {}",
-            dest
-        )));
-    }
     if let Some(parent) = dest_p.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::rename(&src_p, &dest_p).map_err(AppError::from)
+    rename_no_replace(&src_p, &dest_p).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            AppError::Fs(format!("destination already exists: {dest}"))
+        } else {
+            AppError::from(error)
+        }
+    })
+}
+
+#[cfg(unix)]
+fn rename_no_replace(src: &Path, dest: &Path) -> std::io::Result<()> {
+    use rustix::fs::{renameat_with, RenameFlags, CWD};
+    renameat_with(CWD, src, CWD, dest, RenameFlags::NOREPLACE).map_err(std::io::Error::from)
+}
+
+#[cfg(windows)]
+fn rename_no_replace(src: &Path, dest: &Path) -> std::io::Result<()> {
+    // Windows MoveFile semantics refuse an existing destination unless the
+    // replace flag is explicitly requested; std::fs::rename does not request it.
+    fs::rename(src, dest)
 }
 
 /// Copy an external file into a target directory, preserving its basename.
@@ -297,26 +472,47 @@ fn copy_into_dir_sync(src: String, dir: String) -> AppResult<String> {
     let dest_dir = std::path::PathBuf::from(&dir);
     fs::create_dir_all(&dest_dir)?;
 
-    let mut candidate = dest_dir.join(&name);
-    if candidate.exists() {
-        let stem = std::path::Path::new(&name)
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let ext = std::path::Path::new(&name)
-            .extension()
-            .map(|s| format!(".{}", s.to_string_lossy()))
-            .unwrap_or_default();
-        for n in 1..1000 {
-            let attempt = dest_dir.join(format!("{stem} ({n}){ext}"));
-            if !attempt.exists() {
-                candidate = attempt;
-                break;
-            }
+    let stem = std::path::Path::new(&name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ext = std::path::Path::new(&name)
+        .extension()
+        .map(|s| format!(".{}", s.to_string_lossy()))
+        .unwrap_or_default();
+
+    for n in 0..1000 {
+        let candidate = if n == 0 {
+            dest_dir.join(&name)
+        } else {
+            dest_dir.join(format!("{stem} ({n}){ext}"))
+        };
+        let mut destination = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(AppError::from(error)),
+        };
+        let copy_result = (|| -> std::io::Result<()> {
+            let mut source = fs::File::open(&src_path)?;
+            std::io::copy(&mut source, &mut destination)?;
+            destination.sync_all()
+        })();
+        if let Err(error) = copy_result {
+            drop(destination);
+            let _ = fs::remove_file(&candidate);
+            return Err(AppError::from(error));
         }
+        return Ok(candidate.to_string_lossy().into_owned());
     }
-    fs::copy(&src_path, &candidate)?;
-    Ok(candidate.to_string_lossy().into_owned())
+
+    Err(AppError::Fs(format!(
+        "no available destination name for {} after 1000 attempts",
+        name.to_string_lossy()
+    )))
 }
 
 /// Reveal a path in the OS file manager, selecting the entry itself.

@@ -245,6 +245,16 @@
     height: 0;
     display: none;
 }
+.tab-wrap {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: stretch;
+    border-right: 1px solid var(--line-soft);
+}
+.tab-wrap.active {
+    background: var(--acc-soft);
+    box-shadow: inset 0 -2px 0 var(--acc);
+}
 .tab {
     display: flex;
     align-items: center;
@@ -253,7 +263,7 @@
     background: transparent;
     color: var(--ink-faint);
     white-space: nowrap;
-    border-right: 1px solid var(--line-soft);
+    border: 0;
     transition:
         color 0.1s,
         background 0.1s;
@@ -263,8 +273,7 @@
 }
 .tab.active {
     color: var(--ink);
-    background: var(--acc-soft);
-    box-shadow: inset 0 -2px 0 var(--acc);
+    background: transparent;
 }
 .tab-label {
     font-size: 12px;
@@ -284,6 +293,9 @@
     flex: 0 0 auto;
     padding: 2px;
     color: var(--ink-faint);
+    border: 0;
+    background: transparent;
+    cursor: pointer;
 }
 .tab-x:hover {
     color: var(--danger);
@@ -368,7 +380,8 @@
         opacity 0.12s,
         color 0.12s;
 }
-.tabbar.v-agent .tab:hover .tab-x {
+.tabbar.v-agent .tab-wrap:hover .tab-x,
+.tabbar.v-agent .tab-x:focus-visible {
     opacity: 1;
 }
 .tabbar.v-agent .tab-add {

@@ -5,19 +5,22 @@ interface Props {
     paneId: string;
     initialUrl?: string;
     initialUser?: string;
+    initialAllowInsecurePrivateHttp?: boolean;
     notice?: string;
     onDone: () => void;
 }
 
-export function RundeckLogin({ initialUrl = "", initialUser = "", notice, onDone }: Props) {
+export function RundeckLogin({ initialUrl = "", initialUser = "", initialAllowInsecurePrivateHttp = false, notice, onDone }: Props) {
     const [url, setUrl] = useState(initialUrl);
     const [user, setUser] = useState(initialUser);
     const [password, setPassword] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(notice ?? null);
     const [version, setVersion] = useState<string | null>(null);
+    const [allowInsecurePrivateHttp, setAllowInsecurePrivateHttp] = useState(initialAllowInsecurePrivateHttp);
 
-    const canSubmit = url.trim() && user.trim() && password.length > 0 && !busy;
+    const insecureHttp = url.trim().toLowerCase().startsWith("http://");
+    const canSubmit = url.trim() && user.trim() && password.length > 0 && (!insecureHttp || allowInsecurePrivateHttp) && !busy;
 
     const submit = async () => {
         if (!canSubmit) return;
@@ -28,6 +31,7 @@ export function RundeckLogin({ initialUrl = "", initialUser = "", notice, onDone
                 url: url.trim(),
                 user: user.trim(),
                 password,
+                allow_insecure_private_http: insecureHttp && allowInsecurePrivateHttp,
             });
             setVersion(res.rundeck_version ?? "connected");
             setPassword("");
@@ -47,7 +51,8 @@ export function RundeckLogin({ initialUrl = "", initialUser = "", notice, onDone
                     <span>connect to rundeck</span>
                 </div>
                 <div className="rnd-login-help">
-                    Credentials are stored at <code>~/.rd-config</code> (chmod&nbsp;600) and shared with the <code>rnd</code> CLI.
+                    The minted token is stored at <code>~/.rd-config</code> (chmod&nbsp;600) and shared with the <code>rnd</code> CLI. Your password
+                    is never saved.
                 </div>
 
                 <label className="rnd-field">
@@ -62,6 +67,20 @@ export function RundeckLogin({ initialUrl = "", initialUser = "", notice, onDone
                         autoCorrect="off"
                     />
                 </label>
+
+                {insecureHttp && (
+                    <label className="rnd-insecure-http">
+                        <input
+                            type="checkbox"
+                            checked={allowInsecurePrivateHttp}
+                            onChange={(event) => setAllowInsecurePrivateHttp(event.target.checked)}
+                        />
+                        <span>
+                            Allow plaintext HTTP for this private-subnet host. I understand the password and token are not protected by TLS. Sikemux
+                            will refuse the connection unless every resolved address is private or loopback.
+                        </span>
+                    </label>
+                )}
 
                 <label className="rnd-field">
                     <span>Username</span>

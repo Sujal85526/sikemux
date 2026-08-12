@@ -6,7 +6,7 @@ import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../c
 import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agentLaunch";
 import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
-import { agentStartup } from "./commands";
+import { agentDirectCommand, agentStartup } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { validatePersistedLayout } from "./persistValidation";
@@ -649,6 +649,10 @@ export function applyHydrate(raw: string): HydrationResult {
                     ...saved,
                     permissionMode,
                     startup: agentStartup(saved.type, saved.resumeId, permissionMode, executablePath, {
+                        model: saved.model,
+                        effort: saved.effort,
+                    }),
+                    directCommand: agentDirectCommand(saved.type, saved.resumeId, permissionMode, executablePath, {
                         model: saved.model,
                         effort: saved.effort,
                     }),

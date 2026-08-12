@@ -35,7 +35,15 @@ export function RundeckPane({ paneId, active }: Props) {
             return <RundeckLoading />;
         }
         if (status.data && !status.data.configured) {
-            return <RundeckLogin paneId={paneId} initialUrl={status.data.url} initialUser={status.data.user} onDone={() => status.refresh()} />;
+            return (
+                <RundeckLogin
+                    paneId={paneId}
+                    initialUrl={status.data.url}
+                    initialUser={status.data.user}
+                    initialAllowInsecurePrivateHttp={status.data.allow_insecure_private_http}
+                    onDone={() => status.refresh()}
+                />
+            );
         }
         if (status.data && status.data.configured && !status.data.ok && status.data.auth_failed) {
             return (
@@ -43,6 +51,7 @@ export function RundeckPane({ paneId, active }: Props) {
                     paneId={paneId}
                     initialUrl={status.data.url}
                     initialUser={status.data.user}
+                    initialAllowInsecurePrivateHttp={status.data.allow_insecure_private_http}
                     notice={status.data.message ?? "Authentication failed"}
                     onDone={() => status.refresh()}
                 />

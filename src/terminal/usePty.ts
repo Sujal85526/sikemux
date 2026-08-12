@@ -3,7 +3,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "../api/invoke";
 import { registerPtyDrop } from "../state/dropRegistry";
 import { IS_WINDOWS } from "../lib/platform";
-import type { PtyContext } from "../state/types";
+import type { PtyContext, PtyDirectCommand } from "../state/types";
 import { createItemId } from "../workbench/registry";
 import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource } from "../workbench/itemRuntime";
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
@@ -25,6 +25,7 @@ interface IntegrationHealthShell {
 interface PtyResourceConfiguration {
     readonly cwd?: string;
     readonly startup?: string;
+    readonly directCommand?: PtyDirectCommand;
     readonly initialInput?: string;
     readonly context?: PtyContext;
     readonly externallyOwned?: boolean;
@@ -122,6 +123,8 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
     return JSON.stringify([
         configuration.cwd ?? null,
         configuration.startup ?? null,
+        configuration.directCommand?.program ?? null,
+        configuration.directCommand?.args ?? null,
         configuration.initialInput ?? null,
         context?.sessionId ?? null,
         context?.sessionName ?? null,
@@ -144,6 +147,7 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
 export function usePty(opts: {
     cwd?: string;
     startup?: string;
+    directCommand?: PtyDirectCommand;
     initialInput?: string;
     onInitialInputDelivered?: () => void;
     hostRef: RefObject<HTMLDivElement | null>;
@@ -212,6 +216,7 @@ export function usePty(opts: {
                 existingPtyId: externallyOwned ? taskBinding!.ptyId : undefined,
                 cwd: initial.cwd,
                 startup: initial.startup,
+                directCommand: initial.directCommand,
                 context: initial.context,
                 initialInput: externallyOwned ? undefined : initial.initialInput,
                 onInitialInputDelivered: () => deliveredRef.current?.(),

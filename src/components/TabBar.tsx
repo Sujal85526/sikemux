@@ -50,38 +50,39 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
             {tabs.map((t) => {
                 const closable = t.closable ?? !!onClose;
                 return (
-                    <button
-                        key={t.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={t.active ?? false}
-                        title={t.title}
-                        className={`tab${t.active ? " active" : ""}`}
-                        onClick={() => onSelect(t.id)}
-                        onContextMenu={
-                            buildMenu
-                                ? (e) => {
-                                      e.preventDefault();
-                                      setMenu({ x: e.clientX, y: e.clientY, id: t.id });
-                                  }
-                                : undefined
-                        }>
-                        {t.icon}
-                        <span className="tab-label">{t.label}</span>
-                        {t.dirty && <span className="tab-dot" />}
-                        {t.accessory}
+                    <div key={t.id} className={`tab-wrap${t.active ? " active" : ""}`} role="presentation">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={t.active ?? false}
+                            aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
+                            title={t.title}
+                            className={`tab${t.active ? " active" : ""}`}
+                            onClick={() => onSelect(t.id)}
+                            onContextMenu={
+                                buildMenu
+                                    ? (e) => {
+                                          e.preventDefault();
+                                          setMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                                      }
+                                    : undefined
+                            }>
+                            {t.icon}
+                            <span className="tab-label">{t.label}</span>
+                            {t.dirty && <span className="tab-dot" aria-hidden="true" />}
+                            {t.accessory}
+                        </button>
                         {closable && onClose && (
-                            <span
+                            <button
+                                type="button"
                                 className="tab-x"
-                                title="Close"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onClose(t.id);
-                                }}>
+                                aria-label={`Close ${t.label}`}
+                                title={`Close ${t.label}`}
+                                onClick={() => onClose(t.id)}>
                                 <IconClose size={11} />
-                            </span>
+                            </button>
                         )}
-                    </button>
+                    </div>
                 );
             })}
             {onAdd && (

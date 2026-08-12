@@ -32,6 +32,16 @@ pub fn http() -> &'static Client {
     })
 }
 
+fn pinned_http(transport: &config::ValidatedTransport) -> AppResult<Client> {
+    Ok(transport
+        .pin_dns(Client::builder())
+        .pool_idle_timeout(Duration::from_secs(25))
+        .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("sikemux-rundeck/0.1")
+        .build()?)
+}
+
 fn api_url(base: &str, endpoint: &str) -> String {
     let trimmed = base.trim_end_matches('/');
     format!("{trimmed}/api/{API_VERSION}{endpoint}")
@@ -54,13 +64,22 @@ async fn send_with_token(
     if cfg.url.is_empty() {
         return Err(AppError::RundeckUnconfigured);
     }
-    config::validate_base_url(&cfg.url)?;
+    let transport = config::validate_transport(&cfg.url, cfg.allow_insecure_private_http).await?;
     let token = token_override.unwrap_or(&cfg.token);
     if token.is_empty() {
         return Err(AppError::RundeckUnconfigured);
     }
 
-    let mut req = http()
+    // For acknowledged private HTTP, bind this client to the exact private
+    // addresses that passed validation. This closes the re-resolution gap a
+    // DNS rebinding response could otherwise exploit between policy and send.
+    let private_client = if transport.pins_private_dns() {
+        Some(pinned_http(&transport)?)
+    } else {
+        None
+    };
+    let client = private_client.as_ref().unwrap_or_else(|| http());
+    let mut req = client
         .request(method, api_url(&cfg.url, endpoint))
         .header("X-Rundeck-Auth-Token", token)
         .header("Accept", "application/json");

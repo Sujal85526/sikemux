@@ -7,7 +7,7 @@ import { useXterm } from "./useXterm";
 import type { TerminalSearchOptions } from "./interactions";
 import { TerminalFindBar } from "./TerminalFindBar";
 import { TerminalContextMenu } from "./TerminalContextMenu";
-import type { PtyContext } from "../state/types";
+import type { PtyContext, PtyDirectCommand } from "../state/types";
 import { applyPtyShellMetadataEvent, type PtyShellMetadataEvent } from "../api/ptyShell";
 import type { PtyShellMetadataSnapshot } from "./ptyController";
 import { basename } from "../lib/paths";
@@ -27,6 +27,7 @@ function enforceHiddenRendererBudget() {
 export function TerminalPane({
     cwd,
     startup,
+    directCommand,
     initialInput,
     onInitialInputDelivered,
     active,
@@ -40,6 +41,7 @@ export function TerminalPane({
 }: {
     cwd?: string;
     startup?: string;
+    directCommand?: PtyDirectCommand;
     /** First submitted task for interactive CLIs without an argv prompt. */
     initialInput?: string;
     onInitialInputDelivered?: () => void;
@@ -79,6 +81,7 @@ export function TerminalPane({
     const ptyController = usePty({
         cwd,
         startup,
+        directCommand,
         initialInput,
         onInitialInputDelivered,
         hostRef,

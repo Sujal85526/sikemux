@@ -451,11 +451,29 @@
     background: var(--acc-soft);
 }
 
+.session-row-shell {
+    display: flex;
+    align-items: stretch;
+    position: relative;
+    width: 100%;
+}
+.session-row-shell > .sess-row,
+.session-row-shell > .proj-row {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.session-row-shell > .sess-close {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
 .sess-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
+    width: auto;
     height: 30px;
     padding: 0 8px;
     border-radius: 0;
