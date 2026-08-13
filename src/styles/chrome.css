@@ -273,7 +273,10 @@
     background: var(--acc-soft);
     border-color: var(--acc);
 }
-.tb-update-installing {
+.tb-update-preparing,
+.tb-update-downloading,
+.tb-update-installing,
+.tb-update-restarting {
     color: var(--warn);
     border-color: color-mix(in srgb, var(--warn) 45%, transparent);
     animation: tb-update-pulse 1.4s ease-in-out infinite;

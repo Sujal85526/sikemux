@@ -6,7 +6,7 @@ import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
-import { installPendingUpdate } from "../api/updater";
+import { installPendingUpdate, isUpdateBusy, updateStatusLabel } from "../api/updater";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
 import {
     getKeybindingAction,
@@ -579,6 +579,7 @@ export function WhatsNewOverlay() {
         if (open) void getVersion().then(setVersion);
     }, [open]);
     if (!open) return null;
+    const updateBusy = pending ? isUpdateBusy(pending.state) : false;
     return (
         <Frame label="What’s new" onClose={cmd.closeWhatsNew}>
             <p className="experience-deck">
@@ -595,8 +596,12 @@ export function WhatsNewOverlay() {
             </div>
             <footer>
                 {pending && (
-                    <button className="primary" disabled={pending.state === "installing"} onClick={() => void installPendingUpdate()}>
-                        {pending.state === "installing" ? "Installing…" : `Install v${pending.version}`}
+                    <button className="primary" disabled={updateBusy} onClick={() => void installPendingUpdate()}>
+                        {updateBusy
+                            ? updateStatusLabel(pending)
+                            : pending.state === "error"
+                              ? `Retry v${pending.version}`
+                              : `Install v${pending.version}`}
                     </button>
                 )}
             </footer>

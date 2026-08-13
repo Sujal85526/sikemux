@@ -28,6 +28,7 @@ import {
 import { branchKind } from "./rundeck/branchStyle";
 import { CopyButton } from "./CopyButton";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
+import { isUpdateBusy, updateStatusLabel } from "../api/updater";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -257,8 +258,10 @@ export function UpdateChip() {
     if (!pending) return null;
 
     const state = pending.state;
+    const busy = isUpdateBusy(state);
+    const statusLabel = updateStatusLabel(pending);
     const onClick = () => {
-        if (state === "installing") return;
+        if (busy) return;
         cmd.openWhatsNew();
     };
 
@@ -266,18 +269,16 @@ export function UpdateChip() {
         <button
             className={`tb-update tb-update-${state}`}
             onClick={onClick}
-            disabled={state === "installing"}
+            disabled={busy}
             title={
                 state === "error"
                     ? `Update v${pending.version} failed — ${pending.error ?? "unknown"}. Click to retry.`
-                    : state === "installing"
-                      ? `Installing v${pending.version}…`
+                    : busy
+                      ? `${statusLabel} v${pending.version}`
                       : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`
             }>
             <UpdateArrow size={12} />
-            <span className="tb-update-label">
-                {state === "installing" ? "installing…" : state === "error" ? "update failed — retry" : `update · v${pending.version}`}
-            </span>
+            <span className="tb-update-label">{statusLabel}</span>
         </button>
     );
 }

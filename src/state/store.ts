@@ -83,6 +83,19 @@ export interface DomainState {
     defaultAgentPermissionMode: AgentPermissionMode;
 }
 
+export type UpdateOperationState = "available" | "preparing" | "downloading" | "installing" | "restarting" | "error";
+
+export interface PendingUpdate {
+    version: string;
+    currentVersion: string;
+    notes: string | null;
+    date: string | null;
+    state: UpdateOperationState;
+    error: string | null;
+    downloadedBytes: number;
+    totalBytes: number | null;
+}
+
 export interface ViewState {
     home: string;
 
@@ -125,14 +138,7 @@ export interface ViewState {
     terminalTitles: Record<string, string>;
     lastSessionId: string | null;
 
-    pendingUpdate: {
-        version: string;
-        currentVersion: string;
-        notes: string | null;
-        date: string | null;
-        state: "available" | "installing" | "error";
-        error: string | null;
-    } | null;
+    pendingUpdate: PendingUpdate | null;
 }
 
 export type StoreState = DomainState & ViewState;
