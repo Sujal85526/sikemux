@@ -338,10 +338,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_configured_http_and_https_servers() {
+    fn validates_schemes_credentials_and_plaintext_policy() {
         assert!(validate_base_url("https://rundeck.example.com").is_ok());
-        assert!(validate_base_url("http://localhost:4440").is_ok());
-        assert!(validate_base_url("http://rundeck.example.com").is_ok());
+        assert!(validate_base_url("http://localhost:4440").is_err());
+        assert!(validate_base_url("http://rundeck.example.com").is_err());
+        assert!(validate_base_url_with_policy("http://localhost:4440", true).is_ok());
         assert!(validate_base_url("ftp://rundeck.example.com").is_err());
         assert!(validate_base_url("https://user:pass@rundeck.example.com").is_err());
     }
@@ -355,6 +356,7 @@ mod tests {
             user: "alice".into(),
             password: "never-store-me".into(),
             token: "token".into(),
+            allow_insecure_private_http: false,
         };
         write_file_at(&path, &cfg).unwrap();
         let text = fs::read_to_string(&path).unwrap();

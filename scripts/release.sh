@@ -98,8 +98,7 @@ CARGO_VER="$(node -e '
 ' <<<"$CARGO_METADATA")" || fail "could not read the Cargo package version"
 [[ "$PKG_VER" == "$TAURI_VER" && "$PKG_VER" == "$CARGO_VER" ]] || \
   fail "current versions disagree (package=$PKG_VER tauri=$TAURI_VER cargo=$CARGO_VER)"
-[[ "$VERSION" != "$PKG_VER" ]] || fail "version is already $VERSION"
-CURRENT_VERSION="$PKG_VER" NEXT_VERSION="$VERSION" node - <<'NODE' || fail "version must be greater than $PKG_VER"
+CURRENT_VERSION="$PKG_VER" NEXT_VERSION="$VERSION" node - <<'NODE' || fail "version must not be less than $PKG_VER"
 const parse = (value) => {
   const [, major, minor, patch, prerelease] = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([^+]+))?(?:\+.*)?$/);
   return { core: [major, minor, patch].map(Number), pre: prerelease?.split(".") };
@@ -121,7 +120,7 @@ const compare = (a, b) => {
   }
   return 0;
 };
-process.exit(compare(parse(process.env.NEXT_VERSION), parse(process.env.CURRENT_VERSION)) > 0 ? 0 : 1);
+process.exit(compare(parse(process.env.NEXT_VERSION), parse(process.env.CURRENT_VERSION)) >= 0 ? 0 : 1);
 NODE
 git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null && fail "tag v$VERSION already exists"
 
@@ -154,7 +153,11 @@ if [[ "${RELEASE_PREFLIGHT_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
-echo "✓ Preflight passed; bumping version to $VERSION"
+if [[ "$VERSION" == "$PKG_VER" ]]; then
+  echo "✓ Preflight passed; using prepared version $VERSION"
+else
+  echo "✓ Preflight passed; bumping version to $VERSION"
+fi
 BACKUP="$(mktemp -d)"
 FILES=(package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock latest.json)
 for file in "${FILES[@]}"; do
@@ -295,7 +298,7 @@ pathlib.Path("latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 PY
 python3 -m json.tool latest.json >/dev/null
 
-STABLE_GH_CMD=(gh release create "v$VERSION" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" latest.json)
+STABLE_GH_CMD=(gh release create "v$VERSION" --target "$(git rev-parse HEAD)" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" latest.json)
 if [[ "$PUBLISH" == "1" && "$CHANNEL" == "stable" ]]; then
   echo "→ Publishing stable v$VERSION"
   "${STABLE_GH_CMD[@]}"

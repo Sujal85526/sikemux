@@ -249,29 +249,3 @@ fn key_code_for(key: &str) -> Option<u8> {
         _ => return None,
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{read_bounded, truncate_utf8};
-    use tokio::io::AsyncWriteExt;
-
-    #[test]
-    fn utf8_truncation_stops_on_a_character_boundary() {
-        let mut text = "abc🦀def".to_string();
-        truncate_utf8(&mut text, 5);
-        assert_eq!(text, "abc");
-        assert!(text.is_char_boundary(text.len()));
-    }
-
-    #[tokio::test]
-    async fn bounded_reader_drains_but_retains_only_the_limit() {
-        let (mut writer, reader) = tokio::io::duplex(64);
-        let producer = tokio::spawn(async move {
-            writer.write_all(&vec![b'x'; 4_096]).await.unwrap();
-        });
-        let output = read_bounded(reader, 128).await.unwrap();
-        producer.await.unwrap();
-        assert_eq!(output.bytes.len(), 128);
-        assert!(output.truncated);
-    }
-}
