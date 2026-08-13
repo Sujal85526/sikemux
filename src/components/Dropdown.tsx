@@ -22,6 +22,7 @@ export function Dropdown({
     onChange,
     label,
     icon,
+    trailing,
     className,
     title,
     disabled,
@@ -35,6 +36,8 @@ export function Dropdown({
     label?: string;
     /** Leading glyph rendered inside the button. */
     icon?: ReactNode;
+    /** Optional status or shortcut between the value and chevron. */
+    trailing?: ReactNode;
     className?: string;
     title?: string;
     disabled?: boolean;
@@ -80,6 +83,7 @@ export function Dropdown({
                     </span>
                 )}
                 <span className={`dd-val${active?.className ? ` ${active.className}` : ""}`}>{active?.label ?? value}</span>
+                {trailing && <span className="dd-trailing">{trailing}</span>}
                 <IconChevron size={9} className="dd-chev" />
             </button>
             {open && (

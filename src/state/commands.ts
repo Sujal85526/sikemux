@@ -1562,13 +1562,16 @@ export function agentSessionMetadataPending(agent: Agent): boolean {
     return title.length <= FALLBACK_AGENT_TITLE_MAX && agent.resumeId.startsWith(title);
 }
 
-export function toggleAgentSkipPermissions(id: string): void {
+export function setAgentPermissionMode(id: string, requestedMode: AgentPermissionMode): void {
     mutate((d) => {
         const a = d.agents[id];
         if (!a) return;
-        if (!agentSupportsSkipPermissions(a.type)) return;
-        if (a.firstTurnPending && !a.resumeId) return;
-        const next = a.permissionMode === "bypass" || a.skipPermissions ? normalizePermissionMode(a.type, "workspace-write") : "bypass";
+        // A permission boundary is a process launch flag. Never remount a live
+        // provider until its conversation can be resumed safely.
+        if (!a.resumeId) return;
+        const next = normalizePermissionMode(a.type, requestedMode);
+        const current = a.permissionMode ?? (a.skipPermissions ? "bypass" : normalizePermissionMode(a.type, "workspace-write"));
+        if (next === current) return;
         a.permissionMode = next;
         a.skipPermissions = next === "bypass";
         a.startup = agentStartup(a.type, a.resumeId, next, profileExecutable(a.profileId, a.type), {
@@ -1580,6 +1583,14 @@ export function toggleAgentSkipPermissions(id: string): void {
             effort: a.effort,
         });
     });
+}
+
+export function toggleAgentSkipPermissions(id: string): void {
+    const agent = getState().agents[id];
+    if (!agent || !agentSupportsSkipPermissions(agent.type)) return;
+    const current = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : normalizePermissionMode(agent.type, "workspace-write"));
+    const next = current === "bypass" ? normalizePermissionMode(agent.type, "workspace-write") : "bypass";
+    setAgentPermissionMode(id, next);
 }
 
 /** ⌥Y — toggle YOLO (skip-permissions) for the active agent, when one is on screen. */

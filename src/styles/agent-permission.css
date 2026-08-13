@@ -1,0 +1,109 @@
+/* One permission language for launch and live sessions. The flowing spectrum
+   is reserved for YOLO so the animation reads as an armed state, not garnish. */
+.dd-btn.agent-permission-select {
+    --permission-tone: var(--ink-dim);
+    position: relative;
+    isolation: isolate;
+    color: var(--permission-tone);
+}
+
+.dd-btn.agent-permission-select.safe {
+    --permission-tone: var(--live);
+}
+.dd-btn.agent-permission-select.balanced {
+    --permission-tone: var(--acc);
+}
+.dd-btn.agent-permission-select.open {
+    --permission-tone: var(--warn);
+}
+.dd-btn.agent-permission-select.danger {
+    --permission-tone: var(--danger);
+}
+
+.agent-permission-select .dd-icon {
+    color: var(--permission-tone);
+}
+
+.dd-btn.agent-permission-select.is-yolo {
+    border-color: transparent;
+}
+
+.dd-btn.agent-permission-select.is-yolo::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    padding: 1px;
+    background: var(--yolo-rainbow);
+    background-size: 200% 100%;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: permission-yolo-flow 5s linear infinite;
+    pointer-events: none;
+}
+
+.agent-permission-select.is-yolo .dd-val,
+.agent-permission-option.is-yolo {
+    background: var(--yolo-rainbow);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: permission-yolo-flow 5s linear infinite;
+}
+
+.agent-permission-select.is-yolo .dd-icon {
+    animation: permission-yolo-hue 5s linear infinite;
+}
+
+.agent-permission-shortcut {
+    padding-left: 6px;
+    color: var(--ink-faint);
+    border-left: 1px solid color-mix(in srgb, var(--permission-tone) 30%, transparent);
+    font-family: var(--kbd);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+@keyframes permission-yolo-flow {
+    from {
+        background-position: 0% 0;
+    }
+    to {
+        background-position: 200% 0;
+    }
+}
+
+@keyframes permission-yolo-hue {
+    0% {
+        color: var(--acc);
+    }
+    20% {
+        color: var(--cmd);
+    }
+    40% {
+        color: var(--danger);
+    }
+    60% {
+        color: var(--warn);
+    }
+    80% {
+        color: var(--live);
+    }
+    100% {
+        color: var(--acc);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-permission-select.is-yolo::before,
+    .agent-permission-select.is-yolo .dd-val,
+    .agent-permission-select.is-yolo .dd-icon,
+    .agent-permission-option.is-yolo {
+        animation: none;
+    }
+}

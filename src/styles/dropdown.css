@@ -39,6 +39,11 @@
     white-space: nowrap;
     text-align: left;
 }
+.dd-trailing {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
 .dd-chev {
     flex: 0 0 auto;
     color: var(--ink-faint);

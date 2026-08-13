@@ -20,6 +20,7 @@ describe("EditorPane CLI queue", () => {
         invoke.mockReset();
         invoke.mockImplementation(async (command: string) => {
             if (command === "read_file") return "first\nsecond\nthird";
+            if (command === "read_file_versioned") return { content: "first\nsecond\nthird", version: "version-1" };
             if (command === "cli_open_result") return undefined;
             if (command === "repo_watch_start") return 1;
             return null;

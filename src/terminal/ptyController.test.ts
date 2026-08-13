@@ -113,6 +113,7 @@ describe("PtyLifecycleController process ownership", () => {
             rows: 24,
             cwd: "/repo",
             startup: "codex",
+            directCommand: null,
             context: { paneId: "pane-1" },
         });
 

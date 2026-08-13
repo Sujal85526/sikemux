@@ -172,6 +172,7 @@ describe("usePty", () => {
                 rows: 24,
                 cwd: "/repo",
                 startup: "codex",
+                directCommand: null,
                 context,
             });
         });

@@ -135,7 +135,7 @@ describe("AgentPalette new agent page", () => {
         expect(await screen.findByRole("region", { name: "New agent" })).toHaveClass("new-agent-page");
         // Every control is the app's own dropdown — no native <select> anywhere.
         expect(await screen.findByRole("button", { name: "Agent" })).toHaveTextContent("Codex");
-        expect(screen.getByRole("button", { name: "Workspace" })).toHaveTextContent("Current checkout");
+        expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Safety" })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("GPT-5.6-Sol");
         expect(screen.getByRole("button", { name: "Effort" })).toHaveTextContent("high");
@@ -180,6 +180,19 @@ describe("AgentPalette new agent page", () => {
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
         const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
         expect(agent.effort).toBeUndefined();
+    });
+
+    it("names and animates the YOLO safety choice in the new-agent composer", async () => {
+        const user = userEvent.setup();
+        render(<AgentPalette />);
+        await screen.findByRole("button", { name: "Agent" });
+
+        await pickOption(user, "Safety", "YOLO");
+
+        const safety = screen.getByRole("button", { name: "Safety" });
+        expect(safety).toHaveTextContent("YOLO");
+        expect(safety).toHaveClass("is-yolo", "danger");
+        expect(safety).not.toHaveTextContent("Unattended");
     });
 
     it("keeps full Codex choices when the live CLI catalog is empty", async () => {
@@ -232,44 +245,41 @@ describe("AgentPalette new agent page", () => {
             effort: "xhigh",
             workspaceStrategy: "current",
         });
-        expect(agent.startup).toContain("Polish the launch experience and test it.");
+        expect(agent.startup).not.toContain("Polish the launch experience and test it.");
+        expect(agent.initialInput).toBe("Polish the launch experience and test it.");
     });
 
-    it("uses an existing worktree without exposing branch or path creation fields", async () => {
+    it("keeps workspace selection out of the composer and launches in the active checkout", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
         await screen.findByRole("button", { name: "Agent" });
 
-        await pickOption(user, "Workspace", "Existing worktree");
-        const chooser = await screen.findByRole("button", { name: "Worktree" });
-        await waitFor(() => expect(chooser).toBeEnabled());
-        await pickOption(user, "Worktree", "review/ui");
+        expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Worktree" })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: /branch/i })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: /path/i })).not.toBeInTheDocument();
 
-        await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Review this isolated lane.");
+        await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Use the active checkout.");
         await user.click(screen.getByRole("button", { name: /Start task/ }));
 
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
         const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
-        expect(agent).toMatchObject({ cwd: "/code/sikemux-review", workspaceStrategy: "existing" });
+        expect(agent).toMatchObject({ cwd: "/code/sikemux", workspaceStrategy: "current", initialInput: "Use the active checkout." });
     });
 
-    it("offers lazy agent-decided isolation with no eager worktree lookup", async () => {
+    it("does not perform eager worktree discovery", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
         await screen.findByRole("button", { name: "Agent" });
 
-        await pickOption(user, "Workspace", "Agent decides");
         expect(screen.queryByRole("button", { name: "Worktree" })).not.toBeInTheDocument();
         expect(mocks.worktrees).not.toHaveBeenCalled();
 
-        await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Handle isolation only if it becomes necessary.");
+        await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Do not inspect worktrees before launch.");
         await user.click(screen.getByRole("button", { name: /Start task/ }));
 
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
-        const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
-        expect(agent).toMatchObject({ cwd: "/code/sikemux", workspaceStrategy: "agent-decides" });
+        expect(mocks.worktrees).not.toHaveBeenCalled();
     });
 
     it("reports CLI detection state and retries a failed detection", async () => {
@@ -301,7 +311,8 @@ describe("AgentPalette new agent page", () => {
         fireEvent.keyDown(composer, { key: "Enter" });
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
         const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
-        expect(agent.startup).toContain("Launch exactly once.\nWith a second line.");
+        expect(agent.startup).not.toContain("Launch exactly once.\nWith a second line.");
+        expect(agent.initialInput).toBe("Launch exactly once.\nWith a second line.");
         // Attaching the agent retires the draft tab it was launched from.
         expect(getState().agentPaletteOpen).toBe(false);
 

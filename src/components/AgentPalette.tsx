@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentInfo, type AgentModelInfo } from "../api/agents";
-import {
-    MAX_AGENT_MODEL_LENGTH,
-    MAX_AGENT_PROMPT_LENGTH,
-    normalizePermissionMode,
-    permissionCopyForType,
-    supportedEfforts,
-    supportedPermissionModes,
-} from "../agentLaunch";
+import { MAX_AGENT_MODEL_LENGTH, MAX_AGENT_PROMPT_LENGTH, normalizePermissionMode, supportedEfforts } from "../agentLaunch";
 import { basename, prettyPath } from "../lib/paths";
 import * as cmd from "../state/commands";
 import { useResource, useResourceEnabled } from "../state/resources";
@@ -16,7 +9,8 @@ import { useStore } from "../state/store";
 import type { AgentEffort, AgentPermissionMode, AgentType } from "../state/types";
 import { notify } from "../state/toast";
 import { Dropdown } from "./Dropdown";
-import { AgentIcon, IconAgent, IconClose, IconGit, IconShield } from "./Icons";
+import { AgentIcon, IconAgent, IconClose, IconGit } from "./Icons";
+import { AgentPermissionSelector } from "./AgentPermissionSelector";
 import "../styles/new-agent.css";
 
 /** Sentinel for "type a model this provider's list doesn't carry". */
@@ -236,7 +230,6 @@ export function AgentPalette() {
             : type && modelCatalog.status === "ok" && modelCatalog.data?.length === 0 && (MODEL_FALLBACKS[type]?.length ?? 0) > 0
               ? `${selectedLabel} returned no models; showing bundled full model IDs.`
               : "";
-    const permissionCopy = permissionCopyForType(type ?? "codex", permissionMode);
     const launchBlocked = !type || !prompt.trim() || launching;
 
     return (
@@ -356,21 +349,7 @@ export function AgentPalette() {
                                 />
                             )}
 
-                            {type && (
-                                <Dropdown
-                                    icon={<IconShield size={12} />}
-                                    className={`na-chip ${permissionCopy.tone}`}
-                                    title={permissionCopy.detail}
-                                    label="Safety"
-                                    value={permissionMode}
-                                    menuWidth={260}
-                                    options={supportedPermissionModes(type).map((mode) => {
-                                        const copy = permissionCopyForType(type, mode);
-                                        return { value: mode, label: copy.label, detail: copy.detail };
-                                    })}
-                                    onChange={(next) => setPermissionMode(next as AgentPermissionMode)}
-                                />
-                            )}
+                            {type && <AgentPermissionSelector type={type} value={permissionMode} className="na-chip" onChange={setPermissionMode} />}
                         </div>
 
                         <button

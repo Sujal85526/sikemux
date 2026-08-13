@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, toggleAgentSkipPermissions } from "./commands";
+import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, setAgentPermissionMode, toggleAgentSkipPermissions } from "./commands";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -96,7 +96,7 @@ describe("agent launch commands", () => {
         expect(getState().activeSessionId).toBe("other");
     });
 
-    it("launches the first task with model, effort, and lazy isolation without pre-creating a branch", () => {
+    it("launches the first task with model and effort without rewriting the prompt", () => {
         addAgent("codex", undefined, "Repair parser", {
             model: "gpt-5.6-codex",
             effort: "high",
@@ -117,8 +117,9 @@ describe("agent launch commands", () => {
         expect(agent.firstTurnPending).toBe(true);
         expect(agent.startup).toContain("--model gpt-5.6-codex");
         expect(agent.startup).toContain("model_reasoning_effort");
-        expect(agent.startup).toContain("Repair the parser race.");
-        expect(agent.startup).toContain("Create an isolated Git worktree only if concurrent work");
+        expect(agent.startup).not.toContain("Repair the parser race.");
+        expect(agent.initialInput).toBe("Repair the parser race.");
+        expect(agent.initialInput).not.toContain("Workspace instruction");
     });
 
     it("preserves the first task for interactive CLIs that cannot receive it in argv", () => {
@@ -128,7 +129,7 @@ describe("agent launch commands", () => {
         });
 
         const agent = getState().agents[getState().agentsBySession.project[0]];
-        expect(agent.initialPromptSubmitted).toBe(false);
+        expect(agent.initialPromptSubmitted).toBe(true);
         expect(agent.firstTurnPending).toBe(true);
         expect(agent.initialInput).toContain("Inspect the local state machine.");
         expect(agent.startup).not.toContain("Inspect the local state machine.");
@@ -143,5 +144,34 @@ describe("agent launch commands", () => {
 
         expect(getState().agents[id].permissionMode).toBe(before.permissionMode);
         expect(getState().agents[id].startup).toBe(before.startup);
+    });
+
+    it("relaunches a resumable session with any supported permission mode", () => {
+        addAgent("codex", "session-42", "Resumable task", { permissionMode: "workspace-write" });
+        const id = getState().agentsBySession.project[0];
+
+        setAgentPermissionMode(id, "read-only");
+
+        expect(getState().agents[id]).toMatchObject({ permissionMode: "read-only", skipPermissions: false });
+        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "read-only", "session-42"]);
+
+        setAgentPermissionMode(id, "full-access");
+        expect(getState().agents[id].permissionMode).toBe("full-access");
+        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "danger-full-access", "session-42"]);
+
+        setAgentPermissionMode(id, "bypass");
+        expect(getState().agents[id]).toMatchObject({ permissionMode: "bypass", skipPermissions: true });
+        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--dangerously-bypass-approvals-and-sandbox", "session-42"]);
+    });
+
+    it("refuses an explicit mode change until the conversation can be resumed", () => {
+        addAgent("claude", undefined, "Fresh task", { permissionMode: "workspace-write" });
+        const id = getState().agentsBySession.project[0];
+        const before = getState().agents[id];
+
+        setAgentPermissionMode(id, "read-only");
+
+        expect(getState().agents[id].permissionMode).toBe(before.permissionMode);
+        expect(getState().agents[id].directCommand).toEqual(before.directCommand);
     });
 });

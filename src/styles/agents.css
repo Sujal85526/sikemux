@@ -869,143 +869,52 @@
     pointer-events: auto;
 }
 
-/* agent YOLO / bypass toggle — floats over the agent terminal, top-right corner.
-   Sharp corners, no glow. Safe = theme green, armed = flowing theme rainbow. */
-.yolo-toggle {
+/* Live safety boundary — the same four-mode selector used at launch, floating
+   above the agent terminal. A mode change remounts and resumes the provider. */
+.agent-safety-control {
     position: absolute;
     top: 12px;
     right: 14px;
     z-index: 6;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    height: 22px;
-    padding: 0 10px;
-    border: 1px solid color-mix(in srgb, var(--live) 38%, transparent);
-    border-radius: 0;
-    background: color-mix(in srgb, var(--live) 7%, color-mix(in srgb, var(--pane) 82%, transparent));
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-    color: var(--live);
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    line-height: 1;
-    cursor: pointer;
     opacity: 0.5;
     transition:
         opacity 0.16s ease,
-        border-color 0.16s ease,
         transform 0.16s ease;
 }
-.yolo-toggle:disabled {
-    cursor: not-allowed;
-    opacity: 0.48;
-}
-.pane-terminal:hover .yolo-toggle {
+.pane-terminal:hover .agent-safety-control,
+.agent-safety-control:focus-within {
     opacity: 0.85;
 }
-.yolo-toggle:hover {
+.agent-safety-control:hover,
+.agent-safety-control:focus-within {
     opacity: 1;
-    border-color: color-mix(in srgb, var(--live) 70%, transparent);
     transform: translateY(-0.5px);
 }
-.yolo-glyph {
-    display: flex;
-}
-.yolo-hint {
-    font-family: var(--kbd);
-    font-size: 9px;
-    font-weight: 600;
-    line-height: 1;
-    letter-spacing: 0.02em;
-    color: var(--ink-faint);
-    padding-left: 6px;
-    border-left: 1px solid color-mix(in srgb, var(--live) 30%, transparent);
-    transition:
-        color 0.16s ease,
-        border-color 0.16s ease;
-}
-.yolo-toggle:hover .yolo-hint {
-    color: var(--ink-dim);
-}
-
-/* armed: flowing rainbow of theme colors — gradient border + gradient text */
-.yolo-toggle.on,
-.pane-terminal:hover .yolo-toggle.on {
-    opacity: 1;
-    border-color: transparent;
+.agent-safety-control .dd-btn.agent-safety-select {
+    height: 22px;
+    padding: 0 8px;
     background: color-mix(in srgb, var(--pane) 82%, transparent);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
-.yolo-toggle.on::before {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    padding: 1px;
-    background: var(--yolo-rainbow);
-    background-size: 200% 100%;
-    -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    animation: yolo-flow 5s linear infinite;
-    pointer-events: none;
+.agent-safety-control .dd-btn.agent-safety-select:not(.is-yolo) {
+    border-color: color-mix(in srgb, var(--permission-tone) 38%, transparent);
+    background: color-mix(in srgb, var(--permission-tone) 7%, color-mix(in srgb, var(--pane) 82%, transparent));
 }
-.yolo-toggle.on .yolo-label {
-    background: var(--yolo-rainbow);
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    animation: yolo-flow 5s linear infinite;
+.agent-safety-control .dd-btn.agent-safety-select:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--permission-tone) 70%, transparent);
 }
-.yolo-toggle.on .yolo-glyph {
-    animation: yolo-hue 5s linear infinite;
-}
-.yolo-toggle.on .yolo-hint {
-    color: var(--ink-dim);
-    border-left-color: color-mix(in srgb, var(--ink-faint) 70%, transparent);
-}
-
-@keyframes yolo-flow {
-    from {
-        background-position: 0% 0;
-    }
-    to {
-        background-position: 200% 0;
-    }
-}
-@keyframes yolo-hue {
-    0% {
-        color: var(--acc);
-    }
-    20% {
-        color: var(--cmd);
-    }
-    40% {
-        color: var(--danger);
-    }
-    60% {
-        color: var(--warn);
-    }
-    80% {
-        color: var(--live);
-    }
-    100% {
-        color: var(--acc);
-    }
+.agent-safety-control .dd-btn.agent-safety-select:disabled {
+    opacity: 0.52;
 }
 
 @media (prefers-reduced-motion: reduce) {
     .agent-state-loader,
-    .proj-pip.is-working::after,
-    .yolo-toggle.on::before,
-    .yolo-toggle.on .yolo-label,
-    .yolo-toggle.on .yolo-glyph {
+    .proj-pip.is-working::after {
         animation: none;
     }
 }

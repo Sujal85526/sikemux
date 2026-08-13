@@ -114,11 +114,9 @@ describe("agent launch policy", () => {
         expect(supportsInitialPrompt("hermes")).toBe(false);
     });
 
-    it("adds deterministic checkout guidance only when a task exists", () => {
-        expect(initialAgentPrompt(" Ship the local timeline. ", "agent-decides")).toBe(
-            "Ship the local timeline.\n\nWorkspace instruction: Start in the current checkout. Create an isolated Git worktree only if concurrent work would make editing here unsafe; choose any worktree details only when isolation is actually needed.",
-        );
-        expect(initialAgentPrompt("Review it", "current")).toContain("Do not create or switch branches or worktrees");
+    it("preserves the reader's task without appending workspace instructions", () => {
+        expect(initialAgentPrompt(" Ship the local timeline. ", "agent-decides")).toBe("Ship the local timeline.");
+        expect(initialAgentPrompt("Review it", "current")).toBe("Review it");
         expect(initialAgentPrompt("   ", "agent-decides")).toBeUndefined();
     });
 });

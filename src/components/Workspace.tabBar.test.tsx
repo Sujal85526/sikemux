@@ -33,6 +33,9 @@ function projectWithAgent(): string {
                 type: "codex",
                 title: "only agent",
                 startup: "codex",
+                directCommand: { program: "codex", args: ["resume", "--sandbox", "workspace-write", "session-only"] },
+                resumeId: "session-only",
+                permissionMode: "workspace-write",
                 launchState: "live",
             },
         },
@@ -82,6 +85,37 @@ describe("workspace tab bars", () => {
         expect(getState().agentPaletteOpen).toBe(false);
     });
 
+    it("changes every supported safety boundary in a resumable agent session", () => {
+        projectWithAgent();
+        render(<Workspace />);
+
+        const safety = screen.getByRole("button", { name: "Safety" });
+        expect(safety).toHaveTextContent("Build");
+        fireEvent.click(safety);
+
+        const menu = screen.getByRole("listbox", { name: "Safety" });
+        expect(screen.getByRole("option", { name: /Observe/ })).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /Operate/ })).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /YOLO/ })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("option", { name: /Observe/ }));
+        expect(getState().agents["agent-only"].permissionMode).toBe("read-only");
+        expect(screen.getByRole("button", { name: "Safety" })).toHaveTextContent("Observe");
+        expect(menu).not.toBeInTheDocument();
+    });
+
+    it("shows YOLO as the animated live-session state", () => {
+        projectWithAgent();
+        setState((state) => ({
+            agents: { ...state.agents, "agent-only": { ...state.agents["agent-only"], permissionMode: "bypass", skipPermissions: true } },
+        }));
+
+        render(<Workspace />);
+
+        expect(screen.getByRole("button", { name: "Safety" })).toHaveTextContent("YOLO");
+        expect(screen.getByRole("button", { name: "Safety" })).toHaveClass("is-yolo");
+    });
+
     it("shows the draft tab instead of the empty stage when no agent is open yet", () => {
         const state = getState();
         const sessionId = state.activeSessionId;
@@ -99,7 +133,7 @@ describe("workspace tab bars", () => {
         expect(screen.getByRole("tab", { name: /New agent/ })).toBeInTheDocument();
         expect(screen.queryByText("no agents in this project")).not.toBeInTheDocument();
 
-        fireEvent.click(screen.getByTitle("Close"));
+        fireEvent.click(screen.getByTitle("Close New agent"));
         expect(getState().agentPaletteOpen).toBe(false);
     });
 });

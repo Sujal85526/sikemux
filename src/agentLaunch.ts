@@ -74,7 +74,7 @@ export const AGENT_PERMISSION_COPY: Record<AgentPermissionMode, { label: string;
         tone: "open",
     },
     bypass: {
-        label: "Unattended",
+        label: "YOLO",
         detail: "Bypass approvals and sandboxing. Use only in an isolated worktree.",
         tone: "danger",
     },
