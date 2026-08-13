@@ -743,36 +743,51 @@
     height: 100%;
 }
 .terminal-host .xterm-viewport {
+    /* xterm 6 scrolls through its nested xterm-scrollable-element. Its legacy
+       viewport still forces a native scrollbar, which WKWebView may paint as
+       a light gutter even when the track pseudo-element is transparent. */
+    overflow: hidden !important;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
+    background-color: var(--terminal-background, var(--pane)) !important;
+    scrollbar-width: none;
 }
-/* xterm 6 paints the viewport black in its base stylesheet. The renderer's
-   transparent theme only clears its inner surface, so keep the viewport from
-   blocking Sikemux's native window transparency. */
+/* Keep every xterm-owned background clear when native window transparency is
+   active; xterm writes an inline background onto the nested scroll container. */
 html.is-transparent .terminal-host .xterm-viewport {
     background-color: transparent !important;
 }
-.terminal-host .xterm-viewport:hover {
-    scrollbar-color: var(--ink-faint) transparent;
+html.is-transparent .terminal-host .xterm-scrollable-element {
+    background-color: transparent !important;
 }
 .terminal-host .xterm-viewport::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    display: none;
+    width: 0;
+    height: 0;
 }
 .terminal-host .xterm-viewport::-webkit-scrollbar-track,
-.terminal-host .xterm-viewport::-webkit-scrollbar-corner {
+.terminal-host .xterm-viewport::-webkit-scrollbar-corner,
+.terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
     background: transparent;
     border: none;
 }
-.terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
-    background: transparent;
+
+/* xterm 6 uses a VS Code-style overlay scrollbar inside the viewport. Its
+   default width is 14px; narrow both the hit area and slider so it cannot look
+   like a persistent gutter. Slider colors come from terminalThemeFor(). */
+.terminal-host .xterm-scrollable-element > .scrollbar.vertical {
+    width: 6px !important;
+    background: transparent !important;
+}
+.terminal-host .xterm-scrollable-element > .scrollbar.vertical > .slider {
+    left: 1px !important;
+    width: 4px !important;
     border-radius: 2px;
 }
-.terminal-host .xterm-viewport:hover::-webkit-scrollbar-thumb {
+.terminal-host .xterm-scrollable-element:hover > .scrollbar.vertical > .slider {
     background: var(--ink-faint);
 }
-.terminal-host .xterm-viewport::-webkit-scrollbar-thumb:hover {
+.terminal-host .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
+.terminal-host .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
     background: var(--ink-dim);
 }
 

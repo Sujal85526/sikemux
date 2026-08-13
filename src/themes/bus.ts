@@ -1,6 +1,6 @@
 import { Compartment } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import type { Terminal } from "@xterm/xterm";
+import type { ITheme, Terminal } from "@xterm/xterm";
 import { DEFAULT_THEME_ID, themeById, type Theme } from ".";
 import { buildEditorThemeExtensions, buildIndentMarkerExtensions } from "../editor/themeExtensions";
 
@@ -28,9 +28,16 @@ function applyTransparentState() {
     document.documentElement.classList.toggle("is-transparent", currentOpacity < 1);
 }
 
-function terminalThemeFor(theme: Theme) {
-    if (currentOpacity >= 1) return theme.terminal;
-    return { ...theme.terminal, background: "rgba(0, 0, 0, 0)" };
+function terminalThemeFor(theme: Theme): ITheme {
+    return {
+        ...theme.terminal,
+        background: currentOpacity >= 1 ? theme.terminal.background : "rgba(0, 0, 0, 0)",
+        // xterm 6 renders its own scrollbar and injects slider styles after the
+        // app stylesheet. Keep it unobtrusive until the terminal is hovered.
+        scrollbarSliderBackground: "rgba(0, 0, 0, 0)",
+        scrollbarSliderHoverBackground: theme.chrome.inkMuted,
+        scrollbarSliderActiveBackground: theme.chrome.inkDim,
+    };
 }
 
 function applyTerminalThemes() {
@@ -103,6 +110,7 @@ function applyChrome(theme: Theme) {
     root.setProperty("--live", theme.highlight.string);
     root.setProperty("--warn", theme.highlight.number);
     root.setProperty("--cmd", theme.highlight.function);
+    root.setProperty("--terminal-background", theme.terminal.background);
 
     applyTransparentState();
 }
