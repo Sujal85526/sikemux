@@ -771,24 +771,17 @@ html.is-transparent .terminal-host .xterm-scrollable-element {
     border: none;
 }
 
-/* xterm 6 uses a VS Code-style overlay scrollbar inside the viewport. Its
-   default width is 14px; narrow both the hit area and slider so it cannot look
-   like a persistent gutter. Slider colors come from terminalThemeFor(). */
+/* xterm 6 uses a VS Code-style overlay scrollbar inside the viewport. Keep its
+   scroll machinery for wheels and trackpads, but remove the injected chrome so
+   crossing a terminal with the pointer cannot flash a gutter into the pane. */
 .terminal-host .xterm-scrollable-element > .scrollbar.vertical {
-    width: 6px !important;
+    width: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
     background: transparent !important;
 }
 .terminal-host .xterm-scrollable-element > .scrollbar.vertical > .slider {
-    left: 1px !important;
-    width: 4px !important;
-    border-radius: 2px;
-}
-.terminal-host .xterm-scrollable-element:hover > .scrollbar.vertical > .slider {
-    background: var(--ink-faint);
-}
-.terminal-host .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
-.terminal-host .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
-    background: var(--ink-dim);
+    display: none !important;
 }
 
 .divider {

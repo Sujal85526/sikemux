@@ -1113,19 +1113,7 @@
     top: 12px;
     right: 14px;
     z-index: 6;
-    opacity: 0.5;
-    transition:
-        opacity 0.16s ease,
-        transform 0.16s ease;
-}
-.pane-terminal:hover .agent-safety-control,
-.agent-safety-control:focus-within {
-    opacity: 0.85;
-}
-.agent-safety-control:hover,
-.agent-safety-control:focus-within {
     opacity: 1;
-    transform: translateY(-0.5px);
 }
 .agent-safety-control .dd-btn.agent-safety-select {
     height: 22px;
