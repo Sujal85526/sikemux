@@ -31,7 +31,9 @@
 .dd-btn.agent-permission-select.is-yolo::before {
     content: "";
     position: absolute;
-    inset: -1px;
+    /* Keep the animated ring inside compact chips, which intentionally clip
+       their contents. Painting it outside loses the top edge in WebKit. */
+    inset: 0;
     padding: 1px;
     background: var(--yolo-rainbow);
     background-size: 200% 100%;
