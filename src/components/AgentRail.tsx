@@ -5,7 +5,7 @@ import { type ResourceHandle, useResource, useResourceEnabled } from "../state/r
 import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClock, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
+import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 
 const RECENTS_PAGE = 12;
@@ -327,8 +327,7 @@ function resetTitle(value: AgentUsageWindow["resetsAt"]): string {
     return reset == null ? "Reset time unavailable" : `Resets ${new Date(reset).toLocaleString()}`;
 }
 
-function planLabel(plan: string | null | undefined): string {
-    if (!plan) return "account";
+function planLabel(plan: string): string {
     return plan
         .split(/[_-]/g)
         .filter(Boolean)
@@ -349,63 +348,59 @@ function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType;
         usage.status === "loading" ? "reading plan limits…" : usage.status === "error" ? "plan limits unavailable" : "no plan limits reported";
 
     return (
-        <section className={`agent-usage-panel ${provider}`} aria-label={`${providerLabel} plan limits`}>
+        <section className={`agent-usage ${provider}`} aria-label={`${providerLabel} plan limits`}>
             <div className="agent-usage-head">
-                <span className={`agent-usage-provider ${provider}`}>
-                    <AgentIcon type={provider} size={14} />
-                    <span>
-                        <strong>{providerLabel}</strong>
-                        <small>plan capacity</small>
-                    </span>
+                <span className="agent-usage-mark">
+                    <AgentIcon type={provider} size={13} />
                 </span>
-                {usage.data && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
+                <span className="rail-group-label">Limits</span>
+                <span className="rail-group-rule" />
+                {usage.data?.plan && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
                 <button
                     type="button"
-                    className="agent-usage-refresh"
+                    className="rail-group-add"
                     aria-label={`Refresh ${providerLabel} plan limits`}
                     title={`Refresh ${providerLabel} plan limits`}
                     disabled={usage.status === "loading"}
                     onClick={() => void usage.refresh()}>
-                    <IconRefresh size={12} />
+                    <IconRefresh size={11} />
                 </button>
             </div>
 
             {windows.length > 0 ? (
-                <div className="agent-usage-grid" data-single={windows.length === 1 ? "true" : "false"}>
-                    {windows.map((window, index) => {
-                        const percent = Math.max(0, Math.min(100, window.usedPercent));
-                        const tone = usageTone(percent);
-                        const countdown = resetCountdown(window.resetsAt, now);
-                        return (
-                            <div
-                                className="agent-usage-window"
-                                data-tone={tone}
-                                key={`${window.label}:${String(window.resetsAt)}:${index}`}
-                                title={`${window.label}: ${Math.round(percent)}% used. ${resetTitle(window.resetsAt)}`}>
-                                <div className="agent-usage-window-head">
-                                    <span>{window.label}</span>
-                                    <strong>{Math.round(percent)}%</strong>
-                                </div>
-                                <div
-                                    className="agent-usage-meter"
+                windows.map((window, index) => {
+                    const percent = Math.max(0, Math.min(100, window.usedPercent));
+                    const rounded = Math.round(percent);
+                    return (
+                        <div
+                            className="agent-usage-row"
+                            data-tone={usageTone(percent)}
+                            key={`${window.label}:${String(window.resetsAt)}:${index}`}
+                            title={`${window.label}: ${rounded}% used. ${resetTitle(window.resetsAt)}`}>
+                            <div className="agent-usage-line">
+                                <span className="agent-usage-name">{window.label}</span>
+                                <span className="agent-usage-reset">{resetCountdown(window.resetsAt, now)}</span>
+                            </div>
+                            <div className="agent-usage-gauge">
+                                <span className="agent-usage-pct">
+                                    {rounded}
+                                    <i>%</i>
+                                </span>
+                                <span
+                                    className="agent-usage-track"
                                     role="meter"
                                     aria-label={`${window.label} usage`}
                                     aria-valuemin={0}
                                     aria-valuemax={100}
-                                    aria-valuenow={Math.round(percent)}>
-                                    <span style={{ width: `${percent}%` }} />
-                                </div>
-                                <span className="agent-usage-reset">
-                                    <IconClock size={9} />
-                                    {countdown}
+                                    aria-valuenow={rounded}>
+                                    <span className="agent-usage-fill" style={{ width: `${percent}%` }} />
                                 </span>
                             </div>
-                        );
-                    })}
-                </div>
+                        </div>
+                    );
+                })
             ) : (
                 <div className="agent-usage-empty" data-loading={usage.status === "loading" ? "true" : "false"}>
-                    <span />
                     {emptyCopy}
                 </div>
             )}

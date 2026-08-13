@@ -382,12 +382,13 @@
     bottom: 2px;
     height: 2px;
     overflow: hidden;
-    background: color-mix(in srgb, var(--ink-faint) 18%, transparent);
+    background: color-mix(in srgb, var(--ink-faint) 26%, transparent);
 }
 .agent-header-capacity > span {
     display: block;
     height: 100%;
     background: var(--agent-provider);
+    transition: width 0.32s cubic-bezier(0.2, 0.75, 0.2, 1);
 }
 .agent-header-capacity[data-tone="warm"] > span {
     background: var(--warn);
@@ -396,211 +397,168 @@
     background: var(--danger);
 }
 
-/* Provider plan telemetry — compact enough for the rail, precise enough to
-   answer “can I start a long run?” without leaving the workspace. */
-.agent-usage-panel {
-    --usage-brand: var(--acc);
+/* Provider plan telemetry — a branded readout that borrows the rail's
+   group-head grammar, then answers “how much is left?” with a big tabular
+   number and a segmented gauge that matches the app's terminal grain. */
+.agent-usage {
+    --usage-fill: var(--acc);
+    --usage-cell: 4px;
+    --usage-pitch: 6px;
     flex: 0 0 auto;
-    padding: 9px 9px 10px;
+    padding: 10px 10px 13px;
     border-bottom: 1px solid var(--line);
-    background:
-        linear-gradient(112deg, color-mix(in srgb, var(--usage-brand) 7%, transparent), transparent 56%),
-        color-mix(in srgb, var(--rail-2) 34%, transparent);
+    background: color-mix(in srgb, var(--rail-2) 52%, transparent);
 }
-.agent-usage-panel.claude {
-    --usage-brand: var(--brand-claude);
+.agent-usage.claude {
+    --usage-fill: var(--brand-claude);
 }
-.agent-usage-panel.codex {
-    --usage-brand: var(--brand-codex);
+.agent-usage.codex {
+    --usage-fill: var(--brand-codex);
 }
 .agent-usage-head {
     display: flex;
     align-items: center;
-    min-height: 25px;
     gap: 7px;
-    margin-bottom: 7px;
+    height: 18px;
+    margin-bottom: 9px;
 }
-.agent-usage-provider {
-    min-width: 0;
-    flex: 1;
+.agent-usage-mark {
+    flex: 0 0 auto;
     display: flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--usage-brand);
-}
-.agent-usage-provider > span {
-    min-width: 0;
-    display: grid;
-    gap: 1px;
-}
-.agent-usage-provider strong {
-    overflow: hidden;
-    color: var(--ink);
-    font-size: 10px;
-    font-weight: 650;
-    line-height: 1.05;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.agent-usage-provider small {
-    color: var(--ink-faint);
-    font-size: 7.5px;
-    font-weight: 650;
-    line-height: 1;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
+    color: var(--usage-fill);
 }
 .agent-usage-plan {
-    max-width: 76px;
+    max-width: 92px;
     overflow: hidden;
-    padding: 2px 5px;
-    color: color-mix(in srgb, var(--usage-brand) 76%, var(--ink));
-    border: 1px solid color-mix(in srgb, var(--usage-brand) 26%, var(--line));
-    font-size: 8px;
-    font-weight: 650;
-    line-height: 1;
-    letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--usage-fill) 62%, var(--ink-dim));
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
     text-overflow: ellipsis;
     text-transform: uppercase;
     white-space: nowrap;
 }
-.agent-usage-refresh {
-    width: 20px;
-    height: 20px;
-    flex: 0 0 auto;
-    display: grid;
-    place-items: center;
-    color: var(--ink-faint);
-    border: 1px solid transparent;
-    transition:
-        color 0.12s ease,
-        border-color 0.12s ease,
-        background 0.12s ease;
-}
-.agent-usage-refresh:hover:not(:disabled),
-.agent-usage-refresh:focus-visible {
-    color: var(--usage-brand);
-    border-color: color-mix(in srgb, var(--usage-brand) 34%, var(--line));
-    background: color-mix(in srgb, var(--usage-brand) 8%, transparent);
-}
-.agent-usage-refresh:disabled {
-    opacity: 0.28;
+.agent-usage-head .rail-group-add:disabled {
+    opacity: 0.35;
     cursor: default;
 }
-.agent-usage-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 5px;
+.agent-usage-head .rail-group-add:disabled:hover {
+    color: var(--ink-faint);
+    background: transparent;
 }
-.agent-usage-grid[data-single="true"] {
-    grid-template-columns: 1fr;
+.agent-usage-row {
+    --usage-signal: var(--usage-fill);
 }
-.agent-usage-window {
-    --usage-signal: var(--usage-brand);
-    min-width: 0;
-    padding: 6px 6px 5px;
-    border-left: 2px solid color-mix(in srgb, var(--usage-signal) 72%, transparent);
-    background: color-mix(in srgb, var(--pane) 58%, transparent);
+.agent-usage-row + .agent-usage-row {
+    margin-top: 14px;
 }
-.agent-usage-window[data-tone="warm"] {
+.agent-usage-row[data-tone="warm"] {
     --usage-signal: var(--warn);
 }
-.agent-usage-window[data-tone="hot"] {
+.agent-usage-row[data-tone="hot"] {
     --usage-signal: var(--danger);
 }
-.agent-usage-window-head {
-    min-width: 0;
+.agent-usage-line {
     display: flex;
     align-items: baseline;
-    gap: 4px;
-    color: var(--ink-dim);
-    font-size: 8px;
+    gap: 6px;
+    margin-bottom: 3px;
+    font-size: 10px;
     line-height: 1;
 }
-.agent-usage-window-head > span {
+.agent-usage-name {
     min-width: 0;
-    flex: 1;
+    flex: 0 1 auto;
     overflow: hidden;
+    color: var(--ink-dim);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.agent-usage-window-head strong {
-    flex: 0 0 auto;
-    color: var(--usage-signal);
-    font-size: 10px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 720;
-    letter-spacing: -0.03em;
-}
-.agent-usage-meter {
-    height: 3px;
-    margin: 5px 0 4px;
-    overflow: hidden;
-    background: color-mix(in srgb, var(--ink-faint) 16%, transparent);
-}
-.agent-usage-meter > span {
-    display: block;
-    height: 100%;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--usage-signal) 58%, transparent), var(--usage-signal));
-    transition: width 0.32s cubic-bezier(0.2, 0.75, 0.2, 1);
-}
+/* Countdowns are short and never truncate — a long window name gives up its
+   width first, since the ellipsis still identifies it. */
 .agent-usage-reset {
     min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 3px;
+    flex: 1 0 auto;
     overflow: hidden;
     color: var(--ink-faint);
-    font-size: 7.5px;
+    font-size: 9px;
     font-variant-numeric: tabular-nums;
-    line-height: 1;
+    text-align: right;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.agent-usage-reset svg {
-    flex: 0 0 auto;
-    color: color-mix(in srgb, var(--usage-signal) 70%, var(--ink-faint));
-}
-.agent-usage-empty {
-    min-height: 37px;
+.agent-usage-gauge {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 0 7px;
-    color: var(--ink-faint);
-    border-left: 2px solid color-mix(in srgb, var(--usage-brand) 30%, transparent);
-    background: color-mix(in srgb, var(--pane) 44%, transparent);
-    font-size: 9px;
+    gap: 8px;
 }
-.agent-usage-empty > span {
-    width: 5px;
-    height: 5px;
+.agent-usage-pct {
     flex: 0 0 auto;
-    background: color-mix(in srgb, var(--usage-brand) 55%, var(--ink-faint));
+    min-width: 38px;
+    color: var(--usage-signal);
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 620;
+    letter-spacing: -0.04em;
+    line-height: 1;
 }
-.agent-usage-empty[data-loading="true"] > span {
-    animation: agent-usage-breathe 1.2s ease-in-out infinite alternate;
+.agent-usage-row[data-tone="steady"] .agent-usage-pct {
+    color: color-mix(in srgb, var(--usage-signal) 58%, var(--ink));
+}
+.agent-usage-pct i {
+    margin-left: 1px;
+    color: var(--ink-faint);
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 400;
+}
+/* Cell geometry is shared by track and fill, so lit and unlit cells line up. */
+.agent-usage-track {
+    position: relative;
+    flex: 1 1 auto;
+    height: 8px;
+    overflow: hidden;
+    background-image: repeating-linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--ink-faint) 34%, transparent) 0 var(--usage-cell),
+        transparent var(--usage-cell) var(--usage-pitch)
+    );
+}
+.agent-usage-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background-image: repeating-linear-gradient(90deg, var(--usage-signal) 0 var(--usage-cell), transparent var(--usage-cell) var(--usage-pitch));
+    transition: width 0.32s cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+.agent-usage-empty {
+    color: var(--ink-faint);
+    font-size: 10.5px;
+    font-style: italic;
+}
+.agent-usage-empty[data-loading="true"] {
+    animation: agent-usage-breathe 1.3s ease-in-out infinite alternate;
 }
 @keyframes agent-usage-breathe {
     to {
-        opacity: 0.24;
+        opacity: 0.4;
     }
 }
-.agent-rail[data-density="compact"] .agent-usage-panel {
-    padding-block: 7px 8px;
+.agent-rail[data-density="compact"] .agent-usage {
+    padding-block: 8px 9px;
 }
 .agent-rail[data-density="compact"] .agent-usage-head {
-    min-height: 21px;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
 }
-.agent-rail[data-density="compact"] .agent-usage-window {
-    padding-block: 5px 4px;
+.agent-rail[data-density="compact"] .agent-usage-row + .agent-usage-row {
+    margin-top: 11px;
+}
+.agent-rail[data-density="compact"] .agent-usage-pct {
+    font-size: 13.5px;
 }
 @media (prefers-reduced-motion: reduce) {
-    .agent-usage-empty[data-loading="true"] > span {
+    .agent-usage-empty[data-loading="true"] {
         animation: none;
     }
-    .agent-usage-meter > span {
+    .agent-usage-fill {
         transition: none;
     }
 }
