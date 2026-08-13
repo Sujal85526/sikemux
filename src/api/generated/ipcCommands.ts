@@ -25,6 +25,7 @@ export const IPC_COMMANDS = [
     "state_save",
     "available_agents",
     "agent_models",
+    "agent_usage",
     "agent_sessions",
     "agent_sessions_watch_start",
     "agent_sessions_watch_stop",

@@ -23,6 +23,20 @@ export interface AgentSession {
     mtime: number; // unix seconds
 }
 
+export interface AgentUsageWindow {
+    label: string;
+    usedPercent: number;
+    /** Codex reports unix seconds; Claude reports an ISO-8601 timestamp. */
+    resetsAt: number | string | null;
+    windowMinutes: number | null;
+}
+
+export interface AgentUsage {
+    provider: AgentType;
+    plan: string | null;
+    windows: AgentUsageWindow[];
+}
+
 /** A provider-scoped history result. Errors intentionally stay opaque to UI code. */
 export type AgentSessionProviderResult =
     { provider: AgentInfo; status: "success"; sessions: AgentSession[] } | { provider: AgentInfo; status: "error"; sessions: [] };
@@ -71,6 +85,7 @@ async function fetchSessionResults(providers: readonly AgentInfo[], cwd: string)
 export const agentApi = {
     available: fetchAvailable,
     models: (agent: AgentType): Promise<AgentModelInfo[]> => invoke<AgentModelInfo[]>("agent_models", { agent }),
+    usage: (agent: AgentType): Promise<AgentUsage> => invoke<AgentUsage>("agent_usage", { agent }),
     sessions: fetchSessions,
     sessionResults: fetchSessionResults,
     watchStart: (agent: AgentType, cwd: string): Promise<number> => invoke<number>("agent_sessions_watch_start", { agent, cwd }),

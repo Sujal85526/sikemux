@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
     available: vi.fn(),
     sessions: vi.fn(),
+    usage: vi.fn(),
 }));
 
 vi.mock("../api/agents", () => ({
-    agentApi: { available: mocks.available, sessions: mocks.sessions },
+    agentApi: { available: mocks.available, sessions: mocks.sessions, usage: mocks.usage },
 }));
 
 // jsdom has no ResizeObserver; the rail uses one to keep filling its list.
@@ -52,7 +53,15 @@ beforeEach(() => {
         { id: "older", title: "Fix terminal focus", mtime: 100 },
         { id: "newer", title: "Build launch page", mtime: 200 },
     ]);
-    invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
+    mocks.usage.mockResolvedValue({
+        provider: "codex",
+        plan: "pro",
+        windows: [
+            { label: "5h", usedPercent: 37, resetsAt: Math.floor(Date.now() / 1000) + 90 * 60, windowMinutes: 300 },
+            { label: "7d", usedPercent: 12, resetsAt: Math.floor(Date.now() / 1000) + 4 * 86_400, windowMinutes: 10_080 },
+        ],
+    });
+    invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions" || kind === "agents.usage");
 });
 
 afterEach(() => {
@@ -89,5 +98,51 @@ describe("agent rail", () => {
         expect(await screen.findByText("Drafting")).toBeInTheDocument();
         await userEvent.setup().click(screen.getByRole("button", { name: "Close new agent" }));
         expect(getState().agentPaletteOpen).toBe(false);
+    });
+
+    it("shows live plan windows only for detected Codex and Claude providers", async () => {
+        const resetBase = Math.floor(Date.now() / 1000);
+        mocks.available.mockResolvedValue([
+            { type: "codex", label: "Codex", command: "codex", defaultModel: null, defaultEffort: null },
+            { type: "claude", label: "Claude", command: "claude", defaultModel: null, defaultEffort: null },
+        ]);
+        mocks.usage.mockImplementation(async (provider: "codex" | "claude") =>
+            provider === "codex"
+                ? {
+                      provider,
+                      plan: "pro",
+                      windows: [{ label: "5h", usedPercent: 37, resetsAt: resetBase + 90 * 60, windowMinutes: 300 }],
+                  }
+                : {
+                      provider,
+                      plan: "max",
+                      windows: [{ label: "7d", usedPercent: 82, resetsAt: "2026-08-20T00:00:00Z", windowMinutes: 10_080 }],
+                  },
+        );
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.usage");
+
+        const user = userEvent.setup();
+        render(<AgentRail />);
+
+        expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
+        expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
+        expect(screen.getByText("reset 1h 30m")).toBeInTheDocument();
+
+        await user.click(screen.getByTitle(/Claude/));
+        expect(await screen.findByRole("region", { name: "Claude plan limits" })).toBeInTheDocument();
+        expect(await screen.findByRole("meter", { name: "7d usage" })).toHaveAttribute("aria-valuenow", "82");
+        expect(mocks.usage).toHaveBeenCalledWith("codex");
+        expect(mocks.usage).toHaveBeenCalledWith("claude");
+    });
+
+    it("does not request or render plan usage for other detected agents", async () => {
+        mocks.available.mockResolvedValue([{ type: "hermes", label: "Hermes", command: "hermes", defaultModel: null, defaultEffort: null }]);
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.usage");
+
+        render(<AgentRail />);
+
+        expect(await screen.findByTitle("Hermes")).toBeInTheDocument();
+        expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
+        expect(mocks.usage).not.toHaveBeenCalled();
     });
 });

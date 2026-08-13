@@ -39,6 +39,7 @@
     "allow-state-save",
     "allow-available-agents",
     "allow-agent-models",
+    "allow-agent-usage",
     "allow-agent-sessions",
     "allow-agent-sessions-watch-start",
     "allow-agent-sessions-watch-stop",

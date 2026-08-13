@@ -1,14 +1,20 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { AgentInfo } from "../api/agents";
+import type { AgentInfo, AgentUsage, AgentUsageWindow } from "../api/agents";
 import * as cmd from "../state/commands";
-import { useResource, useResourceEnabled } from "../state/resources";
-import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
+import { type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
+import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClose, IconPlus, IconSearch } from "./Icons";
+import { AgentIcon, IconClock, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 
 const RECENTS_PAGE = 12;
+const USAGE_REFRESH_MS = 5 * 60_000;
+type UsageAgentType = "claude" | "codex";
+
+function isUsageAgent(type: AgentType | null): type is UsageAgentType {
+    return type === "claude" || type === "codex";
+}
 
 function ago(unixSecs: number): string {
     if (!unixSecs) return "";
@@ -32,6 +38,12 @@ export function AgentRail() {
     const catalog = useResource(agentCatalogR);
     const availableAgents = useMemo(() => catalog.data ?? [], [catalog.data]);
     const availableTypes = useMemo(() => new Set(availableAgents.map((a) => a.type)), [availableAgents]);
+    const claudeDetected = availableTypes.has("claude");
+    const codexDetected = availableTypes.has("codex");
+    const claudeUsage = useResourceEnabled(claudeDetected, agentUsageR, "claude");
+    const codexUsage = useResourceEnabled(codexDetected, agentUsageR, "codex");
+    const usageRefreshRef = useRef({ claude: claudeUsage.refresh, codex: codexUsage.refresh });
+    usageRefreshRef.current = { claude: claudeUsage.refresh, codex: codexUsage.refresh };
 
     const [type, setType] = useState<AgentType | null>(null);
     const [visibleRecents, setVisibleRecents] = useState(RECENTS_PAGE);
@@ -53,11 +65,25 @@ export function AgentRail() {
         if (searchOpen) searchRef.current?.focus();
     }, [searchOpen]);
 
+    useEffect(() => {
+        if (!claudeDetected && !codexDetected) return;
+        const timer = window.setInterval(() => {
+            if (claudeDetected) void usageRefreshRef.current.claude();
+            if (codexDetected) void usageRefreshRef.current.codex();
+        }, USAGE_REFRESH_MS);
+        return () => window.clearInterval(timer);
+    }, [claudeDetected, codexDetected]);
+
     const isProject = session?.kind === "project";
     const cwd = session?.cwd ?? "";
 
     const recents = useResourceEnabled(isProject && !!cwd && selectedType != null, agentSessionsR, selectedType ?? "claude", isProject ? cwd : "");
     const disk = isProject ? (recents.data ?? []) : [];
+    const selectedUsage = selectedType === "claude" ? claudeUsage : selectedType === "codex" ? codexUsage : null;
+    const usagePeaks = {
+        claude: usagePeak(claudeUsage.data),
+        codex: usagePeak(codexUsage.data),
+    };
 
     // Reset the reveal window when the recents list switches out from under us.
     useEffect(() => {
@@ -116,7 +142,21 @@ export function AgentRail() {
     if (!isProject) {
         return (
             <aside className="agent-rail" data-density={density}>
-                <AgentHeader agents={availableAgents} type={selectedType} setType={setType} searchOpen={false} onToggleSearch={toggleSearch} />
+                <AgentHeader
+                    agents={availableAgents}
+                    type={selectedType}
+                    setType={setType}
+                    searchOpen={false}
+                    onToggleSearch={toggleSearch}
+                    usagePeaks={usagePeaks}
+                />
+                {isUsageAgent(selectedType) && selectedUsage && (
+                    <AgentUsagePanel
+                        provider={selectedType}
+                        usage={selectedUsage}
+                        label={availableAgents.find((a) => a.type === selectedType)?.label}
+                    />
+                )}
                 <div className="agent-empty">agents are project-scoped</div>
             </aside>
         );
@@ -129,7 +169,17 @@ export function AgentRail() {
 
     return (
         <aside className="agent-rail" data-density={density}>
-            <AgentHeader agents={availableAgents} type={selectedType} setType={setType} searchOpen={searchOpen} onToggleSearch={toggleSearch} />
+            <AgentHeader
+                agents={availableAgents}
+                type={selectedType}
+                setType={setType}
+                searchOpen={searchOpen}
+                onToggleSearch={toggleSearch}
+                usagePeaks={usagePeaks}
+            />
+            {isUsageAgent(selectedType) && selectedUsage && (
+                <AgentUsagePanel provider={selectedType} usage={selectedUsage} label={availableAgents.find((a) => a.type === selectedType)?.label} />
+            )}
             {searchOpen && (
                 <div className="rail-search">
                     <IconSearch size={12} />
@@ -238,18 +288,145 @@ function AgentStateMark({ state }: { state: import("../state/types").AgentPresen
     return <AgentStateIndicator state={state} />;
 }
 
+function usagePeak(usage: AgentUsage | undefined): number | undefined {
+    if (!usage?.windows.length) return undefined;
+    return Math.max(...usage.windows.map((window) => Math.max(0, Math.min(100, window.usedPercent))));
+}
+
+function usageTone(percent: number): "steady" | "warm" | "hot" {
+    if (percent >= 90) return "hot";
+    if (percent >= 70) return "warm";
+    return "steady";
+}
+
+function resetAtMs(value: AgentUsageWindow["resetsAt"]): number | null {
+    if (typeof value === "number") return Number.isFinite(value) ? value * 1000 : null;
+    if (typeof value !== "string" || !value) return null;
+    if (/^\d+$/.test(value)) return Number(value) * 1000;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+function resetCountdown(value: AgentUsageWindow["resetsAt"], now: number): string {
+    const reset = resetAtMs(value);
+    if (reset == null) return "reset unknown";
+    const minutes = Math.max(0, Math.ceil((reset - now) / 60_000));
+    if (minutes === 0) return "resetting now";
+    if (minutes < 60) return `reset ${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (hours < 24) return `reset ${hours}h${remainingMinutes ? ` ${remainingMinutes}m` : ""}`;
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    if (days < 7) return `reset ${days}d${remainingHours ? ` ${remainingHours}h` : ""}`;
+    return `reset ${new Date(reset).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}
+
+function resetTitle(value: AgentUsageWindow["resetsAt"]): string {
+    const reset = resetAtMs(value);
+    return reset == null ? "Reset time unavailable" : `Resets ${new Date(reset).toLocaleString()}`;
+}
+
+function planLabel(plan: string | null | undefined): string {
+    if (!plan) return "account";
+    return plan
+        .split(/[_-]/g)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
+
+function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType; usage: ResourceHandle<AgentUsage>; label?: string }) {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    const providerLabel = label ?? (provider === "claude" ? "Claude" : "Codex");
+    const windows = usage.data?.windows ?? [];
+    const emptyCopy =
+        usage.status === "loading" ? "reading plan limits…" : usage.status === "error" ? "plan limits unavailable" : "no plan limits reported";
+
+    return (
+        <section className={`agent-usage-panel ${provider}`} aria-label={`${providerLabel} plan limits`}>
+            <div className="agent-usage-head">
+                <span className={`agent-usage-provider ${provider}`}>
+                    <AgentIcon type={provider} size={14} />
+                    <span>
+                        <strong>{providerLabel}</strong>
+                        <small>plan capacity</small>
+                    </span>
+                </span>
+                {usage.data && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
+                <button
+                    type="button"
+                    className="agent-usage-refresh"
+                    aria-label={`Refresh ${providerLabel} plan limits`}
+                    title={`Refresh ${providerLabel} plan limits`}
+                    disabled={usage.status === "loading"}
+                    onClick={() => void usage.refresh()}>
+                    <IconRefresh size={12} />
+                </button>
+            </div>
+
+            {windows.length > 0 ? (
+                <div className="agent-usage-grid" data-single={windows.length === 1 ? "true" : "false"}>
+                    {windows.map((window, index) => {
+                        const percent = Math.max(0, Math.min(100, window.usedPercent));
+                        const tone = usageTone(percent);
+                        const countdown = resetCountdown(window.resetsAt, now);
+                        return (
+                            <div
+                                className="agent-usage-window"
+                                data-tone={tone}
+                                key={`${window.label}:${String(window.resetsAt)}:${index}`}
+                                title={`${window.label}: ${Math.round(percent)}% used. ${resetTitle(window.resetsAt)}`}>
+                                <div className="agent-usage-window-head">
+                                    <span>{window.label}</span>
+                                    <strong>{Math.round(percent)}%</strong>
+                                </div>
+                                <div
+                                    className="agent-usage-meter"
+                                    role="meter"
+                                    aria-label={`${window.label} usage`}
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                    aria-valuenow={Math.round(percent)}>
+                                    <span style={{ width: `${percent}%` }} />
+                                </div>
+                                <span className="agent-usage-reset">
+                                    <IconClock size={9} />
+                                    {countdown}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="agent-usage-empty" data-loading={usage.status === "loading" ? "true" : "false"}>
+                    <span />
+                    {emptyCopy}
+                </div>
+            )}
+        </section>
+    );
+}
+
 function AgentHeader({
     agents,
     type,
     setType,
     searchOpen,
     onToggleSearch,
+    usagePeaks,
 }: {
     agents: AgentInfo[];
     type: AgentType | null;
     setType: (t: AgentType) => void;
     searchOpen: boolean;
     onToggleSearch: () => void;
+    usagePeaks: Partial<Record<UsageAgentType, number | undefined>>;
 }) {
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
@@ -258,10 +435,19 @@ function AgentHeader({
                 {agents.map((a) => (
                     <button
                         key={a.type}
-                        className={`agent-header-btn${type === a.type ? " active" : ""}`}
-                        title={a.label}
+                        className={`agent-header-btn ${a.type}${type === a.type ? " active" : ""}`}
+                        title={
+                            isUsageAgent(a.type) && usagePeaks[a.type] != null
+                                ? `${a.label} — ${Math.round(usagePeaks[a.type]!)}% of the busiest limit used`
+                                : a.label
+                        }
                         onClick={() => setType(a.type)}>
                         <AgentIcon type={a.type} size={18} />
+                        {isUsageAgent(a.type) && usagePeaks[a.type] != null && (
+                            <span className="agent-header-capacity" data-tone={usageTone(usagePeaks[a.type]!)} aria-hidden="true">
+                                <span style={{ width: `${Math.max(0, Math.min(100, usagePeaks[a.type]!))}%` }} />
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
