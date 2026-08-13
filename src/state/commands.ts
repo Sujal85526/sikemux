@@ -1633,7 +1633,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         const cwd = options.cwd || session.cwd;
         const workspaceStrategy = options.workspaceStrategy ?? (options.worktreePath ? "existing" : "current");
         const model = options.model?.trim() || undefined;
-        const initialPrompt = resumeId ? undefined : initialAgentPrompt(options.initialPrompt, workspaceStrategy);
+        const initialPrompt = resumeId ? undefined : initialAgentPrompt(options.initialPrompt);
         const initialPromptSubmitted = !!initialPrompt;
         const executablePath = profileId ? d.providerProfiles.find((profile) => profile.id === profileId)?.executablePath : undefined;
         const agent: Agent = {

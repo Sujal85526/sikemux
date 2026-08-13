@@ -6,7 +6,7 @@ export interface AgentLaunchOptions {
     permissionMode?: AgentPermissionMode;
     model?: string;
     effort?: AgentEffort;
-    /** Final first message, after any workspace instruction has been added. */
+    /** First message delivered to the interactive provider after launch. */
     initialPrompt?: string;
 }
 
@@ -29,13 +29,6 @@ const INITIAL_PROMPT_SUPPORT: Readonly<Record<AgentType, boolean>> = {
     hermes: false,
     pi: true,
     opencode: true,
-};
-
-const WORKSPACE_INSTRUCTIONS: Readonly<Record<AgentWorkspaceStrategy, string>> = {
-    current: "Work in the current checkout. Do not create or switch branches or worktrees for this task.",
-    existing: "Work in the checkout Sikemux opened for this session. Do not create another branch or worktree.",
-    "agent-decides":
-        "Start in the current checkout. Create an isolated Git worktree only if concurrent work would make editing here unsafe; choose any worktree details only when isolation is actually needed.",
 };
 
 export const AGENT_PERMISSION_MODES: readonly AgentPermissionMode[] = ["read-only", "workspace-write", "full-access", "bypass"];
@@ -127,14 +120,9 @@ export function supportsInitialPrompt(type: AgentType): boolean {
     return INITIAL_PROMPT_SUPPORT[type];
 }
 
-/**
- * Compose the launch task with a stable repository-safety instruction.
- * Empty tasks stay empty so opening an agent never starts a turn by surprise.
- */
-export function initialAgentPrompt(prompt: string | undefined, workspaceStrategy: AgentWorkspaceStrategy = "current"): string | undefined {
-    const task = prompt?.trim();
-    if (!task) return undefined;
-    return `${task}\n\nWorkspace instruction: ${WORKSPACE_INSTRUCTIONS[workspaceStrategy]}`;
+/** Preserve the reader's first task verbatim apart from surrounding whitespace. */
+export function initialAgentPrompt(prompt: string | undefined, _legacyWorkspaceStrategy?: AgentWorkspaceStrategy): string | undefined {
+    return prompt?.trim() || undefined;
 }
 
 /**

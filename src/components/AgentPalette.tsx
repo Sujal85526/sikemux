@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentInfo, type AgentModelInfo } from "../api/agents";
-import { git, type GitWorktree } from "../api/git";
 import {
     MAX_AGENT_MODEL_LENGTH,
     MAX_AGENT_PROMPT_LENGTH,
@@ -14,7 +13,7 @@ import * as cmd from "../state/commands";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentModelsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import type { AgentEffort, AgentPermissionMode, AgentType, AgentWorkspaceStrategy } from "../state/types";
+import type { AgentEffort, AgentPermissionMode, AgentType } from "../state/types";
 import { notify } from "../state/toast";
 import { Dropdown } from "./Dropdown";
 import { AgentIcon, IconAgent, IconClose, IconGit, IconShield } from "./Icons";
@@ -53,12 +52,6 @@ function mergedModels(type: AgentType | null, discovered: readonly AgentModelInf
     });
 }
 
-const WORKSPACE_CHOICES: readonly { id: AgentWorkspaceStrategy; label: string; detail: string }[] = [
-    { id: "current", label: "Current checkout", detail: "Start here. Best when this is the only task changing the project." },
-    { id: "agent-decides", label: "Agent decides", detail: "Stay here unless concurrent edits make lazy isolation useful." },
-    { id: "existing", label: "Existing worktree", detail: "Continue inside a Git lane that already exists." },
-];
-
 function labelForType(type: AgentType, agents: readonly AgentInfo[]): string {
     return agents.find((agent) => agent.type === type)?.label ?? type;
 }
@@ -85,10 +78,6 @@ export function AgentPalette() {
     const [customModel, setCustomModel] = useState(false);
     const [effort, setEffort] = useState<AgentEffort | undefined>(undefined);
     const [permissionMode, setPermissionMode] = useState<AgentPermissionMode>(defaultPermissionMode);
-    const [workspaceStrategy, setWorkspaceStrategy] = useState<AgentWorkspaceStrategy>("current");
-    const [existingPath, setExistingPath] = useState("");
-    const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
-    const [worktreeStatus, setWorktreeStatus] = useState<"loading" | "ready" | "error">("loading");
     const [prompt, setPrompt] = useState("");
     const [launching, setLaunching] = useState(false);
     const [error, setError] = useState("");
@@ -162,31 +151,6 @@ export function AgentPalette() {
         if (activeSession && activeSession.id !== originRef.current.sessionId) cmd.closeAgentPalette();
     }, [activeSession]);
 
-    // Worktrees are only fetched for the one strategy that needs to pick one.
-    useEffect(() => {
-        if (!launchRoot || workspaceStrategy !== "existing") return;
-        let cancelled = false;
-        setWorktreeStatus("loading");
-        void git
-            .worktrees(launchRoot)
-            .then((items) => {
-                if (cancelled) return;
-                const visible = items.filter((item) => !item.bare);
-                setWorktrees(visible);
-                setExistingPath((current) => current || visible.find((item) => !item.is_main)?.path || "");
-                setWorktreeStatus("ready");
-            })
-            .catch(() => {
-                if (!cancelled) {
-                    setWorktrees([]);
-                    setWorktreeStatus("error");
-                }
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [launchRoot, workspaceStrategy]);
-
     function chooseType(nextType: AgentType) {
         setType(nextType);
         setModel("");
@@ -213,32 +177,25 @@ export function AgentPalette() {
             // Give the launch state one paint so keyboard users receive an
             // honest status announcement before the terminal takes focus.
             await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-            let cwd = launchRoot;
-            if (workspaceStrategy === "existing") {
-                if (worktreeStatus !== "ready") throw new Error("Wait for the registered worktrees to finish loading.");
-                if (!existingPath) throw new Error("Choose an existing worktree before starting.");
-                cwd = existingPath;
-            }
             // On failure the ids stay undefined so addAgent falls back to its
             // own cache rather than claiming an existing session as new.
             const baselineSessionIds = await agentApi
-                .sessions(type, cwd)
+                .sessions(type, launchRoot)
                 .then((rows) => rows.map((row) => row.id))
                 .catch(() => undefined);
             const initialTitle = prompt.trim().split(/\r?\n/, 1)[0].slice(0, 72);
             const attached = cmd.addAgent(type, undefined, initialTitle, {
                 permissionMode,
                 profileId: profileId || undefined,
-                cwd,
+                cwd: launchRoot,
                 sessionId: launchSessionId,
                 model: model.trim() || undefined,
                 effort,
                 initialPrompt: prompt.trim(),
-                workspaceStrategy,
                 baselineSessionIds,
             });
             if (!attached) throw new Error("The project that opened this page is no longer available.");
-            notify("success", `${labelForType(type, agents)} started in ${basename(cwd)}`);
+            notify("success", `${labelForType(type, agents)} started in ${basename(launchRoot)}`);
             cmd.closeAgentPalette();
         } catch (cause) {
             setError(cause instanceof Error ? cause.message : String(cause));
@@ -280,17 +237,7 @@ export function AgentPalette() {
               ? `${selectedLabel} returned no models; showing bundled full model IDs.`
               : "";
     const permissionCopy = permissionCopyForType(type ?? "codex", permissionMode);
-    const selectedWorkspace = WORKSPACE_CHOICES.find((choice) => choice.id === workspaceStrategy)!;
-    const selectedWorktree = worktrees.find((item) => item.path === existingPath);
-    const worktreeLabel =
-        worktreeStatus === "loading"
-            ? "loading worktrees…"
-            : worktreeStatus === "error"
-              ? "worktrees unavailable"
-              : selectedWorktree
-                ? (selectedWorktree.branch ?? basename(selectedWorktree.path))
-                : "choose a worktree…";
-    const launchBlocked = !type || !prompt.trim() || launching || (workspaceStrategy === "existing" && (worktreeStatus !== "ready" || !existingPath));
+    const launchBlocked = !type || !prompt.trim() || launching;
 
     return (
         <section ref={pageRef} className="new-agent-page" role="region" aria-label="New agent" tabIndex={-1} onKeyDown={onPageKeyDown}>
@@ -422,39 +369,6 @@ export function AgentPalette() {
                                         return { value: mode, label: copy.label, detail: copy.detail };
                                     })}
                                     onChange={(next) => setPermissionMode(next as AgentPermissionMode)}
-                                />
-                            )}
-
-                            <Dropdown
-                                icon={<IconGit size={12} />}
-                                className="na-chip"
-                                title={selectedWorkspace.detail}
-                                label="Workspace"
-                                value={workspaceStrategy}
-                                menuWidth={260}
-                                options={WORKSPACE_CHOICES.map((choice) => ({ value: choice.id, label: choice.label, detail: choice.detail }))}
-                                onChange={(next) => setWorkspaceStrategy(next as AgentWorkspaceStrategy)}
-                            />
-
-                            {workspaceStrategy === "existing" && (
-                                <Dropdown
-                                    icon={<IconGit size={12} />}
-                                    className="na-chip"
-                                    title="Existing worktree"
-                                    label="Worktree"
-                                    value={existingPath}
-                                    disabled={worktreeStatus !== "ready"}
-                                    options={[
-                                        // The placeholder only stands in for an empty choice — once a
-                                        // worktree is picked its own row carries the label.
-                                        ...(existingPath ? [] : [{ value: "", label: worktreeLabel }]),
-                                        ...worktrees.map((item) => ({
-                                            value: item.path,
-                                            label: item.branch ?? "detached",
-                                            detail: prettyPath(item.path, home),
-                                        })),
-                                    ]}
-                                    onChange={setExistingPath}
                                 />
                             )}
                         </div>
