@@ -21,6 +21,11 @@ export default defineConfig({
   plugins: [react(), pruneBundleOnlyPublicAssets()],
   clearScreen: false,
   build: {
+    // esbuild 0.25 syntax minification can remove xterm's local const-enum
+    // declaration while retaining an assignment to it. The resulting production
+    // bundle throws on terminal mode queries and permanently stalls xterm's write
+    // queue. Terser preserves the declaration and keeps the bundle fully minified.
+    minify: "terser",
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
