@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, setAgentPermissionMode, toggleAgentSkipPermissions } from "./commands";
+import {
+    addAgent,
+    clearAgentInitialInput,
+    closeAgentPalette,
+    focusAgents,
+    saveProviderProfile,
+    setAgentPermissionMode,
+    toggleAgentSkipPermissions,
+} from "./commands";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -133,6 +141,37 @@ describe("agent launch commands", () => {
         expect(agent.firstTurnPending).toBe(true);
         expect(agent.initialInput).toContain("Inspect the local state machine.");
         expect(agent.startup).not.toContain("Inspect the local state machine.");
+    });
+
+    it("keeps dropped images runtime-only until the first turn is delivered", () => {
+        expect(
+            addAgent("codex", undefined, "Compare screenshots", {
+                initialPrompt: "Spot the regression.",
+                initialDropPaths: ["/tmp/before image.png", "/tmp/after.jpg", "/tmp/before image.png"],
+            }),
+        ).toBe(true);
+        const id = getState().agentsBySession.project[0];
+        expect(getState().agents[id]).toMatchObject({
+            initialDropPaths: ["/tmp/before image.png", "/tmp/after.jpg"],
+            initialInput: "Spot the regression.",
+            initialPromptSubmitted: true,
+            firstTurnPending: true,
+        });
+
+        clearAgentInitialInput(id);
+
+        expect(getState().agents[id].initialDropPaths).toBeUndefined();
+        expect(getState().agents[id].initialInput).toBeUndefined();
+    });
+
+    it("rejects an unsafe or oversized native-drop payload", () => {
+        expect(addAgent("codex", undefined, undefined, { initialDropPaths: ["/tmp/safe.png", "/tmp/unsafe\0.png"] })).toBe(false);
+        expect(
+            addAgent("codex", undefined, undefined, {
+                initialDropPaths: Array.from({ length: 9 }, (_, index) => `/tmp/image-${index}.png`),
+            }),
+        ).toBe(false);
+        expect(getState().agentsBySession.project).toHaveLength(0);
     });
 
     it("does not restart a one-shot first turn before its resumable session is known", () => {

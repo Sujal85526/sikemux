@@ -26,6 +26,7 @@ interface PtyResourceConfiguration {
     readonly cwd?: string;
     readonly startup?: string;
     readonly directCommand?: PtyDirectCommand;
+    readonly initialDropPaths?: readonly string[];
     readonly initialInput?: string;
     readonly context?: PtyContext;
     readonly externallyOwned?: boolean;
@@ -125,6 +126,7 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
         configuration.startup ?? null,
         configuration.directCommand?.program ?? null,
         configuration.directCommand?.args ?? null,
+        configuration.initialDropPaths ?? null,
         configuration.initialInput ?? null,
         context?.sessionId ?? null,
         context?.sessionName ?? null,
@@ -148,6 +150,8 @@ export function usePty(opts: {
     cwd?: string;
     startup?: string;
     directCommand?: PtyDirectCommand;
+    /** Native file drops replayed as independent paste events before the first task. */
+    initialDropPaths?: readonly string[];
     initialInput?: string;
     onInitialInputDelivered?: () => void;
     hostRef: RefObject<HTMLDivElement | null>;
@@ -218,6 +222,9 @@ export function usePty(opts: {
                 startup: initial.startup,
                 directCommand: initial.directCommand,
                 context: initial.context,
+                initialPastes: externallyOwned
+                    ? undefined
+                    : initial.initialDropPaths?.map((path) => encodeDroppedPaths([path], DEFAULT_SHELL_SEMANTICS)),
                 initialInput: externallyOwned ? undefined : initial.initialInput,
                 onInitialInputDelivered: () => deliveredRef.current?.(),
                 onError: recordControllerError,

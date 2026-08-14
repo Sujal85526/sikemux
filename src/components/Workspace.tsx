@@ -298,6 +298,7 @@ const AgentLayer = memo(function AgentLayer({
                             cwd={agent.cwd || session.cwd || undefined}
                             startup={agent.startup}
                             directCommand={agent.directCommand}
+                            initialDropPaths={agent.initialDropPaths}
                             initialInput={agent.initialInput}
                             onInitialInputDelivered={() => cmd.clearAgentInitialInput(agent.id)}
                             active={visible}

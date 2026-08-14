@@ -384,6 +384,29 @@ describe("PtyLifecycleController process ownership", () => {
         expect(delivered).toHaveBeenCalledOnce();
     });
 
+    it("replays dropped paths as distinct paste events before submitting the first task", async () => {
+        const timer = new FakeTimer();
+        const delivered = vi.fn();
+        const { fakes, options } = controllerOptions({
+            initialPastes: ["'/tmp/first image.png'", "'/tmp/second image.jpg'"],
+            initialInput: "Compare these screenshots.",
+            timer,
+            onInitialInputDelivered: delivered,
+        });
+        const controller = new PtyLifecycleController(options);
+
+        await controller.start();
+        timer.runAll();
+        await vi.waitFor(() => expect(controller.getSnapshot().initialInput).toBe("delivered"));
+
+        expect(fakes.write).toHaveBeenCalledOnce();
+        expect(fakes.write).toHaveBeenCalledWith(
+            42,
+            "\x1b[200~'/tmp/first image.png'\x1b[201~\x1b[200~'/tmp/second image.jpg'\x1b[201~\x1b[200~Compare these screenshots.\x1b[201~\r",
+        );
+        expect(delivered).toHaveBeenCalledOnce();
+    });
+
     it("does not retry an ambiguous failed initial-input write", async () => {
         const timer = new FakeTimer();
         const writeError = new Error("bridge response lost");

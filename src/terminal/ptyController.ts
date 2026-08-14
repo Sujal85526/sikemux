@@ -107,6 +107,8 @@ export interface PtyLifecycleControllerOptions<ChannelTransport, Context = unkno
     readonly context?: Context;
     readonly cols?: number;
     readonly rows?: number;
+    /** Paste payloads delivered independently before `initialInput`. */
+    readonly initialPastes?: readonly string[];
     readonly initialInput?: string;
     readonly initialInputDelayMs?: number;
     readonly onInitialInputDelivered?: () => void;
@@ -350,7 +352,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private status: PtyControllerStatus = "idle";
     private failureOperation: PtyOperation | null = null;
     private initialInputStatus: PtyInitialInputStatus;
-    private initialInput: string | null;
+    private initialPasteChunks: string[] | null;
     private initialInputAttempted = false;
     private initialInputTimer: unknown | null = null;
     private externalPtyId: number | null;
@@ -396,8 +398,10 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.onInitialInputDelivered = options.onInitialInputDelivered;
         this.onError = options.onError;
         const initialInput = options.initialInput?.trim() ?? "";
-        this.initialInput = initialInput || null;
-        this.initialInputStatus = this.initialInput ? "pending" : "none";
+        const initialPastes = (options.initialPastes ?? []).filter((value) => value.length > 0);
+        this.initialPasteChunks = [...initialPastes, ...(initialInput ? [initialInput] : [])];
+        if (this.initialPasteChunks.length === 0) this.initialPasteChunks = null;
+        this.initialInputStatus = this.initialPasteChunks ? "pending" : "none";
     }
 
     getSnapshot(): PtyControllerSnapshot {
@@ -718,7 +722,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                     await Promise.allSettled([this.killOnce(this.ptyId)]);
                 }
                 this.ptyId = null;
-                this.initialInput = null;
+                this.initialPasteChunks = null;
                 this.status = "disposed";
                 this.failureOperation = null;
                 this.emitState();
@@ -820,7 +824,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     private scheduleInitialInput(id: number): void {
-        if (!this.initialInput || this.initialInputAttempted || this.disposeRequested) return;
+        if (!this.initialPasteChunks || this.initialInputAttempted || this.disposeRequested) return;
         this.initialInputStatus = "scheduled";
         this.emitState();
         try {
@@ -829,7 +833,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                 void this.deliverInitialInput(id);
             }, this.initialInputDelayMs);
         } catch (error) {
-            this.initialInput = null;
+            this.initialPasteChunks = null;
             this.initialInputStatus = "failed";
             this.failureOperation = "initial-input";
             this.reportError("initial-input", error);
@@ -838,18 +842,19 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     private async deliverInitialInput(id: number): Promise<void> {
-        if (this.initialInputAttempted || !this.initialInput) return;
+        if (this.initialInputAttempted || !this.initialPasteChunks) return;
         if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) {
-            this.initialInput = null;
+            this.initialPasteChunks = null;
             return;
         }
         this.initialInputAttempted = true;
         this.initialInputStatus = "delivering";
-        const input = this.initialInput;
-        this.initialInput = null;
+        const pasteChunks = this.initialPasteChunks;
+        this.initialPasteChunks = null;
         this.emitState();
         try {
-            await this.api.write(id, `\x1b[200~${input}\x1b[201~\r`);
+            const input = `${pasteChunks.map((chunk) => `\x1b[200~${chunk}\x1b[201~`).join("")}\r`;
+            await this.api.write(id, input);
             if (this.disposeRequested || this.ptyId !== id) {
                 this.initialInputStatus = "cancelled";
                 this.emitState();
@@ -893,7 +898,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             }
             this.initialInputTimer = null;
         }
-        this.initialInput = null;
+        this.initialPasteChunks = null;
     }
 
     private activateAttachment(state: AttachmentState<ChannelTransport>): void {

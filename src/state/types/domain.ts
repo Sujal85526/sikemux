@@ -108,6 +108,8 @@ export interface Agent {
     initialPromptSubmitted?: boolean;
     /** Runtime guard against restarting a one-shot first turn before its session id is known. */
     firstTurnPending?: boolean;
+    /** Runtime-only native image drops replayed as individual provider paste events. */
+    initialDropPaths?: string[];
     /** Runtime-only first input for CLIs that cannot accept an interactive prompt in argv. */
     initialInput?: string;
     /** @deprecated Compatibility bridge for snapshots and command builders. */

@@ -28,7 +28,7 @@ import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
-import { dispatchFolder, dispatchPty } from "./state/dropRegistry";
+import { dispatchFolder, dispatchPathDrop, resolvePathDropTarget } from "./state/dropRegistry";
 import { notify, reportError, swallow } from "./state/toast";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
@@ -664,8 +664,17 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        let hoveredPathTarget: HTMLElement | null = null;
+
         const clearTreeHover = () => {
             emit({ type: "tree-native-drag-hover", cwd: null, targetDir: null, highlightPath: null });
+        };
+
+        const setPathHover = (target: HTMLElement | null) => {
+            if (hoveredPathTarget === target) return;
+            if (hoveredPathTarget) delete hoveredPathTarget.dataset.nativePathDragOver;
+            hoveredPathTarget = target;
+            if (hoveredPathTarget) hoveredPathTarget.dataset.nativePathDragOver = "true";
         };
 
         const emitTreeHover = (at: HTMLElement | null) => {
@@ -680,6 +689,7 @@ export default function App() {
 
         const unlistenP = getCurrentWebview().onDragDropEvent((e) => {
             if (e.payload.type === "leave") {
+                setPathHover(null);
                 clearTreeHover();
                 return;
             }
@@ -687,18 +697,20 @@ export default function App() {
             const at = elementAtPhysicalPosition(e.payload.position);
 
             if (e.payload.type === "enter" || e.payload.type === "over") {
-                if (at?.closest(".terminal-host")) clearTreeHover();
+                const pathTarget = resolvePathDropTarget(at);
+                setPathHover(pathTarget);
+                if (pathTarget) clearTreeHover();
                 else emitTreeHover(at);
                 return;
             }
 
+            setPathHover(null);
             const paths = e.payload.paths;
             if (!paths || paths.length === 0) {
                 clearTreeHover();
                 return;
             }
-            const term = at?.closest(".terminal-host") as HTMLElement | null;
-            if (term && dispatchPty(term, paths)) {
+            if (dispatchPathDrop(at, paths)) {
                 clearTreeHover();
                 return;
             }
@@ -707,6 +719,7 @@ export default function App() {
             clearTreeHover();
         });
         return () => {
+            setPathHover(null);
             void unlistenP.then((u) => u());
         };
     }, []);

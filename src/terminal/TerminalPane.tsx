@@ -28,6 +28,7 @@ export function TerminalPane({
     cwd,
     startup,
     directCommand,
+    initialDropPaths,
     initialInput,
     onInitialInputDelivered,
     active,
@@ -42,6 +43,8 @@ export function TerminalPane({
     cwd?: string;
     startup?: string;
     directCommand?: PtyDirectCommand;
+    /** Native file drops replayed before the first submitted task. */
+    initialDropPaths?: readonly string[];
     /** First submitted task for interactive CLIs without an argv prompt. */
     initialInput?: string;
     onInitialInputDelivered?: () => void;
@@ -82,6 +85,7 @@ export function TerminalPane({
         cwd,
         startup,
         directCommand,
+        initialDropPaths,
         initialInput,
         onInitialInputDelivered,
         hostRef,

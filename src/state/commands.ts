@@ -10,6 +10,7 @@ import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname, isPathWithin, joinPath } from "../lib/paths";
 import { initialAgentPrompt, MAX_AGENT_MODEL_LENGTH, MAX_AGENT_PROMPT_LENGTH, normalizePermissionMode } from "../agentLaunch";
+import { AGENT_CONTEXT_LIMITS } from "../agentContext";
 import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
@@ -1608,6 +1609,8 @@ export interface AddAgentOptions {
     model?: string;
     effort?: AgentEffort;
     initialPrompt?: string;
+    /** Image paths dropped on the launch composer, delivered with native TUI paste semantics. */
+    initialDropPaths?: readonly string[];
     workspaceStrategy?: AgentWorkspaceStrategy;
     baselineSessionIds?: string[];
     cwd?: string;
@@ -1619,6 +1622,13 @@ export interface AddAgentOptions {
 export function addAgent(type: AgentType, resumeId?: string, title?: string, options: AddAgentOptions = {}): boolean {
     if ((options.model?.trim().length ?? 0) > MAX_AGENT_MODEL_LENGTH) return false;
     if ((options.initialPrompt?.trim().length ?? 0) > MAX_AGENT_PROMPT_LENGTH) return false;
+    const requestedDropPaths = resumeId ? [] : [...new Set(options.initialDropPaths ?? [])];
+    if (
+        requestedDropPaths.length > AGENT_CONTEXT_LIMITS.images ||
+        requestedDropPaths.some((path) => !path || path.length > AGENT_CONTEXT_LIMITS.pathLength || path.includes("\0"))
+    ) {
+        return false;
+    }
     let attached = false;
     mutate((d) => {
         const session = d.sessions[options.sessionId ?? d.activeSessionId];
@@ -1645,7 +1655,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         const workspaceStrategy = options.workspaceStrategy ?? (options.worktreePath ? "existing" : "current");
         const model = options.model?.trim() || undefined;
         const initialPrompt = resumeId ? undefined : initialAgentPrompt(options.initialPrompt);
-        const initialPromptSubmitted = !!initialPrompt;
+        const initialTurnPending = !!initialPrompt || requestedDropPaths.length > 0;
         const executablePath = profileId ? d.providerProfiles.find((profile) => profile.id === profileId)?.executablePath : undefined;
         const agent: Agent = {
             id: newId("agent"),
@@ -1667,8 +1677,9 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             model,
             effort: options.effort,
             workspaceStrategy,
-            initialPromptSubmitted,
-            firstTurnPending: !!initialPrompt,
+            initialPromptSubmitted: initialTurnPending,
+            firstTurnPending: initialTurnPending,
+            ...(requestedDropPaths.length > 0 ? { initialDropPaths: requestedDropPaths } : {}),
             ...(initialPrompt ? { initialInput: initialPrompt } : {}),
             ...(options.worktreePath ? { worktreePath: options.worktreePath } : {}),
             ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
@@ -1690,11 +1701,14 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
     return attached;
 }
 
-/** Prevent a fallback first message from being submitted again if its terminal is remounted. */
+/** Prevent a fallback first turn from being submitted again if its terminal is remounted. */
 export function clearAgentInitialInput(id: string): void {
     mutate((draft) => {
         const agent = draft.agents[id];
-        if (agent) delete agent.initialInput;
+        if (agent) {
+            delete agent.initialDropPaths;
+            delete agent.initialInput;
+        }
     });
 }
 

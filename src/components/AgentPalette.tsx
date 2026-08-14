@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentInfo, type AgentModelInfo } from "../api/agents";
+import { AGENT_CONTEXT_LIMITS } from "../agentContext";
 import { MAX_AGENT_MODEL_LENGTH, MAX_AGENT_PROMPT_LENGTH, normalizePermissionMode, supportedEfforts } from "../agentLaunch";
+import { isImagePath } from "../editor/media";
 import { basename, prettyPath } from "../lib/paths";
 import * as cmd from "../state/commands";
+import { registerPathDrop } from "../state/dropRegistry";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentModelsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { AgentEffort, AgentPermissionMode, AgentType } from "../state/types";
 import { notify } from "../state/toast";
 import { Dropdown } from "./Dropdown";
-import { AgentIcon, IconAgent, IconClose, IconGit } from "./Icons";
+import { AgentIcon, IconAgent, IconClose, IconFile, IconGit } from "./Icons";
 import { AgentPermissionSelector } from "./AgentPermissionSelector";
 import "../styles/new-agent.css";
 
@@ -60,6 +63,8 @@ export function AgentPalette() {
     const agents = useMemo(() => catalog.data ?? [], [catalog.data]);
     const originRef = useRef({ sessionId: activeSession?.id ?? "", cwd: activeSession?.cwd ?? "" });
     const composerRef = useRef<HTMLTextAreaElement>(null);
+    const composerDropRef = useRef<HTMLDivElement>(null);
+    const droppedImagePathsRef = useRef<string[]>([]);
     const modelRef = useRef<HTMLInputElement>(null);
     const pageRef = useRef<HTMLElement>(null);
     const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -73,6 +78,8 @@ export function AgentPalette() {
     const [effort, setEffort] = useState<AgentEffort | undefined>(undefined);
     const [permissionMode, setPermissionMode] = useState<AgentPermissionMode>(defaultPermissionMode);
     const [prompt, setPrompt] = useState("");
+    const [droppedImagePaths, setDroppedImagePaths] = useState<string[]>([]);
+    const [dropMessage, setDropMessage] = useState("");
     const [launching, setLaunching] = useState(false);
     const [error, setError] = useState("");
     const modelCatalog = useResourceEnabled(type != null, agentModelsR, type ?? "codex");
@@ -138,6 +145,42 @@ export function AgentPalette() {
         };
     }, []);
 
+    useEffect(() => {
+        const target = composerDropRef.current;
+        if (!target) return;
+        return registerPathDrop(target, (paths) => {
+            if (launchingRef.current || paths.length === 0) return;
+            const supported = paths.filter((path) => path.length <= AGENT_CONTEXT_LIMITS.pathLength && !path.includes("\0") && isImagePath(path));
+            const current = droppedImagePathsRef.current;
+            const additions = [...new Set(supported)].filter((path) => !current.includes(path));
+            const available = Math.max(0, AGENT_CONTEXT_LIMITS.images - current.length);
+            const accepted = additions.slice(0, available);
+            if (accepted.length > 0) {
+                const next = [...current, ...accepted];
+                droppedImagePathsRef.current = next;
+                setDroppedImagePaths(next);
+            }
+            if (supported.length === 0) {
+                setDropMessage("Drop a supported image file (PNG, JPEG, GIF, WebP, SVG, BMP, ICO, AVIF, or TIFF).");
+            } else if (additions.length > available) {
+                setDropMessage(`Up to ${AGENT_CONTEXT_LIMITS.images} images can be attached to the first task.`);
+            } else {
+                const total = current.length + accepted.length;
+                setDropMessage(`${total} image${total === 1 ? "" : "s"} attached for the first task.`);
+            }
+            window.requestAnimationFrame(() => composerRef.current?.focus());
+        });
+    }, []);
+
+    function removeDroppedImage(path: string) {
+        if (launchingRef.current) return;
+        const next = droppedImagePathsRef.current.filter((candidate) => candidate !== path);
+        droppedImagePathsRef.current = next;
+        setDroppedImagePaths(next);
+        setDropMessage(next.length > 0 ? `${next.length} image${next.length === 1 ? "" : "s"} attached for the first task.` : "");
+        window.requestAnimationFrame(() => composerRef.current?.focus());
+    }
+
     // The draft belongs to the project it was opened from — it launches into
     // that checkout. Leaving for another session retires it rather than letting
     // it follow along and start an agent somewhere the reader never chose.
@@ -157,7 +200,7 @@ export function AgentPalette() {
     }
 
     async function launch() {
-        if (launchingRef.current || !type || !launchRoot || !launchSessionId || !prompt.trim()) return;
+        if (launchingRef.current || !type || !launchRoot || !launchSessionId || (!prompt.trim() && droppedImagePaths.length === 0)) return;
         launchingRef.current = true;
         setLaunching(true);
         setError("");
@@ -177,7 +220,7 @@ export function AgentPalette() {
                 .sessions(type, launchRoot)
                 .then((rows) => rows.map((row) => row.id))
                 .catch(() => undefined);
-            const initialTitle = prompt.trim().split(/\r?\n/, 1)[0].slice(0, 72);
+            const initialTitle = (prompt.trim().split(/\r?\n/, 1)[0] || basename(droppedImagePaths[0])).slice(0, 72);
             const attached = cmd.addAgent(type, undefined, initialTitle, {
                 permissionMode,
                 profileId: profileId || undefined,
@@ -185,7 +228,8 @@ export function AgentPalette() {
                 sessionId: launchSessionId,
                 model: model.trim() || undefined,
                 effort,
-                initialPrompt: prompt.trim(),
+                initialPrompt: prompt.trim() || undefined,
+                initialDropPaths: droppedImagePaths,
                 baselineSessionIds,
             });
             if (!attached) throw new Error("The project that opened this page is no longer available.");
@@ -230,7 +274,7 @@ export function AgentPalette() {
             : type && modelCatalog.status === "ok" && modelCatalog.data?.length === 0 && (MODEL_FALLBACKS[type]?.length ?? 0) > 0
               ? `${selectedLabel} returned no models; showing bundled full model IDs.`
               : "";
-    const launchBlocked = !type || !prompt.trim() || launching;
+    const launchBlocked = !type || (!prompt.trim() && droppedImagePaths.length === 0) || launching;
 
     return (
         <section ref={pageRef} className="new-agent-page" role="region" aria-label="New agent" tabIndex={-1} onKeyDown={onPageKeyDown}>
@@ -245,7 +289,7 @@ export function AgentPalette() {
                     </span>
                 </header>
 
-                <div className="new-agent-composer">
+                <div ref={composerDropRef} className="new-agent-composer">
                     <textarea
                         ref={composerRef}
                         aria-label="Task for the new agent"
@@ -256,6 +300,24 @@ export function AgentPalette() {
                         disabled={launching}
                         rows={4}
                     />
+                    {droppedImagePaths.length > 0 && (
+                        <div className="new-agent-attachments" role="group" aria-label="Images attached to the first task">
+                            {droppedImagePaths.map((path) => (
+                                <button
+                                    key={path}
+                                    type="button"
+                                    className="new-agent-attachment"
+                                    title={path}
+                                    aria-label={`Remove attached image ${basename(path)}`}
+                                    disabled={launching}
+                                    onClick={() => removeDroppedImage(path)}>
+                                    <IconFile size={12} />
+                                    <span>{basename(path)}</span>
+                                    <IconClose size={9} />
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     <div className="new-agent-bar">
                         <div className="na-chips">
                             <Dropdown
@@ -387,9 +449,11 @@ export function AgentPalette() {
                                 </button>
                             )}
                         </span>
+                    ) : dropMessage ? (
+                        <span role="status">{dropMessage}</span>
                     ) : (
                         <span>
-                            <kbd>↵</kbd> start · <kbd>⇧↵</kbd> new line · <kbd>esc</kbd> dismiss · resume past chats from the agent rail
+                            <kbd>↵</kbd> start · <kbd>⇧↵</kbd> new line · drop images to attach · <kbd>esc</kbd> dismiss
                         </span>
                     )}
                 </div>

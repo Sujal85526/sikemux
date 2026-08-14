@@ -62,6 +62,7 @@ afterEach(async () => {
 
 function Harness({
     context,
+    initialDropPaths,
     initialInput,
     onInitialInputDelivered,
     durable = false,
@@ -72,6 +73,7 @@ function Harness({
     onController,
 }: {
     context: PtyContext;
+    initialDropPaths?: readonly string[];
     initialInput?: string;
     onInitialInputDelivered?: () => void;
     durable?: boolean;
@@ -85,6 +87,7 @@ function Harness({
     const controllerRef = usePty({
         cwd,
         startup,
+        initialDropPaths,
         initialInput,
         onInitialInputDelivered,
         hostRef,
@@ -134,6 +137,7 @@ describe("terminal path literal encoding", () => {
         expect(ptyResourceFingerprint(base)).toBe(ptyResourceFingerprint({ ...base }));
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, cwd: "/other" }));
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, startup: "bash" }));
+        expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, initialDropPaths: ["/tmp/image.png"] }));
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, context: { ...base.context, sessionName: "renamed" } }));
 
         const taskBinding = Object.freeze({
@@ -387,6 +391,31 @@ describe("usePty", () => {
         );
         expect(invoke.mock.calls.filter(([command]) => command === "pty_write")).toHaveLength(1);
         expect(onInitialInputDelivered).toHaveBeenCalledOnce();
+    });
+
+    it("delivers launch-composer image drops as separate native paste events before the prompt", async () => {
+        const context: PtyContext = {
+            sessionId: "session-1",
+            sessionName: "repo",
+            sessionKind: "project",
+            project: "/repo",
+            agentId: "agent-1",
+            agentType: "codex",
+            initialPromptSubmitted: true,
+        };
+
+        render(<Harness context={context} initialDropPaths={["/tmp/first image.png", "/tmp/O'Brien.jpg"]} initialInput="Compare both images." />);
+
+        await waitFor(
+            () => {
+                expect(invoke).toHaveBeenCalledWith("pty_write", {
+                    id: 42,
+                    data: "\x1b[200~'/tmp/first image.png'\x1b[201~\x1b[200~'/tmp/O'\\''Brien.jpg'\x1b[201~\x1b[200~Compare both images.\x1b[201~\r",
+                });
+            },
+            { timeout: 1_500 },
+        );
+        expect(invoke.mock.calls.filter(([command]) => command === "pty_write")).toHaveLength(1);
     });
 
     it("keeps a pane PTY alive across renderer remounts until item disposal", async () => {

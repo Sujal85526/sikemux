@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,6 +29,7 @@ vi.mock("../api/git", () => ({
 }));
 
 import { invalidate } from "../state/resources";
+import { dispatchPathDrop } from "../state/dropRegistry";
 import { getState, setState } from "../state/store";
 import { AgentPalette } from "./AgentPalette";
 
@@ -247,6 +248,51 @@ describe("AgentPalette new agent page", () => {
         });
         expect(agent.startup).not.toContain("Polish the launch experience and test it.");
         expect(agent.initialInput).toBe("Polish the launch experience and test it.");
+    });
+
+    it("attaches native image drops and can launch an image-only first turn", async () => {
+        const user = userEvent.setup();
+        render(<AgentPalette />);
+        await screen.findByRole("button", { name: "Agent" });
+        const composer = screen.getByRole("textbox", { name: "Task for the new agent" });
+
+        act(() => {
+            expect(dispatchPathDrop(composer, ["/tmp/first image.png", "/tmp/notes.txt", "/tmp/O'Brien.jpg", "/tmp/first image.png"])).toBe(true);
+        });
+
+        expect(screen.getByRole("group", { name: "Images attached to the first task" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Remove attached image first image.png" })).toHaveAttribute("title", "/tmp/first image.png");
+        expect(screen.getByRole("button", { name: "Remove attached image O'Brien.jpg" })).toBeInTheDocument();
+        expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+        expect(screen.getByText("2 images attached for the first task.")).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: /Start task/ }));
+
+        await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
+        const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
+        expect(agent).toMatchObject({
+            title: "first image.png",
+            initialDropPaths: ["/tmp/first image.png", "/tmp/O'Brien.jpg"],
+            initialPromptSubmitted: true,
+            firstTurnPending: true,
+        });
+        expect(agent.initialInput).toBeUndefined();
+    });
+
+    it("lets the reader remove a dropped image before launch", async () => {
+        const user = userEvent.setup();
+        render(<AgentPalette />);
+        await screen.findByRole("button", { name: "Agent" });
+        const composer = screen.getByRole("textbox", { name: "Task for the new agent" });
+
+        act(() => {
+            expect(dispatchPathDrop(composer, ["/tmp/remove-me.webp"])).toBe(true);
+        });
+        await user.click(screen.getByRole("button", { name: "Remove attached image remove-me.webp" }));
+
+        expect(screen.queryByRole("group", { name: "Images attached to the first task" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Start task/ })).toBeDisabled();
+        await waitFor(() => expect(composer).toHaveFocus());
     });
 
     it("keeps workspace selection out of the composer and launches in the active checkout", async () => {
