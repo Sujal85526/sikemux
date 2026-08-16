@@ -7,7 +7,7 @@ import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { AgentPermissionMode, AgentType } from "../state/types";
-import { AgentIcon, IconSearch } from "./Icons";
+import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "./Icons";
 
 type Row = AgentSession & { type: AgentType };
 type NewAgentItem = { kind: "new"; type: AgentType };
@@ -185,24 +185,23 @@ export function AgentPalette() {
                         }}
                         spellCheck={false}
                     />
-                    <div className="agent-palette-modes" role="radiogroup" aria-label="Agent mode">
-                        <button
-                            type="button"
-                            role="radio"
-                            aria-checked={mode === NORMAL}
-                            className={mode === NORMAL ? "active" : ""}
-                            onClick={() => chooseMode(NORMAL)}>
-                            Normal
-                        </button>
-                        <button
-                            type="button"
-                            role="radio"
-                            aria-checked={mode === YOLO}
-                            className={mode === YOLO ? "active yolo" : "yolo"}
-                            onClick={() => chooseMode(YOLO)}>
-                            YOLO
-                        </button>
-                    </div>
+                    {/* Same control the live PTY uses, so the boundary you pick here
+                        looks like the one you toggle later on the agent itself. */}
+                    <button
+                        type="button"
+                        className={`yolo-toggle inline${mode === YOLO ? " on" : ""}`}
+                        aria-pressed={mode === YOLO}
+                        title={
+                            mode === YOLO
+                                ? "YOLO mode — the agent launches without approvals."
+                                : "Safe mode — the agent launches with normal approvals."
+                        }
+                        onClick={() => chooseMode(mode === YOLO ? NORMAL : YOLO)}>
+                        <span className="yolo-glyph" aria-hidden="true">
+                            {mode === YOLO ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
+                        </span>
+                        <span className="yolo-label">{mode === YOLO ? "yolo" : "safe"}</span>
+                    </button>
                     <span className="picker-hints" aria-hidden="true">
                         <span className="picker-hint">↑↓ nav</span>
                         <span className="picker-hint">⏎ open</span>

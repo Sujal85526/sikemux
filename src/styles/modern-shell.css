@@ -915,14 +915,21 @@ textarea,
  * the bottom edge — it collided with the button's rounded corner.
  */
 .agent-header-btn {
+    /* Each provider keeps its own mark colour — muted while unselected so the
+     * active one still reads, but recognisable at a glance either way. */
+    color: color-mix(in srgb, var(--agent-provider) 55%, var(--ink-faint));
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 55%), transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 66%, transparent);
 }
 
+.agent-header-btn:hover:not(:disabled) {
+    color: var(--agent-provider);
+}
+
 .agent-header-btn.active {
-    color: var(--acc);
-    background: var(--acc-soft);
-    box-shadow: inset 0 0 0 1px var(--acc-line);
+    color: var(--agent-provider);
+    background: color-mix(in srgb, var(--agent-provider) 12%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--agent-provider) 34%, transparent);
 }
 
 /* Inset and rounded so it sits inside the button rather than across its edge. */

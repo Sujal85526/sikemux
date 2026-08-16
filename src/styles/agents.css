@@ -363,6 +363,18 @@
 .agent-header-btn.codex {
     --agent-provider: var(--brand-codex);
 }
+
+.agent-header-btn.hermes {
+    --agent-provider: var(--brand-hermes);
+}
+
+.agent-header-btn.pi {
+    --agent-provider: var(--brand-pi);
+}
+
+.agent-header-btn.opencode {
+    --agent-provider: var(--brand-opencode);
+}
 /* Provider plan telemetry — a branded readout that borrows the rail's
    group-head grammar, then answers “how much is left?” with a big tabular
    number and a segmented gauge that matches the app's terminal grain. */
@@ -622,6 +634,15 @@
 .pane-terminal:hover .yolo-toggle {
     opacity: 0.85;
 }
+/* Inside a picker toolbar the toggle is part of the row, not an overlay. */
+.yolo-toggle.inline {
+    position: static;
+    flex: none;
+    opacity: 1;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
 .yolo-toggle:hover {
     opacity: 1;
     border-color: color-mix(in srgb, var(--live) 70%, transparent);

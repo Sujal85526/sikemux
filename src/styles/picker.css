@@ -231,9 +231,11 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    width: 100%;
+    width: auto;
     height: 30px;
-    padding: 0 12px;
+    margin: 0 var(--space-1h);
+    padding: 0 var(--space-1h);
+    border-radius: var(--radius-control);
     color: var(--ink-dim);
     text-align: left;
 }
@@ -244,30 +246,6 @@
     background: var(--acc-soft);
     color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--acc-line);
-}
-.agent-palette-modes {
-    display: flex;
-    flex: 0 0 auto;
-    gap: 2px;
-    padding: 2px;
-    border: 1px solid var(--line);
-    background: var(--bg);
-}
-.agent-palette-modes button {
-    height: 22px;
-    padding: 0 8px;
-    color: var(--ink-faint);
-    font: 700 9px var(--mono);
-    letter-spacing: 0.03em;
-}
-.agent-palette-modes button:hover,
-.agent-palette-modes button.active {
-    color: var(--ink);
-    background: var(--hover);
-}
-.agent-palette-modes button.yolo.active {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 13%, transparent);
 }
 .agent-palette .picker-item:disabled {
     cursor: not-allowed;

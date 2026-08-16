@@ -78,7 +78,7 @@ describe("AgentPalette", () => {
         expect(mocks.sessions).not.toHaveBeenCalledWith("hermes", expect.anything());
         expect(screen.queryByRole("textbox", { name: /task/i })).not.toBeInTheDocument();
         expect(screen.queryByText(/worktree/i)).not.toBeInTheDocument();
-        expect(screen.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Normal", "YOLO"]);
+        expect(screen.getByRole("button", { name: "safe" })).toHaveAttribute("aria-pressed", "false");
 
         view.unmount();
         expect(opener).toHaveFocus();
@@ -108,7 +108,7 @@ describe("AgentPalette", () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
 
-        await user.click(screen.getByRole("radio", { name: "YOLO" }));
+        await user.click(screen.getByRole("button", { name: "safe" }));
         await user.click(await screen.findByRole("button", { name: "Fix terminal tabs in YOLO mode" }));
 
         const id = getState().agentsBySession["sess-project"][0];
@@ -124,16 +124,17 @@ describe("AgentPalette", () => {
         });
     });
 
-    it("offers only Normal and YOLO and skips unsupported rows during keyboard navigation", async () => {
+    it("toggles to YOLO and skips unsupported rows during keyboard navigation", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
 
         const search = await screen.findByRole("textbox", { name: "Search agent sessions" });
-        const yolo = screen.getByRole("radio", { name: "YOLO" });
+        const yolo = screen.getByRole("button", { name: "safe" });
         yolo.focus();
         fireEvent.keyDown(yolo, { key: "Enter" });
         expect(getState().agentsBySession["sess-project"]).toEqual([]);
         await user.click(yolo);
+        expect(screen.getByRole("button", { name: "yolo" })).toHaveAttribute("aria-pressed", "true");
         expect(screen.getByRole("button", { name: "+ new Pi in YOLO mode" })).toBeDisabled();
         fireEvent.keyDown(search, { key: "ArrowDown" });
         expect(screen.getByRole("button", { name: "+ new Hermes in YOLO mode" })).toHaveClass("sel");
