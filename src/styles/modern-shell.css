@@ -84,7 +84,7 @@ textarea:focus-visible {
 }
 
 .top-bar {
-    height: 40px;
+    height: 34px;
 }
 
 .tb-center {
@@ -92,10 +92,10 @@ textarea:focus-visible {
 }
 
 .crumb {
-    gap: 9px;
+    gap: var(--space-2);
     max-width: min(420px, 42vw);
-    height: 30px;
-    padding: 0 10px;
+    height: 26px;
+    padding: 0 var(--space-2);
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 58%), transparent);
 }
@@ -819,9 +819,10 @@ textarea,
  */
 .body {
     gap: var(--space-3);
-    /* The bar's own slack under the crumb is part of the top gutter, so this
-       only tops it up to match the other three sides. */
-    padding: 7px var(--space-3) var(--space-3);
+    /* Half gutter under the bar: it is window chrome, not another panel, so it
+       sits closer than the panels do to each other. The bar's own slack under
+       the crumb is most of it; this tops it up. */
+    padding: var(--space-0) var(--space-3) var(--space-3);
 }
 
 .side-rail,
