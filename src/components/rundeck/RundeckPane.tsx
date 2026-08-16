@@ -4,6 +4,8 @@ import { useResourceEnabled } from "../../state/resources";
 import { rndStatusR } from "../../state/resources.defs";
 import { useStore } from "../../state/store";
 import type { RundeckView } from "../../state/types";
+import { EmptyState } from "../Panel";
+import { IconWarning } from "../Icons";
 import { RundeckBreadcrumb } from "./RundeckBreadcrumb";
 import { RundeckLogin } from "./RundeckLogin";
 import { RundeckMatrix } from "./RundeckMatrix";
@@ -82,12 +84,13 @@ export function RundeckPane({ paneId, active }: Props) {
 
 function RundeckStatusError({ message, onRetry }: { message: string; onRetry: () => void }) {
     return (
-        <div className="rnd-empty">
-            <div className="rnd-empty-msg">couldn't reach Rundeck — {message}</div>
-            <button className="rnd-btn-sm" onClick={onRetry}>
-                retry
-            </button>
-        </div>
+        <EmptyState
+            tone="error"
+            icon={<IconWarning size={14} />}
+            title="Can't reach Rundeck"
+            message={message}
+            action={{ label: "Retry", onClick: onRetry }}
+        />
     );
 }
 

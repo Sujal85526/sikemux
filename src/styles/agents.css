@@ -579,10 +579,6 @@
     color: var(--ink-faint);
 }
 
-.agent-group + .agent-group {
-    margin-top: 10px;
-}
-
 .agent-row.active::before {
     content: "";
     position: absolute;

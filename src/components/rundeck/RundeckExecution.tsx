@@ -7,6 +7,7 @@ import { swallow } from "../../state/toast";
 import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../Icons";
 import { VirtualLogList } from "../VirtualLogList";
 import { Switch } from "../Controls";
+import { EmptyState } from "../Panel";
 
 interface Props {
     paneId: string;
@@ -251,7 +252,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                         )}
                     </div>
                     <div className="rnd-steps-list">
-                        {(state?.steps ?? []).length === 0 && <div className="rnd-empty muted compact">waiting for steps…</div>}
+                        {(state?.steps ?? []).length === 0 && <EmptyState message="waiting for steps…" />}
                         {(state?.steps ?? []).map((s, i) => {
                             const filterKey = stepFilterKey(s, i);
                             return <StepRow key={i} idx={i} step={s} selected={stepFilter === filterKey} onClick={() => setStepFilter(filterKey)} />;
@@ -278,7 +279,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                         rowClassName={(entry) => `rnd-log-line${entry.level ? ` lvl-${entry.level.toLowerCase()}` : ""}`}
                         estimateSize={20}
                         follow={followTail}
-                        empty={<div className="rnd-empty muted compact">no output{stepFilter ? " for this step" : ""} yet</div>}
+                        empty={<EmptyState message={`no output${stepFilter ? " for this step" : ""} yet`} />}
                         getItemKey={(entry, index) => `${entry.time ?? ""}:${entry.stepctx ?? ""}:${index}`}
                         renderRow={(entry) => (
                             <>

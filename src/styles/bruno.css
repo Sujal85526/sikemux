@@ -482,12 +482,8 @@ body.bruno-resizing {
     gap: 8px;
     flex: 0 0 auto;
 }
-.bruno-section-head {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    margin-top: 2px;
+.bruno-section > .panel-label {
+    margin-top: var(--space-0);
 }
 .bruno-muted {
     color: var(--ink-faint);

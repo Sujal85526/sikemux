@@ -8,6 +8,7 @@ import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 import { Tooltip } from "./Tooltip";
+import { Panel, PanelHeader } from "./Panel";
 
 const RECENTS_PAGE = 12;
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -208,8 +209,8 @@ export function AgentRail() {
                 )}
 
                 {opens.length > 0 && (
-                    <div className="agent-group">
-                        <div className="panel-label">Open</div>
+                    <Panel variant="group" className="agent-group">
+                        <PanelHeader label="Open" rule />
                         {opens.map((a) => {
                             const active = session.view === "agent" && a.id === session.activeAgentId;
                             return (
@@ -236,12 +237,12 @@ export function AgentRail() {
                                 </div>
                             );
                         })}
-                    </div>
+                    </Panel>
                 )}
 
                 {selectedType && recentDisplay.length > 0 && (
-                    <div className="agent-group">
-                        <div className="panel-label">Recent</div>
+                    <Panel variant="group" className="agent-group">
+                        <PanelHeader label="Recent" rule />
                         {recentDisplay.map((s) => (
                             <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(selectedType, s.id, s.title)}>
                                 <span className={`agent-glyph ${selectedType}`}>
@@ -251,7 +252,7 @@ export function AgentRail() {
                                 <span className="agent-ago">{ago(s.mtime)}</span>
                             </button>
                         ))}
-                    </div>
+                    </Panel>
                 )}
             </div>
         </aside>

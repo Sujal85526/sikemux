@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { PANEL_ROW_HEIGHT } from "../Panel";
 
 const VIRTUAL_THRESHOLD = 100;
 
@@ -7,7 +8,7 @@ export function VirtualPanelRows<T>({
     items,
     selectedIndex,
     focused,
-    estimateSize = 22,
+    estimateSize = PANEL_ROW_HEIGHT,
     getKey,
     renderRow,
 }: {

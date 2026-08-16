@@ -10,6 +10,15 @@ import { Fragment, type ReactNode } from "react";
  * describe what genuinely differs.
  */
 
+/**
+ * Height of a `PanelRow`, in px.
+ *
+ * Virtualised lists position rows absolutely from this number, so it has to
+ * match `.panel-row { height }` in panel.css exactly — a drift makes rows
+ * overlap once a list is long enough to virtualise.
+ */
+export const PANEL_ROW_HEIGHT = 24;
+
 export interface PanelAction {
     /** Single-key shortcut shown as a chip on the action. */
     key?: string;

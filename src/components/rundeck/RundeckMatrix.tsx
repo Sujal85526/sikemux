@@ -8,6 +8,8 @@ import { useStore } from "../../state/store";
 import { IconSearch } from "../Icons";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 import { PRIMARY_SHORTCUT } from "../../lib/platform";
+import { EmptyState } from "../Panel";
+import { IconWarning, IconRundeck } from "../Icons";
 
 interface Props {
     paneId: string;
@@ -59,7 +61,7 @@ export function RundeckMatrix({ paneId, active }: Props) {
     }, [cells, envFolder]);
 
     if (!project) {
-        return <div className="rnd-empty muted">Pick a Rundeck project from the top bar.</div>;
+        return <EmptyState icon={<IconRundeck size={14} />} message="Pick a Rundeck project from the top bar." />;
     }
 
     return (
@@ -98,20 +100,17 @@ export function RundeckMatrix({ paneId, active }: Props) {
 
             {env?.error && <div className="rnd-banner warn">{env.error}</div>}
             {res.error && !data && (
-                <div className="rnd-empty">
-                    <div className="rnd-empty-msg">couldn't load — {res.error}</div>
-                    <button className="rnd-btn-sm" onClick={() => res.refresh()}>
-                        retry
-                    </button>
-                </div>
+                <EmptyState
+                    tone="error"
+                    icon={<IconWarning size={14} />}
+                    title="Couldn't load jobs"
+                    message={res.error}
+                    action={{ label: "Retry", onClick: () => void res.refresh() }}
+                />
             )}
 
             <div className="rnd-list-rows">
-                {cells.length === 0 && !loading && (
-                    <div className="rnd-empty muted compact">
-                        No jobs in <strong>{project}</strong>.
-                    </div>
-                )}
+                {cells.length === 0 && !loading && <EmptyState message={`No jobs in ${project}.`} />}
                 {groups.map((g) => (
                     <div className="rnd-group" key={g.env ?? "_flat"}>
                         {g.env && (

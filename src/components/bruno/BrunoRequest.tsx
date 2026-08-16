@@ -168,11 +168,11 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
             <div className="bruno-tab-body">
                 {tab === "params" && (
                     <div className="bruno-section">
-                        <div className="bruno-section-head">Query params</div>
+                        <div className="panel-label">Query params</div>
                         <KeyValTable rows={request.params.query} scope={scope} onChange={(query) => set({ params: { ...request.params, query } })} />
                         {request.params.path.length > 0 && (
                             <>
-                                <div className="bruno-section-head">Path params</div>
+                                <div className="panel-label">Path params</div>
                                 <KeyValTable
                                     rows={request.params.path}
                                     scope={scope}
@@ -306,14 +306,14 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
 
                 {tab === "vars" && (
                     <div className="bruno-section">
-                        <div className="bruno-section-head">Pre-request vars</div>
+                        <div className="panel-label">Pre-request vars</div>
                         <KeyValTable
                             rows={request.vars.req}
                             scope={scope}
                             onChange={(req) => set({ vars: { ...request.vars, req } })}
                             valuePh="value or {{expr}}"
                         />
-                        <div className="bruno-section-head">Post-response vars</div>
+                        <div className="panel-label">Post-response vars</div>
                         <KeyValTable
                             rows={request.vars.res}
                             scope={scope}
@@ -325,14 +325,14 @@ export function BrunoRequestView({ request, tab, scope, running, dirty, onChange
 
                 {tab === "script" && (
                     <div className="bruno-section bruno-section-fill">
-                        <div className="bruno-section-head">Pre-request</div>
+                        <div className="panel-label">Pre-request</div>
                         <BrunoCode
                             value={request.scripts.pre}
                             lang="javascript"
                             placeholder="// runs before the request"
                             onChange={(pre) => set({ scripts: { ...request.scripts, pre } })}
                         />
-                        <div className="bruno-section-head">Post-response</div>
+                        <div className="panel-label">Post-response</div>
                         <BrunoCode
                             value={request.scripts.post}
                             lang="javascript"

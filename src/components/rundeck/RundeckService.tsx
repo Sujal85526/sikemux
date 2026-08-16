@@ -5,6 +5,8 @@ import * as cmd from "../../state/commands";
 import { useResourceEnabled } from "../../state/resources";
 import { rndExecutionsR } from "../../state/resources.defs";
 import { IconFetch, IconGit, IconRefresh, IconRun } from "../Icons";
+import { EmptyState } from "../Panel";
+import { SkeletonRows } from "../Skeleton";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 
 interface Props {
@@ -79,15 +81,11 @@ export function RundeckService({ paneId, level, active }: Props) {
                     <span>recent executions</span>
                     <span className="rnd-history-help">click a row to open the live view</span>
                 </div>
-                {execs.status === "loading" && !execs.data && (
-                    <div className="rnd-empty muted">
-                        <span className="rnd-spinner inline" /> loading…
-                    </div>
-                )}
+                {execs.status === "loading" && !execs.data && <SkeletonRows rows={4} label="Loading executions" />}
                 {execs.data?.map((ex) => (
                     <ExecutionRow key={ex.id} paneId={paneId} level={level} ex={ex} />
                 ))}
-                {execs.data && execs.data.length === 0 && <div className="rnd-empty muted">No executions for this job yet.</div>}
+                {execs.data && execs.data.length === 0 && <EmptyState message="No executions for this job yet." />}
             </div>
         </div>
     );

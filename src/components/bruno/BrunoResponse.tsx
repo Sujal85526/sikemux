@@ -107,7 +107,7 @@ export function BrunoResponseView({ result, running, tab, onTab }: Props) {
                         </pre>
                         {result.logs.length > 0 && (
                             <div className="bruno-logs">
-                                <div className="bruno-section-head">Console</div>
+                                <div className="panel-label">Console</div>
                                 {result.logs.map((l, i) => (
                                     <div key={i} className={`bruno-log lvl-${l.level}`}>
                                         <span className="bruno-log-lvl">{l.level}</span>

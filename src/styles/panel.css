@@ -21,7 +21,7 @@
     border-color: var(--acc-line);
 }
 .panel-group {
-    margin-top: 14px;
+    margin-top: var(--space-4);
 }
 .panel-group:first-child {
     margin-top: 0;
@@ -31,17 +31,17 @@
 .panel-head {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     flex: 0 0 auto;
 }
 .panel-block > .panel-head {
-    height: 29px;
-    padding: 0 9px;
+    height: 30px;
+    padding: 0 var(--gutter-row);
     border-bottom: 1px solid var(--line);
 }
 .panel-group > .panel-head {
-    gap: 8px;
-    padding: 4px 6px 6px 10px;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-1h) var(--space-1h) var(--space-3);
 }
 
 .panel-index {
@@ -86,7 +86,7 @@
 .panel-actions {
     display: none;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     margin-left: auto;
 }
 .panel.focused .panel-actions,
@@ -102,9 +102,9 @@
 .panel-abtn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     height: 18px;
-    padding: 0 7px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--line);
     border-radius: var(--radius-xs);
     background: transparent;
@@ -145,12 +145,14 @@
     overflow-y: auto;
 }
 
+/* Height is mirrored by PANEL_ROW_HEIGHT in Panel.tsx; virtualised lists
+   position rows from that number, so the two must not drift. */
 .panel-row {
     display: flex;
     align-items: center;
-    gap: 7px;
-    height: 22px;
-    padding: 0 9px;
+    gap: var(--space-2);
+    height: 24px;
+    padding: 0 var(--gutter-row);
     font-size: 12px;
     color: var(--ink-dim);
 }
@@ -184,8 +186,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 22px 16px;
+    gap: var(--space-1h);
+    padding: var(--space-6) var(--space-4);
     text-align: center;
     color: var(--ink-faint);
 }
@@ -194,7 +196,7 @@
     place-items: center;
     width: 28px;
     height: 28px;
-    margin-bottom: 2px;
+    margin-bottom: var(--space-0);
     border-radius: var(--radius-sm);
     color: var(--ink-dim);
     background: color-mix(in srgb, var(--ink-faint) 12%, transparent);
@@ -211,9 +213,9 @@
     line-height: 1.5;
 }
 .empty-state-action {
-    margin-top: 4px;
+    margin-top: var(--space-1);
     height: 24px;
-    padding: 0 12px;
+    padding: 0 var(--space-3);
     border: 1px solid var(--line);
     border-radius: var(--radius-xs);
     background: transparent;
@@ -243,8 +245,8 @@
 .empty-state.inline {
     flex-direction: row;
     justify-content: flex-start;
-    gap: 6px;
-    padding: 10px 12px;
+    gap: var(--space-1h);
+    padding: var(--space-3) var(--space-3);
     text-align: left;
     font-size: 11px;
     line-height: 1.45;
@@ -271,7 +273,7 @@
     display: inline-flex;
     align-items: center;
     flex: none;
-    padding: 1px 6px;
+    padding: var(--space-0) var(--space-1h);
     border: 1px solid transparent;
     border-radius: 999px;
     font-family: var(--mono);

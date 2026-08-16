@@ -14,6 +14,27 @@
     --radius-lg: 10px;
     --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.18);
     --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.34);
+
+    /* Spacing scale.
+     *
+     * The app had no rhythm — every value from 1px to 18px was in use, so
+     * nothing lined up between panes. This is a 4px scale with two half steps
+     * for dense chrome (icon gaps, chip padding) where 4px is already too big.
+     * New work uses these; literals mean "this one is genuinely bespoke".
+     */
+    --space-0: 2px;
+    --space-1: 4px;
+    --space-1h: 6px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+
+    /* Gutters — the inset a surface keeps from its own edge. */
+    --gutter-rail: 10px;
+    --gutter-pane: 12px;
+    --gutter-row: var(--space-3);
 }
 
 body {
@@ -130,15 +151,17 @@ textarea:focus-visible {
 }
 
 .rail-scroll {
-    padding: 10px 10px 14px;
+    padding: var(--gutter-rail) var(--gutter-rail) var(--space-4);
 }
 
-.side-rail .panel-group {
-    margin-top: 13px;
+.side-rail .panel-group,
+.agent-rail .panel-group {
+    margin-top: var(--space-4);
 }
 
-.side-rail .panel-head {
-    padding: 2px 8px 5px;
+.side-rail .panel-head,
+.agent-rail .panel-head {
+    padding: var(--space-0) var(--space-2) var(--space-1h);
 }
 
 .side-rail .panel-label,
@@ -381,16 +404,7 @@ textarea:focus-visible {
 }
 
 .agent-group {
-    margin-inline: 10px;
-}
-
-.agent-group + .agent-group {
-    margin-top: 16px;
-}
-
-.agent-group > .panel-label {
-    display: block;
-    padding: 3px 7px 6px;
+    margin-inline: var(--gutter-rail);
 }
 
 .agent-row-wrap {
