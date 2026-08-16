@@ -18,7 +18,6 @@ import {
     Logo,
     WindowIcon,
 } from "./Icons";
-import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
@@ -340,13 +339,6 @@ export function SideRail() {
             </div>
 
             <UpdateChip />
-
-            <Tooltip label={`Open or create a session — ${kb("session.open")}`} side="top">
-                <button className="rail-foot" onClick={() => cmd.openPicker("all")}>
-                    <Kbd>{kb("session.open")}</Kbd>
-                    <span>open or create a session</span>
-                </button>
-            </Tooltip>
 
             {/* Identity lives at the foot of the rail: present when you look for
                 it, out of the way of the sessions above it. */}

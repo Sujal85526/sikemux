@@ -616,20 +616,6 @@
     color: var(--brand-opencode);
 }
 
-.rail-foot {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid var(--line-soft);
-    color: var(--ink-faint);
-    font-size: 11px;
-    transition: color 0.12s;
-}
-.rail-foot:hover {
-    color: var(--ink-dim);
-}
-
 .window-area {
     position: absolute;
     inset: 0;

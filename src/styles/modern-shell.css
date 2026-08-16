@@ -298,14 +298,6 @@ textarea:focus-visible {
     line-height: 1.2;
 }
 
-.rail-foot {
-    margin: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 58%), transparent);
-}
-
 /* Agent rail: a little wider so titles, provider identity, and timestamps do
  * not compete for the same 250px. */
 .agent-rail {
@@ -665,7 +657,6 @@ textarea,
         .sess-row,
         .proj-row,
         .proj-child,
-        .rail-foot,
         .agent-header-btn,
         .agent-usage,
         .rail-search,
@@ -794,8 +785,8 @@ textarea,
     gap: var(--space-3);
     /* Half gutter under the bar: it is window chrome, not another panel, so it
        sits closer than the panels do to each other. The bar's own slack under
-       the crumb is most of it; this tops it up. */
-    padding: var(--space-0) var(--space-3) var(--space-3);
+       the crumb is most of it; this tops it up to match the gap above. */
+    padding: var(--space-1) var(--space-3) var(--space-3);
 }
 
 .side-rail,
