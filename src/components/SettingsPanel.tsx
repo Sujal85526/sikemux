@@ -422,13 +422,13 @@ function AgentsPage() {
                 sub="Only confirmed native agent session IDs are saved. Raw startup commands and terminal evidence never touch disk.">
                 <ToggleSetting
                     label="Restore agent tabs"
-                    detail="Bring resumable tabs back in a dormant, inert state."
+                    detail="Bring resumable agent tabs back when Sikemux starts."
                     checked={restore}
                     onChange={cmd.setRestoreAgentTabs}
                 />
                 <ToggleSetting
                     label="Auto-resume restored agents"
-                    detail="Explicit opt-in: launch every restored agent after Sikemux starts."
+                    detail="On by default. Turn off to restore tabs inert and resume them by hand."
                     checked={auto}
                     disabled={!restore}
                     onChange={cmd.setAutoResumeAgents}

@@ -3,7 +3,6 @@ import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { Agent, Divider, Rect, Session, Window as WindowT } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
-import { AgentStateIndicator } from "./AgentStateIndicator";
 import { getState, useStore } from "../state/store";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { type CtxItem } from "./FileTree";
@@ -142,7 +141,6 @@ function TerminalTabsBar({ session, tabs }: { session: Session; tabs: WindowT[] 
 }
 
 function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }) {
-    const activityById = useStore((s) => s.agentActivity);
     const buildMenu = (id: string): CtxItem[] => {
         const a = agents.find((x) => x.id === id);
         if (!a) return [];
@@ -176,7 +174,6 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
                 <AgentIcon type={a.type} size={14} />
             </span>
         ),
-        accessory: <AgentActivityMark state={activityById[a.id]?.state} unread={activityById[a.id]?.unread ?? false} />,
     }));
     return (
         <TabBar
@@ -246,9 +243,7 @@ const AgentLayer = memo(function AgentLayer({
                             <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
                             <span className="agent-dormant-kicker">restored safely</span>
                             <strong>{agent.title}</strong>
-                            <span>
-                                This tab is inert. Resume it when you are ready; Sikemux will never relaunch an agent merely because the app opened.
-                            </span>
+                            <span>Auto-resume is off, so this tab was restored inert. Resume it when you are ready.</span>
                             <button type="button" onClick={() => cmd.resumeAgent(agent.id)}>
                                 Resume {agent.type}
                             </button>
@@ -277,11 +272,6 @@ const AgentLayer = memo(function AgentLayer({
         </div>
     );
 });
-
-function AgentActivityMark({ state, unread }: { state?: import("../state/types").AgentPresentationState; unread: boolean }) {
-    if (!state) return null;
-    return <AgentStateIndicator state={state} unread={unread} />;
-}
 
 const WindowLayer = memo(function WindowLayer({
     session,

@@ -213,7 +213,6 @@
     letter-spacing: 0.08em;
     color: var(--warn);
     border: 1px solid rgba(255, 202, 133, 0.3);
-    border-radius: 0;
     padding: 2px 7px;
 }
 
@@ -346,7 +345,6 @@
     justify-content: center;
     width: 26px;
     height: 24px;
-    border-radius: 0;
     color: var(--ink-faint);
     transition:
         color 0.12s,
@@ -431,7 +429,6 @@
     width: auto;
     height: 30px;
     padding: 0 8px;
-    border-radius: 0;
     color: var(--ink);
     position: relative;
     transition:
@@ -682,7 +679,6 @@
 .pane {
     position: absolute;
     inset: 0;
-    border-radius: 0;
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
     overflow: hidden;
 }

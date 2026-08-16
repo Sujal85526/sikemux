@@ -41,14 +41,20 @@ const budgets = [
   },
   { label: "all JavaScript", pattern: /\.js$/, raw: 2_650_000, gzip: 840_000 },
   {
-    // Raised from 235_000/40_000 when the shared UI primitives landed (app
-    // dialog, switch/checkbox/slider, tooltip, skeletons, global scrollbars).
-    // That is ~6 kB raw / ~1 kB gzip of genuinely new surface, added after
-    // folding the duplicated dropdown and git-modal rules back together.
+    // Raised twice while the design system landed: first for the shared
+    // primitives (dialog, switch/checkbox/slider, tooltip, skeletons,
+    // scrollbars), then for the panel kit, spacing scale and the app-wide
+    // rounding pass. Both raises came after reclaiming what they replaced —
+    // the duplicated dropdown, git-modal, git-panel, rail-group and
+    // rnd-empty rules, and 35 now-dead `border-radius: 0` declarations.
+    //
+    // If this needs raising a third time, re-baseline it deliberately rather
+    // than nudging: the point of the number is to notice growth, and it has
+    // now moved 235k -> 245k in one sitting.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 240_000,
-    gzip: 41_000,
+    raw: 245_000,
+    gzip: 42_000,
   },
 ];
 

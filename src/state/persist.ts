@@ -582,7 +582,7 @@ export function applyHydrate(raw: string): HydrationResult {
     const cur = getState();
     const providerProfiles = normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
-    const autoResumeAgents = typeof prefs.autoResumeAgents === "boolean" ? prefs.autoResumeAgents : false;
+    const autoResumeAgents = typeof prefs.autoResumeAgents === "boolean" ? prefs.autoResumeAgents : true;
     const rawAgents = isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {};
     const claimedResumeIds = new Set<string>();
     if (restoreAgentTabs) {

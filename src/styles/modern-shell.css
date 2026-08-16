@@ -511,9 +511,32 @@ textarea:focus-visible {
     backdrop-filter: blur(16px);
 }
 
+/* Tabs are pills, so the active one is filled rather than underlined — a hard
+ * 2px bar under a rounded corner reads as a rendering fault, not a selection. */
+.tabbar.v-agent,
+.tabbar.v-editor {
+    gap: var(--space-1);
+    padding-inline: var(--space-1);
+    align-items: center;
+}
+
+.tabbar.v-agent .tab-wrap,
+.tabbar.v-editor .tab-wrap {
+    height: 22px;
+    border-right: 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.tabbar.v-agent .tab-wrap:hover,
+.tabbar.v-editor .tab-wrap:hover {
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 80%), transparent);
+}
+
 .tabbar.v-agent .tab-wrap.active,
 .tabbar.v-editor .tab-wrap.active {
-    border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+    background: var(--acc-soft);
+    box-shadow: inset 0 0 0 1px var(--acc-line);
 }
 
 .tabbar.v-agent .tab-label {
@@ -522,7 +545,6 @@ textarea:focus-visible {
 
 .pane {
     border-radius: var(--radius-md);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 50%, transparent);
 }
 
 .yolo-toggle {
@@ -616,19 +638,14 @@ textarea,
         .agent-glyph-x,
         .agent-empty,
         .tabbar,
-        .tab-wrap,
-        .tabbar.v-agent .tab-wrap.active,
         .pane,
         .yolo-toggle,
-        .env-dd-menu,
-        .picker,
         .command-palette,
         .session-switcher,
         .settings-pane,
         .settings-rail,
         .settings-main,
         .settings-list,
-        .settings-theme,
         .settings-depth,
         .git-toolbar,
         .git-tbtn,
@@ -769,4 +786,56 @@ textarea,
 .pane {
     inset: 3px;
     border-radius: var(--radius-sm);
+}
+
+/* ---- Rounding by role ----------------------------------------------------
+ * The geometry pass above works off a hand-picked list of selectors, so every
+ * sheet written before it kept square corners — text fields worst of all,
+ * which is how a square input ended up sitting next to a rounded button.
+ * These cover the rest by role. Range, colour, checkbox and radio opt out
+ * because their shape is the control; tabs opt out because they own theirs.
+ */
+.shell :where(input, textarea, select):not([type="range"], [type="color"], [type="checkbox"], [type="radio"]) {
+    border-radius: var(--radius-xs) !important;
+}
+
+.shell
+    :where(
+        .rnd-btn,
+        .rnd-btn-sm,
+        .rnd-input,
+        .rnd-cell,
+        .bruno-send,
+        .bruno-save,
+        .bruno-input,
+        .bruno-icon-btn,
+        .bruno-secrets-btn,
+        .bruno-resp-status,
+        .git-cp-input,
+        .settings-control,
+        .settings-theme,
+        .settings-theme-act,
+        .settings-knob-num,
+        .settings-rail-item,
+        .settings-close,
+        .settings-topbar-close,
+        .settings-logo-mark,
+        .picker,
+        .picker-item,
+        .picker-hint,
+        .env-dd-btn,
+        .env-dd-menu,
+        .env-dd-item,
+        .agent-row,
+        .sess-row,
+        .sess-close,
+        .zoom-pill,
+        .gg-ref
+    ) {
+    border-radius: var(--radius-xs) !important;
+}
+
+/* Surfaces that read as cards want the softer corner, not the control one. */
+.shell :where(.picker, .settings-theme, .theme-editor, .bruno-secrets-pop, .env-dd-menu, .settings-section) {
+    border-radius: var(--radius-md) !important;
 }

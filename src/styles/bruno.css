@@ -347,7 +347,6 @@ body.bruno-resizing {
     background: var(--acc);
     color: var(--void);
     border: 1px solid var(--acc);
-    border-radius: 0;
     padding: 0 13px;
     font-family: var(--mono);
     font-weight: 700;
@@ -397,7 +396,6 @@ body.bruno-resizing {
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink-dim);
     border: 1px solid var(--line);
-    border-radius: 0;
     cursor: pointer;
     transition:
         color 0.12s,
@@ -517,7 +515,6 @@ body.bruno-resizing {
     width: 100%;
     background: var(--void);
     border: 1px solid var(--line);
-    border-radius: 0;
     padding: 4px 7px;
     color: var(--ink);
     font-family: var(--mono);
@@ -642,7 +639,6 @@ body.bruno-resizing {
     font-weight: 700;
     font-size: 12px;
     padding: 2px 8px;
-    border-radius: 0;
 }
 .bruno-resp-status.ok {
     color: var(--live);
@@ -714,7 +710,6 @@ body.bruno-resizing {
     gap: 5px;
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
     border: 1px solid var(--line);
-    border-radius: 0;
     color: var(--ink-dim);
     padding: 4px 8px;
     font-family: var(--mono);
@@ -748,7 +743,6 @@ body.bruno-resizing {
     width: 300px;
     background: var(--rail-2);
     border: 1px solid var(--line);
-    border-radius: 0;
     padding: 10px;
     box-shadow: 0 18px 44px -14px rgba(0, 0, 0, 0.7);
 }

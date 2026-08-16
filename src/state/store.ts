@@ -203,7 +203,7 @@ export const useStore = create<StoreState>(() => {
             prodEnvs: ["prod", "production"],
         },
         restoreAgentTabs: true,
-        autoResumeAgents: false,
+        autoResumeAgents: true,
         railDensity: "comfortable",
         onboardingComplete: false,
         lastSeenVersion: "",

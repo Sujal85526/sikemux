@@ -173,7 +173,7 @@ describe("frontend persistence", () => {
         expect(getState().sessions[sid]).toMatchObject({ view: "windows", activeAgentId: null });
     });
 
-    it("restores confirmed agent sessions as dormant tabs without trusting saved startup", async () => {
+    it("restores confirmed agent sessions live without trusting saved startup", async () => {
         const sid = getState().activeSessionId;
         const agent = {
             id: "agent-resumable",
@@ -200,11 +200,34 @@ describe("frontend persistence", () => {
         saved.agentsBySession[sid][0].startup = "still malicious";
         applyHydrate(JSON.stringify(saved));
         const restored = getState().agents[agent.id];
-        expect(restored).toMatchObject({ launchState: "dormant" });
+        expect(restored).toMatchObject({ launchState: "live" });
         expect(restored.startup).toMatch(/^codex resume\b/);
         expect(restored.startup).toContain("session-123");
         expect(restored.startup).not.toContain("still malicious");
         expect(getState().sessions[sid]).toMatchObject({ view: "agent", activeAgentId: agent.id });
+    });
+
+    it("restores tabs inert when auto-resume is turned off", async () => {
+        const sid = getState().activeSessionId;
+        const agent = {
+            id: "agent-inert",
+            type: "codex" as const,
+            title: "held back",
+            startup: "codex resume session-456",
+            resumeId: "session-456",
+            launchState: "live" as const,
+        };
+        setState((s) => ({
+            autoResumeAgents: false,
+            sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", view: "agent", activeAgentId: agent.id } },
+            agents: { [agent.id]: agent },
+            agentsBySession: { ...s.agentsBySession, [sid]: [agent.id] },
+        }));
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+
+        applyHydrate(invoke.mock.calls[0][1].data as string);
+        expect(getState().agents[agent.id]).toMatchObject({ launchState: "dormant" });
     });
 
     it("persists non-secret provider profiles and defensively hydrates selections", async () => {
@@ -279,7 +302,7 @@ describe("frontend persistence", () => {
             skipPermissions: true,
             profileId: "builtin-claude",
             cwd: legacy.cwd,
-            launchState: "dormant",
+            launchState: "live",
         });
         expect(getState().agents[legacy.id]).not.toHaveProperty("worktreePath");
         expect(getState().agents[legacy.id].startup).toContain("--dangerously-skip-permissions");

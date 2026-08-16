@@ -49,7 +49,6 @@
     resize: none;
     background: transparent;
     border: none;
-    border-radius: 0;
     color: var(--ink);
     font: inherit;
     font-size: 12px;
@@ -119,7 +118,6 @@
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 10.5px;
-    border-radius: 0;
     cursor: pointer;
     transition:
         color 0.1s,
@@ -207,7 +205,6 @@
     color: var(--acc);
     font-family: var(--mono);
     font-size: 11px;
-    border-radius: 0;
     cursor: pointer;
     transition:
         background 0.1s,
@@ -230,7 +227,6 @@
     width: 100%;
     background: var(--void);
     border: 1px solid var(--acc-line);
-    border-radius: 0;
     color: var(--ink);
     font: inherit;
     font-size: 12px;
@@ -324,7 +320,6 @@
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 11px;
-    border-radius: 0;
     cursor: pointer;
     white-space: nowrap;
     transition:
@@ -782,7 +777,6 @@
     font-size: 9.5px;
     line-height: 1;
     padding: 2px 7px 2px 6px;
-    border-radius: 0;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -1240,7 +1234,6 @@ body.git-resizing {
     display: flex;
     align-items: center;
     padding: 3px;
-    border-radius: 0;
     color: var(--ink-faint);
     opacity: 0;
     transition:
