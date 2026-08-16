@@ -11,6 +11,7 @@ import { confirmDialog } from "../state/dialog";
 import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
+import { Tooltip } from "./Tooltip";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
 
@@ -660,14 +661,18 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 <div className="ed-tree-head">
                     <span className="ed-tree-name">{basename(cwd) || "files"}</span>
                     <span className="ed-tree-actions">
-                        <button type="button" className="ed-tree-act" title="New file — a" onClick={() => startNew("file")}>
-                            <FileIcon name="" size={13} />
-                            <IconPlus size={9} />
-                        </button>
-                        <button type="button" className="ed-tree-act" title="New folder — ⇧A" onClick={() => startNew("folder")}>
-                            <IconFolder size={13} />
-                            <IconPlus size={9} />
-                        </button>
+                        <Tooltip label="New file — a">
+                            <button type="button" className="ed-tree-act" aria-label="New file" onClick={() => startNew("file")}>
+                                <FileIcon name="" size={13} />
+                                <IconPlus size={9} />
+                            </button>
+                        </Tooltip>
+                        <Tooltip label="New folder — ⇧A">
+                            <button type="button" className="ed-tree-act" aria-label="New folder" onClick={() => startNew("folder")}>
+                                <IconFolder size={13} />
+                                <IconPlus size={9} />
+                            </button>
+                        </Tooltip>
                     </span>
                 </div>
                 <div

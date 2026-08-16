@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { IconCheck, IconChevron } from "./Icons";
+import { Tooltip } from "./Tooltip";
 import "../styles/dropdown.css";
 
 export interface DropdownOption {
@@ -65,27 +66,28 @@ export function Dropdown({
 
     return (
         <div className="dd" ref={rootRef}>
-            <button
-                type="button"
-                className={`dd-btn${className ? ` ${className}` : ""}`}
-                title={title}
-                aria-label={label ?? title}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                disabled={disabled}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setOpen((v) => !v);
-                }}>
-                {icon && (
-                    <span className="dd-icon" aria-hidden="true">
-                        {icon}
-                    </span>
-                )}
-                <span className={`dd-val${active?.className ? ` ${active.className}` : ""}`}>{active?.label ?? value}</span>
-                {trailing && <span className="dd-trailing">{trailing}</span>}
-                <IconChevron size={9} className="dd-chev" />
-            </button>
+            <Tooltip label={title}>
+                <button
+                    type="button"
+                    className={`dd-btn${className ? ` ${className}` : ""}`}
+                    aria-label={label ?? title}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    disabled={disabled}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setOpen((v) => !v);
+                    }}>
+                    {icon && (
+                        <span className="dd-icon" aria-hidden="true">
+                            {icon}
+                        </span>
+                    )}
+                    <span className={`dd-val${active?.className ? ` ${active.className}` : ""}`}>{active?.label ?? value}</span>
+                    {trailing && <span className="dd-trailing">{trailing}</span>}
+                    <IconChevron size={9} className="dd-chev" />
+                </button>
+            </Tooltip>
             {open && (
                 <>
                     <div className="dd-scrim" onClick={() => setOpen(false)} />

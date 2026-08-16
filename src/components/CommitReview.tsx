@@ -3,6 +3,7 @@ import { git } from "../api/git";
 import { DiffEditor } from "./DiffEditor";
 import { IconChevron } from "./Icons";
 import { FileIcon } from "./FileIcon";
+import { Tooltip } from "./Tooltip";
 import { basename, joinPath } from "../lib/paths";
 
 export function CommitReview({
@@ -61,15 +62,19 @@ export function CommitReview({
                     return (
                         <div className="acc-item" key={f}>
                             <div className="acc-header">
-                                <button className="acc-toggle" onClick={() => toggle(f)} title={open ? "Collapse" : "Expand"}>
-                                    <span className={`acc-chev${open ? " open" : ""}`}>
-                                        <IconChevron size={11} />
-                                    </span>
-                                </button>
-                                <button className="acc-name" onClick={() => onOpenFile(joinPath(repo, f))} title="Open in editor">
-                                    <FileIcon name={basename(f)} size={15} />
-                                    <span>{f}</span>
-                                </button>
+                                <Tooltip label={open ? "Collapse" : "Expand"}>
+                                    <button className="acc-toggle" onClick={() => toggle(f)} aria-label={open ? "Collapse" : "Expand"}>
+                                        <span className={`acc-chev${open ? " open" : ""}`}>
+                                            <IconChevron size={11} />
+                                        </span>
+                                    </button>
+                                </Tooltip>
+                                <Tooltip label="Open in editor">
+                                    <button className="acc-name" onClick={() => onOpenFile(joinPath(repo, f))}>
+                                        <FileIcon name={basename(f)} size={15} />
+                                        <span>{f}</span>
+                                    </button>
+                                </Tooltip>
                             </div>
                             {open && <DiffEditor repo={repo} path={f} baseRev={`${rev}~1`} headRev={rev} editable={false} autoHeight />}
                         </div>

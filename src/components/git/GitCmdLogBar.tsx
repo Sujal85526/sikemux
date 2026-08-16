@@ -1,5 +1,6 @@
 import { clearGitCmdLog, toggleGitCmdLog } from "../../state/git";
 import { useStore } from "../../state/store";
+import { Tooltip } from "../Tooltip";
 
 export function GitCmdLogBar() {
     const open = useStore((s) => s.gitCmdLogOpen);
@@ -7,10 +8,12 @@ export function GitCmdLogBar() {
 
     if (!open) {
         return (
-            <button type="button" className="git-log-bar collapsed" onClick={toggleGitCmdLog} title="Show command log (@)">
-                <span className="kbd">@</span>
-                <span className="git-log-bar-summary">{log.length === 0 ? "no commands yet" : `${log.length} cmds`}</span>
-            </button>
+            <Tooltip label="Show command log (@)">
+                <button type="button" className="git-log-bar collapsed" onClick={toggleGitCmdLog}>
+                    <span className="kbd">@</span>
+                    <span className="git-log-bar-summary">{log.length === 0 ? "no commands yet" : `${log.length} cmds`}</span>
+                </button>
+            </Tooltip>
         );
     }
 
@@ -20,12 +23,16 @@ export function GitCmdLogBar() {
                 <span className="kbd">@</span>
                 <span className="git-log-bar-title">command log</span>
                 <span className="git-log-bar-count">{log.length}</span>
-                <button type="button" className="git-log-bar-btn" onClick={clearGitCmdLog} disabled={log.length === 0} title="Clear log">
-                    clear
-                </button>
-                <button type="button" className="git-log-bar-btn" onClick={toggleGitCmdLog} title="Hide log (@)">
-                    close
-                </button>
+                <Tooltip label="Clear log">
+                    <button type="button" className="git-log-bar-btn" onClick={clearGitCmdLog} disabled={log.length === 0}>
+                        clear
+                    </button>
+                </Tooltip>
+                <Tooltip label="Hide log (@)">
+                    <button type="button" className="git-log-bar-btn" onClick={toggleGitCmdLog}>
+                        close
+                    </button>
+                </Tooltip>
             </div>
             <div className="git-log-bar-rows">
                 {log.length === 0 && <div className="git-log-bar-empty">log empty — every git command will appear here</div>}
