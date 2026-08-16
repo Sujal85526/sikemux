@@ -1165,10 +1165,6 @@ export function GitPane({
           : files.length === 0
             ? "clean"
             : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`;
-    // Growth follows row count so the longest list absorbs the slack, with a
-    // nudge for whichever panel has focus. Empty panels do not grow at all.
-    const panelFlex = (rows: number, focused: boolean) => (rows === 0 ? 0 : Math.min(rows, 14) + (focused ? 6 : 0));
-
     const fileEmptyText = overviewError ?? (fileQuery ? `Nothing matches "${fileQuery}".` : "No uncommitted changes.");
     const branchEmptyText = overviewError ?? (branchQuery ? `Nothing matches "${branchQuery}".` : "This repository has no branches yet.");
     const commitEmptyText = overviewError ?? (commitQuery ? `Nothing matches "${commitQuery}".` : "No commits on this branch yet.");
@@ -1354,7 +1350,7 @@ export function GitPane({
                         label="Files"
                         focused={panel === "files"}
                         onFocus={() => setPanel("files")}
-                        flex={panelFlex(filteredFiles.length, panelFiles)}
+                        flex={0}
                         actions={[
                             {
                                 key: "a",
@@ -1405,7 +1401,7 @@ export function GitPane({
                         label="Branches"
                         focused={panel === "branches"}
                         onFocus={() => setPanel("branches")}
-                        flex={panelFlex(filteredBranches.length, panel === "branches")}
+                        flex={0}
                         actions={[
                             {
                                 key: "n",
@@ -1457,7 +1453,7 @@ export function GitPane({
                         label="Commits"
                         focused={panel === "commits"}
                         onFocus={() => setPanel("commits")}
-                        flex={panelFlex(filteredCommits.length, panel === "commits")}
+                        flex={1}
                         actions={[
                             { key: "b", label: "branch", onClick: openCommitBranchPrompt },
                             { key: "r", label: "reset", tone: "warn", onClick: openCommitResetMenu },
@@ -1607,7 +1603,7 @@ export function GitPane({
                             label="Stashes"
                             focused={panel === "stashes"}
                             onFocus={() => setPanel("stashes")}
-                            flex={panelFlex(filteredStashes.length, panel === "stashes")}
+                            flex={0}
                             actions={[
                                 { key: "p", label: "pop", onClick: popSelectedStash },
                                 { key: "d", label: "drop", tone: "danger", onClick: openStashDropConfirm },

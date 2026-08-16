@@ -45,11 +45,12 @@ export function Panel({
     variant?: "block" | "group";
     focused?: boolean;
     /**
-     * Share of the height this panel takes when several stack.
+     * `0` sizes the panel to its content; `1` makes it the one that absorbs
+     * whatever height is left over.
      *
-     * Every panel starts from a zero basis and the share is divided by these
-     * weights, so height tracks how much each panel actually has to show. A
-     * content-sized basis instead let the longest list crush the others.
+     * Sharing the height by weight meant five branches still claimed a third
+     * of the pane, because every panel had to grow into the space. Only one
+     * panel should, and the rest should ask for exactly what they need.
      */
     flex?: number;
     className?: string;
@@ -58,7 +59,7 @@ export function Panel({
     return (
         <div
             className={`panel panel-${variant}${focused ? " focused" : ""}${className ? ` ${className}` : ""}`}
-            style={variant === "block" && flex !== undefined ? { flex: `${flex} 1 0` } : undefined}>
+            style={variant === "block" && flex !== undefined ? { flex: `${flex} 1 auto`, ...(flex === 0 ? { maxHeight: "45%" } : {}) } : undefined}>
             {children}
         </div>
     );
