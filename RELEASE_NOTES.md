@@ -1,18 +1,24 @@
-# Sikemux v0.2.2
+# Sikemux v0.2.3
 
-Sikemux 0.2.2 fixes terminal panes that could stop rendering when interactive programs such as Vim queried terminal capabilities. The shell or editor process kept running underneath, but the visible terminal output queue could become permanently stalled.
+Sikemux 0.2.3 restores the direct, terminal-first agent workflow. Agent CLIs open in a PTY without an intermediate task composer or worktree setup, while the classic searchable session picker and the original live YOLO toggle are back.
 
-## Fixed
+## Agent workflow
 
-- Preserve xterm's terminal mode-query handler in production builds by switching JavaScript minification from esbuild to Terser.
-- Keep terminal output flowing when Vim and other interactive applications issue DEC private-mode queries.
-- Check every generated JavaScript asset for undeclared runtime globals during production builds.
-- Exercise the exact xterm mode-query path in the built bundle so this failure cannot silently return.
+- Open the classic agent picker with `⌥N`, start a fresh local CLI, or resume a recent project-scoped session.
+- Launch agents directly in the current project without task-input, model, worktree, or notification UI.
+- Keep launch safety focused on the two supported modes: Normal and YOLO.
+- Restore the one-click `safe` / `yolo` control over live agent terminals, including `⌥Y`, immediate PTY restart, provider-specific bypass flags, and the original armed-state treatment.
+- Exclude global Hermes history from project session results while keeping fresh Hermes launches available.
+- Accept native image-file drops in supported agent terminal flows.
+
+## Development
+
+- Give `make dev` its own `Sikemux Dev` identity and application-data directory so the debug binary can run beside an installed release without tripping the single-instance guard.
 
 ## Upgrade note
 
-No Vim, shell, or dotfile changes are required. Install the update and restart Sikemux to replace the affected production bundle.
+Existing resumable agent sessions remain available. Changing Normal or YOLO mode restarts the underlying CLI because those permissions are process launch flags; resumable sessions reopen with their session ID.
 
 The published automatic-update feed continues to target Apple Silicon macOS.
 
-For the complete patch history, compare [`v0.2.1...v0.2.2`](https://github.com/nodelike/sikemux/compare/v0.2.1...v0.2.2).
+For the complete patch history, compare [`v0.2.2...v0.2.3`](https://github.com/nodelike/sikemux/compare/v0.2.2...v0.2.3).
