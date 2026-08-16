@@ -116,18 +116,6 @@ button {
     background: var(--acc-soft);
 }
 
-.rail-scroll::-webkit-scrollbar,
-.picker-list::-webkit-scrollbar {
-    width: 8px;
-}
-.rail-scroll::-webkit-scrollbar-thumb,
-.picker-list::-webkit-scrollbar-thumb {
-    background: var(--line);
-    border-radius: 0;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-}
-
 .cm-scroller::-webkit-scrollbar {
     -webkit-appearance: none;
     width: 12px;

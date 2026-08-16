@@ -7,21 +7,36 @@
 .dd-btn {
     display: flex;
     align-items: center;
-    gap: 7px;
-    height: 27px;
-    padding: 0 8px;
+    gap: 8px;
+    height: 30px;
+    padding: 0 10px;
     border: 1px solid var(--line);
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
+    border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 92%), transparent);
     color: var(--ink);
-    font-family: var(--mono);
-    font-size: 11.5px;
+    font-family: var(--ui);
+    font-size: 12.5px;
     cursor: pointer;
     transition:
         border-color 0.12s,
+        background 0.12s,
         color 0.12s;
 }
 .dd-btn:hover:not(:disabled) {
     border-color: var(--acc-line);
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
+}
+.dd-btn[aria-expanded="true"] {
+    border-color: var(--acc-line);
+    box-shadow: 0 0 0 3px var(--acc-soft);
+}
+/* Settings rows want the control to span the field, not hug its label. */
+.dd-btn.settings-dd {
+    width: 100%;
+}
+.dd:has(> .settings-dd) {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 .dd-btn:disabled {
     color: var(--ink-faint);
@@ -56,19 +71,22 @@
 }
 .dd-menu {
     position: absolute;
-    top: calc(100% + 4px);
+    top: calc(100% + 5px);
     left: 0;
     z-index: 41;
     min-width: 100%;
     max-height: 280px;
     overflow-y: auto;
     background: var(--rail-2);
-    border: 1px solid var(--line);
-    box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.7);
-    padding: 3px;
+    border: 1px solid color-mix(in srgb, var(--line) 65%, white 10%);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-float);
+    -webkit-backdrop-filter: blur(18px) saturate(112%);
+    backdrop-filter: blur(18px) saturate(112%);
+    padding: 4px;
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 2px;
 }
 .dd-menu.right {
     left: auto;
@@ -79,12 +97,13 @@
     align-items: center;
     gap: 7px;
     width: 100%;
-    padding: 5px 8px;
+    padding: 6px 8px;
     border: 0;
+    border-radius: var(--radius-xs);
     background: transparent;
     color: var(--ink-dim);
-    font-family: var(--mono);
-    font-size: 11.5px;
+    font-family: var(--ui);
+    font-size: 12.5px;
     text-align: left;
     white-space: nowrap;
     cursor: pointer;
@@ -93,7 +112,7 @@
         color 0.1s;
 }
 .dd-item:hover {
-    background: var(--rail);
+    background: var(--acc-soft);
     color: var(--ink);
 }
 .dd-item.active {
@@ -114,64 +133,5 @@
     display: block;
     margin-top: 1px;
     color: var(--ink-faint);
-    font-size: 9.5px;
-}
-
-/* ---- Modern shell pass --------------------------------------------------
- * The dropdown predates the modern chrome, so it still read as a sharp mono
- * control next to rounded UI-font surfaces. These rules bring it in line
- * without touching the component's markup or behaviour.
- */
-.dd-btn {
-    height: 30px;
-    padding: 0 10px;
-    gap: 8px;
-    border-radius: var(--radius-xs);
-    font-family: var(--ui);
-    font-size: 12.5px;
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 92%), transparent);
-    transition:
-        border-color 0.12s,
-        background 0.12s,
-        color 0.12s;
-}
-.dd-btn:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
-}
-.dd-btn[aria-expanded="true"] {
-    border-color: var(--acc-line);
-    box-shadow: 0 0 0 3px var(--acc-soft);
-}
-
-.dd-menu {
-    top: calc(100% + 5px);
-    padding: 4px;
-    gap: 2px;
-    border-radius: var(--radius-sm);
-    border-color: color-mix(in srgb, var(--line) 65%, white 10%);
-    box-shadow: var(--shadow-float);
-    -webkit-backdrop-filter: blur(18px) saturate(112%);
-    backdrop-filter: blur(18px) saturate(112%);
-}
-
-.dd-item {
-    padding: 6px 8px;
-    border-radius: var(--radius-xs);
-    font-family: var(--ui);
-    font-size: 12.5px;
-}
-.dd-item:hover {
-    background: var(--acc-soft);
-}
-.dd-item-label small {
     font-size: 10.5px;
-}
-
-/* Settings rows want the control to span the field, not hug its label. */
-.settings-dd {
-    width: 100%;
-}
-.dd:has(> .settings-dd) {
-    flex: 1 1 auto;
-    min-width: 0;
 }

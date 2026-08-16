@@ -41,10 +41,14 @@ const budgets = [
   },
   { label: "all JavaScript", pattern: /\.js$/, raw: 2_650_000, gzip: 840_000 },
   {
+    // Raised from 235_000/40_000 when the shared UI primitives landed (app
+    // dialog, switch/checkbox/slider, tooltip, skeletons, global scrollbars).
+    // That is ~6 kB raw / ~1 kB gzip of genuinely new surface, added after
+    // folding the duplicated dropdown and git-modal rules back together.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 235_000,
-    gzip: 40_000,
+    raw: 240_000,
+    gzip: 41_000,
   },
 ];
 

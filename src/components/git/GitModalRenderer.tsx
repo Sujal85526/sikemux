@@ -51,9 +51,9 @@ export function GitModalRenderer({ paneId, active }: { paneId: string; active: b
 
     if (!modal || !ownsModal || !active) return null;
     return (
-        <div className="git-modal-scrim" onClick={closeGitModal}>
+        <div className="dlg-scrim" onClick={closeGitModal}>
             <div
-                className={`git-modal git-modal-${modal.kind}`}
+                className={`dlg git-modal git-modal-${modal.kind}`}
                 role="dialog"
                 aria-modal="true"
                 aria-label={modal.title}
@@ -70,8 +70,10 @@ export function GitModalRenderer({ paneId, active }: { paneId: string; active: b
 function MenuBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof useStore.getState>["gitModal"]>, { kind: "menu" }> }) {
     return (
         <>
-            <div className="git-modal-h">{modal.title}</div>
-            <div className="git-modal-body">
+            <div className="dlg-head">
+                <h2 className="dlg-title">{modal.title}</h2>
+            </div>
+            <div className="dlg-body git-modal-body">
                 {modal.items.map((item, i) => (
                     <button
                         key={i}
@@ -88,7 +90,7 @@ function MenuBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof useS
                     </button>
                 ))}
             </div>
-            <div className="git-modal-foot">
+            <div className="dlg-foot">
                 <span className="kbd">esc</span> cancel
             </div>
         </>
@@ -104,16 +106,18 @@ function ConfirmBody({ modal }: { modal: ConfirmModal }) {
     }, [modal.destructive, modal.initialFocus]);
     return (
         <>
-            <div className="git-modal-h">{modal.title}</div>
-            <div className="git-modal-body git-modal-confirm">{modal.body}</div>
-            <div className="git-modal-foot">
-                <button ref={cancelRef} type="button" className="git-modal-btn" onClick={closeGitModal}>
+            <div className="dlg-head">
+                <h2 className="dlg-title">{modal.title}</h2>
+            </div>
+            <div className="dlg-body git-modal-confirm">{modal.body}</div>
+            <div className="dlg-foot">
+                <button ref={cancelRef} type="button" className="dlg-btn" onClick={closeGitModal}>
                     {modal.cancelLabel ?? "cancel"}
                 </button>
                 <button
                     ref={confirmRef}
                     type="button"
-                    className={`git-modal-btn primary${modal.destructive ? " danger" : ""}`}
+                    className={`dlg-btn primary${modal.destructive ? " danger" : ""}`}
                     onClick={() => submitConfirmation(modal)}>
                     {modal.confirmLabel ?? "confirm"}
                 </button>
@@ -139,12 +143,14 @@ function PromptBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof us
 
     return (
         <>
-            <div className="git-modal-h">{modal.title}</div>
-            <div className="git-modal-body git-modal-prompt">
+            <div className="dlg-head">
+                <h2 className="dlg-title">{modal.title}</h2>
+            </div>
+            <div className="dlg-body git-modal-prompt">
                 {modal.multiline ? (
                     <textarea
                         ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-                        className="git-modal-input multiline"
+                        className="dlg-input git-modal-multiline"
                         placeholder={modal.placeholder}
                         value={value}
                         onChange={(e) => setValue(e.target.value)}
@@ -162,7 +168,7 @@ function PromptBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof us
                     <input
                         ref={inputRef as React.RefObject<HTMLInputElement>}
                         type="text"
-                        className="git-modal-input"
+                        className="dlg-input"
                         placeholder={modal.placeholder}
                         value={value}
                         onChange={(e) => setValue(e.target.value)}
@@ -195,11 +201,11 @@ function PromptBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof us
                     </div>
                 )}
             </div>
-            <div className="git-modal-foot">
-                <button type="button" className="git-modal-btn" onClick={closeGitModal}>
+            <div className="dlg-foot">
+                <button type="button" className="dlg-btn" onClick={closeGitModal}>
                     cancel
                 </button>
-                <button type="button" className="git-modal-btn primary" onClick={submit}>
+                <button type="button" className="dlg-btn primary" onClick={submit}>
                     {modal.multiline ? `submit (${PRIMARY_SHORTCUT}↵)` : "ok (↵)"}
                 </button>
             </div>
@@ -210,8 +216,10 @@ function PromptBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof us
 function CheatsheetBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeof useStore.getState>["gitModal"]>, { kind: "cheatsheet" }> }) {
     return (
         <>
-            <div className="git-modal-h">{modal.title}</div>
-            <div className="git-modal-body git-modal-cheatsheet">
+            <div className="dlg-head">
+                <h2 className="dlg-title">{modal.title}</h2>
+            </div>
+            <div className="dlg-body git-modal-cheatsheet">
                 {modal.sections.map((sec, si) => (
                     <div className="git-cheat-section" key={si}>
                         <div className="git-cheat-section-h">{sec.title}</div>
@@ -226,7 +234,7 @@ function CheatsheetBody({ modal }: { modal: Extract<NonNullable<ReturnType<typeo
                     </div>
                 ))}
             </div>
-            <div className="git-modal-foot">
+            <div className="dlg-foot">
                 <span className="kbd">esc</span> close
             </div>
         </>
