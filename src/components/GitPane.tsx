@@ -11,7 +11,7 @@ import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { CopyButton } from "./CopyButton";
-import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle } from "./Icons";
+import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle, IconWarning } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitTerminal } from "./git/GitTerminal";
@@ -21,6 +21,7 @@ import { GitPanelBlock } from "./git/GitPanelBlock";
 import { GitSelect } from "./git/GitSelect";
 import { GitToolbarButton } from "./git/GitToolbarButton";
 import { VirtualPanelRows } from "./git/VirtualPanelRows";
+import { SkeletonRows } from "./Skeleton";
 import {
     AI_MODEL_STORAGE,
     AI_MODELS,
@@ -1163,9 +1164,9 @@ export function GitPane({
           : files.length === 0
             ? "clean"
             : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`;
-    const fileEmptyText = overviewLoading ? "loading repo..." : overviewError ? `x ${overviewError}` : fileQuery ? "no matches" : "clean tree";
-    const branchEmptyText = overviewLoading ? "loading repo..." : overviewError ? `x ${overviewError}` : branchQuery ? "no matches" : "no branches";
-    const commitEmptyText = overviewLoading ? "loading repo..." : overviewError ? `x ${overviewError}` : commitQuery ? "no matches" : "no commits";
+    const fileEmptyText = overviewError ?? (fileQuery ? "no matches" : "clean tree");
+    const branchEmptyText = overviewError ?? (branchQuery ? "no matches" : "no branches");
+    const commitEmptyText = overviewError ?? (commitQuery ? "no matches" : "no commits");
 
     return (
         <div className="git-pane">
@@ -1362,7 +1363,15 @@ export function GitPane({
                         ]}
                         rangeBadge={rangeBadge(filesRange)}
                         filterBadge={searchByPanel.files || null}>
-                        {filteredFiles.length === 0 && <div className={`git-empty${overviewError ? " error" : ""}`}>{fileEmptyText}</div>}
+                        {filteredFiles.length === 0 &&
+                            (overviewLoading ? (
+                                <SkeletonRows rows={5} label="Loading changed files" />
+                            ) : (
+                                <div className={`git-empty${overviewError ? " error" : ""}`}>
+                                    {overviewError && <IconWarning size={11} />}
+                                    <span>{fileEmptyText}</span>
+                                </div>
+                            ))}
                         <VirtualPanelRows
                             items={filteredFiles}
                             selectedIndex={sel.files}
@@ -1400,7 +1409,15 @@ export function GitPane({
                         ]}
                         rangeBadge={rangeBadge(branchesRange)}
                         filterBadge={searchByPanel.branches || null}>
-                        {filteredBranches.length === 0 && <div className={`git-empty${overviewError ? " error" : ""}`}>{branchEmptyText}</div>}
+                        {filteredBranches.length === 0 &&
+                            (overviewLoading ? (
+                                <SkeletonRows rows={5} label="Loading branches" />
+                            ) : (
+                                <div className={`git-empty${overviewError ? " error" : ""}`}>
+                                    {overviewError && <IconWarning size={11} />}
+                                    <span>{branchEmptyText}</span>
+                                </div>
+                            ))}
                         <VirtualPanelRows
                             items={filteredBranches}
                             selectedIndex={sel.branches}
@@ -1440,7 +1457,14 @@ export function GitPane({
                         rangeBadge={rangeBadge(commitsRange)}
                         filterBadge={searchByPanel.commits || null}>
                         {filteredCommits.length === 0 ? (
-                            <div className={`git-empty${overviewError ? " error" : ""}`}>{commitEmptyText}</div>
+                            overviewLoading ? (
+                                <SkeletonRows rows={8} label="Loading commits" />
+                            ) : (
+                                <div className={`git-empty${overviewError ? " error" : ""}`}>
+                                    {overviewError && <IconWarning size={11} />}
+                                    <span>{commitEmptyText}</span>
+                                </div>
+                            )
                         ) : (
                             <GitGraph
                                 commits={filteredCommits}

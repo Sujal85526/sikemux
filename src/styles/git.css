@@ -931,12 +931,20 @@
     font-size: 11px;
 }
 .git-empty {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
     padding: 10px 12px;
     color: var(--ink-faint);
     font-size: 11px;
+    line-height: 1.45;
 }
 .git-empty.error {
     color: var(--danger);
+}
+.git-empty svg {
+    flex: none;
+    margin-top: 1px;
 }
 
 .git-graph {
