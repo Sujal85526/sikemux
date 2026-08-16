@@ -129,14 +129,16 @@ describe("agent launch commands", () => {
         expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "workspace-write", "session-42"]);
     });
 
-    it("refuses an explicit mode change until the conversation can be resumed", () => {
+    it("relaunches a fresh CLI when its live PTY mode changes", () => {
         addAgent("claude", undefined, "Fresh task", { permissionMode: "workspace-write" });
         const id = getState().agentsBySession.project[0];
-        const before = getState().agents[id];
 
-        setAgentPermissionMode(id, "read-only");
+        setAgentPermissionMode(id, "bypass");
 
-        expect(getState().agents[id].permissionMode).toBe(before.permissionMode);
-        expect(getState().agents[id].directCommand).toEqual(before.directCommand);
+        expect(getState().agents[id]).toMatchObject({
+            permissionMode: "bypass",
+            skipPermissions: true,
+            directCommand: { program: "claude", args: ["--dangerously-skip-permissions"] },
+        });
     });
 });

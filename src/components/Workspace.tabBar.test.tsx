@@ -16,7 +16,7 @@ const initial = getState();
 beforeEach(() => setState(initial, true));
 afterEach(cleanup);
 
-function projectWithAgent(): string {
+function projectWithAgent(resumable = true): string {
     const state = getState();
     const sessionId = state.activeSessionId;
     const session = state.sessions[sessionId];
@@ -31,8 +31,11 @@ function projectWithAgent(): string {
                 type: "codex",
                 title: "only agent",
                 startup: "codex",
-                directCommand: { program: "codex", args: ["resume", "--sandbox", "workspace-write", "session-only"] },
-                resumeId: "session-only",
+                directCommand: {
+                    program: "codex",
+                    args: resumable ? ["resume", "--sandbox", "workspace-write", "session-only"] : ["--sandbox", "workspace-write"],
+                },
+                ...(resumable ? { resumeId: "session-only" } : {}),
                 permissionMode: "workspace-write",
                 launchState: "live",
             },
@@ -65,23 +68,23 @@ describe("workspace tab bars", () => {
         expect(getState().agentPaletteOpen).toBe(true);
     });
 
-    it("changes between Normal and YOLO in a resumable agent session", () => {
-        projectWithAgent();
+    it("restores the one-click PTY toggle and remounts a fresh CLI in YOLO mode", () => {
+        projectWithAgent(false);
         render(<Workspace />);
 
-        const safety = screen.getByRole("button", { name: "Safety" });
-        expect(safety).toHaveTextContent("Normal");
-        fireEvent.click(safety);
+        const originalTerminal = screen.getByTestId("terminal-agent-only");
+        const toggle = screen.getByRole("button", { name: /safe/i });
+        expect(toggle).toHaveAttribute("aria-pressed", "false");
+        expect(toggle).not.toBeDisabled();
+        fireEvent.click(toggle);
 
-        const menu = screen.getByRole("listbox", { name: "Safety" });
-        expect(screen.getByRole("option", { name: /Normal/ })).toBeInTheDocument();
-        expect(screen.getByRole("option", { name: /YOLO/ })).toBeInTheDocument();
-        expect(screen.getAllByRole("option")).toHaveLength(2);
-
-        fireEvent.click(screen.getByRole("option", { name: /YOLO/ }));
-        expect(getState().agents["agent-only"].permissionMode).toBe("bypass");
-        expect(screen.getByRole("button", { name: "Safety" })).toHaveTextContent("YOLO");
-        expect(menu).not.toBeInTheDocument();
+        expect(getState().agents["agent-only"]).toMatchObject({
+            permissionMode: "bypass",
+            skipPermissions: true,
+            directCommand: { program: "codex", args: ["--dangerously-bypass-approvals-and-sandbox"] },
+        });
+        expect(screen.getByRole("button", { name: /yolo/i })).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByTestId("terminal-agent-only")).not.toBe(originalTerminal);
     });
 
     it("shows YOLO as the animated live-session state", () => {
@@ -92,8 +95,8 @@ describe("workspace tab bars", () => {
 
         render(<Workspace />);
 
-        expect(screen.getByRole("button", { name: "Safety" })).toHaveTextContent("YOLO");
-        expect(screen.getByRole("button", { name: "Safety" })).toHaveClass("is-yolo");
+        expect(screen.getByRole("button", { name: /yolo/i })).toHaveClass("yolo-toggle", "on");
+        expect(screen.getByRole("button", { name: /yolo/i })).toHaveAttribute("aria-pressed", "true");
     });
 
     it("keeps the empty agent stage free of input UI", () => {

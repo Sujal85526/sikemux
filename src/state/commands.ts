@@ -1565,9 +1565,6 @@ export function setAgentPermissionMode(id: string, requestedMode: AgentPermissio
     mutate((d) => {
         const a = d.agents[id];
         if (!a) return;
-        // A permission boundary is a process launch flag. Never remount a live
-        // provider until its conversation can be resumed safely.
-        if (!a.resumeId) return;
         const next = normalizePermissionMode(a.type, requestedMode);
         const current = a.permissionMode ?? (a.skipPermissions ? "bypass" : normalizePermissionMode(a.type, "workspace-write"));
         if (next === current) return;

@@ -1,6 +1,5 @@
 import { memo, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import { supportedPermissionModes } from "../agentLaunch";
 import type { Agent, Divider, Rect, Session, Window as WindowT } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
@@ -10,8 +9,7 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
-import { AgentPermissionSelector } from "./AgentPermissionSelector";
-import { AgentIcon, IconCommand, IconPlus } from "./Icons";
+import { AgentIcon, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
 import { renderWorkbenchItem } from "../workbench/renderers";
 
 const AGENT_TABS_H = 32;
@@ -156,13 +154,11 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
         ];
         if (cmd.agentSupportsSkipPermissions(a.type)) {
             const skip = a.permissionMode === "bypass" || a.skipPermissions === true;
-            const restartBlocked = !a.resumeId;
             items.push(
                 { sep: true },
                 {
                     label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode",
                     hint: "⌥Y",
-                    disabled: restartBlocked,
                     run: () => cmd.toggleAgentSkipPermissions(id),
                 },
             );
@@ -197,28 +193,29 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
     );
 }
 
-function AgentSafetySelector({ agent }: { agent: Agent }) {
-    const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
-    const restartBlocked = !agent.resumeId;
+function YoloToggle({ agent }: { agent: Agent }) {
+    const on = agent.permissionMode === "bypass" || agent.skipPermissions === true;
     return (
-        <div className="agent-safety-control">
-            <AgentPermissionSelector
-                type={agent.type}
-                value={permissionMode}
-                className="agent-safety-select"
-                align="right"
-                shortcut="⌥Y"
-                menuWidth={280}
-                onChange={(mode) => cmd.setAgentPermissionMode(agent.id, mode)}
-                disabled={restartBlocked}
-                disabledTitle="Safety can be changed after the CLI creates a resumable session."
-            />
-        </div>
+        <button
+            type="button"
+            className={`yolo-toggle${on ? " on" : ""}`}
+            aria-pressed={on}
+            title={
+                on
+                    ? `YOLO mode ON — ${agent.type} runs without approvals. Toggle with ⌥Y.`
+                    : `Safe mode — ${agent.type} uses normal approvals. Go YOLO with ⌥Y.`
+            }
+            onClick={(event) => {
+                event.stopPropagation();
+                cmd.toggleAgentSkipPermissions(agent.id);
+            }}>
+            <span className="yolo-glyph" aria-hidden="true">
+                {on ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
+            </span>
+            <span className="yolo-label">{on ? "yolo" : "safe"}</span>
+            <kbd className="yolo-hint">⌥Y</kbd>
+        </button>
     );
-}
-
-function agentHasConfigurablePermissions(agent: Agent): boolean {
-    return supportedPermissionModes(agent.type).length > 1;
 }
 
 const AgentLayer = memo(function AgentLayer({
@@ -274,7 +271,7 @@ const AgentLayer = memo(function AgentLayer({
                             }}
                         />
                     )}
-                    {agentHasConfigurablePermissions(agent) && <AgentSafetySelector agent={agent} />}
+                    {cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} />}
                 </div>
             </div>
         </div>
