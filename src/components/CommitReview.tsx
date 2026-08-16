@@ -5,6 +5,14 @@ import { IconChevron } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { Tooltip } from "./Tooltip";
 import { basename, joinPath } from "../lib/paths";
+import { Badge } from "./Panel";
+import { CopyButton } from "./CopyButton";
+
+/** Leading directory of a repo-relative path, with its trailing slash. */
+function dirOf(path: string): string {
+    const cut = path.lastIndexOf("/");
+    return cut === -1 ? "" : path.slice(0, cut + 1);
+}
 
 export function CommitReview({
     repo,
@@ -52,7 +60,13 @@ export function CommitReview({
     return (
         <div className="commit-review">
             <div className="commit-head">
-                <span className="commit-hash">{title}</span>
+                <div className="commit-head-top">
+                    <Badge tone="warn">{title}</Badge>
+                    <CopyButton value={title} label="commit hash" size={10} />
+                    <span className="commit-count">
+                        {files.length} {files.length === 1 ? "file" : "files"}
+                    </span>
+                </div>
                 <span className="commit-subject">{subtitle}</span>
             </div>
             <div className="commit-stack">
@@ -60,7 +74,7 @@ export function CommitReview({
                 {files.map((f) => {
                     const open = !collapsed.has(f);
                     return (
-                        <div className="acc-item" key={f}>
+                        <div className={`acc-item${open ? " open" : ""}`} key={f}>
                             <div className="acc-header">
                                 <Tooltip label={open ? "Collapse" : "Expand"}>
                                     <button className="acc-toggle" onClick={() => toggle(f)} aria-label={open ? "Collapse" : "Expand"}>
@@ -71,8 +85,11 @@ export function CommitReview({
                                 </Tooltip>
                                 <Tooltip label="Open in editor">
                                     <button className="acc-name" onClick={() => onOpenFile(joinPath(repo, f))}>
-                                        <FileIcon name={basename(f)} size={15} />
-                                        <span>{f}</span>
+                                        <FileIcon name={basename(f)} size={14} />
+                                        {/* The directory recedes so a column of paths scans by filename
+                                            rather than by the prefix they mostly share. */}
+                                        <span className="acc-dir">{dirOf(f)}</span>
+                                        <span className="acc-file">{basename(f)}</span>
                                     </button>
                                 </Tooltip>
                             </div>
