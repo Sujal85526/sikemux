@@ -13,8 +13,8 @@
      * name. The old names stay as aliases so call sites need not all change. */
     /* Radius scales with the control: 6px on an 18px-tall button is a third
      * of its height and reads as a pill, so compact chips take less. */
-    --radius-chip: 3px;
-    --radius-control: 6px;
+    --radius-chip: 2px;
+    --radius-control: 4px;
     --radius-panel: 10px;
     --radius-xs: var(--radius-control);
     --radius-sm: var(--radius-control);
@@ -680,7 +680,6 @@ textarea,
         .settings-main,
         .settings-list,
         .settings-depth,
-        .git-toolbar,
         .git-tbtn,
         .git-dd-btn,
         .git-dd-menu,
@@ -839,6 +838,10 @@ textarea,
 
 .shell :where(.rnd-btn-sm, .git-kbd, .panel-akbd, .picker-hint) {
     border-radius: var(--radius-chip) !important;
+}
+
+.git-toolbar {
+    border-radius: 0;
 }
 
 /* ---- Rounding by role ----------------------------------------------------
