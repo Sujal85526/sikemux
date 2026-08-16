@@ -394,6 +394,17 @@ textarea:focus-visible {
     box-shadow: none;
 }
 
+/* The rows sit on the same inset as the header above them; without this the
+ * meters ran wider than the rule they belong under. */
+.agent-usage-row,
+.agent-usage-empty {
+    padding-inline: var(--space-2);
+}
+
+.agent-usage-row + .agent-usage-row {
+    margin-top: var(--space-3);
+}
+
 .agent-usage-head {
     margin-bottom: 11px;
 }
