@@ -963,11 +963,11 @@ textarea,
 
 .side-rail,
 .agent-rail {
-    background: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent);
+    background: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent);
 }
 
 .stage {
-    background: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent);
+    background: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent);
 }
 
 .pane {
@@ -984,9 +984,9 @@ textarea,
  * darker than the chrome and left the centre of the window reading as a hole.
  * It follows the surface now, and still fades with the window like one. */
 .pane {
-    background: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent);
+    background: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent);
 }
 
 .terminal-host .xterm-viewport {
-    background-color: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent) !important;
+    background-color: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent) !important;
 }
