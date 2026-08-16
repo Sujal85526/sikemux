@@ -1034,3 +1034,13 @@ textarea,
 .agent-rail .agent-ago {
     font-size: 10.5px;
 }
+
+/* Row names take the UI font in both rails. The project navigator was
+ * deliberately monospace to read as a tree, but next to the agent rail's
+ * Figtree titles it made the two halves of the window look unrelated.
+ * Shortcuts and timestamps stay monospace, as they do on the agent side. */
+.side-rail .proj-name,
+.side-rail .proj-child-label,
+.side-rail .sess-name {
+    font-family: var(--ui);
+}
