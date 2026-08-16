@@ -137,32 +137,31 @@ textarea:focus-visible {
     backdrop-filter: blur(18px) saturate(112%);
 }
 
+/* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
+ * tracked caps and a version chip, all above the first thing you actually use.
+ * It is a quiet single line now. */
 .rail-brand {
-    min-height: 62px;
-    padding: 14px 16px 13px;
+    min-height: 0;
+    gap: var(--space-2);
+    padding: var(--space-1h) var(--gutter-rail) var(--space-1);
     border-bottom: 0;
 }
 
 .rail-brand-mark {
     display: grid;
     place-items: center;
-    width: 30px;
-    height: 30px;
-    border: 1px solid color-mix(in srgb, var(--acc) 35%, var(--line));
-    border-radius: var(--radius-sm);
-    background: color-mix(
-        in srgb,
-        var(--acc) calc(var(--window-opacity, 1) * 12%),
-        color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 88%), transparent)
-    );
+    width: 18px;
+    height: 18px;
+    border: 0;
+    background: none;
     filter: none;
 }
 
 .rail-brand-name {
     font-family: var(--ui);
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
 }
 
 .rail-scroll {

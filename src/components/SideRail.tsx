@@ -296,7 +296,7 @@ export function SideRail() {
         <aside className="side-rail">
             <header className="rail-brand">
                 <span className="rail-brand-mark">
-                    <Logo size={26} />
+                    <Logo size={18} />
                 </span>
                 <span className="rail-brand-name">
                     Sike<span className="rail-brand-dim">mux</span>
