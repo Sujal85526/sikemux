@@ -1,15 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentInfo } from "../api/agents";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { agentApi, type AgentInfo, type AgentSession } from "../api/agents";
 import { useMouseActive } from "../hooks/useMouseActive";
+import { rankBy } from "../lib/fuzzy";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import type { AgentPermissionMode } from "../state/types";
-import { AgentIcon, IconAgent } from "./Icons";
+import type { AgentPermissionMode, AgentType } from "../state/types";
+import { AgentIcon, IconSearch } from "./Icons";
+
+type Row = AgentSession & { type: AgentType };
+type NewAgentItem = { kind: "new"; type: AgentType };
+type ResumeAgentItem = { kind: "resume"; row: Row };
+type AgentItem = NewAgentItem | ResumeAgentItem;
 
 const NORMAL: AgentPermissionMode = "workspace-write";
 const YOLO: AgentPermissionMode = "bypass";
+
+function labelForType(type: AgentType, agents: readonly AgentInfo[]): string {
+    return agents.find((agent) => agent.type === type)?.label ?? type;
+}
+
+function typeForItem(item: AgentItem): AgentType {
+    return item.kind === "new" ? item.type : item.row.type;
+}
+
+function ago(unixSecs: number): string {
+    if (!unixSecs) return "";
+    const delta = Math.max(0, Date.now() / 1000 - unixSecs);
+    if (delta < 90) return "now";
+    if (delta < 3600) return `${Math.round(delta / 60)}m`;
+    if (delta < 86400) return `${Math.round(delta / 3600)}h`;
+    return `${Math.round(delta / 86400)}d`;
+}
 
 export function AgentPalette() {
     const session = useStore((state) => state.sessions[state.activeSessionId]);
@@ -18,110 +41,157 @@ export function AgentPalette() {
     const defaultMode = useStore((state) => state.defaultAgentPermissionMode);
     const catalog = useResource(agentCatalogR);
     const agents = useMemo(() => catalog.data ?? [], [catalog.data]);
-    const [mode, setMode] = useState<AgentPermissionMode>(defaultMode === YOLO ? YOLO : NORMAL);
-    const dialogRef = useRef<HTMLDivElement>(null);
-    const listRef = useRef<HTMLDivElement>(null);
-    const originSessionId = useRef(session?.id ?? "");
+    const origin = useRef({ sessionId: session?.id ?? "", cwd: session?.cwd ?? "" });
     const returnFocusRef = useRef<HTMLElement | null>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
     const mouseActive = useMouseActive();
+    const [query, setQuery] = useState("");
+    const [rows, setRows] = useState<Row[]>([]);
+    const [selected, setSelected] = useState(0);
+    const [mode, setMode] = useState<AgentPermissionMode>(defaultMode === YOLO ? YOLO : NORMAL);
 
     useEffect(() => {
         returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        inputRef.current?.focus();
         return () => returnFocusRef.current?.focus();
     }, []);
 
     useEffect(() => {
-        const firstAction = listRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)");
-        (firstAction ?? dialogRef.current)?.focus();
-    }, [agents.length, catalog.status, mode]);
+        let cancelled = false;
+        if (!origin.current.cwd || agents.length === 0) {
+            setRows([]);
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        // Hermes history is global rather than project-scoped, so showing it
+        // here leaks unrelated projects into a picker opened for one checkout.
+        const projectScopedAgents = agents.filter((agent) => agent.type !== "hermes");
+        void Promise.all(
+            projectScopedAgents.map((agent) =>
+                agentApi
+                    .sessions(agent.type, origin.current.cwd)
+                    .then((sessions) => sessions.map((candidate): Row => ({ ...candidate, type: agent.type })))
+                    .catch(() => [] as Row[]),
+            ),
+        ).then((lists) => {
+            if (!cancelled) setRows(lists.flat().sort((left, right) => right.mtime - left.mtime));
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [agents]);
 
     useEffect(() => {
-        if (session && session.id !== originSessionId.current) cmd.closeAgentPalette();
+        if (session && session.id !== origin.current.sessionId) cmd.closeAgentPalette();
     }, [session]);
 
-    function launch(agent: AgentInfo) {
-        if (!session || session.kind !== "project") return;
-        if (mode === YOLO && !cmd.agentSupportsSkipPermissions(agent.type)) return;
-        const selectedProfile = profiles.find((profile) => profile.id === profileSelections[agent.type] && profile.provider === agent.type);
-        cmd.addAgent(agent.type, undefined, undefined, {
+    const items = useMemo(() => {
+        const fresh = agents.map(({ type }): NewAgentItem => ({ kind: "new", type }));
+        const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
+        const rankedFresh = rankBy(query, fresh, (item) => `+ new ${labelForType(item.type, agents)} ${item.type}`);
+        const rankedResumable = rankBy(query, resumable, (item) => `${item.row.title} ${labelForType(item.row.type, agents)} ${item.row.type}`);
+        return [...rankedFresh, ...rankedResumable];
+    }, [agents, query, rows]);
+
+    const selectable = useMemo(
+        () =>
+            items
+                .map((item, index) => ({ index, supported: mode === NORMAL || cmd.agentSupportsSkipPermissions(typeForItem(item)) }))
+                .filter(({ supported }) => supported)
+                .map(({ index }) => index),
+        [items, mode],
+    );
+    const firstResumeIndex = items.findIndex((item) => item.kind === "resume");
+
+    useEffect(() => {
+        setSelected((current) => (selectable.includes(current) ? current : (selectable[0] ?? 0)));
+    }, [selectable]);
+
+    function chooseMode(nextMode: AgentPermissionMode) {
+        setMode(nextMode);
+        window.requestAnimationFrame(() => inputRef.current?.focus());
+    }
+
+    function moveSelection(delta: number) {
+        if (selectable.length === 0) return;
+        const current = selectable.indexOf(selected);
+        const base = current < 0 ? (delta > 0 ? -1 : 0) : current;
+        setSelected(selectable[(base + delta + selectable.length) % selectable.length]);
+    }
+
+    function activate(item: AgentItem | undefined) {
+        if (!item || !origin.current.sessionId || !origin.current.cwd) return;
+        const type = typeForItem(item);
+        if (mode === YOLO && !cmd.agentSupportsSkipPermissions(type)) return;
+        const selectedProfile = profiles.find((profile) => profile.id === profileSelections[type] && profile.provider === type);
+        const resume = item.kind === "resume" ? item.row : undefined;
+        cmd.addAgent(type, resume?.id, resume?.title, {
             permissionMode: mode,
             profileId: selectedProfile?.id,
-            cwd: session.cwd,
-            sessionId: session.id,
+            cwd: origin.current.cwd,
+            sessionId: origin.current.sessionId,
         });
     }
 
-    function moveFocus(current: HTMLButtonElement, delta: number) {
-        const buttons = [...current.closest(".agent-picker-list")!.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-        const index = buttons.indexOf(current);
-        buttons[(index + delta + buttons.length) % buttons.length]?.focus();
-    }
-
-    function onAgentKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
-        if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-            event.preventDefault();
-            moveFocus(event.currentTarget, 1);
-        } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-            event.preventDefault();
-            moveFocus(event.currentTarget, -1);
-        }
-    }
-
-    function onModalKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
         if (event.key === "Escape") {
             event.preventDefault();
             cmd.closeAgentPalette();
             return;
         }
-        if (event.key !== "Tab") return;
-        const focusable = [...(dialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
-        if (focusable.length === 0) {
+        if (event.target !== inputRef.current) return;
+        if (event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey)) {
             event.preventDefault();
-            return;
-        }
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
+            moveSelection(1);
+        } else if (event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey)) {
             event.preventDefault();
-            last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+            moveSelection(-1);
+        } else if (event.key === "Enter") {
             event.preventDefault();
-            first.focus();
+            activate(items[selected]);
         }
     }
 
-    const status =
+    const emptyMessage =
         catalog.status === "loading"
-            ? "Detecting agent CLIs…"
+            ? "detecting agent CLIs..."
             : catalog.status === "error"
-              ? catalog.error || "Agent detection failed."
-              : "No supported agent CLIs were detected on PATH.";
+              ? catalog.error || "agent detection failed"
+              : "no agent matches";
 
     return (
-        <div className="picker-backdrop agent-picker-backdrop" onMouseDown={cmd.closeAgentPalette} onKeyDown={onModalKeyDown}>
+        <div className="picker-backdrop" onMouseDown={cmd.closeAgentPalette}>
             <div
-                ref={dialogRef}
-                className="picker agent-picker"
+                className="picker agent-palette"
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby="agent-picker-title"
-                tabIndex={-1}
+                aria-label="Open agent CLI"
+                onKeyDown={onKeyDown}
                 onMouseDown={(event) => event.stopPropagation()}>
-                <header className="agent-picker-head">
-                    <span className="agent-picker-mark" aria-hidden="true">
-                        <IconAgent size={16} />
-                    </span>
-                    <span>
-                        <strong id="agent-picker-title">Open agent CLI</strong>
-                        <small>{session?.cwd ?? "Open a project first"}</small>
-                    </span>
-                    <div className="agent-picker-modes" role="radiogroup" aria-label="Agent mode">
+                <div className="picker-input-wrap">
+                    <IconSearch size={15} className="picker-search-icon" />
+                    <input
+                        ref={inputRef}
+                        className="picker-input"
+                        aria-label="Search agent sessions"
+                        placeholder={agents.length ? `search agent sessions — ${agents.map((agent) => agent.label).join(" · ")}...` : emptyMessage}
+                        value={query}
+                        onChange={(event) => {
+                            setQuery(event.target.value);
+                            setSelected(0);
+                        }}
+                        spellCheck={false}
+                    />
+                    <div className="agent-palette-modes" role="radiogroup" aria-label="Agent mode">
                         <button
                             type="button"
                             role="radio"
                             aria-checked={mode === NORMAL}
                             className={mode === NORMAL ? "active" : ""}
-                            onClick={() => setMode(NORMAL)}>
+                            onClick={() => chooseMode(NORMAL)}>
                             Normal
                         </button>
                         <button
@@ -129,52 +199,61 @@ export function AgentPalette() {
                             role="radio"
                             aria-checked={mode === YOLO}
                             className={mode === YOLO ? "active yolo" : "yolo"}
-                            onClick={() => setMode(YOLO)}>
+                            onClick={() => chooseMode(YOLO)}>
                             YOLO
                         </button>
                     </div>
-                </header>
+                    <span className="picker-hints" aria-hidden="true">
+                        <span className="picker-hint">↑↓ nav</span>
+                        <span className="picker-hint">⏎ open</span>
+                        <span className="picker-hint">esc</span>
+                    </span>
+                </div>
 
-                <div className="picker-list agent-picker-list" ref={listRef}>
-                    {agents.length === 0 && (
+                <div className="picker-list">
+                    {items.length === 0 && (
                         <div className="picker-empty" role="status">
-                            {status}
+                            {emptyMessage}
                             {catalog.status === "error" && (
                                 <button type="button" onClick={() => void catalog.refresh().catch(() => {})}>
-                                    Try again
+                                    try again
                                 </button>
                             )}
                         </div>
                     )}
-                    {agents.map((agent) => {
-                        const supportsMode = mode === NORMAL || cmd.agentSupportsSkipPermissions(agent.type);
+                    {items.map((item, index) => {
+                        const type = typeForItem(item);
+                        const supported = mode === NORMAL || cmd.agentSupportsSkipPermissions(type);
+                        const key = item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`;
+                        const name = item.kind === "new" ? `+ new ${labelForType(type, agents)}` : item.row.title;
                         return (
-                            <button
-                                key={agent.type}
-                                type="button"
-                                className="picker-item agent-picker-item"
-                                disabled={!supportsMode}
-                                aria-label={`Start ${agent.label} in ${mode === YOLO ? "YOLO" : "Normal"} mode`}
-                                onMouseEnter={(event) => {
-                                    if (mouseActive.current) event.currentTarget.focus();
-                                }}
-                                onKeyDown={onAgentKeyDown}
-                                onClick={() => launch(agent)}>
-                                <span className={`picker-icon agent-glyph ${agent.type}`}>
-                                    <AgentIcon type={agent.type} size={15} />
-                                </span>
-                                <span className="picker-name">{agent.label}</span>
-                                <span className="picker-sub">{supportsMode ? `${agent.command} · opens directly in PTY` : "Normal mode only"}</span>
-                            </button>
+                            <Fragment key={key}>
+                                {index === firstResumeIndex && firstResumeIndex > 0 && <div className="agent-palette-divider" />}
+                                <button
+                                    type="button"
+                                    className={`picker-item${index === selected ? " sel" : ""}`}
+                                    disabled={!supported}
+                                    aria-label={`${name} in ${mode === YOLO ? "YOLO" : "Normal"} mode`}
+                                    onMouseEnter={() => {
+                                        if (mouseActive.current && supported) setSelected(index);
+                                    }}
+                                    onClick={() => activate(item)}>
+                                    <span className={`picker-icon agent-glyph ${type}`}>
+                                        <AgentIcon type={type} size={14} />
+                                    </span>
+                                    <span className="picker-name">{name}</span>
+                                    <span className="picker-sub">
+                                        {!supported
+                                            ? "Normal mode only"
+                                            : item.kind === "new"
+                                              ? "start agent"
+                                              : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
+                                    </span>
+                                </button>
+                            </Fragment>
                         );
                     })}
                 </div>
-
-                <footer className="agent-picker-foot" aria-hidden="true">
-                    <span>↑↓ choose</span>
-                    <span>↵ open</span>
-                    <span>esc dismiss</span>
-                </footer>
             </div>
         </div>
     );

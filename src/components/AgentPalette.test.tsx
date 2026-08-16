@@ -4,13 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
     available: vi.fn(),
-    invoke: vi.fn(),
+    sessions: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../api/agents", () => ({
     agentApi: {
         available: mocks.available,
+        sessions: mocks.sessions,
     },
 }));
 
@@ -44,8 +44,14 @@ beforeEach(() => {
     });
     mocks.available.mockResolvedValue([
         { type: "codex", label: "Codex", command: "codex", defaultModel: null, defaultEffort: null },
+        { type: "hermes", label: "Hermes", command: "hermes", defaultModel: null, defaultEffort: null },
         { type: "pi", label: "Pi", command: "pi", defaultModel: null, defaultEffort: null },
     ]);
+    mocks.sessions.mockImplementation((type: string) => {
+        if (type === "codex") return Promise.resolve([{ id: "codex-old", title: "Fix terminal tabs", mtime: 200 }]);
+        if (type === "hermes") return Promise.resolve([{ id: "hermes-global", title: "Unrelated Hermes project", mtime: 300 }]);
+        return Promise.resolve([{ id: "pi-old", title: "Review picker", mtime: 100 }]);
+    });
     invalidate((kind) => kind === "agents.catalog");
 });
 
@@ -55,17 +61,23 @@ afterEach(() => {
 });
 
 describe("AgentPalette", () => {
-    it("restores the modal picker without any agent input or worktree UI", async () => {
+    it("restores the historical searchable picker and excludes Hermes project history", async () => {
         const opener = document.createElement("button");
         document.body.append(opener);
         opener.focus();
         const view = render(<AgentPalette />);
 
-        expect(await screen.findByRole("dialog", { name: "Open agent CLI" })).toHaveAttribute("aria-modal", "true");
-        expect(screen.getByRole("button", { name: "Start Codex in Normal mode" })).toHaveFocus();
-        expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+        const dialog = await screen.findByRole("dialog", { name: "Open agent CLI" });
+        expect(dialog).toHaveClass("picker", "agent-palette");
+        expect(screen.getByRole("textbox", { name: "Search agent sessions" })).toHaveFocus();
+        expect(screen.getByRole("button", { name: "+ new Codex in Normal mode" })).toHaveClass("sel");
+        expect(screen.getByRole("button", { name: "+ new Hermes in Normal mode" })).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Fix terminal tabs in Normal mode" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Review picker in Normal mode" })).toBeInTheDocument();
+        expect(screen.queryByText("Unrelated Hermes project")).not.toBeInTheDocument();
+        expect(mocks.sessions).not.toHaveBeenCalledWith("hermes", expect.anything());
+        expect(screen.queryByRole("textbox", { name: /task/i })).not.toBeInTheDocument();
         expect(screen.queryByText(/worktree/i)).not.toBeInTheDocument();
-        expect(screen.queryByText(/model/i)).not.toBeInTheDocument();
         expect(screen.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Normal", "YOLO"]);
 
         view.unmount();
@@ -73,11 +85,11 @@ describe("AgentPalette", () => {
         opener.remove();
     });
 
-    it("opens the selected CLI directly in a PTY using Normal mode", async () => {
+    it("opens a new CLI directly in a PTY using Normal mode", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
 
-        await user.click(await screen.findByRole("button", { name: "Start Codex in Normal mode" }));
+        await user.click(await screen.findByRole("button", { name: "+ new Codex in Normal mode" }));
 
         const id = getState().agentsBySession["sess-project"][0];
         expect(getState().agents[id]).toMatchObject({
@@ -92,32 +104,58 @@ describe("AgentPalette", () => {
         expect(getState().agentPaletteOpen).toBe(false);
     });
 
-    it("offers YOLO as the only alternate mode and disables unsupported CLIs", async () => {
+    it("resumes a historical session with the selected mode", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
 
         await user.click(screen.getByRole("radio", { name: "YOLO" }));
-        const codex = screen.getByRole("button", { name: "Start Codex in YOLO mode" });
-        expect(screen.getByRole("button", { name: "Start Pi in YOLO mode" })).toBeDisabled();
-        await user.click(codex);
+        await user.click(await screen.findByRole("button", { name: "Fix terminal tabs in YOLO mode" }));
 
         const id = getState().agentsBySession["sess-project"][0];
-        expect(getState().agents[id]).toMatchObject({ permissionMode: "bypass", skipPermissions: true });
-        expect(getState().agents[id].directCommand?.args).toEqual(["--dangerously-bypass-approvals-and-sandbox"]);
+        expect(getState().agents[id]).toMatchObject({
+            type: "codex",
+            title: "Fix terminal tabs",
+            resumeId: "codex-old",
+            permissionMode: "bypass",
+            directCommand: {
+                program: "codex",
+                args: ["resume", "--dangerously-bypass-approvals-and-sandbox", "codex-old"],
+            },
+        });
     });
 
-    it("supports arrow navigation and Escape dismissal", async () => {
+    it("offers only Normal and YOLO and skips unsupported rows during keyboard navigation", async () => {
+        const user = userEvent.setup();
         render(<AgentPalette />);
-        const codex = await screen.findByRole("button", { name: "Start Codex in Normal mode" });
-        const pi = screen.getByRole("button", { name: "Start Pi in Normal mode" });
 
-        fireEvent.keyDown(codex, { key: "ArrowDown" });
-        expect(pi).toHaveFocus();
-        fireEvent.keyDown(pi, { key: "Escape" });
-        expect(getState().agentPaletteOpen).toBe(false);
+        const search = await screen.findByRole("textbox", { name: "Search agent sessions" });
+        const yolo = screen.getByRole("radio", { name: "YOLO" });
+        yolo.focus();
+        fireEvent.keyDown(yolo, { key: "Enter" });
+        expect(getState().agentsBySession["sess-project"]).toEqual([]);
+        await user.click(yolo);
+        expect(screen.getByRole("button", { name: "+ new Pi in YOLO mode" })).toBeDisabled();
+        fireEvent.keyDown(search, { key: "ArrowDown" });
+        expect(screen.getByRole("button", { name: "+ new Hermes in YOLO mode" })).toHaveClass("sel");
+        fireEvent.keyDown(search, { key: "ArrowDown" });
+        expect(await screen.findByRole("button", { name: "Fix terminal tabs in YOLO mode" })).toHaveClass("sel");
     });
 
-    it("reports and retries CLI detection failures", async () => {
+    it("filters sessions and opens the selected row with Enter", async () => {
+        const user = userEvent.setup();
+        render(<AgentPalette />);
+        const search = await screen.findByRole("textbox", { name: "Search agent sessions" });
+        await screen.findByRole("button", { name: "Review picker in Normal mode" });
+
+        await user.type(search, "terminal tabs");
+        expect(screen.queryByRole("button", { name: "+ new Codex in Normal mode" })).not.toBeInTheDocument();
+        fireEvent.keyDown(search, { key: "Enter" });
+
+        const id = getState().agentsBySession["sess-project"][0];
+        expect(getState().agents[id]).toMatchObject({ resumeId: "codex-old", title: "Fix terminal tabs" });
+    });
+
+    it("dismisses with Escape and retries CLI detection failures", async () => {
         const user = userEvent.setup();
         mocks.available
             .mockRejectedValueOnce(new Error("missing PATH"))
@@ -126,7 +164,9 @@ describe("AgentPalette", () => {
         render(<AgentPalette />);
 
         expect(await screen.findByText(/missing PATH/)).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Try again" }));
-        await waitFor(() => expect(screen.getByRole("button", { name: "Start Codex in Normal mode" })).toBeInTheDocument());
+        await user.click(screen.getByRole("button", { name: "try again" }));
+        await waitFor(() => expect(screen.getByRole("button", { name: "+ new Codex in Normal mode" })).toBeInTheDocument());
+        fireEvent.keyDown(screen.getByRole("textbox", { name: "Search agent sessions" }), { key: "Escape" });
+        expect(getState().agentPaletteOpen).toBe(false);
     });
 });
