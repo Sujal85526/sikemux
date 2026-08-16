@@ -111,7 +111,6 @@ export function RundeckJobPalette() {
                         onKeyDown={onKeyDown}
                         spellCheck={false}
                     />
-                    <span className="picker-hint">esc</span>
                 </div>
 
                 <div className="picker-list" ref={listRef}>

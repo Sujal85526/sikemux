@@ -117,11 +117,6 @@ export function CommandPalette({
                         onKeyDown={onKeyDown}
                         spellCheck={false}
                     />
-                    <span className="picker-hints" aria-hidden="true">
-                        <span className="picker-hint">↑↓ nav</span>
-                        <span className="picker-hint">⏎ run</span>
-                        <span className="picker-hint">esc</span>
-                    </span>
                 </div>
 
                 <div className="picker-list command-palette-list" ref={listRef} role="listbox" aria-label="Commands">

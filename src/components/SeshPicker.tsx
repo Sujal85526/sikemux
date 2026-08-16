@@ -223,11 +223,6 @@ export function SeshPicker() {
                             <IconFolder size={14} />
                         </button>
                     )}
-                    <span className="picker-hints">
-                        <span className="picker-hint">↑↓ nav</span>
-                        <span className="picker-hint">⏎ open</span>
-                        <span className="picker-hint">esc</span>
-                    </span>
                 </div>
 
                 <div className="picker-list">

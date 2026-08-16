@@ -110,11 +110,6 @@ export function BrunoEnvPalette() {
                         onKeyDown={onKeyDown}
                         spellCheck={false}
                     />
-                    <span className="picker-hints">
-                        <span className="picker-hint">↑↓ nav</span>
-                        <span className="picker-hint">⏎ select</span>
-                        <span className="picker-hint">esc</span>
-                    </span>
                 </div>
 
                 <div className="picker-list" ref={listRef}>

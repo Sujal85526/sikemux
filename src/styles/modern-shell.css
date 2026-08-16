@@ -850,7 +850,7 @@ textarea,
     border-radius: var(--radius-sm);
 }
 
-.shell :where(.rnd-btn-sm, .git-kbd, .panel-akbd, .picker-hint) {
+.shell :where(.rnd-btn-sm, .git-kbd, .panel-akbd) {
     border-radius: var(--radius-chip) !important;
 }
 
@@ -891,7 +891,6 @@ textarea,
         .settings-logo-mark,
         .picker,
         .picker-item,
-        .picker-hint,
         .env-dd-btn,
         .env-dd-menu,
         .env-dd-item,

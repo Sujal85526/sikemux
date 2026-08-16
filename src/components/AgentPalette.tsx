@@ -202,11 +202,6 @@ export function AgentPalette() {
                         </span>
                         <span className="yolo-label">{mode === YOLO ? "yolo" : "safe"}</span>
                     </button>
-                    <span className="picker-hints" aria-hidden="true">
-                        <span className="picker-hint">↑↓ nav</span>
-                        <span className="picker-hint">⏎ open</span>
-                        <span className="picker-hint">esc</span>
-                    </span>
                 </div>
 
                 <div className="picker-list">
