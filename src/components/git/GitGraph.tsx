@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GitCommit } from "../../api/git";
+import { EmptyState } from "../Panel";
 
 const ROW_H = 30;
 const LANE_W = 14; // horizontal gap between lanes
@@ -282,7 +283,7 @@ export function GitGraph({
         if (focused) selRef.current?.scrollIntoView({ block: "nearest" });
     }, [selectedIndex, focused]);
 
-    if (commits.length === 0) return <div className="git-empty">no commits</div>;
+    if (commits.length === 0) return <EmptyState message="no commits" />;
 
     return (
         <div className="git-graph" style={{ position: "relative" }} ref={wrapRef}>

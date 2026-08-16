@@ -26,11 +26,7 @@
 }
 
 .git-commit-panel {
-    display: flex;
-    flex-direction: column;
     flex: 0 0 auto;
-    border-bottom: 1px solid var(--line);
-    background: transparent;
 }
 .git-cp-headfocus {
     display: inline-flex;

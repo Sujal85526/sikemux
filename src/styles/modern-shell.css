@@ -730,3 +730,43 @@ textarea,
         animation: none;
     }
 }
+
+/* ---- Shell gutters -------------------------------------------------------
+ * The rails and the stage used to sit flush against each other and against the
+ * window edge, divided only by 1px borders. They are separate surfaces now:
+ * a real gutter runs between them and around the frame, and the shell
+ * background (and the desktop, at reduced window opacity) shows through it.
+ */
+.body {
+    gap: var(--space-2);
+    padding: var(--space-2);
+}
+
+.side-rail,
+.agent-rail,
+.stage {
+    border: 1px solid color-mix(in srgb, var(--line) 76%, white 4%);
+    border-radius: var(--radius-md);
+}
+
+/* The gutter replaces the dividing borders the rails used to carry. */
+.side-rail {
+    border-right-width: 1px;
+}
+.agent-rail {
+    border-left-width: 1px;
+}
+
+/* Panes are inset to 0 inside the stage, so the stage has to do the clipping
+ * for its rounded corners to survive. */
+.stage {
+    overflow: hidden;
+    background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
+}
+
+/* Splits get the same gutter. Each pane insets by half of it, so neighbours
+ * end up a full gutter apart while the outer edges stay tight to the stage. */
+.pane {
+    inset: 3px;
+    border-radius: var(--radius-sm);
+}

@@ -1225,15 +1225,15 @@ export function GitPane({
             </div>
             <div className="git-body">
                 <div className="git-left">
-                    <div className="git-commit-panel">
-                        <div className="git-panel-head">
+                    <div className="panel panel-block git-commit-panel">
+                        <div className="panel-head">
                             <button
                                 type="button"
                                 className="git-cp-headfocus"
                                 onClick={() => commitInputRef.current?.focus()}
                                 title="Focus commit message">
-                                <span className="git-panel-n">1</span>
-                                <span className="git-panel-label">Commit</span>
+                                <span className="panel-index">1</span>
+                                <span className="panel-label">Commit</span>
                             </button>
                             <div className="git-cp-head-actions">
                                 <GitSelect
