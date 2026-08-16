@@ -42,7 +42,6 @@ function deriveRole(w: Window): WindowRole {
 
 const VERSION = 7;
 const MIN_SUPPORTED_VERSION = 3;
-const NOTIFICATION_DEFAULT_MIGRATION_VERSION = 6;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const RETRY_MS = 1500;
 let lastSaved = "";
@@ -84,7 +83,6 @@ const PERSISTED_KEYS = [
     "rundeck",
     "restoreAgentTabs",
     "autoResumeAgents",
-    "notificationPreferences",
     "railDensity",
     "onboardingComplete",
     "lastSeenVersion",
@@ -135,7 +133,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         rundeck: s.rundeck,
         restoreAgentTabs: s.restoreAgentTabs,
         autoResumeAgents: s.autoResumeAgents,
-        notificationPreferences: s.notificationPreferences,
         railDensity: s.railDensity,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
@@ -168,34 +165,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isThemeId(value: string, customThemes: unknown): boolean {
     if (isBuiltinTheme(value)) return true;
     return Array.isArray(customThemes) && customThemes.some((theme) => isTheme(theme) && theme.id === value);
-}
-
-function normaliseNotificationPreferences(
-    value: unknown,
-    fallback: StoreState["notificationPreferences"],
-    enableByDefault = false,
-): StoreState["notificationPreferences"] {
-    if (!isRecord(value)) return fallback;
-    const time = (candidate: unknown, current: string) =>
-        typeof candidate === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(candidate) ? candidate : current;
-    const mutedAgentTypes = Array.isArray(value.mutedAgentTypes)
-        ? value.mutedAgentTypes.filter((v): v is AgentType => AGENT_TYPES.has(v as AgentType))
-        : fallback.mutedAgentTypes;
-    return {
-        // v5 briefly shipped agent alerts disabled by default, making the
-        // feature completely silent until users found the setting. Migrate
-        // that development schema once; v6+ preserves an explicit opt-out.
-        enabled: enableByDefault ? true : typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
-        onlyWhenUnfocused: typeof value.onlyWhenUnfocused === "boolean" ? value.onlyWhenUnfocused : fallback.onlyWhenUnfocused,
-        sounds: typeof value.sounds === "boolean" ? value.sounds : fallback.sounds,
-        soundStyle: value.soundStyle === "soft" || value.soundStyle === "bright" ? value.soundStyle : fallback.soundStyle,
-        delayMs:
-            typeof value.delayMs === "number" && Number.isFinite(value.delayMs) ? Math.min(10_000, Math.max(0, value.delayMs)) : fallback.delayMs,
-        quietHoursEnabled: typeof value.quietHoursEnabled === "boolean" ? value.quietHoursEnabled : fallback.quietHoursEnabled,
-        quietHoursStart: time(value.quietHoursStart, fallback.quietHoursStart),
-        quietHoursEnd: time(value.quietHoursEnd, fallback.quietHoursEnd),
-        mutedAgentTypes,
-    };
 }
 
 const COMMAND_CONTEXTS = new Set<CommandContext>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
@@ -760,11 +729,6 @@ export function applyHydrate(raw: string): HydrationResult {
         },
         restoreAgentTabs,
         autoResumeAgents,
-        notificationPreferences: normaliseNotificationPreferences(
-            prefs.notificationPreferences,
-            cur.notificationPreferences,
-            decoded.version < NOTIFICATION_DEFAULT_MIGRATION_VERSION,
-        ),
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"

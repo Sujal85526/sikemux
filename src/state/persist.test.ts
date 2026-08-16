@@ -312,20 +312,6 @@ describe("frontend persistence", () => {
         expect(getState().agents["claude-agent"].startup).toMatch(/^claude /);
     });
 
-    it("migrates the silent v5 notification default once and preserves v6+ opt-outs", async () => {
-        invoke.mockResolvedValue(undefined);
-        expect(await flushPersist()).toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        saved.version = 5;
-        saved.prefs.notificationPreferences.enabled = false;
-        applyHydrate(JSON.stringify(saved));
-        expect(getState().notificationPreferences.enabled).toBe(true);
-
-        saved.version = 6;
-        applyHydrate(JSON.stringify(saved));
-        expect(getState().notificationPreferences.enabled).toBe(false);
-    });
-
     it("writes v7 item envelopes and migrates bounded v6 editor views", async () => {
         const sid = getState().activeSessionId;
         const window = getState().windows[getState().sessions[sid].activeWindowId];

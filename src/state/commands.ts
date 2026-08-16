@@ -2116,8 +2116,6 @@ export function deleteProviderProfile(id: string): void {
     });
 }
 export const setUpdateChannel = (value: "stable" | "preview"): void => setState({ updateChannel: value, pendingUpdate: null });
-export const patchNotificationPreferences = (patch: Partial<import("./types").NotificationPreferences>): void =>
-    setState((s) => ({ notificationPreferences: { ...s.notificationPreferences, ...patch } }));
 
 export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));

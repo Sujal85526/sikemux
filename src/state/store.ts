@@ -25,7 +25,6 @@ import type {
     ProviderProfileSelection,
     RecentEntry,
     RundeckSettings,
-    NotificationPreferences,
     RailDensity,
     RundeckView,
     Session,
@@ -69,7 +68,6 @@ export interface DomainState {
     rundeck: RundeckSettings;
     restoreAgentTabs: boolean;
     autoResumeAgents: boolean;
-    notificationPreferences: NotificationPreferences;
     railDensity: RailDensity;
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -206,17 +204,6 @@ export const useStore = create<StoreState>(() => {
         },
         restoreAgentTabs: true,
         autoResumeAgents: false,
-        notificationPreferences: {
-            enabled: true,
-            onlyWhenUnfocused: true,
-            sounds: true,
-            soundStyle: "soft",
-            delayMs: 650,
-            quietHoursEnabled: false,
-            quietHoursStart: "22:00",
-            quietHoursEnd: "08:00",
-            mutedAgentTypes: [],
-        },
         railDensity: "comfortable",
         onboardingComplete: false,
         lastSeenVersion: "",

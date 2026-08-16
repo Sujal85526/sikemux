@@ -21,11 +21,10 @@ import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
 import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconRefresh, IconSave, IconTrash } from "./Icons";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
-import { requestAgentNotificationPermission } from "./AgentNotifications";
-import type { AgentProvider, AgentType, ProviderProfile } from "../state/types";
+import type { AgentProvider, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agentLaunch";
 
-type Page = "general" | "appearance" | "keybindings" | "commands" | "agents" | "notifications" | "cli" | "cloud" | "about";
+type Page = "general" | "appearance" | "keybindings" | "commands" | "agents" | "cli" | "cloud" | "about";
 
 const PAGES: { id: Page; name: string; detail: string }[] = [
     { id: "general", name: "General", detail: "Projects and discovery" },
@@ -33,7 +32,6 @@ const PAGES: { id: Page; name: string; detail: string }[] = [
     { id: "keybindings", name: "Keybindings", detail: "Commands and navigation" },
     { id: "commands", name: "Command deck", detail: "Your contextual actions" },
     { id: "agents", name: "Agents", detail: "Profiles and launch safety" },
-    { id: "notifications", name: "Notifications", detail: "Attention without noise" },
     { id: "cli", name: "CLI", detail: "Shell and editor integration" },
     { id: "cloud", name: "Cloud", detail: "Sign-in workspace" },
     { id: "about", name: "About", detail: "Updates and diagnostics" },
@@ -130,8 +128,6 @@ export function SettingsPanel() {
                         {page === "commands" && <CommandsPage />}
 
                         {page === "agents" && <AgentsPage />}
-
-                        {page === "notifications" && <NotificationsPage />}
 
                         {page === "cli" && <CliPage />}
 
@@ -446,128 +442,6 @@ function AgentsPage() {
                     <option value="comfortable">comfortable</option>
                     <option value="compact">compact</option>
                 </select>
-            </SettingsSection>
-        </SettingsPage>
-    );
-}
-
-function NotificationsPage() {
-    const prefs = useStore((s) => s.notificationPreferences);
-    const patch = cmd.patchNotificationPreferences;
-    return (
-        <SettingsPage name="notifications" deck="Agent attention, delayed just enough to avoid noisy state flicker.">
-            <SettingsSection title="Delivery" sub="Blocked and completed signals are delayed and cancelled if the agent starts working again.">
-                <ToggleSetting
-                    label="Agent notifications"
-                    detail="Show in-app alerts. Native banners are added when macOS permission is granted."
-                    checked={prefs.enabled}
-                    onChange={(enabled) => {
-                        if (!enabled) patch({ enabled: false });
-                        else {
-                            patch({ enabled: true });
-                            void requestAgentNotificationPermission()
-                                .then((granted) => {
-                                    if (!granted) notify("info", "In-app alerts are on; native notification permission was not granted");
-                                })
-                                .catch(reportError("notifications"));
-                        }
-                    }}
-                />
-                <ToggleSetting
-                    label="Native banners only when unfocused"
-                    detail="In-app completion alerts remain visible while you are using Sikemux."
-                    checked={prefs.onlyWhenUnfocused}
-                    onChange={(onlyWhenUnfocused) => patch({ onlyWhenUnfocused })}
-                />
-                <div className="settings-actions">
-                    <button
-                        className="settings-btn"
-                        type="button"
-                        onClick={() =>
-                            void requestAgentNotificationPermission()
-                                .then((granted) =>
-                                    notify(
-                                        granted ? "success" : "info",
-                                        granted ? "Native agent banners enabled" : "macOS did not grant native banners; in-app alerts remain enabled",
-                                    ),
-                                )
-                                .catch(reportError("notifications"))
-                        }>
-                        Enable native banners…
-                    </button>
-                    <small>In-app alerts do not require macOS permission.</small>
-                </div>
-                <ToggleSetting
-                    label="Signal sounds"
-                    detail="Short synthesized tones; no external audio files or network fetches."
-                    checked={prefs.sounds}
-                    onChange={(sounds) => patch({ sounds })}
-                />
-                <label className="settings-field-label" htmlFor="notification-sound-style">
-                    signal tone
-                </label>
-                <select
-                    id="notification-sound-style"
-                    className="settings-input"
-                    value={prefs.soundStyle}
-                    disabled={!prefs.sounds}
-                    onChange={(event) => patch({ soundStyle: event.target.value as "soft" | "bright" })}>
-                    <option value="soft">soft · calm sine</option>
-                    <option value="bright">bright · sharper triangle</option>
-                </select>
-                <label className="settings-field-label">delivery delay · {prefs.delayMs} ms</label>
-                <input type="range" min="0" max="5000" step="50" value={prefs.delayMs} onChange={(e) => patch({ delayMs: Number(e.target.value) })} />
-            </SettingsSection>
-            <SettingsSection title="Quiet hours" sub="Cross-midnight ranges are supported and evaluated in local time.">
-                <ToggleSetting
-                    label="Enable quiet hours"
-                    detail="Silence sounds and native notifications in this window."
-                    checked={prefs.quietHoursEnabled}
-                    onChange={(quietHoursEnabled) => patch({ quietHoursEnabled })}
-                />
-                <div className="quiet-hours">
-                    <input
-                        className="settings-input"
-                        type="time"
-                        value={prefs.quietHoursStart}
-                        onChange={(e) => patch({ quietHoursStart: e.target.value })}
-                    />
-                    <span>to</span>
-                    <input
-                        className="settings-input"
-                        type="time"
-                        value={prefs.quietHoursEnd}
-                        onChange={(e) => patch({ quietHoursEnd: e.target.value })}
-                    />
-                </div>
-            </SettingsSection>
-            <SettingsSection title="Agent types" sub="Mute individual agent integrations while keeping notifications enabled for the others.">
-                {(
-                    [
-                        ["claude", "Claude"],
-                        ["codex", "Codex"],
-                        ["hermes", "Hermes"],
-                        ["pi", "Pi"],
-                        ["opencode", "OpenCode"],
-                    ] as const satisfies readonly (readonly [AgentType, string])[]
-                ).map(([type, label]) => {
-                    const muted = prefs.mutedAgentTypes.includes(type);
-                    return (
-                        <ToggleSetting
-                            key={type}
-                            label={`Mute ${label}`}
-                            detail={`Suppress blocked and completed notifications from ${label} agents.`}
-                            checked={muted}
-                            onChange={(nextMuted) =>
-                                patch({
-                                    mutedAgentTypes: nextMuted
-                                        ? [...prefs.mutedAgentTypes, type]
-                                        : prefs.mutedAgentTypes.filter((candidate) => candidate !== type),
-                                })
-                            }
-                        />
-                    );
-                })}
             </SettingsSection>
         </SettingsPage>
     );

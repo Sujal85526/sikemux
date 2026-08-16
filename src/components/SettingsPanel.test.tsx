@@ -79,27 +79,6 @@ describe("SettingsPanel keybindings", () => {
         expect(getState().providerProfiles.find((profile) => profile.id === "builtin-codex")?.executablePath).toBe("/opt/codex/bin/codex");
     });
 
-    it("mutes and unmutes notifications by agent type", async () => {
-        const user = userEvent.setup();
-        render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "NotificationsAttention without noise" }));
-
-        expect(screen.getByRole("checkbox", { name: /Agent notifications/ })).toBeChecked();
-        expect(screen.getByRole("button", { name: "Enable native banners…" })).toBeInTheDocument();
-
-        const claude = screen.getByRole("checkbox", { name: /Mute Claude/ });
-        const codex = screen.getByRole("checkbox", { name: /Mute Codex/ });
-        await user.click(claude);
-        await user.click(codex);
-        expect(getState().notificationPreferences.mutedAgentTypes).toEqual(["claude", "codex"]);
-
-        await user.click(claude);
-        expect(getState().notificationPreferences.mutedAgentTypes).toEqual(["codex"]);
-
-        await user.selectOptions(screen.getByRole("combobox", { name: "signal tone" }), "bright");
-        expect(getState().notificationPreferences.soundStyle).toBe("bright");
-    });
-
     it("configures separate themes for system light and dark appearances", async () => {
         const user = userEvent.setup();
         render(<SettingsPanel />);

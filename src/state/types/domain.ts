@@ -160,18 +160,6 @@ export interface PtyContext {
     shellIntegration?: boolean;
 }
 
-export interface NotificationPreferences {
-    enabled: boolean;
-    onlyWhenUnfocused: boolean;
-    sounds: boolean;
-    soundStyle: "soft" | "bright";
-    delayMs: number;
-    quietHoursEnabled: boolean;
-    quietHoursStart: string;
-    quietHoursEnd: string;
-    mutedAgentTypes: AgentType[];
-}
-
 export type RailDensity = "comfortable" | "compact";
 
 /** A resolved Rundeck deploy location for a service: a project plus an env subfolder. */

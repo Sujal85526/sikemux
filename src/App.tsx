@@ -20,7 +20,6 @@ import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./components/ExperienceOverlays";
 import { TerminalPane } from "./terminal/TerminalPane";
-import { AgentNotifications } from "./components/AgentNotifications";
 import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
@@ -748,7 +747,6 @@ export default function App() {
         <div className="shell">
             <CliOpenBridge />
             <AgentSessionSync />
-            <AgentNotifications />
             <TopBar />
             <div className="body">
                 {leftOpen && <SideRail />}

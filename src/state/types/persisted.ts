@@ -5,7 +5,6 @@ import type {
     Agent,
     AgentPermissionMode,
     AwsService,
-    NotificationPreferences,
     PinnedProject,
     ProjectRoot,
     ProviderProfile,
@@ -77,7 +76,6 @@ export interface PersistedPrefs {
     rundeck?: RundeckSettings;
     restoreAgentTabs?: boolean;
     autoResumeAgents?: boolean;
-    notificationPreferences?: NotificationPreferences;
     railDensity?: RailDensity;
     onboardingComplete?: boolean;
     lastSeenVersion?: string;
