@@ -978,8 +978,11 @@ textarea,
     background: color-mix(in srgb, var(--pane) var(--surface-solidity), transparent);
 }
 
-/* The shell keeps the darkest tone so the gutter always reads as a recess. */
+/* The shell keeps the darkest tone so the gutter always reads as a recess,
+ * and carries the top edge of the frame so the gutter runs all the way round
+ * rather than stopping where the bar meets the window. */
 .shell {
+    padding-top: var(--space-3);
     background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
