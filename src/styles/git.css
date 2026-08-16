@@ -18,7 +18,11 @@
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    /* The column is a fixed height that the panels divide; it must not scroll,
+       or the growing log simply pushes the panels above it off screen. Each
+       panel's own body does the scrolling. */
+    min-height: 0;
+    overflow: hidden;
     border-right: 1px solid var(--line);
 }
 
