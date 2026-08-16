@@ -240,10 +240,10 @@
     gap: 6px;
     flex: 0 0 auto;
     width: 100%;
-    height: 41px;
-    padding: 0 10px;
+    height: 40px;
+    padding: 0 var(--gutter-row);
     border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent), transparent);
+    background: transparent;
     overflow: hidden;
 }
 .git-tb-status {
