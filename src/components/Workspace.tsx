@@ -12,8 +12,8 @@ import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentIcon, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
 import { renderWorkbenchItem } from "../workbench/renderers";
 
-const AGENT_TABS_H = 32;
-const TERM_TABS_H = 32;
+const AGENT_TABS_H = 28;
+const TERM_TABS_H = 28;
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;

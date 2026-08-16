@@ -51,7 +51,7 @@ describe("workspace tab bars", () => {
 
         expect(screen.getByRole("tablist")).toBeInTheDocument();
         expect(screen.getByTitle("New terminal — ⌥N")).toBeInTheDocument();
-        expect(container.querySelector(".window-layer.visible")).toHaveStyle({ top: "32px" });
+        expect(container.querySelector(".window-layer.visible")).toHaveStyle({ top: "28px" });
     });
 
     it("keeps the agent tab bar and new-agent action visible with one agent", () => {
@@ -62,7 +62,7 @@ describe("workspace tab bars", () => {
         expect(screen.getByRole("tablist")).toBeInTheDocument();
         const addAgent = screen.getByTitle("New agent — ⌥N");
         expect(addAgent).toBeInTheDocument();
-        expect(container.querySelector(".window-layer.visible .pane-cell")).toHaveStyle({ top: "32px", height: "calc(100% - 32px)" });
+        expect(container.querySelector(".window-layer.visible .pane-cell")).toHaveStyle({ top: "28px", height: "calc(100% - 28px)" });
 
         fireEvent.click(addAgent);
         expect(getState().agentPaletteOpen).toBe(true);
