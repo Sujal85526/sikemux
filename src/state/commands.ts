@@ -2061,9 +2061,7 @@ export function setWindowBlur(v: number): void {
 
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
-export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value, ...(!value ? { autoResumeAgents: false } : {}) });
-export const setAutoResumeAgents = (value: boolean): void =>
-    setState({ autoResumeAgents: value, restoreAgentTabs: value ? true : getState().restoreAgentTabs });
+export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value });
 export const setRailDensity = (value: import("./types").RailDensity): void => setState({ railDensity: value });
 export const setDefaultAgentPermissionMode = (value: import("./types").AgentPermissionMode): void =>
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });

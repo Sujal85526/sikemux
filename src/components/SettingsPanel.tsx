@@ -276,7 +276,6 @@ function ToggleSetting({
 
 function AgentsPage() {
     const restore = useStore((s) => s.restoreAgentTabs);
-    const auto = useStore((s) => s.autoResumeAgents);
     const density = useStore((s) => s.railDensity);
     const profiles = useStore((s) => s.providerProfiles);
     const selectedProfiles = useStore((s) => s.selectedProviderProfileIds);
@@ -422,16 +421,9 @@ function AgentsPage() {
                 sub="Only confirmed native agent session IDs are saved. Raw startup commands and terminal evidence never touch disk.">
                 <ToggleSetting
                     label="Restore agent tabs"
-                    detail="Bring resumable agent tabs back when Sikemux starts."
+                    detail="Bring resumable agent tabs back and start them when Sikemux opens."
                     checked={restore}
                     onChange={cmd.setRestoreAgentTabs}
-                />
-                <ToggleSetting
-                    label="Auto-resume restored agents"
-                    detail="On by default. Turn off to restore tabs inert and resume them by hand."
-                    checked={auto}
-                    disabled={!restore}
-                    onChange={cmd.setAutoResumeAgents}
                 />
             </SettingsSection>
             <SettingsSection title="Rail density" sub="Compact mode fits more sessions while keeping state symbols visible.">

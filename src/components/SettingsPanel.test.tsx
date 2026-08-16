@@ -48,20 +48,18 @@ describe("SettingsPanel keybindings", () => {
         expect(getState().keybindingOverrides).toEqual({});
     });
 
-    it("turning off tab restoration also clears and disables auto-resume", async () => {
+    it("toggles agent tab restoration", async () => {
         const user = userEvent.setup();
-        setState({ restoreAgentTabs: true, autoResumeAgents: true });
+        setState({ restoreAgentTabs: true });
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "AgentsProfiles and launch safety" }));
 
         const restore = screen.getByRole("switch", { name: /Restore agent tabs/ });
-        const autoResume = screen.getByRole("switch", { name: /Auto-resume restored agents/ });
-        expect(autoResume).toBeChecked();
+        expect(restore).toBeChecked();
 
         await user.click(restore);
-        expect(getState()).toMatchObject({ restoreAgentTabs: false, autoResumeAgents: false });
-        expect(autoResume).not.toBeChecked();
-        expect(autoResume).toBeDisabled();
+        expect(getState()).toMatchObject({ restoreAgentTabs: false });
+        expect(restore).not.toBeChecked();
     });
 
     it("persists an explicit launch boundary and non-secret provider path", async () => {

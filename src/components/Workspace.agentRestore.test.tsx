@@ -20,7 +20,7 @@ const initial = getState();
 beforeEach(() => setState(initial, true));
 afterEach(cleanup);
 
-function arrangeRestoredAgents(autoResumeAgents: boolean): void {
+function arrangeRestoredAgents(resumeId: string | undefined): void {
     const state = getState();
     const sessionId = state.activeSessionId;
     const session = state.sessions[sessionId];
@@ -43,26 +43,25 @@ function arrangeRestoredAgents(autoResumeAgents: boolean): void {
                 type: "claude",
                 title: "hidden",
                 startup: "claude --resume hidden-session",
-                resumeId: "hidden-session",
+                resumeId,
                 launchState: "live",
             },
         },
         agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-visible", "agent-hidden"] },
-        autoResumeAgents,
     });
 }
 
 describe("restored agent lifecycle", () => {
-    it("spawns a hidden restored agent when auto-resume is enabled", () => {
-        arrangeRestoredAgents(true);
+    it("spawns a hidden restored agent that has a session to resume", () => {
+        arrangeRestoredAgents("hidden-session");
         render(<Workspace />);
 
         expect(screen.getByTestId("terminal-agent-hidden")).toHaveAttribute("data-visible", "false");
         expect(screen.getByTestId("terminal-agent-hidden")).toHaveAttribute("data-spawn-when", "true");
     });
 
-    it("leaves a hidden restored agent inert when auto-resume is disabled", () => {
-        arrangeRestoredAgents(false);
+    it("leaves a hidden agent with nothing to resume inert until it is shown", () => {
+        arrangeRestoredAgents(undefined);
         render(<Workspace />);
 
         expect(screen.getByTestId("terminal-agent-hidden")).toHaveAttribute("data-spawn-when", "false");

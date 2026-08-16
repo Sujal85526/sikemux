@@ -82,7 +82,6 @@ const PERSISTED_KEYS = [
     "zenMode",
     "rundeck",
     "restoreAgentTabs",
-    "autoResumeAgents",
     "railDensity",
     "onboardingComplete",
     "lastSeenVersion",
@@ -132,7 +131,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         zenMode: s.zenMode,
         rundeck: s.rundeck,
         restoreAgentTabs: s.restoreAgentTabs,
-        autoResumeAgents: s.autoResumeAgents,
         railDensity: s.railDensity,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
@@ -582,7 +580,6 @@ export function applyHydrate(raw: string): HydrationResult {
     const cur = getState();
     const providerProfiles = normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
-    const autoResumeAgents = typeof prefs.autoResumeAgents === "boolean" ? prefs.autoResumeAgents : true;
     const rawAgents = isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {};
     const claimedResumeIds = new Set<string>();
     if (restoreAgentTabs) {
@@ -616,13 +613,13 @@ export function applyHydrate(raw: string): HydrationResult {
                         model: saved.model,
                         effort: saved.effort,
                     }),
-                    launchState: autoResumeAgents ? "live" : "dormant",
+                    launchState: "live",
                 };
                 agentsBySession[sid].push(saved.id);
             }
         }
     }
-    // Restored agent tabs are inert by default. Startup is rebuilt from the
+    // Startup is rebuilt from the
     // trusted agent type/resume id pair above and never read from disk.
     for (const sid of Object.keys(sessions)) {
         const session = sessions[sid];
@@ -719,7 +716,6 @@ export function applyHydrate(raw: string): HydrationResult {
             prodEnvs,
         },
         restoreAgentTabs,
-        autoResumeAgents,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"

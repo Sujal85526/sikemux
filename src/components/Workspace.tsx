@@ -11,8 +11,8 @@ import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentIcon, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
 import { renderWorkbenchItem } from "../workbench/renderers";
 
-const AGENT_TABS_H = 28;
-const TERM_TABS_H = 28;
+const AGENT_TABS_H = 34;
+const TERM_TABS_H = 34;
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
@@ -226,7 +226,6 @@ const AgentLayer = memo(function AgentLayer({
     visible: boolean;
     tabsShown: boolean;
 }) {
-    const autoResumeAgents = useStore((s) => s.autoResumeAgents);
     return (
         <div className={`window-layer${visible ? " visible" : ""}`}>
             <div
@@ -241,9 +240,9 @@ const AgentLayer = memo(function AgentLayer({
                     {agent.launchState === "dormant" ? (
                         <div className="agent-dormant" role="group" aria-label={`${agent.title} is ready to resume`}>
                             <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
-                            <span className="agent-dormant-kicker">restored safely</span>
+                            <span className="agent-dormant-kicker">imported</span>
                             <strong>{agent.title}</strong>
-                            <span>Auto-resume is off, so this tab was restored inert. Resume it when you are ready.</span>
+                            <span>Agents from an imported session stay inert until you start them yourself.</span>
                             <button type="button" onClick={() => cmd.resumeAgent(agent.id)}>
                                 Resume {agent.type}
                             </button>
@@ -255,7 +254,7 @@ const AgentLayer = memo(function AgentLayer({
                             directCommand={agent.directCommand}
                             active={visible}
                             visible={visible}
-                            spawnWhen={visible || (autoResumeAgents && !!agent.resumeId)}
+                            spawnWhen={visible || !!agent.resumeId}
                             context={{
                                 sessionId: session.id,
                                 sessionName: session.name,

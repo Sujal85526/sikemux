@@ -67,7 +67,6 @@ export interface DomainState {
     zenMode: boolean;
     rundeck: RundeckSettings;
     restoreAgentTabs: boolean;
-    autoResumeAgents: boolean;
     railDensity: RailDensity;
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -203,7 +202,6 @@ export const useStore = create<StoreState>(() => {
             prodEnvs: ["prod", "production"],
         },
         restoreAgentTabs: true,
-        autoResumeAgents: true,
         railDensity: "comfortable",
         onboardingComplete: false,
         lastSeenVersion: "",

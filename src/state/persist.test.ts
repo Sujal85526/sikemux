@@ -207,29 +207,6 @@ describe("frontend persistence", () => {
         expect(getState().sessions[sid]).toMatchObject({ view: "agent", activeAgentId: agent.id });
     });
 
-    it("restores tabs inert when auto-resume is turned off", async () => {
-        const sid = getState().activeSessionId;
-        const agent = {
-            id: "agent-inert",
-            type: "codex" as const,
-            title: "held back",
-            startup: "codex resume session-456",
-            resumeId: "session-456",
-            launchState: "live" as const,
-        };
-        setState((s) => ({
-            autoResumeAgents: false,
-            sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", view: "agent", activeAgentId: agent.id } },
-            agents: { [agent.id]: agent },
-            agentsBySession: { ...s.agentsBySession, [sid]: [agent.id] },
-        }));
-        invoke.mockResolvedValue(undefined);
-        expect(await flushPersist()).toBe(true);
-
-        applyHydrate(invoke.mock.calls[0][1].data as string);
-        expect(getState().agents[agent.id]).toMatchObject({ launchState: "dormant" });
-    });
-
     it("persists non-secret provider profiles and defensively hydrates selections", async () => {
         setState({
             providerProfiles: [

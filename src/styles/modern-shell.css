@@ -376,8 +376,8 @@ textarea:focus-visible {
 }
 
 .agent-usage {
-    margin: 12px 12px 14px;
-    padding: 12px;
+    margin: var(--space-3) var(--gutter-rail) var(--space-2);
+    padding: var(--space-2) var(--space-3);
     border: 1px solid color-mix(in srgb, var(--line) 88%, white 4%);
     border-bottom: 1px solid color-mix(in srgb, var(--line) 88%, white 4%);
     border-radius: var(--radius-md);
@@ -404,24 +404,24 @@ textarea:focus-visible {
 }
 
 .agent-group {
-    margin-inline: var(--gutter-rail);
+    margin-inline: 0;
 }
 
 .agent-row-wrap {
-    margin: 2px 0;
+    margin: 1px 0;
 }
 
 .agent-row {
-    height: 39px;
-    padding: 0 12px;
-    gap: 11px;
+    height: 32px;
+    padding: 0 var(--space-2);
+    gap: var(--space-2);
     border-radius: var(--radius-sm);
     font-family: var(--ui);
     color: var(--ink-dim);
 }
 
 .agent-row.recent {
-    height: 36px;
+    height: 30px;
 }
 
 .agent-row:hover {
@@ -442,19 +442,19 @@ textarea:focus-visible {
 }
 
 .agent-row.active::before {
-    top: 9px;
-    bottom: 9px;
-    width: 3px;
+    top: 7px;
+    bottom: 7px;
+    width: 2px;
     border-radius: 2px;
 }
 
 .agent-row .agent-glyph {
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
-    flex: 0 0 24px;
-    border-radius: 6px;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    border-radius: var(--radius-xs);
     background: color-mix(
         in srgb,
         currentColor calc(var(--window-opacity, 1) * 10%),
@@ -520,23 +520,39 @@ textarea:focus-visible {
     align-items: center;
 }
 
+/* Every tab is a surface, not just the active one — an unselected tab with no
+ * edge reads as loose text sitting on the bar. */
 .tabbar.v-agent .tab-wrap,
 .tabbar.v-editor .tab-wrap {
-    height: 22px;
+    height: 26px;
+    padding-right: var(--space-1);
     border-right: 0;
     border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 55%), transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
     overflow: hidden;
 }
 
 .tabbar.v-agent .tab-wrap:hover,
 .tabbar.v-editor .tab-wrap:hover {
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 80%), transparent);
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 90%), transparent);
 }
 
 .tabbar.v-agent .tab-wrap.active,
 .tabbar.v-editor .tab-wrap.active {
     background: var(--acc-soft);
     box-shadow: inset 0 0 0 1px var(--acc-line);
+}
+
+/* The close button was flush against the tab's own edge. */
+.tabbar.v-agent .tab-x,
+.tabbar.v-editor .tab-x {
+    border-radius: var(--radius-xs);
+    padding: 2px;
+}
+.tabbar.v-agent .tab-x:hover,
+.tabbar.v-editor .tab-x:hover {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
 .tabbar.v-agent .tab-label {
