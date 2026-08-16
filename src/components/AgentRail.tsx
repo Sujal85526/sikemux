@@ -209,7 +209,7 @@ export function AgentRail() {
 
                 {opens.length > 0 && (
                     <div className="agent-group">
-                        <div className="rail-group-label">Open</div>
+                        <div className="panel-label">Open</div>
                         {opens.map((a) => {
                             const active = session.view === "agent" && a.id === session.activeAgentId;
                             return (
@@ -241,7 +241,7 @@ export function AgentRail() {
 
                 {selectedType && recentDisplay.length > 0 && (
                     <div className="agent-group">
-                        <div className="rail-group-label">Recent</div>
+                        <div className="panel-label">Recent</div>
                         {recentDisplay.map((s) => (
                             <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(selectedType, s.id, s.title)}>
                                 <span className={`agent-glyph ${selectedType}`}>
@@ -327,8 +327,8 @@ function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType;
                 <span className="agent-usage-mark">
                     <AgentIcon type={provider} size={13} />
                 </span>
-                <span className="rail-group-label">Limits</span>
-                <span className="rail-group-rule" />
+                <span className="panel-label">Limits</span>
+                <span className="panel-rule" />
                 {usage.data?.plan && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
                 <Tooltip label={`Refresh ${providerLabel} plan limits`}>
                     <button

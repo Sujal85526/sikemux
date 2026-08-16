@@ -20,6 +20,7 @@ import {
 } from "./Icons";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
+import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 
@@ -259,40 +260,36 @@ export function SideRail() {
         actionTitle?: string;
         emptyText: string;
     }) => (
-        <div className="rail-group">
-            <div className="rail-group-head">
-                <span className="rail-group-label">{label}</span>
-                <span className="rail-group-rule" />
-                {add && (
-                    <span className="rail-group-actions">
-                        {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
-                        {action && (
-                            <Tooltip label={actionTitle}>
-                                <button className="rail-group-add" onClick={action} aria-label={actionTitle} type="button">
-                                    <IconPencil size={11} />
+        <Panel variant="group">
+            <PanelHeader
+                label={label}
+                rule
+                extra={
+                    add && (
+                        <span className="rail-group-actions">
+                            {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
+                            {action && (
+                                <Tooltip label={actionTitle}>
+                                    <button className="rail-group-add" onClick={action} aria-label={actionTitle} type="button">
+                                        <IconPencil size={11} />
+                                    </button>
+                                </Tooltip>
+                            )}
+                            <Tooltip label={addTitle}>
+                                <button className="rail-group-add" onClick={add} aria-label={addTitle} type="button">
+                                    <IconPlus size={11} />
                                 </button>
                             </Tooltip>
-                        )}
-                        <Tooltip label={addTitle}>
-                            <button className="rail-group-add" onClick={add} aria-label={addTitle} type="button">
-                                <IconPlus size={11} />
-                            </button>
-                        </Tooltip>
-                    </span>
-                )}
-            </div>
+                        </span>
+                    )
+                }
+            />
             {list.length === 0 ? (
-                add ? (
-                    <button className="rail-group-empty interactive" onClick={add}>
-                        {emptyText}
-                    </button>
-                ) : (
-                    <div className="rail-group-empty">{emptyText}</div>
-                )
+                <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
             ) : (
                 list.map(renderSession)
             )}
-        </div>
+        </Panel>
     );
 
     return (

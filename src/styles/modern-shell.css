@@ -133,15 +133,16 @@ textarea:focus-visible {
     padding: 10px 10px 14px;
 }
 
-.rail-group {
+.side-rail .panel-group {
     margin-top: 13px;
 }
 
-.rail-group-head {
+.side-rail .panel-head {
     padding: 2px 8px 5px;
 }
 
-.rail-group-label {
+.side-rail .panel-label,
+.agent-rail .panel-label {
     font-family: var(--ui);
     font-size: 11px;
     font-weight: 700;
@@ -165,7 +166,7 @@ textarea:focus-visible {
     font-size: 13.5px;
 }
 
-.rail-group-empty {
+.side-rail .empty-state.inline {
     font-size: 12px;
 }
 
@@ -387,7 +388,7 @@ textarea:focus-visible {
     margin-top: 16px;
 }
 
-.agent-group > .rail-group-label {
+.agent-group > .panel-label {
     display: block;
     padding: 3px 7px 6px;
 }
@@ -617,12 +618,11 @@ textarea,
         .settings-depth,
         .git-toolbar,
         .git-tbtn,
-        .git-hbtn,
+        .panel-abtn,
         .git-dd-btn,
         .git-dd-menu,
         .git-cp-commit,
         .git-commit-input,
-        .git-panel-pill,
         .dlg,
         .dlg-input,
         .dlg-btn,

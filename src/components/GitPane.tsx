@@ -11,7 +11,7 @@ import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
 import { CopyButton } from "./CopyButton";
-import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle, IconWarning } from "./Icons";
+import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle, IconWarning, IconChevron } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitTerminal } from "./git/GitTerminal";
@@ -22,6 +22,7 @@ import { GitSelect } from "./git/GitSelect";
 import { GitToolbarButton } from "./git/GitToolbarButton";
 import { VirtualPanelRows } from "./git/VirtualPanelRows";
 import { SkeletonRows } from "./Skeleton";
+import { EmptyState } from "./Panel";
 import {
     AI_MODEL_STORAGE,
     AI_MODELS,
@@ -1367,10 +1368,12 @@ export function GitPane({
                             (overviewLoading ? (
                                 <SkeletonRows rows={5} label="Loading changed files" />
                             ) : (
-                                <div className={`git-empty${overviewError ? " error" : ""}`}>
-                                    {overviewError && <IconWarning size={11} />}
-                                    <span>{fileEmptyText}</span>
-                                </div>
+                                <EmptyState
+                                    tone={overviewError ? "error" : "neutral"}
+                                    icon={overviewError ? <IconWarning size={14} /> : <IconGit size={14} />}
+                                    title={overviewError ? "Git error" : fileQuery ? "No matches" : "Clean tree"}
+                                    message={fileEmptyText}
+                                />
                             ))}
                         <VirtualPanelRows
                             items={filteredFiles}
@@ -1379,7 +1382,7 @@ export function GitPane({
                             getKey={(f) => f.path}
                             renderRow={(f, i) => (
                                 <div
-                                    className={`git-row${panelFiles && sel.files === i ? " sel" : ""}${isInRange(filesRange, i) ? " ranged" : ""}`}
+                                    className={`panel-row git-row${panelFiles && sel.files === i ? " sel" : ""}${isInRange(filesRange, i) ? " ranged" : ""}`}
                                     onClick={() => {
                                         setPanel("files");
                                         setSel({ ...sel, files: i });
@@ -1413,10 +1416,11 @@ export function GitPane({
                             (overviewLoading ? (
                                 <SkeletonRows rows={5} label="Loading branches" />
                             ) : (
-                                <div className={`git-empty${overviewError ? " error" : ""}`}>
-                                    {overviewError && <IconWarning size={11} />}
-                                    <span>{branchEmptyText}</span>
-                                </div>
+                                <EmptyState
+                                    tone={overviewError ? "error" : "neutral"}
+                                    icon={overviewError ? <IconWarning size={14} /> : undefined}
+                                    message={branchEmptyText}
+                                />
                             ))}
                         <VirtualPanelRows
                             items={filteredBranches}
@@ -1425,7 +1429,7 @@ export function GitPane({
                             getKey={(b) => b.name}
                             renderRow={(b, i) => (
                                 <div
-                                    className={`git-row${panel === "branches" && sel.branches === i ? " sel" : ""}${isInRange(branchesRange, i) ? " ranged" : ""}`}
+                                    className={`panel-row git-row${panel === "branches" && sel.branches === i ? " sel" : ""}${isInRange(branchesRange, i) ? " ranged" : ""}`}
                                     onClick={() => {
                                         setPanel("branches");
                                         setSel({ ...sel, branches: i });
@@ -1460,10 +1464,11 @@ export function GitPane({
                             overviewLoading ? (
                                 <SkeletonRows rows={8} label="Loading commits" />
                             ) : (
-                                <div className={`git-empty${overviewError ? " error" : ""}`}>
-                                    {overviewError && <IconWarning size={11} />}
-                                    <span>{commitEmptyText}</span>
-                                </div>
+                                <EmptyState
+                                    tone={overviewError ? "error" : "neutral"}
+                                    icon={overviewError ? <IconWarning size={14} /> : undefined}
+                                    message={commitEmptyText}
+                                />
                             )
                         ) : (
                             <GitGraph
@@ -1500,30 +1505,38 @@ export function GitPane({
                                 <>
                                     <button
                                         type="button"
-                                        className="git-row git-row-back"
+                                        className="panel-row git-row git-row-back"
                                         onClick={() => setRemoteDrill(null)}
                                         title="Back to remotes (esc)">
-                                        <span className="git-row-back-glyph">←</span>
+                                        <IconChevron size={10} className="git-row-back-glyph" />
                                         <span className="git-path">{remoteDrill}</span>
-                                        <span className="git-row-hint">esc to go back</span>
+                                        <span className="panel-row-hint">esc to go back</span>
                                     </button>
-                                    {filteredRemoteBranches.length === 0 && (
-                                        <div
-                                            className={`git-empty${remoteBranchesRes.status === "error" && !remoteBranchesRes.data ? " error" : ""}`}>
-                                            {remoteBranchesRes.status === "error" && !remoteBranchesRes.data
-                                                ? `x ${remoteBranchesRes.error ?? "failed to load remote branches"}`
-                                                : remoteBranchesRes.status === "loading"
-                                                  ? "loading…"
-                                                  : remotesQuery
-                                                    ? "no matches"
-                                                    : `no branches under ${remoteDrill}/`}
-                                        </div>
-                                    )}
+                                    {filteredRemoteBranches.length === 0 &&
+                                        (remoteBranchesRes.status === "loading" ? (
+                                            <SkeletonRows rows={4} label="Loading remote branches" />
+                                        ) : (
+                                            <EmptyState
+                                                tone={remoteBranchesRes.status === "error" && !remoteBranchesRes.data ? "error" : "neutral"}
+                                                icon={
+                                                    remoteBranchesRes.status === "error" && !remoteBranchesRes.data ? (
+                                                        <IconWarning size={14} />
+                                                    ) : undefined
+                                                }
+                                                message={
+                                                    remoteBranchesRes.status === "error" && !remoteBranchesRes.data
+                                                        ? (remoteBranchesRes.error ?? "failed to load remote branches")
+                                                        : remotesQuery
+                                                          ? "no matches"
+                                                          : `no branches under ${remoteDrill}/`
+                                                }
+                                            />
+                                        ))}
                                     {filteredRemoteBranches.map((rb, i) => {
                                         return (
                                             <div
                                                 key={rb.full_ref}
-                                                className={`git-row${
+                                                className={`panel-row git-row${
                                                     panel === "remotes" && remoteBranchSel === i ? " sel" : ""
                                                 }${isInRange(remotesRange, i) ? " ranged" : ""}${rb.is_head_pointer ? " muted" : ""}`}
                                                 onClick={() => {
@@ -1534,29 +1547,37 @@ export function GitPane({
                                                 <span className="gb-dot remote" />
                                                 <span className="git-path">{rb.name}</span>
                                                 {rb.tracked_by && <span className="git-tracked">↻ {rb.tracked_by}</span>}
-                                                {rb.is_head_pointer && <span className="git-row-hint">HEAD</span>}
+                                                {rb.is_head_pointer && <span className="panel-row-hint">HEAD</span>}
                                             </div>
                                         );
                                     })}
                                 </>
                             ) : (
                                 <>
-                                    {filteredRemotes.length === 0 && (
-                                        <div className={`git-empty${remotesRes.status === "error" && !remotesRes.data ? " error" : ""}`}>
-                                            {remotesRes.status === "error" && !remotesRes.data
-                                                ? `x ${remotesRes.error ?? "failed to load remotes"}`
-                                                : remotesRes.status === "loading"
-                                                  ? "loading…"
-                                                  : remotesQuery
-                                                    ? "no matches"
-                                                    : "no remotes — press n to add"}
-                                        </div>
-                                    )}
+                                    {filteredRemotes.length === 0 &&
+                                        (remotesRes.status === "loading" ? (
+                                            <SkeletonRows rows={3} label="Loading remotes" />
+                                        ) : remotesRes.status === "error" && !remotesRes.data ? (
+                                            <EmptyState
+                                                tone="error"
+                                                icon={<IconWarning size={14} />}
+                                                message={remotesRes.error ?? "failed to load remotes"}
+                                            />
+                                        ) : remotesQuery ? (
+                                            <EmptyState message="no matches" />
+                                        ) : (
+                                            <EmptyState
+                                                icon={<IconGit size={14} />}
+                                                title="No remotes"
+                                                message="This repository has no remotes configured yet."
+                                                action={{ label: "Add remote", onClick: openAddRemotePrompt }}
+                                            />
+                                        ))}
                                     {filteredRemotes.map((r, i) => {
                                         return (
                                             <div
                                                 key={r.name}
-                                                className={`git-row${panel === "remotes" && sel.remotes === i ? " sel" : ""}${isInRange(remotesRange, i) ? " ranged" : ""}`}
+                                                className={`panel-row git-row${panel === "remotes" && sel.remotes === i ? " sel" : ""}${isInRange(remotesRange, i) ? " ranged" : ""}`}
                                                 onClick={() => {
                                                     setPanel("remotes");
                                                     setSel({ ...sel, remotes: i });
@@ -1587,16 +1608,17 @@ export function GitPane({
                             ]}
                             rangeBadge={rangeBadge(stashesRange)}
                             filterBadge={searchByPanel.stashes || null}>
-                            {filteredStashes.length === 0 && (
-                                <div className="git-empty">
-                                    {stashesRes.status === "loading" ? "loading…" : stashQuery ? "no matches" : "no stashes"}
-                                </div>
-                            )}
+                            {filteredStashes.length === 0 &&
+                                (stashesRes.status === "loading" ? (
+                                    <SkeletonRows rows={3} label="Loading stashes" />
+                                ) : (
+                                    <EmptyState message={stashQuery ? "no matches" : "no stashes"} />
+                                ))}
                             {filteredStashes.map((s, i) => {
                                 return (
                                     <div
                                         key={s.refname}
-                                        className={`git-row${panel === "stashes" && sel.stashes === i ? " sel" : ""}${isInRange(stashesRange, i) ? " ranged" : ""}`}
+                                        className={`panel-row git-row${panel === "stashes" && sel.stashes === i ? " sel" : ""}${isInRange(stashesRange, i) ? " ranged" : ""}`}
                                         onClick={() => {
                                             setPanel("stashes");
                                             setSel({ ...sel, stashes: i });
@@ -1604,7 +1626,7 @@ export function GitPane({
                                         onDoubleClick={openStashRowMenu}>
                                         <span className="gc-hash">{s.refname}</span>
                                         <span className="git-path">{s.message}</span>
-                                        {s.branch && <span className="git-row-hint">{s.branch}</span>}
+                                        {s.branch && <span className="panel-row-hint">{s.branch}</span>}
                                     </div>
                                 );
                             })}

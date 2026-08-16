@@ -1,0 +1,306 @@
+/*
+ * Shared panel vocabulary — surface, header, body, row, empty state, badge.
+ *
+ * Lifted out of the git pane, which was the only place that had a real panel
+ * abstraction. Feature stylesheets should now only describe what differs from
+ * this, not restate it.
+ */
+
+/* ---- Surface ------------------------------------------------------------ */
+.panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.panel-block {
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+    background: transparent;
+}
+.panel-block.focused {
+    border-color: var(--acc-line);
+}
+.panel-group {
+    margin-top: 14px;
+}
+.panel-group:first-child {
+    margin-top: 0;
+}
+
+/* ---- Header ------------------------------------------------------------- */
+.panel-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+}
+.panel-block > .panel-head {
+    height: 29px;
+    padding: 0 9px;
+    border-bottom: 1px solid var(--line);
+}
+.panel-group > .panel-head {
+    gap: 8px;
+    padding: 4px 6px 6px 10px;
+}
+
+.panel-index {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--void);
+    background: var(--ink-faint);
+}
+.panel.focused .panel-index {
+    background: var(--acc);
+}
+
+.panel-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    white-space: nowrap;
+}
+.panel-group > .panel-head .panel-label {
+    letter-spacing: 0.2em;
+}
+.panel.focused .panel-label {
+    color: var(--ink);
+}
+
+/* Fills the gap between the label and the actions in the rail grouping. */
+.panel-rule {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--line);
+}
+
+/* ---- Header actions ----------------------------------------------------- */
+.panel-actions {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+.panel.focused .panel-actions,
+.panel:hover .panel-actions {
+    display: flex;
+}
+/* The rail grouping keeps its actions visible; there is no focused state. */
+.panel-group .panel-actions {
+    display: flex;
+    margin-left: 0;
+}
+
+.panel-abtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 18px;
+    padding: 0 7px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    cursor: pointer;
+}
+.panel-abtn:hover:not(:disabled) {
+    color: var(--ink);
+    border-color: var(--acc-line);
+}
+.panel-abtn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.panel-abtn.warn {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 36%, transparent);
+}
+.panel-abtn.danger {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.panel-akbd {
+    font-family: var(--kbd);
+    font-size: 8px;
+    color: var(--ink-faint);
+}
+.panel-abtn:hover:not(:disabled) .panel-akbd {
+    color: var(--ink-dim);
+}
+
+/* ---- Body and rows ------------------------------------------------------ */
+.panel-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.panel-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 22px;
+    padding: 0 9px;
+    font-size: 12px;
+    color: var(--ink-dim);
+}
+.panel-row:hover {
+    background: var(--rail-2);
+}
+.panel-row.sel {
+    background: var(--rail-2);
+    color: var(--ink);
+}
+.panel-row.ranged {
+    background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.panel-row.sel.ranged {
+    background: var(--acc-soft);
+}
+.panel-row.muted {
+    color: var(--ink-faint);
+    cursor: default;
+}
+.panel-row-hint {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--ink-faint);
+}
+
+/* ---- Empty state -------------------------------------------------------- */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 22px 16px;
+    text-align: center;
+    color: var(--ink-faint);
+}
+.empty-state-media {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-bottom: 2px;
+    border-radius: var(--radius-sm);
+    color: var(--ink-dim);
+    background: color-mix(in srgb, var(--ink-faint) 12%, transparent);
+}
+.empty-state-title {
+    font-family: var(--ui);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-dim);
+}
+.empty-state-msg {
+    max-width: 34ch;
+    font-size: 11px;
+    line-height: 1.5;
+}
+.empty-state-action {
+    margin-top: 4px;
+    height: 24px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: var(--ui);
+    font-size: 11.5px;
+    cursor: pointer;
+}
+.empty-state-action:hover {
+    color: var(--ink);
+    border-color: var(--acc-line);
+    background: var(--acc-soft);
+}
+
+.empty-state.tone-error {
+    color: var(--danger);
+}
+.empty-state.tone-error .empty-state-media {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.empty-state.tone-error .empty-state-title {
+    color: var(--danger);
+}
+
+/* One-line form for the rails, where the block form would dwarf its group. */
+.empty-state.inline {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 11px;
+    line-height: 1.45;
+}
+.empty-state.inline svg {
+    flex: none;
+}
+.empty-state.inline.interactive {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+.empty-state.inline.interactive:hover {
+    color: var(--acc);
+    background: var(--acc-soft);
+}
+
+/* ---- Badge -------------------------------------------------------------- */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.badge-neutral {
+    color: var(--ink-faint);
+    background: color-mix(in srgb, var(--ink-faint) 14%, transparent);
+    border-color: color-mix(in srgb, var(--ink-faint) 30%, transparent);
+}
+.badge-accent {
+    color: var(--acc);
+    background: var(--acc-soft);
+    border-color: var(--acc-line);
+}
+.badge-warn {
+    color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 14%, transparent);
+    border-color: color-mix(in srgb, var(--warn) 36%, transparent);
+}
+.badge-danger {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.badge-live {
+    color: var(--live);
+    background: color-mix(in srgb, var(--live) 14%, transparent);
+    border-color: color-mix(in srgb, var(--live) 36%, transparent);
+}

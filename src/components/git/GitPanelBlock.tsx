@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
+import { Badge, Panel, PanelBody, PanelHeader, type PanelAction } from "../Panel";
 
-export interface PanelAction {
-    key?: string;
-    label: string;
-    onClick: () => void;
-    tone?: "warn" | "danger";
-}
+export type { PanelAction };
 
+/**
+ * A git stack panel. Thin wrapper over the shared panel so the git pane keeps
+ * its own naming for badges (a `/query` filter and a selection range) while the
+ * surface, header and body come from the app vocabulary.
+ */
 export function GitPanelBlock({
     n,
     label,
@@ -31,43 +32,16 @@ export function GitPanelBlock({
     children: ReactNode;
 }) {
     return (
-        <div className={`git-panel${focused ? " focused" : ""}`} style={{ flex }}>
-            <div
-                className="git-panel-head"
-                role="button"
-                tabIndex={0}
-                aria-label={`Focus ${label} panel`}
-                onClick={onFocus}
-                onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onFocus();
-                }}>
-                <span className="git-panel-n">{n}</span>
-                <span className="git-panel-label">{label}</span>
-                {filterBadge && <span className="git-panel-pill">/{filterBadge}</span>}
-                {rangeBadge && <span className="git-panel-pill range">{rangeBadge}</span>}
-                {extra}
-                {actions && actions.length > 0 && (
-                    <span className="git-head-actions">
-                        {actions.map((a) => (
-                            <button
-                                key={a.label}
-                                type="button"
-                                className={`git-hbtn${a.tone ? ` ${a.tone}` : ""}`}
-                                title={a.label}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    a.onClick();
-                                }}>
-                                {a.label}
-                                {a.key && <kbd className="git-kbd">{a.key}</kbd>}
-                            </button>
-                        ))}
-                    </span>
-                )}
-            </div>
-            <div className="git-panel-body">{children}</div>
-        </div>
+        <Panel focused={focused} flex={flex} className="git-panel">
+            <PanelHeader
+                index={n}
+                label={label}
+                badges={[filterBadge && <Badge tone="accent">/{filterBadge}</Badge>, rangeBadge && <Badge tone="warn">{rangeBadge}</Badge>]}
+                actions={actions}
+                extra={extra}
+                onFocus={onFocus}
+            />
+            <PanelBody>{children}</PanelBody>
+        </Panel>
     );
 }

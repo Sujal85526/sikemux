@@ -1,0 +1,223 @@
+import { Fragment, type ReactNode } from "react";
+
+/**
+ * The app's panel vocabulary.
+ *
+ * Every pane used to hand-roll the same four things — a labelled header with
+ * actions, a scrolling body, selectable rows, and an empty state — under its
+ * own class names (`git-panel-*`, `rail-group-*`, `rnd-section-*`,
+ * `bruno-section-*`). These are the shared versions; feature CSS should only
+ * describe what genuinely differs.
+ */
+
+export interface PanelAction {
+    /** Single-key shortcut shown as a chip on the action. */
+    key?: string;
+    label: string;
+    onClick: () => void;
+    tone?: "warn" | "danger";
+    disabled?: boolean;
+}
+
+/**
+ * A panel surface.
+ *
+ * `variant="block"` is the bordered, focusable, flex-sized panel used when
+ * several stack in one pane. `variant="group"` is the lighter rail grouping —
+ * a labelled run of rows with no border of its own.
+ */
+export function Panel({
+    variant = "block",
+    focused = false,
+    flex,
+    className,
+    children,
+}: {
+    variant?: "block" | "group";
+    focused?: boolean;
+    /** Flex grow within a stacking pane. Ignored by the group variant. */
+    flex?: number;
+    className?: string;
+    children: ReactNode;
+}) {
+    return (
+        <div
+            className={`panel panel-${variant}${focused ? " focused" : ""}${className ? ` ${className}` : ""}`}
+            style={variant === "block" && flex !== undefined ? { flex } : undefined}>
+            {children}
+        </div>
+    );
+}
+
+/**
+ * A panel's header row: optional ordinal, an eyebrow label, badges, and
+ * actions that reveal on hover or focus.
+ */
+export function PanelHeader({
+    index,
+    label,
+    badges,
+    actions,
+    extra,
+    onFocus,
+    rule = false,
+}: {
+    index?: number;
+    label: string;
+    /** Rendered after the label; falsy entries are skipped. Pass `<Badge>`s. */
+    badges?: ReactNode[];
+    actions?: PanelAction[];
+    /** Arbitrary content between the badges and the actions. */
+    extra?: ReactNode;
+    /** Makes the header itself a focus target for the panel it labels. */
+    onFocus?: () => void;
+    /** Draws a hairline from the label to the actions (the rail grouping look). */
+    rule?: boolean;
+}) {
+    const visibleBadges = (badges ?? []).filter(Boolean);
+    return (
+        <div
+            className="panel-head"
+            role={onFocus ? "button" : undefined}
+            tabIndex={onFocus ? 0 : undefined}
+            aria-label={onFocus ? `Focus ${label} panel` : undefined}
+            onClick={onFocus}
+            onKeyDown={
+                onFocus
+                    ? (event) => {
+                          if (event.key !== "Enter" && event.key !== " ") return;
+                          event.preventDefault();
+                          onFocus();
+                      }
+                    : undefined
+            }>
+            {index !== undefined && <span className="panel-index">{index}</span>}
+            <span className="panel-label">{label}</span>
+            {visibleBadges.map((badge, i) => (
+                <Fragment key={i}>{badge}</Fragment>
+            ))}
+            {rule && <span className="panel-rule" />}
+            {extra}
+            {actions && actions.length > 0 && (
+                <span className="panel-actions">
+                    {actions.map((action) => (
+                        <button
+                            key={action.label}
+                            type="button"
+                            className={`panel-abtn${action.tone ? ` ${action.tone}` : ""}`}
+                            disabled={action.disabled}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                action.onClick();
+                            }}>
+                            {action.label}
+                            {action.key && <kbd className="panel-akbd">{action.key}</kbd>}
+                        </button>
+                    ))}
+                </span>
+            )}
+        </div>
+    );
+}
+
+/** The scrolling region under a header. */
+export function PanelBody({ className, children }: { className?: string; children: ReactNode }) {
+    return <div className={`panel-body${className ? ` ${className}` : ""}`}>{children}</div>;
+}
+
+/**
+ * A selectable list row. `ranged` marks membership of a multi-row selection,
+ * which reads differently from the cursor position.
+ */
+export function PanelRow({
+    selected = false,
+    ranged = false,
+    muted = false,
+    onClick,
+    className,
+    children,
+}: {
+    selected?: boolean;
+    ranged?: boolean;
+    muted?: boolean;
+    onClick?: () => void;
+    className?: string;
+    children: ReactNode;
+}) {
+    const state = `${selected ? " sel" : ""}${ranged ? " ranged" : ""}${muted ? " muted" : ""}`;
+    return (
+        <div className={`panel-row${state}${className ? ` ${className}` : ""}`} onClick={onClick}>
+            {children}
+        </div>
+    );
+}
+
+/** Trailing secondary text on a row — counts, timestamps, hints. */
+export function PanelRowHint({ children }: { children: ReactNode }) {
+    return <span className="panel-row-hint">{children}</span>;
+}
+
+export interface EmptyStateAction {
+    label: string;
+    onClick: () => void;
+}
+
+/**
+ * What a panel shows instead of rows.
+ *
+ * `variant="inline"` is the one-line form the rails use, where a full
+ * icon-and-title block would dwarf the group it sits in.
+ */
+export function EmptyState({
+    icon,
+    title,
+    message,
+    action,
+    tone = "neutral",
+    variant = "block",
+}: {
+    icon?: ReactNode;
+    title?: string;
+    /** The only required copy — `title` and `icon` are for roomier panels. */
+    message: string;
+    action?: EmptyStateAction;
+    tone?: "neutral" | "error";
+    variant?: "block" | "inline";
+}) {
+    if (variant === "inline") {
+        const body = (
+            <>
+                {icon}
+                <span>{message}</span>
+            </>
+        );
+        return action ? (
+            <button type="button" className={`empty-state inline tone-${tone} interactive`} onClick={action.onClick}>
+                {body}
+            </button>
+        ) : (
+            <div className={`empty-state inline tone-${tone}`}>{body}</div>
+        );
+    }
+    return (
+        <div className={`empty-state tone-${tone}`} role={tone === "error" ? "alert" : undefined}>
+            {icon && (
+                <span className="empty-state-media" aria-hidden="true">
+                    {icon}
+                </span>
+            )}
+            {title && <span className="empty-state-title">{title}</span>}
+            <span className="empty-state-msg">{message}</span>
+            {action && (
+                <button type="button" className="empty-state-action" onClick={action.onClick}>
+                    {action.label}
+                </button>
+            )}
+        </div>
+    );
+}
+
+/** A small status pill. Used for counts, ranges, filters and states. */
+export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "accent" | "warn" | "danger" | "live"; children: ReactNode }) {
+    return <span className={`badge badge-${tone}`}>{children}</span>;
+}

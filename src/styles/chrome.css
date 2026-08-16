@@ -379,27 +379,6 @@
     padding: 14px 8px 12px;
 }
 
-.rail-group {
-    margin-top: 14px;
-}
-.rail-group:first-child {
-    margin-top: 0;
-}
-.rail-group-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 6px 6px 10px;
-}
-.rail-group-rule {
-    flex: 1 1 auto;
-    height: 1px;
-    background: var(--line);
-}
-.rail-group-label {
-    font-size: 9.5px;
-    letter-spacing: 0.2em;
-}
 .rail-group-add {
     display: flex;
     align-items: center;
@@ -427,33 +406,6 @@
     line-height: 1;
     color: var(--ink-faint);
 }
-.rail-group-empty {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 4px 12px 6px 12px;
-    font-size: 11px;
-    font-style: italic;
-    color: var(--ink-faint);
-    letter-spacing: 0;
-    text-transform: none;
-    border-radius: 0;
-    background: transparent;
-    border: none;
-    cursor: default;
-    font-family: var(--mono);
-    transition:
-        color 0.12s,
-        background 0.12s;
-}
-.rail-group-empty.interactive {
-    cursor: pointer;
-}
-.rail-group-empty.interactive:hover {
-    color: var(--acc);
-    background: var(--acc-soft);
-}
-
 .session-row-shell {
     display: flex;
     align-items: stretch;
