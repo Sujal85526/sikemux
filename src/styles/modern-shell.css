@@ -188,15 +188,15 @@ textarea:focus-visible {
 }
 
 .session-row-shell {
-    margin: 2px 0;
+    margin: 0;
 }
 
 .sess-row,
 .proj-row {
-    min-height: 34px;
-    height: 34px;
+    min-height: 28px;
+    height: 28px;
     border-radius: var(--radius-sm);
-    padding-inline: 10px;
+    padding-inline: var(--space-2);
 }
 
 .sess-name,
@@ -265,9 +265,9 @@ textarea:focus-visible {
  * chrome: monospace labels, a slim active rail, and compact rows make these
  * five workspace tabs read like developer navigation again. */
 .proj-row {
-    min-height: 31px;
-    height: 31px;
-    padding: 3px 0 3px 12px;
+    min-height: 26px;
+    height: 26px;
+    padding: 0 0 0 var(--space-3);
     border: 0;
     border-left: 2px solid transparent;
     border-radius: 0;
