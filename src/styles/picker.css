@@ -337,8 +337,10 @@
     color: var(--ink);
 }
 .picker-sub {
-    flex: 1 1 0;
-    min-width: 0;
+    /* Never shrink: the provider and age are short and fixed, so the title is
+       what should truncate. Sharing flex crushed this to "C…". */
+    flex: 0 0 auto;
+    padding-left: var(--space-3);
     text-align: right;
     font-size: 11px;
     color: var(--ink-faint);

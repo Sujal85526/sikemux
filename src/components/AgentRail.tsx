@@ -403,11 +403,32 @@ function AgentHeader({
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
-            <div className="agent-header-copy">
-                <span className="agent-header-kicker">Workspace</span>
+            <div className="agent-header-top">
                 <span className="agent-header-label">Agents</span>
+                <div className="agent-header-actions">
+                    <Tooltip label="Filter recent chats">
+                        <button
+                            className={`agent-header-btn${searchOpen ? " active" : ""}`}
+                            aria-pressed={searchOpen}
+                            aria-label="Filter recent chats"
+                            onClick={onToggleSearch}>
+                            <IconSearch size={15} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label={type ? `new ${label} agent — ⌥N` : "No agent CLI detected"}>
+                        <button
+                            className="agent-header-btn"
+                            disabled={!type}
+                            aria-label={type ? `New ${label} agent` : "No agent CLI detected"}
+                            onClick={() => {
+                                if (type) cmd.openAgentPalette();
+                            }}>
+                            <IconPlus size={15} />
+                        </button>
+                    </Tooltip>
+                </div>
             </div>
-            <div className="agent-header-types">
+            <div className="agent-header-types" role="tablist" aria-label="Agent provider">
                 {agents.map((a) => (
                     <Tooltip
                         key={a.type}
@@ -417,6 +438,8 @@ function AgentHeader({
                                 : a.label
                         }>
                         <button
+                            role="tab"
+                            aria-selected={type === a.type}
                             className={`agent-header-btn ${a.type}${type === a.type ? " active" : ""}`}
                             aria-label={a.label}
                             onClick={() => setType(a.type)}>
@@ -429,28 +452,6 @@ function AgentHeader({
                         </button>
                     </Tooltip>
                 ))}
-            </div>
-            <div className="agent-header-actions">
-                <Tooltip label="Filter recent chats">
-                    <button
-                        className={`agent-header-btn${searchOpen ? " active" : ""}`}
-                        aria-pressed={searchOpen}
-                        aria-label="Filter recent chats"
-                        onClick={onToggleSearch}>
-                        <IconSearch size={15} />
-                    </button>
-                </Tooltip>
-                <Tooltip label={type ? `new ${label} agent — ⌥N` : "No agent CLI detected"}>
-                    <button
-                        className="agent-header-btn"
-                        disabled={!type}
-                        aria-label={type ? `New ${label} agent` : "No agent CLI detected"}
-                        onClick={() => {
-                            if (type) cmd.openAgentPalette();
-                        }}>
-                        <IconPlus size={15} />
-                    </button>
-                </Tooltip>
             </div>
         </div>
     );

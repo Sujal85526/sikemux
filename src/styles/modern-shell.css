@@ -50,12 +50,31 @@ textarea {
     font-family: var(--ui);
 }
 
+/* Keyboard focus has to be visible, but a 2px ring with an offset around a
+ * text field reads as a highlight box rather than a cursor position. Controls
+ * keep a thin ring; fields take a soft glow on their own edge instead. */
 button:focus-visible,
-input:focus-visible,
 select:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible {
+    outline: 1.5px solid color-mix(in srgb, var(--acc) 68%, transparent);
+    outline-offset: 1px;
+}
+
+input:focus-visible,
 textarea:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--acc) 72%, white 10%);
-    outline-offset: 2px;
+    outline: none;
+    border-color: var(--acc-line);
+    box-shadow: 0 0 0 2px var(--acc-soft);
+}
+
+/* Fields embedded in an already-focused surface (palette search, rail filter)
+ * are the focus context themselves, so they take no ring at all. */
+.picker-input:focus-visible,
+.rail-search input:focus-visible,
+.command-palette input:focus-visible,
+.settings-search:focus-visible {
+    box-shadow: none;
 }
 
 /* The chrome owns the window edges. Content surfaces get a soft inset line so
@@ -323,10 +342,31 @@ textarea:focus-visible {
 }
 
 .agent-header {
-    min-height: 60px;
-    padding: 8px 12px;
-    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    padding: var(--space-2) var(--gutter-rail);
+    gap: var(--space-2);
     border-bottom-color: var(--line-soft);
+}
+
+.agent-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+/* The provider switch spans the rail instead of competing with the title. */
+.agent-header-types {
+    display: flex;
+    gap: var(--space-1);
+}
+.agent-header-types > * {
+    flex: 1 1 0;
+}
+.agent-header-types .agent-header-btn {
+    width: 100%;
 }
 
 .agent-header-copy {
@@ -521,7 +561,7 @@ textarea:focus-visible {
 .tabbar.v-agent .tab-wrap,
 .tabbar.v-editor .tab-wrap {
     height: 26px;
-    padding-right: var(--space-1);
+    padding-right: var(--space-1h);
     border-right: 0;
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 55%), transparent);
@@ -540,15 +580,23 @@ textarea:focus-visible {
     box-shadow: inset 0 0 0 1px var(--acc-line);
 }
 
-/* The close button was flush against the tab's own edge. */
+/* The close button was a slab flush against the tab's own edge. */
 .tabbar.v-agent .tab-x,
 .tabbar.v-editor .tab-x {
-    border-radius: var(--radius-xs);
-    padding: 2px;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    margin-left: var(--space-1);
+    padding: 0;
+    border-radius: 999px;
+    color: var(--ink-faint);
 }
 .tabbar.v-agent .tab-x:hover,
 .tabbar.v-editor .tab-x:hover {
-    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
 .tabbar.v-agent .tab-label {
@@ -768,7 +816,9 @@ textarea,
  */
 .body {
     gap: var(--space-2);
-    padding: var(--space-2);
+    /* No top padding: the top bar's own bottom slack already leaves a gutter
+       the same size, so adding one here doubled it. */
+    padding: 0 var(--space-2) var(--space-2);
 }
 
 .side-rail,
@@ -898,4 +948,33 @@ textarea,
 .crumb {
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 92%), transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+/* ---- Surface vs gutter ---------------------------------------------------
+ * The gutter is the window; the panels sit on top of it. So the panels take
+ * the lighter tone and the shell keeps the darkest, and the two part company
+ * as the window turns translucent: the gutter lets the desktop through while
+ * the panels stay close to solid. Without that second half, lowering window
+ * opacity faded everything equally and the frame disappeared.
+ */
+:root {
+    --surface-solidity: calc((0.62 + var(--window-opacity, 1) * 0.38) * 100%);
+}
+
+.side-rail,
+.agent-rail {
+    background: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent);
+}
+
+.stage {
+    background: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent);
+}
+
+.pane {
+    background: color-mix(in srgb, var(--pane) var(--surface-solidity), transparent);
+}
+
+/* The shell keeps the darkest tone so the gutter always reads as a recess. */
+.shell {
+    background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
