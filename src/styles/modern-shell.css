@@ -1,0 +1,453 @@
+/*
+ * Modern shell direction
+ *
+ * The product is still a developer tool, so the terminal grain and provider
+ * colors stay intact. The surrounding chrome is intentionally quieter: SF UI
+ * type, layered glass surfaces, generous hit areas, and a periwinkle accent
+ * that reads like a native macOS selection color instead of a neon terminal.
+ */
+:root {
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+    --radius-xs: 6px;
+    --radius-sm: 9px;
+    --radius-md: 13px;
+    --radius-lg: 17px;
+    --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.18);
+    --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.34);
+}
+
+body {
+    font-family: var(--ui);
+    font-size: 13px;
+    letter-spacing: -0.005em;
+}
+
+button,
+input,
+select,
+textarea {
+    font-family: var(--ui);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--acc) 72%, white 10%);
+    outline-offset: 2px;
+}
+
+/* The chrome owns the window edges. Content surfaces get a soft inset line so
+ * the app still reads clearly when macOS window transparency is enabled. */
+.shell {
+    background: color-mix(in srgb, var(--void) 94%, black);
+}
+
+.top-bar {
+    height: 48px;
+    background: color-mix(in srgb, var(--rail) 88%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--line) 82%, white 4%);
+    -webkit-backdrop-filter: blur(22px) saturate(125%);
+    backdrop-filter: blur(22px) saturate(125%);
+}
+
+.tb-center {
+    padding-left: 20px;
+}
+
+.crumb {
+    gap: 9px;
+    max-width: min(420px, 42vw);
+    height: 30px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--rail-2) 58%, transparent);
+}
+
+.crumb-session,
+.crumb-name {
+    font-family: var(--ui);
+    font-size: 12px;
+}
+
+.crumb-session {
+    font-weight: 650;
+}
+
+.tb-right {
+    gap: 8px;
+    padding-right: 16px;
+}
+
+.tb-btn,
+.env-dd-btn,
+.zoom-pill,
+.tb-git-chip,
+.tb-deploy-chip,
+.tb-deploy-checkout {
+    border-radius: var(--radius-xs);
+}
+
+.tb-btn {
+    width: 30px;
+    height: 30px;
+}
+
+.side-rail {
+    width: 258px;
+    background: color-mix(in srgb, var(--rail) 96%, black);
+    border-right-color: color-mix(in srgb, var(--line) 84%, white 3%);
+    -webkit-backdrop-filter: blur(18px) saturate(112%);
+    backdrop-filter: blur(18px) saturate(112%);
+}
+
+.rail-brand {
+    min-height: 62px;
+    padding: 14px 16px 13px;
+    border-bottom: 0;
+}
+
+.rail-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid color-mix(in srgb, var(--acc) 35%, var(--line));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--acc) 12%, var(--rail-2));
+    filter: none;
+}
+
+.rail-brand-name {
+    font-family: var(--ui);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.rail-scroll {
+    padding: 10px 10px 14px;
+}
+
+.rail-group {
+    margin-top: 18px;
+}
+
+.rail-group-head {
+    padding: 4px 8px 7px;
+}
+
+.rail-group-label {
+    font-family: var(--ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+}
+
+.session-row-shell {
+    margin: 2px 0;
+}
+
+.sess-row,
+.proj-row {
+    min-height: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    padding-inline: 10px;
+}
+
+.sess-row:hover,
+.sess-row.active,
+.proj-row:hover,
+.proj-row.expanded {
+    background: color-mix(in srgb, var(--rail-2) 82%, transparent);
+}
+
+.sess-row.active,
+.proj-row.expanded {
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent);
+}
+
+.proj-row.expanded {
+    border-left: 0;
+    background: linear-gradient(100deg, color-mix(in srgb, var(--acc) 16%, var(--rail-2)), color-mix(in srgb, var(--acc) 3%, transparent));
+}
+
+.proj-children {
+    padding: 5px 0 4px 8px;
+    margin-left: 7px;
+    border-left: 1px solid color-mix(in srgb, var(--line) 85%, var(--acc) 15%);
+}
+
+.proj-child {
+    min-height: 32px;
+    padding-inline: 8px;
+    border-radius: var(--radius-xs);
+}
+
+.proj-child.active {
+    background: color-mix(in srgb, var(--acc) 10%, transparent);
+}
+
+.rail-foot {
+    margin: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--rail-2) 58%, transparent);
+}
+
+/* Agent rail: a little wider so titles, provider identity, and timestamps do
+ * not compete for the same 250px. */
+.agent-rail {
+    width: 312px;
+    background: color-mix(in srgb, var(--rail) 96%, black);
+    border-left-color: color-mix(in srgb, var(--line) 84%, white 3%);
+    -webkit-backdrop-filter: blur(18px) saturate(112%);
+    backdrop-filter: blur(18px) saturate(112%);
+}
+
+.agent-header {
+    min-height: 64px;
+    padding: 10px 12px;
+    gap: 10px;
+    border-bottom-color: var(--line-soft);
+}
+
+.agent-header-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 72px;
+    margin-right: auto;
+}
+
+.agent-header-kicker {
+    color: var(--ink-faint);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+.agent-header-label {
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+}
+
+.agent-header-types,
+.agent-header-actions {
+    gap: 4px;
+}
+
+.agent-header-types {
+    flex: 0 0 auto;
+}
+
+.agent-header-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-xs);
+}
+
+.agent-header-btn.active {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.agent-usage {
+    margin: 12px 12px 14px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--line) 88%, white 4%);
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 88%, white 4%);
+    border-radius: var(--radius-md);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--rail-2) 78%, transparent), color-mix(in srgb, var(--rail) 72%, transparent));
+    box-shadow: var(--shadow-soft);
+}
+
+.agent-usage-head {
+    margin-bottom: 11px;
+}
+
+.rail-search {
+    height: 34px;
+    margin: 10px 12px 2px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--rail-2) 62%, transparent);
+}
+
+.agent-group {
+    margin-inline: 10px;
+}
+
+.agent-group + .agent-group {
+    margin-top: 16px;
+}
+
+.agent-group > .rail-group-label {
+    display: block;
+    padding: 3px 7px 6px;
+}
+
+.agent-row-wrap {
+    margin: 2px 0;
+}
+
+.agent-row {
+    height: 42px;
+    padding: 0 12px;
+    gap: 11px;
+    border-radius: var(--radius-sm);
+    font-family: var(--ui);
+    color: var(--ink-dim);
+}
+
+.agent-row.recent {
+    height: 39px;
+}
+
+.agent-row:hover {
+    background: color-mix(in srgb, var(--rail-2) 78%, transparent);
+}
+
+.agent-row.active {
+    background: linear-gradient(100deg, color-mix(in srgb, var(--acc) 18%, var(--rail-2)), color-mix(in srgb, var(--acc) 5%, transparent));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent);
+}
+
+.agent-row.active::before {
+    top: 9px;
+    bottom: 9px;
+    width: 3px;
+    border-radius: 999px;
+}
+
+.agent-row .agent-glyph {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    border-radius: 8px;
+    background: color-mix(in srgb, currentColor 10%, var(--rail));
+}
+
+.agent-row .agent-glyph-icon {
+    transform: scale(0.86);
+}
+
+.agent-title {
+    font-size: 12px;
+    letter-spacing: -0.01em;
+}
+
+.agent-ago,
+.agent-dormant-label {
+    font-family: var(--mono);
+    font-size: 10px;
+}
+
+.agent-glyph-x {
+    top: 11px;
+    left: 14px;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: var(--rail-2);
+}
+
+.agent-empty {
+    margin: 12px;
+    padding: 16px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--rail-2) 36%, transparent);
+}
+
+.agent-rail .rail-scroll::-webkit-scrollbar {
+    width: 9px;
+}
+
+.agent-rail .rail-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+}
+
+.tabbar.v-agent,
+.tabbar.v-editor,
+.tabbar.v-bruno {
+    border-bottom-color: var(--line-soft);
+    background: color-mix(in srgb, var(--rail) 86%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+}
+
+.tabbar.v-agent .tab-wrap.active,
+.tabbar.v-editor .tab-wrap.active {
+    border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+}
+
+.pane {
+    border-radius: var(--radius-md);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 50%, transparent);
+}
+
+.yolo-toggle {
+    border-radius: 999px;
+    box-shadow: var(--shadow-soft);
+}
+
+/* Keep menus and modal cards in the same visual family as the shell. */
+:where(
+    .env-dd-menu,
+    .picker,
+    .command-palette,
+    .session-switcher,
+    .settings-pane,
+    .settings-rail,
+    .settings-main,
+    .settings-list,
+    .settings-theme,
+    .settings-depth,
+    [role="dialog"],
+    [role="listbox"]
+) {
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-float);
+}
+
+.env-dd-menu,
+.picker,
+.command-palette,
+.session-switcher {
+    border-color: color-mix(in srgb, var(--line) 88%, white 4%);
+    background: color-mix(in srgb, var(--rail-2) 92%, black);
+    -webkit-backdrop-filter: blur(22px) saturate(125%);
+    backdrop-filter: blur(22px) saturate(125%);
+}
+
+@media (max-width: 900px) {
+    .side-rail {
+        width: 224px;
+    }
+
+    .agent-rail {
+        width: 286px;
+    }
+
+    .agent-header-copy {
+        min-width: 60px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .top-bar,
+    .side-rail,
+    .agent-rail {
+        animation: none;
+    }
+}

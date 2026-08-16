@@ -398,6 +398,10 @@ function AgentHeader({
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
+            <div className="agent-header-copy">
+                <span className="agent-header-kicker">Workspace</span>
+                <span className="agent-header-label">Agents</span>
+            </div>
             <div className="agent-header-types">
                 {agents.map((a) => (
                     <button
