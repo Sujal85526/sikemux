@@ -290,7 +290,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     font-weight: 500;
-    color: var(--ink);
+    /* Pulled off full --ink: a long column of pure white (or pure black on a
+       light theme) glares against the surface. Mixing toward --ink-dim softens
+       it the same way in either direction. */
+    color: color-mix(in srgb, var(--ink) 80%, var(--ink-dim));
 }
 .picker-sub {
     /* Never shrink: the provider and age are short and fixed, so the title is
