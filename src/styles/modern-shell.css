@@ -566,3 +566,87 @@ textarea:focus-visible {
         animation: none;
     }
 }
+
+/* Final surface geometry pass. A few optional legacy component sheets are
+ * imported after this file, so these focused important rules keep their
+ * controls in the same rounded macOS visual system without flattening
+ * semantic status dots or slider tracks. */
+button,
+input,
+select,
+textarea,
+.shell
+    :where(
+        .top-bar,
+        .side-rail,
+        .agent-rail,
+        .rail-brand,
+        .rail-brand-mark,
+        .crumb,
+        .tb-btn,
+        .env-dd-btn,
+        .zoom-pill,
+        .tb-git-chip,
+        .tb-deploy-chip,
+        .tb-deploy-checkout,
+        .sess-row,
+        .proj-row,
+        .proj-child,
+        .rail-foot,
+        .agent-header-btn,
+        .agent-usage,
+        .rail-search,
+        .agent-row,
+        .agent-row .agent-glyph,
+        .agent-glyph-x,
+        .agent-empty,
+        .tabbar,
+        .tab-wrap,
+        .tabbar.v-agent .tab-wrap.active,
+        .pane,
+        .yolo-toggle,
+        .env-dd-menu,
+        .picker,
+        .command-palette,
+        .session-switcher,
+        .settings-pane,
+        .settings-rail,
+        .settings-main,
+        .settings-list,
+        .settings-theme,
+        .settings-depth,
+        .git-toolbar,
+        .git-tbtn,
+        .git-hbtn,
+        .git-dd-btn,
+        .git-dd-menu,
+        .git-cp-commit,
+        .git-commit-input,
+        .git-panel-pill,
+        .dlg,
+        .dlg-input,
+        .dlg-btn,
+        .tip,
+        .cbx-box,
+        .cswx-face,
+        [role="dialog"],
+        [role="listbox"]
+    ) {
+    border-radius: var(--radius-sm) !important;
+}
+
+.shell
+    :where(.pane, .agent-usage, .agent-empty, .env-dd-menu, .picker, .command-palette, .session-switcher, .dlg, [role="dialog"], [role="listbox"]) {
+    border-radius: var(--radius-md) !important;
+}
+
+.shell
+    :where(
+        .swx-track,
+        .swx-thumb,
+        .sld input[type="range"],
+        .sld input[type="range"]::-webkit-slider-runnable-track,
+        .sld input[type="range"]::-webkit-slider-thumb
+    ) {
+    border-radius: 999px !important;
+}
