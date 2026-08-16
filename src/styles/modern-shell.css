@@ -650,8 +650,6 @@ textarea,
 .shell
     :where(
         .top-bar,
-        .side-rail,
-        .agent-rail,
         .crumb,
         .tb-btn,
         .env-dd-btn,
@@ -698,7 +696,21 @@ textarea,
 }
 
 .shell
-    :where(.pane, .agent-usage, .agent-empty, .env-dd-menu, .picker, .command-palette, .session-switcher, .dlg, [role="dialog"], [role="listbox"]) {
+    :where(
+        .side-rail,
+        .agent-rail,
+        .stage,
+        .pane,
+        .agent-usage,
+        .agent-empty,
+        .env-dd-menu,
+        .picker,
+        .command-palette,
+        .session-switcher,
+        .dlg,
+        [role="dialog"],
+        [role="listbox"]
+    ) {
     border-radius: var(--radius-md) !important;
 }
 
