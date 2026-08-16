@@ -31,7 +31,11 @@ function applyTransparentState() {
 function terminalThemeFor(theme: Theme): ITheme {
     return {
         ...theme.terminal,
-        background: currentOpacity >= 1 ? theme.terminal.background : "rgba(0, 0, 0, 0)",
+        // Always transparent so the pane's surface shows through the canvas.
+        // xterm paints this itself, below CSS, so any opaque value here put a
+        // darker rectangle in the middle of the chrome that no stylesheet
+        // could reach.
+        background: "rgba(0, 0, 0, 0)",
         // xterm 6 renders its own scrollbar and injects slider styles after the
         // app stylesheet. Keep it unobtrusive until the terminal is hovered.
         scrollbarSliderBackground: "rgba(0, 0, 0, 0)",

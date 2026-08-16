@@ -84,7 +84,7 @@ textarea:focus-visible {
 }
 
 .top-bar {
-    height: 48px;
+    height: 40px;
 }
 
 .tb-center {
@@ -815,10 +815,10 @@ textarea,
  * background (and the desktop, at reduced window opacity) shows through it.
  */
 .body {
-    gap: var(--space-2);
-    /* No top padding: the top bar's own bottom slack already leaves a gutter
-       the same size, so adding one here doubled it. */
-    padding: 0 var(--space-2) var(--space-2);
+    gap: var(--space-3);
+    /* The bar's own slack under the crumb is part of the top gutter, so this
+       only tops it up to match the other three sides. */
+    padding: 7px var(--space-3) var(--space-3);
 }
 
 .side-rail,
@@ -846,7 +846,7 @@ textarea,
 /* Splits get the same gutter. Each pane insets by half of it, so neighbours
  * end up a full gutter apart while the outer edges stay tight to the stage. */
 .pane {
-    inset: 3px;
+    inset: var(--space-1);
     border-radius: var(--radius-sm);
 }
 
