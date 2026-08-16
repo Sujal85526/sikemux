@@ -783,7 +783,7 @@
     flex: none;
     border: 1px solid var(--line);
     color: var(--ink-dim);
-    max-width: 150px;
+    max-width: 108px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

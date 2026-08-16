@@ -3,6 +3,8 @@ import type { GitCommit } from "../../api/git";
 import { EmptyState } from "../Panel";
 
 const ROW_H = 30;
+/** Beyond two, refs crowd the subject out of the row entirely. */
+const MAX_ROW_REFS = 2;
 const LANE_W = 14; // horizontal gap between lanes
 const X0 = 14; // x of lane 0's centre
 const NODE_R = 4;
@@ -307,9 +309,14 @@ export function GitGraph({
                         </span>
                         {c.refs.length > 0 && (
                             <span className="gg-refs">
-                                {c.refs.map((r) => (
+                                {c.refs.slice(0, MAX_ROW_REFS).map((r) => (
                                     <RefBadge key={r} label={r} />
                                 ))}
+                                {c.refs.length > MAX_ROW_REFS && (
+                                    <span className="gg-ref more" title={c.refs.slice(MAX_ROW_REFS).join(", ")}>
+                                        +{c.refs.length - MAX_ROW_REFS}
+                                    </span>
+                                )}
                             </span>
                         )}
                         <span className="gg-subj">{c.subject}</span>

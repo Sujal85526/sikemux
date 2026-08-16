@@ -11,6 +11,9 @@
     /* Two radii, and only two: panels and controls. The four-step ramp meant
      * neighbouring elements rounded differently for no reason anyone could
      * name. The old names stay as aliases so call sites need not all change. */
+    /* Radius scales with the control: 6px on an 18px-tall button is a third
+     * of its height and reads as a pill, so compact chips take less. */
+    --radius-chip: 3px;
     --radius-control: 6px;
     --radius-panel: 10px;
     --radius-xs: var(--radius-control);
@@ -679,7 +682,6 @@ textarea,
         .settings-depth,
         .git-toolbar,
         .git-tbtn,
-        .panel-abtn,
         .git-dd-btn,
         .git-dd-menu,
         .git-cp-commit,
@@ -835,6 +837,10 @@ textarea,
     border-radius: var(--radius-sm);
 }
 
+.shell :where(.rnd-btn-sm, .git-kbd, .panel-akbd, .picker-hint) {
+    border-radius: var(--radius-chip) !important;
+}
+
 /* ---- Rounding by role ----------------------------------------------------
  * The geometry pass above works off a hand-picked list of selectors, so every
  * sheet written before it kept square corners — text fields worst of all,
@@ -849,7 +855,6 @@ textarea,
 .shell
     :where(
         .rnd-btn,
-        .rnd-btn-sm,
         .rnd-input,
         .rnd-cell,
         .bruno-send,

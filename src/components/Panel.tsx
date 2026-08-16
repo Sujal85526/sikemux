@@ -44,7 +44,13 @@ export function Panel({
 }: {
     variant?: "block" | "group";
     focused?: boolean;
-    /** Flex grow within a stacking pane. Ignored by the group variant. */
+    /**
+     * Share of the height this panel takes when several stack.
+     *
+     * Every panel starts from a zero basis and the share is divided by these
+     * weights, so height tracks how much each panel actually has to show. A
+     * content-sized basis instead let the longest list crush the others.
+     */
     flex?: number;
     className?: string;
     children: ReactNode;
@@ -52,7 +58,7 @@ export function Panel({
     return (
         <div
             className={`panel panel-${variant}${focused ? " focused" : ""}${className ? ` ${className}` : ""}`}
-            style={variant === "block" && flex !== undefined ? { flex } : undefined}>
+            style={variant === "block" && flex !== undefined ? { flex: `${flex} 1 0` } : undefined}>
             {children}
         </div>
     );

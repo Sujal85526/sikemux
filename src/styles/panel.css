@@ -13,6 +13,8 @@
     min-height: 0;
 }
 .panel-block {
+    /* Header plus a row: a panel with few items still shows what it has. */
+    min-height: 54px;
     border-bottom: 1px solid var(--line);
     overflow: hidden;
     background: transparent;
@@ -107,7 +109,7 @@
     height: 18px;
     padding: 0 var(--space-2);
     border: 1px solid var(--line);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-chip);
     background: transparent;
     color: var(--ink-dim);
     font-family: var(--mono);
