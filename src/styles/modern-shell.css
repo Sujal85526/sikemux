@@ -588,6 +588,9 @@ textarea:focus-visible {
     width: 16px;
     height: 16px;
     flex: 0 0 16px;
+    /* .tab-wrap stretches its children, and a definite height under stretch
+       falls back to the start edge — so this pinned itself to the tab's top. */
+    align-self: center;
     margin-left: var(--space-1);
     padding: 0;
     border-radius: 999px;
