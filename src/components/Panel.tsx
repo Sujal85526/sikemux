@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type CSSProperties, type ReactNode } from "react";
 
 /**
  * The app's panel vocabulary.
@@ -18,6 +18,19 @@ import { Fragment, type ReactNode } from "react";
  * overlap once a list is long enough to virtualise.
  */
 export const PANEL_ROW_HEIGHT = 24;
+
+/**
+ * How a stacking panel claims height.
+ *
+ * A content-sized panel must not shrink: with `flex-shrink: 1` a long list
+ * elsewhere in the column squeezes it down to its min-height and clips its
+ * rows. It is capped at 45% instead, and scrolls its own body past that. The
+ * grower is the mirror image — it must be allowed *below* its content height,
+ * or it pushes the fixed panels out of the column entirely.
+ */
+function blockSizing(flex: number): CSSProperties {
+    return flex === 0 ? { flex: "0 0 auto", maxHeight: "45%" } : { flex: `${flex} 1 auto`, minHeight: 0 };
+}
 
 export interface PanelAction {
     /** Single-key shortcut shown as a chip on the action. */
@@ -59,7 +72,7 @@ export function Panel({
     return (
         <div
             className={`panel panel-${variant}${focused ? " focused" : ""}${className ? ` ${className}` : ""}`}
-            style={variant === "block" && flex !== undefined ? { flex: `${flex} 1 auto`, ...(flex === 0 ? { maxHeight: "45%" } : {}) } : undefined}>
+            style={variant === "block" && flex !== undefined ? blockSizing(flex) : undefined}>
             {children}
         </div>
     );
