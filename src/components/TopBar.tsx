@@ -28,6 +28,7 @@ import {
 import { branchKind } from "./rundeck/branchStyle";
 import { CopyButton } from "./CopyButton";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
+import { Tooltip } from "./Tooltip";
 import { isUpdateBusy, updateStatusLabel } from "../api/updater";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
@@ -93,9 +94,11 @@ function AwsChip() {
     const title = profile ? `AWS · ${profile}${status ? ` · ${status}` : ""}` : "AWS — sign in";
 
     return (
-        <button className={`tb-aws-chip ${dotClass}`} onClick={onClick} title={title}>
-            <IconAws size={24} />
-        </button>
+        <Tooltip label={title}>
+            <button className={`tb-aws-chip ${dotClass}`} onClick={onClick} aria-label={title}>
+                <IconAws size={24} />
+            </button>
+        </Tooltip>
     );
 }
 
@@ -145,20 +148,18 @@ function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
     };
     return (
         <span className="tb-deploy-actions" data-no-window-drag>
-            <button
-                className="tb-deploy-chip"
-                onClick={() => setMenuOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                title={
+            <Tooltip
+                label={
                     loc.branch
                         ? `Rundeck actions: ${loc.status ?? "?"} · ${loc.branch} · ${loc.label}`
                         : `Rundeck actions for ${loc.service} on ${loc.label}`
                 }>
-                <IconRundeck size={12} />
-                {loc.branch && <span className={`tb-deploy-branch rnd-branch-${k}`}>{loc.branch}</span>}
-                <IconChevron size={10} className="env-dd-chev" />
-            </button>
+                <button className="tb-deploy-chip" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen}>
+                    <IconRundeck size={12} />
+                    {loc.branch && <span className={`tb-deploy-branch rnd-branch-${k}`}>{loc.branch}</span>}
+                    <IconChevron size={10} className="env-dd-chev" />
+                </button>
+            </Tooltip>
             {menuOpen && (
                 <>
                     <div className="env-dd-scrim" onClick={() => setMenuOpen(false)} />
@@ -175,15 +176,14 @@ function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
                             )}
                         </button>
                         {repo && loc.branch && (
-                            <button
-                                className="env-dd-item"
-                                role="menuitem"
-                                onClick={checkoutBranch}
-                                disabled={checkingOut}
-                                title={`Checkout deployed branch ${loc.branch}. If it only exists on a remote, Sikemux will fetch and create a tracking local branch.`}>
-                                <IconGit size={12} />
-                                <span>{checkingOut ? "checking out…" : "checkout"}</span>
-                            </button>
+                            <Tooltip
+                                side="left"
+                                label={`Checkout deployed branch ${loc.branch}. If it only exists on a remote, Sikemux will fetch and create a tracking local branch.`}>
+                                <button className="env-dd-item" role="menuitem" onClick={checkoutBranch} disabled={checkingOut}>
+                                    <IconGit size={12} />
+                                    <span>{checkingOut ? "checking out…" : "checkout"}</span>
+                                </button>
+                            </Tooltip>
                         )}
                     </div>
                 </>
@@ -205,16 +205,18 @@ function GitChip({ repo }: { repo: string }) {
     return (
         <>
             <span className="tb-git" data-no-window-drag>
-                <button className="tb-git-chip" onClick={cmd.openGitPane} title={title}>
-                    <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
-                    <span className="tb-git-branch">{st.branch}</span>
-                    {(ahead > 0 || behind > 0) && (
-                        <span className="tb-git-track">
-                            {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
-                            {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
-                        </span>
-                    )}
-                </button>
+                <Tooltip label={title}>
+                    <button className="tb-git-chip" onClick={cmd.openGitPane} aria-label={title}>
+                        <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
+                        <span className="tb-git-branch">{st.branch}</span>
+                        {(ahead > 0 || behind > 0) && (
+                            <span className="tb-git-track">
+                                {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
+                                {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
+                            </span>
+                        )}
+                    </button>
+                </Tooltip>
                 <CopyButton className="tb-git-copy" value={st.branch} label="branch name" size={11} />
             </span>
             <span className="tb-sep" />
@@ -247,9 +249,9 @@ export function VersionChip() {
     }, []);
     if (!version) return null;
     return (
-        <span className="tb-version" title={`Sikemux ${version}`}>
-            v{version}
-        </span>
+        <Tooltip label={`Sikemux ${version}`}>
+            <span className="tb-version">v{version}</span>
+        </Tooltip>
     );
 }
 
@@ -266,20 +268,19 @@ export function UpdateChip() {
     };
 
     return (
-        <button
-            className={`tb-update tb-update-${state}`}
-            onClick={onClick}
-            disabled={busy}
-            title={
+        <Tooltip
+            label={
                 state === "error"
                     ? `Update v${pending.version} failed — ${pending.error ?? "unknown"}. Click to retry.`
                     : busy
                       ? `${statusLabel} v${pending.version}`
                       : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`
             }>
-            <UpdateArrow size={12} />
-            <span className="tb-update-label">{statusLabel}</span>
-        </button>
+            <button className={`tb-update tb-update-${state}`} onClick={onClick} disabled={busy}>
+                <UpdateArrow size={12} />
+                <span className="tb-update-label">{statusLabel}</span>
+            </button>
+        </Tooltip>
     );
 }
 
@@ -307,12 +308,12 @@ function BatteryChip() {
     const pct = batt.percent;
     const tone = pct <= 10 ? "danger" : pct <= 20 ? "warn" : "ok";
     return (
-        <span
-            className={`tb-batt tb-batt-${tone}${batt.charging ? " charging" : ""}`}
-            title={batt.time_remaining ? `${pct}% · ${batt.time_remaining} remaining` : `${pct}%${batt.charging ? " · charging" : ""}`}>
-            <IconBattery size={11} percent={pct} charging={batt.charging} />
-            <span className="tb-batt-pct">{pct}%</span>
-        </span>
+        <Tooltip label={batt.time_remaining ? `${pct}% · ${batt.time_remaining} remaining` : `${pct}%${batt.charging ? " · charging" : ""}`}>
+            <span className={`tb-batt tb-batt-${tone}${batt.charging ? " charging" : ""}`}>
+                <IconBattery size={11} percent={pct} charging={batt.charging} />
+                <span className="tb-batt-pct">{pct}%</span>
+            </span>
+        </Tooltip>
     );
 }
 
@@ -424,7 +425,7 @@ export function TopBar() {
                             aria-haspopup="listbox"
                             aria-expanded={envOpen}
                             onClick={() => locations.length > 1 && setEnvOpen((v) => !v)}
-                            title={locations.length > 1 ? "Switch deploy location" : activeLoc.label}>
+                            aria-label={locations.length > 1 ? "Switch deploy location" : activeLoc.label}>
                             <span className={`env-dot ${envDotKind(activeLoc.folder)}`} />
                             <span className="env-dd-label">{activeLoc.label}</span>
                             {locations.length > 1 && <IconChevron size={10} className="env-dd-chev" />}
@@ -458,18 +459,26 @@ export function TopBar() {
                 <BatteryChip />
                 <ClockChip />
                 <div className="tb-toggles">
-                    <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} title="Focus mode — hide rails">
-                        <IconFocus size={15} />
-                    </button>
-                    <button className={`tb-btn${leftOpen ? " on" : ""}`} onClick={cmd.toggleLeftRail} title="Toggle sessions rail">
-                        <IconPanelLeft size={15} />
-                    </button>
-                    <button className={`tb-btn${rightOpen ? " on" : ""}`} onClick={cmd.toggleRightRail} title="Toggle agents rail">
-                        <IconPanelRight size={15} />
-                    </button>
-                    <button className="tb-btn" onClick={cmd.toggleSettings} title={`Settings — ${PRIMARY_SHORTCUT},`}>
-                        <CogIcon size={15} />
-                    </button>
+                    <Tooltip label="Focus mode — hide rails">
+                        <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} aria-label="Focus mode">
+                            <IconFocus size={15} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="Toggle sessions rail">
+                        <button className={`tb-btn${leftOpen ? " on" : ""}`} onClick={cmd.toggleLeftRail} aria-label="Toggle sessions rail">
+                            <IconPanelLeft size={15} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="Toggle agents rail">
+                        <button className={`tb-btn${rightOpen ? " on" : ""}`} onClick={cmd.toggleRightRail} aria-label="Toggle agents rail">
+                            <IconPanelRight size={15} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label={`Settings — ${PRIMARY_SHORTCUT},`}>
+                        <button className="tb-btn" onClick={cmd.toggleSettings} aria-label="Settings">
+                            <CogIcon size={15} />
+                        </button>
+                    </Tooltip>
                 </div>
             </div>
         </header>

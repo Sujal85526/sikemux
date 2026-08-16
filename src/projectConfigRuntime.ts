@@ -1,5 +1,6 @@
 import type { CustomCommand } from "./commands/registry";
 import type { ProjectAction, ProjectConfigLoadResult, ProjectWorktreeCreateHook } from "./projectConfig";
+import { confirmDialog, type ConfirmRequest } from "./state/dialog";
 
 const trustedConfigs = new Set<string>();
 
@@ -29,17 +30,24 @@ export function worktreeHookCommand(hook: ProjectWorktreeCreateHook): CustomComm
     };
 }
 
-export function trustProjectConfig(
+/**
+ * Already-trusted configs resolve synchronously on the microtask queue; only a
+ * first-time approval reaches the dialog.
+ */
+export async function trustProjectConfig(
     result: Extract<ProjectConfigLoadResult, { status: "valid" }>,
-    confirm: (message: string) => boolean = window.confirm,
-): boolean {
+    ask: (request: ConfirmRequest) => Promise<boolean> = confirmDialog,
+): Promise<boolean> {
     const key = trustKey(result);
     if (!result.trust.requiresApproval || trustedConfigs.has(key)) return true;
     const detail = result.trust.reasons.join(", ");
-    const approved = confirm(
-        `Trust this sikemux.json?\n\nIt can run ${detail || `${result.trust.executableEntries} commands`} from this project. ` +
-            "Review the file before approving. Trust lasts until Sikemux closes or the file changes.",
-    );
+    const approved = await ask({
+        title: "Trust this sikemux.json?",
+        body:
+            `It can run ${detail || `${result.trust.executableEntries} commands`} from this project. Review the file before approving.\n` +
+            "Trust lasts until Sikemux closes or the file changes.",
+        confirmLabel: "Trust project",
+    });
     if (approved) trustedConfigs.add(key);
     return approved;
 }

@@ -14,8 +14,8 @@ describe("project config runtime boundary", () => {
         });
     });
 
-    it("asks once per exact fingerprint", () => {
-        const confirm = vi.fn(() => true);
+    it("asks once per exact fingerprint", async () => {
+        const confirm = vi.fn(async () => true);
         const result = {
             status: "valid" as const,
             path: "/repo/sikemux.json",
@@ -23,13 +23,13 @@ describe("project config runtime boundary", () => {
             config: { version: 1 as const, actions: [], tasks: [] },
             trust: { requiresApproval: true, executableEntries: 1, reasons: ["a project action"] },
         };
-        expect(trustProjectConfig(result, confirm)).toBe(true);
-        expect(trustProjectConfig(result, confirm)).toBe(true);
+        await expect(trustProjectConfig(result, confirm)).resolves.toBe(true);
+        await expect(trustProjectConfig(result, confirm)).resolves.toBe(true);
         expect(confirm).toHaveBeenCalledTimes(1);
     });
 
-    it("does not remember rejected trust", () => {
-        const confirm = vi.fn(() => false);
+    it("does not remember rejected trust", async () => {
+        const confirm = vi.fn(async () => false);
         const result = {
             status: "valid" as const,
             path: "/repo/sikemux.json",
@@ -37,21 +37,21 @@ describe("project config runtime boundary", () => {
             config: { version: 1 as const, actions: [], tasks: [] },
             trust: { requiresApproval: true, executableEntries: 1, reasons: ["a hook"] },
         };
-        expect(trustProjectConfig(result, confirm)).toBe(false);
-        expect(trustProjectConfig(result, confirm)).toBe(false);
+        await expect(trustProjectConfig(result, confirm)).resolves.toBe(false);
+        await expect(trustProjectConfig(result, confirm)).resolves.toBe(false);
         expect(confirm).toHaveBeenCalledTimes(2);
     });
 
-    it("scopes trust to both content and project path", () => {
-        const confirm = vi.fn(() => true);
+    it("scopes trust to both content and project path", async () => {
+        const confirm = vi.fn(async () => true);
         const base = {
             status: "valid" as const,
             fingerprint: "sha256:same",
             config: { version: 1 as const, actions: [], tasks: [] },
             trust: { requiresApproval: true, executableEntries: 1, reasons: ["an action"] },
         };
-        expect(trustProjectConfig({ ...base, path: "/repo-a/sikemux.json" }, confirm)).toBe(true);
-        expect(trustProjectConfig({ ...base, path: "/repo-b/sikemux.json" }, confirm)).toBe(true);
+        await expect(trustProjectConfig({ ...base, path: "/repo-a/sikemux.json" }, confirm)).resolves.toBe(true);
+        await expect(trustProjectConfig({ ...base, path: "/repo-b/sikemux.json" }, confirm)).resolves.toBe(true);
         expect(confirm).toHaveBeenCalledTimes(2);
     });
 });

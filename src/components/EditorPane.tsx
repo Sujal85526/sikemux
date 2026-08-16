@@ -20,6 +20,7 @@ import * as cmd from "../state/commands";
 import { invalidate } from "../state/resources";
 import { useStore } from "../state/store";
 import { errCategory, errMessage, notify, reportError, swallow } from "../state/toast";
+import { confirmDialog } from "../state/dialog";
 import { refreshViewTheme, registerView } from "../themes/bus";
 import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
@@ -843,16 +844,25 @@ export function EditorPane({
         const closing = new Set(toClose.filter((p) => tabs.includes(p)));
         if (closing.size === 0) return;
         const dirtyClosing = [...closing].filter((p) => dirtyRef.current.has(p));
-        if (dirtyClosing.length > 0) {
-            const msg =
-                dirtyClosing.length === 1
-                    ? `Discard unsaved changes in ${basename(dirtyClosing[0])}?`
-                    : `Discard unsaved changes in ${dirtyClosing.length} files?`;
-            if (!window.confirm(msg)) {
-                notify("info", "close cancelled — unsaved changes remain");
-                return;
-            }
+        if (dirtyClosing.length === 0) {
+            closeTabsNow(closing);
+            return;
         }
+        void confirmDialog({
+            title: "Discard unsaved changes?",
+            body:
+                dirtyClosing.length === 1
+                    ? `Edits in ${basename(dirtyClosing[0])} will be lost.`
+                    : `Edits in ${dirtyClosing.length} files will be lost.`,
+            confirmLabel: "Discard",
+            destructive: true,
+        }).then((ok) => {
+            if (ok) closeTabsNow(closing);
+            else notify("info", "close cancelled — unsaved changes remain");
+        });
+    };
+
+    const closeTabsNow = (closing: Set<string>) => {
         for (const p of closing) {
             states.current.delete(p);
             imagesRef.current.delete(p);

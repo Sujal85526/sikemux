@@ -76,7 +76,7 @@ describe("agent rail", () => {
 
         expect(await screen.findByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
 
-        await user.click(screen.getByTitle("Filter recent chats"));
+        await user.click(screen.getByRole("button", { name: "Filter recent chats" }));
         await user.type(screen.getByRole("textbox", { name: "Filter recent chats" }), "terminal");
 
         expect(screen.getByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("agent rail", () => {
         expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
         expect(screen.getByText("reset 1h 30m")).toBeInTheDocument();
 
-        await user.click(screen.getByTitle(/Claude/));
+        await user.click(screen.getByRole("button", { name: "Claude" }));
         expect(await screen.findByRole("region", { name: "Claude plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "7d usage" })).toHaveAttribute("aria-valuenow", "82");
         expect(mocks.usage).toHaveBeenCalledWith("codex");
@@ -129,7 +129,7 @@ describe("agent rail", () => {
 
         render(<AgentRail />);
 
-        expect(await screen.findByTitle("Hermes")).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Hermes" })).toBeInTheDocument();
         expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
         expect(mocks.usage).not.toHaveBeenCalled();
     });

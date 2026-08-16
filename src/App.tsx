@@ -20,6 +20,7 @@ import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./components/ExperienceOverlays";
+import { DialogHost } from "./components/DialogHost";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
@@ -30,6 +31,7 @@ import * as cmd from "./state/commands";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import { dispatchFolder, dispatchPathDrop, resolvePathDropTarget } from "./state/dropRegistry";
 import { notify, reportError, swallow } from "./state/toast";
+import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
@@ -126,12 +128,21 @@ function activeProjectConfigMatches(project: string, expected: ValidProjectConfi
     );
 }
 
-function trustCurrentProjectConfig(project: string, expected: ValidProjectConfig, requireTaskInventory = false): boolean {
-    return (
-        activeProjectConfigMatches(project, expected, requireTaskInventory) &&
-        trustProjectConfig(expected) &&
-        activeProjectConfigMatches(project, expected, requireTaskInventory)
-    );
+/**
+ * Re-checks the on-disk config after approval: the user can take arbitrarily
+ * long in the dialog, and the project must still be the one they approved.
+ */
+async function trustCurrentProjectConfig(project: string, expected: ValidProjectConfig, requireTaskInventory = false): Promise<boolean> {
+    if (!activeProjectConfigMatches(project, expected, requireTaskInventory)) return false;
+    if (!(await trustProjectConfig(expected))) return false;
+    return activeProjectConfigMatches(project, expected, requireTaskInventory);
+}
+
+/** `if (!trusted) return;` in promise form, for command bodies that must stay void. */
+function whenTrusted(project: string, expected: ValidProjectConfig, requireTaskInventory: boolean, run: () => void): void {
+    void trustCurrentProjectConfig(project, expected, requireTaskInventory).then((ok) => {
+        if (ok) run();
+    });
 }
 
 function elementAtPhysicalPosition(pos: { x: number; y: number }): HTMLElement | null {
@@ -263,14 +274,16 @@ export default function App() {
                 detail: projectConfig.config.preview.url ? `Serve ${projectConfig.config.preview.url}` : "Run the checked-in preview command",
                 category: "Project · Preview",
                 execute: runStandalone("project.preview.start", () => {
-                    if (!trustProjectConfig(projectConfig)) return;
-                    cmd.runCustomCommand({
-                        id: "project.preview.start",
-                        title: "Project preview",
-                        detail: "Checked-in preview command",
-                        command: projectConfig.config.preview!.command!,
-                        contexts: ["project"],
-                        placement: "terminal",
+                    void trustProjectConfig(projectConfig).then((ok) => {
+                        if (!ok) return;
+                        cmd.runCustomCommand({
+                            id: "project.preview.start",
+                            title: "Project preview",
+                            detail: "Checked-in preview command",
+                            command: projectConfig.config.preview!.command!,
+                            contexts: ["project"],
+                            placement: "terminal",
+                        });
                     });
                 }),
             });
@@ -311,13 +324,14 @@ export default function App() {
                   detail: `Run task from ${task.cwd}`,
                   category: "Tasks",
                   execute: runStandalone(`task.run.${task.id}`, () => {
-                      if (!trustCurrentProjectConfig(activeProjectCwd, projectConfig, true)) return;
-                      const snapshot = appTaskRuntime.getSnapshot(activeProjectCwd);
-                      const operation =
-                          snapshot?.status === "running" || snapshot?.status === "stopping"
-                              ? appTaskRuntime.restart(activeProjectCwd, task.id)
-                              : appTaskRuntime.run(activeProjectCwd, task.id);
-                      void operation.then(() => notify("success", `Started task: ${task.label}`)).catch(reportError(`start task ${task.label}`));
+                      whenTrusted(activeProjectCwd, projectConfig, true, () => {
+                          const snapshot = appTaskRuntime.getSnapshot(activeProjectCwd);
+                          const operation =
+                              snapshot?.status === "running" || snapshot?.status === "stopping"
+                                  ? appTaskRuntime.restart(activeProjectCwd, task.id)
+                                  : appTaskRuntime.run(activeProjectCwd, task.id);
+                          void operation.then(() => notify("success", `Started task: ${task.label}`)).catch(reportError(`start task ${task.label}`));
+                      });
                   }),
               }))
             : [];
@@ -331,11 +345,13 @@ export default function App() {
             detail: "Stop the current project task and start its current trusted definition",
             category: "Tasks",
             execute: runStandalone("task.restart-active", () => {
-                if (projectConfig?.status !== "valid" || !trustCurrentProjectConfig(activeProjectCwd, projectConfig, true)) return;
-                void appTaskRuntime
-                    .restart(activeProjectCwd, restartTaskId)
-                    .then(() => notify("success", "Restarted active task"))
-                    .catch(reportError("restart active task"));
+                if (projectConfig?.status !== "valid") return;
+                whenTrusted(activeProjectCwd, projectConfig, true, () => {
+                    void appTaskRuntime
+                        .restart(activeProjectCwd, restartTaskId)
+                        .then(() => notify("success", "Restarted active task"))
+                        .catch(reportError("restart active task"));
+                });
             }),
         });
     }
@@ -375,14 +391,21 @@ export default function App() {
                                   notify("info", "Close the worktree’s Sikemux project and agents before removing it");
                                   return;
                               }
-                              if (!window.confirm(`Remove worktree ${worktree.branch ?? worktree.path}?\n\nDirty worktrees will be refused.`)) return;
-                              void git
-                                  .worktreeRemove(activeProjectCwd, worktree.path)
-                                  .then(async () => {
-                                      await projectControllerBridge.refresh(activeProjectCwd);
-                                      notify("success", `Removed worktree ${worktree.branch ?? worktree.path}`);
-                                  })
-                                  .catch(reportError("remove worktree"));
+                              void confirmDialog({
+                                  title: `Remove worktree ${worktree.branch ?? worktree.path}?`,
+                                  body: "Dirty worktrees will be refused.",
+                                  confirmLabel: "Remove",
+                                  destructive: true,
+                              }).then((ok) => {
+                                  if (!ok) return;
+                                  return git
+                                      .worktreeRemove(activeProjectCwd, worktree.path)
+                                      .then(async () => {
+                                          await projectControllerBridge.refresh(activeProjectCwd);
+                                          notify("success", `Removed worktree ${worktree.branch ?? worktree.path}`);
+                                      })
+                                      .catch(reportError("remove worktree"));
+                              });
                           }),
                       } satisfies StandaloneCommand,
                   ]
@@ -483,8 +506,7 @@ export default function App() {
                     actions: projectConfig.config.actions,
                     isCurrent: () => activeProjectConfigMatches(activeProjectCwd, projectConfig),
                     execute: (action) => {
-                        if (!trustCurrentProjectConfig(activeProjectCwd, projectConfig)) return;
-                        cmd.runCustomCommand(projectActionCommand(action));
+                        whenTrusted(activeProjectCwd, projectConfig, false, () => cmd.runCustomCommand(projectActionCommand(action)));
                     },
                 });
                 dispose = () => registration.dispose();
@@ -809,6 +831,7 @@ export default function App() {
             <Onboarding />
             <DiagnosticsOverlay />
             <WhatsNewOverlay />
+            <DialogHost />
             <Toaster />
         </div>
     );

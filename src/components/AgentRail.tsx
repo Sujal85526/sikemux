@@ -7,6 +7,7 @@ import { useStore } from "../state/store";
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
+import { Tooltip } from "./Tooltip";
 
 const RECENTS_PAGE = 12;
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -223,14 +224,15 @@ export function AgentRail() {
                                         {activityById[a.id] && <AgentStateMark state={activityById[a.id].state} />}
                                         {a.launchState === "dormant" && <span className="agent-dormant-label">paused</span>}
                                     </button>
-                                    <button
-                                        type="button"
-                                        className="agent-glyph-x"
-                                        aria-label={`Close ${a.title}`}
-                                        title={`Close ${a.title}`}
-                                        onClick={() => cmd.closeAgent(a.id)}>
-                                        <IconClose size={11} />
-                                    </button>
+                                    <Tooltip label={`Close ${a.title}`}>
+                                        <button
+                                            type="button"
+                                            className="agent-glyph-x"
+                                            aria-label={`Close ${a.title}`}
+                                            onClick={() => cmd.closeAgent(a.id)}>
+                                            <IconClose size={11} />
+                                        </button>
+                                    </Tooltip>
                                 </div>
                             );
                         })}
@@ -328,15 +330,16 @@ function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType;
                 <span className="rail-group-label">Limits</span>
                 <span className="rail-group-rule" />
                 {usage.data?.plan && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
-                <button
-                    type="button"
-                    className="rail-group-add"
-                    aria-label={`Refresh ${providerLabel} plan limits`}
-                    title={`Refresh ${providerLabel} plan limits`}
-                    disabled={usage.status === "loading"}
-                    onClick={() => void usage.refresh()}>
-                    <IconRefresh size={11} />
-                </button>
+                <Tooltip label={`Refresh ${providerLabel} plan limits`}>
+                    <button
+                        type="button"
+                        className="rail-group-add"
+                        aria-label={`Refresh ${providerLabel} plan limits`}
+                        disabled={usage.status === "loading"}
+                        onClick={() => void usage.refresh()}>
+                        <IconRefresh size={11} />
+                    </button>
+                </Tooltip>
             </div>
 
             {windows.length > 0 ? (
@@ -344,31 +347,32 @@ function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType;
                     const percent = Math.max(0, Math.min(100, window.usedPercent));
                     const rounded = Math.round(percent);
                     return (
-                        <div
-                            className="agent-usage-row"
-                            data-tone={usageTone(percent)}
+                        <Tooltip
                             key={`${window.label}:${String(window.resetsAt)}:${index}`}
-                            title={`${window.label}: ${rounded}% used. ${resetTitle(window.resetsAt)}`}>
-                            <div className="agent-usage-line">
-                                <span className="agent-usage-name">{window.label}</span>
-                                <span className="agent-usage-reset">{resetCountdown(window.resetsAt, now)}</span>
+                            side="left"
+                            label={`${window.label}: ${rounded}% used. ${resetTitle(window.resetsAt)}`}>
+                            <div className="agent-usage-row" data-tone={usageTone(percent)}>
+                                <div className="agent-usage-line">
+                                    <span className="agent-usage-name">{window.label}</span>
+                                    <span className="agent-usage-reset">{resetCountdown(window.resetsAt, now)}</span>
+                                </div>
+                                <div className="agent-usage-gauge">
+                                    <span className="agent-usage-pct">
+                                        {rounded}
+                                        <i>%</i>
+                                    </span>
+                                    <span
+                                        className="agent-usage-track"
+                                        role="meter"
+                                        aria-label={`${window.label} usage`}
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
+                                        aria-valuenow={rounded}>
+                                        <span className="agent-usage-fill" style={{ width: `${percent}%` }} />
+                                    </span>
+                                </div>
                             </div>
-                            <div className="agent-usage-gauge">
-                                <span className="agent-usage-pct">
-                                    {rounded}
-                                    <i>%</i>
-                                </span>
-                                <span
-                                    className="agent-usage-track"
-                                    role="meter"
-                                    aria-label={`${window.label} usage`}
-                                    aria-valuemin={0}
-                                    aria-valuemax={100}
-                                    aria-valuenow={rounded}>
-                                    <span className="agent-usage-fill" style={{ width: `${percent}%` }} />
-                                </span>
-                            </div>
-                        </div>
+                        </Tooltip>
                     );
                 })
             ) : (
@@ -404,41 +408,48 @@ function AgentHeader({
             </div>
             <div className="agent-header-types">
                 {agents.map((a) => (
-                    <button
+                    <Tooltip
                         key={a.type}
-                        className={`agent-header-btn ${a.type}${type === a.type ? " active" : ""}`}
-                        title={
+                        label={
                             isUsageAgent(a.type) && usagePeaks[a.type] != null
                                 ? `${a.label} — ${Math.round(usagePeaks[a.type]!)}% of the busiest limit used`
                                 : a.label
-                        }
-                        onClick={() => setType(a.type)}>
-                        <AgentIcon type={a.type} size={18} />
-                        {isUsageAgent(a.type) && usagePeaks[a.type] != null && (
-                            <span className="agent-header-capacity" data-tone={usageTone(usagePeaks[a.type]!)} aria-hidden="true">
-                                <span style={{ width: `${Math.max(0, Math.min(100, usagePeaks[a.type]!))}%` }} />
-                            </span>
-                        )}
-                    </button>
+                        }>
+                        <button
+                            className={`agent-header-btn ${a.type}${type === a.type ? " active" : ""}`}
+                            aria-label={a.label}
+                            onClick={() => setType(a.type)}>
+                            <AgentIcon type={a.type} size={18} />
+                            {isUsageAgent(a.type) && usagePeaks[a.type] != null && (
+                                <span className="agent-header-capacity" data-tone={usageTone(usagePeaks[a.type]!)} aria-hidden="true">
+                                    <span style={{ width: `${Math.max(0, Math.min(100, usagePeaks[a.type]!))}%` }} />
+                                </span>
+                            )}
+                        </button>
+                    </Tooltip>
                 ))}
             </div>
             <div className="agent-header-actions">
-                <button
-                    className={`agent-header-btn${searchOpen ? " active" : ""}`}
-                    aria-pressed={searchOpen}
-                    title="Filter recent chats"
-                    onClick={onToggleSearch}>
-                    <IconSearch size={15} />
-                </button>
-                <button
-                    className="agent-header-btn"
-                    disabled={!type}
-                    title={type ? `new ${label} agent — ⌥N` : "No agent CLI detected"}
-                    onClick={() => {
-                        if (type) cmd.openAgentPalette();
-                    }}>
-                    <IconPlus size={15} />
-                </button>
+                <Tooltip label="Filter recent chats">
+                    <button
+                        className={`agent-header-btn${searchOpen ? " active" : ""}`}
+                        aria-pressed={searchOpen}
+                        aria-label="Filter recent chats"
+                        onClick={onToggleSearch}>
+                        <IconSearch size={15} />
+                    </button>
+                </Tooltip>
+                <Tooltip label={type ? `new ${label} agent — ⌥N` : "No agent CLI detected"}>
+                    <button
+                        className="agent-header-btn"
+                        disabled={!type}
+                        aria-label={type ? `New ${label} agent` : "No agent CLI detected"}
+                        onClick={() => {
+                            if (type) cmd.openAgentPalette();
+                        }}>
+                        <IconPlus size={15} />
+                    </button>
+                </Tooltip>
             </div>
         </div>
     );

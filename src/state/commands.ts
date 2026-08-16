@@ -21,6 +21,7 @@ import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.def
 import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
+import { confirmDialog } from "./dialog";
 import { agentSupportsSkipPermissions } from "./commands/agentLogic";
 import { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
 import { parseSessionBundle } from "./sessionBundle";
@@ -187,13 +188,26 @@ function dirtyPathsForSession(st: StoreState, sessionId: string): string[] {
     return winIds.flatMap((id) => dirtyPathsForWindow(st, st.windows[id]));
 }
 
-function confirmDiscardDirty(paths: string[], action: string): boolean {
-    if (paths.length === 0) return true;
+/**
+ * Runs `proceed` once the user accepts losing the listed edits. Stays
+ * synchronous when nothing is dirty so the common close path has no extra tick.
+ */
+function guardDiscardDirty(paths: string[], action: string, proceed: () => void): void {
+    if (paths.length === 0) {
+        proceed();
+        return;
+    }
     const shown = paths.slice(0, 3).map(basename).join(", ");
     const more = paths.length > 3 ? ` and ${paths.length - 3} more` : "";
-    const ok = window.confirm(`Discard unsaved changes in ${shown}${more}?`);
-    if (!ok) notify("info", `${action} cancelled — unsaved changes remain`);
-    return ok;
+    void confirmDialog({
+        title: "Discard unsaved changes?",
+        body: `Edits in ${shown}${more} will be lost.`,
+        confirmLabel: "Discard",
+        destructive: true,
+    }).then((ok) => {
+        if (ok) proceed();
+        else notify("info", `${action} cancelled — unsaved changes remain`);
+    });
 }
 
 export function createProjectSession(cwd: string): void {
@@ -706,7 +720,10 @@ export function selectLastSession(): void {
 }
 
 export function closeSession(id: string): void {
-    if (!confirmDiscardDirty(dirtyPathsForSession(getState(), id), "close session")) return;
+    guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id));
+}
+
+function closeSessionNow(id: string): void {
     const beforeClose = getState();
     const closingCwd = beforeClose.sessions[id]?.cwd;
     const taskPaneIds = (beforeClose.windowsBySession[id] ?? []).flatMap((windowId) => {
@@ -1241,8 +1258,7 @@ export function closeActiveFocusTarget(): void {
     }
 
     if (win && collectPanes(win.root).length > 1) {
-        if (!confirmDiscardDirty(dirtyPathsForPane(st, win.activePaneId), "close pane")) return;
-        closeActivePane();
+        guardDiscardDirty(dirtyPathsForPane(st, win.activePaneId), "close pane", closeActivePane);
         return;
     }
 
@@ -1350,7 +1366,12 @@ export function closeWindowById(id: string): void {
     const st = getState();
     const closing = st.windows[id];
     if (!closing || closing.fixed) return;
-    if (!confirmDiscardDirty(dirtyPathsForWindow(st, closing), "close window")) return;
+    guardDiscardDirty(dirtyPathsForWindow(st, closing), "close window", () => closeWindowNow(id));
+}
+
+function closeWindowNow(id: string): void {
+    const closing = getState().windows[id];
+    if (!closing || closing.fixed) return;
     const taskPaneIds = collectPanes(closing.root)
         .filter((pane) => pane.externalPty)
         .map((pane) => pane.id);

@@ -15,6 +15,7 @@ import { basename, relativePath as pathRelative } from "../../lib/paths";
 import { FILE_MANAGER_NAME } from "../../lib/platform";
 import { fsapi } from "../../api/fs";
 import { notify, reportError } from "../../state/toast";
+import { confirmDialog } from "../../state/dialog";
 import { type CtxItem } from "../FileTree";
 import { TabBar } from "../TabBar";
 import { IconBruno } from "../Icons";
@@ -114,9 +115,11 @@ export function BrunoPane({ sessionId, active }: Props) {
         const scopes = [collection.config, ...(located?.folderScopes ?? [])].filter(Boolean) as BruScope[];
         let trusted = trustedCollection === collectionPath;
         if (!trusted) {
-            trusted = window.confirm(
-                "Trust this Bruno collection for this session?\n\nTrusted collections may run request scripts, contact localhost/private APIs, and upload files located inside the collection folder. Requests still have hard time and size limits.",
-            );
+            trusted = await confirmDialog({
+                title: "Trust this Bruno collection for this session?",
+                body: "Trusted collections may run request scripts, contact localhost/private APIs, and upload files located inside the collection folder.\nRequests still have hard time and size limits.",
+                confirmLabel: "Trust collection",
+            });
             if (!trusted) return;
             setTrustedCollection(collectionPath);
         }

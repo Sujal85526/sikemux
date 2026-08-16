@@ -6,6 +6,7 @@ import { statusKind } from "./branchStyle";
 import { swallow } from "../../state/toast";
 import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../Icons";
 import { VirtualLogList } from "../VirtualLogList";
+import { Switch } from "../Controls";
 
 interface Props {
     paneId: string;
@@ -266,8 +267,8 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                             {logsCompleted ? " · ended" : terminal ? " · ending…" : " · live"}
                         </span>
                         <label className="rnd-toggle">
-                            <input type="checkbox" checked={followTail} onChange={(e) => setFollowTail(e.target.checked)} />
                             <span>follow</span>
+                            <Switch checked={followTail} onChange={setFollowTail} label="Follow log tail" />
                         </label>
                         <span className="rnd-logs-count">{filteredEntries.length} lines</span>
                     </div>

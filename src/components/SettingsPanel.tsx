@@ -20,6 +20,8 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
 import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconRefresh, IconSave, IconTrash } from "./Icons";
+import { Dropdown, type DropdownOption } from "./Dropdown";
+import { Checkbox, Slider, Switch } from "./Controls";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agentLaunch";
@@ -201,31 +203,26 @@ function CommandsPage() {
                         onChange={(e) => setDraft({ ...draft, command: e.target.value })}
                         spellCheck={false}
                     />
-                    <select
-                        className="settings-input"
+                    <Dropdown
+                        className="settings-dd"
+                        label="placement"
                         value={draft.placement}
-                        onChange={(e) => setDraft({ ...draft, placement: e.target.value as CustomCommandPlacement })}>
-                        {COMMAND_PLACEMENTS.map((value) => (
-                            <option key={value}>{value}</option>
-                        ))}
-                    </select>
+                        options={COMMAND_PLACEMENTS.map((value) => ({ value, label: value }))}
+                        onChange={(value) => setDraft({ ...draft, placement: value as CustomCommandPlacement })}
+                    />
                     <div className="command-contexts">
                         {COMMAND_CONTEXT_OPTIONS.map((context) => (
-                            <label key={context}>
-                                <input
-                                    type="checkbox"
-                                    checked={draft.contexts.includes(context)}
-                                    onChange={(e) =>
-                                        setDraft({
-                                            ...draft,
-                                            contexts: e.target.checked
-                                                ? [...draft.contexts, context]
-                                                : draft.contexts.filter((item) => item !== context),
-                                        })
-                                    }
-                                />
+                            <Checkbox
+                                key={context}
+                                checked={draft.contexts.includes(context)}
+                                onChange={(on) =>
+                                    setDraft({
+                                        ...draft,
+                                        contexts: on ? [...draft.contexts, context] : draft.contexts.filter((item) => item !== context),
+                                    })
+                                }>
                                 {context}
-                            </label>
+                            </Checkbox>
                         ))}
                     </div>
                     <div className="command-editor-actions">
@@ -272,7 +269,7 @@ function ToggleSetting({
                 <b>{label}</b>
                 <small>{detail}</small>
             </span>
-            <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+            <Switch checked={checked} disabled={disabled} onChange={onChange} label={label} />
         </label>
     );
 }
@@ -357,15 +354,18 @@ function AgentsPage() {
                             </label>
                             <label>
                                 <span>provider</span>
-                                <select
-                                    className="settings-input"
+                                <Dropdown
+                                    className="settings-dd"
+                                    label="provider"
                                     value={draft.provider}
                                     disabled={draft.id.startsWith("builtin-")}
-                                    onChange={(event) => setDraft({ ...draft, provider: event.target.value as AgentProvider })}>
-                                    <option value="claude">Claude</option>
-                                    <option value="codex">Codex</option>
-                                    <option value="gemini">Gemini</option>
-                                </select>
+                                    options={[
+                                        { value: "claude", label: "Claude" },
+                                        { value: "codex", label: "Codex" },
+                                        { value: "gemini", label: "Gemini" },
+                                    ]}
+                                    onChange={(value) => setDraft({ ...draft, provider: value as AgentProvider })}
+                                />
                             </label>
                         </div>
                         <label>
@@ -405,16 +405,13 @@ function AgentsPage() {
                         return (
                             <label key={type}>
                                 <span>{type} default</span>
-                                <select
-                                    className="settings-input"
+                                <Dropdown
+                                    className="settings-dd"
+                                    label={`${type} default`}
                                     value={selectedProfiles[type] ?? ""}
-                                    onChange={(event) => cmd.selectProviderProfile(type, event.target.value)}>
-                                    {options.map((profile) => (
-                                        <option key={profile.id} value={profile.id}>
-                                            {profile.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                    options={options.map((profile) => ({ value: profile.id, label: profile.name }))}
+                                    onChange={(value) => cmd.selectProviderProfile(type, value)}
+                                />
                             </label>
                         );
                     })}
@@ -438,10 +435,16 @@ function AgentsPage() {
                 />
             </SettingsSection>
             <SettingsSection title="Rail density" sub="Compact mode fits more sessions while keeping state symbols visible.">
-                <select className="settings-input" value={density} onChange={(e) => cmd.setRailDensity(e.target.value as "comfortable" | "compact")}>
-                    <option value="comfortable">comfortable</option>
-                    <option value="compact">compact</option>
-                </select>
+                <Dropdown
+                    className="settings-dd"
+                    label="rail density"
+                    value={density}
+                    options={[
+                        { value: "comfortable", label: "comfortable", detail: "Full labels and generous rows" },
+                        { value: "compact", label: "compact", detail: "More sessions per screen" },
+                    ]}
+                    onChange={(value) => cmd.setRailDensity(value as "comfortable" | "compact")}
+                />
             </SettingsSection>
         </SettingsPage>
     );
@@ -546,13 +549,16 @@ function AboutPage() {
                 title="Update channel"
                 meta={updateChannel}
                 sub="Stable follows the latest signed release. Preview follows the signed moving preview release.">
-                <select
-                    className="settings-input"
+                <Dropdown
+                    className="settings-dd"
+                    label="update channel"
                     value={updateChannel}
-                    onChange={(event) => cmd.setUpdateChannel(event.target.value as "stable" | "preview")}>
-                    <option value="stable">stable</option>
-                    <option value="preview">preview</option>
-                </select>
+                    options={[
+                        { value: "stable", label: "stable", detail: "Latest signed release" },
+                        { value: "preview", label: "preview", detail: "Signed moving preview release" },
+                    ]}
+                    onChange={(value) => cmd.setUpdateChannel(value as "stable" | "preview")}
+                />
             </SettingsSection>
             <SettingsSection title="Support deck" sub="These views are also searchable from the command deck.">
                 <div className="about-actions">
@@ -968,6 +974,15 @@ interface ThemeEdit {
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const customThemes = useStore((s) => s.customThemes);
+    /** Themes matching the requested appearance, plus the current pick so it stays selectable. */
+    const themeOptions = (dark: boolean, selectedId: string): DropdownOption[] =>
+        [...THEMES, ...customThemes]
+            .filter((theme) => theme.dark === dark || theme.id === selectedId)
+            .map((theme) => ({
+                value: theme.id,
+                label: theme.name,
+                ...(customThemes.some((candidate) => candidate.id === theme.id) ? { detail: "custom" } : {}),
+            }));
     const themeMode = useStore((s) => s.themeMode);
     const systemLightThemeId = useStore((s) => s.systemLightThemeId);
     const systemDarkThemeId = useStore((s) => s.systemDarkThemeId);
@@ -1084,35 +1099,23 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 <div className="system-theme-grid">
                     <label>
                         <span>Light appearance</span>
-                        <select
-                            className="settings-input"
+                        <Dropdown
+                            className="settings-dd"
+                            label="Light appearance"
                             value={systemLightThemeId}
-                            onChange={(event) => cmd.setSystemLightThemeId(event.target.value)}>
-                            {[...THEMES, ...customThemes]
-                                .filter((theme) => !theme.dark || theme.id === systemLightThemeId)
-                                .map((theme) => (
-                                    <option key={theme.id} value={theme.id}>
-                                        {theme.name}
-                                        {customThemes.some((candidate) => candidate.id === theme.id) ? " · custom" : ""}
-                                    </option>
-                                ))}
-                        </select>
+                            options={themeOptions(false, systemLightThemeId)}
+                            onChange={cmd.setSystemLightThemeId}
+                        />
                     </label>
                     <label>
                         <span>Dark appearance</span>
-                        <select
-                            className="settings-input"
+                        <Dropdown
+                            className="settings-dd"
+                            label="Dark appearance"
                             value={systemDarkThemeId}
-                            onChange={(event) => cmd.setSystemDarkThemeId(event.target.value)}>
-                            {[...THEMES, ...customThemes]
-                                .filter((theme) => theme.dark || theme.id === systemDarkThemeId)
-                                .map((theme) => (
-                                    <option key={theme.id} value={theme.id}>
-                                        {theme.name}
-                                        {customThemes.some((candidate) => candidate.id === theme.id) ? " · custom" : ""}
-                                    </option>
-                                ))}
-                        </select>
+                            options={themeOptions(true, systemDarkThemeId)}
+                            onChange={cmd.setSystemDarkThemeId}
+                        />
                     </label>
                 </div>
             </SettingsSection>
@@ -1168,15 +1171,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                                 <p>Solid at 1.00, translucent below it.</p>
                             </div>
                             <div className="settings-knob-row">
-                                <input
-                                    type="range"
-                                    className="settings-slider"
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    value={windowOpacity}
-                                    onChange={(e) => cmd.setWindowOpacity(parseFloat(e.target.value))}
-                                />
+                                <Slider label="Window opacity" min={0} max={1} step={0.01} value={windowOpacity} onChange={cmd.setWindowOpacity} />
                                 <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
                             </div>
                         </div>
@@ -1186,14 +1181,13 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                                 <p>0 is crisp; 20–40px gives a soft frosted effect.</p>
                             </div>
                             <div className="settings-knob-row">
-                                <input
-                                    type="range"
-                                    className="settings-slider alt"
+                                <Slider
+                                    label="Background blur"
                                     min={0}
                                     max={60}
                                     step={1}
                                     value={Math.min(60, windowBlur)}
-                                    onChange={(e) => cmd.setWindowBlur(parseInt(e.target.value, 10))}
+                                    onChange={(value) => cmd.setWindowBlur(Math.round(value))}
                                 />
                                 <NumberField
                                     value={windowBlur}

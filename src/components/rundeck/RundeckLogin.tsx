@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { rundeckApi } from "../../api/rundeck";
+import { Checkbox } from "../Controls";
 
 interface Props {
     paneId: string;
@@ -69,17 +70,12 @@ export function RundeckLogin({ initialUrl = "", initialUser = "", initialAllowIn
                 </label>
 
                 {insecureHttp && (
-                    <label className="rnd-insecure-http">
-                        <input
-                            type="checkbox"
-                            checked={allowInsecurePrivateHttp}
-                            onChange={(event) => setAllowInsecurePrivateHttp(event.target.checked)}
-                        />
-                        <span>
+                    <div className="rnd-insecure-http">
+                        <Checkbox checked={allowInsecurePrivateHttp} onChange={setAllowInsecurePrivateHttp}>
                             Allow plaintext HTTP for this private-subnet host. I understand the password and token are not protected by TLS. Sikemux
                             will refuse the connection unless every resolved address is private or loopback.
-                        </span>
-                    </label>
+                        </Checkbox>
+                    </div>
                 )}
 
                 <label className="rnd-field">

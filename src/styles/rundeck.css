@@ -452,10 +452,20 @@
     line-height: 1.45;
 }
 
-.rnd-insecure-http input {
-    flex: 0 0 auto;
-    margin-top: 2px;
-    accent-color: var(--danger);
+/* Destructive consent: the box picks up the danger colour, not the accent. */
+.rnd-insecure-http .cbx {
+    align-items: flex-start;
+    font-size: inherit;
+}
+.rnd-insecure-http .cbx-box {
+    margin-top: 1px;
+}
+.rnd-insecure-http .cbx.on .cbx-box {
+    background: var(--danger);
+    color: #2a0d0d;
+}
+.rnd-insecure-http .cbx-label {
+    line-height: 1.45;
 }
 .rnd-login-error {
     padding: 7px 10px;
@@ -1204,8 +1214,9 @@
     color: var(--ink-dim);
     font-weight: 400;
 }
-.rnd-toggle input {
-    accent-color: var(--acc);
+.rnd-toggle .swx {
+    transform: scale(0.8);
+    transform-origin: center;
 }
 .rnd-logs-stream {
     flex: 1;

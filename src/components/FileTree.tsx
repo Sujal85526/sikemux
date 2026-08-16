@@ -7,6 +7,7 @@ import { subscribe } from "../state/bus";
 import { useResourceEnabled } from "../state/resources";
 import { gitStatusR } from "../state/resources.defs";
 import { notify, reportError, swallow } from "../state/toast";
+import { confirmDialog } from "../state/dialog";
 import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
@@ -425,7 +426,13 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     const revealInFinder = (p: string) => void fsapi.revealInFinder(p).catch(reportError("reveal"));
 
     const deleteEntry = async (entry: DirEntry) => {
-        if (!window.confirm(`Move "${entry.name}" to the Trash?`)) return;
+        const ok = await confirmDialog({
+            title: `Move "${entry.name}" to the Trash?`,
+            body: entry.path,
+            confirmLabel: "Move to Trash",
+            destructive: true,
+        });
+        if (!ok) return;
         try {
             await fsapi.deletePath(entry.path);
             await loadDir(dirname(entry.path) || cwd);

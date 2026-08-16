@@ -54,8 +54,8 @@ describe("SettingsPanel keybindings", () => {
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "AgentsProfiles and launch safety" }));
 
-        const restore = screen.getByRole("checkbox", { name: /Restore agent tabs/ });
-        const autoResume = screen.getByRole("checkbox", { name: /Auto-resume restored agents/ });
+        const restore = screen.getByRole("switch", { name: /Restore agent tabs/ });
+        const autoResume = screen.getByRole("switch", { name: /Auto-resume restored agents/ });
         expect(autoResume).toBeChecked();
 
         await user.click(restore);
@@ -88,8 +88,11 @@ describe("SettingsPanel keybindings", () => {
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "AppearanceTheme and window" }));
 
-        await user.selectOptions(screen.getByRole("combobox", { name: "Light appearance" }), "aura-day");
-        await user.selectOptions(screen.getByRole("combobox", { name: "Dark appearance" }), "dracula");
+        // The app dropdown is a button + listbox, not a native <select>.
+        await user.click(screen.getByRole("button", { name: "Light appearance" }));
+        await user.click(screen.getByRole("option", { name: /Aura Day/i }));
+        await user.click(screen.getByRole("button", { name: "Dark appearance" }));
+        await user.click(screen.getByRole("option", { name: /Dracula/i }));
 
         expect(getState()).toMatchObject({ systemLightThemeId: "aura-day", systemDarkThemeId: "dracula" });
     });

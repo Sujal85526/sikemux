@@ -1,5 +1,6 @@
 import { useState } from "react";
 import * as cmd from "../../state/commands";
+import { confirmDialog, promptDialog } from "../../state/dialog";
 import type { BruTreeNode } from "../../bruno/types";
 import { IconChevron, IconFolder, IconPlus, IconFolderPlus, IconRefresh, IconPencil, IconTrash } from "../Icons";
 
@@ -23,20 +24,21 @@ export function BrunoTree({ sessionId, collectionPath, tree, activePath, drafts,
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const toggle = (p: string) => setExpanded((c) => ({ ...c, [p]: !c[p] }));
 
-    const newRequest = (dir: string) => {
-        const name = window.prompt("New request name");
+    const newRequest = async (dir: string) => {
+        const name = await promptDialog({ title: "New request", label: "Name", placeholder: "get-users", confirmLabel: "Create" });
         if (name) void cmd.brunoNewRequest(sessionId, dir, name);
     };
-    const newFolder = (parent: string) => {
-        const name = window.prompt("New folder name");
+    const newFolder = async (parent: string) => {
+        const name = await promptDialog({ title: "New folder", label: "Name", placeholder: "auth", confirmLabel: "Create" });
         if (name) void cmd.brunoNewFolder(sessionId, parent, name);
     };
-    const rename = (path: string, current: string) => {
-        const name = window.prompt("Rename request", current);
+    const rename = async (path: string, current: string) => {
+        const name = await promptDialog({ title: "Rename request", label: "Name", initial: current, confirmLabel: "Rename" });
         if (name && name !== current) void cmd.brunoRenameRequest(sessionId, path, name);
     };
-    const del = (path: string, name: string) => {
-        if (window.confirm(`Delete request "${name}"?`)) void cmd.brunoDeleteRequest(sessionId, path);
+    const del = async (path: string, name: string) => {
+        const ok = await confirmDialog({ title: `Delete request "${name}"?`, body: path, confirmLabel: "Delete", destructive: true });
+        if (ok) void cmd.brunoDeleteRequest(sessionId, path);
     };
 
     const activateOnKey = (e: React.KeyboardEvent, action: () => void) => {

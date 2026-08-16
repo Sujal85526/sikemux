@@ -116,3 +116,62 @@
     color: var(--ink-faint);
     font-size: 9.5px;
 }
+
+/* ---- Modern shell pass --------------------------------------------------
+ * The dropdown predates the modern chrome, so it still read as a sharp mono
+ * control next to rounded UI-font surfaces. These rules bring it in line
+ * without touching the component's markup or behaviour.
+ */
+.dd-btn {
+    height: 30px;
+    padding: 0 10px;
+    gap: 8px;
+    border-radius: var(--radius-xs);
+    font-family: var(--ui);
+    font-size: 12.5px;
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 92%), transparent);
+    transition:
+        border-color 0.12s,
+        background 0.12s,
+        color 0.12s;
+}
+.dd-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
+}
+.dd-btn[aria-expanded="true"] {
+    border-color: var(--acc-line);
+    box-shadow: 0 0 0 3px var(--acc-soft);
+}
+
+.dd-menu {
+    top: calc(100% + 5px);
+    padding: 4px;
+    gap: 2px;
+    border-radius: var(--radius-sm);
+    border-color: color-mix(in srgb, var(--line) 65%, white 10%);
+    box-shadow: var(--shadow-float);
+    -webkit-backdrop-filter: blur(18px) saturate(112%);
+    backdrop-filter: blur(18px) saturate(112%);
+}
+
+.dd-item {
+    padding: 6px 8px;
+    border-radius: var(--radius-xs);
+    font-family: var(--ui);
+    font-size: 12.5px;
+}
+.dd-item:hover {
+    background: var(--acc-soft);
+}
+.dd-item-label small {
+    font-size: 10.5px;
+}
+
+/* Settings rows want the control to span the field, not hug its label. */
+.settings-dd {
+    width: 100%;
+}
+.dd:has(> .settings-dd) {
+    flex: 1 1 auto;
+    min-width: 0;
+}

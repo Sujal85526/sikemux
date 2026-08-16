@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { IconClose } from "./Icons";
+import { Tooltip } from "./Tooltip";
 
 /**
  * One normalized tab. Every tab strip in the app (editor files, agents,
@@ -51,44 +52,44 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                 const closable = t.closable ?? !!onClose;
                 return (
                     <div key={t.id} className={`tab-wrap${t.active ? " active" : ""}`} role="presentation">
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={t.active ?? false}
-                            aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
-                            title={t.title}
-                            className={`tab${t.active ? " active" : ""}`}
-                            onClick={() => onSelect(t.id)}
-                            onContextMenu={
-                                buildMenu
-                                    ? (e) => {
-                                          e.preventDefault();
-                                          setMenu({ x: e.clientX, y: e.clientY, id: t.id });
-                                      }
-                                    : undefined
-                            }>
-                            {t.icon}
-                            <span className="tab-label">{t.label}</span>
-                            {t.dirty && <span className="tab-dot" aria-hidden="true" />}
-                            {t.accessory}
-                        </button>
-                        {closable && onClose && (
+                        <Tooltip label={t.title}>
                             <button
                                 type="button"
-                                className="tab-x"
-                                aria-label={`Close ${t.label}`}
-                                title={`Close ${t.label}`}
-                                onClick={() => onClose(t.id)}>
-                                <IconClose size={11} />
+                                role="tab"
+                                aria-selected={t.active ?? false}
+                                aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
+                                className={`tab${t.active ? " active" : ""}`}
+                                onClick={() => onSelect(t.id)}
+                                onContextMenu={
+                                    buildMenu
+                                        ? (e) => {
+                                              e.preventDefault();
+                                              setMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                                          }
+                                        : undefined
+                                }>
+                                {t.icon}
+                                <span className="tab-label">{t.label}</span>
+                                {t.dirty && <span className="tab-dot" aria-hidden="true" />}
+                                {t.accessory}
                             </button>
+                        </Tooltip>
+                        {closable && onClose && (
+                            <Tooltip label={`Close ${t.label}`}>
+                                <button type="button" className="tab-x" aria-label={`Close ${t.label}`} onClick={() => onClose(t.id)}>
+                                    <IconClose size={11} />
+                                </button>
+                            </Tooltip>
                         )}
                     </div>
                 );
             })}
             {onAdd && (
-                <button type="button" className="tab-add" title={addTitle} onClick={onAdd}>
-                    {addIcon}
-                </button>
+                <Tooltip label={addTitle}>
+                    <button type="button" className="tab-add" aria-label={addTitle} onClick={onAdd}>
+                        {addIcon}
+                    </button>
+                </Tooltip>
             )}
             {trailing && <div className="tabbar-trailing">{trailing}</div>}
             {menu && menuItems && <TreeContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}

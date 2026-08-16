@@ -19,6 +19,7 @@ import {
     WindowIcon,
 } from "./Icons";
 import { Kbd } from "./Kbd";
+import { Tooltip } from "./Tooltip";
 import { UpdateChip, VersionChip } from "./TopBar";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 
@@ -64,14 +65,11 @@ export function SideRail() {
     };
 
     const SessionCloseButton = ({ session }: { session: Session }) => (
-        <button
-            type="button"
-            className="sess-close"
-            title={`Close ${session.name}`}
-            aria-label={`Close ${session.name}`}
-            onClick={() => cmd.closeSession(session.id)}>
-            <IconClose size={11} />
-        </button>
+        <Tooltip label={`Close ${session.name}`}>
+            <button type="button" className="sess-close" aria-label={`Close ${session.name}`} onClick={() => cmd.closeSession(session.id)}>
+                <IconClose size={11} />
+            </button>
+        </Tooltip>
     );
 
     const ProjectBlock = ({ s }: { s: Session }) => {
@@ -88,25 +86,27 @@ export function SideRail() {
             const overflow = agents.length - visible.length;
             return (
                 <div className="session-row-shell project-row-shell">
-                    <button className="proj-row collapsed" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
-                        <span className="proj-folder">
-                            <IconFolder size={12} />
-                        </span>
-                        <span className="proj-name">{s.name}</span>
-                        {visible.length > 0 && (
-                            <span className="proj-child-icons">
-                                {visible.map((a) => (
-                                    <span
-                                        key={a.id}
-                                        className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-                                        <AgentIcon type={a.type} size={20} />
-                                    </span>
-                                ))}
-                                {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                    <Tooltip label={s.cwd || s.name} side="right">
+                        <button className="proj-row collapsed" onClick={() => cmd.selectSession(s.id)}>
+                            <span className="proj-folder">
+                                <IconFolder size={12} />
                             </span>
-                        )}
-                        {rollup && <AgentStateIndicator state={rollup} />}
-                    </button>
+                            <span className="proj-name">{s.name}</span>
+                            {visible.length > 0 && (
+                                <span className="proj-child-icons">
+                                    {visible.map((a) => (
+                                        <span
+                                            key={a.id}
+                                            className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
+                                            <AgentIcon type={a.type} size={20} />
+                                        </span>
+                                    ))}
+                                    {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                                </span>
+                            )}
+                            {rollup && <AgentStateIndicator state={rollup} />}
+                        </button>
+                    </Tooltip>
                     <SessionCloseButton session={s} />
                 </div>
             );
@@ -178,12 +178,14 @@ export function SideRail() {
         return (
             <div className="proj-tree active">
                 <div className="session-row-shell project-row-shell">
-                    <button className="proj-row expanded" onClick={() => cmd.selectSession(s.id)} title={s.cwd || s.name}>
-                        <span className="proj-folder">
-                            <IconFolder size={12} />
-                        </span>
-                        <span className="proj-name">{s.name}</span>
-                    </button>
+                    <Tooltip label={s.cwd || s.name} side="right">
+                        <button className="proj-row expanded" onClick={() => cmd.selectSession(s.id)}>
+                            <span className="proj-folder">
+                                <IconFolder size={12} />
+                            </span>
+                            <span className="proj-name">{s.name}</span>
+                        </button>
+                    </Tooltip>
                     <SessionCloseButton session={s} />
                 </div>
                 <div className="proj-children">
@@ -193,27 +195,27 @@ export function SideRail() {
                         const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
                         const overflow = c.icons.length - visibleIcons.length;
                         return (
-                            <button
-                                key={c.role}
-                                type="button"
-                                className={`proj-child${subActive ? " active" : ""}`}
-                                title={c.title}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onSubClick(c.role);
-                                }}>
-                                <span className="proj-child-tick" />
-                                <span className="proj-child-ic">{node}</span>
-                                <span className="proj-child-label">{c.label}</span>
-                                {visibleIcons.length > 0 && (
-                                    <span className="proj-child-icons">
-                                        {visibleIcons}
-                                        {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                    </span>
-                                )}
-                                {c.role === "agents" && rollup && <AgentStateIndicator state={rollup} />}
-                                {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
-                            </button>
+                            <Tooltip key={c.role} label={c.title} side="right">
+                                <button
+                                    type="button"
+                                    className={`proj-child${subActive ? " active" : ""}`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSubClick(c.role);
+                                    }}>
+                                    <span className="proj-child-tick" />
+                                    <span className="proj-child-ic">{node}</span>
+                                    <span className="proj-child-label">{c.label}</span>
+                                    {visibleIcons.length > 0 && (
+                                        <span className="proj-child-icons">
+                                            {visibleIcons}
+                                            {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                                        </span>
+                                    )}
+                                    {c.role === "agents" && rollup && <AgentStateIndicator state={rollup} />}
+                                    {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
+                                </button>
+                            </Tooltip>
                         );
                     })}
                 </div>
@@ -265,13 +267,17 @@ export function SideRail() {
                     <span className="rail-group-actions">
                         {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
                         {action && (
-                            <button className="rail-group-add" onClick={action} title={actionTitle} aria-label={actionTitle} type="button">
-                                <IconPencil size={11} />
-                            </button>
+                            <Tooltip label={actionTitle}>
+                                <button className="rail-group-add" onClick={action} aria-label={actionTitle} type="button">
+                                    <IconPencil size={11} />
+                                </button>
+                            </Tooltip>
                         )}
-                        <button className="rail-group-add" onClick={add} title={addTitle}>
-                            <IconPlus size={11} />
-                        </button>
+                        <Tooltip label={addTitle}>
+                            <button className="rail-group-add" onClick={add} aria-label={addTitle} type="button">
+                                <IconPlus size={11} />
+                            </button>
+                        </Tooltip>
                     </span>
                 )}
             </div>
@@ -347,10 +353,12 @@ export function SideRail() {
 
             <UpdateChip />
 
-            <button className="rail-foot" onClick={() => cmd.openPicker("all")} title={`Open or create a session — ${kb("session.open")}`}>
-                <Kbd>{kb("session.open")}</Kbd>
-                <span>open or create a session</span>
-            </button>
+            <Tooltip label={`Open or create a session — ${kb("session.open")}`} side="top">
+                <button className="rail-foot" onClick={() => cmd.openPicker("all")}>
+                    <Kbd>{kb("session.open")}</Kbd>
+                    <span>open or create a session</span>
+                </button>
+            </Tooltip>
         </aside>
     );
 }
