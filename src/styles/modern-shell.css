@@ -7,7 +7,7 @@
  * that reads like a native macOS selection color instead of a neon terminal.
  */
 :root {
-    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+    --ui: "Figtree", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
     --radius-xs: 6px;
     --radius-sm: 9px;
     --radius-md: 13px;
