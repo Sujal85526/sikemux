@@ -219,7 +219,7 @@
 
 .picker-list {
     overflow-y: auto;
-    padding: 0px;
+    padding: var(--space-1) var(--space-1h);
 }
 .picker-group {
     padding: 10px 10px 6px;
@@ -231,9 +231,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    width: auto;
+    width: 100%;
     height: 30px;
-    margin: 0 var(--space-1h);
     padding: 0 var(--space-1h);
     border-radius: var(--radius-control);
     color: var(--ink-dim);

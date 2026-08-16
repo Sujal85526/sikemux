@@ -678,6 +678,9 @@
     content: "";
     position: absolute;
     inset: -1px;
+    /* The masked gradient ring needs its own radius, or it paints a sharp
+       rectangle over the rounded button. One extra px for the -1px inset. */
+    border-radius: calc(var(--radius-control) + 1px);
     padding: 1px;
     background: var(--yolo-rainbow);
     background-size: 200% 100%;
