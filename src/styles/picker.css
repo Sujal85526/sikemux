@@ -290,10 +290,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     font-weight: 500;
-    /* Pulled off full --ink: a long column of pure white (or pure black on a
-       light theme) glares against the surface. Mixing toward --ink-dim softens
-       it the same way in either direction. */
-    color: color-mix(in srgb, var(--ink) 55%, var(--ink-dim));
+    /* The resting list sits at --ink-dim; only the row under the cursor comes
+       up to full ink. A whole column at --ink glares, and once every row is
+       bright the selection has nothing left to say. */
+    color: var(--ink-dim);
+}
+.picker-item.sel .picker-name {
+    color: var(--ink);
 }
 .picker-sub {
     /* Never shrink: the provider and age are short and fixed, so the title is
