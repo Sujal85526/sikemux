@@ -79,11 +79,11 @@ describe("agent launch commands", () => {
         expect(agent.startup).toMatch(/^claude /);
     });
 
-    it("normalizes unenforceable modes to an explicit provider default", () => {
+    it("normalizes legacy modes to Normal", () => {
         addAgent("pi", undefined, undefined, { permissionMode: "read-only" });
 
         const agent = getState().agents[getState().agentsBySession.project[0]];
-        expect(agent.permissionMode).toBe("full-access");
+        expect(agent.permissionMode).toBe("workspace-write");
         expect(agent.startup).toBe("pi");
     });
 
@@ -185,22 +185,17 @@ describe("agent launch commands", () => {
         expect(getState().agents[id].startup).toBe(before.startup);
     });
 
-    it("relaunches a resumable session with any supported permission mode", () => {
+    it("relaunches a resumable session in Normal or YOLO mode", () => {
         addAgent("codex", "session-42", "Resumable task", { permissionMode: "workspace-write" });
         const id = getState().agentsBySession.project[0];
-
-        setAgentPermissionMode(id, "read-only");
-
-        expect(getState().agents[id]).toMatchObject({ permissionMode: "read-only", skipPermissions: false });
-        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "read-only", "session-42"]);
-
-        setAgentPermissionMode(id, "full-access");
-        expect(getState().agents[id].permissionMode).toBe("full-access");
-        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "danger-full-access", "session-42"]);
 
         setAgentPermissionMode(id, "bypass");
         expect(getState().agents[id]).toMatchObject({ permissionMode: "bypass", skipPermissions: true });
         expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--dangerously-bypass-approvals-and-sandbox", "session-42"]);
+
+        setAgentPermissionMode(id, "workspace-write");
+        expect(getState().agents[id]).toMatchObject({ permissionMode: "workspace-write", skipPermissions: false });
+        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "workspace-write", "session-42"]);
     });
 
     it("refuses an explicit mode change until the conversation can be resumed", () => {

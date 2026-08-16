@@ -2089,7 +2089,8 @@ export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreA
 export const setAutoResumeAgents = (value: boolean): void =>
     setState({ autoResumeAgents: value, restoreAgentTabs: value ? true : getState().restoreAgentTabs });
 export const setRailDensity = (value: import("./types").RailDensity): void => setState({ railDensity: value });
-export const setDefaultAgentPermissionMode = (value: import("./types").AgentPermissionMode): void => setState({ defaultAgentPermissionMode: value });
+export const setDefaultAgentPermissionMode = (value: import("./types").AgentPermissionMode): void =>
+    setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });
 export function selectProviderProfile(type: AgentType, profileId: string): void {
     setState((state) => ({ selectedProviderProfileIds: { ...state.selectedProviderProfileIds, [type]: profileId } }));
 }

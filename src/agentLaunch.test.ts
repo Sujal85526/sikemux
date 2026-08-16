@@ -15,18 +15,18 @@ import {
 } from "./agentLaunch";
 
 describe("agent launch policy", () => {
-    it("maps Codex safety modes to explicit sandbox flags", () => {
-        expect(permissionArgs("codex", "read-only")).toEqual(["--sandbox", "read-only"]);
+    it("maps Codex Normal and YOLO modes to explicit flags", () => {
         expect(permissionArgs("codex", "workspace-write")).toEqual(["--sandbox", "workspace-write"]);
-        expect(permissionArgs("codex", "full-access")).toEqual(["--sandbox", "danger-full-access"]);
         expect(permissionArgs("codex", "bypass")).toEqual(["--dangerously-bypass-approvals-and-sandbox"]);
+        expect(permissionArgs("codex", "read-only")).toEqual(["--sandbox", "workspace-write"]);
+        expect(permissionArgs("codex", "full-access")).toEqual(["--sandbox", "workspace-write"]);
     });
 
-    it("maps Claude modes without conflating full access and bypass", () => {
-        expect(permissionArgs("claude", "read-only")).toEqual(["--permission-mode", "plan"]);
+    it("maps Claude Normal and YOLO modes without reviving legacy choices", () => {
         expect(permissionArgs("claude", "workspace-write")).toEqual(["--permission-mode", "acceptEdits"]);
-        expect(permissionArgs("claude", "full-access")).toEqual(["--permission-mode", "default"]);
         expect(permissionArgs("claude", "bypass")).toEqual(["--dangerously-skip-permissions"]);
+        expect(permissionArgs("claude", "read-only")).toEqual(["--permission-mode", "acceptEdits"]);
+        expect(permissionArgs("claude", "full-access")).toEqual(["--permission-mode", "acceptEdits"]);
     });
 
     it("places generated worktrees outside the repository", () => {
@@ -39,11 +39,12 @@ describe("agent launch policy", () => {
         expect(isDangerousPermissionMode("bypass")).toBe(true);
     });
 
-    it("never presents unenforceable boundaries for providers without matching CLI flags", () => {
-        expect(supportedPermissionModes("pi")).toEqual(["full-access"]);
-        expect(supportedPermissionModes("hermes")).toEqual(["full-access", "bypass"]);
-        expect(normalizePermissionMode("opencode", "read-only")).toBe("full-access");
-        expect(permissionCopyForType("pi", "full-access").label).toBe("Provider default");
+    it("presents only Normal and YOLO, without inventing unsupported provider flags", () => {
+        expect(supportedPermissionModes("codex")).toEqual(["workspace-write", "bypass"]);
+        expect(supportedPermissionModes("hermes")).toEqual(["workspace-write", "bypass"]);
+        expect(supportedPermissionModes("pi")).toEqual(["workspace-write"]);
+        expect(normalizePermissionMode("opencode", "read-only")).toBe("workspace-write");
+        expect(permissionCopyForType("pi", "workspace-write").label).toBe("Normal");
         expect(permissionArgs("pi", "read-only")).toEqual([]);
     });
 
@@ -63,7 +64,7 @@ describe("agent launch policy", () => {
         expect(
             agentLaunchArgs("codex", {
                 resumeId: "session-2",
-                permissionMode: "read-only",
+                permissionMode: "workspace-write",
                 model: "gpt-5.6-codex",
                 effort: "xhigh",
                 initialPrompt: "Review only.",
@@ -75,7 +76,7 @@ describe("agent launch policy", () => {
             "--config",
             'model_reasoning_effort="xhigh"',
             "--sandbox",
-            "read-only",
+            "workspace-write",
             "session-2",
             "Review only.",
         ]);

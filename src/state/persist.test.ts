@@ -242,7 +242,7 @@ describe("frontend persistence", () => {
             },
         ]);
         expect(saved.prefs.selectedProviderProfileIds).toEqual({ codex: "codex-work" });
-        expect(saved.prefs.defaultAgentPermissionMode).toBe("full-access");
+        expect(saved.prefs.defaultAgentPermissionMode).toBe("workspace-write");
 
         saved.prefs.providerProfiles.push({ id: "bad", name: "Bad", provider: "unknown", accent: "red", token: "do-not-hydrate" });
         saved.prefs.selectedProviderProfileIds = { codex: "codex-work", claude: "bad", unknown: "codex-work" };
@@ -250,7 +250,7 @@ describe("frontend persistence", () => {
         applyHydrate(JSON.stringify(saved));
         expect(getState().providerProfiles).toEqual(saved.prefs.providerProfiles.slice(0, 1));
         expect(getState().selectedProviderProfileIds).toEqual({ codex: "codex-work" });
-        expect(getState().defaultAgentPermissionMode).toBe("full-access");
+        expect(getState().defaultAgentPermissionMode).toBe("workspace-write");
         expect(JSON.stringify(getState().providerProfiles)).not.toContain("do-not-hydrate");
     });
 

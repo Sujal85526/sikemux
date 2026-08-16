@@ -233,7 +233,7 @@ describe("AgentPalette new agent page", () => {
         await user.type(screen.getByRole("textbox", { name: "Task for the new agent" }), "Polish the launch experience and test it.");
         await pickOption(user, "Model", "GPT-5.5");
         await pickOption(user, "Effort", "xhigh");
-        await pickOption(user, "Safety", "Observe");
+        await pickOption(user, "Safety", "Normal");
         await user.click(screen.getByRole("button", { name: /Start task/ }));
 
         await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
@@ -241,7 +241,7 @@ describe("AgentPalette new agent page", () => {
         expect(agent).toMatchObject({
             type: "codex",
             cwd: "/code/sikemux",
-            permissionMode: "read-only",
+            permissionMode: "workspace-write",
             model: "gpt-5.5",
             effort: "xhigh",
             workspaceStrategy: "current",

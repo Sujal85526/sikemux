@@ -69,8 +69,12 @@ describe("SettingsPanel keybindings", () => {
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "AgentsProfiles and launch safety" }));
 
-        await user.click(screen.getByRole("radio", { name: /Observe/ }));
-        expect(getState().defaultAgentPermissionMode).toBe("read-only");
+        expect(screen.getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
+            expect.stringContaining("Normal"),
+            expect.stringContaining("YOLO"),
+        ]);
+        await user.click(screen.getByRole("radio", { name: /YOLO/ }));
+        expect(getState().defaultAgentPermissionMode).toBe("bypass");
 
         await user.click(screen.getByRole("button", { name: /Codexcodex.*system PATH/ }));
         await user.type(screen.getByRole("textbox", { name: "executable path" }), "/opt/codex/bin/codex");

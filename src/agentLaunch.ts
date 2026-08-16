@@ -31,27 +31,25 @@ const INITIAL_PROMPT_SUPPORT: Readonly<Record<AgentType, boolean>> = {
     opencode: true,
 };
 
-export const AGENT_PERMISSION_MODES: readonly AgentPermissionMode[] = ["read-only", "workspace-write", "full-access", "bypass"];
+export const AGENT_PERMISSION_MODES: readonly AgentPermissionMode[] = ["workspace-write", "bypass"];
 
 export function supportedPermissionModes(type: AgentType): readonly AgentPermissionMode[] {
-    if (type === "claude" || type === "codex") return AGENT_PERMISSION_MODES;
-    if (type === "hermes") return ["full-access", "bypass"];
-    return ["full-access"];
+    return type === "claude" || type === "codex" || type === "hermes" ? AGENT_PERMISSION_MODES : ["workspace-write"];
 }
 
 export function normalizePermissionMode(type: AgentType, mode: AgentPermissionMode): AgentPermissionMode {
-    return supportedPermissionModes(type).includes(mode) ? mode : "full-access";
+    return supportedPermissionModes(type).includes(mode) ? mode : "workspace-write";
 }
 
 export function permissionCopyForType(
     type: AgentType,
     mode: AgentPermissionMode,
 ): { label: string; detail: string; tone: "safe" | "balanced" | "open" | "danger" } {
-    if (type !== "claude" && type !== "codex" && mode === "full-access") {
+    if (type !== "claude" && type !== "codex" && mode === "workspace-write") {
         return {
-            label: "Provider default",
+            label: "Normal",
             detail: "This provider does not expose a configurable Sikemux boundary; its own settings apply.",
-            tone: "open",
+            tone: "balanced",
         };
     }
     return AGENT_PERMISSION_COPY[mode];
@@ -64,8 +62,8 @@ export const AGENT_PERMISSION_COPY: Record<AgentPermissionMode, { label: string;
         tone: "safe",
     },
     "workspace-write": {
-        label: "Build",
-        detail: "Edit inside this workspace while approvals guard wider access.",
+        label: "Normal",
+        detail: "Use the provider's normal approval and sandbox behavior.",
         tone: "balanced",
     },
     "full-access": {
@@ -75,7 +73,7 @@ export const AGENT_PERMISSION_COPY: Record<AgentPermissionMode, { label: string;
     },
     bypass: {
         label: "YOLO",
-        detail: "Bypass approvals and sandboxing. Use only in an isolated worktree.",
+        detail: "Bypass approvals and sandboxing.",
         tone: "danger",
     },
 };
@@ -160,7 +158,7 @@ function resumeArgsForType(type: AgentType, id: string): string[] {
     return ["resume", id];
 }
 
-/** Provider CLI arguments that represent Sikemux's four portable safety levels. */
+/** Provider CLI arguments for Sikemux's Normal and YOLO modes. */
 export function permissionArgs(type: AgentType, mode: AgentPermissionMode): string[] {
     mode = normalizePermissionMode(type, mode);
     if (type === "codex") {

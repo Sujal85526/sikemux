@@ -142,7 +142,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         recentCommandKeys: s.recentCommandKeys,
         providerProfiles,
         selectedProviderProfileIds: normaliseProviderProfileSelection(s.selectedProviderProfileIds, providerProfiles, {}),
-        defaultAgentPermissionMode: s.defaultAgentPermissionMode,
+        defaultAgentPermissionMode: s.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
     };
 }
 
@@ -756,9 +756,7 @@ export function applyHydrate(raw: string): HydrationResult {
             providerProfiles,
             cur.selectedProviderProfileIds,
         ),
-        defaultAgentPermissionMode: isAgentPermissionMode(prefs.defaultAgentPermissionMode)
-            ? prefs.defaultAgentPermissionMode
-            : cur.defaultAgentPermissionMode,
+        defaultAgentPermissionMode: prefs.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
     });
     ensureSearchWindow();
     registerCustomThemes(getState().customThemes);

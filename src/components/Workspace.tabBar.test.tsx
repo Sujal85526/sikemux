@@ -85,22 +85,22 @@ describe("workspace tab bars", () => {
         expect(getState().agentPaletteOpen).toBe(false);
     });
 
-    it("changes every supported safety boundary in a resumable agent session", () => {
+    it("changes between Normal and YOLO in a resumable agent session", () => {
         projectWithAgent();
         render(<Workspace />);
 
         const safety = screen.getByRole("button", { name: "Safety" });
-        expect(safety).toHaveTextContent("Build");
+        expect(safety).toHaveTextContent("Normal");
         fireEvent.click(safety);
 
         const menu = screen.getByRole("listbox", { name: "Safety" });
-        expect(screen.getByRole("option", { name: /Observe/ })).toBeInTheDocument();
-        expect(screen.getByRole("option", { name: /Operate/ })).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /Normal/ })).toBeInTheDocument();
         expect(screen.getByRole("option", { name: /YOLO/ })).toBeInTheDocument();
+        expect(screen.getAllByRole("option")).toHaveLength(2);
 
-        fireEvent.click(screen.getByRole("option", { name: /Observe/ }));
-        expect(getState().agents["agent-only"].permissionMode).toBe("read-only");
-        expect(screen.getByRole("button", { name: "Safety" })).toHaveTextContent("Observe");
+        fireEvent.click(screen.getByRole("option", { name: /YOLO/ }));
+        expect(getState().agents["agent-only"].permissionMode).toBe("bypass");
+        expect(screen.getByRole("button", { name: "Safety" })).toHaveTextContent("YOLO");
         expect(menu).not.toBeInTheDocument();
     });
 
