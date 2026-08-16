@@ -140,30 +140,6 @@ textarea:focus-visible {
 /* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
  * tracked caps and a version chip, all above the first thing you actually use.
  * It is a quiet single line now. */
-.rail-brand {
-    min-height: 0;
-    gap: var(--space-2);
-    padding: var(--space-1h) var(--gutter-rail) var(--space-1);
-    border-bottom: 0;
-}
-
-.rail-brand-mark {
-    display: grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    border: 0;
-    background: none;
-    filter: none;
-}
-
-.rail-brand-name {
-    font-family: var(--ui);
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.06em;
-}
-
 .rail-scroll {
     padding: var(--gutter-rail) var(--gutter-rail) var(--space-4);
 }
@@ -679,8 +655,6 @@ textarea,
         .top-bar,
         .side-rail,
         .agent-rail,
-        .rail-brand,
-        .rail-brand-mark,
         .crumb,
         .tb-btn,
         .env-dd-btn,
@@ -995,4 +969,28 @@ textarea,
 
 .terminal-host .xterm-viewport {
     background-color: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent) !important;
+}
+
+/* Rail signature — the app's identity, parked at the foot of the sessions
+ * rather than occupying the row above the first project. */
+.rail-sig {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    flex: 0 0 auto;
+    padding: 0 var(--gutter-rail) var(--space-2);
+    color: var(--ink-faint);
+}
+.rail-sig svg {
+    opacity: 0.6;
+}
+.rail-sig-name {
+    font-family: var(--ui);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+.rail-sig .tb-version {
+    margin-left: auto;
+    font-size: 10.5px;
 }

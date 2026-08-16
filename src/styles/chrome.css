@@ -103,34 +103,6 @@
     flex: 0 0 auto;
 }
 
-.rail-brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 16px 14px 14px;
-    border-bottom: 1px solid var(--line);
-    flex: 0 0 auto;
-}
-.rail-brand-mark {
-    color: var(--acc);
-    display: flex;
-    filter: drop-shadow(0 0 7px rgba(162, 119, 255, 0.45));
-}
-.rail-brand-name {
-    font-size: 16px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    color: var(--ink);
-    line-height: 1;
-}
-.rail-brand-dim {
-    color: var(--ink-faint);
-}
-.rail-brand .tb-version {
-    margin-left: auto;
-}
-
 .tb-center {
     /* Basis auto (not 0) so a narrow window shrinks the crumb and the right
        cluster proportionally, instead of starving the crumb. */

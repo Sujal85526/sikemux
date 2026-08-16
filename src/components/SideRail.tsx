@@ -294,15 +294,6 @@ export function SideRail() {
 
     return (
         <aside className="side-rail">
-            <header className="rail-brand">
-                <span className="rail-brand-mark">
-                    <Logo size={18} />
-                </span>
-                <span className="rail-brand-name">
-                    Sike<span className="rail-brand-dim">mux</span>
-                </span>
-                <VersionChip />
-            </header>
             <div className="rail-scroll">
                 <Group
                     label="Projects"
@@ -356,6 +347,14 @@ export function SideRail() {
                     <span>open or create a session</span>
                 </button>
             </Tooltip>
+
+            {/* Identity lives at the foot of the rail: present when you look for
+                it, out of the way of the sessions above it. */}
+            <div className="rail-sig">
+                <Logo size={13} />
+                <span className="rail-sig-name">Sikemux</span>
+                <VersionChip />
+            </div>
         </aside>
     );
 }
