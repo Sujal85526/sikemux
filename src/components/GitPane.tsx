@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { git, hasUnstaged, isStaged } from "../api/git";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, runGitCmd, toggleGitCmdLog } from "../state/git";
@@ -6,7 +6,7 @@ import { useResourceEnabled } from "../state/resources";
 import { gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { errMessage, reportError } from "../state/toast";
-import { DEFAULT_GIT_VIEW, type GitPanel, type PtyContext } from "../state/types";
+import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { CommitReview } from "./CommitReview";
 import { FileIcon } from "./FileIcon";
@@ -14,7 +14,6 @@ import { CopyButton } from "./CopyButton";
 import { IconCommit, IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle, IconWarning, IconChevron } from "./Icons";
 import { MergeReview } from "./MergeReview";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
-import { GitTerminal } from "./git/GitTerminal";
 import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
 import { GitPanelBlock } from "./git/GitPanelBlock";
@@ -32,29 +31,13 @@ import {
     GIT_HELP,
     GIT_PANEL_BY_KEY,
     GIT_PANEL_ORDER,
-    GIT_TERM_PCT_DEFAULT,
-    GIT_TERM_PCT_MAX,
-    GIT_TERM_PCT_MIN,
-    GIT_TERM_PCT_STORAGE,
     defaultAiModel,
 } from "./git/gitPaneConstants";
 import { filterByQuery, isGitAiProvider, isInRange, rangeBadge } from "./git/gitPaneLogic";
 import type { GitAiProvider, RightView } from "./git/gitPaneTypes";
 import { basename as basenameOf } from "../lib/paths";
 
-export function GitPane({
-    paneId,
-    cwd,
-    active,
-    visible = active,
-    termContext,
-}: {
-    paneId: string;
-    cwd: string;
-    active: boolean;
-    visible?: boolean;
-    termContext?: PtyContext;
-}) {
+export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; active: boolean }) {
     const repo = cwd;
     const storedView = useStore((s) => s.gitViews[paneId]);
     const view = {
@@ -98,7 +81,6 @@ export function GitPane({
         const provider = isGitAiProvider(storedProvider) ? storedProvider : DEFAULT_AI_PROVIDER;
         return window.localStorage.getItem(AI_MODEL_STORAGE) || defaultAiModel(provider);
     });
-    const [termPct, setTermPct] = useState(() => clampTermPct(Number(window.localStorage.getItem(GIT_TERM_PCT_STORAGE))));
     const rightRef = useRef<HTMLDivElement>(null);
     const [branchInput, setBranchInput] = useState<{ startPoint: string } | null>(null);
     const [branchText, setBranchText] = useState("");
@@ -134,45 +116,6 @@ export function GitPane({
         window.localStorage.setItem(AI_PROVIDER_STORAGE, aiProvider);
         window.localStorage.setItem(AI_MODEL_STORAGE, aiModel);
     }, [aiProvider, aiModel]);
-
-    useEffect(() => {
-        window.localStorage.setItem(GIT_TERM_PCT_STORAGE, String(termPct));
-    }, [termPct]);
-
-    useEffect(() => () => document.body.classList.remove("git-resizing"), []);
-
-    const onTermSplitPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        const handle = e.currentTarget;
-        const column = rightRef.current;
-        if (!column) return;
-        const rect = column.getBoundingClientRect();
-        if (rect.height <= 0) return;
-        handle.setPointerCapture(e.pointerId);
-
-        const move = (ev: PointerEvent) => {
-            const fromBottom = ((rect.bottom - ev.clientY) / rect.height) * 100;
-            setTermPct(clampTermPct(Math.round(fromBottom * 10) / 10));
-        };
-        const up = () => {
-            document.body.classList.remove("git-resizing");
-            handle.removeEventListener("pointermove", move);
-            handle.removeEventListener("pointerup", up);
-            handle.removeEventListener("pointercancel", up);
-        };
-        document.body.classList.add("git-resizing");
-        handle.addEventListener("pointermove", move);
-        handle.addEventListener("pointerup", up);
-        handle.addEventListener("pointercancel", up);
-    };
-
-    const onTermSplitKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-        e.preventDefault();
-        e.stopPropagation();
-        const step = e.shiftKey ? 8 : 3;
-        setTermPct(clampTermPct(termPct + (e.key === "ArrowUp" ? step : -step)));
-    };
 
     const fileQuery = searchByPanel.files;
     const branchQuery = searchByPanel.branches;
@@ -991,7 +934,6 @@ export function GitPane({
             // The embedded shell owns every key while it has focus, otherwise
             // typing `git status` would trip the panel's single-letter verbs.
             // The split handle is excluded too so its arrow keys resize.
-            if (ae && ae.closest(".git-term, .git-term-split")) return;
             if (searchOpen) {
                 if (e.key === "Escape") {
                     setSearchOpen(false);
@@ -1165,6 +1107,10 @@ export function GitPane({
           : files.length === 0
             ? "clean"
             : `${files.length} changed · ${stagedCount} staged · ${unstagedCount} unstaged`;
+    // Only the focused panel opens up; the rest stay at the height their rows
+    // need, so the log sits collapsed until you actually go to it.
+    const panelFlex = (focused: boolean) => (focused ? 1 : 0);
+
     const fileEmptyText = overviewError ?? (fileQuery ? `Nothing matches "${fileQuery}".` : "No uncommitted changes.");
     const branchEmptyText = overviewError ?? (branchQuery ? `Nothing matches "${branchQuery}".` : "This repository has no branches yet.");
     const commitEmptyText = overviewError ?? (commitQuery ? `Nothing matches "${commitQuery}".` : "No commits on this branch yet.");
@@ -1238,7 +1184,7 @@ export function GitPane({
                             <div className="git-cp-head-actions">
                                 <GitSelect
                                     title="Local AI CLI"
-                                    width={76}
+                                    width={62}
                                     value={aiProvider}
                                     label={AI_PROVIDER_LABEL[aiProvider]}
                                     options={(Object.keys(AI_PROVIDER_LABEL) as GitAiProvider[]).map((provider) => ({
@@ -1253,7 +1199,7 @@ export function GitPane({
                                 />
                                 <GitSelect
                                     title="AI model"
-                                    width={150}
+                                    width={96}
                                     value={aiModel || defaultAiModel(aiProvider)}
                                     label={aiModel || defaultAiModel(aiProvider)}
                                     options={AI_MODELS[aiProvider].map((model) => ({ value: model, label: model }))}
@@ -1350,7 +1296,7 @@ export function GitPane({
                         label="Files"
                         focused={panel === "files"}
                         onFocus={() => setPanel("files")}
-                        flex={0}
+                        flex={panelFlex(panelFiles)}
                         actions={[
                             {
                                 key: "a",
@@ -1401,7 +1347,7 @@ export function GitPane({
                         label="Branches"
                         focused={panel === "branches"}
                         onFocus={() => setPanel("branches")}
-                        flex={0}
+                        flex={panelFlex(panel === "branches")}
                         actions={[
                             {
                                 key: "n",
@@ -1453,7 +1399,7 @@ export function GitPane({
                         label="Commits"
                         focused={panel === "commits"}
                         onFocus={() => setPanel("commits")}
-                        flex={1}
+                        flex={panelFlex(panel === "commits")}
                         actions={[
                             { key: "b", label: "branch", onClick: openCommitBranchPrompt },
                             { key: "r", label: "reset", tone: "warn", onClick: openCommitResetMenu },
@@ -1603,7 +1549,7 @@ export function GitPane({
                             label="Stashes"
                             focused={panel === "stashes"}
                             onFocus={() => setPanel("stashes")}
-                            flex={0}
+                            flex={panelFlex(panel === "stashes")}
                             actions={[
                                 { key: "p", label: "pop", onClick: popSelectedStash },
                                 { key: "d", label: "drop", tone: "danger", onClick: openStashDropConfirm },
@@ -1639,7 +1585,7 @@ export function GitPane({
                 </div>
 
                 <div className="git-right" ref={rightRef}>
-                    <div className="git-right-review" style={{ height: `${100 - termPct}%` }}>
+                    <div className="git-right-review">
                         {right.mode === "merge" ? (
                             <MergeReview
                                 key={`${right.file.path}:${right.file.index}:${right.file.worktree}`}
@@ -1669,29 +1615,10 @@ export function GitPane({
                             </div>
                         )}
                     </div>
-                    <div
-                        className="git-term-split"
-                        role="separator"
-                        tabIndex={0}
-                        aria-orientation="horizontal"
-                        aria-label="Resize terminal"
-                        aria-valuemin={GIT_TERM_PCT_MIN}
-                        aria-valuemax={GIT_TERM_PCT_MAX}
-                        aria-valuenow={Math.round(termPct)}
-                        title="Drag or use arrow keys to resize the terminal"
-                        onPointerDown={onTermSplitPointerDown}
-                        onKeyDown={onTermSplitKeyDown}
-                    />
-                    <GitTerminal repo={repo} visible={visible} context={termContext} />
                 </div>
             </div>
 
             <GitModalRenderer paneId={paneId} active={active} />
         </div>
     );
-}
-
-function clampTermPct(pct: number): number {
-    if (!Number.isFinite(pct) || pct <= 0) return GIT_TERM_PCT_DEFAULT;
-    return Math.max(GIT_TERM_PCT_MIN, Math.min(GIT_TERM_PCT_MAX, pct));
 }

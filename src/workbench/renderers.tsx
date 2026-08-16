@@ -47,15 +47,9 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<PaneKind, (props: Workbench
             />
         </Suspense>
     ),
-    git: ({ pane, session, win, active, visible }) => (
+    git: ({ pane, session, active }) => (
         <Suspense fallback={<ItemFallback />}>
-            <GitPane
-                paneId={pane.id}
-                cwd={paneCwd(pane, session)}
-                active={active}
-                visible={visible}
-                termContext={terminalContext(session, win, pane)}
-            />
+            <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} />
         </Suspense>
     ),
     aws: ({ visible }) => (

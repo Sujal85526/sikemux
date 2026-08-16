@@ -1012,3 +1012,25 @@ textarea,
     margin-left: auto;
     font-size: 10.5px;
 }
+
+/* ---- Rail typography -----------------------------------------------------
+ * The two rails had drifted apart: session and project names were declared at
+ * three different sizes across as many rules, and their shortcut chips were a
+ * point larger than the agent rail's timestamps. One scale for both — row
+ * title, child row, meta — so the rails read as the same surface.
+ */
+.side-rail .sess-name,
+.side-rail .proj-name,
+.agent-rail .agent-title {
+    font-size: 13px;
+}
+
+.side-rail .proj-child-label {
+    font-size: 12.5px;
+}
+
+.side-rail .proj-child-kbd,
+.side-rail .rail-group-kbd,
+.agent-rail .agent-ago {
+    font-size: 10.5px;
+}

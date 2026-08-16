@@ -21,10 +21,6 @@ export const AI_PROVIDER_STORAGE = "sikemux.git.ai.provider";
 export const AI_MODEL_STORAGE = "sikemux.git.ai.model";
 
 /** Height of the Git pane's built-in terminal, as a percent of the right column. */
-export const GIT_TERM_PCT_STORAGE = "sikemux.git.termPct";
-export const GIT_TERM_PCT_DEFAULT = 32;
-export const GIT_TERM_PCT_MIN = 12;
-export const GIT_TERM_PCT_MAX = 80;
 
 export const defaultAiModel = (provider: GitAiProvider): string => AI_MODELS[provider][0];
 
