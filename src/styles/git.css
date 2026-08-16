@@ -1092,18 +1092,22 @@ body.git-resizing {
 .diff-editor .cm-editor .cm-deletedChunk .cm-deletedLine {
     padding-left: 8px;
 }
+/* Whole changed lines are tinted, not the individual words inside them.
+   Per-token highlights read as a stray text selection sitting in the diff. */
+.diff-editor .cm-editor .cm-changedLine {
+    background: color-mix(in srgb, var(--live) 10%, transparent) !important;
+}
+.diff-editor .cm-editor .cm-deletedLine {
+    background: color-mix(in srgb, var(--danger) 12%, transparent) !important;
+}
+.diff-editor .cm-editor .cm-changedText,
 .diff-editor .cm-editor .cm-deletedText {
-    background: color-mix(in srgb, var(--danger) 14%, transparent) !important;
-    color: #ffc9c9 !important;
-    border-radius: 2px;
+    background: transparent !important;
+    border-radius: 0;
     text-decoration: none;
 }
-.diff-editor .cm-editor .cm-changedLine {
-    background: transparent !important;
-}
-.diff-editor .cm-editor .cm-changedText {
-    background: color-mix(in srgb, var(--live) 12%, transparent) !important;
-    border-radius: 2px;
+.diff-editor .cm-editor .cm-deletedText {
+    color: #ffc9c9 !important;
 }
 .diff-editor .cm-editor .cm-changeGutter {
     width: 3px;
