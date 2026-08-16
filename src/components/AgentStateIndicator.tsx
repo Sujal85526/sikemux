@@ -1,25 +1,19 @@
-import { CircleAlert, CircleCheck, CircleDot, CircleHelp, CircleStop, type LucideIcon } from "lucide-react";
 import { AGENT_STATE_META } from "../state/agentStatus";
 import type { AgentPresentationState } from "../state/types";
 
-const STATE_ICONS: Record<Exclude<AgentPresentationState, "working">, LucideIcon> = {
-    blocked: CircleAlert,
-    done: CircleCheck,
-    idle: CircleDot,
-    stopped: CircleStop,
-    unknown: CircleHelp,
-};
-
+/**
+ * A spinner while an agent is working, and nothing otherwise.
+ *
+ * Every other state used to render its own circle glyph, so a rail of idle
+ * agents was a column of dots carrying no information — the row already says
+ * the agent exists.
+ */
 export function AgentStateIndicator({ state, unread = false }: { state: AgentPresentationState; unread?: boolean }) {
+    if (state !== "working") return null;
     const label = AGENT_STATE_META[state].label;
-    const Icon = state === "working" ? null : STATE_ICONS[state];
     return (
-        <span className={`agent-activity state-${state}${unread ? " unread" : ""}`} title={label} aria-label={label} role="img">
-            {Icon ? (
-                <Icon className="agent-state-icon" size={13} strokeWidth={2.15} aria-hidden="true" />
-            ) : (
-                <span className="agent-state-loader" aria-hidden="true" />
-            )}
+        <span className={`agent-activity state-working${unread ? " unread" : ""}`} title={label} aria-label={label} role="img">
+            <span className="agent-state-loader" aria-hidden="true" />
         </span>
     );
 }

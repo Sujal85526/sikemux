@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AgentPresentationState } from "../state/types";
 import { AgentStateIndicator } from "./AgentStateIndicator";
+
+afterEach(cleanup);
 
 describe("AgentStateIndicator", () => {
     it("renders working as a dedicated circular CSS loader", () => {
@@ -11,16 +13,8 @@ describe("AgentStateIndicator", () => {
         expect(container.querySelector("svg")).not.toBeInTheDocument();
     });
 
-    it.each([
-        ["blocked", "Needs input"],
-        ["done", "Done — unseen"],
-        ["idle", "Ready"],
-        ["stopped", "Stopped"],
-        ["unknown", "Unknown"],
-    ] as const)("renders the %s state as an accessible SVG icon", (state, label) => {
+    it.each(["blocked", "done", "idle", "stopped", "unknown"] as const)("renders nothing for %s", (state) => {
         const { container } = render(<AgentStateIndicator state={state as AgentPresentationState} />);
-        expect(screen.getByRole("img", { name: label })).toBeInTheDocument();
-        expect(container.querySelector("svg.agent-state-icon")).toBeInTheDocument();
-        expect(container).not.toHaveTextContent(/[↻!✓○?]/);
+        expect(container).toBeEmptyDOMElement();
     });
 });
