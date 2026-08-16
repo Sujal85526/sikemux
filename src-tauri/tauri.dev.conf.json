@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sikemux Dev",
+  "identifier": "com.nodelike.sikemux.dev",
+  "bundle": {
+    "active": false
+  },
+  "plugins": {
+    "updater": {
+      "active": false
+    }
+  }
+}

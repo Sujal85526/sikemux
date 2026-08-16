@@ -180,8 +180,8 @@ git clone git@github.com:nodelike/sikemux.git
 cd sikemux
 pnpm install
 
-# Hot-reload dev (Vite + Tauri)
-make dev            # or: pnpm tauri dev
+# Hot-reload dev (Vite + Tauri, isolated from the installed app)
+make dev            # or: pnpm dev:desktop
 
 # Production Apple Silicon .app + .dmg on an Apple Silicon host
 make build          # or: pnpm build:mac
@@ -197,7 +197,7 @@ AI commit-message generation runs through a locally installed **Hermes**, **Code
 
 Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY with PowerShell as its default Windows shell.
 
-The terminal uses xterm.js's DOM renderer by default. To exercise the opt-in WebGL renderer, launch with `VITE_TERMINAL_WEBGL=1 pnpm tauri dev`. Sikemux automatically falls back to DOM rendering if WebGL initialization fails or its context is lost; `window.sikemuxDiagnostics?.snapshot()` reports the active renderer counts.
+The terminal uses xterm.js's DOM renderer by default. To exercise the opt-in WebGL renderer, launch with `VITE_TERMINAL_WEBGL=1 pnpm dev:desktop`. Development uses the separate `com.nodelike.sikemux.dev` identity, so it can run alongside the installed app without tripping the single-instance guard or sharing its application-data directory. Sikemux automatically falls back to DOM rendering if WebGL initialization fails or its context is lost; `window.sikemuxDiagnostics?.snapshot()` reports the active renderer counts.
 
 Run `make check` for the full local quality gate: Prettier, ESLint, TypeScript, deterministic frontend tests, Rust formatting, Clippy, Rust tests, and credential-free release-tooling verification. `make test-coverage` reports coverage across all frontend TypeScript/TSX source, including files no test imports. `make run` launches an already-built release binary.
 

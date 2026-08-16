@@ -4,7 +4,7 @@ icons:
 	./scripts/icons.sh
 
 dev: icons
-	pnpm tauri dev
+	pnpm dev:desktop
 
 # Default release artifacts target the host architecture (Apple Silicon on the
 # supported release machine). Use `pnpm build:mac:universal` explicitly for a
