@@ -92,7 +92,7 @@
     width: 15px;
     height: 15px;
     flex: none;
-    border-radius: 4px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--line);
     background: color-mix(in srgb, var(--void) 60%, transparent);
     color: transparent;

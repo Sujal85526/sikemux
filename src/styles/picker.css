@@ -315,7 +315,7 @@
     justify-content: center;
     color: var(--ink-faint);
     opacity: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-control);
     padding: 2px;
 }
 .picker-item-wrap:hover .picker-forget,

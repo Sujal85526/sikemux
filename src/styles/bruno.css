@@ -260,7 +260,7 @@ body.bruno-resizing {
     flex: 0 0 auto;
     background: var(--rail-2);
     border: 1px solid var(--line);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     padding: 4px 6px;
     font: inherit;
     font-weight: 800;
@@ -562,7 +562,7 @@ body.bruno-resizing {
     min-height: 180px;
     background: var(--void);
     border: 1px solid var(--line);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     padding: 8px;
     color: var(--ink);
     font-family: var(--mono);
@@ -580,7 +580,7 @@ body.bruno-resizing {
     align-self: flex-start;
     background: var(--rail-2);
     border: 1px solid var(--line);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     padding: 4px 8px;
     color: var(--ink);
     font: inherit;
@@ -600,7 +600,7 @@ body.bruno-resizing {
 .bruno-field select {
     background: var(--rail-2);
     border: 1px solid var(--line);
-    border-radius: 4px;
+    border-radius: var(--radius-control);
     color: var(--ink);
     padding: 3px 6px;
     font: inherit;

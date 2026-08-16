@@ -29,7 +29,7 @@
     width: 42px;
     height: 42px;
     border: 1px solid color-mix(in srgb, var(--acc) 52%, var(--line));
-    border-radius: 12px;
+    border-radius: var(--radius-panel);
     background: color-mix(in srgb, var(--acc) 14%, var(--bg-raised, var(--rail-2)));
     color: var(--acc);
     font-weight: 800;
@@ -55,7 +55,7 @@
     margin-top: 4px;
     padding: 8px 12px;
     border: 1px solid color-mix(in srgb, var(--acc) 48%, var(--line));
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--acc) 12%, var(--bg-raised, var(--rail-2)));
     color: var(--ink);
     cursor: pointer;

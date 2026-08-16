@@ -65,7 +65,7 @@
 .pane-error button {
     padding: 5px 12px;
     border: 1px solid var(--line);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--ink);
     background: var(--rail-2);
 }
@@ -96,7 +96,7 @@
     align-items: flex-start;
     gap: 10px;
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-panel);
     font-size: 12.5px;
     line-height: 1.4;
     background: #1c1929;

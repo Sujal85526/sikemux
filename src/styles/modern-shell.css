@@ -8,10 +8,15 @@
  */
 :root {
     --ui: "Figtree", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    --radius-xs: 4px;
-    --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 10px;
+    /* Two radii, and only two: panels and controls. The four-step ramp meant
+     * neighbouring elements rounded differently for no reason anyone could
+     * name. The old names stay as aliases so call sites need not all change. */
+    --radius-control: 6px;
+    --radius-panel: 10px;
+    --radius-xs: var(--radius-control);
+    --radius-sm: var(--radius-control);
+    --radius-md: var(--radius-panel);
+    --radius-lg: var(--radius-panel);
     --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.18);
     --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.34);
 
@@ -485,7 +490,7 @@ textarea:focus-visible {
     left: 14px;
     width: 20px;
     height: 20px;
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
@@ -502,7 +507,7 @@ textarea:focus-visible {
 }
 
 .agent-rail .rail-scroll::-webkit-scrollbar-thumb {
-    border-radius: 4px;
+    border-radius: 999px;
 }
 
 .tabbar.v-agent,
@@ -578,7 +583,7 @@ textarea:focus-visible {
 }
 
 .yolo-toggle {
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 82%), transparent);
     box-shadow: var(--shadow-soft);
 }
@@ -705,11 +710,11 @@ textarea,
         .sld input[type="range"]::-webkit-slider-runnable-track,
         .sld input[type="range"]::-webkit-slider-thumb
     ) {
-    border-radius: 4px !important;
+    border-radius: 999px !important;
 }
 
 .shell :where([class*="pill"], [class*="chip"]) {
-    border-radius: 4px !important;
+    border-radius: 999px !important;
 }
 
 /* ---- Scrollbars ---------------------------------------------------------
@@ -749,7 +754,7 @@ textarea,
 }
 .skel {
     height: 11px;
-    border-radius: 4px;
+    border-radius: 999px;
     background: linear-gradient(
         90deg,
         color-mix(in srgb, var(--ink-faint) 14%, transparent) 25%,
