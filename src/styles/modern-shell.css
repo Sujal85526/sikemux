@@ -978,3 +978,15 @@ textarea,
 .shell {
     background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
+
+/* The pane is a surface like the rails, so it takes the same raised tone.
+ * The terminal painted the theme's own terminal background on top, which is
+ * darker than the chrome and left the centre of the window reading as a hole.
+ * It follows the surface now, and still fades with the window like one. */
+.pane {
+    background: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent);
+}
+
+.terminal-host .xterm-viewport {
+    background-color: color-mix(in srgb, var(--rail-2) var(--surface-solidity), transparent) !important;
+}
