@@ -8,10 +8,10 @@
  */
 :root {
     --ui: "Figtree", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    --radius-xs: 6px;
-    --radius-sm: 9px;
-    --radius-md: 13px;
-    --radius-lg: 17px;
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
     --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.18);
     --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.34);
 }
@@ -430,7 +430,7 @@ textarea:focus-visible {
     top: 9px;
     bottom: 9px;
     width: 3px;
-    border-radius: 999px;
+    border-radius: 2px;
 }
 
 .agent-row .agent-glyph {
@@ -439,7 +439,7 @@ textarea:focus-visible {
     width: 24px;
     height: 24px;
     flex: 0 0 24px;
-    border-radius: 8px;
+    border-radius: 6px;
     background: color-mix(
         in srgb,
         currentColor calc(var(--window-opacity, 1) * 10%),
@@ -484,7 +484,7 @@ textarea:focus-visible {
 }
 
 .agent-rail .rail-scroll::-webkit-scrollbar-thumb {
-    border-radius: 999px;
+    border-radius: 4px;
 }
 
 .tabbar.v-agent,
@@ -511,7 +511,7 @@ textarea:focus-visible {
 }
 
 .yolo-toggle {
-    border-radius: 999px;
+    border-radius: 6px;
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 82%), transparent);
     box-shadow: var(--shadow-soft);
 }
@@ -648,5 +648,9 @@ textarea,
         .sld input[type="range"]::-webkit-slider-runnable-track,
         .sld input[type="range"]::-webkit-slider-thumb
     ) {
-    border-radius: 999px !important;
+    border-radius: 4px !important;
+}
+
+.shell :where([class*="pill"], [class*="chip"]) {
+    border-radius: 4px !important;
 }
