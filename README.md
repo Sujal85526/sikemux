@@ -81,7 +81,8 @@ Run coding agents right next to the code they're editing. Sikemux auto-detects *
 
 - Multiple concurrent agents per project, each in its own pane.
 - Reads agent session histories so you can resume threads.
-- **YOLO toggle** (`⌥Y`) to skip permission prompts when you trust the run.
+- **Agent picker** (`⌥N` from the Agents view) opens the selected CLI directly in a PTY—no launch prompt or worktree form.
+- Only two launch modes: **Normal** and **YOLO**. Toggle a resumable agent with `⌥Y`.
 
 ![Agents view](public/screenshots/project-agents-view.png)
 
@@ -156,10 +157,11 @@ These are the defaults. Every command can be reassigned or cleared in **Settings
 | `⌥A`      | Open AWS                             |     | `⌥Z`             | Zoom / unzoom pane        |
 | `⌥B`      | Open Bruno workspace                 |     | `⌥W`             | Close focused pane        |
 | `⌥1`–`⌥5` | Files / Term / Git / Agents / Search |     | `⌥Tab` / `⌥⇧Tab` | Cycle session / group     |
-| `⌥[` `⌥]` | Prev / next window                   |     | `⌥Y`             | Toggle agent YOLO mode    |
-| `⌘P`      | File / request palette               |     | `⌘⇧F`            | Global search             |
-| `⌘⇧P`     | Command deck                         |     | `⌥U`             | Last-used session         |
-| `⌘,`      | Settings                             |     | `⌥T`             | Focus command terminal    |
+| `⌥[` `⌥]` | Prev / next window                   |     | `⌥N`             | New terminal/agent picker |
+| `⌘P`      | File / request palette               |     | `⌥Y`             | Toggle agent YOLO mode    |
+| `⌘⇧F`     | Global search                        |     | `⌥U`             | Last-used session         |
+| `⌘⇧P`     | Command deck                         |     | `⌥T`             | Focus command terminal    |
+| `⌘,`      | Settings                             |     | `Esc`            | Dismiss active modal      |
 
 On Windows, use `Ctrl` for `⌘` shortcuts and `Alt` for `⌥` shortcuts.
 

@@ -1,472 +1,181 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { agentApi, type AgentInfo, type AgentModelInfo } from "../api/agents";
-import { AGENT_CONTEXT_LIMITS } from "../agentContext";
-import { MAX_AGENT_MODEL_LENGTH, MAX_AGENT_PROMPT_LENGTH, normalizePermissionMode, supportedEfforts } from "../agentLaunch";
-import { isImagePath } from "../editor/media";
-import { basename, prettyPath } from "../lib/paths";
+import type { AgentInfo } from "../api/agents";
+import { useMouseActive } from "../hooks/useMouseActive";
 import * as cmd from "../state/commands";
-import { registerPathDrop } from "../state/dropRegistry";
-import { useResource, useResourceEnabled } from "../state/resources";
-import { agentCatalogR, agentModelsR } from "../state/resources.defs";
+import { useResource } from "../state/resources";
+import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import type { AgentEffort, AgentPermissionMode, AgentType } from "../state/types";
-import { notify } from "../state/toast";
-import { Dropdown } from "./Dropdown";
-import { AgentIcon, IconAgent, IconClose, IconFile, IconGit } from "./Icons";
-import { AgentPermissionSelector } from "./AgentPermissionSelector";
-import "../styles/new-agent.css";
+import type { AgentPermissionMode } from "../state/types";
+import { AgentIcon, IconAgent } from "./Icons";
 
-/** Sentinel for "type a model this provider's list doesn't carry". */
-const CUSTOM_MODEL = "\0custom";
-
-/**
- * Full model IDs shipped as a last-resort floor. Live CLI discovery is merged
- * on top, so new releases appear immediately while a failed IPC/subprocess can
- * no longer collapse the picker to only the configured default.
- */
-const MODEL_FALLBACKS: Partial<Record<AgentType, readonly AgentModelInfo[]>> = {
-    claude: [
-        { id: "claude-opus-5[1m]", label: "Opus (1M context)" },
-        { id: "claude-fable-5", label: "Fable" },
-        { id: "claude-sonnet-5", label: "Sonnet" },
-        { id: "claude-haiku-4-5-20251001", label: "Haiku" },
-    ],
-    codex: [
-        { id: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
-        { id: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
-        { id: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
-        { id: "gpt-5.5", label: "GPT-5.5" },
-        { id: "gpt-5.2", label: "GPT-5.2" },
-    ],
-};
-
-function mergedModels(type: AgentType | null, discovered: readonly AgentModelInfo[] | undefined): AgentModelInfo[] {
-    const seen = new Set<string>();
-    return [...(discovered ?? []), ...(type ? (MODEL_FALLBACKS[type] ?? []) : [])].filter((candidate) => {
-        if (seen.has(candidate.id)) return false;
-        seen.add(candidate.id);
-        return true;
-    });
-}
-
-function labelForType(type: AgentType, agents: readonly AgentInfo[]): string {
-    return agents.find((agent) => agent.type === type)?.label ?? type;
-}
+const NORMAL: AgentPermissionMode = "workspace-write";
+const YOLO: AgentPermissionMode = "bypass";
 
 export function AgentPalette() {
-    const activeSession = useStore((state) => state.sessions[state.activeSessionId]);
-    const home = useStore((state) => state.home);
+    const session = useStore((state) => state.sessions[state.activeSessionId]);
     const profiles = useStore((state) => state.providerProfiles);
     const profileSelections = useStore((state) => state.selectedProviderProfileIds);
-    const defaultPermissionMode = useStore((state) => state.defaultAgentPermissionMode);
+    const defaultMode = useStore((state) => state.defaultAgentPermissionMode);
     const catalog = useResource(agentCatalogR);
     const agents = useMemo(() => catalog.data ?? [], [catalog.data]);
-    const originRef = useRef({ sessionId: activeSession?.id ?? "", cwd: activeSession?.cwd ?? "" });
-    const composerRef = useRef<HTMLTextAreaElement>(null);
-    const composerDropRef = useRef<HTMLDivElement>(null);
-    const droppedImagePathsRef = useRef<string[]>([]);
-    const modelRef = useRef<HTMLInputElement>(null);
-    const pageRef = useRef<HTMLElement>(null);
+    const [mode, setMode] = useState<AgentPermissionMode>(defaultMode === YOLO ? YOLO : NORMAL);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    const originSessionId = useRef(session?.id ?? "");
     const returnFocusRef = useRef<HTMLElement | null>(null);
-    const launchingRef = useRef(false);
-
-    const [type, setType] = useState<AgentType | null>(null);
-    const [profileId, setProfileId] = useState("");
-    const [model, setModel] = useState("");
-    /** True once the reader asks for a model the provider's list doesn't carry. */
-    const [customModel, setCustomModel] = useState(false);
-    const [effort, setEffort] = useState<AgentEffort | undefined>(undefined);
-    const [permissionMode, setPermissionMode] = useState<AgentPermissionMode>(defaultPermissionMode);
-    const [prompt, setPrompt] = useState("");
-    const [droppedImagePaths, setDroppedImagePaths] = useState<string[]>([]);
-    const [dropMessage, setDropMessage] = useState("");
-    const [launching, setLaunching] = useState(false);
-    const [error, setError] = useState("");
-    const modelCatalog = useResourceEnabled(type != null, agentModelsR, type ?? "codex");
-
-    const launchRoot = originRef.current.cwd;
-    const launchSessionId = originRef.current.sessionId;
-    const matchingProfiles = useMemo(() => profiles.filter((profile) => profile.provider === type), [profiles, type]);
-    const effortOptions = type ? supportedEfforts(type) : [];
-    const selectedAgent = type ? agents.find((agent) => agent.type === type) : undefined;
-    const defaultModel = selectedAgent?.defaultModel ?? null;
-    const defaultEffort = selectedAgent?.defaultEffort ?? null;
-    const availableModels = useMemo(() => mergedModels(type, modelCatalog.data), [type, modelCatalog.data]);
-    const modelOptions = useMemo(() => {
-        const configuredDefault = availableModels.find((candidate) => candidate.id === defaultModel);
-        return [
-            {
-                value: "",
-                label: configuredDefault?.label ?? defaultModel ?? "CLI default",
-                detail:
-                    defaultModel && configuredDefault?.label !== defaultModel
-                        ? `${defaultModel} · CLI default`
-                        : defaultModel
-                          ? "CLI default"
-                          : "configured by the provider",
-            },
-            ...availableModels
-                .filter((candidate) => candidate.id !== defaultModel)
-                .map((candidate) => ({
-                    value: candidate.id,
-                    label: candidate.label,
-                    detail: candidate.label !== candidate.id ? candidate.id : undefined,
-                })),
-            {
-                value: CUSTOM_MODEL,
-                label: "Custom…",
-                detail:
-                    modelCatalog.status === "loading"
-                        ? "loading CLI models…"
-                        : modelCatalog.status === "error"
-                          ? "CLI lookup failed · manual override"
-                          : "override for this task",
-            },
-        ];
-    }, [availableModels, defaultModel, modelCatalog.status]);
-
-    useEffect(() => {
-        if (customModel) modelRef.current?.focus();
-    }, [customModel]);
-
-    useEffect(() => {
-        if (type || agents.length === 0) return;
-        chooseType(agents[0].type);
-        // The initial choice is intentionally tied to catalog arrival only.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agents, type]);
+    const mouseActive = useMouseActive();
 
     useEffect(() => {
         returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        const frame = window.requestAnimationFrame(() => composerRef.current?.focus());
-        return () => {
-            window.cancelAnimationFrame(frame);
-            returnFocusRef.current?.focus();
-        };
+        return () => returnFocusRef.current?.focus();
     }, []);
 
     useEffect(() => {
-        const target = composerDropRef.current;
-        if (!target) return;
-        return registerPathDrop(target, (paths) => {
-            if (launchingRef.current || paths.length === 0) return;
-            const supported = paths.filter((path) => path.length <= AGENT_CONTEXT_LIMITS.pathLength && !path.includes("\0") && isImagePath(path));
-            const current = droppedImagePathsRef.current;
-            const additions = [...new Set(supported)].filter((path) => !current.includes(path));
-            const available = Math.max(0, AGENT_CONTEXT_LIMITS.images - current.length);
-            const accepted = additions.slice(0, available);
-            if (accepted.length > 0) {
-                const next = [...current, ...accepted];
-                droppedImagePathsRef.current = next;
-                setDroppedImagePaths(next);
-            }
-            if (supported.length === 0) {
-                setDropMessage("Drop a supported image file (PNG, JPEG, GIF, WebP, SVG, BMP, ICO, AVIF, or TIFF).");
-            } else if (additions.length > available) {
-                setDropMessage(`Up to ${AGENT_CONTEXT_LIMITS.images} images can be attached to the first task.`);
-            } else {
-                const total = current.length + accepted.length;
-                setDropMessage(`${total} image${total === 1 ? "" : "s"} attached for the first task.`);
-            }
-            window.requestAnimationFrame(() => composerRef.current?.focus());
+        const firstAction = listRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+        (firstAction ?? dialogRef.current)?.focus();
+    }, [agents.length, catalog.status, mode]);
+
+    useEffect(() => {
+        if (session && session.id !== originSessionId.current) cmd.closeAgentPalette();
+    }, [session]);
+
+    function launch(agent: AgentInfo) {
+        if (!session || session.kind !== "project") return;
+        if (mode === YOLO && !cmd.agentSupportsSkipPermissions(agent.type)) return;
+        const selectedProfile = profiles.find((profile) => profile.id === profileSelections[agent.type] && profile.provider === agent.type);
+        cmd.addAgent(agent.type, undefined, undefined, {
+            permissionMode: mode,
+            profileId: selectedProfile?.id,
+            cwd: session.cwd,
+            sessionId: session.id,
         });
-    }, []);
-
-    function removeDroppedImage(path: string) {
-        if (launchingRef.current) return;
-        const next = droppedImagePathsRef.current.filter((candidate) => candidate !== path);
-        droppedImagePathsRef.current = next;
-        setDroppedImagePaths(next);
-        setDropMessage(next.length > 0 ? `${next.length} image${next.length === 1 ? "" : "s"} attached for the first task.` : "");
-        window.requestAnimationFrame(() => composerRef.current?.focus());
     }
 
-    // The draft belongs to the project it was opened from — it launches into
-    // that checkout. Leaving for another session retires it rather than letting
-    // it follow along and start an agent somewhere the reader never chose.
-    useEffect(() => {
-        if (activeSession && activeSession.id !== originRef.current.sessionId) cmd.closeAgentPalette();
-    }, [activeSession]);
-
-    function chooseType(nextType: AgentType) {
-        setType(nextType);
-        setModel("");
-        setCustomModel(false);
-        setEffort(undefined);
-        setPermissionMode(normalizePermissionMode(nextType, defaultPermissionMode));
-        const selected = profiles.find((profile) => profile.id === profileSelections[nextType] && profile.provider === nextType);
-        setProfileId(selected?.id ?? profiles.find((profile) => profile.provider === nextType)?.id ?? "");
-        setError("");
+    function moveFocus(current: HTMLButtonElement, delta: number) {
+        const buttons = [...current.closest(".agent-picker-list")!.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+        const index = buttons.indexOf(current);
+        buttons[(index + delta + buttons.length) % buttons.length]?.focus();
     }
 
-    async function launch() {
-        if (launchingRef.current || !type || !launchRoot || !launchSessionId || (!prompt.trim() && droppedImagePaths.length === 0)) return;
-        launchingRef.current = true;
-        setLaunching(true);
-        setError("");
-        try {
-            if (prompt.trim().length > MAX_AGENT_PROMPT_LENGTH) {
-                throw new Error(`Keep the first task under ${Math.floor(MAX_AGENT_PROMPT_LENGTH / 1024)} KiB.`);
-            }
-            if (model.trim().length > MAX_AGENT_MODEL_LENGTH) {
-                throw new Error(`Keep the model identifier under ${MAX_AGENT_MODEL_LENGTH} characters.`);
-            }
-            // Give the launch state one paint so keyboard users receive an
-            // honest status announcement before the terminal takes focus.
-            await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-            // On failure the ids stay undefined so addAgent falls back to its
-            // own cache rather than claiming an existing session as new.
-            const baselineSessionIds = await agentApi
-                .sessions(type, launchRoot)
-                .then((rows) => rows.map((row) => row.id))
-                .catch(() => undefined);
-            const initialTitle = (prompt.trim().split(/\r?\n/, 1)[0] || basename(droppedImagePaths[0])).slice(0, 72);
-            const attached = cmd.addAgent(type, undefined, initialTitle, {
-                permissionMode,
-                profileId: profileId || undefined,
-                cwd: launchRoot,
-                sessionId: launchSessionId,
-                model: model.trim() || undefined,
-                effort,
-                initialPrompt: prompt.trim() || undefined,
-                initialDropPaths: droppedImagePaths,
-                baselineSessionIds,
-            });
-            if (!attached) throw new Error("The project that opened this page is no longer available.");
-            notify("success", `${labelForType(type, agents)} started in ${basename(launchRoot)}`);
-            cmd.closeAgentPalette();
-        } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause));
-        } finally {
-            launchingRef.current = false;
-            setLaunching(false);
+    function onAgentKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+        if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+            event.preventDefault();
+            moveFocus(event.currentTarget, 1);
+        } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+            event.preventDefault();
+            moveFocus(event.currentTarget, -1);
         }
     }
 
-    // The page is a pane, not a modal: Tab flows out to the rails like it does
-    // from any other pane. Enter launches only from the task composer so it
-    // keeps its normal activation behavior on dropdowns and buttons.
-    function onPageKeyDown(event: React.KeyboardEvent) {
-        event.stopPropagation();
+    function onModalKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
         if (event.key === "Escape") {
             event.preventDefault();
             cmd.closeAgentPalette();
             return;
         }
-        if (event.key === "Enter" && event.target === composerRef.current && !event.shiftKey && !event.nativeEvent.isComposing) {
+        if (event.key !== "Tab") return;
+        const focusable = [...(dialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+        if (focusable.length === 0) {
             event.preventDefault();
-            void launch();
+            return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
         }
     }
 
-    const detectionMessage =
+    const status =
         catalog.status === "loading"
             ? "Detecting agent CLIs…"
             : catalog.status === "error"
               ? catalog.error || "Agent detection failed."
-              : agents.length === 0
-                ? "No supported agent CLIs were detected on PATH."
-                : "";
-    const selectedLabel = type ? labelForType(type, agents) : "an agent";
-    const modelMessage =
-        type && modelCatalog.status === "error"
-            ? `${selectedLabel} model lookup failed; showing bundled full model IDs.`
-            : type && modelCatalog.status === "ok" && modelCatalog.data?.length === 0 && (MODEL_FALLBACKS[type]?.length ?? 0) > 0
-              ? `${selectedLabel} returned no models; showing bundled full model IDs.`
-              : "";
-    const launchBlocked = !type || (!prompt.trim() && droppedImagePaths.length === 0) || launching;
+              : "No supported agent CLIs were detected on PATH.";
 
     return (
-        <section ref={pageRef} className="new-agent-page" role="region" aria-label="New agent" tabIndex={-1} onKeyDown={onPageKeyDown}>
-            <div className="new-agent-body">
-                <header className="new-agent-head">
-                    <span className={`new-agent-mark${type ? ` ${type}` : ""}`} aria-hidden="true">
-                        {type ? <AgentIcon type={type} size={17} /> : <IconAgent size={16} />}
+        <div className="picker-backdrop agent-picker-backdrop" onMouseDown={cmd.closeAgentPalette} onKeyDown={onModalKeyDown}>
+            <div
+                ref={dialogRef}
+                className="picker agent-picker"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="agent-picker-title"
+                tabIndex={-1}
+                onMouseDown={(event) => event.stopPropagation()}>
+                <header className="agent-picker-head">
+                    <span className="agent-picker-mark" aria-hidden="true">
+                        <IconAgent size={16} />
                     </span>
-                    <h2>What should {selectedLabel} make?</h2>
-                    <span className="new-agent-project" title={launchRoot}>
-                        <IconGit size={11} /> {prettyPath(launchRoot, home)}
+                    <span>
+                        <strong id="agent-picker-title">Open agent CLI</strong>
+                        <small>{session?.cwd ?? "Open a project first"}</small>
                     </span>
-                </header>
-
-                <div ref={composerDropRef} className="new-agent-composer">
-                    <textarea
-                        ref={composerRef}
-                        aria-label="Task for the new agent"
-                        placeholder="Describe the outcome, constraints, and what done looks like…"
-                        value={prompt}
-                        onChange={(event) => setPrompt(event.target.value)}
-                        maxLength={MAX_AGENT_PROMPT_LENGTH}
-                        disabled={launching}
-                        rows={4}
-                    />
-                    {droppedImagePaths.length > 0 && (
-                        <div className="new-agent-attachments" role="group" aria-label="Images attached to the first task">
-                            {droppedImagePaths.map((path) => (
-                                <button
-                                    key={path}
-                                    type="button"
-                                    className="new-agent-attachment"
-                                    title={path}
-                                    aria-label={`Remove attached image ${basename(path)}`}
-                                    disabled={launching}
-                                    onClick={() => removeDroppedImage(path)}>
-                                    <IconFile size={12} />
-                                    <span>{basename(path)}</span>
-                                    <IconClose size={9} />
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    <div className="new-agent-bar">
-                        <div className="na-chips">
-                            <Dropdown
-                                icon={type ? <AgentIcon type={type} size={13} /> : <IconAgent size={13} />}
-                                className={`na-chip${type ? ` ${type}` : ""}`}
-                                title="Agent runtime"
-                                label="Agent"
-                                value={type ?? ""}
-                                disabled={agents.length === 0}
-                                options={
-                                    agents.length === 0
-                                        ? [{ value: "", label: "no agent" }]
-                                        : agents.map((agent) => ({ value: agent.type, label: agent.label }))
-                                }
-                                onChange={(next) => chooseType(next as AgentType)}
-                            />
-
-                            {customModel ? (
-                                <span className="na-chip na-chip-model">
-                                    <input
-                                        ref={modelRef}
-                                        aria-label="Model"
-                                        size={Math.max(14, model.length + 2)}
-                                        value={model}
-                                        onChange={(event) => setModel(event.target.value)}
-                                        maxLength={MAX_AGENT_MODEL_LENGTH}
-                                        placeholder={defaultModel || "model id"}
-                                        spellCheck={false}
-                                    />
-                                    <button
-                                        type="button"
-                                        aria-label="Use the CLI default model"
-                                        title="Use the CLI default model"
-                                        onClick={() => {
-                                            setCustomModel(false);
-                                            setModel("");
-                                        }}>
-                                        <IconClose size={10} />
-                                    </button>
-                                </span>
-                            ) : (
-                                <Dropdown
-                                    className="na-chip"
-                                    title="Model"
-                                    label="Model"
-                                    value={model}
-                                    options={modelOptions}
-                                    onChange={(next) => {
-                                        if (next === CUSTOM_MODEL) {
-                                            setCustomModel(true);
-                                            setModel("");
-                                        } else setModel(next);
-                                    }}
-                                />
-                            )}
-
-                            {matchingProfiles.length > 1 && (
-                                <Dropdown
-                                    icon={<IconAgent size={12} />}
-                                    className="na-chip"
-                                    title="Provider profile"
-                                    label="Profile"
-                                    value={profileId}
-                                    options={matchingProfiles.map((profile) => ({
-                                        value: profile.id,
-                                        label: profile.name,
-                                        detail: profile.executablePath || "PATH",
-                                    }))}
-                                    onChange={setProfileId}
-                                />
-                            )}
-
-                            {effortOptions.length > 0 && (
-                                <Dropdown
-                                    icon={<IconSpark />}
-                                    className="na-chip"
-                                    title="Reasoning effort"
-                                    label="Effort"
-                                    value={effort ?? ""}
-                                    options={[
-                                        {
-                                            value: "",
-                                            label: defaultEffort ?? "CLI default",
-                                            detail: defaultEffort ? "CLI default" : "configured by the provider",
-                                        },
-                                        ...effortOptions
-                                            .filter((option) => option !== defaultEffort)
-                                            .map((option) => ({ value: option, label: option })),
-                                    ]}
-                                    onChange={(next) => setEffort((next || undefined) as AgentEffort | undefined)}
-                                />
-                            )}
-
-                            {type && <AgentPermissionSelector type={type} value={permissionMode} className="na-chip" onChange={setPermissionMode} />}
-                        </div>
-
+                    <div className="agent-picker-modes" role="radiogroup" aria-label="Agent mode">
                         <button
                             type="button"
-                            className="new-agent-launch"
-                            aria-keyshortcuts="Enter"
-                            disabled={launchBlocked}
-                            onClick={() => void launch()}>
-                            {launching ? "starting…" : "Start task"}
-                            <kbd>↵</kbd>
+                            role="radio"
+                            aria-checked={mode === NORMAL}
+                            className={mode === NORMAL ? "active" : ""}
+                            onClick={() => setMode(NORMAL)}>
+                            Normal
+                        </button>
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked={mode === YOLO}
+                            className={mode === YOLO ? "active yolo" : "yolo"}
+                            onClick={() => setMode(YOLO)}>
+                            YOLO
                         </button>
                     </div>
-                </div>
+                </header>
 
-                <div className="new-agent-feedback" aria-live="polite">
-                    {error ? (
-                        <span role="alert">{error}</span>
-                    ) : launching ? (
-                        <span role="status">Launching {selectedLabel} and preparing the first turn…</span>
-                    ) : detectionMessage ? (
-                        <span className={catalog.status === "error" ? "error" : ""} role="status">
-                            {detectionMessage}
+                <div className="picker-list agent-picker-list" ref={listRef}>
+                    {agents.length === 0 && (
+                        <div className="picker-empty" role="status">
+                            {status}
                             {catalog.status === "error" && (
                                 <button type="button" onClick={() => void catalog.refresh().catch(() => {})}>
                                     Try again
                                 </button>
                             )}
-                        </span>
-                    ) : modelMessage ? (
-                        <span className="error" role="status">
-                            {modelMessage}
-                            {modelCatalog.status === "error" && (
-                                <button type="button" onClick={() => void modelCatalog.refresh().catch(() => {})}>
-                                    Try again
-                                </button>
-                            )}
-                        </span>
-                    ) : dropMessage ? (
-                        <span role="status">{dropMessage}</span>
-                    ) : (
-                        <span>
-                            <kbd>↵</kbd> start · <kbd>⇧↵</kbd> new line · drop images to attach · <kbd>esc</kbd> dismiss
-                        </span>
+                        </div>
                     )}
+                    {agents.map((agent) => {
+                        const supportsMode = mode === NORMAL || cmd.agentSupportsSkipPermissions(agent.type);
+                        return (
+                            <button
+                                key={agent.type}
+                                type="button"
+                                className="picker-item agent-picker-item"
+                                disabled={!supportsMode}
+                                aria-label={`Start ${agent.label} in ${mode === YOLO ? "YOLO" : "Normal"} mode`}
+                                onMouseEnter={(event) => {
+                                    if (mouseActive.current) event.currentTarget.focus();
+                                }}
+                                onKeyDown={onAgentKeyDown}
+                                onClick={() => launch(agent)}>
+                                <span className={`picker-icon agent-glyph ${agent.type}`}>
+                                    <AgentIcon type={agent.type} size={15} />
+                                </span>
+                                <span className="picker-name">{agent.label}</span>
+                                <span className="picker-sub">{supportsMode ? `${agent.command} · opens directly in PTY` : "Normal mode only"}</span>
+                            </button>
+                        );
+                    })}
                 </div>
-            </div>
-        </section>
-    );
-}
 
-/** Effort glyph — a spark, kept local because nothing else needs it. */
-function IconSpark() {
-    return (
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
-            <path d="M8 1.8 9.7 6.3 14.2 8 9.7 9.7 8 14.2 6.3 9.7 1.8 8 6.3 6.3Z" />
-        </svg>
+                <footer className="agent-picker-foot" aria-hidden="true">
+                    <span>↑↓ choose</span>
+                    <span>↵ open</span>
+                    <span>esc dismiss</span>
+                </footer>
+            </div>
+        </div>
     );
 }

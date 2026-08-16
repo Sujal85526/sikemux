@@ -9,8 +9,7 @@ import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname, isPathWithin, joinPath } from "../lib/paths";
-import { initialAgentPrompt, MAX_AGENT_MODEL_LENGTH, MAX_AGENT_PROMPT_LENGTH, normalizePermissionMode } from "../agentLaunch";
-import { AGENT_CONTEXT_LIMITS } from "../agentContext";
+import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../agentLaunch";
 import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
@@ -44,7 +43,6 @@ import type {
     AgentEffort,
     AgentPermissionMode,
     AgentType,
-    AgentWorkspaceStrategy,
     AwsService,
     BrunoReqTab,
     BrunoResTab,
@@ -1222,8 +1220,8 @@ export function closeActiveFocusTarget(): void {
     if (!session) return;
 
     if (inAgentView(session)) {
-        // The new-agent draft is the frontmost agent tab while it is open, so
-        // ⌥W dismisses the draft before it reaches a running agent.
+        // The agent picker is frontmost while open, so ⌥W dismisses it before
+        // it reaches a running agent.
         if (st.agentPaletteOpen) closeAgentPalette();
         else if (session.activeAgentId) closeAgent(session.activeAgentId);
         return;
@@ -1608,27 +1606,14 @@ export interface AddAgentOptions {
     profileId?: string;
     model?: string;
     effort?: AgentEffort;
-    initialPrompt?: string;
-    /** Image paths dropped on the launch composer, delivered with native TUI paste semantics. */
-    initialDropPaths?: readonly string[];
-    workspaceStrategy?: AgentWorkspaceStrategy;
     baselineSessionIds?: string[];
     cwd?: string;
-    worktreePath?: string;
-    /** Pin async launches to the project that opened the launch studio. */
+    /** Pin launches to the project that opened the picker. */
     sessionId?: string;
 }
 
 export function addAgent(type: AgentType, resumeId?: string, title?: string, options: AddAgentOptions = {}): boolean {
     if ((options.model?.trim().length ?? 0) > MAX_AGENT_MODEL_LENGTH) return false;
-    if ((options.initialPrompt?.trim().length ?? 0) > MAX_AGENT_PROMPT_LENGTH) return false;
-    const requestedDropPaths = resumeId ? [] : [...new Set(options.initialDropPaths ?? [])];
-    if (
-        requestedDropPaths.length > AGENT_CONTEXT_LIMITS.images ||
-        requestedDropPaths.some((path) => !path || path.length > AGENT_CONTEXT_LIMITS.pathLength || path.includes("\0"))
-    ) {
-        return false;
-    }
     let attached = false;
     mutate((d) => {
         const session = d.sessions[options.sessionId ?? d.activeSessionId];
@@ -1638,7 +1623,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         const existing = resumeId ? ownedIds.map((id) => d.agents[id]).find((a) => a && a.type === type && a.resumeId === resumeId) : undefined;
         const sess = d.sessions[session.id];
         d.zoomedPaneId = null;
-        // An attached agent takes over the draft tab it was launched from.
+        // A successful launch closes the picker and activates the new PTY.
         d.agentPaletteOpen = false;
         if (existing) {
             sess.activeAgentId = existing.id;
@@ -1652,10 +1637,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             ? d.providerProfiles.find((profile) => profile.id === requestedProfileId && profile.provider === type)?.id
             : undefined;
         const cwd = options.cwd || session.cwd;
-        const workspaceStrategy = options.workspaceStrategy ?? (options.worktreePath ? "existing" : "current");
         const model = options.model?.trim() || undefined;
-        const initialPrompt = resumeId ? undefined : initialAgentPrompt(options.initialPrompt);
-        const initialTurnPending = !!initialPrompt || requestedDropPaths.length > 0;
         const executablePath = profileId ? d.providerProfiles.find((profile) => profile.id === profileId)?.executablePath : undefined;
         const agent: Agent = {
             id: newId("agent"),
@@ -1676,12 +1658,6 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             cwd,
             model,
             effort: options.effort,
-            workspaceStrategy,
-            initialPromptSubmitted: initialTurnPending,
-            firstTurnPending: initialTurnPending,
-            ...(requestedDropPaths.length > 0 ? { initialDropPaths: requestedDropPaths } : {}),
-            ...(initialPrompt ? { initialInput: initialPrompt } : {}),
-            ...(options.worktreePath ? { worktreePath: options.worktreePath } : {}),
             ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
             launchState: "live",
         };
@@ -1699,17 +1675,6 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         attached = true;
     });
     return attached;
-}
-
-/** Prevent a fallback first turn from being submitted again if its terminal is remounted. */
-export function clearAgentInitialInput(id: string): void {
-    mutate((draft) => {
-        const agent = draft.agents[id];
-        if (agent) {
-            delete agent.initialDropPaths;
-            delete agent.initialInput;
-        }
-    });
 }
 
 export function reconcileAgentSessions(type: AgentType, cwd: string, rows: AgentSession[]): void {
@@ -1772,7 +1737,6 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
                 { model: agent.model, effort: agent.effort },
             );
             delete agent.baselineSessionIds;
-            delete agent.firstTurnPending;
             claimed.add(row.id);
         }
     });
@@ -1860,10 +1824,6 @@ export function focusAgents(): void {
         const sess = d.sessions[session.id];
         sess.view = "agent";
         sess.activeAgentId = session.activeAgentId ?? ids[0] ?? null;
-        // An empty agent view has no useful landing state. Open the draft when
-        // the user enters it, while leaving an explicitly dismissed draft
-        // closed until they choose the Agents destination again.
-        if (ids.length === 0) d.agentPaletteOpen = true;
         d.zoomedPaneId = null;
     });
     emit({ type: "agent-focus", sessionId: getState().activeSessionId });
@@ -1875,9 +1835,7 @@ export const setTerminalTitle = (paneId: string, title: string): void =>
     setState((s) => ({ terminalTitles: { ...s.terminalTitles, [paneId]: title } }));
 export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, rundeckJobPaletteOpen: false });
 export const closePicker = (): void => setState({ pickerOpen: false });
-// The new-agent page is a draft tab inside the agent view, not an overlay, so
-// opening it also puts the project session into that view. Agents are
-// project-scoped; anywhere else the draft would have nowhere to render.
+// The agent picker is project-scoped and opens over the agent view.
 export const openAgentPalette = (): void =>
     mutate((d) => {
         const session = d.sessions[d.activeSessionId];

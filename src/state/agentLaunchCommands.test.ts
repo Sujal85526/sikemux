@@ -1,13 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-    addAgent,
-    clearAgentInitialInput,
-    closeAgentPalette,
-    focusAgents,
-    saveProviderProfile,
-    setAgentPermissionMode,
-    toggleAgentSkipPermissions,
-} from "./commands";
+import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, setAgentPermissionMode } from "./commands";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -35,17 +27,17 @@ beforeEach(() => {
 });
 
 describe("agent launch commands", () => {
-    it("opens the new-agent draft when entering an empty project's agent view", () => {
+    it("enters an empty project's agent view without opening input UI", () => {
         focusAgents();
 
         expect(getState().sessions.project.view).toBe("agent");
-        expect(getState().agentPaletteOpen).toBe(true);
+        expect(getState().agentPaletteOpen).toBe(false);
 
         closeAgentPalette();
         expect(getState().agentPaletteOpen).toBe(false);
     });
 
-    it("focuses an existing agent without opening a new-agent draft", () => {
+    it("focuses an existing agent without opening the picker", () => {
         addAgent("codex");
         setState((state) => ({
             sessions: { ...state.sessions, project: { ...state.sessions.project, view: "windows" } },
@@ -104,12 +96,10 @@ describe("agent launch commands", () => {
         expect(getState().activeSessionId).toBe("other");
     });
 
-    it("launches the first task with model and effort without rewriting the prompt", () => {
+    it("launches the provider directly with model and effort overrides", () => {
         addAgent("codex", undefined, "Repair parser", {
             model: "gpt-5.6-codex",
             effort: "high",
-            initialPrompt: "Repair the parser race.",
-            workspaceStrategy: "agent-decides",
             baselineSessionIds: ["existing-one", "existing-two"],
         });
 
@@ -117,72 +107,13 @@ describe("agent launch commands", () => {
         expect(agent).toMatchObject({
             model: "gpt-5.6-codex",
             effort: "high",
-            workspaceStrategy: "agent-decides",
             cwd: "/code/project",
         });
-        expect(agent.worktreePath).toBeUndefined();
         expect(agent.baselineSessionIds).toEqual(["existing-one", "existing-two"]);
-        expect(agent.firstTurnPending).toBe(true);
         expect(agent.startup).toContain("--model gpt-5.6-codex");
         expect(agent.startup).toContain("model_reasoning_effort");
-        expect(agent.startup).not.toContain("Repair the parser race.");
-        expect(agent.initialInput).toBe("Repair the parser race.");
-        expect(agent.initialInput).not.toContain("Workspace instruction");
-    });
-
-    it("preserves the first task for interactive CLIs that cannot receive it in argv", () => {
-        addAgent("hermes", undefined, "Hermes task", {
-            initialPrompt: "Inspect the local state machine.",
-            workspaceStrategy: "current",
-        });
-
-        const agent = getState().agents[getState().agentsBySession.project[0]];
-        expect(agent.initialPromptSubmitted).toBe(true);
-        expect(agent.firstTurnPending).toBe(true);
-        expect(agent.initialInput).toContain("Inspect the local state machine.");
-        expect(agent.startup).not.toContain("Inspect the local state machine.");
-    });
-
-    it("keeps dropped images runtime-only until the first turn is delivered", () => {
-        expect(
-            addAgent("codex", undefined, "Compare screenshots", {
-                initialPrompt: "Spot the regression.",
-                initialDropPaths: ["/tmp/before image.png", "/tmp/after.jpg", "/tmp/before image.png"],
-            }),
-        ).toBe(true);
-        const id = getState().agentsBySession.project[0];
-        expect(getState().agents[id]).toMatchObject({
-            initialDropPaths: ["/tmp/before image.png", "/tmp/after.jpg"],
-            initialInput: "Spot the regression.",
-            initialPromptSubmitted: true,
-            firstTurnPending: true,
-        });
-
-        clearAgentInitialInput(id);
-
-        expect(getState().agents[id].initialDropPaths).toBeUndefined();
-        expect(getState().agents[id].initialInput).toBeUndefined();
-    });
-
-    it("rejects an unsafe or oversized native-drop payload", () => {
-        expect(addAgent("codex", undefined, undefined, { initialDropPaths: ["/tmp/safe.png", "/tmp/unsafe\0.png"] })).toBe(false);
-        expect(
-            addAgent("codex", undefined, undefined, {
-                initialDropPaths: Array.from({ length: 9 }, (_, index) => `/tmp/image-${index}.png`),
-            }),
-        ).toBe(false);
-        expect(getState().agentsBySession.project).toHaveLength(0);
-    });
-
-    it("does not restart a one-shot first turn before its resumable session is known", () => {
-        addAgent("codex", undefined, "Running task", { initialPrompt: "Keep this turn alive." });
-        const id = getState().agentsBySession.project[0];
-        const before = getState().agents[id];
-
-        toggleAgentSkipPermissions(id);
-
-        expect(getState().agents[id].permissionMode).toBe(before.permissionMode);
-        expect(getState().agents[id].startup).toBe(before.startup);
+        expect(agent).not.toHaveProperty("initialInput");
+        expect(agent).not.toHaveProperty("worktreePath");
     });
 
     it("relaunches a resumable session in Normal or YOLO mode", () => {

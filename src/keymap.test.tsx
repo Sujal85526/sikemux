@@ -72,6 +72,20 @@ describe("Alt+Tab session switching", () => {
     });
 });
 
+describe("agent picker shortcut", () => {
+    it("opens the agent picker modal with Alt+N from the agent view", () => {
+        setState((state) => ({
+            sessions: { ...state.sessions, one: { ...state.sessions.one, view: "agent" } },
+        }));
+        render(<KeymapHarness />);
+
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "n", code: "KeyN", altKey: true, bubbles: true, cancelable: true }));
+
+        expect(getState().agentPaletteOpen).toBe(true);
+        expect(getState().sessions.one.view).toBe("agent");
+    });
+});
+
 describe("command popup modality", () => {
     it("blocks workspace shortcuts and closes on Escape", () => {
         render(<KeymapHarness />);

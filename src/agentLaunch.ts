@@ -1,17 +1,13 @@
-import { basename, dirname, joinPath } from "./lib/paths";
-import type { AgentEffort, AgentPermissionMode, AgentType, AgentWorkspaceStrategy } from "./state/types";
+import type { AgentEffort, AgentPermissionMode, AgentType } from "./state/types";
 
 export interface AgentLaunchOptions {
     resumeId?: string;
     permissionMode?: AgentPermissionMode;
     model?: string;
     effort?: AgentEffort;
-    /** First message delivered to the interactive provider after launch. */
-    initialPrompt?: string;
 }
 
 export const MAX_AGENT_MODEL_LENGTH = 256;
-export const MAX_AGENT_PROMPT_LENGTH = 48 * 1024;
 
 const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
     claude: ["low", "medium", "high", "xhigh", "max"],
@@ -21,14 +17,6 @@ const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
     // The interactive OpenCode command has --model and --prompt, but its
     // provider-specific --variant effort flag belongs to `opencode run`.
     opencode: [],
-};
-
-const INITIAL_PROMPT_SUPPORT: Readonly<Record<AgentType, boolean>> = {
-    claude: true,
-    codex: true,
-    hermes: false,
-    pi: true,
-    opencode: true,
 };
 
 export const AGENT_PERMISSION_MODES: readonly AgentPermissionMode[] = ["workspace-write", "bypass"];
@@ -78,29 +66,6 @@ export const AGENT_PERMISSION_COPY: Record<AgentPermissionMode, { label: string;
     },
 };
 
-function slug(value: string): string {
-    return value
-        .trim()
-        .toLocaleLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 42);
-}
-
-export function defaultAgentBranch(type: AgentType, now = new Date()): string {
-    const stamp =
-        [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()]
-            .map((part) => String(part).padStart(2, "0"))
-            .join("") + String(now.getMilliseconds()).padStart(3, "0");
-    return `agent/${slug(type) || "agent"}-${stamp}`;
-}
-
-export function defaultWorktreePath(repo: string, branch: string): string {
-    const repoName = slug(basename(repo)) || "project";
-    const lane = slug(branch) || "agent";
-    return joinPath(dirname(repo), ".sikemux-worktrees", repoName, lane);
-}
-
 export function supportedEfforts(type: AgentType): readonly AgentEffort[] {
     return AGENT_EFFORTS[type];
 }
@@ -114,15 +79,6 @@ export function normalizeAgentEffort(type: AgentType, effort?: AgentEffort): Age
     return undefined;
 }
 
-export function supportsInitialPrompt(type: AgentType): boolean {
-    return INITIAL_PROMPT_SUPPORT[type];
-}
-
-/** Preserve the reader's first task verbatim apart from surrounding whitespace. */
-export function initialAgentPrompt(prompt: string | undefined, _legacyWorkspaceStrategy?: AgentWorkspaceStrategy): string | undefined {
-    return prompt?.trim() || undefined;
-}
-
 /**
  * Build raw provider argv. Callers remain responsible for shell quoting each
  * token when converting the result into Sikemux's terminal startup string.
@@ -130,7 +86,6 @@ export function initialAgentPrompt(prompt: string | undefined, _legacyWorkspaceS
 export function agentLaunchArgs(type: AgentType, options: AgentLaunchOptions = {}): string[] {
     const model = options.model?.trim();
     const effort = normalizeAgentEffort(type, options.effort);
-    const prompt = supportsInitialPrompt(type) ? options.initialPrompt?.trim() : undefined;
     const providerArgs: string[] = [];
 
     if (model) providerArgs.push("--model", model);
@@ -143,13 +98,12 @@ export function agentLaunchArgs(type: AgentType, options: AgentLaunchOptions = {
     if (options.permissionMode) providerArgs.push(...permissionArgs(type, options.permissionMode));
 
     if (type === "codex" && options.resumeId) {
-        return ["resume", ...providerArgs, options.resumeId, ...(prompt ? [prompt] : [])];
+        return ["resume", ...providerArgs, options.resumeId];
     }
 
     const resumeArgs = options.resumeId ? resumeArgsForType(type, options.resumeId) : [];
     if (type === "hermes" && (model || effort)) providerArgs.push("--tui");
-    if (type === "opencode" && prompt) return [...providerArgs, ...resumeArgs, "--prompt", prompt];
-    return [...providerArgs, ...resumeArgs, ...(prompt ? [prompt] : [])];
+    return [...providerArgs, ...resumeArgs];
 }
 
 function resumeArgsForType(type: AgentType, id: string): string[] {

@@ -147,15 +147,15 @@ describe("agent context serialization", () => {
         expect(result.text).not.toContain("Do not close </review>");
     });
 
-    it("resolves worktree and current cwd lazily when delivery is prepared", () => {
-        const state: { worktreePath?: string } = {};
-        const lazy = () => ({ currentCwd: "/code/project", worktreePath: state.worktreePath });
+    it("resolves the active agent cwd lazily when delivery is prepared", () => {
+        const state: { agentCwd?: string } = {};
+        const lazy = () => ({ currentCwd: "/code/project", agentCwd: state.agentCwd });
         const item: AgentContextItem = { kind: "file", path: "src/main.ts" };
 
         expect(resolveAgentContextCwd(lazy)).toBe("/code/project");
-        state.worktreePath = "/code/worktree";
+        state.agentCwd = "/code/agent";
         const prepared = prepareAgentContextDelivery([item], lazy, "insert-only");
-        expect(prepared.cwd).toBe("/code/worktree");
+        expect(prepared.cwd).toBe("/code/agent");
         expect(prepared.items[0]).toMatchObject({ path: "src/main.ts" });
     });
 

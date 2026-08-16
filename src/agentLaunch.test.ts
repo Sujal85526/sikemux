@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
     agentLaunchArgs,
-    defaultAgentBranch,
-    defaultWorktreePath,
-    initialAgentPrompt,
     isDangerousPermissionMode,
     normalizeAgentEffort,
     normalizePermissionMode,
@@ -11,7 +8,6 @@ import {
     permissionCopyForType,
     supportedEfforts,
     supportedPermissionModes,
-    supportsInitialPrompt,
 } from "./agentLaunch";
 
 describe("agent launch policy", () => {
@@ -29,12 +25,7 @@ describe("agent launch policy", () => {
         expect(permissionArgs("claude", "full-access")).toEqual(["--permission-mode", "acceptEdits"]);
     });
 
-    it("places generated worktrees outside the repository", () => {
-        expect(defaultWorktreePath("/code/sikemux", "agent/codex-1")).toBe("/code/.sikemux-worktrees/sikemux/agent-codex-1");
-    });
-
-    it("creates stable branch-shaped defaults and marks only bypass dangerous", () => {
-        expect(defaultAgentBranch("codex", new Date(2026, 7, 9, 6, 7, 8, 9))).toBe("agent/codex-20260809060708009");
+    it("marks only bypass dangerous", () => {
         expect(isDangerousPermissionMode("full-access")).toBe(false);
         expect(isDangerousPermissionMode("bypass")).toBe(true);
     });
@@ -48,16 +39,15 @@ describe("agent launch policy", () => {
         expect(permissionArgs("pi", "read-only")).toEqual([]);
     });
 
-    it("builds Claude model, effort, permission, resume, and prompt arguments", () => {
+    it("builds Claude model, effort, permission, and resume arguments", () => {
         expect(
             agentLaunchArgs("claude", {
                 resumeId: "session-1",
                 permissionMode: "workspace-write",
                 model: " sonnet ",
                 effort: "high",
-                initialPrompt: "  Repair the parser.  ",
             }),
-        ).toEqual(["--model", "sonnet", "--effort", "high", "--permission-mode", "acceptEdits", "--resume", "session-1", "Repair the parser."]);
+        ).toEqual(["--model", "sonnet", "--effort", "high", "--permission-mode", "acceptEdits", "--resume", "session-1"]);
     });
 
     it("places Codex resume first and passes reasoning as a config override", () => {
@@ -67,57 +57,32 @@ describe("agent launch policy", () => {
                 permissionMode: "workspace-write",
                 model: "gpt-5.6-codex",
                 effort: "xhigh",
-                initialPrompt: "Review only.",
             }),
-        ).toEqual([
-            "resume",
-            "--model",
-            "gpt-5.6-codex",
-            "--config",
-            'model_reasoning_effort="xhigh"',
-            "--sandbox",
-            "workspace-write",
-            "session-2",
-            "Review only.",
-        ]);
+        ).toEqual(["resume", "--model", "gpt-5.6-codex", "--config", 'model_reasoning_effort="xhigh"', "--sandbox", "workspace-write", "session-2"]);
     });
 
     it("uses only flags supported by each local interactive CLI", () => {
-        expect(agentLaunchArgs("hermes", { model: "anthropic/claude-sonnet-4.6", effort: "ultra", initialPrompt: "Ignored." })).toEqual([
+        expect(agentLaunchArgs("hermes", { model: "anthropic/claude-sonnet-4.6", effort: "ultra" })).toEqual([
             "--model",
             "anthropic/claude-sonnet-4.6",
             "--reasoning",
             "ultra",
             "--tui",
         ]);
-        expect(agentLaunchArgs("pi", { model: "anthropic/claude-sonnet-4.6", effort: "ultra", initialPrompt: "Build it." })).toEqual([
+        expect(agentLaunchArgs("pi", { model: "anthropic/claude-sonnet-4.6", effort: "ultra" })).toEqual([
             "--model",
             "anthropic/claude-sonnet-4.6",
             "--thinking",
             "max",
-            "Build it.",
         ]);
-        expect(agentLaunchArgs("opencode", { model: "openai/gpt-5", effort: "high", initialPrompt: "Build it." })).toEqual([
-            "--model",
-            "openai/gpt-5",
-            "--prompt",
-            "Build it.",
-        ]);
+        expect(agentLaunchArgs("opencode", { model: "openai/gpt-5", effort: "high" })).toEqual(["--model", "openai/gpt-5"]);
     });
 
-    it("reports effort and first-message support without inventing provider capabilities", () => {
+    it("reports effort support without inventing provider capabilities", () => {
         expect(supportedEfforts("claude")).toEqual(["low", "medium", "high", "xhigh", "max"]);
         expect(supportedEfforts("hermes")).toContain("ultra");
         expect(supportedEfforts("opencode")).toEqual([]);
         expect(normalizeAgentEffort("codex", "ultra")).toBe("max");
         expect(normalizeAgentEffort("opencode", "high")).toBeUndefined();
-        expect(supportsInitialPrompt("claude")).toBe(true);
-        expect(supportsInitialPrompt("hermes")).toBe(false);
-    });
-
-    it("preserves the reader's task without appending workspace instructions", () => {
-        expect(initialAgentPrompt(" Ship the local timeline. ", "agent-decides")).toBe("Ship the local timeline.");
-        expect(initialAgentPrompt("Review it", "current")).toBe("Review it");
-        expect(initialAgentPrompt("   ", "agent-decides")).toBeUndefined();
     });
 });

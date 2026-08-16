@@ -88,18 +88,6 @@ describe("agent rail", () => {
         expect(agent).toMatchObject({ resumeId: "older", title: "Fix terminal focus", cwd: "/code/sikemux" });
     });
 
-    it("shows the open new-agent draft as the selected lane", async () => {
-        render(<AgentRail />);
-        await screen.findByRole("button", { name: /Fix terminal focus/ });
-        expect(screen.queryByText("Drafting")).not.toBeInTheDocument();
-
-        setState({ agentPaletteOpen: true });
-
-        expect(await screen.findByText("Drafting")).toBeInTheDocument();
-        await userEvent.setup().click(screen.getByRole("button", { name: "Close new agent" }));
-        expect(getState().agentPaletteOpen).toBe(false);
-    });
-
     it("shows live plan windows only for detected Codex and Claude providers", async () => {
         const resetBase = Math.floor(Date.now() / 1000);
         mocks.available.mockResolvedValue([

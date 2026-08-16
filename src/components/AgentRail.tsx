@@ -31,7 +31,6 @@ const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 export function AgentRail() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
-    const paletteOpen = useStore((s) => s.agentPaletteOpen);
     const density = useStore((s) => s.railDensity);
     const agentsBySession = useStore((s) => s.agentsBySession);
     const agentsById = useStore((s) => s.agents);
@@ -162,10 +161,7 @@ export function AgentRail() {
         );
     }
 
-    // The unlaunched new-agent page is a draft lane: it owns the selection in
-    // the rail until it either starts an agent or is dismissed.
-    const draftOpen = paletteOpen && session.view === "agent";
-    const noContent = opens.length === 0 && recentDisplay.length === 0 && !draftOpen;
+    const noContent = opens.length === 0 && recentDisplay.length === 0;
 
     return (
         <aside className="agent-rail" data-density={density}>
@@ -198,30 +194,6 @@ export function AgentRail() {
                 </div>
             )}
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
-                {draftOpen && (
-                    <div className="agent-group">
-                        <div className="rail-group-label">Drafting</div>
-                        <div className="agent-row-wrap">
-                            <button className="agent-row draft active" onClick={cmd.openAgentPalette}>
-                                <span className="agent-glyph draft">
-                                    <span className="agent-glyph-icon">
-                                        <IconPlus size={18} />
-                                    </span>
-                                </span>
-                                <span className="agent-title">New agent</span>
-                            </button>
-                            <button
-                                type="button"
-                                className="agent-glyph-x"
-                                aria-label="Close new agent"
-                                title="Close new agent"
-                                onClick={cmd.closeAgentPalette}>
-                                <IconClose size={11} />
-                            </button>
-                        </div>
-                    </div>
-                )}
-
                 {noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"
@@ -238,7 +210,7 @@ export function AgentRail() {
                     <div className="agent-group">
                         <div className="rail-group-label">Open</div>
                         {opens.map((a) => {
-                            const active = !draftOpen && session.view === "agent" && a.id === session.activeAgentId;
+                            const active = session.view === "agent" && a.id === session.activeAgentId;
                             return (
                                 <div key={a.id} className="agent-row-wrap">
                                     <button className={`agent-row closable${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>

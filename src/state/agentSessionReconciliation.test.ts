@@ -7,7 +7,7 @@ const initial = getState();
 beforeEach(() => setState(initial, true));
 
 describe("agent session reconciliation", () => {
-    it("replaces a generic new-agent title when the first prompt reaches disk", () => {
+    it("replaces a generic title when the provider session title reaches disk", () => {
         const state = getState();
         const sessionId = state.activeSessionId;
         const agentId = "agent-new";

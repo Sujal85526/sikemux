@@ -47,9 +47,6 @@ export type AgentPermissionMode = "read-only" | "workspace-write" | "full-access
 /** Provider-neutral reasoning levels; unsupported levels are normalized per CLI. */
 export type AgentEffort = "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
-/** How the first task should treat repository isolation. */
-export type AgentWorkspaceStrategy = "current" | "existing" | "agent-decides";
-
 /** Supported profile backends. Gemini is profile-ready ahead of a dedicated agent tab. */
 export type AgentProvider = "claude" | "codex" | "gemini";
 
@@ -94,24 +91,12 @@ export interface Agent {
     permissionMode?: AgentPermissionMode;
     /** Non-secret provider profile selected for this launch. */
     profileId?: string;
-    /** Effective launch directory, commonly a project worktree. */
+    /** Effective launch directory. */
     cwd?: string;
-    /** Worktree root when this agent owns an isolated Git worktree. */
-    worktreePath?: string;
     /** Optional provider model override selected at launch. */
     model?: string;
     /** Optional provider reasoning-effort override selected at launch. */
     effort?: AgentEffort;
-    /** Launch-time repository strategy, retained for an honest session summary. */
-    workspaceStrategy?: AgentWorkspaceStrategy;
-    /** Runtime evidence that a first task is scheduled for delivery to the provider PTY. */
-    initialPromptSubmitted?: boolean;
-    /** Runtime guard against restarting a one-shot first turn before its session id is known. */
-    firstTurnPending?: boolean;
-    /** Runtime-only native image drops replayed as individual provider paste events. */
-    initialDropPaths?: string[];
-    /** Runtime-only first input for CLIs that cannot accept an interactive prompt in argv. */
-    initialInput?: string;
     /** @deprecated Compatibility bridge for snapshots and command builders. */
     skipPermissions?: boolean;
     /**

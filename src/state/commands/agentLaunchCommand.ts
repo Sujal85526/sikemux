@@ -2,7 +2,7 @@ import { agentLaunchArgs } from "../../agentLaunch";
 import { IS_WINDOWS } from "../../lib/platform";
 import type { AgentEffort, AgentPermissionMode, AgentType, PtyDirectCommand } from "../types";
 
-type LaunchOptions = { model?: string; effort?: AgentEffort; initialPrompt?: string };
+type LaunchOptions = { model?: string; effort?: AgentEffort };
 
 function shellQuote(value: string): string {
     if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;

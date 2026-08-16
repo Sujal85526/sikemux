@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 
 describe("worktree lifecycle", () => {
-    it("protects project sessions and agent-owned worktrees", () => {
+    it("protects project sessions and agents currently using a checkout", () => {
         const project = {
             id: "project",
             name: "lane",

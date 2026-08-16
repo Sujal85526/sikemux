@@ -11,8 +11,6 @@ vi.mock("../terminal/TerminalPane", () => ({
     ),
 }));
 
-vi.mock("./AgentPalette", () => ({ AgentPalette: () => <div data-testid="new-agent-page" /> }));
-
 const initial = getState();
 
 beforeEach(() => setState(initial, true));
@@ -67,24 +65,6 @@ describe("workspace tab bars", () => {
         expect(getState().agentPaletteOpen).toBe(true);
     });
 
-    it("renders the new agent page as a draft tab in the stage instead of an overlay", () => {
-        projectWithAgent();
-        setState({ agentPaletteOpen: true });
-
-        const { container } = render(<Workspace />);
-
-        const draftTab = screen.getByRole("tab", { name: /New agent/ });
-        expect(draftTab).toHaveAttribute("aria-selected", "true");
-        expect(screen.getByRole("tab", { name: /only agent/ })).toHaveAttribute("aria-selected", "false");
-        expect(screen.getByTestId("new-agent-page")).toBeInTheDocument();
-        expect(container.querySelector(".new-agent-layer")).toHaveStyle({ top: "32px" });
-        // The agent behind the draft backgrounds instead of painting through it.
-        expect(screen.getByTestId("terminal-agent-only")).toHaveAttribute("data-visible", "false");
-
-        fireEvent.click(screen.getByRole("tab", { name: /only agent/ }));
-        expect(getState().agentPaletteOpen).toBe(false);
-    });
-
     it("changes between Normal and YOLO in a resumable agent session", () => {
         projectWithAgent();
         render(<Workspace />);
@@ -116,7 +96,7 @@ describe("workspace tab bars", () => {
         expect(screen.getByRole("button", { name: "Safety" })).toHaveClass("is-yolo");
     });
 
-    it("shows the draft tab instead of the empty stage when no agent is open yet", () => {
+    it("keeps the empty agent stage free of input UI", () => {
         const state = getState();
         const sessionId = state.activeSessionId;
         setState({
@@ -125,15 +105,11 @@ describe("workspace tab bars", () => {
                 [sessionId]: { ...state.sessions[sessionId], kind: "project", view: "agent", activeAgentId: null, cwd: "/repo" },
             },
             agentsBySession: { ...state.agentsBySession, [sessionId]: [] },
-            agentPaletteOpen: true,
         });
 
         render(<Workspace />);
 
-        expect(screen.getByRole("tab", { name: /New agent/ })).toBeInTheDocument();
-        expect(screen.queryByText("no agents in this project")).not.toBeInTheDocument();
-
-        fireEvent.click(screen.getByTitle("Close New agent"));
-        expect(getState().agentPaletteOpen).toBe(false);
+        expect(screen.getByText("no agents in this project")).toBeInTheDocument();
+        expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     });
 });

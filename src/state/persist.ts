@@ -351,8 +351,6 @@ function boundedOptionalString(value: unknown, max: number): string | undefined 
 }
 
 const AGENT_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max", "ultra"]);
-const AGENT_WORKSPACE_STRATEGIES = new Set(["current", "existing", "agent-decides"]);
-
 function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (!isRecord(value) || typeof value.id !== "string" || !value.id || !AGENT_TYPES.has(value.type as AgentType)) return null;
     if (typeof value.title !== "string" || !value.title.trim() || typeof value.resumeId !== "string" || !value.resumeId.trim()) return null;
@@ -369,16 +367,11 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (permissionMode === "bypass") agent.skipPermissions = true;
     const profileId = boundedOptionalString(value.profileId, 100);
     const cwd = boundedOptionalString(value.cwd, 4096);
-    const worktreePath = boundedOptionalString(value.worktreePath, 4096);
     const model = boundedOptionalString(value.model, 200);
     if (profileId) agent.profileId = profileId;
     if (cwd) agent.cwd = cwd;
-    if (worktreePath) agent.worktreePath = worktreePath;
     if (model) agent.model = model;
     if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
-    if (typeof value.workspaceStrategy === "string" && AGENT_WORKSPACE_STRATEGIES.has(value.workspaceStrategy)) {
-        agent.workspaceStrategy = value.workspaceStrategy as PersistedAgent["workspaceStrategy"];
-    }
     return agent;
 }
 
@@ -445,10 +438,8 @@ function snapshot(): string {
                     ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
                     ...(agent.profileId ? { profileId: agent.profileId } : {}),
                     ...(agent.cwd ? { cwd: agent.cwd } : {}),
-                    ...(agent.worktreePath ? { worktreePath: agent.worktreePath } : {}),
                     ...(agent.model ? { model: agent.model } : {}),
                     ...(agent.effort ? { effort: agent.effort } : {}),
-                    ...(agent.workspaceStrategy ? { workspaceStrategy: agent.workspaceStrategy } : {}),
                 };
             });
     }

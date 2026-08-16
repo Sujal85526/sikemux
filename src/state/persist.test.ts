@@ -254,7 +254,7 @@ describe("frontend persistence", () => {
         expect(JSON.stringify(getState().providerProfiles)).not.toContain("do-not-hydrate");
     });
 
-    it("migrates legacy permission bypass and preserves non-secret worktree launch metadata", async () => {
+    it("migrates legacy permission bypass and drops retired worktree metadata", async () => {
         const sid = getState().activeSessionId;
         const session = getState().sessions[sid];
         const legacy = {
@@ -279,9 +279,9 @@ describe("frontend persistence", () => {
             skipPermissions: true,
             profileId: "builtin-claude",
             cwd: legacy.cwd,
-            worktreePath: legacy.worktreePath,
             launchState: "dormant",
         });
+        expect(getState().agents[legacy.id]).not.toHaveProperty("worktreePath");
         expect(getState().agents[legacy.id].startup).toContain("--dangerously-skip-permissions");
     });
 

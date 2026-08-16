@@ -10,16 +10,12 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
-import { AgentPalette } from "./AgentPalette";
 import { AgentPermissionSelector } from "./AgentPermissionSelector";
 import { AgentIcon, IconCommand, IconPlus } from "./Icons";
 import { renderWorkbenchItem } from "../workbench/renderers";
 
 const AGENT_TABS_H = 32;
 const TERM_TABS_H = 32;
-
-/** Identity of the unlaunched new-agent tab. Agent ids are `agent-*`, so this can never collide. */
-export const DRAFT_AGENT_TAB_ID = "draft:new-agent";
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 const pct = (n: number) => `${n * 100}%`;
@@ -35,7 +31,6 @@ export function Workspace() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agentsBySession = useStore((s) => s.agentsBySession);
     const activeSessionId = useStore((s) => s.activeSessionId);
-    const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const areaRef = useRef<HTMLDivElement>(null);
 
     const sessions = sessionOrder.map((id) => sessionsById[id]);
@@ -44,11 +39,8 @@ export function Workspace() {
     const activeAgents = activeSession ? (agentsBySession[activeSession.id] ?? []).map((id) => agentsById[id]) : [];
 
     const inAgentView = !!activeSession && sessionView(activeSession) === "agent";
-    // The new-agent page is a draft tab in this session's agent strip, not an
-    // app-wide overlay: it sits in the stage with both rails still in reach.
-    const draftOpen = inAgentView && agentPaletteOpen;
-    const showAgentTabs = inAgentView && (activeAgents.length > 0 || draftOpen);
-    const showAgentEmpty = inAgentView && activeAgents.length === 0 && !draftOpen;
+    const showAgentTabs = inAgentView && activeAgents.length > 0;
+    const showAgentEmpty = inAgentView && activeAgents.length === 0;
 
     const activeWindowList = activeSession ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id]) : [];
     const termTabs =
@@ -59,7 +51,7 @@ export function Workspace() {
 
     return (
         <div className="window-area" ref={areaRef}>
-            {showAgentTabs && <AgentTabsBar session={activeSession!} agents={activeAgents} draft={draftOpen} />}
+            {showAgentTabs && <AgentTabsBar session={activeSession!} agents={activeAgents} />}
             {showTermTabs && <TerminalTabsBar session={activeSession!} tabs={termTabs} />}
             {showAgentEmpty && (
                 <div className="agent-empty-stage">
@@ -100,21 +92,12 @@ export function Workspace() {
                             session={session}
                             agent={agent}
                             tabsShown={sessTabs}
-                            // The draft holds the foreground while it is open, so the agent
-                            // behind it backgrounds like any other unselected tab.
-                            visible={isActive && !draftOpen && view === "agent" && aid === session.activeAgentId}
+                            visible={isActive && view === "agent" && aid === session.activeAgentId}
                         />
                     );
                 });
                 return [...windowLayers, ...agentLayers];
             })}
-            {draftOpen && (
-                <div className="window-layer visible new-agent-layer" style={showAgentTabs ? { top: `${AGENT_TABS_H}px` } : undefined}>
-                    <ErrorBoundary label="new agent">
-                        <AgentPalette />
-                    </ErrorBoundary>
-                </div>
-            )}
         </div>
     );
 }
@@ -160,7 +143,7 @@ function TerminalTabsBar({ session, tabs }: { session: Session; tabs: WindowT[] 
     );
 }
 
-function AgentTabsBar({ session, agents, draft }: { session: Session; agents: Agent[]; draft: boolean }) {
+function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }) {
     const activityById = useStore((s) => s.agentActivity);
     const buildMenu = (id: string): CtxItem[] => {
         const a = agents.find((x) => x.id === id);
@@ -173,7 +156,7 @@ function AgentTabsBar({ session, agents, draft }: { session: Session; agents: Ag
         ];
         if (cmd.agentSupportsSkipPermissions(a.type)) {
             const skip = a.permissionMode === "bypass" || a.skipPermissions === true;
-            const restartBlocked = !!a.firstTurnPending && !a.resumeId;
+            const restartBlocked = !a.resumeId;
             items.push(
                 { sep: true },
                 {
@@ -191,7 +174,7 @@ function AgentTabsBar({ session, agents, draft }: { session: Session; agents: Ag
         id: a.id,
         label: a.title,
         title: a.title,
-        active: !draft && a.id === session.activeAgentId,
+        active: a.id === session.activeAgentId,
         icon: (
             <span className={`agent-glyph ${a.type}`}>
                 <AgentIcon type={a.type} size={14} />
@@ -199,33 +182,13 @@ function AgentTabsBar({ session, agents, draft }: { session: Session; agents: Ag
         ),
         accessory: <AgentActivityMark state={activityById[a.id]?.state} unread={activityById[a.id]?.unread ?? false} />,
     }));
-    if (draft) {
-        tabs.push({
-            id: DRAFT_AGENT_TAB_ID,
-            label: "New agent",
-            title: "New agent — not started yet",
-            active: true,
-            icon: (
-                <span className="agent-glyph draft">
-                    <IconPlus size={13} />
-                </span>
-            ),
-        });
-    }
-
     return (
         <TabBar
             variant="agent"
             style={{ height: AGENT_TABS_H }}
             tabs={tabs}
-            onSelect={(id) => {
-                if (id === DRAFT_AGENT_TAB_ID) return;
-                cmd.selectAgent(id);
-            }}
-            onClose={(id) => {
-                if (id === DRAFT_AGENT_TAB_ID) cmd.closeAgentPalette();
-                else cmd.closeAgent(id);
-            }}
+            onSelect={cmd.selectAgent}
+            onClose={cmd.closeAgent}
             buildMenu={buildMenu}
             onAdd={() => cmd.openAgentPalette()}
             addIcon={<IconPlus size={13} />}
@@ -248,7 +211,7 @@ function AgentSafetySelector({ agent }: { agent: Agent }) {
                 menuWidth={280}
                 onChange={(mode) => cmd.setAgentPermissionMode(agent.id, mode)}
                 disabled={restartBlocked}
-                disabledTitle="Safety can be changed after the first task has a resumable session."
+                disabledTitle="Safety can be changed after the CLI creates a resumable session."
             />
         </div>
     );
@@ -298,9 +261,6 @@ const AgentLayer = memo(function AgentLayer({
                             cwd={agent.cwd || session.cwd || undefined}
                             startup={agent.startup}
                             directCommand={agent.directCommand}
-                            initialDropPaths={agent.initialDropPaths}
-                            initialInput={agent.initialInput}
-                            onInitialInputDelivered={() => cmd.clearAgentInitialInput(agent.id)}
                             active={visible}
                             visible={visible}
                             spawnWhen={visible || (autoResumeAgents && !!agent.resumeId)}
@@ -311,7 +271,6 @@ const AgentLayer = memo(function AgentLayer({
                                 ...(session.kind === "project" && (agent.cwd || session.cwd) ? { project: agent.cwd || session.cwd } : {}),
                                 agentId: agent.id,
                                 agentType: agent.type,
-                                initialPromptSubmitted: agent.initialPromptSubmitted,
                             }}
                         />
                     )}

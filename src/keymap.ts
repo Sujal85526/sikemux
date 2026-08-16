@@ -16,10 +16,8 @@ function isTerminalKeyTarget(e: KeyboardEvent): boolean {
 function hasOpenModal(st: StoreState): boolean {
     return (
         st.pickerOpen ||
+        st.agentPaletteOpen ||
         st.filePaletteOpen ||
-        // The new-agent page is not here on purpose: it is a draft tab inside
-        // the agent view, so the rest of the app stays keyboard-reachable while
-        // it is open (⌥W closes the draft, ⌥N re-opens it).
         st.rundeckJobPaletteOpen ||
         st.brunoReqPaletteOpen ||
         st.brunoEnvPaletteOpen ||

@@ -67,8 +67,6 @@ export interface AgentContextLocation {
     currentCwd: string;
     /** Effective provider cwd for an existing agent. */
     agentCwd?: string;
-    /** A launch-time worktree wins when it exists. */
-    worktreePath?: string;
 }
 
 /** Location is deliberately resolved at preparation time, not captured in a shelf draft. */
@@ -150,7 +148,7 @@ function resolveLocation(source: LazyAgentContextLocation): AgentContextLocation
 
 export function resolveAgentContextCwd(source: LazyAgentContextLocation): string | null {
     const location = resolveLocation(source);
-    for (const candidate of [location.worktreePath, location.agentCwd, location.currentCwd]) {
+    for (const candidate of [location.agentCwd, location.currentCwd]) {
         if (!candidate?.trim()) continue;
         const canonical = canonicalPath(candidate.trim());
         if (canonical) return canonical;
