@@ -66,10 +66,6 @@ textarea:focus-visible {
 
 .top-bar {
     height: 48px;
-    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 88%), transparent);
-    border-bottom-color: color-mix(in srgb, var(--line) 82%, white 4%);
-    -webkit-backdrop-filter: blur(22px) saturate(125%);
-    backdrop-filter: blur(22px) saturate(125%);
 }
 
 .tb-center {
@@ -854,4 +850,52 @@ textarea,
 /* Surfaces that read as cards want the softer corner, not the control one. */
 .shell :where(.picker, .settings-theme, .theme-editor, .bruno-secrets-pop, .env-dd-menu, .settings-section) {
     border-radius: var(--radius-md) !important;
+}
+
+/* ---- Agent rail header ---------------------------------------------------
+ * The provider buttons only had a surface when active, so the row read as one
+ * boxed icon among loose glyphs, and the usage meter was a hard bar pinned to
+ * the bottom edge — it collided with the button's rounded corner.
+ */
+.agent-header-btn {
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 55%), transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 66%, transparent);
+}
+
+.agent-header-btn.active {
+    color: var(--acc);
+    background: var(--acc-soft);
+    box-shadow: inset 0 0 0 1px var(--acc-line);
+}
+
+/* Inset and rounded so it sits inside the button rather than across its edge. */
+.agent-header-capacity {
+    left: var(--space-1h);
+    right: var(--space-1h);
+    bottom: var(--space-1);
+    height: 2px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink-faint) 22%, transparent);
+}
+.agent-header-capacity > span {
+    border-radius: inherit;
+}
+
+/* ---- Top bar -------------------------------------------------------------
+ * The gutter under the bar already separates it from the frame, so the hard
+ * rule underneath was a second divider. The breadcrumb gets a real chip so it
+ * reads as the window's subject rather than text floating past the lights.
+ */
+/* Flush: the bar shares the shell background with the gutter around the
+ * frame, so there is no bar — just window chrome sitting above the surfaces. */
+.top-bar {
+    border-bottom: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+.crumb {
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 92%), transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
 }
