@@ -388,16 +388,10 @@ textarea:focus-visible {
 
 .agent-usage {
     margin: var(--space-3) var(--gutter-rail) var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid color-mix(in srgb, var(--line) 88%, white 4%);
-    border-bottom: 1px solid color-mix(in srgb, var(--line) 88%, white 4%);
-    border-radius: var(--radius-md);
-    background: linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 78%), transparent),
-        color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 72%), transparent)
-    );
-    box-shadow: var(--shadow-soft);
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
 }
 
 .agent-usage-head {
@@ -538,7 +532,9 @@ textarea:focus-visible {
     height: 26px;
     padding-right: var(--space-1h);
     border-right: 0;
-    border-radius: var(--radius-sm);
+    /* A shade rounder than the control radius: a tab is wider than it is tall,
+       so the same corner reads tighter on it. */
+    border-radius: 4.5px;
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 55%), transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
     overflow: hidden;
@@ -577,8 +573,15 @@ textarea:focus-visible {
     background: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
-.tabbar.v-agent .tab-label {
+.tabbar.v-agent .tab-label,
+.tabbar.v-editor .tab-label {
     font-size: 12px;
+    font-weight: 500;
+}
+
+.tabbar.v-agent .tab-wrap.active .tab-label,
+.tabbar.v-editor .tab-wrap.active .tab-label {
+    font-weight: 600;
 }
 
 .pane {
@@ -912,18 +915,6 @@ textarea,
 }
 
 /* Inset and rounded so it sits inside the button rather than across its edge. */
-.agent-header-capacity {
-    left: var(--space-1h);
-    right: var(--space-1h);
-    bottom: var(--space-1);
-    height: 2px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--ink-faint) 22%, transparent);
-}
-.agent-header-capacity > span {
-    border-radius: inherit;
-}
-
 /* ---- Top bar -------------------------------------------------------------
  * The gutter under the bar already separates it from the frame, so the hard
  * rule underneath was a second divider. The breadcrumb gets a real chip so it

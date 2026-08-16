@@ -324,10 +324,7 @@ function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType;
 
     return (
         <section className={`agent-usage ${provider}`} aria-label={`${providerLabel} plan limits`}>
-            <div className="agent-usage-head">
-                <span className="agent-usage-mark">
-                    <AgentIcon type={provider} size={13} />
-                </span>
+            <div className="panel-head agent-usage-head">
                 <span className="panel-label">Limits</span>
                 <span className="panel-rule" />
                 {usage.data?.plan && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
@@ -444,11 +441,6 @@ function AgentHeader({
                             aria-label={a.label}
                             onClick={() => setType(a.type)}>
                             <AgentIcon type={a.type} size={18} />
-                            {isUsageAgent(a.type) && usagePeaks[a.type] != null && (
-                                <span className="agent-header-capacity" data-tone={usageTone(usagePeaks[a.type]!)} aria-hidden="true">
-                                    <span style={{ width: `${Math.max(0, Math.min(100, usagePeaks[a.type]!))}%` }} />
-                                </span>
-                            )}
                         </button>
                     </Tooltip>
                 ))}

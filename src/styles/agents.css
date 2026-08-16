@@ -363,28 +363,6 @@
 .agent-header-btn.codex {
     --agent-provider: var(--brand-codex);
 }
-.agent-header-capacity {
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    bottom: 2px;
-    height: 2px;
-    overflow: hidden;
-    background: color-mix(in srgb, var(--ink-faint) 26%, transparent);
-}
-.agent-header-capacity > span {
-    display: block;
-    height: 100%;
-    background: var(--agent-provider);
-    transition: width 0.32s cubic-bezier(0.2, 0.75, 0.2, 1);
-}
-.agent-header-capacity[data-tone="warm"] > span {
-    background: var(--warn);
-}
-.agent-header-capacity[data-tone="hot"] > span {
-    background: var(--danger);
-}
-
 /* Provider plan telemetry — a branded readout that borrows the rail's
    group-head grammar, then answers “how much is left?” with a big tabular
    number and a segmented gauge that matches the app's terminal grain. */
@@ -409,11 +387,6 @@
     gap: 7px;
     height: 18px;
     margin-bottom: 9px;
-}
-.agent-usage-mark {
-    flex: 0 0 auto;
-    display: flex;
-    color: var(--usage-fill);
 }
 .agent-usage-plan {
     max-width: 92px;
