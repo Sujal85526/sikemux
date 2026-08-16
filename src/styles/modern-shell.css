@@ -982,7 +982,7 @@ textarea,
  * and carries the top edge of the frame so the gutter runs all the way round
  * rather than stopping where the bar meets the window. */
 .shell {
-    padding-top: var(--space-3);
+    padding-top: var(--space-1h);
     background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
