@@ -633,6 +633,13 @@
 .ed-findbar-chev:hover {
     color: var(--ink);
 }
+.ed-findbar-chev svg {
+    transform: rotate(90deg);
+    transition: transform 0.14s ease;
+}
+.ed-findbar-chev[aria-expanded="true"] svg {
+    transform: rotate(-90deg);
+}
 
 .ed-findbar-rows {
     flex: 1 1 auto;
@@ -757,9 +764,7 @@
     opacity: 0.4;
     cursor: not-allowed;
 }
-.ed-findbar-btn.close {
-    font-size: 17px;
-}
+
 .ed-findbar-btn.close:hover {
     color: var(--danger);
 }

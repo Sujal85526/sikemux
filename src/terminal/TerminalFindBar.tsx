@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import type { ISearchResultChangeEvent } from "@xterm/addon-search";
 import type { TerminalController } from "./useXterm";
 import type { TerminalSearchOptions } from "./interactions";
+import { IconArrowDown, IconArrowUp, IconClose } from "../components/Icons";
+import { Tooltip } from "../components/Tooltip";
 
 export function TerminalFindBar({
     controller,
@@ -59,24 +61,51 @@ export function TerminalFindBar({
             <span className="terminal-find-result" aria-live="polite">
                 {resultLabel}
             </span>
-            <button type="button" className={options.caseSensitive ? "active" : ""} onClick={() => toggle("caseSensitive")} title="Match case">
-                Aa
-            </button>
-            <button type="button" className={options.wholeWord ? "active" : ""} onClick={() => toggle("wholeWord")} title="Match whole word">
-                W
-            </button>
-            <button type="button" className={options.regex ? "active" : ""} onClick={() => toggle("regex")} title="Use regular expression">
-                .*
-            </button>
-            <button type="button" onClick={() => move("previous")} title="Previous match (Shift+Enter)" aria-label="Previous match">
-                ↑
-            </button>
-            <button type="button" onClick={() => move("next")} title="Next match (Enter)" aria-label="Next match">
-                ↓
-            </button>
-            <button type="button" onClick={onClose} title="Close (Escape)" aria-label="Close terminal find">
-                ×
-            </button>
+            <Tooltip label="Match case">
+                <button
+                    type="button"
+                    className={options.caseSensitive ? "active" : ""}
+                    aria-label="Match case"
+                    aria-pressed={options.caseSensitive}
+                    onClick={() => toggle("caseSensitive")}>
+                    Aa
+                </button>
+            </Tooltip>
+            <Tooltip label="Match whole word">
+                <button
+                    type="button"
+                    className={options.wholeWord ? "active" : ""}
+                    aria-label="Match whole word"
+                    aria-pressed={options.wholeWord}
+                    onClick={() => toggle("wholeWord")}>
+                    W
+                </button>
+            </Tooltip>
+            <Tooltip label="Use regular expression">
+                <button
+                    type="button"
+                    className={options.regex ? "active" : ""}
+                    aria-label="Use regular expression"
+                    aria-pressed={options.regex}
+                    onClick={() => toggle("regex")}>
+                    .*
+                </button>
+            </Tooltip>
+            <Tooltip label="Previous match (Shift+Enter)">
+                <button type="button" onClick={() => move("previous")} aria-label="Previous match">
+                    <IconArrowUp size={12} />
+                </button>
+            </Tooltip>
+            <Tooltip label="Next match (Enter)">
+                <button type="button" onClick={() => move("next")} aria-label="Next match">
+                    <IconArrowDown size={12} />
+                </button>
+            </Tooltip>
+            <Tooltip label="Close (Escape)">
+                <button type="button" onClick={onClose} aria-label="Close terminal find">
+                    <IconClose size={11} />
+                </button>
+            </Tooltip>
         </div>
     );
 }

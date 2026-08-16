@@ -163,6 +163,23 @@ export const IconFile = makeSvgIcon(
     </>,
 );
 export const IconClose = makeSvgIcon(<path d="M4 4l8 8M12 4l-8 8" />);
+export const IconArrowUp = makeSvgIcon(<path d="M8 12.6V3.4M4.2 7.2 8 3.4l3.8 3.8" />);
+export const IconArrowDown = makeSvgIcon(<path d="M8 3.4v9.2M4.2 8.8 8 12.6l3.8-3.8" />);
+/** Substitute once: the match loops back and is written over. */
+export const IconReplace = makeSvgIcon(
+    <>
+        <path d="M2.9 4.3h7.3a2.6 2.6 0 0 1 0 5.2H5.5" />
+        <path d="M7.6 7.2 5.2 9.5l2.4 2.3" />
+    </>,
+);
+/** Substitute everywhere: the same loop over a whole stack. */
+export const IconReplaceAll = makeSvgIcon(
+    <>
+        <path d="M2.9 3.4h6.6a2.4 2.4 0 0 1 0 4.8H5.2" />
+        <path d="M7.1 6.1 4.9 8.2l2.2 2.1" />
+        <path d="M2.9 12.9h10.2" />
+    </>,
+);
 export const IconCheck = makeSvgIcon(<path d="M3.5 8.4 6.6 11.5 12.5 4.5" />);
 export const IconWarning = makeSvgIcon(
     <>

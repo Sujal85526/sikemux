@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Tooltip } from "../Tooltip";
 
 export function GitToolbarButton({
     ariaControls,
@@ -22,17 +23,19 @@ export function GitToolbarButton({
     title: string;
 }) {
     return (
-        <button
-            className={`git-tbtn${className ? ` ${className}` : ""}`}
-            type="button"
-            aria-controls={ariaControls}
-            aria-expanded={ariaExpanded}
-            onClick={onClick}
-            title={title}>
-            {icon}
-            {!!count && count > 0 && <span className="git-tbtn-count">{count}</span>}
-            {children}
-            {kbd && <kbd className="git-kbd">{kbd}</kbd>}
-        </button>
+        <Tooltip label={title}>
+            <button
+                className={`git-tbtn${className ? ` ${className}` : ""}`}
+                type="button"
+                aria-label={title}
+                aria-controls={ariaControls}
+                aria-expanded={ariaExpanded}
+                onClick={onClick}>
+                {icon}
+                {!!count && count > 0 && <span className="git-tbtn-count">{count}</span>}
+                {children}
+                {kbd && <kbd className="git-kbd">{kbd}</kbd>}
+            </button>
+        </Tooltip>
     );
 }

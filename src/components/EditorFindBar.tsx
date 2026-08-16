@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { SearchQuery, findNext, findPrevious, getSearchQuery, replaceAll, replaceNext, setSearchQuery } from "@codemirror/search";
-import { IconSearch } from "./Icons";
+import { IconArrowDown, IconArrowUp, IconChevron, IconClose, IconReplace, IconReplaceAll, IconSearch } from "./Icons";
+import { Tooltip } from "./Tooltip";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 interface Props {
@@ -130,9 +131,9 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
                         window.setTimeout(() => replaceInputRef.current?.focus(), 0);
                     }
                 }}
-                title={replaceOpen ? "Hide replace" : "Show replace"}
+                aria-label={replaceOpen ? "Hide replace" : "Show replace"}
                 aria-expanded={replaceOpen}>
-                {replaceOpen ? "▾" : "▸"}
+                <IconChevron size={10} />
             </button>
 
             <div className="ed-findbar-rows">
@@ -150,51 +151,66 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
                         spellCheck={false}
                     />
                     <div className="ed-findbar-toggles">
-                        <button
-                            type="button"
-                            className={`ed-findbar-toggle${caseSensitive ? " on" : ""}`}
-                            onClick={() => setCaseSensitive((v) => !v)}
-                            title="Match case — ⌥C">
-                            Aa
-                        </button>
-                        <button
-                            type="button"
-                            className={`ed-findbar-toggle${wholeWord ? " on" : ""}`}
-                            onClick={() => setWholeWord((v) => !v)}
-                            title="Whole word — ⌥W">
-                            ab
-                        </button>
-                        <button
-                            type="button"
-                            className={`ed-findbar-toggle${regexp ? " on" : ""}`}
-                            onClick={() => setRegexp((v) => !v)}
-                            title="Regex — ⌥R">
-                            .*
-                        </button>
+                        <Tooltip label="Match case — ⌥C">
+                            <button
+                                type="button"
+                                className={`ed-findbar-toggle${caseSensitive ? " on" : ""}`}
+                                aria-label="Match case"
+                                aria-pressed={caseSensitive}
+                                onClick={() => setCaseSensitive((v) => !v)}>
+                                Aa
+                            </button>
+                        </Tooltip>
+                        <Tooltip label="Whole word — ⌥W">
+                            <button
+                                type="button"
+                                className={`ed-findbar-toggle${wholeWord ? " on" : ""}`}
+                                aria-label="Whole word"
+                                aria-pressed={wholeWord}
+                                onClick={() => setWholeWord((v) => !v)}>
+                                ab
+                            </button>
+                        </Tooltip>
+                        <Tooltip label="Regex — ⌥R">
+                            <button
+                                type="button"
+                                className={`ed-findbar-toggle${regexp ? " on" : ""}`}
+                                aria-label="Regular expression"
+                                aria-pressed={regexp}
+                                onClick={() => setRegexp((v) => !v)}>
+                                .*
+                            </button>
+                        </Tooltip>
                     </div>
                     <span className="ed-findbar-status">{status}</span>
-                    <button type="button" className="ed-findbar-btn" onClick={() => run(findPrevious)} title="Previous — ⇧⏎">
-                        ↑
-                    </button>
-                    <button type="button" className="ed-findbar-btn" onClick={() => run(findNext)} title="Next — ⏎">
-                        ↓
-                    </button>
-                    <button
-                        type="button"
-                        className="ed-findbar-btn close"
-                        onClick={() => {
-                            onClose();
-                            getView()?.focus();
-                        }}
-                        title="Close — esc">
-                        ×
-                    </button>
+                    <Tooltip label="Previous — ⇧⏎">
+                        <button type="button" className="ed-findbar-btn" aria-label="Previous match" onClick={() => run(findPrevious)}>
+                            <IconArrowUp size={12} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="Next — ⏎">
+                        <button type="button" className="ed-findbar-btn" aria-label="Next match" onClick={() => run(findNext)}>
+                            <IconArrowDown size={12} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="Close — esc">
+                        <button
+                            type="button"
+                            className="ed-findbar-btn close"
+                            aria-label="Close find bar"
+                            onClick={() => {
+                                onClose();
+                                getView()?.focus();
+                            }}>
+                            <IconClose size={11} />
+                        </button>
+                    </Tooltip>
                 </div>
 
                 {replaceOpen && (
                     <div className="ed-findbar-row">
                         <span className="ed-findbar-av repl" aria-hidden>
-                            ↻
+                            <IconReplace size={11} />
                         </span>
                         <input
                             ref={replaceInputRef}
@@ -206,17 +222,26 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
                             spellCheck={false}
                         />
                         <span className="ed-findbar-status" aria-hidden />
-                        <button type="button" className="ed-findbar-btn" onClick={() => run(replaceNext)} title="Replace — ⏎" disabled={!query}>
-                            ↪
-                        </button>
-                        <button
-                            type="button"
-                            className="ed-findbar-btn"
-                            onClick={() => run(replaceAll)}
-                            title={`Replace all — ${PRIMARY_SHORTCUT}⏎`}
-                            disabled={!query}>
-                            ⇶
-                        </button>
+                        <Tooltip label="Replace — ⏎">
+                            <button
+                                type="button"
+                                className="ed-findbar-btn"
+                                aria-label="Replace match"
+                                onClick={() => run(replaceNext)}
+                                disabled={!query}>
+                                <IconReplace size={12} />
+                            </button>
+                        </Tooltip>
+                        <Tooltip label={`Replace all — ${PRIMARY_SHORTCUT}⏎`}>
+                            <button
+                                type="button"
+                                className="ed-findbar-btn"
+                                aria-label="Replace all matches"
+                                onClick={() => run(replaceAll)}
+                                disabled={!query}>
+                                <IconReplaceAll size={12} />
+                            </button>
+                        </Tooltip>
                         <span className="ed-findbar-btn-spacer" aria-hidden />
                     </div>
                 )}

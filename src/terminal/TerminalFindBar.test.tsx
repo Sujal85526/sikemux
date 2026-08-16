@@ -62,7 +62,7 @@ describe("TerminalFindBar", () => {
             />,
         );
 
-        fireEvent.click(screen.getByTitle("Use regular expression"));
+        fireEvent.click(screen.getByRole("button", { name: "Use regular expression" }));
         expect(onOptionsChange).toHaveBeenCalledWith({ ...options, regex: true });
         fireEvent.keyDown(screen.getByLabelText("Find in terminal"), { key: "Escape" });
         expect(onClose).toHaveBeenCalledOnce();

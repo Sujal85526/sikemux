@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCheck, IconCopy } from "./Icons";
 import { reportError } from "../state/toast";
+import { Tooltip } from "./Tooltip";
 
 const FEEDBACK_MS = 1100;
 
@@ -35,17 +36,18 @@ export function CopyButton({
     }, [value, label]);
 
     return (
-        <button
-            type="button"
-            className={`copy-btn${copied ? " copied" : ""}${className ? ` ${className}` : ""}`}
-            disabled={!value}
-            aria-label={`Copy ${label}`}
-            title={copied ? `copied ${label}` : `Copy ${label}`}
-            onClick={(e) => {
-                e.stopPropagation();
-                copy();
-            }}>
-            {copied ? <IconCheck size={size} /> : <IconCopy size={size} />}
-        </button>
+        <Tooltip label={copied ? `copied ${label}` : `Copy ${label}`}>
+            <button
+                type="button"
+                className={`copy-btn${copied ? " copied" : ""}${className ? ` ${className}` : ""}`}
+                disabled={!value}
+                aria-label={`Copy ${label}`}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    copy();
+                }}>
+                {copied ? <IconCheck size={size} /> : <IconCopy size={size} />}
+            </button>
+        </Tooltip>
     );
 }
