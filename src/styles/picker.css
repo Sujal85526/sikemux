@@ -290,10 +290,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     font-weight: 500;
-    /* The resting list sits at --ink-dim; only the row under the cursor comes
-       up to full ink. A whole column at --ink glares, and once every row is
-       bright the selection has nothing left to say. */
-    color: var(--ink-dim);
+    /* A shade above --ink-dim: readable at a glance without the whole column
+       sitting at full --ink, which glares and leaves the selected row nothing
+       to distinguish it. */
+    color: color-mix(in srgb, var(--ink) 30%, var(--ink-dim));
 }
 .picker-item.sel .picker-name {
     color: var(--ink);
