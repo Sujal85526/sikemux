@@ -605,7 +605,6 @@
     padding: 4px 6px 4px 4px;
     background: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
     border: 1px solid var(--line);
-    box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.55);
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 12px;

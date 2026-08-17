@@ -78,7 +78,6 @@
     border: 0;
     border-radius: 0;
     background: var(--s-bg);
-    box-shadow: none;
 }
 
 /* ── rail ───────────────────────────────────────────── */
@@ -104,7 +103,6 @@
     height: 30px;
     color: var(--bg);
     background: var(--acc);
-    box-shadow: none;
     font: 700 14px/1 var(--mono);
 }
 .settings-logo-text {
@@ -171,7 +169,6 @@
     color: var(--ink);
     background: color-mix(in srgb, var(--acc-dim) 78%, var(--s-bg-raised));
     border-color: color-mix(in srgb, var(--acc-line) 64%, transparent);
-    box-shadow: none;
 }
 .settings-rail-name {
     font-size: 12px;
@@ -331,7 +328,6 @@
     border: 0;
     border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
     background: transparent;
-    box-shadow: none;
 }
 .settings-section:last-child {
     border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
@@ -542,7 +538,6 @@
 }
 .settings-theme:hover {
     border-color: var(--ink-dim);
-    box-shadow: none;
     transform: none;
 }
 .settings-theme.active {
@@ -582,7 +577,7 @@
     position: absolute;
     inset: 0;
     content: "";
-    background: linear-gradient(125deg, rgba(255, 255, 255, 0.08), transparent 56%);
+    background: color-mix(in srgb, var(--rail-2) 70%, transparent);
     pointer-events: none;
 }
 .settings-theme-preview-mark,
@@ -960,7 +955,6 @@
     border-bottom: 1px solid color-mix(in srgb, var(--acc-line) 70%, var(--line));
     padding: 24px 32px;
     background: var(--s-bg-dim);
-    box-shadow: none;
 }
 .theme-editor-head {
     display: flex;

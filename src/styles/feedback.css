@@ -23,7 +23,6 @@
     padding: 16px 22px;
     background: var(--rail-2);
     border: 1px solid var(--acc-line);
-    box-shadow: 0 12px 36px -16px rgba(162, 119, 255, 0.4);
     color: var(--ink);
     font-size: 13px;
     letter-spacing: 0.02em;
@@ -101,7 +100,6 @@
     background: #1c1929;
     color: var(--ink);
     border: 1px solid var(--line);
-    box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
     animation: toastIn 140ms ease-out;
 }
 .toast-error {
@@ -183,7 +181,6 @@
 
 .git-busy-card.error {
     border-color: var(--danger);
-    box-shadow: 0 12px 36px -16px rgba(255, 103, 103, 0.4);
 }
 .git-busy-card.error .git-busy-label {
     color: var(--danger);

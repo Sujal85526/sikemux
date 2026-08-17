@@ -80,7 +80,6 @@
     background: var(--rail-2);
     border: 1px solid color-mix(in srgb, var(--line) 65%, white 10%);
     border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-float);
     padding: 4px;
     display: flex;
     flex-direction: column;

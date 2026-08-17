@@ -76,15 +76,6 @@ textarea:focus-visible {
     box-shadow: 0 0 0 2px var(--acc-soft);
 }
 
-/* Fields embedded in an already-focused surface (palette search, rail filter)
- * are the focus context themselves, so they take no ring at all. */
-.picker-input:focus-visible,
-.rail-search input:focus-visible,
-.command-palette input:focus-visible,
-.settings-search:focus-visible {
-    box-shadow: none;
-}
-
 /* The chrome owns the window edges. Content surfaces get a soft inset line so
  * the app still reads clearly when macOS window transparency is enabled. */
 .shell {
@@ -204,15 +195,7 @@ textarea:focus-visible {
 
 .proj-row.expanded {
     border-left: 0;
-    background: linear-gradient(
-        100deg,
-        color-mix(
-            in srgb,
-            var(--acc) calc(var(--window-opacity, 1) * 16%),
-            color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 84%), transparent)
-        ),
-        color-mix(in srgb, var(--acc) calc(var(--window-opacity, 1) * 3%), transparent)
-    );
+    background: color-mix(in srgb, var(--acc) calc(var(--window-opacity, 1) * 12%), transparent);
 }
 
 .proj-children {
@@ -253,7 +236,6 @@ textarea:focus-visible {
     border-left: 2px solid transparent;
     border-radius: 0;
     background: transparent;
-    box-shadow: none;
     font-family: var(--mono);
 }
 
@@ -265,13 +247,7 @@ textarea:focus-visible {
     padding: 5px 12px;
     border-left-color: var(--acc);
     border-radius: 0;
-    box-shadow: none;
-    background: linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--acc) calc(var(--window-opacity, 1) * 14%), transparent),
-        color-mix(in srgb, var(--acc) calc(var(--window-opacity, 1) * 2%), transparent) 78%,
-        transparent
-    );
+    background: color-mix(in srgb, var(--acc) calc(var(--window-opacity, 1) * 12%), transparent);
 }
 
 .proj-name {
@@ -387,7 +363,6 @@ textarea:focus-visible {
     padding: 0;
     border: 0;
     background: none;
-    box-shadow: none;
 }
 
 /* The rows sit on the same inset as the header above them; without this the
@@ -441,15 +416,7 @@ textarea:focus-visible {
 }
 
 .agent-row.active {
-    background: linear-gradient(
-        100deg,
-        color-mix(
-            in srgb,
-            var(--acc) calc(var(--window-opacity, 1) * 18%),
-            color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 82%), transparent)
-        ),
-        color-mix(in srgb, var(--acc) calc(var(--window-opacity, 1) * 5%), transparent)
-    );
+    background: color-mix(in srgb, var(--acc) calc(var(--window-opacity, 1) * 12%), transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent);
 }
 
@@ -596,7 +563,6 @@ textarea:focus-visible {
 .yolo-toggle {
     border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 82%), transparent);
-    box-shadow: var(--shadow-soft);
 }
 
 /* Keep menus and modal cards in the same visual family as the shell. */
@@ -615,7 +581,6 @@ textarea:focus-visible {
     [role="listbox"]
 ) {
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-float);
 }
 
 .env-dd-menu,

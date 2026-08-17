@@ -195,7 +195,6 @@
     background: transparent;
     border: 1.5px solid color-mix(in srgb, var(--live) 30%, transparent);
     border-top-color: var(--live);
-    box-shadow: none;
     animation: agent-activity-spin 0.72s linear infinite;
 }
 .env-dd {
@@ -268,7 +267,6 @@
     padding: 4px;
     background: var(--rail-2);
     border: 1px solid var(--line);
-    box-shadow: 0 16px 44px -18px rgba(0, 0, 0, 0.85);
 }
 .env-dd-item {
     display: flex;

@@ -9,9 +9,7 @@
 .boot-shell {
     align-items: center;
     justify-content: center;
-    background:
-        radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--acc) 12%, transparent), transparent 34%),
-        color-mix(in srgb, var(--bg, var(--void)) calc(var(--window-opacity, 1) * 100%), transparent);
+    background: color-mix(in srgb, var(--bg, var(--void)) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
 .boot-state {
@@ -34,7 +32,6 @@
     color: var(--acc);
     font-weight: 800;
     letter-spacing: 0.04em;
-    box-shadow: 0 12px 36px color-mix(in srgb, var(--acc) 12%, transparent);
 }
 
 .boot-state h1 {
@@ -466,7 +463,7 @@
 .proj-row.expanded {
     padding: 6px 12px;
     border-left-color: var(--acc);
-    background: linear-gradient(90deg, var(--acc-soft), transparent 75%);
+    background: var(--acc-soft);
     color: var(--acc);
 }
 .proj-row.expanded .proj-name {

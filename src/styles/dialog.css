@@ -21,7 +21,6 @@
     background: color-mix(in srgb, var(--rail-2) 96%, white 4%);
     border: 1px solid color-mix(in srgb, var(--line) 70%, white 12%);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-float);
     font-family: var(--ui);
     overflow: hidden;
     animation: dlgIn 150ms cubic-bezier(0.16, 1, 0.3, 1);

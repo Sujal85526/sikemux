@@ -79,7 +79,6 @@
     background: var(--rail-2);
     border: 1px solid var(--acc);
     border-radius: var(--radius-control);
-    box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.6);
     white-space: nowrap;
 }
 .ed-tree-scroll.drag-over-root {
@@ -172,7 +171,6 @@
     overflow-y: auto;
     background: var(--rail-2);
     border: 1px solid var(--line);
-    box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.7);
     padding: 4px;
     display: flex;
     flex-direction: column;
@@ -525,7 +523,6 @@
     max-height: 100%;
     object-fit: contain;
     image-rendering: auto;
-    box-shadow: 0 18px 60px -28px rgba(0, 0, 0, 0.8);
 }
 .ed-image-message {
     display: flex;

@@ -16,7 +16,7 @@
     gap: 10px;
     height: 38px;
     padding: 0 10px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent), transparent);
+    background: transparent;
     border-bottom: 1px solid var(--line);
     flex: 0 0 auto;
 }
@@ -744,7 +744,6 @@ body.bruno-resizing {
     background: var(--rail-2);
     border: 1px solid var(--line);
     padding: 10px;
-    box-shadow: 0 18px 44px -14px rgba(0, 0, 0, 0.7);
 }
 .bruno-secrets-head {
     font-size: 11px;

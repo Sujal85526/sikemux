@@ -161,7 +161,6 @@
     overflow-y: auto;
     background: var(--rail-2);
     border: 1px solid var(--line);
-    box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.7);
     padding: 3px;
     display: flex;
     flex-direction: column;
@@ -659,11 +658,9 @@
 }
 .gb-dot.cur {
     background: var(--live);
-    box-shadow: 0 0 6px rgba(97, 255, 202, 0.7);
 }
 .gb-dot.remote {
     background: var(--acc);
-    box-shadow: 0 0 5px color-mix(in srgb, var(--acc) 60%, transparent);
 }
 
 .git-remote-url {
