@@ -87,12 +87,19 @@ pub fn fix_path_from_login_shell() {
     // there is no login-shell environment to recover here.
 }
 
-/// Fences the payload off from whatever an interactive rc file prints on the
-/// way past — banners, `clear`, prompt-init escapes. Only bytes after the last
-/// occurrence are parsed, so an rc file that echoes the command line back
-/// cannot inject entries.
+/// Opens the payload, fencing it off from whatever an interactive rc file
+/// prints on the way past — banners, `clear`, prompt-init escapes. Only bytes
+/// after the last occurrence are parsed, so an rc file that echoes the command
+/// line back cannot inject entries.
 #[cfg(unix)]
 const LOGIN_ENV_SENTINEL: &str = "@@SIKEMUX_ENV@@";
+
+/// Closes the payload. `env -0` terminates its last record with a NUL, so
+/// anything a `zshexit`/`precmd` hook prints afterwards would otherwise become
+/// a trailing record — and parse as a real entry if it happened to contain an
+/// `=`. Fencing both ends means only what the capture itself emitted is read.
+#[cfg(unix)]
+const LOGIN_ENV_SENTINEL_END: &str = "@@SIKEMUX_ENV_END@@";
 
 /// A profile that blocks forever must never stop the app from starting. The
 /// capture runs on its own thread and drains the pipe, so the child cannot
@@ -103,9 +110,14 @@ const LOGIN_ENV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5)
 /// Keys the PTY layer owns. Importing these would let a profile rename the
 /// terminal, redirect shell integration, or hand a pane the capture shell's
 /// own working directory and launchd-scoped temp dir. `PATH` is excluded
-/// because `fix_path_from_login_shell` already unions it process-wide, and
-/// `EDITOR`/`VISUAL` because Sikemux deliberately points them at its own
-/// editor — importing them would silently retire that integration.
+/// because `fix_path_from_login_shell` already unions it process-wide.
+///
+/// This list is about keys whose *values* would be wrong in a pane, not about
+/// identity: `configure_pty_environment` scrubs `OPTIONAL_PTY_ENV` after the
+/// fill, and that is what stops a profile forging a pane's identity.
+///
+/// `EDITOR`/`VISUAL` stay excluded because Sikemux deliberately points them at
+/// its own editor.
 #[cfg(unix)]
 const LOGIN_ENV_SIKEMUX_OWNED: &[&str] = &[
     "COLORTERM",
@@ -172,7 +184,8 @@ fn capture_login_shell_environment() -> HashMap<String, String> {
     let shell = configured_shell();
     // `env -0` rather than newline records: a value may contain a newline, but
     // never a NUL.
-    let script = format!("printf %s '{LOGIN_ENV_SENTINEL}'; env -0");
+    let script =
+        format!("printf %s '{LOGIN_ENV_SENTINEL}'; env -0; printf %s '{LOGIN_ENV_SENTINEL_END}'");
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut command = Command::new(&shell);
@@ -190,6 +203,11 @@ fn capture_login_shell_environment() -> HashMap<String, String> {
         }
         let _ = sender.send(command.output().ok());
     });
+    // On timeout the capture thread stays parked in `output()` until the shell
+    // it is waiting on exits, so a profile that blocks forever leaks one thread
+    // and one process for the life of the app. That is bounded — this runs
+    // exactly once — and the alternative is process-group teardown for a case
+    // that ends the moment the user fixes their profile.
     match receiver.recv_timeout(LOGIN_ENV_TIMEOUT) {
         Ok(Some(output)) if output.status.success() => {
             parse_login_shell_environment(&output.stdout)
@@ -200,12 +218,23 @@ fn capture_login_shell_environment() -> HashMap<String, String> {
 
 #[cfg(unix)]
 fn parse_login_shell_environment(stdout: &[u8]) -> HashMap<String, String> {
-    let text = String::from_utf8_lossy(stdout);
-    let Some(index) = text.rfind(LOGIN_ENV_SENTINEL) else {
+    // Work on bytes, not `from_utf8_lossy`: a value that is not valid UTF-8
+    // would otherwise have replacement characters substituted into it and be
+    // imported in corrupted form, which is a silent way to break a token. Each
+    // record is converted individually so one bad value drops itself instead of
+    // the whole capture.
+    let Some(start) = rfind_bytes(stdout, LOGIN_ENV_SENTINEL.as_bytes()) else {
         return HashMap::new();
     };
-    text[index + LOGIN_ENV_SENTINEL.len()..]
-        .split('\0')
+    let payload = &stdout[start + LOGIN_ENV_SENTINEL.len()..];
+    // Without the closing fence we cannot tell the payload from whatever an
+    // exit hook printed after it, so refuse rather than guess.
+    let Some(end) = rfind_bytes(payload, LOGIN_ENV_SENTINEL_END.as_bytes()) else {
+        return HashMap::new();
+    };
+    payload[..end]
+        .split(|byte| *byte == 0)
+        .filter_map(|record| std::str::from_utf8(record).ok())
         .filter_map(|record| record.split_once('='))
         .filter(|(key, _)| {
             !key.is_empty()
@@ -214,6 +243,13 @@ fn parse_login_shell_environment(stdout: &[u8]) -> HashMap<String, String> {
         })
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect()
+}
+
+#[cfg(unix)]
+fn rfind_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .rposition(|window| window == needle)
 }
 
 pub fn user_home() -> PathBuf {
@@ -701,8 +737,9 @@ mod executable_tests {
     #[test]
     fn login_env_parse_discards_interactive_rc_chatter_before_the_sentinel() {
         let stdout = format!(
-            "\u{1b}[2J\u{1b}[Hbanner line\nANTHROPIC_API_KEY=decoy\n{}HOME=/Users/x\0ANTHROPIC_API_KEY=sk-real\0",
-            super::LOGIN_ENV_SENTINEL
+            "\u{1b}[2J\u{1b}[Hbanner line\nANTHROPIC_API_KEY=decoy\n{}HOME=/Users/x\0ANTHROPIC_API_KEY=sk-real\0{}",
+            super::LOGIN_ENV_SENTINEL,
+            super::LOGIN_ENV_SENTINEL_END
         );
 
         let parsed = super::parse_login_shell_environment(stdout.as_bytes());
@@ -721,7 +758,8 @@ mod executable_tests {
     #[test]
     fn login_env_parse_honours_only_the_final_sentinel() {
         let sentinel = super::LOGIN_ENV_SENTINEL;
-        let stdout = format!("{sentinel}INJECTED=yes\0{sentinel}REAL=yes\0");
+        let end = super::LOGIN_ENV_SENTINEL_END;
+        let stdout = format!("{sentinel}INJECTED=yes\0{sentinel}REAL=yes\0{end}");
 
         let parsed = super::parse_login_shell_environment(stdout.as_bytes());
 
@@ -729,13 +767,54 @@ mod executable_tests {
         assert!(!parsed.contains_key("INJECTED"));
     }
 
+    /// `env -0` ends its last record with a NUL, so anything a `zshexit` or
+    /// `precmd` hook prints after the payload arrives as a trailing record —
+    /// and parses as an entry if it contains an `=`. The closing fence is what
+    /// keeps a hook from injecting one.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_ignores_anything_printed_after_the_payload() {
+        let stdout = format!(
+            "{}REAL=yes\0{}\nrestored session: TRAILING=injected\n",
+            super::LOGIN_ENV_SENTINEL,
+            super::LOGIN_ENV_SENTINEL_END
+        );
+
+        let parsed = super::parse_login_shell_environment(stdout.as_bytes());
+
+        assert_eq!(parsed.get("REAL").map(String::as_str), Some("yes"));
+        assert!(!parsed.contains_key("TRAILING"));
+        assert_eq!(parsed.len(), 1);
+    }
+
+    /// A value that is not valid UTF-8 must drop itself rather than be imported
+    /// with replacement characters substituted in — a corrupted token is worse
+    /// than an absent one. Its neighbours still arrive intact.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_drops_non_utf8_records_without_corrupting_them() {
+        let mut stdout = Vec::new();
+        stdout.extend_from_slice(super::LOGIN_ENV_SENTINEL.as_bytes());
+        stdout.extend_from_slice(b"GOOD=yes\0BAD=");
+        stdout.extend_from_slice(&[0xff, 0xfe]);
+        stdout.extend_from_slice(b"\0ALSO_GOOD=yes\0");
+        stdout.extend_from_slice(super::LOGIN_ENV_SENTINEL_END.as_bytes());
+
+        let parsed = super::parse_login_shell_environment(&stdout);
+
+        assert_eq!(parsed.get("GOOD").map(String::as_str), Some("yes"));
+        assert_eq!(parsed.get("ALSO_GOOD").map(String::as_str), Some("yes"));
+        assert!(!parsed.contains_key("BAD"));
+    }
+
     /// NUL delimiting is what makes a multi-line export survive the round trip.
     #[cfg(unix)]
     #[test]
     fn login_env_parse_keeps_values_containing_newlines_and_equals_signs() {
         let stdout = format!(
-            "{}NODE_EXTRA_CA_CERTS=-----BEGIN-----\nline2\n-----END-----\0CONN=a=b=c\0",
-            super::LOGIN_ENV_SENTINEL
+            "{}NODE_EXTRA_CA_CERTS=-----BEGIN-----\nline2\n-----END-----\0CONN=a=b=c\0{}",
+            super::LOGIN_ENV_SENTINEL,
+            super::LOGIN_ENV_SENTINEL_END
         );
 
         let parsed = super::parse_login_shell_environment(stdout.as_bytes());
@@ -748,14 +827,17 @@ mod executable_tests {
     }
 
     /// Keys the PTY layer owns are dropped at the source, so a profile can
-    /// never redirect shell integration or hand a pane the capture shell's own
+    /// never rename the terminal or hand a pane the capture shell's own working
     /// directory. `PATH` is excluded because it is already unioned separately.
+    /// Pane identity is not defended here — `configure_pty_environment` scrubs
+    /// `OPTIONAL_PTY_ENV` after the fill and owns that invariant.
     #[cfg(unix)]
     #[test]
     fn login_env_parse_drops_keys_the_pty_layer_owns() {
         let stdout = format!(
-            "{}PWD=/tmp/capture\0ZDOTDIR=/tmp/z\0TERM=xterm-kitty\0PATH=/only/profile\0EDITOR=nvim\0KEEP=yes\0",
-            super::LOGIN_ENV_SENTINEL
+            "{}PWD=/tmp/capture\0ZDOTDIR=/tmp/z\0TERM=xterm-kitty\0PATH=/only/profile\0EDITOR=nvim\0KEEP=yes\0{}",
+            super::LOGIN_ENV_SENTINEL,
+            super::LOGIN_ENV_SENTINEL_END
         );
 
         let parsed = super::parse_login_shell_environment(stdout.as_bytes());
@@ -776,5 +858,9 @@ mod executable_tests {
     fn login_env_parse_yields_nothing_without_a_sentinel() {
         assert!(super::parse_login_shell_environment(b"HOME=/Users/x\0").is_empty());
         assert!(super::parse_login_shell_environment(b"").is_empty());
+        // Opening fence but no closing one: the shell died mid-capture, so the
+        // payload is unterminated and cannot be told apart from later output.
+        let truncated = format!("{}HOME=/Users/x\0", super::LOGIN_ENV_SENTINEL);
+        assert!(super::parse_login_shell_environment(truncated.as_bytes()).is_empty());
     }
 }
