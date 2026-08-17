@@ -60,7 +60,7 @@
     align-items: stretch;
     padding: 0;
     color: var(--ink);
-    font-family: var(--mono);
+    font-family: var(--ui);
     animation: fade 0.16s ease;
     --s-bg: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     --s-bg-dim: color-mix(in srgb, var(--bg-dim) calc(var(--window-opacity, 1) * 100%), transparent);
@@ -89,43 +89,6 @@
     min-height: 0;
     padding: 18px 12px 12px;
 }
-.settings-rail-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 3px 8px;
-}
-.settings-logo-mark {
-    display: grid;
-    place-items: center;
-    flex: 0 0 30px;
-    width: 30px;
-    height: 30px;
-    color: var(--bg);
-    background: var(--acc);
-    font: 700 14px/1 var(--mono);
-}
-.settings-logo-text {
-    display: block;
-    color: var(--ink);
-    font: 650 13px/1.15 var(--mono);
-    letter-spacing: -0.02em;
-}
-.settings-logo-tag {
-    display: block;
-    margin-top: 4px;
-    color: var(--ink-muted);
-    font-size: 9px;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-}
-.settings-rail-intro {
-    margin: 23px 8px 14px;
-    color: var(--ink-dim);
-    font-size: 11px;
-    line-height: 1.55;
-}
-
 .settings-rail-list {
     display: flex;
     flex-direction: column;
@@ -197,30 +160,6 @@
     color: var(--ink-muted);
     line-height: 1.45;
 }
-.settings-pane .settings-close {
-    width: 100%;
-    height: 32px;
-    background: color-mix(in srgb, var(--s-bg) 74%, transparent);
-    border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
-    color: var(--ink-dim);
-    font: 600 10px/1 var(--mono);
-    letter-spacing: 0.04em;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition:
-        color 0.1s,
-        border-color 0.1s,
-        background 0.1s;
-}
-.settings-pane .settings-close:hover {
-    color: var(--ink);
-    border-color: var(--ink-muted);
-    background: var(--hl);
-}
-
 /* ── main ───────────────────────────────────────────── */
 .settings-main {
     background: var(--s-bg);
@@ -376,8 +315,9 @@
     background: var(--s-bg-dim);
     border: 1px solid var(--line);
     color: var(--ink);
-    font: 500 12px/1.4 var(--mono);
-    padding: 7px 10px;
+    font: 400 12.5px/1.4 var(--ui);
+    padding: 0 var(--space-2);
+    height: 28px;
     outline: none;
     min-width: 0;
     transition: border-color 0.1s;
@@ -396,10 +336,9 @@
     background: var(--s-bg-dim);
     border: 1px solid var(--line);
     color: var(--ink-dim);
-    font: 500 10px/1 var(--mono);
-    padding: 8px 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font: 500 12px/1 var(--ui);
+    padding: 0 var(--space-3);
+    height: 28px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -476,14 +415,31 @@
     font-size: 11px;
     color: var(--acc);
 }
+/* One line: the path field takes the slack, the controls keep their size. */
+.settings-add {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: nowrap;
+}
+.settings-add .settings-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.settings-add .settings-btn,
+.settings-add .settings-depth {
+    flex: 0 0 auto;
+}
+
 .settings-list-row {
     background: var(--s-bg);
     display: grid;
-    grid-template-columns: 24px 1fr auto auto;
+    /* path | index-itself | depth | remove */
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     align-items: center;
-    gap: 10px;
-    padding: 5px 10px;
-    font-size: 12px;
+    gap: var(--space-3);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+    font-size: 12.5px;
     border-top: 1px solid var(--line-soft);
     transition: background 0.1s;
 }
@@ -1203,7 +1159,6 @@
         border-right: 0;
         border-bottom: 1px solid var(--line);
     }
-    .settings-rail-intro,
     .settings-rail-foot {
         display: none;
     }

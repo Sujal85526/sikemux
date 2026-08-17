@@ -73,16 +73,6 @@ export function SettingsPanel() {
         <div className="settings-pane" role="dialog" aria-modal="true" aria-label="Settings">
             <div className="settings-frame">
                 <aside className="settings-rail">
-                    <div className="settings-rail-head">
-                        <span className="settings-logo-mark">S</span>
-                        <span>
-                            <span className="settings-logo-text">Sikemux</span>
-                            <span className="settings-logo-tag">Preferences</span>
-                        </span>
-                    </div>
-
-                    <p className="settings-rail-intro">A calmer workspace starts here.</p>
-
                     <nav className="settings-rail-list">
                         {PAGES.map((p) => (
                             <button
@@ -98,9 +88,6 @@ export function SettingsPanel() {
 
                     <div className="settings-rail-foot">
                         <span className="settings-rail-path">Changes save automatically</span>
-                        <button className="settings-close" onClick={cmd.closeSettings} title={`Close settings (${closeSettingsHint})`} type="button">
-                            <IconClose size={12} /> Done
-                        </button>
                     </div>
                 </aside>
 
@@ -1456,7 +1443,7 @@ function DepthStepper({ value, onChange, title }: { value: number; onChange: (v:
 
     return (
         <div className="settings-depth" title={title}>
-            <span className="settings-depth-label">d</span>
+            <span className="settings-depth-label">depth</span>
             <button className="settings-depth-btn" onClick={() => bump(-1)} disabled={value <= 0} type="button">
                 −
             </button>
