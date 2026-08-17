@@ -1001,7 +1001,7 @@ textarea,
  * --ink glares, and leaves the active row nothing to distinguish it. */
 .side-rail .sess-row,
 .side-rail .proj-row {
-    color: color-mix(in srgb, var(--ink) 30%, var(--ink-dim));
+    color: color-mix(in srgb, var(--ink) 50%, var(--ink-dim));
 }
 
 .side-rail .sess-row.active,
