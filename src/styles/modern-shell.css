@@ -1050,3 +1050,17 @@ textarea,
 .side-rail .sess-name {
     font-family: var(--ui);
 }
+
+/* Rail rows rest below full ink, same as the picker: a column of names all at
+ * --ink glares, and leaves the active row nothing to distinguish it. */
+.side-rail .sess-row,
+.side-rail .proj-row {
+    color: color-mix(in srgb, var(--ink) 30%, var(--ink-dim));
+}
+
+.side-rail .sess-row.active,
+.side-rail .proj-row.expanded,
+.side-rail .sess-row:hover,
+.side-rail .proj-row:hover {
+    color: var(--ink);
+}
