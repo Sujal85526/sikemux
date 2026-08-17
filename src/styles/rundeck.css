@@ -29,7 +29,7 @@
     flex-shrink: 0;
     background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 100%), transparent);
     border-right: 1px solid var(--line);
-    padding: 10px 0 16px;
+    padding: var(--space-2) var(--space-1h) var(--space-4);
     overflow-y: auto;
 }
 .rnd-tree-section + .rnd-tree-section {
@@ -64,7 +64,7 @@
     align-items: center;
     gap: 6px;
     width: 100%;
-    padding: 5px 14px 5px 8px;
+    padding: 5px var(--space-2);
     background: transparent;
     border: none;
     color: var(--ink-dim);
@@ -129,9 +129,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    width: calc(100% - 22px);
-    padding: 4px 12px 4px 10px;
-    margin-left: 4px;
+    width: calc(100% - 14px);
+    padding: 4px var(--space-2);
+    margin-left: 14px;
     background: transparent;
     border: none;
     color: var(--ink-faint);
