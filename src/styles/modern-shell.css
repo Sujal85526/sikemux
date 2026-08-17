@@ -141,8 +141,6 @@ textarea:focus-visible {
     width: 258px;
     background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 96%), transparent);
     border-right-color: color-mix(in srgb, var(--line) 84%, white 3%);
-    -webkit-backdrop-filter: blur(18px) saturate(112%);
-    backdrop-filter: blur(18px) saturate(112%);
 }
 
 /* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
@@ -312,8 +310,6 @@ textarea:focus-visible {
     width: 312px;
     background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 96%), transparent);
     border-left-color: color-mix(in srgb, var(--line) 84%, white 3%);
-    -webkit-backdrop-filter: blur(18px) saturate(112%);
-    backdrop-filter: blur(18px) saturate(112%);
 }
 
 .agent-header {
@@ -523,8 +519,6 @@ textarea:focus-visible {
 .tabbar.v-bruno {
     border-bottom-color: var(--line-soft);
     background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 86%), transparent);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
 }
 
 /* Tabs are pills, so the active one is filled rather than underlined — a hard
@@ -630,8 +624,6 @@ textarea:focus-visible {
 .session-switcher {
     border-color: color-mix(in srgb, var(--line) 88%, white 4%);
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 92%), transparent);
-    -webkit-backdrop-filter: blur(22px) saturate(125%);
-    backdrop-filter: blur(22px) saturate(125%);
 }
 
 @media (max-width: 900px) {
@@ -942,8 +934,6 @@ textarea,
 .top-bar {
     border-bottom: 0;
     background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
 }
 
 .crumb {
@@ -997,8 +987,6 @@ textarea,
 /* One painted surface for the centre, with the rails' own glass on it. */
 .pane {
     background: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent);
-    -webkit-backdrop-filter: blur(18px) saturate(112%);
-    backdrop-filter: blur(18px) saturate(112%);
 }
 
 /* Transparent so the pane's surface shows through; painting it here stacked a

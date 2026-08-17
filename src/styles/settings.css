@@ -7,7 +7,6 @@
     align-items: flex-start;
     padding-top: 9vh;
     background: rgba(8, 7, 12, 0.62);
-    backdrop-filter: blur(7px);
     animation: fade 0.15s ease;
 }
 .settings-head {
@@ -67,7 +66,6 @@
     --s-bg-dim: color-mix(in srgb, var(--bg-dim) calc(var(--window-opacity, 1) * 100%), transparent);
     --s-bg-raised: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
     background: var(--s-bg);
-    backdrop-filter: none;
 }
 .settings-frame {
     display: grid;

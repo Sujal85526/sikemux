@@ -616,8 +616,6 @@
     color: var(--live);
     border: 1px solid color-mix(in srgb, var(--live) 38%, transparent);
     background: color-mix(in srgb, var(--live) 7%, color-mix(in srgb, var(--pane) 82%, transparent));
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     font-family: var(--mono);
     font-size: 10px;
     font-weight: 600;
@@ -639,8 +637,6 @@
     position: static;
     flex: none;
     opacity: 1;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
 }
 
 .yolo-toggle:hover {

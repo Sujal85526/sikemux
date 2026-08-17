@@ -6,7 +6,6 @@
     place-items: center;
     padding: 24px;
     background: color-mix(in srgb, var(--void) 76%, transparent);
-    backdrop-filter: blur(8px);
 }
 .experience-frame {
     position: relative;
@@ -869,7 +868,6 @@
     align-items: flex-start;
     padding-top: 28px;
     background: rgba(8, 7, 12, 0.72);
-    backdrop-filter: blur(3px);
     animation: fade 0.14s ease;
 }
 
