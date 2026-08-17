@@ -116,13 +116,14 @@ const LOGIN_ENV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5)
 /// identity: `configure_pty_environment` scrubs `OPTIONAL_PTY_ENV` after the
 /// fill, and that is what stops a profile forging a pane's identity.
 ///
-/// `EDITOR`/`VISUAL` stay excluded because Sikemux deliberately points them at
-/// its own editor.
+/// `EDITOR`/`VISUAL` are deliberately absent — the PTY layer already installs
+/// its own editor only when neither is set, so importing them keeps a user who
+/// exports one in their profile from getting different behaviour depending on
+/// whether the app was launched from a terminal or from the Dock.
 #[cfg(unix)]
 const LOGIN_ENV_SIKEMUX_OWNED: &[&str] = &[
     "COLORTERM",
     "COLUMNS",
-    "EDITOR",
     "LINES",
     "OLDPWD",
     "PATH",
@@ -134,7 +135,6 @@ const LOGIN_ENV_SIKEMUX_OWNED: &[&str] = &[
     "TERM_PROGRAM_VERSION",
     "TERM_SESSION_ID",
     "TMPDIR",
-    "VISUAL",
     "ZDOTDIR",
     "_",
 ];
@@ -807,6 +807,24 @@ mod executable_tests {
         assert!(!parsed.contains_key("BAD"));
     }
 
+    /// The user's own editor choice reaches a pane the same way whether the app
+    /// was launched from a terminal or from the Dock. The PTY layer still
+    /// installs its own editor when the profile sets neither.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_imports_the_editor_the_profile_chose() {
+        let stdout = format!(
+            "{}EDITOR=hx\0VISUAL=hx\0{}",
+            super::LOGIN_ENV_SENTINEL,
+            super::LOGIN_ENV_SENTINEL_END
+        );
+
+        let parsed = super::parse_login_shell_environment(stdout.as_bytes());
+
+        assert_eq!(parsed.get("EDITOR").map(String::as_str), Some("hx"));
+        assert_eq!(parsed.get("VISUAL").map(String::as_str), Some("hx"));
+    }
+
     /// NUL delimiting is what makes a multi-line export survive the round trip.
     #[cfg(unix)]
     #[test]
@@ -835,14 +853,14 @@ mod executable_tests {
     #[test]
     fn login_env_parse_drops_keys_the_pty_layer_owns() {
         let stdout = format!(
-            "{}PWD=/tmp/capture\0ZDOTDIR=/tmp/z\0TERM=xterm-kitty\0PATH=/only/profile\0EDITOR=nvim\0KEEP=yes\0{}",
+            "{}PWD=/tmp/capture\0ZDOTDIR=/tmp/z\0TERM=xterm-kitty\0PATH=/only/profile\0KEEP=yes\0{}",
             super::LOGIN_ENV_SENTINEL,
             super::LOGIN_ENV_SENTINEL_END
         );
 
         let parsed = super::parse_login_shell_environment(stdout.as_bytes());
 
-        for owned in ["PWD", "ZDOTDIR", "TERM", "PATH", "EDITOR"] {
+        for owned in ["PWD", "ZDOTDIR", "TERM", "PATH"] {
             assert!(
                 !parsed.contains_key(owned),
                 "{owned} should not be imported"
