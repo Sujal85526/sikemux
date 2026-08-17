@@ -82,9 +82,10 @@
 .rnd-tree-row.active {
     color: var(--ink);
     background: var(--acc-soft);
-    /* Inset rather than a border-left, which stayed square and stuck out past
-       the row's rounded corner. */
-    box-shadow: inset 2px 0 0 var(--acc);
+    /* A ring, like the session rail marks its active row. A 2px bar down one
+       edge gets pinched by the corner radius and reads as a stray lozenge
+       sitting beside the row. */
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 30%, transparent);
     font-weight: 600;
 }
 .rnd-tree-chev {
@@ -1097,7 +1098,6 @@
     text-align: left;
     background: transparent;
     border: none;
-    border-left: 2px solid transparent;
     padding: 7px 14px;
     cursor: pointer;
     font-family: var(--mono);
@@ -1105,14 +1105,14 @@
     color: var(--ink);
     transition:
         background 0.08s,
-        border-color 0.08s;
+        box-shadow 0.08s;
 }
 .rnd-step:hover {
     background: var(--acc-soft);
 }
 .rnd-step.selected {
     background: var(--acc-soft);
-    border-left-color: var(--acc);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .rnd-step-num {
     color: var(--ink-faint);
