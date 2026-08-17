@@ -200,6 +200,11 @@ export interface RundeckSettings {
 export interface ProjectRoot {
     path: string;
     depth: number;
+    /**
+     * Index the root itself as a project, git repo or not, on top of whatever
+     * `depth` finds beneath it. Replaces the separate pinned-projects list.
+     */
+    selfIndex?: boolean;
 }
 
 export interface PinnedProject {

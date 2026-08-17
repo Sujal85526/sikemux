@@ -5,7 +5,6 @@ import type {
     Agent,
     AgentPermissionMode,
     AwsService,
-    PinnedProject,
     ProjectRoot,
     ProviderProfile,
     ProviderProfileSelection,
@@ -44,7 +43,6 @@ export interface PersistedSnapshot {
 }
 
 export interface PersistedPrefs {
-    pinnedProjects: PinnedProject[];
     projectRoots: ProjectRoot[];
     brunoWorkspaces?: string[];
     themeId: string;

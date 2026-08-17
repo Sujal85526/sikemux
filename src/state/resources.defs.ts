@@ -29,7 +29,7 @@ import { settingsApi, type ProjectEntry } from "../api/settings";
 import { loadCollection } from "../bruno/collection";
 import type { BruCollection } from "../bruno/types";
 import { sshApi, type SshHost } from "../api/ssh";
-import type { AgentType, PinnedProject, ProjectRoot } from "./types";
+import type { AgentType, ProjectRoot } from "./types";
 import { resource } from "./resources";
 
 export const gitOverviewR = resource({
@@ -158,7 +158,7 @@ export const filesListR = resource({
 
 export const projectRootsScanR = resource({
     kind: "settings.projectRootsScan",
-    fetch: (pinnedProjects: PinnedProject[], roots: ProjectRoot[]): Promise<ProjectEntry[]> => settingsApi.scanProjectRoots(pinnedProjects, roots),
+    fetch: (roots: ProjectRoot[]): Promise<ProjectEntry[]> => settingsApi.scanProjectRoots(roots),
     staleAfterMs: 60_000,
 });
 

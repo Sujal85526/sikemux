@@ -48,7 +48,6 @@ const capability = {
     "core:window:allow-start-dragging",
     "dialog:default",
     "process:allow-restart",
-    "notification:default",
     "core:window:allow-show",
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",

@@ -5,7 +5,7 @@ import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agentLaunch";
-import { ensureSearchWindow, normalisePinnedProjects, normaliseProjectRoots } from "./commands";
+import { ensureSearchWindow, mergePinnedIntoRoots, normaliseProjectRoots } from "./commands";
 import { agentDirectCommand, agentStartup } from "./commands";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
@@ -62,7 +62,6 @@ const PERSISTED_KEYS = [
     "activeSessionId",
     "recent",
     "editorViews",
-    "pinnedProjects",
     "projectRoots",
     "brunoWorkspaces",
     "themeId",
@@ -112,7 +111,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
     const providerProfiles = normaliseProviderProfiles(s.providerProfiles, []);
     return {
         projectRoots: s.projectRoots,
-        pinnedProjects: s.pinnedProjects,
         brunoWorkspaces: s.brunoWorkspaces,
         themeId: s.themeId,
         themeMode: s.themeMode,
@@ -683,8 +681,12 @@ export function applyHydrate(raw: string): HydrationResult {
         activeSessionId,
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
         editorViews,
-        pinnedProjects: normalisePinnedProjects(Array.isArray(prefs.pinnedProjects) ? prefs.pinnedProjects : []),
-        projectRoots: Array.isArray(prefs.projectRoots) ? normaliseProjectRoots(prefs.projectRoots) : cur.projectRoots,
+        // Pinned projects used to be their own list; they are self-indexed
+        // roots now, folded in here so existing setups carry over untouched.
+        projectRoots: mergePinnedIntoRoots(
+            Array.isArray(prefs.projectRoots) ? normaliseProjectRoots(prefs.projectRoots) : cur.projectRoots,
+            prefs.pinnedProjects,
+        ),
         brunoWorkspaces: mergeBrunoWorkspaces(
             Array.isArray(prefs.brunoWorkspaces) ? prefs.brunoWorkspaces.filter((v): v is string => typeof v === "string") : undefined,
             Object.values(sessions),

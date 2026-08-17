@@ -1,6 +1,6 @@
 import { invokeCommand as invoke } from "./invoke";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { PinnedProject, ProjectRoot } from "../state/types";
+import type { ProjectRoot } from "../state/types";
 
 export interface ProjectEntry {
     name: string;
@@ -8,8 +8,7 @@ export interface ProjectEntry {
 }
 
 export const settingsApi = {
-    scanProjectRoots: (pinnedProjects: PinnedProject[], roots: ProjectRoot[]) =>
-        invoke<ProjectEntry[]>("scan_project_roots", { pinnedProjects, roots }),
+    scanProjectRoots: (roots: ProjectRoot[]) => invoke<ProjectEntry[]>("scan_project_roots", { roots }),
     expandPath: (path: string) => invoke<string>("expand_path", { path }),
     isDirectory: (path: string) => invoke<boolean>("is_directory", { path }),
     pickFolder: async (defaultPath?: string): Promise<string | null> => {

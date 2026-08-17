@@ -1,7 +1,7 @@
 // Backend bits for the settings page:
-//   - scan_project_roots: exact pinned projects are always emitted when
-//     they exist. Discovery roots emit the root itself only when it is a
-//     git repo; subdirectories within the configured `depth` are emitted
+//   - scan_project_roots: a root emits itself when it is a git repo, or
+//     when `self_index` is set — that flag replaces the separate list of
+//     pinned projects. Subdirectories within the configured `depth` are emitted
 //     ONLY if they are git repos — and the walk does not descend INTO a
 //     git repo (its inner src/, vendor/, etc. shouldn't pollute the
 //     picker). Dotfile dirs are skipped at every level.
@@ -30,11 +30,11 @@ pub struct ProjectRoot {
     path: String,
     #[serde(default = "default_depth")]
     depth: i64,
-}
-
-#[derive(Deserialize)]
-pub struct PinnedProject {
-    path: String,
+    /// Emit the root itself as a project, whether or not it is a git repo.
+    /// This is what a "pinned project" used to be: a root with depth 0 and
+    /// this set is exactly the old behaviour.
+    #[serde(default)]
+    self_index: bool,
 }
 
 fn default_depth() -> i64 {
@@ -159,46 +159,35 @@ fn walk(
 }
 
 #[tauri::command]
-pub async fn scan_project_roots(
-    pinned_projects: Vec<PinnedProject>,
-    roots: Vec<ProjectRoot>,
-) -> AppResult<Vec<ProjectEntry>> {
-    tauri::async_runtime::spawn_blocking(move || scan_project_roots_sync(pinned_projects, roots))
+pub async fn scan_project_roots(roots: Vec<ProjectRoot>) -> AppResult<Vec<ProjectEntry>> {
+    tauri::async_runtime::spawn_blocking(move || scan_project_roots_sync(roots))
         .await
         .map_err(|error| AppError::Other(format!("scan_project_roots join: {error}")))?
 }
 
-fn scan_project_roots_sync(
-    pinned_projects: Vec<PinnedProject>,
-    roots: Vec<ProjectRoot>,
-) -> AppResult<Vec<ProjectEntry>> {
-    if roots.len() > MAX_PROJECT_ROOTS || pinned_projects.len() > MAX_DISCOVERED_PROJECTS {
-        return Err(AppError::BadArg(
-            "too many project discovery roots or pinned projects",
-        ));
+fn scan_project_roots_sync(roots: Vec<ProjectRoot>) -> AppResult<Vec<ProjectEntry>> {
+    if roots.len() > MAX_PROJECT_ROOTS {
+        return Err(AppError::BadArg("too many project discovery roots"));
     }
     let mut out: Vec<ProjectEntry> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
 
-    for p in pinned_projects {
-        let project = expand(&p.path);
-        if !project.is_dir() {
-            continue;
-        }
-        let path = project.to_string_lossy().into_owned();
-        if seen.insert(path.clone()) {
-            out.push(ProjectEntry {
-                name: name_of(&project),
-                path,
-            });
-        }
-    }
-
     for r in roots {
         let root = expand(&r.path);
         if !root.is_dir() {
             continue;
+        }
+        // A self-indexed root is a project in its own right, git repo or not,
+        // and is still scanned for repos beneath it when depth allows.
+        if r.self_index {
+            let root_path = root.to_string_lossy().into_owned();
+            if seen.insert(root_path.clone()) {
+                out.push(ProjectEntry {
+                    name: name_of(&root),
+                    path: root_path,
+                });
+            }
         }
         if is_repo(&root) {
             let root_path = root.to_string_lossy().into_owned();

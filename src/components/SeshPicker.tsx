@@ -31,7 +31,6 @@ export function SeshPicker() {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const home = useStore((s) => s.home);
-    const pinnedProjects = useStore((s) => s.pinnedProjects);
     const projectRoots = useStore((s) => s.projectRoots);
     const brunoWorkspaces = useStore((s) => s.brunoWorkspaces);
     const mode = useStore((s) => s.pickerMode);
@@ -49,13 +48,8 @@ export function SeshPicker() {
         inputRef.current?.focus();
     }, []);
 
-    const hasConfiguredProjects = pinnedProjects.length > 0 || projectRoots.length > 0;
-    const scanned = useResourceEnabled(
-        showProjects && hasConfiguredProjects,
-        projectRootsScanR,
-        showProjects ? pinnedProjects : [],
-        showProjects ? projectRoots : [],
-    );
+    const hasConfiguredProjects = projectRoots.length > 0;
+    const scanned = useResourceEnabled(showProjects && hasConfiguredProjects, projectRootsScanR, showProjects ? projectRoots : []);
     const hostsR = useResourceEnabled(showSsh, sshHostsR);
     const projects = showProjects ? (scanned.data ?? []) : [];
     const hosts = showSsh ? (hostsR.data ?? []) : [];
@@ -138,7 +132,7 @@ export function SeshPicker() {
         };
         return groups.flatMap(finalize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessions, projects, hosts, brunoWorkspaces, query, home, mode, projectRoots, pinnedProjects]);
+    }, [sessions, projects, hosts, brunoWorkspaces, query, home, mode, projectRoots]);
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));
@@ -156,7 +150,7 @@ export function SeshPicker() {
         try {
             const picked = await settingsApi.pickFolder(home || undefined);
             if (!picked) return;
-            cmd.addPinnedProject(picked);
+            cmd.addProjectRoot(picked, 0, true);
             cmd.createProjectSession(picked);
         } catch (err) {
             reportError("open folder")(err);

@@ -19,7 +19,6 @@ import type {
     BrunoView,
     GlobalSearchView,
     PickerMode,
-    PinnedProject,
     ProjectRoot,
     ProviderProfile,
     ProviderProfileSelection,
@@ -45,7 +44,6 @@ export interface DomainState {
 
     recent: RecentEntry[];
 
-    pinnedProjects: PinnedProject[];
     projectRoots: ProjectRoot[];
     /** Imported Bruno (API) workspace collection paths, most-recent-first. Survive session close so they stay reopenable. */
     brunoWorkspaces: string[];
@@ -187,7 +185,6 @@ export const useStore = create<StoreState>(() => {
         agentsBySession: { [session.id]: [] },
         activeSessionId: session.id,
         recent: [],
-        pinnedProjects: [],
         projectRoots: [],
         brunoWorkspaces: [],
         themeId: DEFAULT_THEME_ID,

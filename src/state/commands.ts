@@ -68,7 +68,7 @@ import type {
 
 export { agentSupportsSkipPermissions } from "./commands/agentLogic";
 export { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
-export { normalisePinnedProjects, normaliseProjectRoots } from "./commands/settingsLogic";
+export { mergePinnedIntoRoots, normaliseProjectRoots } from "./commands/settingsLogic";
 
 const patchSession = (id: string, fn: (s: Session) => Session): void =>
     mutate((d) => {
@@ -2115,14 +2115,19 @@ export function resetKeybinding(id: import("../keybindings").KeybindingActionId)
 
 export const resetAllKeybindings = (): void => setState({ keybindingOverrides: {} });
 
-export function addProjectRoot(path: string, depth = 1): void {
+export function addProjectRoot(path: string, depth = 1, selfIndex = false): void {
     const boundedDepth = Math.max(0, Math.min(8, Math.round(Number.isFinite(depth) ? depth : 1)));
-    setState((s) => (s.projectRoots.some((r) => r.path === path) ? {} : { projectRoots: [...s.projectRoots, { path, depth: boundedDepth }] }));
+    setState((s) =>
+        s.projectRoots.some((r) => r.path === path) ? {} : { projectRoots: [...s.projectRoots, { path, depth: boundedDepth, selfIndex }] },
+    );
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
-export function addPinnedProject(path: string): void {
-    setState((s) => (s.pinnedProjects.some((p) => p.path === path) ? {} : { pinnedProjects: [...s.pinnedProjects, { path }] }));
+/** Index the folder itself as a project, on top of whatever its depth finds. */
+export function setProjectRootSelfIndex(path: string, selfIndex: boolean): void {
+    setState((s) => ({
+        projectRoots: s.projectRoots.map((r) => (r.path === path ? { ...r, selfIndex } : r)),
+    }));
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
@@ -2134,13 +2139,6 @@ export function registerBrunoWorkspace(path: string): void {
 /** Forget an imported Bruno workspace entirely (removes it from the picker). */
 export function removeBrunoWorkspace(path: string): void {
     setState((s) => ({ brunoWorkspaces: s.brunoWorkspaces.filter((p) => p !== path) }));
-}
-
-export function removePinnedProject(path: string): void {
-    setState((s) => ({
-        pinnedProjects: s.pinnedProjects.filter((p) => p.path !== path),
-    }));
-    invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
 export function removeProjectRoot(path: string): void {
