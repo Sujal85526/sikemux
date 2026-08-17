@@ -1,24 +1,43 @@
-# Sikemux v0.2.3
+# Sikemux v0.3.0
 
-Sikemux 0.2.3 restores the direct, terminal-first agent workflow. Agent CLIs open in a PTY without an intermediate task composer or worktree setup, while the classic searchable session picker and the original live YOLO toggle are back.
+Sikemux 0.3.0 is a full pass over the desktop shell. The window, rails, tabs, panels, pickers, and dialogs now share one spacing scale, two corner radii, and a single set of themed controls, so the application reads as one surface instead of a stack of separately styled panes.
 
-## Agent workflow
+## Shell
 
-- Open the classic agent picker with `⌥N`, start a fresh local CLI, or resume a recent project-scoped session.
-- Launch agents directly in the current project without task-input, model, worktree, or notification UI.
-- Keep launch safety focused on the two supported modes: Normal and YOLO.
-- Restore the one-click `safe` / `yolo` control over live agent terminals, including `⌥Y`, immediate PTY restart, provider-specific bypass flags, and the original armed-state treatment.
-- Exclude global Hermes history from project session results while keeping fresh Hermes launches available.
-- Accept native image-file drops in supported agent terminal flows.
+- Rebuild the desktop shell and agent rail around even gutters, a flush top bar, and a compact project tab navigator.
+- Use Figtree for application chrome, with one font shared across the row names in both rails.
+- Sit the macOS traffic lights on the top bar's centre line and move the brand to the foot of the rail.
+- Paint a single surface in the centre so the stage, pane, and terminal viewport stop stacking tints, and honour the window-opacity setting across rails and panes alike.
+- Drop every backdrop blur; overlay scrims keep their dimming, which is what separates an overlay from the app behind it.
+- Settle on two radii — one for controls, one for panels — and round the surfaces that predated them.
 
-## Development
+## Shared controls
 
-- Give `make dev` its own `Sikemux Dev` identity and application-data directory so the debug binary can run beside an installed release without tripping the single-instance guard.
+- Replace platform widgets with themed application controls, and add themed tooltips, scrollbars, skeletons, and iconised error states.
+- Share one panel vocabulary and one dialog surface across features, covered by primitive tests.
+- Add icons and tooltips to find bars and shared buttons, and make the theme palette rows readable.
+
+## Agents
+
+- Toggle YOLO from the agent picker itself, with providers shown in their brand colours.
+- Always resume restored agent tabs, and show the working mark only while an agent is actually working.
+- Rest rail and picker rows below full ink so hover and selection have something to mark, and drop the NAV / OPEN / ESC hint chips from every picker.
+- Read the agent limits as a rail section rather than a card.
+
+## Git
+
+- Give the git view a fixed 30% column with focus-driven panels that size to their content, and drop the terminal from the view.
+- Tint whole diff lines instead of words, flatten the toolbar, and tighten its chips.
+
+## Rundeck
+
+- Round the Rundeck pane so the deploy composer and execution meta bar match the rest of the app.
+- Mark the active row in the project tree and step list with a ring instead of an edge bar, and gutter the project tree column.
 
 ## Upgrade note
 
-Existing resumable agent sessions remain available. Changing Normal or YOLO mode restarts the underlying CLI because those permissions are process launch flags; resumable sessions reopen with their session ID.
+This release changes appearance only. Projects, sessions, themes, and resumable agent sessions carry over untouched.
 
 The published automatic-update feed continues to target Apple Silicon macOS.
 
-For the complete patch history, compare [`v0.2.2...v0.2.3`](https://github.com/nodelike/sikemux/compare/v0.2.2...v0.2.3).
+For the complete patch history, compare [`v0.2.3...v0.3.0`](https://github.com/nodelike/sikemux/compare/v0.2.3...v0.3.0).
