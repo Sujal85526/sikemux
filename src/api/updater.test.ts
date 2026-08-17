@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getState, setState, type PendingUpdate } from "../state/store";
+import { useToasts } from "../state/toast";
 import { MemoryIpcTransport, installIpcTransportForTests, resetIpcTransportForTests } from "./transport";
-import { checkForUpdate, installPendingUpdate, isUpdateBusy, parseUpdateInstallProgress, updateDownloadPercent, updateStatusLabel } from "./updater";
+import {
+    checkForUpdate,
+    checkForUpdateNow,
+    installPendingUpdate,
+    isUpdateBusy,
+    parseUpdateInstallProgress,
+    updateCheckLabel,
+    updateDownloadPercent,
+    updateStatusLabel,
+} from "./updater";
 
 const mocks = vi.hoisted(() => ({ relaunch: vi.fn(() => Promise.resolve()) }));
 
@@ -35,6 +45,7 @@ beforeEach(() => {
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
     setState(initial, true);
+    useToasts.setState({ toasts: [] });
     mocks.relaunch.mockClear();
 });
 
@@ -146,5 +157,57 @@ describe("updater progress", () => {
         expect(installHandler).toHaveBeenCalledOnce();
         expect(mocks.relaunch).not.toHaveBeenCalled();
         expect(getState().pendingUpdate).toMatchObject({ state: "error", error: "Error: download timed out" });
+    });
+});
+
+describe("update checks", () => {
+    it("records a silent background failure without a toast", async () => {
+        transport.register("update_check", () => Promise.reject(new Error("update check: network unreachable")));
+
+        await checkForUpdate();
+
+        expect(getState().pendingUpdate).toBeNull();
+        expect(getState().lastUpdateCheck).toMatchObject({ channel: "stable", error: "update check: network unreachable" });
+        expect(useToasts.getState().toasts).toEqual([]);
+    });
+
+    it("reports a user-initiated failure so a broken feed is not mistaken for being current", async () => {
+        transport.register("update_check", () => Promise.reject(new Error("update check: 404 Not Found")));
+
+        await checkForUpdateNow();
+
+        expect(getState().lastUpdateCheck).toMatchObject({ error: "update check: 404 Not Found" });
+        expect(useToasts.getState().toasts).toMatchObject([{ kind: "error", text: "update check: update check: 404 Not Found" }]);
+    });
+
+    it("confirms an up-to-date result only when the check actually succeeded", async () => {
+        transport.register("update_check", () => Promise.resolve(null));
+
+        await checkForUpdateNow();
+
+        expect(getState().pendingUpdate).toBeNull();
+        expect(getState().lastUpdateCheck).toMatchObject({ error: null });
+        expect(useToasts.getState().toasts).toMatchObject([{ kind: "info", text: "Sikemux is up to date on the stable channel." }]);
+    });
+
+    it("announces an available update and deduplicates concurrent manual checks", async () => {
+        const handler = vi.fn(() => Promise.resolve({ version: "0.3.0", currentVersion: "0.2.3", notes: null, date: null }));
+        transport.register("update_check", handler);
+
+        const first = checkForUpdateNow();
+        expect(checkForUpdateNow()).toBe(first);
+        await first;
+
+        expect(handler).toHaveBeenCalledOnce();
+        expect(getState().pendingUpdate).toMatchObject({ version: "0.3.0", state: "available" });
+        expect(useToasts.getState().toasts).toMatchObject([{ kind: "success", text: "Update v0.3.0 is ready to install." }]);
+    });
+
+    it("labels the last check outcome for the About page", () => {
+        const at = new Date("2026-08-17T06:02:47Z").getTime();
+        expect(updateCheckLabel({ at, channel: "stable", error: null })).toBe(`Checked stable at ${new Date(at).toLocaleTimeString()}.`);
+        expect(updateCheckLabel({ at, channel: "preview", error: "boom" })).toBe(
+            `Last preview check failed at ${new Date(at).toLocaleTimeString()} — boom`,
+        );
     });
 });

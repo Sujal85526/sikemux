@@ -13,6 +13,7 @@ import {
     type KeybindingOverrides,
 } from "../keybindings";
 import { settingsApi } from "../api/settings";
+import { isUpdateBusy, updateCheckLabel } from "../api/updater";
 import { prettyPath } from "../lib/paths";
 import { IS_MACOS } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
@@ -535,6 +536,8 @@ function CliPage() {
 
 function AboutPage() {
     const updateChannel = useStore((s) => s.updateChannel);
+    const lastUpdateCheck = useStore((s) => s.lastUpdateCheck);
+    const pendingUpdate = useStore((s) => s.pendingUpdate);
     return (
         <SettingsPage name="about" deck="Release details, first-run guidance, and redacted runtime health.">
             <SettingsSection
@@ -551,6 +554,12 @@ function AboutPage() {
                     ]}
                     onChange={(value) => cmd.setUpdateChannel(value as "stable" | "preview")}
                 />
+                <div className="about-actions">
+                    <button className="settings-btn" disabled={isUpdateBusy(pendingUpdate?.state)} onClick={() => void cmd.checkForUpdates()}>
+                        Check for updates
+                    </button>
+                </div>
+                {lastUpdateCheck && <p className="settings-field-help">{updateCheckLabel(lastUpdateCheck)}</p>}
             </SettingsSection>
             <SettingsSection title="Support deck" sub="These views are also searchable from the command deck.">
                 <div className="about-actions">

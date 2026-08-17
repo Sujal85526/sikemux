@@ -93,6 +93,14 @@ export interface PendingUpdate {
     totalBytes: number | null;
 }
 
+/** Outcome of the most recent update check. A failed background check has no
+ *  other surface, so About reads this instead of leaving the app silent. */
+export interface UpdateCheckOutcome {
+    at: number;
+    channel: "stable" | "preview";
+    error: string | null;
+}
+
 export interface ViewState {
     home: string;
 
@@ -136,6 +144,7 @@ export interface ViewState {
     lastSessionId: string | null;
 
     pendingUpdate: PendingUpdate | null;
+    lastUpdateCheck: UpdateCheckOutcome | null;
 }
 
 export type StoreState = DomainState & ViewState;
@@ -246,6 +255,7 @@ export const useStore = create<StoreState>(() => {
         terminalTitles: {},
         lastSessionId: null,
         pendingUpdate: null,
+        lastUpdateCheck: null,
     };
 });
 

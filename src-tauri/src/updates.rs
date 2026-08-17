@@ -12,6 +12,12 @@ const PREVIEW_ENDPOINT: &str =
     "https://github.com/nodelike/sikemux/releases/download/preview/latest.json";
 const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const UPDATE_INSTALL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+// GitHub serves release assets from four addresses, and a network can blackhole
+// one of them: the SYN goes out and nothing comes back. Without a per-address
+// deadline the client waits on that address until the whole request expires
+// instead of failing over to the next one, so every check times out and reads
+// as "no update available". curl hides this by rotating addresses quickly.
+const UPDATE_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const PROGRESS_EVENT_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(serde::Serialize)]
@@ -93,6 +99,9 @@ fn updater(app: &AppHandle, channel: &str, timeout: Duration) -> AppResult<Updat
         .map_err(|error| AppError::Other(format!("update endpoint: {error}")))?;
     app.updater_builder()
         .endpoints(vec![url])
+        .map(|builder| {
+            builder.configure_client(|client| client.connect_timeout(UPDATE_CONNECT_TIMEOUT))
+        })
         .and_then(|builder| builder.timeout(timeout).build())
         .map_err(|error| AppError::Other(format!("updater: {error}")))
 }
@@ -244,6 +253,68 @@ mod tests {
                 "downloadedBytes": 13_362_333,
                 "totalBytes": 13_362_333
             })
+        );
+    }
+
+    // Network diagnostic, not part of the normal suite: run with
+    // `cargo test --manifest-path src-tauri/Cargo.toml -- --ignored updater_feed`.
+    // Reproduces the updater plugin's own request (user agent, Accept header,
+    // timeout) through this crate's reqwest/TLS features, then applies the same
+    // target lookup and semver comparison the plugin uses, so a feed or
+    // transport fault is visible without waiting on the in-app check.
+    // Network diagnostic, excluded from the normal suite. Run with
+    // `cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored update_feed`.
+    // Reproduces the plugin's own request — user agent, Accept header, and the
+    // connect timeout that lets a blackholed release-asset address fail over —
+    // so a broken feed or transport is diagnosable without waiting on the
+    // in-app check, whose failures are deliberately quiet.
+    #[test]
+    #[ignore = "requires network access"]
+    fn stable_update_feed_serves_this_platform() {
+        let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let body: serde_json::Value = runtime.block_on(async {
+            reqwest::Client::builder()
+                .user_agent("tauri-plugin-updater/2.10.1")
+                .timeout(UPDATE_CHECK_TIMEOUT)
+                .connect_timeout(UPDATE_CONNECT_TIMEOUT)
+                .build()
+                .expect("build updater http client")
+                .get(STABLE_ENDPOINT)
+                .header("Accept", "application/json")
+                .send()
+                .await
+                .expect("reach the stable update feed")
+                .json()
+                .await
+                .expect("decode the stable update feed")
+        });
+
+        let target = format!("darwin-{}", std::env::consts::ARCH);
+        let platform = body
+            .get("platforms")
+            .and_then(|platforms| platforms.get(&target))
+            .unwrap_or_else(|| panic!("feed has no {target} entry: {body}"));
+        assert!(
+            platform.get("url").and_then(|url| url.as_str()).is_some(),
+            "{target} entry has no url"
+        );
+        assert!(
+            platform
+                .get("signature")
+                .and_then(|signature| signature.as_str())
+                .is_some(),
+            "{target} entry has no signature"
+        );
+        let version = body
+            .get("version")
+            .and_then(|version| version.as_str())
+            .expect("feed version");
+        assert!(
+            version.split('.').count() == 3
+                && version
+                    .split('.')
+                    .all(|part| part.chars().next().is_some_and(|c| c.is_ascii_digit())),
+            "feed version {version} is not a semver the updater can compare"
         );
     }
 

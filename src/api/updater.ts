@@ -1,8 +1,8 @@
 import { Channel } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invokeCommand as invoke } from "./invoke";
-import { getState, setState, type PendingUpdate, type UpdateOperationState } from "../state/store";
-import { swallow } from "../state/toast";
+import { getState, setState, type PendingUpdate, type UpdateCheckOutcome, type UpdateOperationState } from "../state/store";
+import { errMessage, notify, reportError, swallow } from "../state/toast";
 
 interface UpdateInfo {
     version: string;
@@ -91,15 +91,28 @@ function applyInstallProgress(rawProgress: unknown): void {
     });
 }
 
-export async function checkForUpdate(): Promise<void> {
+export function updateCheckLabel(outcome: UpdateCheckOutcome): string {
+    const when = new Date(outcome.at).toLocaleTimeString();
+    if (outcome.error) return `Last ${outcome.channel} check failed at ${when} — ${outcome.error}`;
+    return `Checked ${outcome.channel} at ${when}.`;
+}
+
+// A user-initiated check reports its outcome; the periodic one stays quiet so a
+// flaky network cannot spam toasts. Either way the attempt is recorded, because
+// a check that only fails into a swallowed error is indistinguishable from
+// being up to date.
+async function runUpdateCheck(announce: boolean): Promise<void> {
     if (isUpdateBusy(getState().pendingUpdate?.state)) return;
+    const channel = getState().updateChannel;
     try {
-        const update = await invoke<UpdateInfo | null>("update_check", { channel: getState().updateChannel });
+        const update = await invoke<UpdateInfo | null>("update_check", { channel });
+        setState({ lastUpdateCheck: { at: Date.now(), channel, error: null } });
         // The periodic check may have started just before an install. Never let
         // its stale response erase newer operation progress.
         if (isUpdateBusy(getState().pendingUpdate?.state)) return;
         if (!update) {
             setState({ pendingUpdate: null });
+            if (announce) notify("info", `Sikemux is up to date on the ${channel} channel.`);
             return;
         }
         setState({
@@ -114,9 +127,29 @@ export async function checkForUpdate(): Promise<void> {
                 totalBytes: null,
             },
         });
+        if (announce) notify("success", `Update v${update.version} is ready to install.`);
     } catch (error) {
-        swallow("update check")(error);
+        setState({ lastUpdateCheck: { at: Date.now(), channel, error: errMessage(error) } });
+        if (announce) reportError("update check")(error);
+        else swallow("update check")(error);
     }
+}
+
+export function checkForUpdate(): Promise<void> {
+    return runUpdateCheck(false);
+}
+
+let activeCheck: Promise<void> | null = null;
+
+/** User-initiated check. Reports failures instead of swallowing them. */
+export function checkForUpdateNow(): Promise<void> {
+    if (activeCheck) return activeCheck;
+    const operation = runUpdateCheck(true);
+    const tracked = operation.finally(() => {
+        if (activeCheck === tracked) activeCheck = null;
+    });
+    activeCheck = tracked;
+    return tracked;
 }
 
 async function installPendingUpdateOnce(): Promise<void> {

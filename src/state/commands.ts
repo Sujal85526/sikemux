@@ -5,6 +5,7 @@ import { awsApi } from "../api/aws";
 import { fsapi } from "../api/fs";
 import { lsp } from "../api/lsp";
 import { sshApi } from "../api/ssh";
+import { checkForUpdateNow } from "../api/updater";
 import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
@@ -2090,7 +2091,15 @@ export function deleteProviderProfile(id: string): void {
         return { providerProfiles: state.providerProfiles.filter((profile) => profile.id !== id), selectedProviderProfileIds };
     });
 }
-export const setUpdateChannel = (value: "stable" | "preview"): void => setState({ updateChannel: value, pendingUpdate: null });
+export const checkForUpdates = (): Promise<void> => checkForUpdateNow();
+
+export const setUpdateChannel = (value: "stable" | "preview"): void => {
+    if (getState().updateChannel === value) return;
+    // The other channel's result says nothing about this one, and waiting out
+    // the 30-minute poll to learn what the new channel offers reads as broken.
+    setState({ updateChannel: value, pendingUpdate: null, lastUpdateCheck: null });
+    void checkForUpdateNow();
+};
 
 export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
