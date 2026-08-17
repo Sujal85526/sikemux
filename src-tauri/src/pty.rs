@@ -1472,8 +1472,17 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 /// input. Once it returns, replace the bootstrap shell with the normal local
 /// shell so users always land at a usable prompt.
 #[cfg(unix)]
-fn startup_bootstrap(startup: &str) -> String {
-    format!("{startup}\nexec \"$SIKEMUX_SHELL\"")
+fn startup_bootstrap(startup: &str, login_shell: bool) -> String {
+    let login = if login_shell { " -l" } else { "" };
+    format!("{startup}\nexec \"$SIKEMUX_SHELL\"{login}")
+}
+
+/// Shells launched without an injected rc file need `-l` to read their profile,
+/// the way a normal terminal emulator starts them. Shells that do get an
+/// injected rc file are already reading the user's chain through it.
+#[cfg(unix)]
+fn shell_wants_login_flag(shell: &str) -> bool {
+    matches!(detect_shell_kind(shell), Some(ShellKind::Zsh))
 }
 
 /// Drive a non-blocking write to completion against a tokio `AsyncFd`.
@@ -1936,7 +1945,22 @@ const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_TASK_TERMINAL_KEY",
     "SIKEMUX_TASK_ID",
     "SIKEMUX_TASK_SOURCE",
+    // Markers an agent CLI exports for processes it starts. If Sikemux was
+    // itself launched from inside one, every terminal it opens looks like a
+    // child of that session — the CLI then disables transcript saving, and the
+    // messaging socket and token hand a new shell the parent's IPC credentials.
+    // A user who exports any of these from their own profile still gets them:
+    // the shell reads its profile after this point.
     "CODEX_THREAD_ID",
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
 ];
 
 fn non_empty(value: &Option<String>) -> Option<&str> {
@@ -2029,95 +2053,6 @@ enum ShellKind {
 struct ShellLaunchIntegration {
     _files: Option<tempfile::TempDir>,
 }
-
-const ZSH_ENV_INTEGRATION: &str = r#"# Sikemux ephemeral zsh startup forwarder.
-typeset -g __sikemux_temp_zdotdir="$ZDOTDIR"
-typeset -g __sikemux_effective_zdotdir="${SIKEMUX_ORIGINAL_ZDOTDIR:-$HOME}"
-typeset -g __sikemux_effective_zdotdir_set="${SIKEMUX_ORIGINAL_ZDOTDIR_SET:-0}"
-function __sikemux_source_startup_file {
-  local startup_file="$1"
-  local startup_root="$__sikemux_effective_zdotdir"
-  if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
-    ZDOTDIR="$startup_root"
-  else
-    unset ZDOTDIR
-  fi
-  [[ -n "$startup_root" && -r "$startup_root/$startup_file" ]] && source "$startup_root/$startup_file"
-  if (( ${+ZDOTDIR} )); then
-    __sikemux_effective_zdotdir="$ZDOTDIR"
-    __sikemux_effective_zdotdir_set=1
-  else
-    __sikemux_effective_zdotdir="$HOME"
-    __sikemux_effective_zdotdir_set=0
-  fi
-}
-__sikemux_source_startup_file .zshenv
-if [[ -o RCS ]]; then
-  ZDOTDIR="$__sikemux_temp_zdotdir"
-else
-  if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
-    ZDOTDIR="$__sikemux_effective_zdotdir"
-  else
-    unset ZDOTDIR
-  fi
-  unfunction __sikemux_source_startup_file
-  unset __sikemux_temp_zdotdir __sikemux_effective_zdotdir __sikemux_effective_zdotdir_set
-  unset SIKEMUX_ORIGINAL_ZDOTDIR SIKEMUX_ORIGINAL_ZDOTDIR_SET SIKEMUX_TEMP_ZDOTDIR
-fi
-"#;
-
-const ZSH_PROFILE_INTEGRATION: &str = r#"# Sikemux ephemeral zsh startup forwarder.
-__sikemux_source_startup_file .zprofile
-if [[ -o RCS ]]; then
-  ZDOTDIR="$__sikemux_temp_zdotdir"
-else
-  if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
-    ZDOTDIR="$__sikemux_effective_zdotdir"
-  else
-    unset ZDOTDIR
-  fi
-  unfunction __sikemux_source_startup_file
-  unset __sikemux_temp_zdotdir __sikemux_effective_zdotdir __sikemux_effective_zdotdir_set
-  unset SIKEMUX_ORIGINAL_ZDOTDIR SIKEMUX_ORIGINAL_ZDOTDIR_SET SIKEMUX_TEMP_ZDOTDIR
-fi
-"#;
-
-const ZSH_INTEGRATION: &str = r#"# Sikemux ephemeral zsh integration; generated per PTY.
-__sikemux_source_startup_file .zshrc
-# Restore the effective user value before zsh evaluates .zlogin; .zlogout and
-# any later `source` operations therefore use the same path as an ordinary zsh.
-if [[ "$__sikemux_effective_zdotdir_set" == 1 ]]; then
-  ZDOTDIR="$__sikemux_effective_zdotdir"
-else
-  unset ZDOTDIR
-fi
-unfunction __sikemux_source_startup_file
-unset __sikemux_temp_zdotdir __sikemux_effective_zdotdir __sikemux_effective_zdotdir_set
-unset SIKEMUX_ORIGINAL_ZDOTDIR SIKEMUX_ORIGINAL_ZDOTDIR_SET SIKEMUX_TEMP_ZDOTDIR
-
-autoload -Uz add-zsh-hook
-function __sikemux_emit_cwd {
-  local path="${PWD//[[:cntrl:]]/}"
-  path="${path//\%/%25}"
-  path="${path//\\/%5C}"
-  path="${path// /%20}"
-  path="${path//\#/%23}"
-  path="${path//\?/%3F}"
-  builtin printf '\e]7;file://localhost%s\a' "$path"
-}
-function __sikemux_precmd {
-  local command_status=$?
-  builtin printf '\e]133;D;%d\a' "$command_status"
-  __sikemux_emit_cwd
-  builtin printf '\e]133;A\a'
-  return "$command_status"
-}
-function __sikemux_preexec {
-  builtin printf '\e]133;B\a\e]133;C\a'
-}
-add-zsh-hook precmd __sikemux_precmd
-add-zsh-hook preexec __sikemux_preexec
-"#;
 
 const BASH_INTEGRATION: &str = r#"# Sikemux ephemeral shell integration; generated per PTY.
 [[ -r "$HOME/.bashrc" ]] && source "$HOME/.bashrc"
@@ -2317,29 +2252,13 @@ fn configure_shell_integration(
         return Ok(None);
     };
     match kind {
-        ShellKind::Zsh => {
-            let directory = temporary_shell_directory()?;
-            write_temporary_shell_file(&directory, Path::new(".zshenv"), ZSH_ENV_INTEGRATION)?;
-            write_temporary_shell_file(
-                &directory,
-                Path::new(".zprofile"),
-                ZSH_PROFILE_INTEGRATION,
-            )?;
-            write_temporary_shell_file(&directory, Path::new(".zshrc"), ZSH_INTEGRATION)?;
-            cmd.env("SIKEMUX_SHELL_INTEGRATION", "1");
-            let original_zdotdir = std::env::var_os("ZDOTDIR").filter(|value| !value.is_empty());
-            if let Some(original) = original_zdotdir.as_ref() {
-                cmd.env("SIKEMUX_ORIGINAL_ZDOTDIR", original);
-                cmd.env("SIKEMUX_ORIGINAL_ZDOTDIR_SET", "1");
-            } else if let Some(original) = std::env::var_os("HOME") {
-                cmd.env("SIKEMUX_ORIGINAL_ZDOTDIR", original);
-            }
-            cmd.env("SIKEMUX_TEMP_ZDOTDIR", directory.path());
-            cmd.env("ZDOTDIR", directory.path());
-            Ok(Some(ShellLaunchIntegration {
-                _files: Some(directory),
-            }))
-        }
+        // zsh gets no integration: it is driven by ZDOTDIR, and pointing that
+        // at a scratch directory silently redirects everything a user's config
+        // derives from it — `HISTFILE` above all, so a session's history was
+        // written into a temp dir and deleted on exit. zsh is launched exactly
+        // as Terminal, Ghostty and Alacritty launch it, and the cwd/exit
+        // metadata is given up rather than paid for with the user's shell.
+        ShellKind::Zsh => Ok(None),
         ShellKind::Bash => {
             let (directory, path) = temporary_shell_file(Path::new("bashrc"), BASH_INTEGRATION)?;
             cmd.env("SIKEMUX_SHELL_INTEGRATION", "1");
@@ -2387,6 +2306,7 @@ pub async fn pty_spawn(
         validate_direct_command(command, context.as_ref())?;
     }
     let shell = crate::system::configured_shell();
+    let has_direct_command = direct_command.is_some();
     let mut cmd = if let Some(command) = direct_command {
         let mut builder = CommandBuilder::new(command.program);
         builder.args(command.args);
@@ -2426,12 +2346,22 @@ pub async fn pty_spawn(
     };
     let cwd = cwd.unwrap_or_else(|| crate::system::user_home().to_string_lossy().into_owned());
     cmd.cwd(cwd);
+    // Terminal, Ghostty and Alacritty all start a login shell, which is how
+    // /etc/zprofile and ~/.zprofile get read — on macOS that is where
+    // path_helper builds PATH. Without it the shell came up missing both the
+    // user's profile and half their PATH.
+    #[cfg(unix)]
+    let login_shell = shell_wants_login_flag(&shell);
+    #[cfg(unix)]
+    if login_shell && startup.is_none() && !has_direct_command {
+        cmd.arg("-l");
+    }
     if let Some(startup) = startup.as_deref() {
         #[cfg(unix)]
         {
             cmd.env("SIKEMUX_SHELL", &shell);
             cmd.arg("-c");
-            cmd.arg(startup_bootstrap(startup));
+            cmd.arg(startup_bootstrap(startup, login_shell));
         }
         #[cfg(windows)]
         {
@@ -3304,6 +3234,8 @@ pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16)
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
+    use super::shell_wants_login_flag;
+    #[cfg(unix)]
     use super::startup_bootstrap;
     use super::{
         attach_snapshot, attach_snapshot_with_compaction, compact_parser_for_idle,
@@ -3321,11 +3253,6 @@ mod tests {
         MAX_SHELL_PATH_BYTES, MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES,
         MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL,
         TASK_EXIT_RETENTION,
-    };
-    #[cfg(target_os = "macos")]
-    use super::{
-        temporary_shell_directory, write_temporary_shell_file, ZSH_ENV_INTEGRATION,
-        ZSH_INTEGRATION, ZSH_PROFILE_INTEGRATION,
     };
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
@@ -3738,6 +3665,11 @@ mod tests {
         let mut command = CommandBuilder::new("shell");
         command.env("SIKEMUX_AGENT_ID", "stale-agent");
         command.env("CODEX_THREAD_ID", "parent-thread");
+        command.env("CLAUDECODE", "1");
+        command.env("CLAUDE_CODE_CHILD_SESSION", "1");
+        command.env("CLAUDE_CODE_SESSION_ID", "parent-session");
+        command.env("CLAUDE_CODE_MESSAGING_TOKEN", "parent-token");
+        command.env("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/parent.sock");
         command.env_remove("EDITOR");
         command.env_remove("VISUAL");
         let context = PtyContext {
@@ -3781,6 +3713,17 @@ mod tests {
         assert_eq!(env(&command, "SIKEMUX_PANE_ID"), Some("pane-1".into()));
         assert_eq!(env(&command, "SIKEMUX_AGENT_ID"), None);
         assert_eq!(env(&command, "CODEX_THREAD_ID"), None);
+        // A terminal must not come up wearing the identity, or holding the IPC
+        // credentials, of an agent session that happened to launch the app.
+        for marker in [
+            "CLAUDECODE",
+            "CLAUDE_CODE_CHILD_SESSION",
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDE_CODE_MESSAGING_TOKEN",
+            "CLAUDE_CODE_MESSAGING_SOCKET",
+        ] {
+            assert_eq!(env(&command, marker), None, "{marker} leaked into the PTY");
+        }
         assert_eq!(
             env(&command, "SIKEMUX_BIN_PATH"),
             Some("/app/sikemux-editor".into())
@@ -3944,25 +3887,15 @@ mod tests {
 
     #[test]
     fn supported_shells_receive_ephemeral_hooks_without_dotfile_writes() {
+        // zsh is deliberately left alone: hooking it means owning ZDOTDIR, and
+        // a user's config derives real paths from that.
         let mut zsh = CommandBuilder::new("/bin/zsh");
-        let zsh_guard = configure_shell_integration(&mut zsh, "/bin/zsh")
+        assert!(configure_shell_integration(&mut zsh, "/bin/zsh")
             .expect("configure zsh")
-            .expect("supported zsh");
-        let zdotdir = env(&zsh, "ZDOTDIR").expect("temporary ZDOTDIR");
-        let zsh_hook =
-            std::fs::read_to_string(Path::new(&zdotdir).join(".zshrc")).expect("read zsh hook");
-        let zsh_env = std::fs::read_to_string(Path::new(&zdotdir).join(".zshenv"))
-            .expect("read zshenv forwarder");
-        let zsh_profile = std::fs::read_to_string(Path::new(&zdotdir).join(".zprofile"))
-            .expect("read zprofile forwarder");
-        assert!(zsh_env.contains("__sikemux_source_startup_file .zshenv"));
-        assert!(zsh_profile.contains("__sikemux_source_startup_file .zprofile"));
-        assert!(zsh_hook.contains("__sikemux_source_startup_file .zshrc"));
-        assert!(zsh_hook.contains("before zsh evaluates .zlogin"));
-        assert!(!Path::new(&zdotdir).join(".zlogin").exists());
-        assert!(zsh_hook.contains("add-zsh-hook precmd"));
-        assert!(zsh_hook.contains("133;C"));
-        assert_eq!(env(&zsh, "SIKEMUX_SHELL_INTEGRATION"), Some("1".into()));
+            .is_none());
+        assert_eq!(env(&zsh, "ZDOTDIR"), None);
+        assert_eq!(env(&zsh, "SIKEMUX_SHELL_INTEGRATION"), None);
+        assert!(shell_wants_login_flag("/bin/zsh"));
 
         let mut bash = CommandBuilder::new("/bin/bash");
         let bash_guard = configure_shell_integration(&mut bash, "/bin/bash")
@@ -4016,52 +3949,10 @@ mod tests {
         assert_eq!(unsupported.get_argv().len(), 1);
         assert_eq!(env(&unsupported, "SIKEMUX_SHELL_INTEGRATION"), None);
 
-        drop((zsh_guard, bash_guard, fish_guard, powershell_guard));
-        assert!(!Path::new(&zdotdir).exists());
+        drop((bash_guard, fish_guard, powershell_guard));
     }
 
     #[cfg(target_os = "macos")]
-    #[test]
-    fn zsh_forwarders_preserve_the_complete_user_startup_chain() {
-        let original = tempfile::tempdir().expect("original ZDOTDIR");
-        let integration = temporary_shell_directory().expect("integration ZDOTDIR");
-        let log = original.path().join("startup.log");
-        for name in [".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout"] {
-            std::fs::write(
-                original.path().join(name),
-                format!("print -r -- {name} >> \"$SIKEMUX_ZSH_TEST_LOG\"\n"),
-            )
-            .expect("write original startup file");
-        }
-        write_temporary_shell_file(&integration, Path::new(".zshenv"), ZSH_ENV_INTEGRATION)
-            .expect("write zshenv forwarder");
-        write_temporary_shell_file(
-            &integration,
-            Path::new(".zprofile"),
-            ZSH_PROFILE_INTEGRATION,
-        )
-        .expect("write zprofile forwarder");
-        write_temporary_shell_file(&integration, Path::new(".zshrc"), ZSH_INTEGRATION)
-            .expect("write zshrc integration");
-
-        let status = std::process::Command::new("/bin/zsh")
-            .args(["-ilc", "exit 0"])
-            .env("ZDOTDIR", integration.path())
-            .env("SIKEMUX_TEMP_ZDOTDIR", integration.path())
-            .env("SIKEMUX_ORIGINAL_ZDOTDIR", original.path())
-            .env("SIKEMUX_ORIGINAL_ZDOTDIR_SET", "1")
-            .env("SIKEMUX_ZSH_TEST_LOG", &log)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .expect("run isolated zsh startup");
-        assert!(status.success());
-        assert_eq!(
-            std::fs::read_to_string(log).expect("read startup log"),
-            ".zshenv\n.zprofile\n.zshrc\n.zlogin\n.zlogout\n"
-        );
-    }
-
     #[test]
     fn shell_protocol_parses_chunked_cwd_and_command_boundaries() {
         let mut parser = ShellProtocolParser::default();
@@ -4606,9 +4497,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn startup_runs_before_the_interactive_shell_without_pty_input() {
-        let bootstrap = startup_bootstrap("ssh prod-db");
+        let bootstrap = startup_bootstrap("ssh prod-db", false);
         assert_eq!(bootstrap, "ssh prod-db\nexec \"$SIKEMUX_SHELL\"");
         assert!(!bootstrap.contains('\r'));
+
+        // A shell that reads its profile keeps doing so after the startup
+        // command hands over, or the user lands in a stripped environment.
+        let login = startup_bootstrap("ssh prod-db", true);
+        assert_eq!(login, "ssh prod-db\nexec \"$SIKEMUX_SHELL\" -l");
     }
 
     #[cfg(unix)]
