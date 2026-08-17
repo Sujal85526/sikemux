@@ -155,6 +155,18 @@ pub fn login_shell_environment() -> &'static HashMap<String, String> {
     })
 }
 
+/// Populate the `login_shell_environment` cache from the startup thread.
+///
+/// The capture blocks for as long as the profile takes, up to
+/// `LOGIN_ENV_TIMEOUT`. It is first *needed* inside `pty_spawn`, an async
+/// command, so initialising it lazily there would park an async runtime worker
+/// for that whole time and make concurrent spawns during session restore queue
+/// behind the same one-time initialisation. Called from `run()` it costs
+/// nothing extra: startup is already waiting on a login shell for `PATH`.
+pub fn warm_login_shell_environment() {
+    let _ = login_shell_environment();
+}
+
 #[cfg(unix)]
 fn capture_login_shell_environment() -> HashMap<String, String> {
     let shell = configured_shell();

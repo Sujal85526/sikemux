@@ -49,6 +49,15 @@ pub fn run() {
     // PATH that's missing ~/.local/bin, /opt/homebrew/bin, etc.
     system::fix_path_from_login_shell();
 
+    // Warm the profile-environment cache here, on the startup thread, while
+    // we are already paying for a login shell. It is first *needed* inside
+    // `pty_spawn`, which is an async command — initialising it there would
+    // block an async runtime worker for up to the capture deadline, and
+    // concurrent spawns during session restore would serialise behind the
+    // same one-time initialisation. An rc file that runs something slow like
+    // `fastfetch` makes that delay visible on the first pane.
+    system::warm_login_shell_environment();
+
     tauri::Builder::default()
         // Must be the first plugin: subsequent GUI launches focus the primary
         // process instead of creating a second workspace/CLI broker.
