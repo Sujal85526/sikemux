@@ -1996,20 +1996,27 @@ fn configure_pty_environment(
     cli_endpoint: Option<&Path>,
     profile_env: &HashMap<String, String>,
 ) {
-    for key in OPTIONAL_PTY_ENV {
-        cmd.env_remove(key);
-    }
-
     // A GUI app inherits launchd's environment, not the user's profile, and a
     // direct-command PTY has no shell that would read one. Fill in what the
     // profile exports — API keys, tokens, proxy and CA settings — so an agent
     // CLI authenticates in a pane exactly as it does in the user's own
-    // terminal. Absent keys only: every explicit assignment here wins, and a
-    // key stripped above stays stripped unless the profile itself set it.
+    // terminal. Absent keys only, so every explicit assignment below still
+    // wins. This runs first so the scrub that follows has the final word.
     for (key, value) in profile_env {
         if cmd.get_env(key).is_none() {
             cmd.env(key, value);
         }
+    }
+
+    // Scrub *after* the profile fill, never before. A direct-command pane has
+    // no shell that would re-read the profile, so this is the only thing
+    // standing between it and an inherited identity. Scrubbing first would
+    // leave every one of these keys absent — and therefore refillable — and
+    // the ones no PtyContext ever sets (CLAUDECODE, CLAUDE_CODE_*) would come
+    // straight back from the profile map, handing a pane the transcript
+    // suppression and IPC credentials this list exists to strip.
+    for key in OPTIONAL_PTY_ENV {
+        cmd.env_remove(key);
     }
 
     cmd.env("TERM", "xterm-256color");
@@ -3870,6 +3877,77 @@ mod tests {
         assert_eq!(env(&command, "TERM_PROGRAM"), Some("Sikemux".into()));
         assert_eq!(env(&command, "TERM"), Some("xterm-256color".into()));
         assert_eq!(env(&command, "SIKEMUX_AGENT_ID"), Some("agent-real".into()));
+    }
+
+    /// The invariant the test above cannot see: it sets `agent_id`, so a later
+    /// assignment overwrites the profile value regardless of ordering. These
+    /// are the keys nothing rebuilds — an unset optional field, and the agent
+    /// markers no `PtyContext` ever writes. A shell pane may legitimately pick
+    /// these up when it reads the profile itself; a direct-command pane has no
+    /// shell, so the scrub is the only thing standing in the way. If the
+    /// profile fill ran after it, a marker in the user's own `.zshrc` would
+    /// silently disable the agent CLI's transcript saving and hand the pane
+    /// another session's IPC credentials.
+    #[test]
+    fn pty_environment_profile_cannot_restore_scrubbed_keys_nothing_rebuilds() {
+        let mut command = CommandBuilder::new("claude");
+        // `CommandBuilder::new` seeds itself from this process's environment,
+        // so a developer running the suite from their own terminal already has
+        // these set and the profile fill would correctly decline to touch them.
+        // Clear them to model the launchd-minimal environment a GUI app sees.
+        command.env_remove("ANTHROPIC_API_KEY");
+        let context = PtyContext {
+            session_id: "session-1".into(),
+            session_name: "one".into(),
+            session_kind: "agent".into(),
+            project: None,
+            window_id: None,
+            pane_id: None,
+            agent_id: None,
+            agent_type: None,
+            initial_prompt_submitted: false,
+            shell_integration: false,
+        };
+        let profile = HashMap::from([
+            ("SIKEMUX_AGENT_ID".to_string(), "agent-forged".to_string()),
+            ("SIKEMUX_PANE_ID".to_string(), "pane-forged".to_string()),
+            ("SIKEMUX_SHELL_INTEGRATION".to_string(), "1".to_string()),
+            ("CLAUDECODE".to_string(), "1".to_string()),
+            (
+                "CLAUDE_CODE_MESSAGING_SOCKET".to_string(),
+                "/tmp/parent.sock".to_string(),
+            ),
+            (
+                "CLAUDE_CODE_MESSAGING_TOKEN".to_string(),
+                "parent-token".to_string(),
+            ),
+            ("CODEX_THREAD_ID".to_string(), "thread-parent".to_string()),
+            // A real credential in the same map still has to arrive, or the
+            // scrub would be passing by discarding everything.
+            ("ANTHROPIC_API_KEY".to_string(), "sk-profile".to_string()),
+        ]);
+
+        configure_pty_environment(&mut command, Some(&context), "1.2.3", None, None, &profile);
+
+        for scrubbed in [
+            "SIKEMUX_AGENT_ID",
+            "SIKEMUX_PANE_ID",
+            "SIKEMUX_SHELL_INTEGRATION",
+            "CLAUDECODE",
+            "CLAUDE_CODE_MESSAGING_SOCKET",
+            "CLAUDE_CODE_MESSAGING_TOKEN",
+            "CODEX_THREAD_ID",
+        ] {
+            assert_eq!(
+                env(&command, scrubbed),
+                None,
+                "{scrubbed} must not survive from the profile"
+            );
+        }
+        assert_eq!(
+            env(&command, "ANTHROPIC_API_KEY"),
+            Some("sk-profile".into())
+        );
     }
 
     /// An explicit value already on the command outranks the profile, so a
