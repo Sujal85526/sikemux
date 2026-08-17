@@ -952,11 +952,15 @@ textarea,
 }
 
 /* ---- Surface vs gutter ---------------------------------------------------
- * The gutter is the window; the panels sit on top of it. So the panels take
- * the lighter tone and the shell keeps the darkest, and the two part company
- * as the window turns translucent: the gutter lets the desktop through while
- * the panels stay close to solid. Without that second half, lowering window
- * opacity faded everything equally and the frame disappeared.
+ * The gutter is the window; the panels sit on top of it, so the panels take
+ * the lighter tone and the shell keeps the darkest, and the panels hold more
+ * of their own colour as the window dims.
+ *
+ * This only governs the partly-translucent range. Once window opacity drops
+ * far enough that base.css adds `html.is-transparent`, that sheet clears the
+ * background on every surface — rails and panes alike — and the desktop shows
+ * straight through the whole frame. Every surface goes together, which is the
+ * point: they should never disagree.
  */
 :root {
     --surface-solidity: calc((0.62 + var(--window-opacity, 1) * 0.38) * 100%);
@@ -967,8 +971,11 @@ textarea,
     background: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent);
 }
 
+/* The stage is a frame, not a surface. It used to paint the same tint the
+ * pane inside it does, so the centre carried two layers of it and sat darker
+ * and less translucent than either rail. */
 .stage {
-    background: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent);
+    background: transparent;
 }
 
 .pane {
@@ -987,12 +994,17 @@ textarea,
  * The terminal painted the theme's own terminal background on top, which is
  * darker than the chrome and left the centre of the window reading as a hole.
  * It follows the surface now, and still fades with the window like one. */
+/* One painted surface for the centre, with the rails' own glass on it. */
 .pane {
     background: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(112%);
+    backdrop-filter: blur(18px) saturate(112%);
 }
 
+/* Transparent so the pane's surface shows through; painting it here stacked a
+ * second tint over the one the pane already draws. */
 .terminal-host .xterm-viewport {
-    background-color: color-mix(in srgb, var(--rail) var(--surface-solidity), transparent) !important;
+    background-color: transparent !important;
 }
 
 /* Rail signature — the app's identity, parked at the foot of the sessions
