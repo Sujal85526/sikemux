@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 #[cfg(unix)]
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use serde::Serialize;
 
@@ -83,6 +85,123 @@ pub fn fix_path_from_login_shell() {
 pub fn fix_path_from_login_shell() {
     // Windows desktop applications inherit the user's PATH. Unlike macOS,
     // there is no login-shell environment to recover here.
+}
+
+/// Fences the payload off from whatever an interactive rc file prints on the
+/// way past — banners, `clear`, prompt-init escapes. Only bytes after the last
+/// occurrence are parsed, so an rc file that echoes the command line back
+/// cannot inject entries.
+#[cfg(unix)]
+const LOGIN_ENV_SENTINEL: &str = "@@SIKEMUX_ENV@@";
+
+/// A profile that blocks forever must never stop the app from starting. The
+/// capture runs on its own thread and drains the pipe, so the child cannot
+/// deadlock on a full one; past this deadline we launch with what we have.
+#[cfg(unix)]
+const LOGIN_ENV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Keys the PTY layer owns. Importing these would let a profile rename the
+/// terminal, redirect shell integration, or hand a pane the capture shell's
+/// own working directory and launchd-scoped temp dir. `PATH` is excluded
+/// because `fix_path_from_login_shell` already unions it process-wide, and
+/// `EDITOR`/`VISUAL` because Sikemux deliberately points them at its own
+/// editor — importing them would silently retire that integration.
+#[cfg(unix)]
+const LOGIN_ENV_SIKEMUX_OWNED: &[&str] = &[
+    "COLORTERM",
+    "COLUMNS",
+    "EDITOR",
+    "LINES",
+    "OLDPWD",
+    "PATH",
+    "PWD",
+    "SHELL",
+    "SHLVL",
+    "TERM",
+    "TERM_PROGRAM",
+    "TERM_PROGRAM_VERSION",
+    "TERM_SESSION_ID",
+    "TMPDIR",
+    "VISUAL",
+    "ZDOTDIR",
+    "_",
+];
+
+/// What the user's shell profile exports, captured once per app run.
+///
+/// A macOS GUI app inherits launchd's environment, never the user's profile.
+/// `fix_path_from_login_shell` recovers `PATH` from it; this recovers the
+/// rest. That matters most for a PTY launched with a direct command — an agent
+/// CLI running as the PTY's own process with no shell in between — because it
+/// reads no profile at all. An API key or token the user keeps in `.zshrc` is
+/// simply absent there, so the CLI comes up asking them to log in while the
+/// very same CLI works in their own terminal.
+///
+/// `-i` is the load-bearing flag: zsh sources `.zshrc` only when interactive,
+/// and that is where people put exports. `-l` alone reads `.zprofile` and
+/// misses them, which is why the `PATH` capture above cannot be reused.
+pub fn login_shell_environment() -> &'static HashMap<String, String> {
+    static CACHE: OnceLock<HashMap<String, String>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        #[cfg(unix)]
+        {
+            capture_login_shell_environment()
+        }
+        // Windows desktop apps already inherit the user's environment.
+        #[cfg(windows)]
+        {
+            HashMap::new()
+        }
+    })
+}
+
+#[cfg(unix)]
+fn capture_login_shell_environment() -> HashMap<String, String> {
+    let shell = configured_shell();
+    // `env -0` rather than newline records: a value may contain a newline, but
+    // never a NUL.
+    let script = format!("printf %s '{LOGIN_ENV_SENTINEL}'; env -0");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut command = Command::new(&shell);
+        command
+            .args(["-l", "-i", "-c", &script])
+            // An rc file that reads stdin sees EOF instead of blocking.
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        // The capture inherits our environment, so any agent-session marker
+        // this app was itself launched under would come straight back and
+        // defeat the scrub in `configure_pty_environment`. Drop them up front:
+        // whatever survives genuinely came from the profile.
+        for key in crate::pty::OPTIONAL_PTY_ENV {
+            command.env_remove(key);
+        }
+        let _ = sender.send(command.output().ok());
+    });
+    match receiver.recv_timeout(LOGIN_ENV_TIMEOUT) {
+        Ok(Some(output)) if output.status.success() => {
+            parse_login_shell_environment(&output.stdout)
+        }
+        _ => HashMap::new(),
+    }
+}
+
+#[cfg(unix)]
+fn parse_login_shell_environment(stdout: &[u8]) -> HashMap<String, String> {
+    let text = String::from_utf8_lossy(stdout);
+    let Some(index) = text.rfind(LOGIN_ENV_SENTINEL) else {
+        return HashMap::new();
+    };
+    text[index + LOGIN_ENV_SENTINEL.len()..]
+        .split('\0')
+        .filter_map(|record| record.split_once('='))
+        .filter(|(key, _)| {
+            !key.is_empty()
+                && !key.contains(char::is_whitespace)
+                && !LOGIN_ENV_SIKEMUX_OWNED.contains(key)
+        })
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect()
 }
 
 pub fn user_home() -> PathBuf {
@@ -561,5 +680,89 @@ mod executable_tests {
             resolve_configured_shell(ShellPlatform::Windows, None, Some("ignored-unix-shell")),
             "powershell.exe"
         );
+    }
+
+    /// Interactive rc files print banners, run `clear`, and emit prompt-init
+    /// escapes before the payload ever appears. Only what follows the sentinel
+    /// is environment.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_discards_interactive_rc_chatter_before_the_sentinel() {
+        let stdout = format!(
+            "\u{1b}[2J\u{1b}[Hbanner line\nANTHROPIC_API_KEY=decoy\n{}HOME=/Users/x\0ANTHROPIC_API_KEY=sk-real\0",
+            super::LOGIN_ENV_SENTINEL
+        );
+
+        let parsed = super::parse_login_shell_environment(stdout.as_bytes());
+
+        assert_eq!(
+            parsed.get("ANTHROPIC_API_KEY").map(String::as_str),
+            Some("sk-real")
+        );
+        assert_eq!(parsed.get("HOME").map(String::as_str), Some("/Users/x"));
+        assert_eq!(parsed.len(), 2);
+    }
+
+    /// An rc file that echoes the capture command back would otherwise let a
+    /// second sentinel smuggle entries in; the last one always wins.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_honours_only_the_final_sentinel() {
+        let sentinel = super::LOGIN_ENV_SENTINEL;
+        let stdout = format!("{sentinel}INJECTED=yes\0{sentinel}REAL=yes\0");
+
+        let parsed = super::parse_login_shell_environment(stdout.as_bytes());
+
+        assert_eq!(parsed.get("REAL").map(String::as_str), Some("yes"));
+        assert!(!parsed.contains_key("INJECTED"));
+    }
+
+    /// NUL delimiting is what makes a multi-line export survive the round trip.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_keeps_values_containing_newlines_and_equals_signs() {
+        let stdout = format!(
+            "{}NODE_EXTRA_CA_CERTS=-----BEGIN-----\nline2\n-----END-----\0CONN=a=b=c\0",
+            super::LOGIN_ENV_SENTINEL
+        );
+
+        let parsed = super::parse_login_shell_environment(stdout.as_bytes());
+
+        assert_eq!(
+            parsed.get("NODE_EXTRA_CA_CERTS").map(String::as_str),
+            Some("-----BEGIN-----\nline2\n-----END-----")
+        );
+        assert_eq!(parsed.get("CONN").map(String::as_str), Some("a=b=c"));
+    }
+
+    /// Keys the PTY layer owns are dropped at the source, so a profile can
+    /// never redirect shell integration or hand a pane the capture shell's own
+    /// directory. `PATH` is excluded because it is already unioned separately.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_drops_keys_the_pty_layer_owns() {
+        let stdout = format!(
+            "{}PWD=/tmp/capture\0ZDOTDIR=/tmp/z\0TERM=xterm-kitty\0PATH=/only/profile\0EDITOR=nvim\0KEEP=yes\0",
+            super::LOGIN_ENV_SENTINEL
+        );
+
+        let parsed = super::parse_login_shell_environment(stdout.as_bytes());
+
+        for owned in ["PWD", "ZDOTDIR", "TERM", "PATH", "EDITOR"] {
+            assert!(
+                !parsed.contains_key(owned),
+                "{owned} should not be imported"
+            );
+        }
+        assert_eq!(parsed.get("KEEP").map(String::as_str), Some("yes"));
+    }
+
+    /// A shell that fails, or output with no sentinel at all, must degrade to
+    /// "no profile environment" rather than to garbage entries.
+    #[cfg(unix)]
+    #[test]
+    fn login_env_parse_yields_nothing_without_a_sentinel() {
+        assert!(super::parse_login_shell_environment(b"HOME=/Users/x\0").is_empty());
+        assert!(super::parse_login_shell_environment(b"").is_empty());
     }
 }

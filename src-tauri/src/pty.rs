@@ -1923,7 +1923,7 @@ fn validate_direct_command(
     Ok(())
 }
 
-const OPTIONAL_PTY_ENV: &[&str] = &[
+pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_SHELL",
     "SIKEMUX_SESSION_ID",
     "SIKEMUX_SESSION_NAME",
@@ -1994,9 +1994,22 @@ fn configure_pty_environment(
     version: &str,
     cli_executable: Option<&Path>,
     cli_endpoint: Option<&Path>,
+    profile_env: &HashMap<String, String>,
 ) {
     for key in OPTIONAL_PTY_ENV {
         cmd.env_remove(key);
+    }
+
+    // A GUI app inherits launchd's environment, not the user's profile, and a
+    // direct-command PTY has no shell that would read one. Fill in what the
+    // profile exports — API keys, tokens, proxy and CA settings — so an agent
+    // CLI authenticates in a pane exactly as it does in the user's own
+    // terminal. Absent keys only: every explicit assignment here wins, and a
+    // key stripped above stays stripped unless the profile itself set it.
+    for (key, value) in profile_env {
+        if cmd.get_env(key).is_none() {
+            cmd.env(key, value);
+        }
     }
 
     cmd.env("TERM", "xterm-256color");
@@ -2322,6 +2335,7 @@ pub async fn pty_spawn(
         &app.package_info().version.to_string(),
         cli_executable.as_deref(),
         cli_endpoint.as_deref(),
+        crate::system::login_shell_environment(),
     );
     #[cfg(windows)]
     cmd.args(["-NoLogo"]);
@@ -2430,6 +2444,7 @@ pub async fn task_spawn(
         &app.package_info().version.to_string(),
         cli_executable.as_deref(),
         cli_endpoint.as_deref(),
+        crate::system::login_shell_environment(),
     );
     task_command.env("SIKEMUX_TASK_EXECUTION_ID", execution_id);
     task_command.env("SIKEMUX_TASK_TERMINAL_KEY", terminal_key);
@@ -3691,6 +3706,7 @@ mod tests {
             "1.2.3",
             Some(Path::new("/app/sikemux-editor")),
             Some(Path::new("/runtime/cli.json")),
+            &HashMap::new(),
         );
 
         assert_eq!(env(&command, "TERM"), Some("xterm-256color".into()));
@@ -3747,6 +3763,7 @@ mod tests {
             "1.2.3",
             Some(Path::new("/app/sikemux-editor")),
             None,
+            &HashMap::new(),
         );
         assert_eq!(env(&editor_only, "EDITOR"), Some("nvim".into()));
         assert_eq!(env(&editor_only, "VISUAL"), None);
@@ -3760,6 +3777,7 @@ mod tests {
             "1.2.3",
             Some(Path::new("/app/sikemux-editor")),
             None,
+            &HashMap::new(),
         );
         assert_eq!(env(&visual_only, "EDITOR"), None);
         assert_eq!(env(&visual_only, "VISUAL"), Some("code --wait".into()));
@@ -3778,6 +3796,7 @@ mod tests {
                 "/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor",
             )),
             None,
+            &HashMap::new(),
         );
 
         assert_eq!(
@@ -3793,6 +3812,79 @@ mod tests {
         assert_eq!(
             env(&command, "EDITOR"),
             Some("\"/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor\"".into())
+        );
+    }
+
+    /// The bug this guards: an agent CLI spawned as a direct command reads no
+    /// shell profile, so a credential the user keeps in `.zshrc` never reaches
+    /// it and the CLI demands a login that the user's own terminal never asks
+    /// for.
+    #[test]
+    fn pty_environment_supplies_profile_exports_a_shell_free_pane_cannot_read() {
+        let mut command = CommandBuilder::new("claude");
+        command.env_remove("ANTHROPIC_API_KEY");
+        let profile = HashMap::from([
+            ("ANTHROPIC_API_KEY".to_string(), "sk-profile".to_string()),
+            ("HTTPS_PROXY".to_string(), "http://proxy:8080".to_string()),
+        ]);
+
+        configure_pty_environment(&mut command, None, "1.2.3", None, None, &profile);
+
+        assert_eq!(
+            env(&command, "ANTHROPIC_API_KEY"),
+            Some("sk-profile".into())
+        );
+        assert_eq!(
+            env(&command, "HTTPS_PROXY"),
+            Some("http://proxy:8080".into())
+        );
+    }
+
+    /// The profile fills gaps; it never overrules a value this layer sets. A
+    /// profile that exports TERM_PROGRAM must not make a pane claim to be
+    /// another terminal, and one that exports SIKEMUX_AGENT_ID must not let a
+    /// pane forge another pane's identity.
+    #[test]
+    fn pty_environment_profile_never_overrides_sikemux_owned_identity() {
+        let mut command = CommandBuilder::new("shell");
+        let context = PtyContext {
+            session_id: "session-1".into(),
+            session_name: "one".into(),
+            session_kind: "agent".into(),
+            project: None,
+            window_id: None,
+            pane_id: None,
+            agent_id: Some("agent-real".into()),
+            agent_type: Some("claude".into()),
+            initial_prompt_submitted: false,
+            shell_integration: false,
+        };
+        let profile = HashMap::from([
+            ("TERM_PROGRAM".to_string(), "Ghostty".to_string()),
+            ("TERM".to_string(), "xterm-kitty".to_string()),
+            ("SIKEMUX_AGENT_ID".to_string(), "agent-forged".to_string()),
+        ]);
+
+        configure_pty_environment(&mut command, Some(&context), "1.2.3", None, None, &profile);
+
+        assert_eq!(env(&command, "TERM_PROGRAM"), Some("Sikemux".into()));
+        assert_eq!(env(&command, "TERM"), Some("xterm-256color".into()));
+        assert_eq!(env(&command, "SIKEMUX_AGENT_ID"), Some("agent-real".into()));
+    }
+
+    /// An explicit value already on the command outranks the profile, so a
+    /// per-pane assignment is never silently replaced by a global export.
+    #[test]
+    fn pty_environment_profile_yields_to_an_explicit_command_value() {
+        let mut command = CommandBuilder::new("shell");
+        command.env("ANTHROPIC_API_KEY", "sk-explicit");
+        let profile = HashMap::from([("ANTHROPIC_API_KEY".to_string(), "sk-profile".to_string())]);
+
+        configure_pty_environment(&mut command, None, "1.2.3", None, None, &profile);
+
+        assert_eq!(
+            env(&command, "ANTHROPIC_API_KEY"),
+            Some("sk-explicit".into())
         );
     }
 
@@ -3814,7 +3906,14 @@ mod tests {
             shell_integration: false,
         };
 
-        configure_pty_environment(&mut command, Some(&context), "1.2.3", None, None);
+        configure_pty_environment(
+            &mut command,
+            Some(&context),
+            "1.2.3",
+            None,
+            None,
+            &HashMap::new(),
+        );
 
         assert_eq!(env(&command, "SIKEMUX_AGENT_ID"), Some("agent-1".into()));
         assert_eq!(env(&command, "SIKEMUX_AGENT_TYPE"), Some("codex".into()));
