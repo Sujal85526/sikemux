@@ -67,7 +67,6 @@
     padding: 5px 14px 5px 8px;
     background: transparent;
     border: none;
-    border-left: 2px solid transparent;
     color: var(--ink-dim);
     cursor: pointer;
     font-family: var(--mono);
@@ -83,7 +82,9 @@
 .rnd-tree-row.active {
     color: var(--ink);
     background: var(--acc-soft);
-    border-left-color: var(--acc);
+    /* Inset rather than a border-left, which stayed square and stuck out past
+       the row's rounded corner. */
+    box-shadow: inset 2px 0 0 var(--acc);
     font-weight: 600;
 }
 .rnd-tree-chev {
@@ -1230,4 +1231,49 @@
 }
 .rnd-log-line.lvl-debug .rnd-log-text {
     color: var(--ink-faint);
+}
+
+/* ---- Corners -------------------------------------------------------------
+ * This sheet predates the shared radii, so every bordered element here was
+ * still square while the rest of the app had rounded. Grouped by what the
+ * element is rather than added one at a time to the global sweep.
+ */
+.rnd-btn,
+.rnd-btn-sm,
+.rnd-crumb,
+.rnd-field input,
+.rnd-ghost-btn,
+.rnd-icon-btn,
+.rnd-row-open,
+.rnd-row-action,
+.rnd-pill-x,
+.rnd-bar-back,
+.rnd-exec-pill,
+.rnd-tree-row,
+.rnd-tree-leaf {
+    border-radius: var(--radius-control);
+}
+
+.rnd-exec-meta-row,
+.rnd-exec-row,
+.rnd-step,
+.rnd-field-hint {
+    border-radius: var(--radius-control);
+}
+
+/* Only the standalone notices read as cards. */
+.rnd-tree-err,
+.rnd-insecure-http {
+    border-radius: var(--radius-panel);
+}
+
+/* Joined control: the group owns the corners and clips the input and button
+ * inside it, so the seam between them stays flush. */
+.rnd-composer {
+    border-radius: var(--radius-control);
+    overflow: hidden;
+}
+.rnd-composer input,
+.rnd-composer-go {
+    border-radius: 0;
 }
