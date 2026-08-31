@@ -6,9 +6,8 @@ icons:
 dev: icons
 	pnpm dev:desktop
 
-# Default release artifacts target the host architecture (Apple Silicon on the
-# supported release machine). Use `pnpm build:mac:universal` explicitly for a
-# universal Apple Silicon + Intel bundle.
+# Release artifacts target the host architecture (Apple Silicon on the
+# supported release machine).
 build: icons
 	./scripts/build-mac.sh
 

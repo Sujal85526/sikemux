@@ -42,6 +42,9 @@ jobs:
       - name: Test embedded browser bridge
         run: pnpm browser:test
 
+      - name: Audit embedded browser dependencies
+        run: pnpm browser:audit
+
       - name: Check project formatting
         run: pnpm format:check
 
@@ -159,6 +162,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

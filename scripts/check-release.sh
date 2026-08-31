@@ -39,6 +39,8 @@ const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", 
 const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
 const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
+const browserBuild = fs.readFileSync("scripts/build-browser-sidecar.mjs", "utf8");
+const ci = fs.readFileSync(".github/workflows/ci.yml", "utf8");
 const fail = (message) => { throw new Error(message); };
 
 if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
@@ -59,6 +61,10 @@ if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("
 if (!macBuild.includes("build-cli-sidecar.mjs")) fail("macOS build does not build the CLI sidecar");
 if (!macBuild.includes("build-browser-sidecar.mjs")) fail("macOS build does not build the browser sidecar");
 if (!macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build does not bundle the CLI sidecar");
+if (!browserBuild.includes("smoke_sikemux_browser_mcp.py")) fail("browser sidecar build does not run its frozen-binary smoke test");
+if (!pkg.scripts?.["browser:audit"]?.includes("pip-audit")) fail("browser dependency audit is missing");
+const windowsJob = ci.slice(ci.indexOf("  windows:"));
+if (!windowsJob.includes("astral-sh/setup-uv")) fail("Windows build job does not install uv");
 const endpoints = config.plugins?.updater?.endpoints;
 if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
   fail("updater endpoint is not the expected HTTPS latest.json URL");

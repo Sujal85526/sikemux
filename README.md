@@ -175,7 +175,7 @@ Grab the latest `.dmg` from the [**Releases**](https://github.com/nodelike/sikem
 
 ### Build from source
 
-**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install), Node.js 22+, and [pnpm](https://pnpm.io/).
+**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install), Node.js 22+, [pnpm](https://pnpm.io/), and [uv](https://docs.astral.sh/uv/getting-started/installation/) for the embedded Browser Use sidecar.
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git
@@ -187,9 +187,6 @@ make dev            # or: pnpm dev:desktop
 
 # Production Apple Silicon .app + .dmg on an Apple Silicon host
 make build          # or: pnpm build:mac
-
-# Explicit local universal build (Apple Silicon + Intel; not the published feed)
-pnpm build:mac:universal
 
 # Windows NSIS installer (run from Windows)
 pnpm build:windows

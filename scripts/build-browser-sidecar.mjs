@@ -5,15 +5,19 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const scriptPath = fileURLToPath(import.meta.url);
+const root = resolve(dirname(scriptPath), "..");
 const browserDir = join(root, "browser");
 const tauriDir = join(root, "src-tauri");
 const binariesDir = join(tauriDir, "binaries");
@@ -32,6 +36,11 @@ function run(command, commandArgs, options = {}) {
     encoding: "utf8",
     stdio: options.capture ? "pipe" : "inherit",
   });
+  if (result.error || result.status !== 0) {
+    for (const path of options.removeOnFailure ?? []) {
+      rmSync(path, { force: true });
+    }
+  }
   if (result.error) fail(`${command}: ${result.error.message}`);
   if (result.status !== 0)
     fail(`${command} exited with status ${result.status}`);
@@ -54,8 +63,8 @@ function hostTriple() {
   );
 }
 
-function hasBrowserRuntime(directory) {
-  if (!existsSync(directory)) return false;
+function findBrowserRuntime(directory) {
+  if (!existsSync(directory)) return null;
   const pending = [directory];
   while (pending.length) {
     const current = pending.pop();
@@ -72,10 +81,10 @@ function hasBrowserRuntime(directory) {
           "Google Chrome for Testing",
         ].includes(entry.name)
       )
-        return true;
+        return path;
     }
   }
-  return false;
+  return null;
 }
 
 const target = option("--target") || hostTriple();
@@ -94,6 +103,7 @@ const distDir = join(workDir, "dist");
 const suffix = target.includes("windows") ? ".exe" : "";
 const destination = join(binariesDir, `sikemux-browser-mcp-${target}${suffix}`);
 const sidecarInputs = [
+  scriptPath,
   join(browserDir, "sikemux_browser_mcp.py"),
   join(browserDir, "pyproject.toml"),
   join(browserDir, "uv.lock"),
@@ -146,7 +156,17 @@ if (needsSidecarBuild) {
 }
 if (!target.includes("windows")) chmodSync(destination, 0o755);
 
-if (!hasBrowserRuntime(runtimeDir)) {
+const runtimeMarker = join(runtimeDir, ".sikemux-browser-runtime");
+const runtimeFingerprint = createHash("sha256")
+  .update(readFileSync(join(browserDir, "uv.lock")))
+  .update("chromium-headless-shell")
+  .digest("hex");
+const runtimeIsCurrent =
+  findBrowserRuntime(runtimeDir) &&
+  existsSync(runtimeMarker) &&
+  readFileSync(runtimeMarker, "utf8").trim() === runtimeFingerprint;
+if (!runtimeIsCurrent) {
+  rmSync(runtimeDir, { recursive: true, force: true });
   mkdirSync(runtimeDir, { recursive: true });
   run(
     "uv",
@@ -164,6 +184,28 @@ if (!hasBrowserRuntime(runtimeDir)) {
       cwd: browserDir,
       env: { PLAYWRIGHT_BROWSERS_PATH: runtimeDir },
     },
+  );
+  writeFileSync(runtimeMarker, `${runtimeFingerprint}\n`);
+}
+
+const browserExecutable = findBrowserRuntime(runtimeDir);
+if (!browserExecutable)
+  fail("Chromium runtime installation produced no executable");
+if (!args.includes("--skip-smoke")) {
+  run(
+    "uv",
+    [
+      "run",
+      "--project",
+      browserDir,
+      "python",
+      join(browserDir, "smoke_sikemux_browser_mcp.py"),
+      "--sidecar",
+      destination,
+      "--browser",
+      browserExecutable,
+    ],
+    { cwd: browserDir, removeOnFailure: [destination] },
   );
 }
 
