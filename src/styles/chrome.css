@@ -364,6 +364,10 @@
     height: 34px;
     flex: 0 0 34px;
 }
+
+.side-rail > .rail-scroll {
+    padding-top: var(--space-1, 4px);
+}
 .side-rail {
     width: 238px;
     border-right: 1px solid var(--line);
