@@ -15,6 +15,10 @@
     padding: 0 0 var(--space-3, 12px) var(--space-3, 12px);
 }
 
+.shell-frame > .side-rail {
+    margin-top: var(--space-1h, 6px);
+}
+
 .shell-main {
     display: flex;
     flex: 1;
