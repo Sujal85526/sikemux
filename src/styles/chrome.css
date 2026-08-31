@@ -558,7 +558,7 @@
     bottom: -1px;
 }
 .side-rail .proj-row {
-    cursor: grab;
+    cursor: default;
     touch-action: none;
 }
 .proj-row[aria-grabbed="true"],
