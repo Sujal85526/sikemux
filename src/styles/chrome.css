@@ -35,6 +35,10 @@
     padding-left: 80px;
 }
 
+.shell-frame.has-left-rail .tb-center {
+    padding-left: 0;
+}
+
 .boot-shell {
     align-items: center;
     justify-content: center;
