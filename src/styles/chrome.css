@@ -397,8 +397,8 @@
     border: 0;
     border-radius: var(--radius-xs);
     color: var(--ink-faint);
-    background: color-mix(in srgb, var(--rail-2) 92%, transparent);
-    box-shadow: -7px 0 10px color-mix(in srgb, var(--rail) 86%, transparent);
+    background: var(--rail-2);
+    box-shadow: none;
     opacity: 0;
     pointer-events: none;
     transform: translateY(-50%) scale(0.88);
