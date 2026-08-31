@@ -17,14 +17,17 @@
         "hiddenTitle": true,
         "transparent": true,
         "trafficLightPosition": {
-          "x": 22,
-          "y": 29
+          "x": 16,
+          "y": 25
         }
       }
     ]
   },
   "bundle": {
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

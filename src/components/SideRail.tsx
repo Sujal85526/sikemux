@@ -552,7 +552,6 @@ export function SideRail() {
     return (
         <>
             <aside className="side-rail">
-                <div className="side-rail-titlebar" data-tauri-drag-region />
                 <div className="rail-scroll">
                     <Group
                         label="Projects"

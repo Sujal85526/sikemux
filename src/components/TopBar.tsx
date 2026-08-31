@@ -385,6 +385,8 @@ export function TopBar() {
 
     return (
         <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
+            <div className="tb-left" />
+
             <div className="tb-center">
                 <div className="crumb">
                     <span className="crumb-kind">{isProject ? <IconFolder size={12} /> : <IconCommand size={12} />}</span>
