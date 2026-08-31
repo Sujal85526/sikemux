@@ -1,16 +1,19 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GitFile } from "../api/git";
 
 vi.mock("./DiffEditor", () => ({
-    DiffEditor: ({ path, baseRev, headRev }: { path: string; baseRev: string; headRev?: string }) => (
-        <div data-testid={`diff:${path}:${baseRev}:${headRev ?? "working"}`} />
+    DiffEditor: ({ path, baseRev, headRev, editable }: { path: string; baseRev: string; headRev?: string; editable: boolean }) => (
+        <div data-testid={`diff:${path}:${baseRev}:${headRev ?? "working"}`} data-editable={editable} />
     ),
 }));
 
 import { MergeReview } from "./MergeReview";
 
-afterEach(cleanup);
+afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+});
 
 const files: GitFile[] = [
     { path: "staged.ts", index: "M", worktree: " " },
@@ -49,5 +52,43 @@ describe("MergeReview", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "staged.ts" }));
         expect(onOpenFile).toHaveBeenCalledWith("/repo/staged.ts");
+    });
+
+    it("mounts only the selected and near-viewport diff bodies", () => {
+        const observed: Element[] = [];
+        let callback: IntersectionObserverCallback | undefined;
+        class MockIntersectionObserver {
+            constructor(next: IntersectionObserverCallback) {
+                callback = next;
+            }
+            observe(element: Element) {
+                observed.push(element);
+            }
+            unobserve(element: Element) {
+                const index = observed.indexOf(element);
+                if (index >= 0) observed.splice(index, 1);
+            }
+            disconnect() {
+                observed.length = 0;
+            }
+        }
+        vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+
+        render(<MergeReview repo="/repo" files={files} focusPath="working.ts" onOpenFile={() => {}} onSaved={() => {}} />);
+
+        expect(screen.getByTestId("diff:working.ts:HEAD:working")).toHaveAttribute("data-editable", "true");
+        expect(screen.queryByTestId("diff:staged.ts:HEAD::index")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("diff:both.ts:HEAD::index")).not.toBeInTheDocument();
+        expect(observed).toHaveLength(2);
+
+        const target = observed[0];
+        act(() => callback?.([{ target, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+
+        expect(screen.getByTestId("diff:staged.ts:HEAD::index")).toHaveAttribute("data-editable", "false");
+        expect(screen.queryByTestId("diff:both.ts:HEAD::index")).not.toBeInTheDocument();
+
+        act(() => callback?.([{ target, isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver));
+        expect(screen.queryByTestId("diff:staged.ts:HEAD::index")).not.toBeInTheDocument();
+        expect(screen.getByLabelText("Diff for staged.ts loads when scrolled near")).toBeInTheDocument();
     });
 });

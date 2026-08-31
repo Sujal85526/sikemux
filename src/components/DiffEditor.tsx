@@ -44,6 +44,21 @@ function createEditor(options: EditorOptions<undefined>) {
     return new Editor(options);
 }
 
+const revisionReads = new Map<string, Promise<string>>();
+
+function readRevision(repo: string, rev: string, path: string): Promise<string> {
+    const key = `${repo}\0${rev}\0${path}`;
+    const existing = revisionReads.get(key);
+    if (existing) return existing;
+    const pending = git.fileAt(repo, rev, path);
+    revisionReads.set(key, pending);
+    const clear = () => {
+        if (revisionReads.get(key) === pending) revisionReads.delete(key);
+    };
+    void pending.then(clear, clear);
+    return pending;
+}
+
 export function DiffEditor({
     repo,
     path,
@@ -76,7 +91,7 @@ export function DiffEditor({
         setContent(null);
         setError(null);
 
-        void Promise.all([git.fileAt(repo, baseRev, path), headRev ? git.fileAt(repo, headRev, path) : readWorkingFile(absPath)])
+        void Promise.all([readRevision(repo, baseRev, path), headRev ? readRevision(repo, headRev, path) : readWorkingFile(absPath)])
             .then(([base, head]) => {
                 if (cancelled) return;
                 const guard = inlineDiffGuard(path, base, head);

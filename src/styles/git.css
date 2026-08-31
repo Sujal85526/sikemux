@@ -906,6 +906,9 @@
 .merge-file-header {
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 96%), transparent);
 }
+.merge-review-item.focused > .merge-file-header {
+    box-shadow: inset 2px 0 0 var(--acc);
+}
 .merge-file-status {
     display: flex;
     align-items: center;
@@ -926,6 +929,10 @@
     min-width: 0;
     content-visibility: auto;
     contain-intrinsic-size: auto 240px;
+}
+.merge-review-placeholder {
+    border-top: 1px solid color-mix(in srgb, var(--line-soft) 70%, transparent);
+    background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 72%), transparent);
 }
 .merge-sections {
     display: flex;

@@ -100,4 +100,18 @@ describe("DiffEditor", () => {
         });
         expect(shikiTheme.tokenColors.length).toBeGreaterThan(10);
     });
+
+    it("deduplicates simultaneous revision reads", async () => {
+        render(
+            <>
+                <DiffEditor repo="/repo" path="src/shared.ts" baseRev="HEAD" headRev=":index" editable={false} />
+                <DiffEditor repo="/repo" path="src/shared.ts" baseRev="HEAD" headRev=":index" editable={false} />
+            </>,
+        );
+
+        await waitFor(() => expect(document.querySelectorAll('[data-testid="pierre-diff"]')).toHaveLength(2));
+        expect(mocks.fileAt).toHaveBeenCalledTimes(2);
+        expect(mocks.fileAt).toHaveBeenCalledWith("/repo", "HEAD", "src/shared.ts");
+        expect(mocks.fileAt).toHaveBeenCalledWith("/repo", ":index", "src/shared.ts");
+    });
 });

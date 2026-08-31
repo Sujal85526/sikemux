@@ -6,6 +6,38 @@ import { Tooltip } from "./Tooltip";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
 import { basename, joinPath } from "../lib/paths";
 
+const deferredCallbacks = new Map<Element, (visible: boolean) => void>();
+let deferredObserver: IntersectionObserver | null = null;
+
+function canObserveViewport(): boolean {
+    return typeof window !== "undefined" && "IntersectionObserver" in window;
+}
+
+function observeViewportRange(element: Element, onVisibilityChange: (visible: boolean) => void): () => void {
+    deferredObserver ??= new IntersectionObserver(
+        (entries) => {
+            for (const entry of entries) {
+                const callback = deferredCallbacks.get(entry.target);
+                callback?.(entry.isIntersecting);
+            }
+        },
+        { rootMargin: "900px 0px" },
+    );
+    deferredCallbacks.set(element, onVisibilityChange);
+    deferredObserver.observe(element);
+    return () => {
+        deferredObserver?.unobserve(element);
+        deferredCallbacks.delete(element);
+        releaseObserverIfIdle();
+    };
+}
+
+function releaseObserverIfIdle(): void {
+    if (deferredCallbacks.size > 0) return;
+    deferredObserver?.disconnect();
+    deferredObserver = null;
+}
+
 export function MergeReview({
     repo,
     files,
@@ -73,11 +105,12 @@ export function MergeReview({
                 {files.map((file) => {
                     const path = file.path;
                     const open = !collapsed.has(path);
+                    const focused = path === focusPath;
                     const staged = isStaged(file);
                     const unstaged = hasUnstaged(file);
                     return (
                         <div
-                            className="acc-item merge-review-item"
+                            className={`acc-item merge-review-item${focused ? " focused" : ""}`}
                             key={path}
                             ref={(node) => {
                                 if (node) itemRefs.current.set(path, node);
@@ -106,7 +139,7 @@ export function MergeReview({
                                     {unstaged && <span className="merge-file-badge unstaged">unstaged</span>}
                                 </span>
                             </div>
-                            {open && <MergeFileDiff repo={repo} file={file} onSaved={onSaved} />}
+                            {open && <DeferredMergeFileDiff repo={repo} file={file} editable={focused && unstaged} onSaved={onSaved} />}
                         </div>
                     );
                 })}
@@ -115,7 +148,49 @@ export function MergeReview({
     );
 }
 
-function MergeFileDiff({ repo, file, onSaved }: { repo: string; file: GitFile; onSaved: () => void }) {
+function DeferredMergeFileDiff({ repo, file, editable, onSaved }: { repo: string; file: GitFile; editable: boolean; onSaved: () => void }) {
+    const hostRef = useRef<HTMLDivElement>(null);
+    const [mounted, setMounted] = useState(() => editable || !canObserveViewport());
+    const [placeholderHeight, setPlaceholderHeight] = useState(220);
+
+    useEffect(() => {
+        if (editable) {
+            setMounted(true);
+            return;
+        }
+        if (!canObserveViewport()) {
+            setMounted(true);
+            return;
+        }
+        const host = hostRef.current;
+        if (!host) return;
+        return observeViewportRange(host, (visible) => {
+            if (visible) {
+                setMounted(true);
+                return;
+            }
+            const measuredHeight = host.getBoundingClientRect().height;
+            if (measuredHeight > 0) setPlaceholderHeight(Math.ceil(measuredHeight));
+            setMounted(false);
+        });
+    }, [editable]);
+
+    return (
+        <div ref={hostRef} className="merge-review-deferred">
+            {mounted ? (
+                <MergeFileDiff repo={repo} file={file} editable={editable} onSaved={onSaved} />
+            ) : (
+                <div
+                    className="merge-review-placeholder"
+                    style={{ height: placeholderHeight }}
+                    aria-label={`Diff for ${file.path} loads when scrolled near`}
+                />
+            )}
+        </div>
+    );
+}
+
+function MergeFileDiff({ repo, file, editable, onSaved }: { repo: string; file: GitFile; editable: boolean; onSaved: () => void }) {
     const path = file.path;
     const staged = isStaged(file);
     const unstaged = hasUnstaged(file);
@@ -130,13 +205,13 @@ function MergeFileDiff({ repo, file, onSaved }: { repo: string; file: GitFile; o
                     </div>
                     <div className="merge-section">
                         <div className="merge-section-title unstaged">unstaged</div>
-                        <DiffEditor repo={repo} path={path} baseRev=":index" editable onSaved={onSaved} autoHeight />
+                        <DiffEditor repo={repo} path={path} baseRev=":index" editable={editable} onSaved={onSaved} autoHeight />
                     </div>
                 </div>
             ) : staged ? (
                 <DiffEditor repo={repo} path={path} baseRev="HEAD" headRev=":index" editable={false} autoHeight />
             ) : (
-                <DiffEditor repo={repo} path={path} baseRev="HEAD" editable onSaved={onSaved} autoHeight />
+                <DiffEditor repo={repo} path={path} baseRev="HEAD" editable={editable} onSaved={onSaved} autoHeight />
             )}
         </div>
     );
