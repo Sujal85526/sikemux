@@ -1276,7 +1276,10 @@ pub fn agent_sessions(
 const AGENT_DEBOUNCE_MS: u64 = 200;
 
 fn home_path() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 fn push_watch_target(out: &mut Vec<AgentWatchTarget>, dir: PathBuf, mode: RecursiveMode) {
