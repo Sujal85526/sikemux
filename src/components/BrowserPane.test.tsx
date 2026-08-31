@@ -80,4 +80,20 @@ describe("AgentBrowserShell", () => {
         fireEvent.submit(address.closest("form")!);
         expect(browserApi.navigate).toHaveBeenCalledWith("agent-one", "openai.com");
     });
+
+    it("renders a themed native surface instead of Chromium's white blank frame", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({
+            ...snapshot,
+            tabs: [{ id: "blank-tab", title: "", url: "about:blank", active: true }],
+            activeTabId: "blank-tab",
+        });
+        const { container } = render(
+            <AgentBrowserShell agentId="agent-one" agentType="claude" visible>
+                <div>terminal</div>
+            </AgentBrowserShell>,
+        );
+
+        await waitFor(() => expect(screen.getByLabelText("Blank browser page")).toBeInTheDocument());
+        expect(container.querySelector(".browser-viewport > img")).toBeNull();
+    });
 });

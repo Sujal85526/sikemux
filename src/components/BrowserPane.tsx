@@ -121,6 +121,7 @@ function BrowserPane({
     const [viewport, setViewport] = useState<BrowserViewport>({ width: 960, height: 640 });
     const lastPointerMove = useRef(0);
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
+    const blank = activeTab?.url === "about:blank" || activeTab?.url === "chrome://newtab/";
 
     useEffect(() => setAddress(activeTab?.url === "about:blank" ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);
     useLayoutEffect(() => {
@@ -143,7 +144,7 @@ function BrowserPane({
         let stopped = false;
         const draw = async () => {
             try {
-                await refresh(true, viewport, controller.signal);
+                await refresh(!blank, viewport, controller.signal);
             } catch (error) {
                 if (!controller.signal.aborted) console.warn("browser frame failed", error);
             }
@@ -155,7 +156,7 @@ function BrowserPane({
             controller.abort();
             window.clearTimeout(timer);
         };
-    }, [refresh, viewport, visible]);
+    }, [blank, refresh, viewport, visible]);
 
     const run = (operation: Promise<unknown>, label: string) => {
         void operation.then(() => refresh(false)).catch(reportError(label));
@@ -264,7 +265,9 @@ function BrowserPane({
                     event.preventDefault();
                     void browserApi.key(agentId, { kind: "up", key: event.key, code: event.code }).catch(reportError("release browser key"));
                 }}>
-                {snapshot.frame ? (
+                {blank ? (
+                    <div className="browser-blank" aria-label="Blank browser page" />
+                ) : snapshot.frame ? (
                     <img src={`data:image/jpeg;base64,${snapshot.frame}`} draggable={false} alt="" />
                 ) : (
                     <div className="browser-loading">

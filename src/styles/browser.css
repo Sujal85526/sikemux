@@ -51,7 +51,7 @@
     min-height: 0;
     overflow: hidden;
     border-left: 1px solid color-mix(in srgb, var(--browser-agent) 28%, var(--line));
-    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
 }
 
@@ -94,7 +94,7 @@
     padding: 4px 6px 0;
     gap: 2px;
     border-bottom: 1px solid var(--line);
-    background: color-mix(in srgb, var(--rail) 86%, var(--browser-agent) 4%);
+    background: color-mix(in srgb, color-mix(in srgb, var(--rail) 96%, var(--browser-agent) 4%) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
 .browser-tab-wrap {
@@ -129,12 +129,12 @@
 
 .browser-tab-wrap:hover {
     color: var(--ink-dim);
-    background: color-mix(in srgb, var(--rail-2) 80%, transparent);
+    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 80%), transparent);
 }
 
 .browser-tab-wrap.active {
     border-color: var(--line);
-    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
 }
 
@@ -232,7 +232,7 @@
     min-width: 0;
     padding: 4px 7px;
     border-bottom: 1px solid var(--line);
-    background: var(--bg-raised);
+    background: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
 .browser-toolbar button {
@@ -252,7 +252,7 @@
     border: 1px solid var(--line);
     border-radius: var(--radius-control);
     outline: 0;
-    background: color-mix(in srgb, var(--void) 48%, transparent);
+    background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 48%), transparent);
     color: var(--ink-dim);
     font-family: var(--mono);
     font-size: 10.5px;
@@ -270,7 +270,7 @@
     min-height: 0;
     overflow: hidden;
     outline: 0;
-    background: var(--void);
+    background: transparent;
     cursor: default;
 }
 
@@ -285,6 +285,12 @@
     object-fit: fill;
     user-select: none;
     pointer-events: none;
+}
+
+.browser-blank {
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
 .browser-loading {
