@@ -5,6 +5,7 @@
 @import "./styles/editor-insights.css";
 @import "./styles/git.css";
 @import "./styles/agents.css";
+@import "./styles/browser.css";
 @import "./styles/codemirror.css";
 @import "./styles/feedback.css";
 @import "./styles/settings.css";

@@ -8,8 +8,9 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
-import { AgentIcon, IconCommand, IconPlus, IconShield, IconShieldBolt } from "./Icons";
+import { AgentIcon, IconCommand, IconGlobe, IconPlus, IconShield, IconShieldBolt } from "./Icons";
 import { renderWorkbenchItem } from "../workbench/renderers";
+import { AgentBrowserShell } from "./BrowserPane";
 
 const AGENT_TABS_H = 34;
 const TERM_TABS_H = 34;
@@ -186,6 +187,17 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
             onAdd={() => cmd.openAgentPalette()}
             addIcon={<IconPlus size={13} />}
             addTitle="New agent — ⌥N"
+            trailing={
+                <button
+                    type="button"
+                    className="agent-browser-open"
+                    aria-label="New browser tab — ⌘T"
+                    title="New browser tab — ⌘T"
+                    onClick={cmd.newBrowserTab}>
+                    <IconGlobe size={13} />
+                    <span>browser</span>
+                </button>
+            }
         />
     );
 }
@@ -237,35 +249,37 @@ const AgentLayer = memo(function AgentLayer({
                     height: tabsShown ? `calc(100% - ${AGENT_TABS_H}px)` : "100%",
                 }}>
                 <div className="pane pane-terminal">
-                    {agent.launchState === "dormant" ? (
-                        <div className="agent-dormant" role="group" aria-label={`${agent.title} is ready to resume`}>
-                            <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
-                            <span className="agent-dormant-kicker">imported</span>
-                            <strong>{agent.title}</strong>
-                            <span>Agents from an imported session stay inert until you start them yourself.</span>
-                            <button type="button" onClick={() => cmd.resumeAgent(agent.id)}>
-                                Resume {agent.type}
-                            </button>
-                        </div>
-                    ) : (
-                        <TerminalPane
-                            cwd={agent.cwd || session.cwd || undefined}
-                            startup={agent.startup}
-                            directCommand={agent.directCommand}
-                            active={visible}
-                            visible={visible}
-                            spawnWhen={visible || !!agent.resumeId}
-                            context={{
-                                sessionId: session.id,
-                                sessionName: session.name,
-                                sessionKind: session.kind,
-                                ...(session.kind === "project" && (agent.cwd || session.cwd) ? { project: agent.cwd || session.cwd } : {}),
-                                agentId: agent.id,
-                                agentType: agent.type,
-                            }}
-                        />
-                    )}
-                    {cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} />}
+                    <AgentBrowserShell agentId={agent.id} agentType={agent.type} visible={visible}>
+                        {agent.launchState === "dormant" ? (
+                            <div className="agent-dormant" role="group" aria-label={`${agent.title} is ready to resume`}>
+                                <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
+                                <span className="agent-dormant-kicker">imported</span>
+                                <strong>{agent.title}</strong>
+                                <span>Agents from an imported session stay inert until you start them yourself.</span>
+                                <button type="button" onClick={() => cmd.resumeAgent(agent.id)}>
+                                    Resume {agent.type}
+                                </button>
+                            </div>
+                        ) : (
+                            <TerminalPane
+                                cwd={agent.cwd || session.cwd || undefined}
+                                startup={agent.startup}
+                                directCommand={agent.directCommand}
+                                active={visible}
+                                visible={visible}
+                                spawnWhen={visible || !!agent.resumeId}
+                                context={{
+                                    sessionId: session.id,
+                                    sessionName: session.name,
+                                    sessionKind: session.kind,
+                                    ...(session.kind === "project" && (agent.cwd || session.cwd) ? { project: agent.cwd || session.cwd } : {}),
+                                    agentId: agent.id,
+                                    agentType: agent.type,
+                                }}
+                            />
+                        )}
+                        {cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} />}
+                    </AgentBrowserShell>
                 </div>
             </div>
         </div>

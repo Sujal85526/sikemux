@@ -1923,6 +1923,56 @@ fn validate_direct_command(
     Ok(())
 }
 
+fn inject_browser_mcp(
+    app: &AppHandle,
+    command: &mut PtyDirectCommand,
+    agent_type: &str,
+    launch: &crate::browser::BrowserMcpLaunch,
+) -> AppResult<()> {
+    match agent_type {
+        "codex" => {
+            let command_value = serde_json::to_string(&launch.command)?;
+            let args_value = serde_json::to_string(&launch.args)?;
+            let mut injected = vec![
+                "-c".into(),
+                format!("mcp_servers.sikemux_browser.command={command_value}"),
+                "-c".into(),
+                format!("mcp_servers.sikemux_browser.args={args_value}"),
+            ];
+            injected.append(&mut command.args);
+            command.args = injected;
+        }
+        "claude" => {
+            let directory = app
+                .path()
+                .app_data_dir()
+                .map_err(|error| {
+                    AppError::Other(format!("browser MCP config directory unavailable: {error}"))
+                })?
+                .join("browser");
+            std::fs::create_dir_all(&directory)?;
+            let path = directory.join("claude-mcp.json");
+            let config = serde_json::json!({
+                "mcpServers": {
+                    "sikemux-browser": {
+                        "type": "stdio",
+                        "command": launch.command,
+                        "args": launch.args,
+                    }
+                }
+            });
+            let temporary = directory.join(format!(".claude-mcp-{}.json", uuid::Uuid::new_v4()));
+            std::fs::write(&temporary, serde_json::to_vec_pretty(&config)?)?;
+            std::fs::rename(temporary, &path)?;
+            let mut injected = vec!["--mcp-config".into(), path.to_string_lossy().into_owned()];
+            injected.append(&mut command.args);
+            command.args = injected;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_SHELL",
     "SIKEMUX_SESSION_ID",
@@ -1945,6 +1995,9 @@ pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_TASK_TERMINAL_KEY",
     "SIKEMUX_TASK_ID",
     "SIKEMUX_TASK_SOURCE",
+    "SIKEMUX_BROWSER_STATE_DIR",
+    "SIKEMUX_BROWSER_CDP_URL",
+    "SIKEMUX_BROWSER_AGENT_ID",
     // Markers an agent CLI exports for processes it starts. If Sikemux was
     // itself launched from inside one, every terminal it opens looks like a
     // child of that session — the CLI then disables transcript saving, and the
@@ -2308,6 +2361,7 @@ fn configure_shell_integration(
 pub async fn pty_spawn(
     app: AppHandle,
     manager: State<'_, PtyManager>,
+    browser: State<'_, crate::browser::BrowserManager>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -2317,6 +2371,7 @@ pub async fn pty_spawn(
 ) -> AppResult<u32> {
     validate_pty_dimensions(cols, rows)?;
     let startup = startup.filter(|value| !value.is_empty());
+    let mut direct_command = direct_command;
     if startup.is_some() && direct_command.is_some() {
         return Err(AppError::BadArg(
             "PTY startup and direct command are mutually exclusive",
@@ -2325,6 +2380,39 @@ pub async fn pty_spawn(
     if let Some(command) = direct_command.as_ref() {
         validate_direct_command(command, context.as_ref())?;
     }
+    let browser_environment =
+        if let (Some(command), Some(context)) = (direct_command.as_mut(), context.as_ref()) {
+            match (context.agent_id.as_deref(), context.agent_type.as_deref()) {
+                (Some(agent_id), Some(agent_type @ ("codex" | "claude"))) => {
+                    match browser.environment(&app, agent_id).await {
+                        Ok(environment) => match browser.mcp_launch(&app) {
+                            Ok(launch) => {
+                                match inject_browser_mcp(&app, command, agent_type, &launch) {
+                                    Ok(()) => Some(environment),
+                                    Err(error) => {
+                                        eprintln!(
+                                            "Sikemux browser integration is unavailable: {error}"
+                                        );
+                                        None
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                eprintln!("Sikemux browser integration is unavailable: {error}");
+                                None
+                            }
+                        },
+                        Err(error) => {
+                            eprintln!("Sikemux browser integration is unavailable: {error}");
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
     let shell = crate::system::configured_shell();
     let has_direct_command = direct_command.is_some();
     let mut cmd = if let Some(command) = direct_command {
@@ -2344,6 +2432,11 @@ pub async fn pty_spawn(
         cli_endpoint.as_deref(),
         crate::system::login_shell_environment(),
     );
+    if let Some(environment) = browser_environment {
+        for (key, value) in environment {
+            cmd.env(key, value);
+        }
+    }
     #[cfg(windows)]
     cmd.args(["-NoLogo"]);
     let shell_integration = if shell_integration_requested(

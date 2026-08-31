@@ -2,6 +2,7 @@ import { invokeCommand as invoke } from "../api/invoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { AgentSession } from "../api/agents";
 import { awsApi } from "../api/aws";
+import { browserApi } from "../api/browser";
 import { fsapi } from "../api/fs";
 import { lsp } from "../api/lsp";
 import { sshApi } from "../api/ssh";
@@ -2062,6 +2063,80 @@ export function setWindowBlur(v: number): void {
 
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
+
+function activeBrowserAgentId(): string | null {
+    const st = getState();
+    const session = st.sessions[st.activeSessionId];
+    if (!session || session.kind !== "project" || session.view !== "agent") return null;
+    return session.activeAgentId;
+}
+
+export function newBrowserTab(): boolean {
+    const agentId = activeBrowserAgentId();
+    if (!agentId) return false;
+    void browserApi.newTab(agentId).catch(reportError("open browser tab"));
+    return true;
+}
+
+export function closeActiveBrowserTab(): boolean {
+    const agentId = activeBrowserAgentId();
+    if (!agentId) return false;
+    void browserApi
+        .snapshot(agentId, false)
+        .then((snapshot) => (snapshot.activeTabId ? browserApi.closeTab(agentId, snapshot.activeTabId) : undefined))
+        .catch(reportError("close browser tab"));
+    return true;
+}
+
+export function cycleBrowserTab(delta: number): boolean {
+    const agentId = activeBrowserAgentId();
+    if (!agentId) return false;
+    void browserApi
+        .snapshot(agentId, false)
+        .then((snapshot) => {
+            if (snapshot.tabs.length < 2) return;
+            const current = Math.max(
+                0,
+                snapshot.tabs.findIndex((tab) => tab.id === snapshot.activeTabId),
+            );
+            const next = (current + delta + snapshot.tabs.length) % snapshot.tabs.length;
+            return browserApi.switchTab(agentId, snapshot.tabs[next].id);
+        })
+        .catch(reportError("switch browser tab"));
+    return true;
+}
+
+export function reloadBrowserTab(): boolean {
+    const agentId = activeBrowserAgentId();
+    if (!agentId) return false;
+    void browserApi.reload(agentId).catch(reportError("reload browser"));
+    return true;
+}
+
+export function browserHistory(delta: number): boolean {
+    const agentId = activeBrowserAgentId();
+    if (!agentId) return false;
+    void (delta < 0 ? browserApi.back(agentId) : browserApi.forward(agentId)).catch(reportError("navigate browser history"));
+    return true;
+}
+
+export function focusBrowserAddress(): boolean {
+    const agentId = activeBrowserAgentId();
+    if (!agentId) return false;
+    const selector = `.browser-pane[data-agent-id="${CSS.escape(agentId)}"] .browser-address`;
+    const focus = () => {
+        const input = document.querySelector<HTMLInputElement>(selector);
+        input?.focus();
+        input?.select();
+    };
+    if (document.querySelector(selector)) focus();
+    else
+        void browserApi
+            .newTab(agentId)
+            .then(() => window.setTimeout(focus, 50))
+            .catch(reportError("open browser address"));
+    return true;
+}
 export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value });
 export const setRailDensity = (value: import("./types").RailDensity): void => setState({ railDensity: value });
 export const setDefaultAgentPermissionMode = (value: import("./types").AgentPermissionMode): void =>

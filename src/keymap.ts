@@ -13,6 +13,11 @@ function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     return !!target?.closest?.(".xterm");
 }
 
+function isBrowserKeyTarget(e: KeyboardEvent): boolean {
+    const target = e.target instanceof Element ? e.target : document.activeElement;
+    return !!target?.closest?.("[data-browser-pane]");
+}
+
 function hasOpenModal(st: StoreState): boolean {
     return (
         st.pickerOpen ||
@@ -196,6 +201,28 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             if (active?.kind !== "project" || active.view !== "agent") return false;
             cmd.toggleActiveAgentSkipPermissions();
             return true;
+        case "browser.tabNew":
+            return cmd.newBrowserTab();
+        case "browser.tabClose":
+            if (!isBrowserKeyTarget(event)) return false;
+            return cmd.closeActiveBrowserTab();
+        case "browser.address":
+            return cmd.focusBrowserAddress();
+        case "browser.reload":
+            if (!isBrowserKeyTarget(event)) return false;
+            return cmd.reloadBrowserTab();
+        case "browser.back":
+            if (!isBrowserKeyTarget(event)) return false;
+            return cmd.browserHistory(-1);
+        case "browser.forward":
+            if (!isBrowserKeyTarget(event)) return false;
+            return cmd.browserHistory(1);
+        case "browser.tabNext":
+            if (!isBrowserKeyTarget(event)) return false;
+            return cmd.cycleBrowserTab(1);
+        case "browser.tabPrevious":
+            if (!isBrowserKeyTarget(event)) return false;
+            return cmd.cycleBrowserTab(-1);
         case "window.files":
             cmd.selectWindowByRole("files");
             return true;

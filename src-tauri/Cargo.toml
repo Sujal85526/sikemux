@@ -48,6 +48,7 @@ thiserror = "1"
 uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util"] }
+tokio-tungstenite = "0.28"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "stream", "cookies", "multipart"] }
 open = "5"
 trash = "5"

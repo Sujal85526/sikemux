@@ -1,6 +1,6 @@
 import { IS_MACOS } from "./lib/platform";
 
-export type KeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Bruno";
+export type KeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser" | "Bruno";
 
 export interface KeybindingAction {
     id: string;
@@ -278,6 +278,62 @@ const keybindingActions = [
         defaultBinding: "Alt+KeyY",
     },
     {
+        id: "browser.tabNew",
+        label: "New browser tab",
+        detail: "Open the embedded browser for the active agent",
+        category: "Browser",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyT`,
+    },
+    {
+        id: "browser.tabClose",
+        label: "Close browser tab",
+        detail: "Close the active embedded browser tab",
+        category: "Browser",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyW`,
+    },
+    {
+        id: "browser.address",
+        label: "Focus browser address",
+        detail: "Focus the embedded browser address bar",
+        category: "Browser",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyL`,
+    },
+    {
+        id: "browser.reload",
+        label: "Reload browser tab",
+        detail: "Reload the active embedded browser tab",
+        category: "Browser",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyR`,
+    },
+    {
+        id: "browser.back",
+        label: "Browser back",
+        detail: "Go back in the active embedded browser tab",
+        category: "Browser",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+BracketLeft`,
+    },
+    {
+        id: "browser.forward",
+        label: "Browser forward",
+        detail: "Go forward in the active embedded browser tab",
+        category: "Browser",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+BracketRight`,
+    },
+    {
+        id: "browser.tabNext",
+        label: "Next browser tab",
+        detail: "Select the next embedded browser tab",
+        category: "Browser",
+        defaultBinding: "Ctrl+Tab",
+    },
+    {
+        id: "browser.tabPrevious",
+        label: "Previous browser tab",
+        detail: "Select the previous embedded browser tab",
+        category: "Browser",
+        defaultBinding: "Ctrl+Shift+Tab",
+    },
+    {
         id: "bruno.save",
         label: "Save request",
         detail: "Save the active Bruno request",
@@ -304,7 +360,7 @@ export type KeybindingActionId = (typeof keybindingActions)[number]["id"];
 export type KeybindingOverrides = Partial<Record<KeybindingActionId, string | null>>;
 
 export const KEYBINDING_ACTIONS: readonly KeybindingAction[] = keybindingActions;
-export const KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", "Panes", "Navigation", "Bruno"];
+export const KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", "Panes", "Navigation", "Browser", "Bruno"];
 
 const ACTION_IDS = new Set<string>(KEYBINDING_ACTIONS.map((action) => action.id));
 const ACTIONS_BY_ID = new Map<string, KeybindingAction>(KEYBINDING_ACTIONS.map((action) => [action.id, action]));

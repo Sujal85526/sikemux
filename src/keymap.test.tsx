@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadApplicationActions } from "./actions/bridge";
+import { browserApi } from "./api/browser";
+import { IS_MACOS } from "./lib/platform";
 import type { Session } from "./state/types";
 import { getState, setState } from "./state/store";
 import { useKeymap } from "./keymap";
@@ -83,6 +85,29 @@ describe("agent picker shortcut", () => {
 
         expect(getState().agentPaletteOpen).toBe(true);
         expect(getState().sessions.one.view).toBe("agent");
+    });
+});
+
+describe("embedded browser shortcuts", () => {
+    it("opens a browser tab for the active agent with Command+T", async () => {
+        const open = vi.spyOn(browserApi, "newTab").mockResolvedValue("browser-tab");
+        setState((state) => ({
+            sessions: { ...state.sessions, one: { ...state.sessions.one, view: "agent", activeAgentId: "agent-one" } },
+        }));
+        render(<KeymapHarness />);
+
+        window.dispatchEvent(
+            new KeyboardEvent("keydown", {
+                code: "KeyT",
+                metaKey: IS_MACOS,
+                ctrlKey: !IS_MACOS,
+                bubbles: true,
+                cancelable: true,
+            }),
+        );
+
+        await waitFor(() => expect(open).toHaveBeenCalledWith("agent-one"));
+        open.mockRestore();
     });
 });
 

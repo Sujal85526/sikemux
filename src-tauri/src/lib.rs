@@ -2,6 +2,7 @@ mod agent_detection;
 mod agents;
 mod aws;
 mod bounded_process;
+mod browser;
 mod bruno;
 pub mod cli_client;
 mod cli_install;
@@ -27,6 +28,7 @@ mod transparency;
 mod updates;
 
 use aws::LogsTailManager;
+use browser::BrowserManager;
 use observability::UiWatchdogState;
 use pty::PtyManager;
 use rundeck::{RundeckLogsManager, RundeckWatchManager};
@@ -88,6 +90,9 @@ pub fn run() {
                 if let Some(mgr) = window.try_state::<PtyManager>() {
                     mgr.drain();
                 }
+                if let Some(browser) = window.try_state::<BrowserManager>() {
+                    browser.drain();
+                }
                 lsp::drain_all();
             }
         })
@@ -102,6 +107,9 @@ pub fn run() {
                 }
                 if let Some(mgr) = webview.try_state::<PtyManager>() {
                     mgr.drain();
+                }
+                if let Some(browser) = webview.try_state::<BrowserManager>() {
+                    browser.drain();
                 }
                 lsp::drain_all();
             }
@@ -135,6 +143,7 @@ pub fn run() {
             Ok(())
         })
         .manage(PtyManager::default())
+        .manage(BrowserManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
             pty::task_spawn,
@@ -148,6 +157,16 @@ pub fn run() {
             pty::agent_detection_explain,
             pty::agent_detection_manifests,
             pty::agent_detection_reload,
+            browser::browser_snapshot,
+            browser::browser_new_tab,
+            browser::browser_switch_tab,
+            browser::browser_close_tab,
+            browser::browser_navigate,
+            browser::browser_back,
+            browser::browser_forward,
+            browser::browser_reload,
+            browser::browser_pointer,
+            browser::browser_key,
             system::home_dir,
             system::recent_dirs,
             system::boot_init,
@@ -322,6 +341,9 @@ pub fn run() {
                 }
                 if let Some(mgr) = app_handle.try_state::<PtyManager>() {
                     mgr.drain();
+                }
+                if let Some(browser) = app_handle.try_state::<BrowserManager>() {
+                    browser.drain();
                 }
                 lsp::drain_all();
             }
