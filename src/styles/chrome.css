@@ -488,6 +488,41 @@
 .proj-tree.active {
     padding-bottom: 4px;
 }
+.project-row-shell,
+.proj-tree {
+    position: relative;
+}
+.project-row-shell.project-drag-source,
+.proj-tree.project-drag-source {
+    opacity: 0.45;
+}
+.project-row-shell.project-drop-before::before,
+.proj-tree.project-drop-before::before,
+.project-row-shell.project-drop-after::after,
+.proj-tree.project-drop-after::after {
+    content: "";
+    position: absolute;
+    z-index: 2;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--acc);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--acc) 20%, transparent);
+    pointer-events: none;
+}
+.project-row-shell.project-drop-before::before,
+.proj-tree.project-drop-before::before {
+    top: -1px;
+}
+.project-row-shell.project-drop-after::after,
+.proj-tree.project-drop-after::after {
+    bottom: -1px;
+}
+.proj-row[aria-grabbed="true"] {
+    cursor: grabbing;
+    user-select: none;
+}
 .proj-children {
     display: flex;
     flex-direction: column;

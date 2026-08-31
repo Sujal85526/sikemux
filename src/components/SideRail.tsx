@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
@@ -32,6 +32,14 @@ function kindIcon(kind: SessionKind): ReactNode {
 }
 
 const MAX_BADGE_ICONS = 3;
+type ProjectDropPlacement = "before" | "after";
+
+interface ProjectDragSession {
+    sourceId: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+}
 
 export function SideRail() {
     const sessionsById = useStore((s) => s.sessions);
@@ -47,6 +55,12 @@ export function SideRail() {
     const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
     const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
+    const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
+    const [projectDrop, setProjectDrop] = useState<{ targetId: string; placement: ProjectDropPlacement } | null>(null);
+    const projectDragRef = useRef<ProjectDragSession | null>(null);
+    const projectMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
+    const projectUpHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
+    const suppressProjectClickRef = useRef(false);
 
     const projects = sessions.filter((s) => s.kind === "project");
     const sshs = sessions.filter((s) => s.kind === "ssh");
@@ -54,6 +68,80 @@ export function SideRail() {
     const cicd = sessions.filter((s) => s.kind === "rundeck");
     const apis = sessions.filter((s) => s.kind === "bruno");
     const commands = sessions.filter((s) => s.kind === "command");
+
+    const resolveProjectDrop = useCallback((x: number, y: number) => {
+        const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+        const target = hit?.closest<HTMLElement>("[data-project-id]");
+        const targetId = target?.dataset.projectId;
+        if (!targetId || targetId === projectDragRef.current?.sourceId) return null;
+        const row = target.querySelector<HTMLElement>("[data-project-drop-row]");
+        if (!row) return null;
+        const bounds = row.getBoundingClientRect();
+        return { targetId, placement: y < bounds.top + bounds.height / 2 ? ("before" as const) : ("after" as const) };
+    }, []);
+
+    const endProjectDrag = useCallback(() => {
+        if (projectMoveHandlerRef.current) window.removeEventListener("pointermove", projectMoveHandlerRef.current);
+        if (projectUpHandlerRef.current) window.removeEventListener("pointerup", projectUpHandlerRef.current);
+        projectMoveHandlerRef.current = null;
+        projectUpHandlerRef.current = null;
+        projectDragRef.current = null;
+        setDraggingProjectId(null);
+        setProjectDrop(null);
+    }, []);
+
+    const onProjectPointerMove = useCallback(
+        (event: PointerEvent) => {
+            const drag = projectDragRef.current;
+            if (!drag) return;
+            if (!drag.active) {
+                if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
+                drag.active = true;
+                setDraggingProjectId(drag.sourceId);
+            }
+            event.preventDefault();
+            setProjectDrop(resolveProjectDrop(event.clientX, event.clientY));
+        },
+        [resolveProjectDrop],
+    );
+
+    const onProjectPointerUp = useCallback(
+        (event: PointerEvent) => {
+            const drag = projectDragRef.current;
+            const drop = drag?.active ? resolveProjectDrop(event.clientX, event.clientY) : null;
+            const dragged = !!drag?.active;
+            endProjectDrag();
+            if (drag && drop) cmd.reorderSession(drag.sourceId, drop.targetId, drop.placement);
+            suppressProjectClickRef.current = dragged;
+            if (dragged) window.setTimeout(() => (suppressProjectClickRef.current = false), 0);
+        },
+        [endProjectDrag, resolveProjectDrop],
+    );
+
+    const onProjectPointerDown = (event: ReactPointerEvent, sourceId: string) => {
+        if (event.button !== 0) return;
+        projectDragRef.current = { sourceId, startX: event.clientX, startY: event.clientY, active: false };
+        projectMoveHandlerRef.current = onProjectPointerMove;
+        projectUpHandlerRef.current = onProjectPointerUp;
+        window.addEventListener("pointermove", onProjectPointerMove);
+        window.addEventListener("pointerup", onProjectPointerUp, { once: true });
+    };
+
+    const selectProject = (id: string) => {
+        if (suppressProjectClickRef.current) {
+            suppressProjectClickRef.current = false;
+            return;
+        }
+        cmd.selectSession(id);
+    };
+
+    const projectDragClass = (id: string) => {
+        if (draggingProjectId === id) return " project-drag-source";
+        if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
+        return "";
+    };
+
+    useEffect(() => () => endProjectDrag(), [endProjectDrag]);
 
     const jumpToWindow = (sessionId: string, winId: string) => {
         if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
@@ -85,9 +173,14 @@ export function SideRail() {
             const visible = agents.slice(0, MAX_BADGE_ICONS);
             const overflow = agents.length - visible.length;
             return (
-                <div className="session-row-shell project-row-shell">
+                <div className={`session-row-shell project-row-shell${projectDragClass(s.id)}`} data-project-id={s.id}>
                     <Tooltip label={s.cwd || s.name} side="right">
-                        <button className="proj-row collapsed" onClick={() => cmd.selectSession(s.id)}>
+                        <button
+                            className="proj-row collapsed"
+                            data-project-drop-row
+                            aria-grabbed={draggingProjectId === s.id}
+                            onPointerDown={(event) => onProjectPointerDown(event, s.id)}
+                            onClick={() => selectProject(s.id)}>
                             <span className="proj-folder">
                                 <IconFolder size={12} />
                             </span>
@@ -176,10 +269,15 @@ export function SideRail() {
             { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
         ];
         return (
-            <div className="proj-tree active">
+            <div className={`proj-tree active${projectDragClass(s.id)}`} data-project-id={s.id}>
                 <div className="session-row-shell project-row-shell">
                     <Tooltip label={s.cwd || s.name} side="right">
-                        <button className="proj-row expanded" onClick={() => cmd.selectSession(s.id)}>
+                        <button
+                            className="proj-row expanded"
+                            data-project-drop-row
+                            aria-grabbed={draggingProjectId === s.id}
+                            onPointerDown={(event) => onProjectPointerDown(event, s.id)}
+                            onClick={() => selectProject(s.id)}>
                             <span className="proj-folder">
                                 <IconFolder size={12} />
                             </span>

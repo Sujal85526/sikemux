@@ -721,6 +721,25 @@ export function selectLastSession(): void {
     if (id) selectSession(id);
 }
 
+export function reorderSession(sourceId: string, targetId: string, placement: "before" | "after"): void {
+    mutate((d) => {
+        const source = d.sessions[sourceId];
+        const target = d.sessions[targetId];
+        if (!source || !target || sourceId === targetId || source.kind !== target.kind) return;
+
+        const slots = d.sessionOrder.flatMap((id, index) => (d.sessions[id]?.kind === source.kind ? [index] : []));
+        const ordered = slots.map((index) => d.sessionOrder[index]).filter((id) => id !== sourceId);
+        const targetIndex = ordered.indexOf(targetId);
+        if (targetIndex < 0) return;
+
+        ordered.splice(targetIndex + (placement === "after" ? 1 : 0), 0, sourceId);
+        if (slots.every((slot, index) => d.sessionOrder[slot] === ordered[index])) return;
+        slots.forEach((slot, index) => {
+            d.sessionOrder[slot] = ordered[index];
+        });
+    });
+}
+
 export function closeSession(id: string): void {
     guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id));
 }
