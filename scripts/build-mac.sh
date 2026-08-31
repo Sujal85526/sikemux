@@ -41,8 +41,10 @@ fi
 "$ROOT/scripts/icons.sh"
 if [[ -n "$TARGET" ]]; then
   node "$ROOT/scripts/build-cli-sidecar.mjs" --target "$TARGET"
+  node "$ROOT/scripts/build-browser-sidecar.mjs" --target "$TARGET"
 else
   node "$ROOT/scripts/build-cli-sidecar.mjs"
+  node "$ROOT/scripts/build-browser-sidecar.mjs"
 fi
 printf '→ pnpm tauri build'
 if ((${#BUILD_ARGS[@]})); then
@@ -89,6 +91,11 @@ CLI_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-editor"
 [[ -x "$CLI_EXECUTABLE" ]] || fail "bundled CLI sidecar is missing or not executable"
 CLI_ARCHS="$(/usr/bin/lipo -archs "$CLI_EXECUTABLE")"
 [[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "CLI sidecar architecture ($CLI_ARCHS) differs from app ($ARCHS)"
+BROWSER_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-browser-mcp"
+[[ -x "$BROWSER_EXECUTABLE" ]] || fail "bundled browser MCP sidecar is missing or not executable"
+BROWSER_ARCHS="$(/usr/bin/lipo -archs "$BROWSER_EXECUTABLE")"
+[[ "$BROWSER_ARCHS" == "$ARCHS" ]] || fail "browser sidecar architecture ($BROWSER_ARCHS) differs from app ($ARCHS)"
+find "$APP_PATH/Contents/Resources/browser-runtime" -type f \( -name Chromium -o -name chrome -o -name chrome-headless-shell -o -name 'Google Chrome for Testing' \) -perm -111 -print -quit | grep -q . || fail "bundled Chromium runtime is missing"
 
 # Packaged apps must never depend on libraries from the build machine's
 # Homebrew/MacPorts installation. Such binaries pass codesign verification but
@@ -102,6 +109,11 @@ CLI_DYNAMIC_LIBS="$(/usr/bin/otool -L "$CLI_EXECUTABLE")"
 if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$CLI_DYNAMIC_LIBS"; then
   echo "$CLI_DYNAMIC_LIBS" >&2
   fail "CLI sidecar links to a package-manager library"
+fi
+BROWSER_DYNAMIC_LIBS="$(/usr/bin/otool -L "$BROWSER_EXECUTABLE")"
+if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$BROWSER_DYNAMIC_LIBS"; then
+  echo "$BROWSER_DYNAMIC_LIBS" >&2
+  fail "browser sidecar links to a package-manager library"
 fi
 
 # Every normal build is ad-hoc signed when no Apple identity is configured.

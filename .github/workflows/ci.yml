@@ -36,6 +36,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Test embedded browser bridge
+        run: pnpm browser:test
+
       - name: Check project formatting
         run: pnpm format:check
 

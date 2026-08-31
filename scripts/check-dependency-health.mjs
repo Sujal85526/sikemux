@@ -41,8 +41,17 @@ if (rustReport.vulnerabilities?.found) {
 }
 
 const observedWarnings = new Set();
-for (const entries of Object.values(rustReport.warnings ?? {})) {
-  for (const entry of entries) observedWarnings.add(entry.advisory.id);
+for (const [kind, entries] of Object.entries(rustReport.warnings ?? {})) {
+  for (const entry of entries) {
+    const id = entry.advisory?.id;
+    const packageName = entry.package?.name;
+    const packageVersion = entry.package?.version;
+    if (id) observedWarnings.add(id);
+    else if (packageName && packageVersion)
+      observedWarnings.add(`cargo:${kind}:${packageName}@${packageVersion}`);
+    else
+      throw new Error(`cargo audit returned an unidentifiable ${kind} warning`);
+  }
 }
 const allowedWarnings = new Set(Object.keys(policy.allowedRustWarnings ?? {}));
 const unexpected = [...observedWarnings].filter(

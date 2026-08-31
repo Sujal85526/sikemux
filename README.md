@@ -83,6 +83,7 @@ Run coding agents right next to the code they're editing. Sikemux auto-detects *
 - Reads agent session histories so you can resume threads.
 - **Agent picker** (`⌥N` from the Agents view) opens the selected CLI directly in a PTY—no launch prompt or worktree form.
 - Only two launch modes: **Normal** and **YOLO**. Toggle a resumable agent with `⌥Y`.
+- **Embedded browser** — `⌘T` lazily splits the active agent pane, with session-owned tabs, persistent sign-ins, human takeover and Browser Use tools injected into Claude and Codex automatically.
 
 ![Agents view](public/screenshots/project-agents-view.png)
 
@@ -161,6 +162,7 @@ These are the defaults. Every command can be reassigned or cleared in **Settings
 | `⌘P`      | File / request palette               |     | `⌥Y`             | Toggle agent YOLO mode    |
 | `⌘⇧F`     | Global search                        |     | `⌥U`             | Last-used session         |
 | `⌘⇧P`     | Command deck                         |     | `⌥T`             | Focus command terminal    |
+| `⌘T`      | New embedded browser tab             |     | `⌘L`             | Focus browser address     |
 | `⌘,`      | Settings                             |     | `Esc`            | Dismiss active modal      |
 
 On Windows, use `Ctrl` for `⌘` shortcuts and `Alt` for `⌥` shortcuts.
