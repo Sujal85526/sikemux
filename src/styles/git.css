@@ -842,10 +842,9 @@
     overflow: hidden;
     padding-left: 8px;
 }
-/* Height comes from the split percentage, set inline by the pane. */
 .git-right-review {
     position: relative;
-    flex: 0 0 auto;
+    flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -866,46 +865,73 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
+    overflow: hidden;
 }
-.merge-header {
+.merge-review-toolbar {
     display: flex;
     align-items: center;
-    gap: 7px;
-    height: 29px;
+    gap: 10px;
+    min-height: 30px;
     flex: 0 0 auto;
-    padding: 0 10px;
-    color: var(--ink-dim);
+    padding: 0 9px 0 11px;
     border-bottom: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
+}
+.merge-review-count {
+    margin-right: auto;
+    color: var(--ink-faint);
+    font-size: 10px;
+}
+.merge-review-action {
+    color: var(--ink-faint);
+    font-size: 9.5px;
     transition:
         color 0.12s,
-        background 0.12s;
+        opacity 0.12s;
 }
-.merge-header:hover {
-    color: var(--ink);
-    background: var(--rail-2);
-}
-.merge-path {
-    font-size: 12px;
-}
-.merge-open {
-    margin-left: auto;
-    font-size: 9.5px;
-    color: var(--ink-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-}
-.merge-header:hover .merge-open {
+.merge-review-action:hover:not(:disabled) {
     color: var(--acc);
 }
-.merge-sections {
+.merge-review-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.merge-review-list {
     flex: 1;
     min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+.merge-file-header {
+    background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 96%), transparent);
+}
+.merge-file-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-right: 9px;
+}
+.merge-file-badge {
+    font-size: 9.5px;
+    line-height: 1;
+}
+.merge-file-badge.staged {
+    color: var(--live);
+}
+.merge-file-badge.unstaged {
+    color: var(--warn);
+}
+.merge-review-content {
+    min-width: 0;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+}
+.merge-sections {
     display: flex;
     flex-direction: column;
 }
 .merge-section {
-    flex: 1;
-    min-height: 0;
     display: flex;
     flex-direction: column;
 }

@@ -170,8 +170,7 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 else setRight({ mode: "output", text: "" });
                 return;
             }
-            const f = filteredFiles[Math.min(sel.files, filteredFiles.length - 1)];
-            if (f) setRight({ mode: "merge", file: f });
+            setRight({ mode: "merge", files: filteredFiles });
         } else if (panel === "commits") {
             if (filteredCommits.length === 0) return;
             const c = filteredCommits[Math.min(sel.commits, filteredCommits.length - 1)];
@@ -240,7 +239,6 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         }
     }, [
         panel,
-        sel.files,
         sel.commits,
         sel.branches,
         sel.remotes,
@@ -1588,9 +1586,9 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                     <div className="git-right-review">
                         {right.mode === "merge" ? (
                             <MergeReview
-                                key={`${right.file.path}:${right.file.index}:${right.file.worktree}`}
                                 repo={repo}
-                                file={right.file}
+                                files={right.files}
+                                focusPath={filteredFiles[Math.min(sel.files, filteredFiles.length - 1)]?.path}
                                 onOpenFile={(abs) => cmd.requestOpenFile(abs)}
                                 onSaved={() => void overview.refresh().catch(reportError("git refresh"))}
                             />
