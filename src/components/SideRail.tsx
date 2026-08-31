@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { rollupAgentStates } from "../state/agentStatus";
-import { useStore } from "../state/store";
+import { getState, useStore } from "../state/store";
 import {
     AgentIcon,
     IconAgent,
@@ -36,9 +37,40 @@ type ProjectDropPlacement = "before" | "after";
 
 interface ProjectDragSession {
     sourceId: string;
+    name: string;
+    cwd: string;
     startX: number;
     startY: number;
+    grabX: number;
+    grabY: number;
+    width: number;
     active: boolean;
+    sequence: number;
+}
+
+interface ProjectDragVisual {
+    name: string;
+    cwd: string;
+    width: number;
+    grabX: number;
+    grabY: number;
+}
+
+function projectElement(id: string): HTMLElement | null {
+    return Array.from(document.querySelectorAll<HTMLElement>("[data-project-id]")).find((element) => element.dataset.projectId === id) ?? null;
+}
+
+function projectRects(): Map<string, DOMRect> {
+    return new Map(
+        Array.from(document.querySelectorAll<HTMLElement>("[data-project-id]"), (element) => [
+            element.dataset.projectId ?? "",
+            element.getBoundingClientRect(),
+        ]),
+    );
+}
+
+function reducedMotion(): boolean {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 export function SideRail() {
@@ -57,9 +89,13 @@ export function SideRail() {
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
     const [projectDrop, setProjectDrop] = useState<{ targetId: string; placement: ProjectDropPlacement } | null>(null);
+    const [projectDragVisual, setProjectDragVisual] = useState<ProjectDragVisual | null>(null);
     const projectDragRef = useRef<ProjectDragSession | null>(null);
     const projectMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
     const projectUpHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
+    const projectGhostRef = useRef<HTMLDivElement | null>(null);
+    const projectGhostPointRef = useRef<{ x: number; y: number } | null>(null);
+    const projectDragSequenceRef = useRef(0);
     const suppressProjectClickRef = useRef(false);
 
     const projects = sessions.filter((s) => s.kind === "project");
@@ -80,14 +116,73 @@ export function SideRail() {
         return { targetId, placement: y < bounds.top + bounds.height / 2 ? ("before" as const) : ("after" as const) };
     }, []);
 
-    const endProjectDrag = useCallback(() => {
+    const moveProjectGhost = useCallback((drag: ProjectDragSession, x: number, y: number) => {
+        projectGhostPointRef.current = { x, y };
+        if (projectGhostRef.current) {
+            projectGhostRef.current.style.transform = `translate3d(${x - drag.grabX}px, ${y - drag.grabY}px, 0)`;
+        }
+    }, []);
+
+    const animateProjectOrder = useCallback((sourceId: string, drop: { targetId: string; placement: ProjectDropPlacement }) => {
+        const before = reducedMotion() ? null : projectRects();
+        const previousOrder = getState().sessionOrder;
+        flushSync(() => cmd.reorderSession(sourceId, drop.targetId, drop.placement));
+        if (!before || getState().sessionOrder === previousOrder) return;
+        window.requestAnimationFrame(() => {
+            for (const [id, previous] of before) {
+                const element = projectElement(id);
+                if (!element || typeof element.animate !== "function") continue;
+                const shift = previous.top - element.getBoundingClientRect().top;
+                if (Math.abs(shift) < 1) continue;
+                element.animate([{ transform: `translate3d(0, ${shift}px, 0)` }, { transform: "translate3d(0, 0, 0)" }], {
+                    duration: 220,
+                    easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+                });
+            }
+        });
+    }, []);
+
+    const endProjectDrag = useCallback((clearGhost = true) => {
         if (projectMoveHandlerRef.current) window.removeEventListener("pointermove", projectMoveHandlerRef.current);
         if (projectUpHandlerRef.current) window.removeEventListener("pointerup", projectUpHandlerRef.current);
+        document.body.classList.remove("is-sorting-projects");
         projectMoveHandlerRef.current = null;
         projectUpHandlerRef.current = null;
         projectDragRef.current = null;
         setDraggingProjectId(null);
         setProjectDrop(null);
+        if (clearGhost) {
+            projectDragSequenceRef.current += 1;
+            projectGhostPointRef.current = null;
+            setProjectDragVisual(null);
+        }
+    }, []);
+
+    const settleProjectGhost = useCallback((drag: ProjectDragSession) => {
+        const ghost = projectGhostRef.current;
+        const destination = projectElement(drag.sourceId)?.querySelector<HTMLElement>("[data-project-drop-row]");
+        if (!ghost || !destination || reducedMotion() || typeof ghost.animate !== "function") {
+            projectGhostPointRef.current = null;
+            setProjectDragVisual(null);
+            return;
+        }
+
+        const bounds = destination.getBoundingClientRect();
+        const sequence = drag.sequence;
+        const animation = ghost.animate(
+            [
+                { transform: ghost.style.transform, opacity: 1 },
+                { transform: `translate3d(${bounds.left}px, ${bounds.top}px, 0)`, opacity: 0 },
+            ],
+            { duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" },
+        );
+        void animation.finished
+            .catch(() => undefined)
+            .then(() => {
+                if (projectDragSequenceRef.current !== sequence) return;
+                projectGhostPointRef.current = null;
+                setProjectDragVisual(null);
+            });
     }, []);
 
     const onProjectPointerMove = useCallback(
@@ -97,12 +192,25 @@ export function SideRail() {
             if (!drag.active) {
                 if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
                 drag.active = true;
+                drag.sequence = ++projectDragSequenceRef.current;
+                projectGhostPointRef.current = { x: event.clientX, y: event.clientY };
+                setProjectDragVisual({
+                    name: drag.name,
+                    cwd: drag.cwd,
+                    width: drag.width,
+                    grabX: drag.grabX,
+                    grabY: drag.grabY,
+                });
                 setDraggingProjectId(drag.sourceId);
+                document.body.classList.add("is-sorting-projects");
             }
             event.preventDefault();
-            setProjectDrop(resolveProjectDrop(event.clientX, event.clientY));
+            moveProjectGhost(drag, event.clientX, event.clientY);
+            const drop = resolveProjectDrop(event.clientX, event.clientY);
+            setProjectDrop((current) => (current?.targetId === drop?.targetId && current?.placement === drop?.placement ? current : drop));
+            if (drop) animateProjectOrder(drag.sourceId, drop);
         },
-        [resolveProjectDrop],
+        [animateProjectOrder, moveProjectGhost, resolveProjectDrop],
     );
 
     const onProjectPointerUp = useCallback(
@@ -110,17 +218,32 @@ export function SideRail() {
             const drag = projectDragRef.current;
             const drop = drag?.active ? resolveProjectDrop(event.clientX, event.clientY) : null;
             const dragged = !!drag?.active;
-            endProjectDrag();
-            if (drag && drop) cmd.reorderSession(drag.sourceId, drop.targetId, drop.placement);
+            if (drag && drop) animateProjectOrder(drag.sourceId, drop);
+            endProjectDrag(!dragged);
+            if (dragged && drag) settleProjectGhost(drag);
             suppressProjectClickRef.current = dragged;
             if (dragged) window.setTimeout(() => (suppressProjectClickRef.current = false), 0);
         },
-        [endProjectDrag, resolveProjectDrop],
+        [animateProjectOrder, endProjectDrag, resolveProjectDrop, settleProjectGhost],
     );
 
     const onProjectPointerDown = (event: ReactPointerEvent, sourceId: string) => {
         if (event.button !== 0) return;
-        projectDragRef.current = { sourceId, startX: event.clientX, startY: event.clientY, active: false };
+        const project = sessionsById[sourceId];
+        if (!project) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        projectDragRef.current = {
+            sourceId,
+            name: project.name,
+            cwd: project.cwd,
+            startX: event.clientX,
+            startY: event.clientY,
+            grabX: Math.min(Math.max(event.clientX - bounds.left, 18), Math.max(bounds.width - 18, 18)),
+            grabY: Math.min(Math.max(event.clientY - bounds.top, 8), Math.max(bounds.height - 8, 8)),
+            width: bounds.width,
+            active: false,
+            sequence: 0,
+        };
         projectMoveHandlerRef.current = onProjectPointerMove;
         projectUpHandlerRef.current = onProjectPointerUp;
         window.addEventListener("pointermove", onProjectPointerMove);
@@ -389,62 +512,92 @@ export function SideRail() {
         </Panel>
     );
 
+    const ghostPoint = projectGhostPointRef.current;
+    const ghostTransform =
+        projectDragVisual && ghostPoint
+            ? `translate3d(${ghostPoint.x - projectDragVisual.grabX}px, ${ghostPoint.y - projectDragVisual.grabY}px, 0)`
+            : "translate3d(-100vw, -100vh, 0)";
+
     return (
-        <aside className="side-rail">
-            <div className="rail-scroll">
-                <Group
-                    label="Projects"
-                    list={projects}
-                    add={() => cmd.openPicker("projects")}
-                    addTitle={`Open project — ${kb("project.open")}`}
-                    addKbd={kb("project.open")}
-                    emptyText="no projects"
-                />
-                <Group
-                    label="SSH"
-                    list={sshs}
-                    add={() => cmd.openPicker("ssh")}
-                    addTitle={`Connect to SSH host — ${kb("ssh.open")}`}
-                    addKbd={kb("ssh.open")}
-                    action={() => void cmd.openSshConfigEditor()}
-                    actionTitle="Edit ~/.ssh/config"
-                    emptyText="no ssh hosts"
-                />
-                <Group
-                    label="Cloud"
-                    list={cloud}
-                    add={cmd.openAwsSession}
-                    addTitle={`Open AWS — ${kb("aws.open")}`}
-                    addKbd={kb("aws.open")}
-                    emptyText="no cloud sessions"
-                />
-                <Group
-                    label="CI/CD"
-                    list={cicd}
-                    add={cmd.openRundeckSession}
-                    addTitle="Open Rundeck deploy center"
-                    emptyText="open rundeck deploy center"
-                />
-                <Group
-                    label="API"
-                    list={apis}
-                    add={() => cmd.openPicker("bruno")}
-                    addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
-                    addKbd={kb("bruno.open")}
-                    emptyText="open a bruno workspace"
-                />
-                <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
-            </div>
+        <>
+            <aside className="side-rail">
+                <div className="rail-scroll">
+                    <Group
+                        label="Projects"
+                        list={projects}
+                        add={() => cmd.openPicker("projects")}
+                        addTitle={`Open project — ${kb("project.open")}`}
+                        addKbd={kb("project.open")}
+                        emptyText="no projects"
+                    />
+                    <Group
+                        label="SSH"
+                        list={sshs}
+                        add={() => cmd.openPicker("ssh")}
+                        addTitle={`Connect to SSH host — ${kb("ssh.open")}`}
+                        addKbd={kb("ssh.open")}
+                        action={() => void cmd.openSshConfigEditor()}
+                        actionTitle="Edit ~/.ssh/config"
+                        emptyText="no ssh hosts"
+                    />
+                    <Group
+                        label="Cloud"
+                        list={cloud}
+                        add={cmd.openAwsSession}
+                        addTitle={`Open AWS — ${kb("aws.open")}`}
+                        addKbd={kb("aws.open")}
+                        emptyText="no cloud sessions"
+                    />
+                    <Group
+                        label="CI/CD"
+                        list={cicd}
+                        add={cmd.openRundeckSession}
+                        addTitle="Open Rundeck deploy center"
+                        emptyText="open rundeck deploy center"
+                    />
+                    <Group
+                        label="API"
+                        list={apis}
+                        add={() => cmd.openPicker("bruno")}
+                        addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
+                        addKbd={kb("bruno.open")}
+                        emptyText="open a bruno workspace"
+                    />
+                    <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
+                </div>
 
-            <UpdateChip />
+                <UpdateChip />
 
-            {/* Identity lives at the foot of the rail: present when you look for
+                {/* Identity lives at the foot of the rail: present when you look for
                 it, out of the way of the sessions above it. */}
-            <div className="rail-sig">
-                <Logo size={13} />
-                <span className="rail-sig-name">Sikemux</span>
-                <VersionChip />
-            </div>
-        </aside>
+                <div className="rail-sig">
+                    <Logo size={13} />
+                    <span className="rail-sig-name">Sikemux</span>
+                    <VersionChip />
+                </div>
+            </aside>
+            {projectDragVisual &&
+                createPortal(
+                    <div
+                        ref={projectGhostRef}
+                        className="project-drag-ghost"
+                        data-project-drag-ghost
+                        aria-hidden="true"
+                        style={{ width: projectDragVisual.width, transform: ghostTransform }}>
+                        <div className="project-drag-ghost-card">
+                            <span className="project-drag-ghost-grip" />
+                            <span className="project-drag-ghost-folder">
+                                <IconFolder size={13} />
+                            </span>
+                            <span className="project-drag-ghost-copy">
+                                <strong>{projectDragVisual.name}</strong>
+                                <small>{projectDragVisual.cwd}</small>
+                            </span>
+                            <span className="project-drag-ghost-mode">move</span>
+                        </div>
+                    </div>,
+                    document.body,
+                )}
+        </>
     );
 }

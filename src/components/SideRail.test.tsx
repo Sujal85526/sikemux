@@ -56,6 +56,8 @@ describe("project sorting", () => {
         fireEvent.pointerDown(source, { button: 0, clientX: 0, clientY: 0 });
         fireEvent.pointerMove(window, { clientX: 0, clientY: 22 });
 
+        expect(document.querySelector("[data-project-drag-ghost]")).toBeInTheDocument();
+        expect(getState().sessionOrder).toEqual(["gamma", "ssh", "alpha", "command", "beta"]);
         expect(screen.getByRole("button", { name: "alpha" }).closest("[data-project-id]")).toHaveClass("project-drop-before");
 
         fireEvent.pointerUp(window, { clientX: 0, clientY: 22 });
