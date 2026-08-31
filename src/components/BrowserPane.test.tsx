@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe("AgentBrowserShell", () => {
     it("opens the right-side browser when native tabs appear and routes user tab actions", async () => {
-        render(
+        const { container } = render(
             <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
                 <div>terminal</div>
             </AgentBrowserShell>,
@@ -79,6 +79,10 @@ describe("AgentBrowserShell", () => {
         fireEvent.change(address, { target: { value: "openai.com" } });
         fireEvent.submit(address.closest("form")!);
         expect(browserApi.navigate).toHaveBeenCalledWith("agent-one", "openai.com");
+
+        await waitFor(() => expect(container.querySelector(".browser-viewport > img")).not.toBeNull());
+        fireEvent.pointerMove(container.querySelector(".browser-viewport")!, { clientX: 12, clientY: 18 });
+        expect(browserApi.pointer).toHaveBeenCalledWith("agent-one", expect.objectContaining({ kind: "move" }));
     });
 
     it("renders a themed native surface instead of Chromium's white blank frame", async () => {
@@ -95,5 +99,10 @@ describe("AgentBrowserShell", () => {
 
         await waitFor(() => expect(screen.getByLabelText("Blank browser page")).toBeInTheDocument());
         expect(container.querySelector(".browser-viewport > img")).toBeNull();
+        const viewport = container.querySelector(".browser-viewport")!;
+        fireEvent.pointerMove(viewport, { clientX: 12, clientY: 18 });
+        fireEvent.pointerDown(viewport, { clientX: 12, clientY: 18 });
+        fireEvent.wheel(viewport, { deltaY: 100 });
+        expect(browserApi.pointer).not.toHaveBeenCalled();
     });
 });

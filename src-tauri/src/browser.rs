@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,6 +42,7 @@ struct CdpClient {
     sender: mpsc::UnboundedSender<Message>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
     sequence: AtomicU64,
+    closed: Arc<AtomicBool>,
 }
 
 impl CdpClient {
@@ -53,6 +54,9 @@ impl CdpClient {
         let (sender, mut outbound) = mpsc::unbounded_channel::<Message>();
         let pending = Arc::new(Mutex::new(HashMap::<u64, oneshot::Sender<Value>>::new()));
         let pending_reader = pending.clone();
+        let closed = Arc::new(AtomicBool::new(false));
+        let closed_writer = closed.clone();
+        let closed_reader = closed.clone();
 
         tokio::spawn(async move {
             while let Some(message) = outbound.recv().await {
@@ -60,6 +64,7 @@ impl CdpClient {
                     break;
                 }
             }
+            closed_writer.store(true, Ordering::Release);
         });
         tokio::spawn(async move {
             while let Some(Ok(message)) = reader.next().await {
@@ -76,6 +81,7 @@ impl CdpClient {
                     let _ = reply.send(value);
                 }
             }
+            closed_reader.store(true, Ordering::Release);
             let mut pending = pending_reader.lock().await;
             pending.clear();
         });
@@ -84,7 +90,12 @@ impl CdpClient {
             sender,
             pending,
             sequence: AtomicU64::new(1),
+            closed,
         }))
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
     }
 
     async fn call(
@@ -93,6 +104,9 @@ impl CdpClient {
         params: Value,
         session_id: Option<&str>,
     ) -> AppResult<Value> {
+        if self.is_closed() {
+            return Err(AppError::Other("browser CDP connection closed".into()));
+        }
         let id = self.sequence.fetch_add(1, Ordering::Relaxed);
         let (reply, receive) = oneshot::channel();
         self.pending.lock().await.insert(id, reply);
@@ -196,11 +210,7 @@ impl BrowserManager {
     pub async fn ensure_started(&self, app: &AppHandle) -> AppResult<()> {
         let mut runtime = self.runtime.lock().await;
         if let Some(cdp) = runtime.cdp.as_ref() {
-            if cdp
-                .call("Browser.getVersion", json!({}), None)
-                .await
-                .is_ok()
-            {
+            if !cdp.is_closed() {
                 return Ok(());
             }
             runtime.cdp = None;
@@ -219,11 +229,19 @@ impl BrowserManager {
         let active_port = profile_dir.join("DevToolsActivePort");
         let _ = std::fs::remove_file(&active_port);
 
-        if let Ok(mut current) = self.child.lock() {
+        let stopped_previous = if let Ok(mut current) = self.child.lock() {
             if let Some(mut child) = current.take() {
                 let _ = child.kill();
                 let _ = child.wait();
+                true
+            } else {
+                false
             }
+        } else {
+            false
+        };
+        if stopped_previous {
+            tokio::time::sleep(Duration::from_millis(150)).await;
         }
         let executable = browser_executable(app)?;
         let mut child = Command::new(&executable)
@@ -494,6 +512,15 @@ impl BrowserManager {
         let tabs = self.owned_tabs(app, agent_id).await?;
         Ok(tabs.iter().find(|tab| tab.active).map(|tab| tab.id.clone()))
     }
+
+    async fn cached_active_target(&self, agent_id: &str) -> Option<String> {
+        self.runtime
+            .lock()
+            .await
+            .active_targets
+            .get(agent_id)
+            .cloned()
+    }
 }
 
 fn initialize_registry(state_dir: &Path) -> AppResult<()> {
@@ -547,6 +574,60 @@ fn validate_url_input(url: &str) -> AppResult<()> {
         return Err(AppError::BadArg("invalid browser URL"));
     }
     Ok(())
+}
+
+fn pointer_params(input: &BrowserPointerInput) -> AppResult<Value> {
+    let button = input.button.as_deref();
+    let valid_button = match input.kind.as_str() {
+        "move" | "wheel" => button.is_none() || button == Some("none"),
+        "down" | "up" => matches!(button, Some("left" | "middle" | "right")),
+        _ => false,
+    };
+    if !valid_button
+        || !input.x.is_finite()
+        || !input.y.is_finite()
+        || !input.delta_x.is_finite()
+        || !input.delta_y.is_finite()
+        || input.x.abs() > 16_384.0
+        || input.y.abs() > 16_384.0
+        || input.delta_x.abs() > 16_384.0
+        || input.delta_y.abs() > 16_384.0
+    {
+        return Err(AppError::BadArg("invalid browser pointer input"));
+    }
+    Ok(match input.kind.as_str() {
+        "move" => json!({
+            "type": "mouseMoved",
+            "x": input.x,
+            "y": input.y,
+            "button": "none",
+            "buttons": 0,
+        }),
+        "down" => json!({
+            "type": "mousePressed",
+            "x": input.x,
+            "y": input.y,
+            "button": button,
+            "buttons": 1,
+            "clickCount": 1,
+        }),
+        "up" => json!({
+            "type": "mouseReleased",
+            "x": input.x,
+            "y": input.y,
+            "button": button,
+            "buttons": 0,
+            "clickCount": 1,
+        }),
+        "wheel" => json!({
+            "type": "mouseWheel",
+            "x": input.x,
+            "y": input.y,
+            "deltaX": input.delta_x,
+            "deltaY": input.delta_y,
+        }),
+        _ => unreachable!(),
+    })
 }
 
 fn owned_target_ids(
@@ -998,47 +1079,18 @@ pub async fn browser_pointer(
     agent_id: String,
     input: BrowserPointerInput,
 ) -> AppResult<()> {
-    if !matches!(input.kind.as_str(), "move" | "down" | "up" | "wheel")
-        || !input.x.is_finite()
-        || !input.y.is_finite()
-        || !input.delta_x.is_finite()
-        || !input.delta_y.is_finite()
-        || input.x.abs() > 16_384.0
-        || input.y.abs() > 16_384.0
-        || input.delta_x.abs() > 16_384.0
-        || input.delta_y.abs() > 16_384.0
-        || input
-            .button
-            .as_deref()
-            .is_some_and(|button| !matches!(button, "none" | "left" | "middle" | "right"))
-    {
-        return Err(AppError::BadArg("invalid browser pointer input"));
-    }
-    let Some(target_id) = manager.active_target(&app, &agent_id).await? else {
+    validate_agent_id(&agent_id)?;
+    let params = pointer_params(&input)?;
+    let target_id = match manager.cached_active_target(&agent_id).await {
+        Some(target_id) => Some(target_id),
+        None => manager.active_target(&app, &agent_id).await?,
+    };
+    let Some(target_id) = target_id else {
         return Ok(());
     };
     let (cdp, session_id) = manager.target_session(&app, &target_id).await?;
-    let event_type = match input.kind.as_str() {
-        "down" => "mousePressed",
-        "up" => "mouseReleased",
-        "wheel" => "mouseWheel",
-        _ => "mouseMoved",
-    };
-    cdp.call(
-        "Input.dispatchMouseEvent",
-        json!({
-            "type": event_type,
-            "x": input.x,
-            "y": input.y,
-            "button": input.button.as_deref().unwrap_or("none"),
-            "buttons": if input.kind == "down" { 1 } else { 0 },
-            "clickCount": if matches!(input.kind.as_str(), "down" | "up") { 1 } else { 0 },
-            "deltaX": input.delta_x,
-            "deltaY": input.delta_y
-        }),
-        Some(&session_id),
-    )
-    .await?;
+    cdp.call("Input.dispatchMouseEvent", params, Some(&session_id))
+        .await?;
     Ok(())
 }
 
@@ -1049,6 +1101,7 @@ pub async fn browser_key(
     agent_id: String,
     input: BrowserKeyInput,
 ) -> AppResult<()> {
+    validate_agent_id(&agent_id)?;
     if !matches!(input.kind.as_str(), "down" | "up" | "text")
         || input.key.len() > 128
         || input.code.len() > 128
@@ -1060,7 +1113,11 @@ pub async fn browser_key(
     {
         return Err(AppError::BadArg("invalid browser key input"));
     }
-    let Some(target_id) = manager.active_target(&app, &agent_id).await? else {
+    let target_id = match manager.cached_active_target(&agent_id).await {
+        Some(target_id) => Some(target_id),
+        None => manager.active_target(&app, &agent_id).await?,
+    };
+    let Some(target_id) = target_id else {
         return Ok(());
     };
     let (cdp, session_id) = manager.target_session(&app, &target_id).await?;
@@ -1090,7 +1147,10 @@ pub async fn browser_key(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_url, validate_agent_id, validate_target_id, validate_url_input};
+    use super::{
+        normalize_url, pointer_params, validate_agent_id, validate_target_id, validate_url_input,
+        BrowserPointerInput,
+    };
 
     #[test]
     fn normalizes_addresses_and_searches() {
@@ -1117,5 +1177,34 @@ mod tests {
         assert!(validate_url_input("https://example.com").is_ok());
         assert!(validate_url_input("https://example.com\nheader: value").is_err());
         assert!(validate_url_input(&"x".repeat(16 * 1024 + 1)).is_err());
+    }
+
+    #[test]
+    fn pointer_payloads_only_send_fields_valid_for_each_cdp_event() {
+        let moved = pointer_params(&BrowserPointerInput {
+            kind: "move".into(),
+            x: 12.0,
+            y: 18.0,
+            button: Some("none".into()),
+            delta_x: 0.0,
+            delta_y: 0.0,
+        })
+        .unwrap();
+        assert_eq!(moved["type"], "mouseMoved");
+        assert!(moved.get("deltaX").is_none());
+        assert!(moved.get("clickCount").is_none());
+
+        let wheel = pointer_params(&BrowserPointerInput {
+            kind: "wheel".into(),
+            x: 12.0,
+            y: 18.0,
+            button: Some("none".into()),
+            delta_x: 0.0,
+            delta_y: 100.0,
+        })
+        .unwrap();
+        assert_eq!(wheel["type"], "mouseWheel");
+        assert!(wheel.get("button").is_none());
+        assert!(wheel.get("clickCount").is_none());
     }
 }

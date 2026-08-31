@@ -171,11 +171,14 @@ function BrowserPane({
     };
 
     const pointer = (event: React.PointerEvent<HTMLDivElement>, kind: "move" | "down" | "up") => {
+        if (blank || !snapshot.frame) return;
         if (kind === "move" && performance.now() - lastPointerMove.current < 24) return;
         if (kind === "move") lastPointerMove.current = performance.now();
         const next = point(event);
         if (kind === "down") event.currentTarget.focus();
-        void browserApi.pointer(agentId, { kind, ...next, button: kind === "move" ? "none" : "left" }).catch(reportError("browser pointer"));
+        const request = browserApi.pointer(agentId, { kind, ...next, button: kind === "move" ? "none" : "left" });
+        if (kind === "move") void request.catch(() => {});
+        else void request.catch(reportError("browser pointer"));
     };
 
     return (
@@ -246,6 +249,7 @@ function BrowserPane({
                 onPointerDown={(event) => pointer(event, "down")}
                 onPointerUp={(event) => pointer(event, "up")}
                 onWheel={(event) => {
+                    if (blank || !snapshot.frame) return;
                     const next = point(event as unknown as React.PointerEvent<HTMLDivElement>);
                     void browserApi
                         .pointer(agentId, { kind: "wheel", ...next, button: "none", deltaX: event.deltaX, deltaY: event.deltaY })
