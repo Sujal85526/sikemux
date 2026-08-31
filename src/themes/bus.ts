@@ -13,6 +13,7 @@ const views = new Set<EditorView>();
 const terms = new Set<Terminal>();
 
 const customRegistry = new Map<string, Theme>();
+const themeListeners = new Set<(theme: Theme) => void>();
 
 /** Keep the bus aware of user-defined themes so {@link applyTheme} can resolve their ids. */
 export function registerCustomThemes(list: readonly Theme[]): void {
@@ -53,6 +54,11 @@ function applyTerminalThemes() {
 
 export function currentTheme(): Theme {
     return current;
+}
+
+export function subscribeTheme(listener: (theme: Theme) => void): () => void {
+    themeListeners.add(listener);
+    return () => themeListeners.delete(listener);
 }
 
 export function themeCompartmentExtension(opts: { indentMarkers?: boolean } = {}) {
@@ -128,6 +134,7 @@ function applyThemeObject(next: Theme): void {
         view.dispatch({ effects: [themeCompartment.reconfigure(themeExt), indentCompartment.reconfigure(indentExt)] });
     });
     applyTerminalThemes();
+    themeListeners.forEach((listener) => listener(next));
 }
 
 export function applyTheme(id: string): void {

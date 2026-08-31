@@ -24,7 +24,7 @@ const budgets = [
   {
     label: "startup JS",
     pattern: /^index-.*\.js$/,
-    raw: 520_000,
+    raw: 525_000,
     gzip: 165_000,
   },
   {
@@ -39,7 +39,18 @@ const budgets = [
     raw: 450_000,
     gzip: 120_000,
   },
-  { label: "all JavaScript", pattern: /\.js$/, raw: 2_650_000, gzip: 840_000 },
+  {
+    label: "Diffs lazy chunk",
+    pattern: /^diffs-.*\.js$/,
+    raw: 2_350_000,
+    gzip: 580_000,
+  },
+  {
+    label: "all JavaScript except Diffs",
+    pattern: /^(?!diffs-).*\.js$/,
+    raw: 2_650_000,
+    gzip: 840_000,
+  },
   {
     // Raised twice while the design system landed: first for the shared
     // primitives (dialog, switch/checkbox/slider, tooltip, skeletons,

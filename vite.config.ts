@@ -20,6 +20,19 @@ function pruneBundleOnlyPublicAssets(): PluginOption {
 export default defineConfig({
   plugins: [react(), pruneBundleOnlyPublicAssets()],
   clearScreen: false,
+  resolve: {
+    alias: [
+      {
+        find: "@pierre/theming/themes",
+        replacement: resolve("src/vendor/pierreThemes.ts"),
+      },
+      { find: /^shiki$/, replacement: resolve("src/vendor/shiki.ts") },
+    ],
+  },
+  define: {
+    Buffer: "globalThis.Buffer",
+    WorkerGlobalScope: "globalThis.WorkerGlobalScope",
+  },
   build: {
     // esbuild 0.25 syntax minification can remove xterm's local const-enum
     // declaration while retaining an assignment to it. The resulting production
@@ -29,8 +42,28 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
+        onlyExplicitManualChunks: true,
         manualChunks(id) {
+          if (
+            id.endsWith("/src/vendor/shiki.ts") ||
+            id.endsWith("/src/vendor/pierreThemes.ts")
+          ) {
+            return "diffs";
+          }
           if (!id.includes("node_modules")) return undefined;
+          if (
+            id.includes("@pierre") ||
+            id.includes("@shikijs") ||
+            id.includes("/shiki@") ||
+            id.includes("/diff@") ||
+            id.includes("hast-util") ||
+            id.includes("mdast-util") ||
+            id.includes("micromark-util") ||
+            id.includes("unist-util") ||
+            id.includes("oniguruma")
+          ) {
+            return "diffs";
+          }
           if (
             id.includes("@codemirror") ||
             id.includes("@lezer") ||

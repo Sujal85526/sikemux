@@ -941,7 +941,7 @@
 .diff-editor {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 }
 .diff-editor-error {
     margin: 12px;
@@ -953,93 +953,17 @@
     line-height: 1.5;
     white-space: pre-wrap;
 }
-.diff-editor .cm-editor {
-    height: 100%;
+.diff-editor-loading {
+    padding: 12px;
+    color: var(--ink-faint);
+    font-size: 11px;
 }
 .diff-editor.auto {
     flex: none;
     overflow: visible;
 }
-.diff-editor.auto .cm-editor {
-    height: auto;
-}
-
-/* Unified diff. No full-line wash — a changed line is marked by the gutter rail
-   and by the highlight on the characters that actually changed, so the code
-   keeps its normal background. These fight @codemirror/merge's own base theme,
-   hence the !important flags. */
-.diff-editor .cm-editor .cm-deletedChunk {
-    padding-left: 0;
-    background: transparent !important;
-}
-.diff-editor .cm-editor .cm-deletedChunk .cm-deletedLine {
-    padding-left: 8px;
-}
-/* Whole changed lines are tinted, not the individual words inside them.
-   Per-token highlights read as a stray text selection sitting in the diff. */
-.diff-editor .cm-editor .cm-changedLine {
-    background: color-mix(in srgb, var(--live) 10%, transparent) !important;
-}
-.diff-editor .cm-editor .cm-deletedLine {
-    background: color-mix(in srgb, var(--danger) 12%, transparent) !important;
-}
-.diff-editor .cm-editor .cm-changedText,
-.diff-editor .cm-editor .cm-deletedText {
-    background: transparent !important;
-    border-radius: 0;
-    text-decoration: none;
-}
-.diff-editor .cm-editor .cm-deletedText {
-    color: #ffc9c9 !important;
-}
-.diff-editor .cm-editor .cm-changeGutter {
-    width: 3px;
-    padding-left: 0;
-}
-.diff-editor .cm-editor .cm-changedLineGutter {
-    background: var(--live) !important;
-}
-.diff-editor .cm-editor .cm-deletedLineGutter {
-    background: var(--danger) !important;
-}
-/* The "N unchanged lines" folds that sit between hunks. */
-.diff-editor .cm-editor .cm-collapsedLines {
-    padding: 3px 10px;
-    color: var(--ink-faint) !important;
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 100%), transparent) !important;
-    border-top: 1px solid var(--line-soft);
-    border-bottom: 1px solid var(--line-soft);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    transition:
-        color 0.12s,
-        background 0.12s;
-}
-.diff-editor .cm-editor .cm-collapsedLines:hover {
-    color: var(--acc) !important;
-    background: var(--acc-soft) !important;
-}
-.diff-editor .cm-editor .cm-collapsedLines::before,
-.diff-editor .cm-editor .cm-collapsedLines::after {
-    content: "⋯";
-    margin: 0 7px;
-}
-/* Quiet chrome: the gutter reads as a rail, not a second column of content. */
-.diff-editor .cm-editor .cm-gutters {
-    border-right: 1px solid var(--line-soft);
-    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 45%), transparent);
-}
-.diff-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
-    color: var(--ink-faint);
-    font-size: 11px;
-}
-/* A touch tighter than the main editor — the review column is narrow, and
-   every wrapped line costs more here than it does in a full-width pane. */
-.diff-editor .cm-editor .cm-content {
-    font-size: 12px;
-}
-.diff-editor .cm-editor .cm-scroller {
-    line-height: 1.55;
+.diff-editor > diffs-container {
+    display: block;
 }
 
 .commit-review {
