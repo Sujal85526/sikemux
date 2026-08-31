@@ -58,9 +58,6 @@ textarea {
     font-family: var(--ui);
 }
 
-/* Keyboard focus has to be visible, but a 2px ring with an offset around a
- * text field reads as a highlight box rather than a cursor position. Controls
- * keep a thin ring; fields take a soft glow on their own edge instead. */
 button:focus-visible,
 select:focus-visible,
 [role="button"]:focus-visible,
@@ -69,11 +66,18 @@ select:focus-visible,
     outline-offset: 1px;
 }
 
-input:focus-visible,
-textarea:focus-visible {
+:is(
+    input:not([type]),
+    input[type="text"],
+    input[type="search"],
+    input[type="url"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    textarea
+):focus {
     outline: none;
-    border-color: var(--acc-line);
-    box-shadow: 0 0 0 2px var(--acc-soft);
+    box-shadow: none;
 }
 
 /* The chrome owns the window edges. Content surfaces get a soft inset line so

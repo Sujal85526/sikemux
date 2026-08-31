@@ -259,9 +259,7 @@
 }
 
 .browser-address:focus {
-    border-color: color-mix(in srgb, var(--browser-agent) 58%, var(--line));
     color: var(--ink);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--browser-agent) 12%, transparent);
 }
 
 .browser-viewport {

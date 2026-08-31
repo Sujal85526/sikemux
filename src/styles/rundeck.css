@@ -487,9 +487,6 @@
     outline: none;
     transition: border-color 0.12s;
 }
-.rnd-field input:focus {
-    border-bottom-color: var(--acc);
-}
 .rnd-field-hint {
     position: absolute;
     right: 0;
@@ -745,9 +742,6 @@
     border: 1px solid var(--acc-line);
     flex: 0 0 auto;
     transition: border-color 0.12s;
-}
-.rnd-composer:focus-within {
-    border-color: var(--acc);
 }
 .rnd-composer input {
     width: clamp(150px, 15vw, 220px);

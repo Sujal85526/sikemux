@@ -281,9 +281,6 @@ body.bruno-resizing {
     border-radius: 0;
     overflow: hidden;
 }
-.bruno-varwrap:focus-within {
-    border-color: var(--acc-line);
-}
 .bruno-varwrap > * {
     grid-area: 1 / 1;
 }
@@ -522,7 +519,6 @@ body.bruno-resizing {
 }
 .bruno-input:focus {
     outline: none;
-    border-color: var(--acc-line);
 }
 .bruno-kv-del {
     display: inline-flex;

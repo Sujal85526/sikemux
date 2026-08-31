@@ -329,9 +329,6 @@
 .settings-input::placeholder {
     color: var(--ink-muted);
 }
-.settings-input:focus {
-    border-color: var(--acc-line);
-}
 .settings-btn {
     background: var(--s-bg-dim);
     border: 1px solid var(--line);
@@ -699,9 +696,6 @@
     background: color-mix(in srgb, var(--s-bg) 72%, transparent);
     transition: border-color 0.1s;
 }
-.keymap-search:focus-within {
-    border-color: var(--acc-line);
-}
 .keymap-search span {
     padding: 0 10px;
     color: var(--ink-muted);
@@ -945,9 +939,6 @@
     min-width: 160px;
     transition: border-color 0.1s;
 }
-.theme-editor-name:focus {
-    border-color: var(--acc-line);
-}
 .theme-editor-base {
     font-size: 10.5px;
     color: var(--ink-muted);
@@ -1044,9 +1035,6 @@
     transition: border-color 0.1s;
     overflow: hidden;
 }
-.theme-field:focus-within {
-    border-color: var(--acc-line);
-}
 .theme-field-swatch {
     position: relative;
     flex: 0 0 28px;
@@ -1114,9 +1102,6 @@
     border: 1px solid var(--line);
     background: color-mix(in srgb, var(--s-bg) 68%, transparent);
     transition: border-color 0.1s;
-}
-.settings-knob-num:focus-within {
-    border-color: var(--acc-line);
 }
 .settings-knob-val {
     flex: 1 1 auto;
@@ -1212,9 +1197,6 @@
     background: var(--s-bg-dim);
     transition: border-color 0.1s;
     font-family: var(--mono);
-}
-.settings-depth:focus-within {
-    border-color: var(--acc-line);
 }
 .settings-depth-label {
     display: flex;

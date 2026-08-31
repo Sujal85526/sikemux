@@ -93,9 +93,7 @@
     font-size: 13px;
 }
 .dlg-input:focus {
-    border-color: var(--acc-line);
     outline: none;
-    box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
 .dlg-foot {
