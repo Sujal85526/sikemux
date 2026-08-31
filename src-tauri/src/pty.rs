@@ -2488,6 +2488,7 @@ pub async fn pty_spawn(
     let direct_profile = direct_command
         .as_ref()
         .and_then(|command| command.profile.clone());
+    #[cfg(unix)]
     let has_direct_command = direct_command.is_some();
     let mut cmd = if let Some(command) = direct_command {
         let mut builder = CommandBuilder::new(command.program);
@@ -4262,6 +4263,7 @@ mod tests {
             .is_none());
         assert_eq!(env(&zsh, "ZDOTDIR"), None);
         assert_eq!(env(&zsh, "SIKEMUX_SHELL_INTEGRATION"), None);
+        #[cfg(unix)]
         assert!(shell_wants_login_flag("/bin/zsh"));
 
         let mut bash = CommandBuilder::new("/bin/bash");
