@@ -51,12 +51,16 @@ describe("project sorting", () => {
         const source = screen.getByRole("button", { name: "gamma" });
         const target = screen.getByRole("button", { name: "alpha" });
         Object.defineProperty(document, "elementFromPoint", { configurable: true, value: vi.fn(() => target) });
+        vi.spyOn(source, "getBoundingClientRect").mockReturnValue({ left: 8, top: 80, width: 210, height: 26 } as DOMRect);
         vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ top: 20, bottom: 48, height: 28 } as DOMRect);
 
         fireEvent.pointerDown(source, { button: 0, clientX: 0, clientY: 0 });
         fireEvent.pointerMove(window, { clientX: 0, clientY: 22 });
 
-        expect(document.querySelector("[data-project-drag-ghost]")).toBeInTheDocument();
+        const ghost = document.querySelector<HTMLElement>("[data-project-drag-ghost]");
+        expect(ghost).toHaveStyle({ width: "210px", height: "26px" });
+        expect(ghost?.querySelector(".project-drag-ghost-row")).toHaveTextContent("gamma");
+        expect(ghost?.querySelector(".project-drag-ghost-card")).not.toBeInTheDocument();
         expect(getState().sessionOrder).toEqual(["gamma", "ssh", "alpha", "command", "beta"]);
         expect(screen.getByRole("button", { name: "alpha" }).closest("[data-project-id]")).toHaveClass("project-drop-before");
 

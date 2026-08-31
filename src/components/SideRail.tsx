@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
@@ -37,23 +37,41 @@ type ProjectDropPlacement = "before" | "after";
 
 interface ProjectDragSession {
     sourceId: string;
-    name: string;
-    cwd: string;
     startX: number;
     startY: number;
     grabX: number;
     grabY: number;
     width: number;
+    height: number;
+    sourceRow: HTMLElement;
     active: boolean;
     sequence: number;
 }
 
 interface ProjectDragVisual {
-    name: string;
-    cwd: string;
     width: number;
+    height: number;
     grabX: number;
     grabY: number;
+    row: HTMLElement;
+}
+
+function cloneProjectRow(source: HTMLElement): HTMLElement {
+    const clone = source.cloneNode(true) as HTMLElement;
+    const sourceElements = [source, ...source.querySelectorAll<HTMLElement>("*")];
+    const cloneElements = [clone, ...clone.querySelectorAll<HTMLElement>("*")];
+    sourceElements.forEach((element, index) => {
+        const styles = window.getComputedStyle(element);
+        for (let styleIndex = 0; styleIndex < styles.length; styleIndex += 1) {
+            const property = styles.item(styleIndex);
+            cloneElements[index].style.setProperty(property, styles.getPropertyValue(property), styles.getPropertyPriority(property));
+        }
+    });
+    clone.classList.add("project-drag-ghost-row");
+    clone.removeAttribute("data-project-drop-row");
+    clone.removeAttribute("aria-grabbed");
+    clone.setAttribute("tabindex", "-1");
+    return clone;
 }
 
 function projectElement(id: string): HTMLElement | null {
@@ -195,11 +213,11 @@ export function SideRail() {
                 drag.sequence = ++projectDragSequenceRef.current;
                 projectGhostPointRef.current = { x: event.clientX, y: event.clientY };
                 setProjectDragVisual({
-                    name: drag.name,
-                    cwd: drag.cwd,
                     width: drag.width,
+                    height: drag.height,
                     grabX: drag.grabX,
                     grabY: drag.grabY,
+                    row: cloneProjectRow(drag.sourceRow),
                 });
                 setDraggingProjectId(drag.sourceId);
                 document.body.classList.add("is-sorting-projects");
@@ -227,20 +245,19 @@ export function SideRail() {
         [animateProjectOrder, endProjectDrag, resolveProjectDrop, settleProjectGhost],
     );
 
-    const onProjectPointerDown = (event: ReactPointerEvent, sourceId: string) => {
+    const onProjectPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => {
         if (event.button !== 0) return;
-        const project = sessionsById[sourceId];
-        if (!project) return;
+        if (!sessionsById[sourceId]) return;
         const bounds = event.currentTarget.getBoundingClientRect();
         projectDragRef.current = {
             sourceId,
-            name: project.name,
-            cwd: project.cwd,
             startX: event.clientX,
             startY: event.clientY,
             grabX: Math.min(Math.max(event.clientX - bounds.left, 18), Math.max(bounds.width - 18, 18)),
             grabY: Math.min(Math.max(event.clientY - bounds.top, 8), Math.max(bounds.height - 8, 8)),
             width: bounds.width,
+            height: bounds.height,
+            sourceRow: event.currentTarget,
             active: false,
             sequence: 0,
         };
@@ -265,6 +282,11 @@ export function SideRail() {
     };
 
     useEffect(() => () => endProjectDrag(), [endProjectDrag]);
+
+    useLayoutEffect(() => {
+        if (!projectGhostRef.current || !projectDragVisual) return;
+        projectGhostRef.current.replaceChildren(projectDragVisual.row);
+    }, [projectDragVisual]);
 
     const jumpToWindow = (sessionId: string, winId: string) => {
         if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
@@ -583,19 +605,8 @@ export function SideRail() {
                         className="project-drag-ghost"
                         data-project-drag-ghost
                         aria-hidden="true"
-                        style={{ width: projectDragVisual.width, transform: ghostTransform }}>
-                        <div className="project-drag-ghost-card">
-                            <span className="project-drag-ghost-grip" />
-                            <span className="project-drag-ghost-folder">
-                                <IconFolder size={13} />
-                            </span>
-                            <span className="project-drag-ghost-copy">
-                                <strong>{projectDragVisual.name}</strong>
-                                <small>{projectDragVisual.cwd}</small>
-                            </span>
-                            <span className="project-drag-ghost-mode">move</span>
-                        </div>
-                    </div>,
+                        style={{ width: projectDragVisual.width, height: projectDragVisual.height, transform: ghostTransform }}
+                    />,
                     document.body,
                 )}
         </>
