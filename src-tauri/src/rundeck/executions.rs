@@ -1,8 +1,9 @@
 // Execution endpoints: history, single fetch, trigger (with BRANCH option),
 // and abort. State/output polling lives in watch.rs / logs.rs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
@@ -24,6 +25,13 @@ pub struct Execution {
     pub job: Option<JobRef>,
     #[serde(rename = "argstring")]
     pub argstring: Option<String>,
+    #[serde(
+        rename = "workflowState",
+        default,
+        skip_deserializing,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub workflow_state: Option<WorkflowState>,
 }
 
 #[derive(Serialize, Clone, Deserialize)]
@@ -49,16 +57,91 @@ struct ExecutionList {
 #[tauri::command]
 pub async fn rnd_executions(
     job_id: String,
+    project: String,
     max: Option<u32>,
     only_succeeded: Option<bool>,
 ) -> AppResult<Vec<Execution>> {
-    let mut query: Vec<(&str, String)> = vec![("max", max.unwrap_or(25).to_string())];
-    if only_succeeded.unwrap_or(false) {
+    let limit = max.unwrap_or(25);
+    let succeeded_only = only_succeeded.unwrap_or(false);
+    let mut query: Vec<(&str, String)> = vec![("max", limit.to_string())];
+    if succeeded_only {
         query.push(("status", "succeeded".into()));
     }
     let path = format!("/job/{job_id}/executions");
-    let resp: ExecutionList = get_json(&path, &query).await?;
-    Ok(resp.executions)
+    let history: ExecutionList = get_json(&path, &query).await?;
+
+    let running = if succeeded_only {
+        Vec::new()
+    } else {
+        let running_query = [("jobIdFilter", job_id.clone())];
+        let running_path = format!("/project/{project}/executions/running");
+        match get_json::<ExecutionList>(&running_path, &running_query).await {
+            Ok(response) => response.executions,
+            Err(_) => {
+                let fallback_query = [
+                    ("max", limit.to_string()),
+                    ("status", "running".to_string()),
+                ];
+                get_json::<ExecutionList>(&path, &fallback_query)
+                    .await
+                    .map(|response| response.executions)
+                    .unwrap_or_default()
+            }
+        }
+    };
+
+    let mut executions = merge_executions(history.executions, running, limit as usize);
+    let states = join_all(executions.iter().map(|execution| async move {
+        if !status_is_running(&execution.status) {
+            return None;
+        }
+        get_json::<WorkflowState>(&format!("/execution/{}/state", execution.id), &[])
+            .await
+            .ok()
+    }))
+    .await;
+    for (execution, state) in executions.iter_mut().zip(states) {
+        execution.workflow_state = state;
+    }
+    Ok(executions)
+}
+
+fn status_is_running(status: &Option<String>) -> bool {
+    status
+        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case("running"))
+}
+
+fn merge_executions(
+    history: Vec<Execution>,
+    running: Vec<Execution>,
+    limit: usize,
+) -> Vec<Execution> {
+    let running_ids: HashSet<_> = running.iter().map(|execution| execution.id).collect();
+    let mut by_id = HashMap::with_capacity(history.len() + running.len());
+    for execution in history.into_iter().chain(running) {
+        by_id.insert(execution.id, execution);
+    }
+    let mut executions: Vec<_> = by_id.into_values().collect();
+    executions.sort_by(|left, right| {
+        execution_started_at(right)
+            .cmp(&execution_started_at(left))
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    executions
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, execution)| {
+            (index < limit || running_ids.contains(&execution.id)).then_some(execution)
+        })
+        .collect()
+}
+
+fn execution_started_at(execution: &Execution) -> Option<i64> {
+    execution
+        .date_started
+        .as_ref()
+        .and_then(|started| started.unixtime)
 }
 
 #[tauri::command]
@@ -170,4 +253,79 @@ pub struct WorkflowState {
 #[tauri::command]
 pub async fn rnd_execution_state(execution_id: u64) -> AppResult<WorkflowState> {
     get_json(&format!("/execution/{execution_id}/state"), &[]).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn execution(id: u64, started_at: Option<i64>, status: &str) -> Execution {
+        Execution {
+            id,
+            status: Some(status.into()),
+            user: None,
+            project: None,
+            date_started: Some(DateField {
+                date: None,
+                unixtime: started_at,
+            }),
+            date_ended: None,
+            permalink: None,
+            job: None,
+            argstring: None,
+            workflow_state: None,
+        }
+    }
+
+    #[test]
+    fn merges_running_executions_and_sorts_latest_first() {
+        let history = vec![execution(41, Some(1_000), "succeeded")];
+        let running = vec![execution(42, Some(2_000), "running")];
+
+        let result = merge_executions(history, running, 25);
+
+        assert_eq!(
+            result.iter().map(|item| item.id).collect::<Vec<_>>(),
+            [42, 41]
+        );
+    }
+
+    #[test]
+    fn running_snapshot_replaces_duplicate_history_item() {
+        let history = vec![execution(42, Some(2_000), "scheduled")];
+        let running = vec![execution(42, Some(2_000), "running")];
+
+        let result = merge_executions(history, running, 25);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].status.as_deref(), Some("running"));
+    }
+
+    #[test]
+    fn sorts_equal_or_missing_timestamps_by_execution_id() {
+        let history = vec![
+            execution(8, None, "succeeded"),
+            execution(10, None, "failed"),
+        ];
+
+        let result = merge_executions(history, Vec::new(), 1);
+
+        assert_eq!(result[0].id, 10);
+    }
+
+    #[test]
+    fn retains_long_running_executions_beyond_the_history_limit() {
+        let history = vec![
+            execution(43, Some(3_000), "succeeded"),
+            execution(42, Some(2_000), "succeeded"),
+        ];
+        let running = vec![execution(41, Some(1_000), "running")];
+
+        let result = merge_executions(history, running, 2);
+
+        assert_eq!(
+            result.iter().map(|item| item.id).collect::<Vec<_>>(),
+            [43, 42, 41]
+        );
+    }
 }

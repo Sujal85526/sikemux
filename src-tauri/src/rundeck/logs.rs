@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
 use tokio::task::JoinHandle;
@@ -43,8 +43,13 @@ pub struct LogEntry {
 #[derive(Serialize, Clone, Deserialize)]
 pub struct LogChunk {
     pub completed: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_cursor")]
     pub offset: Option<String>,
-    #[serde(rename = "lastModified")]
+    #[serde(
+        rename = "lastModified",
+        default,
+        deserialize_with = "deserialize_cursor"
+    )]
     pub last_modified: Option<String>,
     #[serde(rename = "execCompleted")]
     pub exec_completed: Option<bool>,
@@ -52,6 +57,27 @@ pub struct LogChunk {
     pub exec_state: Option<String>,
     #[serde(default)]
     pub entries: Vec<LogEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CursorValue {
+    String(String),
+    Signed(i64),
+    Unsigned(u64),
+}
+
+fn deserialize_cursor<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(
+        Option::<CursorValue>::deserialize(deserializer)?.map(|value| match value {
+            CursorValue::String(value) => value,
+            CursorValue::Signed(value) => value.to_string(),
+            CursorValue::Unsigned(value) => value.to_string(),
+        }),
+    )
 }
 
 #[derive(Serialize, Clone)]
@@ -62,7 +88,7 @@ pub struct LogTick {
 }
 
 /// Start tailing log output. `backlog` replays N lines on subscribe; pass
-/// 0 (or None) to start at tail.
+/// 0 or None to read from the beginning.
 #[tauri::command]
 pub async fn rnd_logs_start(
     app: tauri::AppHandle,
@@ -124,8 +150,7 @@ pub async fn rnd_logs_start(
                     if chunk.last_modified.is_some() {
                         last_modified = chunk.last_modified.clone();
                     }
-                    let completed =
-                        chunk.completed.unwrap_or(false) || chunk.exec_completed.unwrap_or(false);
+                    let completed = log_stream_completed(&chunk);
                     let tick = LogTick {
                         entries: chunk.entries,
                         completed,
@@ -176,9 +201,47 @@ pub async fn rnd_logs_start(
     Ok(id)
 }
 
+fn log_stream_completed(chunk: &LogChunk) -> bool {
+    chunk.completed.unwrap_or(false) && chunk.exec_completed.unwrap_or(false)
+}
+
 #[tauri::command]
 pub fn rnd_logs_stop(manager: State<'_, LogsManager>, id: u32) {
     if let Some((_, handle)) = manager.handles.remove(&id) {
         handle.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_numeric_and_string_output_cursors() {
+        let numeric: LogChunk = serde_json::from_str(
+            r#"{"completed":false,"offset":12,"lastModified":34,"execCompleted":false,"entries":[]}"#,
+        )
+        .unwrap();
+        let string: LogChunk = serde_json::from_str(
+            r#"{"completed":false,"offset":"56","lastModified":"78","execCompleted":false,"entries":[]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(numeric.offset.as_deref(), Some("12"));
+        assert_eq!(numeric.last_modified.as_deref(), Some("34"));
+        assert_eq!(string.offset.as_deref(), Some("56"));
+        assert_eq!(string.last_modified.as_deref(), Some("78"));
+    }
+
+    #[test]
+    fn keeps_tailing_until_execution_and_output_are_complete() {
+        let mut chunk: LogChunk = serde_json::from_str(
+            r#"{"completed":true,"offset":12,"lastModified":34,"execCompleted":false,"entries":[]}"#,
+        )
+        .unwrap();
+
+        assert!(!log_stream_completed(&chunk));
+        chunk.exec_completed = Some(true);
+        assert!(log_stream_completed(&chunk));
     }
 }

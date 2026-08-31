@@ -43,10 +43,16 @@ pub struct WatchUpdate {
 }
 
 fn is_terminal(status: &Option<String>) -> bool {
-    matches!(
-        status.as_deref(),
-        Some("succeeded" | "failed" | "aborted" | "timedout" | "missed" | "other-failed")
-    )
+    status.as_deref().is_some_and(|value| {
+        matches!(
+            value.to_ascii_lowercase().as_str(),
+            "succeeded" | "failed" | "aborted" | "timedout" | "missed" | "other-failed"
+        )
+    })
+}
+
+fn state_is_terminal(state: &WorkflowState) -> bool {
+    state.completed.unwrap_or(false) || is_terminal(&state.execution_state)
 }
 
 #[tauri::command]
@@ -67,15 +73,16 @@ pub async fn rnd_watch_start(
         }
         let mut last_status: Option<String> = None;
         let mut consecutive_errors: u32 = 0;
+        let mut terminal_settle_polls: u32 = 0;
         const POLL_INTERVAL: Duration = Duration::from_millis(1500);
         const MAX_BACKOFF: Duration = Duration::from_secs(30);
         const ERROR_GIVEUP: u32 = 8;
 
         loop {
-            let exec_res: AppResult<Execution> =
-                get_json(&format!("/execution/{execution_id}"), &[]).await;
-            let state_res: AppResult<WorkflowState> =
-                get_json(&format!("/execution/{execution_id}/state"), &[]).await;
+            let execution_path = format!("/execution/{execution_id}");
+            let state_path = format!("/execution/{execution_id}/state");
+            let (exec_res, state_res): (AppResult<Execution>, AppResult<WorkflowState>) =
+                tokio::join!(get_json(&execution_path, &[]), get_json(&state_path, &[]));
 
             let both_failed = exec_res.is_err() && state_res.is_err();
             let (execution, state, error) = match (exec_res, state_res) {
@@ -97,7 +104,16 @@ pub async fn rnd_watch_start(
                 consecutive_errors = 0;
             }
 
-            let terminal = is_terminal(&last_status) || consecutive_errors >= ERROR_GIVEUP;
+            let execution_terminal = is_terminal(&last_status);
+            let workflow_terminal = state.as_ref().is_some_and(state_is_terminal);
+            if execution_terminal && !workflow_terminal {
+                terminal_settle_polls = terminal_settle_polls.saturating_add(1);
+            } else {
+                terminal_settle_polls = 0;
+            }
+            let terminal = (workflow_terminal && (execution_terminal || execution.is_none()))
+                || terminal_settle_polls >= 6
+                || consecutive_errors >= ERROR_GIVEUP;
             let payload = WatchUpdate {
                 execution,
                 state,
@@ -139,5 +155,28 @@ pub async fn rnd_watch_start(
 pub fn rnd_watch_stop(manager: State<'_, WatchManager>, id: u32) {
     if let Some((_, handle)) = manager.handles.remove(&id) {
         handle.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_execution_and_workflow_terminal_states_case_insensitively() {
+        assert!(is_terminal(&Some("other-failed".into())));
+        assert!(is_terminal(&Some("SUCCEEDED".into())));
+        assert!(state_is_terminal(&WorkflowState {
+            execution_state: Some("FAILED".into()),
+            ..WorkflowState::default()
+        }));
+    }
+
+    #[test]
+    fn completed_workflow_is_terminal_even_without_a_state_name() {
+        assert!(state_is_terminal(&WorkflowState {
+            completed: Some(true),
+            ..WorkflowState::default()
+        }));
     }
 }
