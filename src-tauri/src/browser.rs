@@ -136,20 +136,8 @@ pub struct BrowserSnapshot {
     tabs: Vec<BrowserTab>,
     active_tab_id: Option<String>,
     frame: Option<String>,
-    cursor: Option<BrowserCursor>,
     viewport_width: u32,
     viewport_height: u32,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserCursor {
-    agent_id: String,
-    target_id: String,
-    x: f64,
-    y: f64,
-    pressed: bool,
-    updated_at: f64,
 }
 
 #[derive(Deserialize)]
@@ -768,13 +756,11 @@ pub async fn browser_snapshot(
             tabs: Vec::new(),
             active_tab_id: None,
             frame: None,
-            cursor: None,
             viewport_width: VIEWPORT_WIDTH,
             viewport_height: VIEWPORT_HEIGHT,
         });
     }
     let mut tabs = manager.owned_tabs(&app, &agent_id).await?;
-    let (_, state_dir) = manager.cdp_and_state_dir(&app).await?;
     let active = tabs.iter().find(|tab| tab.active).map(|tab| tab.id.clone());
     let viewport = viewport.unwrap_or(BrowserViewport {
         width: VIEWPORT_WIDTH,
@@ -812,28 +798,13 @@ pub async fn browser_snapshot(
         None
     };
     tabs.sort_by_key(|tab| !tab.active);
-    let cursor = std::fs::read(state_dir.join(format!("cursor-{agent_id}.json")))
-        .ok()
-        .and_then(|contents| serde_json::from_slice::<BrowserCursor>(&contents).ok())
-        .filter(|cursor| {
-            cursor.agent_id == agent_id
-                && active.as_deref() == Some(cursor.target_id.as_str())
-                && current_unix_seconds() - cursor.updated_at < 2.0
-        });
     Ok(BrowserSnapshot {
         tabs,
         active_tab_id: active,
         frame,
-        cursor,
         viewport_width: viewport.width,
         viewport_height: viewport.height,
     })
-}
-
-fn current_unix_seconds() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0.0, |duration| duration.as_secs_f64())
 }
 
 #[tauri::command]

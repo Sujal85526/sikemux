@@ -11,7 +11,6 @@ export interface BrowserSnapshot {
     tabs: BrowserTab[];
     activeTabId: string | null;
     frame: string | null;
-    cursor: { agentId: string; targetId: string; x: number; y: number; pressed: boolean; updatedAt: number } | null;
     viewportWidth: number;
     viewportHeight: number;
 }

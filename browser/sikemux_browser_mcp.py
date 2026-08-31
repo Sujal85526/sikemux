@@ -4,7 +4,6 @@ import os
 import re
 import sqlite3
 import sys
-import time
 from pathlib import Path
 
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
@@ -139,20 +138,8 @@ class SikemuxBrowserServer(BrowserUseServer):
 
     async def _click(self, index=None, coordinate_x=None, coordinate_y=None, new_tab=False):
         assert self.browser_session
-        cursor_position = None
-        if coordinate_x is not None and coordinate_y is not None:
-            cursor_position = (float(coordinate_x), float(coordinate_y))
-        elif index is not None:
-            element = await self.browser_session.get_dom_element_by_index(index)
-            bounds = getattr(element, "absolute_position", None) if element else None
-            if bounds:
-                cursor_position = (float(bounds.x + bounds.width / 2), float(bounds.y + bounds.height / 2))
-        if cursor_position:
-            self._write_cursor(*cursor_position, True)
         before = {tab.target_id for tab in await self.browser_session.get_tabs()}
         result = await super()._click(index=index, coordinate_x=coordinate_x, coordinate_y=coordinate_y, new_tab=new_tab)
-        if cursor_position:
-            self._write_cursor(*cursor_position, False)
         tabs = await self.browser_session.get_tabs()
         created = [tab.target_id for tab in tabs if tab.target_id not in before]
         for target_id in created:
@@ -241,23 +228,6 @@ class SikemuxBrowserServer(BrowserUseServer):
         if len(matches) != 1:
             raise ValueError("Tab does not belong to this Sikemux agent session")
         return matches[0]
-
-    def _write_cursor(self, x: float, y: float, pressed: bool) -> None:
-        target_id = self.active_target_id
-        if not target_id:
-            return
-        payload = {
-            "agentId": self.agent_id,
-            "targetId": target_id,
-            "x": x,
-            "y": y,
-            "pressed": pressed,
-            "updatedAt": time.time(),
-        }
-        temporary = self.state_dir / f"cursor-{self.agent_id}.tmp"
-        destination = self.state_dir / f"cursor-{self.agent_id}.json"
-        temporary.write_text(json.dumps(payload))
-        temporary.replace(destination)
 
     def _write_active(self, target_id: str | None) -> None:
         temporary = self.state_dir / f"active-{self.agent_id}.tmp"

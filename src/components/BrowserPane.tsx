@@ -8,7 +8,6 @@ const EMPTY_SNAPSHOT: BrowserSnapshot = {
     tabs: [],
     activeTabId: null,
     frame: null,
-    cursor: null,
     viewportWidth: 1280,
     viewportHeight: 800,
 };
@@ -120,16 +119,10 @@ function BrowserPane({
     const addressRef = useRef<HTMLInputElement>(null);
     const [address, setAddress] = useState("");
     const [viewport, setViewport] = useState<BrowserViewport>({ width: 960, height: 640 });
-    const [controller, setController] = useState<"agent" | "user">("agent");
-    const [cursor, setCursor] = useState<{ x: number; y: number; pressed: boolean } | null>(null);
     const lastPointerMove = useRef(0);
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
 
     useEffect(() => setAddress(activeTab?.url === "about:blank" ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);
-    useEffect(() => {
-        if (snapshot.cursor) setController("agent");
-    }, [snapshot.cursor]);
-
     useLayoutEffect(() => {
         const host = viewportRef.current;
         if (!host) return;
@@ -180,8 +173,6 @@ function BrowserPane({
         if (kind === "move" && performance.now() - lastPointerMove.current < 24) return;
         if (kind === "move") lastPointerMove.current = performance.now();
         const next = point(event);
-        setController("user");
-        setCursor({ ...next, pressed: kind === "down" });
         if (kind === "down") event.currentTarget.focus();
         void browserApi.pointer(agentId, { kind, ...next, button: kind === "move" ? "none" : "left" }).catch(reportError("browser pointer"));
     };
@@ -218,13 +209,12 @@ function BrowserPane({
                     onClick={() => run(browserApi.newTab(agentId), "new browser tab")}>
                     <IconPlus size={13} />
                 </button>
-                <span className={`browser-controller ${controller}`}>{controller === "user" ? "you" : agentType}</span>
+                <span className="browser-controller">{agentType}</span>
             </div>
             <form
                 className="browser-toolbar"
                 onSubmit={(event) => {
                     event.preventDefault();
-                    setController("agent");
                     run(browserApi.navigate(agentId, address), "navigate browser");
                 }}>
                 <button type="button" aria-label="Back" title="Back — ⌘[" onClick={() => run(browserApi.back(agentId), "browser back")}>
@@ -281,16 +271,6 @@ function BrowserPane({
                         <span className="browser-loading-mark" />
                         <span>Opening browser</span>
                     </div>
-                )}
-                {(controller === "user" ? cursor : snapshot.cursor) && (
-                    <span
-                        className={`browser-cursor ${agentType}${(controller === "user" ? cursor : snapshot.cursor)?.pressed ? " pressed" : ""}`}
-                        style={{
-                            left: `${(((controller === "user" ? cursor : snapshot.cursor)?.x ?? 0) / snapshot.viewportWidth) * 100}%`,
-                            top: `${(((controller === "user" ? cursor : snapshot.cursor)?.y ?? 0) / snapshot.viewportHeight) * 100}%`,
-                        }}
-                        aria-hidden="true"
-                    />
                 )}
             </div>
         </section>

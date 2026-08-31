@@ -26,7 +26,6 @@ const snapshot: BrowserSnapshot = {
     tabs: [{ id: "tab-one", title: "Example", url: "https://example.com", active: true }],
     activeTabId: "tab-one",
     frame: "aGVsbG8=",
-    cursor: null,
     viewportWidth: 960,
     viewportHeight: 640,
 };
