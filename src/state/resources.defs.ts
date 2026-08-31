@@ -194,7 +194,7 @@ export const rndMatrixR = resource({
 
 export const rndExecutionsR = resource({
     kind: "rnd.executions",
-    fetch: (jobId: string, max: number): Promise<RundeckExecution[]> => rundeckApi.executions(jobId, max),
+    fetch: (jobId: string, project: string, max: number): Promise<RundeckExecution[]> => rundeckApi.executions(jobId, project, max),
     staleAfterMs: 15_000,
 });
 

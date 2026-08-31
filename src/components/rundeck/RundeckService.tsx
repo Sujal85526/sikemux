@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { git } from "../../api/git";
 import { rundeckApi, type RundeckExecution } from "../../api/rundeck";
 import * as cmd from "../../state/commands";
@@ -8,6 +8,7 @@ import { IconFetch, IconGit, IconRefresh, IconRun } from "../Icons";
 import { EmptyState } from "../Panel";
 import { SkeletonRows } from "../Skeleton";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
+import { executionProgress, newestExecutions } from "./executionProgress";
 
 interface Props {
     paneId: string;
@@ -23,9 +24,25 @@ interface Props {
 }
 
 export function RundeckService({ paneId, level, active }: Props) {
-    const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, 25);
+    const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 25);
     const [actionError, setActionError] = useState<string | null>(null);
     const [manualBranch, setManualBranch] = useState("");
+    const refreshRef = useRef(execs.refresh);
+    refreshRef.current = execs.refresh;
+    const executions = useMemo(() => newestExecutions(execs.data ?? []), [execs.data]);
+
+    useEffect(() => {
+        if (!active) return;
+        const refresh = () => {
+            if (!document.hidden) void refreshRef.current().catch(() => {});
+        };
+        const timer = window.setInterval(refresh, 3_000);
+        document.addEventListener("visibilitychange", refresh);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", refresh);
+        };
+    }, [active, level.jobId, level.project]);
 
     return (
         <div className="rnd-service">
@@ -63,8 +80,8 @@ export function RundeckService({ paneId, level, active }: Props) {
                 </button>
                 <button
                     className="rnd-ghost-btn"
-                    onClick={() => void redeployLast(paneId, level, execs.data ?? [], setActionError)}
-                    disabled={!execs.data?.length}
+                    onClick={() => void redeployLast(paneId, level, executions, setActionError)}
+                    disabled={!executions.length}
                     title="Redeploy the last successful branch">
                     <IconFetch size={13} />
                     redeploy last
@@ -82,7 +99,7 @@ export function RundeckService({ paneId, level, active }: Props) {
                     <span className="rnd-history-help">click a row to open the live view</span>
                 </div>
                 {execs.status === "loading" && !execs.data && <SkeletonRows rows={4} label="Loading executions" />}
-                {execs.data?.map((ex) => (
+                {executions.map((ex) => (
                     <ExecutionRow key={ex.id} paneId={paneId} level={level} ex={ex} />
                 ))}
                 {execs.data && execs.data.length === 0 && <EmptyState message="No executions for this job yet." />}
@@ -106,10 +123,12 @@ function ExecutionRow({
     const started = ex["date-started"]?.date ?? null;
     const ended = ex["date-ended"]?.date ?? null;
     const dur = duration(started, ended);
+    const running = ex.status?.toLowerCase() === "running";
+    const progress = executionProgress(ex.workflowState);
 
     return (
         <button
-            className="rnd-exec-row"
+            className={`rnd-exec-row${running ? " running" : ""}`}
             onClick={() =>
                 cmd.rundeckPush(paneId, {
                     kind: "execution",
@@ -130,6 +149,21 @@ function ExecutionRow({
             <span className="rnd-exec-user">{ex.user ?? "—"}</span>
             <span className="rnd-exec-when">{started ? formatTime(started) : "—"}</span>
             <span className="rnd-exec-dur">{dur}</span>
+            {running && (
+                <span className="rnd-row-progress">
+                    <span className="rnd-progress-copy">{progress ? `${progress.completed} of ${progress.total} steps` : "syncing steps"}</span>
+                    <span
+                        className={`rnd-progress-track${progress ? "" : " indeterminate"}`}
+                        role="progressbar"
+                        aria-label={`Execution ${ex.id} progress`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={progress?.percent}>
+                        <span className="rnd-progress-fill" style={progress ? { width: `${progress.percent}%` } : undefined} />
+                    </span>
+                    <span className="rnd-progress-value">{progress ? `${progress.percent}%` : "live"}</span>
+                </span>
+            )}
         </button>
     );
 }
@@ -194,7 +228,7 @@ async function redeployLast(
     let branch = execs.find((e) => e.status === "succeeded" && e.job?.options?.BRANCH)?.job?.options?.BRANCH ?? "";
     if (!branch) {
         try {
-            const latest = await rundeckApi.executions(level.jobId, 1, true);
+            const latest = await rundeckApi.executions(level.jobId, level.project, 1, true);
             branch = latest[0]?.job?.options?.BRANCH ?? "";
         } catch (e) {
             setError(typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e));

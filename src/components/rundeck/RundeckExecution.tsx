@@ -8,6 +8,7 @@ import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../Icons";
 import { VirtualLogList } from "../VirtualLogList";
 import { Switch } from "../Controls";
 import { EmptyState } from "../Panel";
+import { executionProgress } from "./executionProgress";
 
 interface Props {
     paneId: string;
@@ -44,6 +45,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
 
     const [entries, setEntries] = useState<LogEntry[]>([]);
     const [logsCompleted, setLogsCompleted] = useState(false);
+    const [logsErr, setLogsErr] = useState<string | null>(null);
     const [followTail, setFollowTail] = useState(true);
     const [stepFilter, setStepFilter] = useState<string | null>(null);
     const [aborting, setAborting] = useState(false);
@@ -56,6 +58,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
         setWatchErr(null);
         setEntries([]);
         setLogsCompleted(false);
+        setLogsErr(null);
         setStepFilter(null);
         let watchId: number | undefined;
         let logsId: number | undefined;
@@ -103,6 +106,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                             return next.length > MAX_LOG_ENTRIES ? next.slice(-MAX_LOG_ENTRIES) : next;
                         });
                     }
+                    setLogsErr(tick.error);
                     if (tick.completed) setLogsCompleted(true);
                 })
                 .then((id) => {
@@ -121,6 +125,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
         const start = () => {
             setEntries([]);
             setLogsCompleted(false);
+            setLogsErr(null);
             startWatch();
             startLogs();
         };
@@ -162,6 +167,8 @@ export function RundeckExecution({ paneId, level, active }: Props) {
     const started = execution?.["date-started"]?.date ?? null;
     const ended = execution?.["date-ended"]?.date ?? null;
     const dur = duration(started, ended);
+    const running = status.toLowerCase() === "running";
+    const progress = executionProgress(state);
 
     const abort = async () => {
         setAborting(true);
@@ -192,6 +199,22 @@ export function RundeckExecution({ paneId, level, active }: Props) {
             <header className="rnd-exec-head">
                 <div className="rnd-exec-head-l">
                     <span className={`rnd-exec-pill rnd-status-${sk}`}>{status}</span>
+                    {running && (
+                        <span className="rnd-head-progress">
+                            <span
+                                className={`rnd-progress-track${progress ? "" : " indeterminate"}`}
+                                role="progressbar"
+                                aria-label={`Execution ${level.executionId} progress`}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={progress?.percent}>
+                                <span className="rnd-progress-fill" style={progress ? { width: `${progress.percent}%` } : undefined} />
+                            </span>
+                            <span className="rnd-progress-copy">
+                                {progress ? `${progress.completed} / ${progress.total} steps · ${progress.percent}%` : "syncing steps"}
+                            </span>
+                        </span>
+                    )}
                 </div>
                 <div className="rnd-exec-head-r">
                     <div className="rnd-exec-meta-row">
@@ -231,7 +254,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                             open ↗
                         </button>
                     )}
-                    {status === "running" && (
+                    {running && (
                         <button className="rnd-btn-sm rnd-btn-danger" disabled={aborting} onClick={abort}>
                             {aborting ? "aborting…" : "abort"}
                         </button>
@@ -240,6 +263,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
             </header>
 
             {watchErr && <div className="rnd-banner warn">{watchErr}</div>}
+            {logsErr && <div className="rnd-banner warn">Log stream: {logsErr}</div>}
 
             <div className="rnd-exec-body">
                 <aside className="rnd-steps">
@@ -255,7 +279,15 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                         {(state?.steps ?? []).length === 0 && <EmptyState message="waiting for steps…" />}
                         {(state?.steps ?? []).map((s, i) => {
                             const filterKey = stepFilterKey(s, i);
-                            return <StepRow key={i} idx={i} step={s} selected={stepFilter === filterKey} onClick={() => setStepFilter(filterKey)} />;
+                            return (
+                                <StepRow
+                                    key={filterKey}
+                                    idx={i}
+                                    step={s}
+                                    selected={stepFilter === filterKey}
+                                    onClick={() => setStepFilter(filterKey)}
+                                />
+                            );
                         })}
                     </div>
                 </aside>

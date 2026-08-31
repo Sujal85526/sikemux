@@ -877,6 +877,9 @@
 .rnd-exec-row:hover {
     background: var(--acc-soft);
 }
+.rnd-exec-row.running {
+    row-gap: 7px;
+}
 .rnd-exec-status {
     font-size: 9.5px;
     font-weight: 700;
@@ -903,6 +906,53 @@
 .rnd-exec-dur {
     text-align: right;
     color: var(--ink-faint);
+}
+.rnd-row-progress {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 110px minmax(120px, 1fr) 44px;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+.rnd-progress-copy,
+.rnd-progress-value {
+    color: var(--ink-faint);
+    font-size: 9.5px;
+    letter-spacing: 0.05em;
+}
+.rnd-progress-value {
+    text-align: right;
+    color: var(--warn);
+}
+.rnd-progress-track {
+    display: block;
+    position: relative;
+    height: 4px;
+    min-width: 80px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--warn) 12%, var(--line));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 18%, transparent);
+}
+.rnd-progress-fill {
+    display: block;
+    height: 100%;
+    min-width: 2px;
+    background: var(--warn);
+    transition: width 0.22s ease-out;
+}
+.rnd-progress-track.indeterminate .rnd-progress-fill {
+    width: 30%;
+    min-width: 36px;
+    animation: rnd-progress-scan 1.25s ease-in-out infinite;
+}
+@keyframes rnd-progress-scan {
+    from {
+        transform: translateX(-110%);
+    }
+    to {
+        transform: translateX(340%);
+    }
 }
 
 .rnd-deploy-form {
@@ -986,6 +1036,17 @@
     display: flex;
     align-items: center;
     gap: 14px;
+}
+.rnd-head-progress {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+}
+.rnd-head-progress .rnd-progress-track {
+    width: clamp(90px, 12vw, 160px);
+}
+.rnd-head-progress .rnd-progress-copy {
+    white-space: nowrap;
 }
 .rnd-exec-pill {
     font-size: 9.5px;
@@ -1149,6 +1210,17 @@
     }
     50% {
         opacity: 0.35;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rnd-progress-track.indeterminate .rnd-progress-fill,
+    .rnd-step-glyph.step-running {
+        animation: none;
+    }
+    .rnd-progress-track.indeterminate .rnd-progress-fill {
+        opacity: 0.55;
+        transform: none;
     }
 }
 

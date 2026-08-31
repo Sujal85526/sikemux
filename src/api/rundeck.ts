@@ -110,6 +110,7 @@ export interface RundeckExecution {
         options: Record<string, string> | null;
     } | null;
     argstring: string | null;
+    workflowState?: RundeckWorkflowState | null;
 }
 
 export interface RunResult {
@@ -199,9 +200,10 @@ export const rundeckApi = {
     branchesMatrix: (envs: RundeckEnvSpec[]) => rndInvoke<MatrixResult>("rnd_branches_matrix", { envs }),
     resolveJob: (project: string, service: string) => rndInvoke<RundeckJob>("rnd_resolve_job", { project, service }),
 
-    executions: (jobId: string, max = 25, onlySucceeded = false) =>
+    executions: (jobId: string, project: string, max = 25, onlySucceeded = false) =>
         rndInvoke<RundeckExecution[]>("rnd_executions", {
             jobId,
+            project,
             max,
             onlySucceeded,
         }),
