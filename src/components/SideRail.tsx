@@ -66,6 +66,7 @@ function cloneProjectRow(source: HTMLElement): HTMLElement {
             const property = styles.item(styleIndex);
             cloneElements[index].style.setProperty(property, styles.getPropertyValue(property), styles.getPropertyPriority(property));
         }
+        cloneElements[index].style.setProperty("pointer-events", "none", "important");
     });
     clone.classList.add("project-drag-ghost-row");
     clone.removeAttribute("data-project-drop-row");
@@ -124,7 +125,15 @@ export function SideRail() {
     const commands = sessions.filter((s) => s.kind === "command");
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {
-        const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+        const ghost = projectGhostRef.current;
+        const previousVisibility = ghost?.style.visibility ?? "";
+        if (ghost) ghost.style.visibility = "hidden";
+        let hit: HTMLElement | null;
+        try {
+            hit = document.elementFromPoint(x, y) as HTMLElement | null;
+        } finally {
+            if (ghost) ghost.style.visibility = previousVisibility;
+        }
         const target = hit?.closest<HTMLElement>("[data-project-id]");
         const targetId = target?.dataset.projectId;
         if (!targetId || targetId === projectDragRef.current?.sourceId) return null;

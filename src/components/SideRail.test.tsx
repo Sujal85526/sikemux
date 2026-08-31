@@ -50,17 +50,31 @@ describe("project sorting", () => {
         render(<SideRail />);
         const source = screen.getByRole("button", { name: "gamma" });
         const target = screen.getByRole("button", { name: "alpha" });
-        Object.defineProperty(document, "elementFromPoint", { configurable: true, value: vi.fn(() => target) });
+        let ghostWasHiddenDuringHitTest = false;
+        Object.defineProperty(document, "elementFromPoint", {
+            configurable: true,
+            value: vi.fn(() => {
+                ghostWasHiddenDuringHitTest ||= document.querySelector<HTMLElement>("[data-project-drag-ghost]")?.style.visibility === "hidden";
+                return target;
+            }),
+        });
         vi.spyOn(source, "getBoundingClientRect").mockReturnValue({ left: 8, top: 80, width: 210, height: 26 } as DOMRect);
         vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ top: 20, bottom: 48, height: 28 } as DOMRect);
 
         fireEvent.pointerDown(source, { button: 0, clientX: 0, clientY: 0 });
         fireEvent.pointerMove(window, { clientX: 0, clientY: 22 });
+        fireEvent.pointerMove(window, { clientX: 0, clientY: 23 });
 
         const ghost = document.querySelector<HTMLElement>("[data-project-drag-ghost]");
         expect(ghost).toHaveStyle({ width: "210px", height: "26px" });
         expect(ghost?.querySelector(".project-drag-ghost-row")).toHaveTextContent("gamma");
         expect(ghost?.querySelector(".project-drag-ghost-card")).not.toBeInTheDocument();
+        for (const element of ghost?.querySelectorAll<HTMLElement>("*") ?? []) {
+            expect(element.style.getPropertyValue("pointer-events")).toBe("none");
+            expect(element.style.getPropertyPriority("pointer-events")).toBe("important");
+        }
+        expect(ghostWasHiddenDuringHitTest).toBe(true);
+        expect(ghost?.style.visibility).toBe("");
         expect(getState().sessionOrder).toEqual(["gamma", "ssh", "alpha", "command", "beta"]);
         expect(screen.getByRole("button", { name: "alpha" }).closest("[data-project-id]")).toHaveClass("project-drop-before");
 
