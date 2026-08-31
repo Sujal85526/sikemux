@@ -77,6 +77,7 @@ function findBrowserRuntime(directory) {
           "chrome",
           "chrome.exe",
           "chrome-headless-shell",
+          "chrome-headless-shell.exe",
           "headless_shell.exe",
           "Google Chrome for Testing",
         ].includes(entry.name)
