@@ -629,7 +629,6 @@ textarea,
         .agent-glyph-x,
         .agent-empty,
         .tabbar,
-        .pane,
         .yolo-toggle,
         .command-palette,
         .session-switcher,
@@ -654,7 +653,6 @@ textarea,
         .side-rail,
         .agent-rail,
         .stage,
-        .pane,
         .agent-usage,
         .agent-empty,
         .env-dd-menu,
@@ -775,18 +773,14 @@ textarea,
     border-left-width: 1px;
 }
 
-/* Panes are inset to 0 inside the stage, so the stage has to do the clipping
- * for its rounded corners to survive. */
 .stage {
     overflow: hidden;
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
-/* Splits get the same gutter. Each pane insets by half of it, so neighbours
- * end up a full gutter apart while the outer edges stay tight to the stage. */
 .pane {
-    inset: var(--space-1);
-    border-radius: var(--radius-sm);
+    inset: 0;
+    border-radius: 0;
 }
 
 .shell :where(.rnd-btn-sm, .git-kbd, .panel-akbd) {
