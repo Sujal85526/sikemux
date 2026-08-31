@@ -366,7 +366,7 @@
 }
 
 .side-rail > .rail-scroll {
-    padding-top: var(--space-1, 4px);
+    padding-top: 0;
 }
 .side-rail {
     width: 238px;
