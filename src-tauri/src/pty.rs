@@ -1881,11 +1881,20 @@ pub struct PtyContext {
     shell_integration: bool,
 }
 
+#[derive(Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PtyAgentProfile {
+    config_path: Option<String>,
+    #[serde(default)]
+    environment_keys: Vec<String>,
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyDirectCommand {
     program: String,
     args: Vec<String>,
+    profile: Option<PtyAgentProfile>,
 }
 
 fn validate_direct_command(
@@ -1917,10 +1926,70 @@ fn validate_direct_command(
         }
         total = total.saturating_add(argument.len());
     }
+    if let Some(profile) = command.profile.as_ref() {
+        if profile
+            .config_path
+            .as_deref()
+            .is_some_and(|path| path.len() > 4_096 || path.contains('\0'))
+            || profile.environment_keys.len() > 64
+            || profile.environment_keys.iter().any(|key| {
+                key.len() > 128
+                    || !key.chars().enumerate().all(|(index, character)| {
+                        character == '_'
+                            || character.is_ascii_alphanumeric()
+                                && (index > 0 || !character.is_ascii_digit())
+                    })
+            })
+        {
+            return Err(AppError::BadArg("invalid direct PTY agent profile"));
+        }
+    }
     if total > 64 * 1_024 {
         return Err(AppError::BadArg("direct PTY command is too large"));
     }
     Ok(())
+}
+
+fn agent_profile_config_root(path: &str) -> PathBuf {
+    let trimmed = path.trim();
+    let expanded = if trimmed == "~" {
+        crate::system::user_home()
+    } else if let Some(rest) = trimmed
+        .strip_prefix("~/")
+        .or_else(|| trimmed.strip_prefix("~\\"))
+    {
+        crate::system::user_home().join(rest)
+    } else {
+        PathBuf::from(trimmed)
+    };
+    if matches!(
+        expanded.file_name().and_then(|value| value.to_str()),
+        Some("config.toml" | "settings.json" | "settings.local.json")
+    ) {
+        expanded.parent().map(Path::to_path_buf).unwrap_or(expanded)
+    } else {
+        expanded
+    }
+}
+
+fn apply_agent_profile(
+    command: &mut CommandBuilder,
+    context: Option<&PtyContext>,
+    profile: Option<&PtyAgentProfile>,
+) {
+    let Some(root) = profile
+        .and_then(|profile| profile.config_path.as_deref())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(agent_profile_config_root)
+    else {
+        return;
+    };
+    match context.and_then(|context| context.agent_type.as_deref()) {
+        Some("codex") => command.env("CODEX_HOME", root),
+        Some("claude") => command.env("CLAUDE_CONFIG_DIR", root),
+        _ => {}
+    }
 }
 
 fn inject_browser_mcp(
@@ -2414,6 +2483,9 @@ pub async fn pty_spawn(
             None
         };
     let shell = crate::system::configured_shell();
+    let direct_profile = direct_command
+        .as_ref()
+        .and_then(|command| command.profile.clone());
     let has_direct_command = direct_command.is_some();
     let mut cmd = if let Some(command) = direct_command {
         let mut builder = CommandBuilder::new(command.program);
@@ -2432,6 +2504,7 @@ pub async fn pty_spawn(
         cli_endpoint.as_deref(),
         crate::system::login_shell_environment(),
     );
+    apply_agent_profile(&mut cmd, context.as_ref(), direct_profile.as_ref());
     if let Some(environment) = browser_environment {
         for (key, value) in environment {
             cmd.env(key, value);
@@ -3353,21 +3426,21 @@ mod tests {
     #[cfg(unix)]
     use super::startup_bootstrap;
     use super::{
-        attach_snapshot, attach_snapshot_with_compaction, compact_parser_for_idle,
-        configure_pty_environment, configure_shell_integration, configure_task_command,
-        detect_shell_kind, event_fingerprint, insert_subscriber, parse_shell_cwd, reseed_parser,
-        screen_scrollback_len, semantic_fingerprint, semantic_parser, semantic_parser_with_shell,
-        shell_integration_requested, should_signal_process_on_drain, submits_line,
-        task_process_needs_force_backstop, task_reclamation_plan, task_retention_elapsed,
-        task_shell_arguments, validate_pty_dimensions, validate_task_environment,
-        validate_task_request, AttachResult, PtyCapacity, PtyContext, PtyShellMetadataEvent,
-        ShellBoundary, ShellKind, ShellPhase, ShellProtocolParser, TaskExitReporter,
-        TaskProcessExit, TaskRetentionCandidate, TaskShellPlatform, TaskSource, TaskSpawnRequest,
-        TaskSpawnResult, IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES, MAX_PTY_DIMENSION,
-        MAX_PTY_SUBSCRIBERS_PER_PTY, MAX_RETAINED_EXITED_TASK_PTYS, MAX_SHELL_OSC_BYTES,
-        MAX_SHELL_PATH_BYTES, MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES,
-        MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL,
-        TASK_EXIT_RETENTION,
+        apply_agent_profile, attach_snapshot, attach_snapshot_with_compaction,
+        compact_parser_for_idle, configure_pty_environment, configure_shell_integration,
+        configure_task_command, detect_shell_kind, event_fingerprint, insert_subscriber,
+        parse_shell_cwd, reseed_parser, screen_scrollback_len, semantic_fingerprint,
+        semantic_parser, semantic_parser_with_shell, shell_integration_requested,
+        should_signal_process_on_drain, submits_line, task_process_needs_force_backstop,
+        task_reclamation_plan, task_retention_elapsed, task_shell_arguments,
+        validate_pty_dimensions, validate_task_environment, validate_task_request, AttachResult,
+        PtyAgentProfile, PtyCapacity, PtyContext, PtyShellMetadataEvent, ShellBoundary, ShellKind,
+        ShellPhase, ShellProtocolParser, TaskExitReporter, TaskProcessExit, TaskRetentionCandidate,
+        TaskShellPlatform, TaskSource, TaskSpawnRequest, TaskSpawnResult, IDLE_SCROLLBACK,
+        MAX_ATTACH_SNAPSHOT_BYTES, MAX_PTY_DIMENSION, MAX_PTY_SUBSCRIBERS_PER_PTY,
+        MAX_RETAINED_EXITED_TASK_PTYS, MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES,
+        MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES, MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK,
+        RESET_MODES, SHELL_EVENT_MIN_INTERVAL, TASK_EXIT_RETENTION,
     };
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
@@ -3398,6 +3471,28 @@ mod tests {
             initial_prompt_submitted: false,
             shell_integration: true,
         }
+    }
+
+    #[test]
+    fn agent_profiles_pin_provider_config_directories() {
+        let profile = PtyAgentProfile {
+            config_path: Some("/profiles/work/config.toml".into()),
+            environment_keys: Vec::new(),
+        };
+        let mut codex = CommandBuilder::new("codex");
+        let mut context = local_shell_context();
+        context.agent_id = Some("agent-1".into());
+        context.agent_type = Some("codex".into());
+        apply_agent_profile(&mut codex, Some(&context), Some(&profile));
+        assert_eq!(env(&codex, "CODEX_HOME"), Some("/profiles/work".into()));
+
+        let mut claude = CommandBuilder::new("claude");
+        context.agent_type = Some("claude".into());
+        apply_agent_profile(&mut claude, Some(&context), Some(&profile));
+        assert_eq!(
+            env(&claude, "CLAUDE_CONFIG_DIR"),
+            Some("/profiles/work".into())
+        );
     }
 
     fn task_request(cwd: &Path) -> TaskSpawnRequest {

@@ -119,8 +119,8 @@ describe("agent rail", () => {
         await user.click(screen.getByRole("tab", { name: "Claude" }));
         expect(await screen.findByRole("region", { name: "Claude plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "7d usage" })).toHaveAttribute("aria-valuenow", "82");
-        expect(mocks.usage).toHaveBeenCalledWith("codex");
-        expect(mocks.usage).toHaveBeenCalledWith("claude");
+        expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", undefined);
+        expect(mocks.usage).toHaveBeenCalledWith("claude", "claude", undefined);
     });
 
     it("does not request or render plan usage for other detected agents", async () => {

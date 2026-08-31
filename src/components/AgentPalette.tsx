@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { agentApi, type AgentInfo, type AgentSession } from "../api/agents";
+import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agentProfiles";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { rankBy } from "../lib/fuzzy";
 import * as cmd from "../state/commands";
@@ -39,7 +40,8 @@ export function AgentPalette() {
     const profiles = useStore((state) => state.providerProfiles);
     const profileSelections = useStore((state) => state.selectedProviderProfileIds);
     const defaultMode = useStore((state) => state.defaultAgentPermissionMode);
-    const catalog = useResource(agentCatalogR);
+    const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
+    const catalog = useResource(agentCatalogR, runtimeProfiles);
     const agents = useMemo(() => catalog.data ?? [], [catalog.data]);
     const origin = useRef({ sessionId: session?.id ?? "", cwd: session?.cwd ?? "" });
     const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -67,11 +69,11 @@ export function AgentPalette() {
 
         // Hermes history is global rather than project-scoped, so showing it
         // here leaks unrelated projects into a picker opened for one checkout.
-        const projectScopedAgents = agents.filter((agent) => agent.type !== "hermes");
+        const projectScopedAgents = agents.filter((agent) => agent.available !== false && agent.type !== "hermes");
         void Promise.all(
             projectScopedAgents.map((agent) =>
                 agentApi
-                    .sessions(agent.type, origin.current.cwd)
+                    .sessions(agent.type, origin.current.cwd, agent.configPath ?? undefined)
                     .then((sessions) => sessions.map((candidate): Row => ({ ...candidate, type: agent.type })))
                     .catch(() => [] as Row[]),
             ),
@@ -99,10 +101,14 @@ export function AgentPalette() {
     const selectable = useMemo(
         () =>
             items
-                .map((item, index) => ({ index, supported: mode === NORMAL || cmd.agentSupportsSkipPermissions(typeForItem(item)) }))
+                .map((item, index) => {
+                    const type = typeForItem(item);
+                    const available = agents.find((agent) => agent.type === type)?.available !== false;
+                    return { index, supported: available && (mode === NORMAL || cmd.agentSupportsSkipPermissions(type)) };
+                })
                 .filter(({ supported }) => supported)
                 .map(({ index }) => index),
-        [items, mode],
+        [agents, items, mode],
     );
     const firstResumeIndex = items.findIndex((item) => item.kind === "resume");
 
@@ -125,12 +131,15 @@ export function AgentPalette() {
     function activate(item: AgentItem | undefined) {
         if (!item || !origin.current.sessionId || !origin.current.cwd) return;
         const type = typeForItem(item);
+        const provider = agents.find((agent) => agent.type === type);
+        if (!provider || provider.available === false) return;
         if (mode === YOLO && !cmd.agentSupportsSkipPermissions(type)) return;
-        const selectedProfile = profiles.find((profile) => profile.id === profileSelections[type] && profile.provider === type);
+        const selectedProfile = selectedProviderProfile(type, profiles, profileSelections);
         const resume = item.kind === "resume" ? item.row : undefined;
         cmd.addAgent(type, resume?.id, resume?.title, {
             permissionMode: mode,
             profileId: selectedProfile?.id,
+            detectedExecutablePath: provider.command,
             cwd: origin.current.cwd,
             sessionId: origin.current.sessionId,
         });
@@ -217,7 +226,9 @@ export function AgentPalette() {
                     )}
                     {items.map((item, index) => {
                         const type = typeForItem(item);
-                        const supported = mode === NORMAL || cmd.agentSupportsSkipPermissions(type);
+                        const provider = agents.find((agent) => agent.type === type);
+                        const available = provider?.available !== false;
+                        const supported = available && (mode === NORMAL || cmd.agentSupportsSkipPermissions(type));
                         const key = item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`;
                         const name = item.kind === "new" ? `+ new ${labelForType(type, agents)}` : item.row.title;
                         return (
@@ -237,11 +248,13 @@ export function AgentPalette() {
                                     </span>
                                     <span className="picker-name">{name}</span>
                                     <span className="picker-sub">
-                                        {!supported
-                                            ? "Normal mode only"
-                                            : item.kind === "new"
-                                              ? "start agent"
-                                              : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
+                                        {!available
+                                            ? provider?.error || "Agent executable is unavailable"
+                                            : !supported
+                                              ? "Normal mode only"
+                                              : item.kind === "new"
+                                                ? "start agent"
+                                                : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
                                     </span>
                                 </button>
                             </Fragment>

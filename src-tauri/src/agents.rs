@@ -23,15 +23,31 @@ pub struct AgentSession {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentInfo {
     #[serde(rename = "type")]
     kind: &'static str,
     label: &'static str,
-    command: &'static str,
+    command: String,
+    available: bool,
+    error: Option<String>,
+    warning: Option<String>,
+    profile_id: Option<String>,
+    config_path: Option<String>,
     #[serde(rename = "defaultModel")]
     default_model: Option<String>,
     #[serde(rename = "defaultEffort")]
     default_effort: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProfileRequest {
+    #[serde(rename = "type")]
+    kind: AgentKind,
+    profile_id: Option<String>,
+    executable_path: Option<String>,
+    config_path: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -64,9 +80,11 @@ pub struct AgentUsage {
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct AgentSessionsChanged {
     agent: &'static str,
     cwd: String,
+    config_path: Option<String>,
 }
 
 struct AgentDef {
@@ -145,35 +163,234 @@ pub fn watch_count() -> usize {
 
 static NEXT_WATCH_ID: AtomicU32 = AtomicU32::new(1);
 
+const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
+fn expand_user_path(value: &str) -> PathBuf {
+    if value == "~" {
+        return crate::system::user_home();
+    }
+    if let Some(rest) = value
+        .strip_prefix("~/")
+        .or_else(|| value.strip_prefix("~\\"))
+    {
+        return crate::system::user_home().join(rest);
+    }
+    PathBuf::from(value)
+}
+
+fn apply_process_config(command: &mut Command, agent: &str, config_path: Option<&str>) {
+    let Some(root) = agent_config_root(agent, config_path) else {
+        return;
+    };
+    if config_path.is_none() {
+        return;
+    }
+    match agent {
+        "codex" => {
+            command.env("CODEX_HOME", root);
+        }
+        "claude" => {
+            command.env("CLAUDE_CONFIG_DIR", root);
+        }
+        _ => {}
+    }
+}
+
+fn apply_login_environment(command: &mut Command) {
+    for (key, value) in crate::system::login_shell_environment() {
+        command.env(key, value);
+    }
+}
+
+fn push_agent_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if candidate.is_file() && !candidates.contains(&candidate) {
+        candidates.push(candidate);
+    }
+}
+
+fn automatic_agent_candidates(def: &AgentDef) -> Vec<PathBuf> {
+    let mut candidates = crate::system::find_executables_matching(def.command, |candidate| {
+        allowed_agent_path(def.kind, candidate)
+    });
+    let home = crate::system::user_home();
+    for candidate in [
+        home.join(".local/bin").join(def.command),
+        home.join("Library/pnpm").join(def.command),
+        home.join(".npm/bin").join(def.command),
+        home.join(".bun/bin").join(def.command),
+    ] {
+        push_agent_candidate(&mut candidates, candidate);
+    }
+    if def.kind == "claude" {
+        push_agent_candidate(&mut candidates, home.join(".claude/local/claude"));
+        push_agent_candidate(&mut candidates, home.join(".claude/bin/claude"));
+    }
+    #[cfg(target_os = "macos")]
+    if def.kind == "codex" {
+        push_agent_candidate(
+            &mut candidates,
+            PathBuf::from("/Applications/ChatGPT.app/Contents/Resources/codex"),
+        );
+    }
+    candidates
+}
+
+fn explicit_agent_candidates(value: &str) -> Vec<PathBuf> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Vec::new();
+    }
+    if value.contains('/') || value.contains('\\') || value.starts_with('~') {
+        return vec![expand_user_path(value)];
+    }
+    crate::system::find_executables_matching(value, |_| true)
+}
+
+async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String, String> {
+    #[cfg(windows)]
+    let mut command = if matches!(
+        executable.extension().and_then(|value| value.to_str()),
+        Some(value) if value.eq_ignore_ascii_case("cmd") || value.eq_ignore_ascii_case("bat")
+    ) {
+        let mut command = Command::new("cmd.exe");
+        command
+            .args(["/D", "/S", "/C"])
+            .arg(executable)
+            .arg("--version");
+        command
+    } else {
+        let mut command = Command::new(executable);
+        command.arg("--version");
+        command
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut command = Command::new(executable);
+        command.arg("--version");
+        command
+    };
+    command
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    apply_login_environment(&mut command);
+    if agent == "claude" {
+        command.env_remove("CLAUDECODE");
+    }
+    let output = tokio::time::timeout(AGENT_PROBE_TIMEOUT, command.output())
+        .await
+        .map_err(|_| "version check timed out".to_string())?
+        .map_err(|error| format!("could not start: {error}"))?;
+    if !output.status.success() {
+        let detail = model_catalog_error_detail(&output.stderr)
+            .or_else(|| model_catalog_error_detail(&output.stdout))
+            .unwrap_or_else(|| format!("exited with {}", output.status));
+        return Err(detail);
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string())
+}
+
+async fn first_healthy_agent_candidate(
+    agent: &str,
+    candidates: Vec<PathBuf>,
+) -> (Option<PathBuf>, Vec<String>) {
+    let mut failures = Vec::new();
+    for candidate in candidates {
+        match probe_agent_executable(agent, &candidate).await {
+            Ok(_) => return (Some(candidate), failures),
+            Err(error) => failures.push(format!("{}: {error}", candidate.display())),
+        }
+    }
+    (None, failures)
+}
+
 /// Agent CLIs that are installed for the current user. The app's PATH is fixed
 /// from the login shell during boot, so this matches what spawned PTYs can run.
 #[tauri::command]
-pub fn available_agents() -> Vec<AgentInfo> {
-    AGENT_DEFS
-        .iter()
-        .filter(|def| executable_in_path(def.kind, def.command))
-        .map(|def| AgentInfo {
+pub async fn available_agents(profiles: Vec<AgentProfileRequest>) -> Vec<AgentInfo> {
+    let mut available = Vec::new();
+    for def in AGENT_DEFS {
+        let profile = profiles
+            .iter()
+            .find(|profile| profile.kind.as_str() == def.kind);
+        let explicit = profile.and_then(|profile| profile.executable_path.as_deref());
+        let candidates = explicit
+            .map(explicit_agent_candidates)
+            .unwrap_or_else(|| automatic_agent_candidates(def));
+        if candidates.is_empty() && profile.is_none() {
+            continue;
+        }
+
+        let (resolved, failures) = first_healthy_agent_candidate(def.kind, candidates).await;
+        let config_path = profile.and_then(|profile| profile.config_path.clone());
+        let warning = resolved.as_ref().and_then(|path| {
+            (!failures.is_empty())
+                .then(|| format!("Skipped {}; using {}", failures.join("; "), path.display()))
+        });
+        let error = resolved.is_none().then(|| {
+            if failures.is_empty() {
+                format!("{} executable was not found", def.label)
+            } else {
+                failures.join("; ")
+            }
+        });
+        available.push(AgentInfo {
             kind: def.kind,
             label: def.label,
-            command: def.command,
-            default_model: configured_default_model(def.kind),
-            default_effort: configured_default_effort(def.kind),
-        })
-        .collect()
+            command: resolved
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned())
+                .or_else(|| explicit.map(str::to_string))
+                .unwrap_or_else(|| def.command.to_string()),
+            available: resolved.is_some(),
+            error,
+            warning,
+            profile_id: profile.and_then(|profile| profile.profile_id.clone()),
+            config_path: config_path.clone(),
+            default_model: configured_default_model(def.kind, config_path.as_deref()),
+            default_effort: configured_default_effort(def.kind, config_path.as_deref()),
+        });
+    }
+    available
 }
 
 /// Full model identifiers exposed by the selected CLI. Catalog lookup is lazy
 /// because some providers build their list from local caches or provider data.
 #[tauri::command]
-pub async fn agent_models(agent: AgentKind) -> Result<Vec<AgentModelInfo>, String> {
+pub async fn agent_models(
+    agent: AgentKind,
+    executable_path: Option<String>,
+    config_path: Option<String>,
+) -> Result<Vec<AgentModelInfo>, String> {
+    let executable = executable_path
+        .as_deref()
+        .map(expand_user_path)
+        .or_else(|| {
+            crate::system::find_executable_matching(agent.as_str(), |candidate| {
+                allowed_agent_path(agent.as_str(), candidate)
+            })
+        })
+        .ok_or_else(|| format!("{} is not available", agent.as_str()))?;
     match agent {
-        AgentKind::Claude => claude_models().await,
-        AgentKind::Codex => run_model_catalog("codex", &["debug", "models", "--bundled"])
-            .await
-            .and_then(|text| {
-                parse_codex_models(&text)
-                    .ok_or_else(|| "Codex returned an unreadable model catalog".to_string())
-            }),
+        AgentKind::Claude => claude_models(&executable, config_path.as_deref()).await,
+        AgentKind::Codex => run_model_catalog_executable(
+            "codex",
+            &executable,
+            &["debug", "models", "--bundled"],
+            None,
+            config_path.as_deref(),
+        )
+        .await
+        .and_then(|text| {
+            parse_codex_models(&text)
+                .ok_or_else(|| "Codex returned an unreadable model catalog".to_string())
+        }),
         AgentKind::Hermes => hermes_cached_models(),
         AgentKind::Pi => run_model_catalog("pi", &["--list-models"])
             .await
@@ -188,10 +405,23 @@ pub async fn agent_models(agent: AgentKind) -> Result<Vec<AgentModelInfo>, Strin
 /// windows. This intentionally goes through each installed CLI so Sikemux uses
 /// the same account, credential store, and provider semantics as the agent.
 #[tauri::command]
-pub async fn agent_usage(agent: AgentKind) -> Result<AgentUsage, String> {
+pub async fn agent_usage(
+    agent: AgentKind,
+    executable_path: Option<String>,
+    config_path: Option<String>,
+) -> Result<AgentUsage, String> {
+    let executable = executable_path
+        .as_deref()
+        .map(expand_user_path)
+        .or_else(|| {
+            crate::system::find_executable_matching(agent.as_str(), |candidate| {
+                allowed_agent_path(agent.as_str(), candidate)
+            })
+        })
+        .ok_or_else(|| format!("{} is not available", agent.as_str()))?;
     match agent {
-        AgentKind::Claude => claude_usage().await,
-        AgentKind::Codex => codex_usage().await,
+        AgentKind::Claude => claude_usage(&executable, config_path.as_deref()).await,
+        AgentKind::Codex => codex_usage(&executable, config_path.as_deref()).await,
         _ => Err(format!(
             "{} does not expose structured plan usage",
             agent.as_str()
@@ -228,7 +458,7 @@ async fn run_model_catalog_with_input(
         allowed_agent_path(agent, candidate)
     })
     .ok_or_else(|| format!("{agent} is not available on PATH"))?;
-    run_model_catalog_executable(agent, &executable, args, input).await
+    run_model_catalog_executable(agent, &executable, args, input, None).await
 }
 
 async fn run_model_catalog_executable(
@@ -236,8 +466,10 @@ async fn run_model_catalog_executable(
     executable: &Path,
     args: &[&str],
     input: Option<&str>,
+    config_path: Option<&str>,
 ) -> Result<String, String> {
     let mut command = Command::new(executable);
+    apply_login_environment(&mut command);
     command
         .args(args)
         .kill_on_drop(true)
@@ -253,6 +485,7 @@ async fn run_model_catalog_executable(
             .env_remove("CLAUDECODE")
             .env("CLAUDE_CODE_ENTRYPOINT", "sikemux");
     }
+    apply_process_config(&mut command, agent, config_path);
     let mut child = command
         .spawn()
         .map_err(|_| format!("Could not start {agent} model lookup"))?;
@@ -317,19 +550,28 @@ fn model_catalog_error_detail(stderr: &[u8]) -> Option<String> {
     })
 }
 
-async fn claude_models() -> Result<Vec<AgentModelInfo>, String> {
+async fn claude_models(
+    executable: &Path,
+    config_path: Option<&str>,
+) -> Result<Vec<AgentModelInfo>, String> {
     const REQUEST_ID: &str = "sikemux-models";
     let request = format!(
         "{{\"type\":\"control_request\",\"request_id\":\"{REQUEST_ID}\",\"request\":{{\"subtype\":\"initialize\",\"hooks\":null}}}}\n"
     );
-    run_model_catalog_with_input("claude", CLAUDE_MODEL_CATALOG_ARGS, Some(&request))
-        .await
-        .and_then(|text| {
-            let models = parse_claude_models(&text, REQUEST_ID);
-            (!models.is_empty())
-                .then_some(models)
-                .ok_or_else(|| "Claude returned an empty model catalog".to_string())
-        })
+    run_model_catalog_executable(
+        "claude",
+        executable,
+        CLAUDE_MODEL_CATALOG_ARGS,
+        Some(&request),
+        config_path,
+    )
+    .await
+    .and_then(|text| {
+        let models = parse_claude_models(&text, REQUEST_ID);
+        (!models.is_empty())
+            .then_some(models)
+            .ok_or_else(|| "Claude returned an empty model catalog".to_string())
+    })
 }
 
 const CLAUDE_USAGE_REQUEST_ID: &str = "sikemux-usage";
@@ -338,33 +580,42 @@ const CODEX_USAGE_REQUEST_ID: u64 = 2;
 const USAGE_LOOKUP_TIMEOUT: Duration = Duration::from_secs(12);
 const USAGE_LOOKUP_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
 
-async fn claude_usage() -> Result<AgentUsage, String> {
+async fn claude_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
     let request = format!(
         "{{\"type\":\"control_request\",\"request_id\":\"{CLAUDE_USAGE_REQUEST_ID}\",\"request\":{{\"subtype\":\"get_usage\"}}}}\n"
     );
-    run_model_catalog_with_input("claude", CLAUDE_MODEL_CATALOG_ARGS, Some(&request))
-        .await
-        .and_then(|text| {
-            parse_claude_usage(&text, CLAUDE_USAGE_REQUEST_ID)
-                .ok_or_else(|| "Claude returned an unreadable usage snapshot".to_string())
-        })
-}
-
-async fn codex_usage() -> Result<AgentUsage, String> {
-    let executable = crate::system::find_executable_matching("codex", |candidate| {
-        allowed_agent_path("codex", candidate)
+    run_model_catalog_executable(
+        "claude",
+        executable,
+        CLAUDE_MODEL_CATALOG_ARGS,
+        Some(&request),
+        config_path,
+    )
+    .await
+    .and_then(|text| {
+        parse_claude_usage(&text, CLAUDE_USAGE_REQUEST_ID)
+            .ok_or_else(|| "Claude returned an unreadable usage snapshot".to_string())
     })
-    .ok_or_else(|| "codex is not available on PATH".to_string())?;
-    run_codex_usage_executable(&executable).await
 }
 
-async fn run_codex_usage_executable(executable: &Path) -> Result<AgentUsage, String> {
-    let mut child = Command::new(executable)
+async fn codex_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
+    run_codex_usage_executable(executable, config_path).await
+}
+
+async fn run_codex_usage_executable(
+    executable: &Path,
+    config_path: Option<&str>,
+) -> Result<AgentUsage, String> {
+    let mut command = Command::new(executable);
+    apply_login_environment(&mut command);
+    command
         .args(["app-server", "--stdio"])
         .kill_on_drop(true)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    apply_process_config(&mut command, "codex", config_path);
+    let mut child = command
         .spawn()
         .map_err(|_| "Could not start Codex usage lookup".to_string())?;
     let mut stdin = child
@@ -747,18 +998,56 @@ fn model_info(id: &str, label: Option<&str>) -> Option<AgentModelInfo> {
 
 const MAX_MODEL_LENGTH: usize = 256;
 
-fn configured_default_model(kind: &str) -> Option<String> {
+fn agent_config_root(kind: &str, configured: Option<&str>) -> Option<PathBuf> {
+    let home = home_path()?;
+    if let Some(configured) = configured.map(str::trim).filter(|value| !value.is_empty()) {
+        let path = expand_user_path(configured);
+        let is_config_file = matches!(
+            path.file_name().and_then(|value| value.to_str()),
+            Some("config.toml" | "settings.json" | "settings.local.json")
+        );
+        return if is_config_file {
+            path.parent().map(Path::to_path_buf)
+        } else {
+            Some(path)
+        };
+    }
+    let environment_path = |key: &str| {
+        std::env::var_os(key).map(PathBuf::from).or_else(|| {
+            crate::system::login_shell_environment()
+                .get(key)
+                .map(PathBuf::from)
+        })
+    };
+    match kind {
+        "claude" => {
+            Some(environment_path("CLAUDE_CONFIG_DIR").unwrap_or_else(|| home.join(".claude")))
+        }
+        "codex" => Some(environment_path("CODEX_HOME").unwrap_or_else(|| home.join(".codex"))),
+        _ => Some(home),
+    }
+}
+
+fn configured_default_model(kind: &str, config_path: Option<&str>) -> Option<String> {
     let home = home_path()?;
     match kind {
         "claude" => std::env::var("ANTHROPIC_MODEL")
             .ok()
             .and_then(|value| clean_model(&value))
-            .or_else(|| json_model(&home.join(".claude/settings.local.json"), "model"))
-            .or_else(|| json_model(&home.join(".claude/settings.json"), "model")),
+            .or_else(|| {
+                json_model(
+                    &agent_config_root(kind, config_path)?.join("settings.local.json"),
+                    "model",
+                )
+            })
+            .or_else(|| {
+                json_model(
+                    &agent_config_root(kind, config_path)?.join("settings.json"),
+                    "model",
+                )
+            }),
         "codex" => {
-            let root = std::env::var_os("CODEX_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".codex"));
+            let root = agent_config_root(kind, config_path)?;
             fs::read_to_string(root.join("config.toml"))
                 .ok()
                 .and_then(|text| toml_model(&text))
@@ -797,19 +1086,23 @@ fn configured_default_model(kind: &str) -> Option<String> {
     }
 }
 
-fn configured_default_effort(kind: &str) -> Option<String> {
+fn configured_default_effort(kind: &str, config_path: Option<&str>) -> Option<String> {
     let home = home_path()?;
     match kind {
         "claude" => json_effort(
-            &home.join(".claude/settings.local.json"),
+            &agent_config_root(kind, config_path)?.join("settings.local.json"),
             "effortLevel",
             kind,
         )
-        .or_else(|| json_effort(&home.join(".claude/settings.json"), "effortLevel", kind)),
+        .or_else(|| {
+            json_effort(
+                &agent_config_root(kind, config_path)?.join("settings.json"),
+                "effortLevel",
+                kind,
+            )
+        }),
         "codex" => {
-            let root = std::env::var_os("CODEX_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".codex"));
+            let root = agent_config_root(kind, config_path)?;
             fs::read_to_string(root.join("config.toml"))
                 .ok()
                 .and_then(|text| toml_effort(&text))
@@ -966,10 +1259,14 @@ fn yaml_scalar(raw: &str) -> Option<String> {
 
 /// Existing on-disk conversations for an agent.
 #[tauri::command]
-pub fn agent_sessions(agent: AgentKind, cwd: String) -> Vec<AgentSession> {
+pub fn agent_sessions(
+    agent: AgentKind,
+    cwd: String,
+    config_path: Option<String>,
+) -> Vec<AgentSession> {
     match agent {
-        AgentKind::Claude => claude_sessions(&cwd),
-        AgentKind::Codex => codex_sessions(&cwd),
+        AgentKind::Claude => claude_sessions(&cwd, config_path.as_deref()),
+        AgentKind::Codex => codex_sessions(&cwd, config_path.as_deref()),
         AgentKind::Hermes => hermes_sessions(),
         AgentKind::Pi => pi_sessions(&cwd),
         AgentKind::Opencode => opencode_sessions(&cwd),
@@ -1007,12 +1304,16 @@ fn push_existing_or_parent(
     }
 }
 
-fn agent_watch_dirs(agent: AgentKind, cwd: &str) -> Vec<AgentWatchTarget> {
+fn agent_watch_dirs(
+    agent: AgentKind,
+    cwd: &str,
+    config_path: Option<&str>,
+) -> Vec<AgentWatchTarget> {
     let mut out = Vec::new();
     match agent {
         AgentKind::Claude => {
-            if let Some(home) = home_path() {
-                let projects = home.join(".claude/projects");
+            if let Some(root) = agent_config_root("claude", config_path) {
+                let projects = root.join("projects");
                 let project = projects.join(cwd.replace('/', "-"));
                 if project.is_dir() {
                     push_watch_target(&mut out, project, RecursiveMode::Recursive);
@@ -1022,8 +1323,7 @@ fn agent_watch_dirs(agent: AgentKind, cwd: &str) -> Vec<AgentWatchTarget> {
             }
         }
         AgentKind::Codex => {
-            if let Some(home) = home_path() {
-                let codex = home.join(".codex");
+            if let Some(codex) = agent_config_root("codex", config_path) {
                 let sessions = codex.join("sessions");
                 if sessions.is_dir() {
                     push_watch_target(&mut out, sessions, RecursiveMode::Recursive);
@@ -1062,6 +1362,7 @@ fn spawn_agent_debouncer(
     app: AppHandle,
     agent: &'static str,
     cwd: String,
+    config_path: Option<String>,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<()>,
 ) {
     tauri::async_runtime::spawn(async move {
@@ -1091,6 +1392,7 @@ fn spawn_agent_debouncer(
                 AgentSessionsChanged {
                     agent,
                     cwd: cwd.clone(),
+                    config_path: config_path.clone(),
                 },
             );
         }
@@ -1102,11 +1404,12 @@ pub fn agent_sessions_watch_start(
     app: AppHandle,
     agent: AgentKind,
     cwd: String,
+    config_path: Option<String>,
 ) -> Result<u32, String> {
-    let dirs = agent_watch_dirs(agent, &cwd);
+    let dirs = agent_watch_dirs(agent, &cwd, config_path.as_deref());
     let id = NEXT_WATCH_ID.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    spawn_agent_debouncer(app, agent.as_str(), cwd, rx);
+    spawn_agent_debouncer(app, agent.as_str(), cwd, config_path, rx);
 
     let mut watchers = Vec::new();
     for target in dirs {
@@ -1140,11 +1443,6 @@ pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .remove(&id);
     Ok(())
-}
-
-fn executable_in_path(agent: &str, bin: &str) -> bool {
-    crate::system::find_executable_matching(bin, |candidate| allowed_agent_path(agent, candidate))
-        .is_some()
 }
 
 fn allowed_agent_path(agent: &str, path: &Path) -> bool {
@@ -1289,13 +1587,11 @@ fn read_suffix(file: &mut fs::File, start: u64) -> Option<String> {
 }
 
 // ---- claude — ~/.claude/projects/<cwd-dashed>/<uuid>.jsonl --------------
-fn claude_sessions(cwd: &str) -> Vec<AgentSession> {
-    let Ok(home) = std::env::var("HOME") else {
+fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
+    let Some(root) = agent_config_root("claude", config_path) else {
         return Vec::new();
     };
-    let dir = PathBuf::from(&home)
-        .join(".claude/projects")
-        .join(cwd.replace('/', "-"));
+    let dir = root.join("projects").join(cwd.replace('/', "-"));
     let Ok(entries) = fs::read_dir(&dir) else {
         return Vec::new();
     };
@@ -1415,12 +1711,12 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
     }
 }
 
-fn codex_sessions(cwd: &str) -> Vec<AgentSession> {
-    let Ok(home) = std::env::var("HOME") else {
+fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
+    let Some(root) = agent_config_root("codex", config_path) else {
         return Vec::new();
     };
     let mut files = Vec::new();
-    collect_jsonl(&PathBuf::from(&home).join(".codex/sessions"), &mut files, 0);
+    collect_jsonl(&root.join("sessions"), &mut files, 0);
     files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
     files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
@@ -1719,14 +2015,17 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 #[cfg(test)]
 mod executable_tests {
     use super::{
-        allowed_agent_path_for_home, cached_title, codex_title, json_effort, parse_claude_models,
-        parse_claude_usage, parse_codex_models, parse_codex_usage_result, parse_hermes_models,
-        parse_line_models, parse_pi_models, qualify_model, title_cache_stamp, toml_effort,
-        toml_model, yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo,
+        agent_config_root, allowed_agent_path_for_home, cached_title, codex_title, json_effort,
+        parse_claude_models, parse_claude_usage, parse_codex_models, parse_codex_usage_result,
+        parse_hermes_models, parse_line_models, parse_pi_models, qualify_model, title_cache_stamp,
+        toml_effort, toml_model, yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo,
         AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
-    use super::{run_model_catalog_executable, MODEL_CATALOG_ERROR_DETAIL_LIMIT};
+    use super::{
+        first_healthy_agent_candidate, probe_agent_executable, run_model_catalog_executable,
+        MODEL_CATALOG_ERROR_DETAIL_LIMIT,
+    };
     use std::io::Write;
     use std::path::Path;
 
@@ -1745,6 +2044,56 @@ mod executable_tests {
             Path::new("/usr/local/bin/opencode"),
             home,
         ));
+    }
+
+    #[test]
+    fn profile_config_files_resolve_to_their_provider_root() {
+        assert_eq!(
+            agent_config_root("codex", Some("/profiles/work/config.toml")),
+            Some(Path::new("/profiles/work").to_path_buf())
+        );
+        assert_eq!(
+            agent_config_root("claude", Some("/profiles/personal/settings.json")),
+            Some(Path::new("/profiles/personal").to_path_buf())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn executable_probe_rejects_broken_wrappers() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut healthy = tempfile::NamedTempFile::new().unwrap();
+        writeln!(healthy, "#!/bin/sh\nprintf 'codex-cli test\\n'").unwrap();
+        let mut permissions = healthy.as_file().metadata().unwrap().permissions();
+        permissions.set_mode(0o755);
+        healthy.as_file().set_permissions(permissions).unwrap();
+
+        let mut broken = tempfile::NamedTempFile::new().unwrap();
+        writeln!(
+            broken,
+            "#!/bin/sh\nprintf 'saved launcher missing\\n' >&2\nexit 127"
+        )
+        .unwrap();
+        let mut permissions = broken.as_file().metadata().unwrap().permissions();
+        permissions.set_mode(0o755);
+        broken.as_file().set_permissions(permissions).unwrap();
+
+        assert!(probe_agent_executable("codex", healthy.path())
+            .await
+            .is_ok());
+        assert!(probe_agent_executable("codex", broken.path())
+            .await
+            .unwrap_err()
+            .contains("saved launcher missing"));
+
+        let (selected, failures) = first_healthy_agent_candidate(
+            "codex",
+            vec![broken.path().to_path_buf(), healthy.path().to_path_buf()],
+        )
+        .await;
+        assert_eq!(selected.as_deref(), Some(healthy.path()));
+        assert_eq!(failures.len(), 1);
     }
 
     #[test]
@@ -1960,6 +2309,7 @@ mod executable_tests {
             Path::new("/bin/sh"),
             &["-c", "printf '%s' '{\"models\":[]}'"],
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1976,6 +2326,7 @@ mod executable_tests {
             "test-agent",
             Path::new("/bin/sh"),
             &["-c", &script],
+            None,
             None,
         )
         .await

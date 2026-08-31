@@ -85,4 +85,16 @@ describe("AgentSessionSync IPC events", () => {
         expect(resources.fetchResource).not.toHaveBeenCalled();
         expect(agentApi.watchStart).not.toHaveBeenCalled();
     });
+
+    it("keeps session discovery inside the selected provider profile", async () => {
+        setState((state) => ({
+            providerProfiles: [{ id: "codex-work", name: "Codex Work", provider: "codex", accent: "#10a37f", configPath: "~/.codex-work" }],
+            agents: { ...state.agents, "agent-1": { ...state.agents["agent-1"], profileId: "codex-work" } },
+        }));
+
+        render(<AgentSessionSync />);
+
+        await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledWith(expect.anything(), "codex", "/repo", "~/.codex-work"));
+        await waitFor(() => expect(agentApi.watchStart).toHaveBeenCalledWith("codex", "/repo", "~/.codex-work"));
+    });
 });

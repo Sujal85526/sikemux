@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentUsage, AgentUsageWindow } from "../api/agents";
+import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agentProfiles";
 import * as cmd from "../state/commands";
 import { type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.defs";
@@ -36,13 +37,19 @@ export function AgentRail() {
     const density = useStore((s) => s.railDensity);
     const agentsBySession = useStore((s) => s.agentsBySession);
     const agentsById = useStore((s) => s.agents);
-    const catalog = useResource(agentCatalogR);
-    const availableAgents = useMemo(() => catalog.data ?? [], [catalog.data]);
+    const profiles = useStore((s) => s.providerProfiles);
+    const profileSelections = useStore((s) => s.selectedProviderProfileIds);
+    const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
+    const catalog = useResource(agentCatalogR, runtimeProfiles);
+    const catalogAgents = useMemo(() => catalog.data ?? [], [catalog.data]);
+    const availableAgents = useMemo(() => catalogAgents.filter((agent) => agent.available !== false), [catalogAgents]);
     const availableTypes = useMemo(() => new Set(availableAgents.map((a) => a.type)), [availableAgents]);
     const claudeDetected = availableTypes.has("claude");
     const codexDetected = availableTypes.has("codex");
-    const claudeUsage = useResourceEnabled(claudeDetected, agentUsageR, "claude");
-    const codexUsage = useResourceEnabled(codexDetected, agentUsageR, "codex");
+    const claudeProvider = availableAgents.find((agent) => agent.type === "claude");
+    const codexProvider = availableAgents.find((agent) => agent.type === "codex");
+    const claudeUsage = useResourceEnabled(claudeDetected, agentUsageR, "claude", claudeProvider?.command, claudeProvider?.configPath ?? undefined);
+    const codexUsage = useResourceEnabled(codexDetected, agentUsageR, "codex", codexProvider?.command, codexProvider?.configPath ?? undefined);
     const usageRefreshRef = useRef({ claude: claudeUsage.refresh, codex: codexUsage.refresh });
     usageRefreshRef.current = { claude: claudeUsage.refresh, codex: codexUsage.refresh };
 
@@ -78,7 +85,14 @@ export function AgentRail() {
     const isProject = session?.kind === "project";
     const cwd = session?.cwd ?? "";
 
-    const recents = useResourceEnabled(isProject && !!cwd && selectedType != null, agentSessionsR, selectedType ?? "claude", isProject ? cwd : "");
+    const selectedProvider = availableAgents.find((agent) => agent.type === selectedType);
+    const recents = useResourceEnabled(
+        isProject && !!cwd && selectedType != null,
+        agentSessionsR,
+        selectedType ?? "claude",
+        isProject ? cwd : "",
+        selectedProvider?.configPath ?? undefined,
+    );
     const disk = isProject ? (recents.data ?? []) : [];
     const selectedUsage = selectedType === "claude" ? claudeUsage : selectedType === "codex" ? codexUsage : null;
     const usagePeaks = {
@@ -150,6 +164,7 @@ export function AgentRail() {
                     searchOpen={false}
                     onToggleSearch={toggleSearch}
                     usagePeaks={usagePeaks}
+                    canOpenPalette={catalogAgents.length > 0}
                 />
                 {isUsageAgent(selectedType) && selectedUsage && (
                     <AgentUsagePanel
@@ -174,6 +189,7 @@ export function AgentRail() {
                 searchOpen={searchOpen}
                 onToggleSearch={toggleSearch}
                 usagePeaks={usagePeaks}
+                canOpenPalette={catalogAgents.length > 0}
             />
             {isUsageAgent(selectedType) && selectedUsage && (
                 <AgentUsagePanel provider={selectedType} usage={selectedUsage} label={availableAgents.find((a) => a.type === selectedType)?.label} />
@@ -244,7 +260,15 @@ export function AgentRail() {
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Recent" rule />
                         {recentDisplay.map((s) => (
-                            <button key={s.id} className="agent-row recent" onClick={() => cmd.addAgent(selectedType, s.id, s.title)}>
+                            <button
+                                key={s.id}
+                                className="agent-row recent"
+                                onClick={() =>
+                                    cmd.addAgent(selectedType, s.id, s.title, {
+                                        profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
+                                        detectedExecutablePath: selectedProvider?.command,
+                                    })
+                                }>
                                 <span className={`agent-glyph ${selectedType}`}>
                                     <AgentIcon type={selectedType} size={20} />
                                 </span>
@@ -389,6 +413,7 @@ function AgentHeader({
     searchOpen,
     onToggleSearch,
     usagePeaks,
+    canOpenPalette,
 }: {
     agents: AgentInfo[];
     type: AgentType | null;
@@ -396,6 +421,7 @@ function AgentHeader({
     searchOpen: boolean;
     onToggleSearch: () => void;
     usagePeaks: Partial<Record<UsageAgentType, number | undefined>>;
+    canOpenPalette: boolean;
 }) {
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
@@ -412,13 +438,13 @@ function AgentHeader({
                             <IconSearch size={15} />
                         </button>
                     </Tooltip>
-                    <Tooltip label={type ? `new ${label} agent — ⌥N` : "No agent CLI detected"}>
+                    <Tooltip label={type ? `new ${label} agent — ⌥N` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}>
                         <button
                             className="agent-header-btn"
-                            disabled={!type}
-                            aria-label={type ? `New ${label} agent` : "No agent CLI detected"}
+                            disabled={!type && !canOpenPalette}
+                            aria-label={type ? `New ${label} agent` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}
                             onClick={() => {
-                                if (type) cmd.openAgentPalette();
+                                if (type || canOpenPalette) cmd.openAgentPalette();
                             }}>
                             <IconPlus size={15} />
                         </button>

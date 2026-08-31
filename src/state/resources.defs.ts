@@ -1,4 +1,5 @@
 import { agentApi, type AgentInfo, type AgentModelInfo, type AgentSession, type AgentUsage } from "../api/agents";
+import type { AgentRuntimeProfile } from "../agentProfiles";
 import {
     awsApi,
     type AwsIdentity,
@@ -128,25 +129,26 @@ export const s3BucketsR = resource({
 
 export const agentCatalogR = resource({
     kind: "agents.catalog",
-    fetch: (): Promise<AgentInfo[]> => agentApi.available(),
+    fetch: (profiles: AgentRuntimeProfile[]): Promise<AgentInfo[]> => agentApi.available(profiles),
     staleAfterMs: 60_000,
 });
 
 export const agentModelsR = resource({
     kind: "agents.models",
-    fetch: (type: AgentType): Promise<AgentModelInfo[]> => agentApi.models(type),
+    fetch: (type: AgentType, executablePath?: string, configPath?: string): Promise<AgentModelInfo[]> =>
+        agentApi.models(type, executablePath, configPath),
     staleAfterMs: 5 * 60_000,
 });
 
 export const agentUsageR = resource({
     kind: "agents.usage",
-    fetch: (type: AgentType): Promise<AgentUsage> => agentApi.usage(type),
+    fetch: (type: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> => agentApi.usage(type, executablePath, configPath),
     staleAfterMs: 5 * 60_000,
 });
 
 export const agentSessionsR = resource({
     kind: "agents.sessions",
-    fetch: (type: AgentType, cwd: string): Promise<AgentSession[]> => agentApi.sessions(type, cwd),
+    fetch: (type: AgentType, cwd: string, configPath?: string): Promise<AgentSession[]> => agentApi.sessions(type, cwd, configPath),
     staleAfterMs: 0,
 });
 

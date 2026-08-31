@@ -24,7 +24,18 @@ export type PersistedSession = Omit<Session, "bruno"> & {
 /** Safe restart record. Startup commands and runtime evidence are never serialized. */
 export type PersistedAgent = Pick<
     Agent,
-    "id" | "type" | "title" | "resumeId" | "permissionMode" | "profileId" | "cwd" | "model" | "effort" | "skipPermissions" | "keepAlive"
+    | "id"
+    | "type"
+    | "title"
+    | "resumeId"
+    | "permissionMode"
+    | "profileId"
+    | "executablePath"
+    | "cwd"
+    | "model"
+    | "effort"
+    | "skipPermissions"
+    | "keepAlive"
 >;
 
 export interface PersistedSnapshot {

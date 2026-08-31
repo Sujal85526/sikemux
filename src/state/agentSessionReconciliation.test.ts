@@ -31,11 +31,11 @@ describe("agent session reconciliation", () => {
             agentsBySession: { ...state.agentsBySession, [sessionId]: [agentId] },
         });
 
-        reconcileAgentSessions("codex", "/repo", [{ id: transcriptId, title: transcriptId.slice(0, 8), mtime: 101 }]);
+        reconcileAgentSessions("codex", "/repo", undefined, [{ id: transcriptId, title: transcriptId.slice(0, 8), mtime: 101 }]);
         expect(getState().agents[agentId]).toMatchObject({ resumeId: transcriptId, title: "codex" });
         expect(agentSessionMetadataPending(getState().agents[agentId])).toBe(true);
 
-        reconcileAgentSessions("codex", "/repo", [{ id: transcriptId, title: "Hello", mtime: 102 }]);
+        reconcileAgentSessions("codex", "/repo", undefined, [{ id: transcriptId, title: "Hello", mtime: 102 }]);
         expect(getState().agents[agentId]).toMatchObject({ resumeId: transcriptId, title: "Hello" });
         expect(agentSessionMetadataPending(getState().agents[agentId])).toBe(false);
     });

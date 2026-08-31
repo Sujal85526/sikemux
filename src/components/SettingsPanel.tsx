@@ -363,6 +363,20 @@ function AgentsPage() {
                                 onChange={(event) => setDraft({ ...draft, executablePath: event.target.value || undefined })}
                             />
                         </label>
+                        {(draft.provider === "claude" || draft.provider === "codex") && (
+                            <label>
+                                <span>profile directory</span>
+                                <input
+                                    className="settings-input"
+                                    placeholder={draft.provider === "codex" ? "Automatic, or ~/.codex-work" : "Automatic, or ~/.claude-work"}
+                                    value={draft.configPath ?? ""}
+                                    onChange={(event) => setDraft({ ...draft, configPath: event.target.value || undefined })}
+                                />
+                                <small className="settings-field-help">
+                                    Leave empty to use the CLI default. Set this only when keeping multiple {draft.provider} accounts side by side.
+                                </small>
+                            </label>
+                        )}
                         <div className="command-editor-actions">
                             {isSaved && !draft.id.startsWith("builtin-") && (
                                 <button

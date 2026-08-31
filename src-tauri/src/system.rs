@@ -29,16 +29,17 @@ use crate::{
 pub fn fix_path_from_login_shell() {
     let shell = configured_shell();
 
-    // Login shell only (`-l`): sources .zprofile / .bash_profile, captures
-    // the user's exported PATH without zsh interactive's terminal-CWD OSC
-    // escapes (which would contaminate the first PATH entry).
     let mut shell_path = String::new();
-    if let Ok(o) = Command::new(&shell)
-        .args(["-l", "-c", "printf %s \"$PATH\""])
-        .output()
-    {
+    let script =
+        "printf %s '@@SIKEMUX_PATH@@'; printf %s \"$PATH\"; printf %s '@@SIKEMUX_PATH_END@@'";
+    let mut command = Command::new(&shell);
+    command
+        .args(["-l", "-i", "-c", script])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Ok(o) = command.output() {
         if o.status.success() {
-            shell_path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            shell_path = parse_login_shell_path(&o.stdout).unwrap_or_default();
         }
     }
 
@@ -79,6 +80,17 @@ pub fn fix_path_from_login_shell() {
     // SAFETY: called once at startup before any threads spawn — env::set_var
     // is unsound under multi-threaded mutation but we're single-threaded.
     unsafe { std::env::set_var("PATH", new_path) };
+}
+
+#[cfg(unix)]
+fn parse_login_shell_path(stdout: &[u8]) -> Option<String> {
+    const START: &[u8] = b"@@SIKEMUX_PATH@@";
+    const END: &[u8] = b"@@SIKEMUX_PATH_END@@";
+    let start = rfind_bytes(stdout, START)? + START.len();
+    let payload = &stdout[start..];
+    let end = rfind_bytes(payload, END)?;
+    let path = std::str::from_utf8(&payload[..end]).ok()?.trim();
+    (!path.is_empty()).then(|| path.to_string())
 }
 
 #[cfg(windows)]
@@ -320,7 +332,15 @@ pub fn integration_health() -> IntegrationHealth {
 }
 
 pub fn find_executable_matching(name: &str, predicate: impl Fn(&Path) -> bool) -> Option<PathBuf> {
-    let paths = std::env::var_os("PATH")?;
+    find_executables_matching(name, predicate)
+        .into_iter()
+        .next()
+}
+
+pub fn find_executables_matching(name: &str, predicate: impl Fn(&Path) -> bool) -> Vec<PathBuf> {
+    let Some(paths) = std::env::var_os("PATH") else {
+        return Vec::new();
+    };
     #[cfg(windows)]
     let names: Vec<String> = if PathBuf::from(name).extension().is_some() {
         vec![name.to_string()]
@@ -336,14 +356,26 @@ pub fn find_executable_matching(name: &str, predicate: impl Fn(&Path) -> bool) -
     #[cfg(not(windows))]
     let names = vec![name.to_string()];
 
-    find_executable_matching_in(std::env::split_paths(&paths), &names, &predicate)
+    find_executables_matching_in(std::env::split_paths(&paths), &names, &predicate)
 }
 
+#[cfg(test)]
 fn find_executable_matching_in(
     paths: impl IntoIterator<Item = PathBuf>,
     names: &[String],
     predicate: &impl Fn(&Path) -> bool,
 ) -> Option<PathBuf> {
+    find_executables_matching_in(paths, names, predicate)
+        .into_iter()
+        .next()
+}
+
+fn find_executables_matching_in(
+    paths: impl IntoIterator<Item = PathBuf>,
+    names: &[String],
+    predicate: &impl Fn(&Path) -> bool,
+) -> Vec<PathBuf> {
+    let mut found = Vec::new();
     for directory in paths {
         for candidate_name in names {
             let candidate = directory.join(candidate_name);
@@ -360,12 +392,12 @@ fn find_executable_matching_in(
                     continue;
                 }
             }
-            if predicate(&candidate) {
-                return Some(candidate);
+            if predicate(&candidate) && !found.contains(&candidate) {
+                found.push(candidate);
             }
         }
     }
-    None
+    found
 }
 
 /// Existing modules use HOME for established ~/.config, ~/.ssh and ~/.aws
@@ -696,6 +728,44 @@ mod executable_tests {
             &|candidate| candidate != first_candidate,
         );
         assert_eq!(result, Some(second_candidate));
+    }
+
+    #[test]
+    fn executable_lookup_returns_every_healthy_candidate_in_path_order() {
+        let first = tempdir().expect("first path");
+        let second = tempdir().expect("second path");
+        let first_candidate = first.path().join("tool");
+        let second_candidate = second.path().join("tool");
+        std::fs::write(&first_candidate, b"first").expect("first executable");
+        std::fs::write(&second_candidate, b"second").expect("second executable");
+
+        #[cfg(unix)]
+        for candidate in [&first_candidate, &second_candidate] {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(candidate).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(candidate, permissions).unwrap();
+        }
+
+        let names = vec!["tool".to_string()];
+        assert_eq!(
+            find_executables_matching_in(
+                [first.path().to_path_buf(), second.path().to_path_buf()],
+                &names,
+                &|_| true,
+            ),
+            vec![first_candidate, second_candidate]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn login_shell_path_ignores_interactive_profile_output() {
+        let output = b"welcome\n\x1b]7;file://host/tmp\x07@@SIKEMUX_PATH@@/Users/test/.mise/shims:/usr/bin@@SIKEMUX_PATH_END@@prompt noise";
+        assert_eq!(
+            parse_login_shell_path(output).as_deref(),
+            Some("/Users/test/.mise/shims:/usr/bin")
+        );
     }
 
     #[test]

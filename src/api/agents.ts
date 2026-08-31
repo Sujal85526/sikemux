@@ -1,10 +1,16 @@
 import { invokeCommand as invoke } from "./invoke";
+import type { AgentRuntimeProfile } from "../agentProfiles";
 import type { AgentEffort, AgentType } from "../state/types";
 
 export interface AgentInfo {
     type: AgentType;
     label: string;
     command: string;
+    available?: boolean;
+    error?: string | null;
+    warning?: string | null;
+    profileId?: string | null;
+    configPath?: string | null;
     /** Effective model inherited from the CLI's own user configuration. */
     defaultModel: string | null;
     /** Effective reasoning effort inherited from the CLI's own user configuration. */
@@ -44,19 +50,19 @@ export type AgentSessionProviderResult =
 const inflight = new Map<string, Promise<AgentSession[]>>();
 const HISTORY_TIMEOUT_MS = 8_000;
 
-function key(agent: string, cwd: string) {
-    return `${agent}\0${cwd}`;
+function key(agent: string, cwd: string, configPath?: string) {
+    return `${agent}\0${cwd}\0${configPath ?? ""}`;
 }
 
-async function fetchAvailable(): Promise<AgentInfo[]> {
-    return invoke<AgentInfo[]>("available_agents");
+async function fetchAvailable(profiles: AgentRuntimeProfile[] = []): Promise<AgentInfo[]> {
+    return invoke<AgentInfo[]>("available_agents", { profiles });
 }
 
-async function fetchSessions(agent: string, cwd: string): Promise<AgentSession[]> {
-    const k = key(agent, cwd);
+async function fetchSessions(agent: string, cwd: string, configPath?: string): Promise<AgentSession[]> {
+    const k = key(agent, cwd, configPath);
     const existing = inflight.get(k);
     if (existing) return existing;
-    const p = invoke<AgentSession[]>("agent_sessions", { agent, cwd }).finally(() => {
+    const p = invoke<AgentSession[]>("agent_sessions", { agent, cwd, configPath }).finally(() => {
         inflight.delete(k);
     });
     inflight.set(k, p);
@@ -71,7 +77,7 @@ async function fetchSessionResults(providers: readonly AgentInfo[], cwd: string)
                 const timeout = new Promise<never>((_resolve, reject) => {
                     timer = setTimeout(() => reject(new Error("agent history timed out")), HISTORY_TIMEOUT_MS);
                 });
-                const sessions = await Promise.race([fetchSessions(provider.type, cwd), timeout]).finally(() => {
+                const sessions = await Promise.race([fetchSessions(provider.type, cwd, provider.configPath ?? undefined), timeout]).finally(() => {
                     if (timer) clearTimeout(timer);
                 });
                 return { provider, status: "success", sessions };
@@ -84,10 +90,13 @@ async function fetchSessionResults(providers: readonly AgentInfo[], cwd: string)
 
 export const agentApi = {
     available: fetchAvailable,
-    models: (agent: AgentType): Promise<AgentModelInfo[]> => invoke<AgentModelInfo[]>("agent_models", { agent }),
-    usage: (agent: AgentType): Promise<AgentUsage> => invoke<AgentUsage>("agent_usage", { agent }),
+    models: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentModelInfo[]> =>
+        invoke<AgentModelInfo[]>("agent_models", { agent, executablePath, configPath }),
+    usage: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> =>
+        invoke<AgentUsage>("agent_usage", { agent, executablePath, configPath }),
     sessions: fetchSessions,
     sessionResults: fetchSessionResults,
-    watchStart: (agent: AgentType, cwd: string): Promise<number> => invoke<number>("agent_sessions_watch_start", { agent, cwd }),
+    watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
+        invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),
     watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),
 };

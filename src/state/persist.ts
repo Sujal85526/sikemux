@@ -362,9 +362,11 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (permissionMode) agent.permissionMode = permissionMode;
     if (permissionMode === "bypass") agent.skipPermissions = true;
     const profileId = boundedOptionalString(value.profileId, 100);
+    const executablePath = boundedOptionalString(value.executablePath, 4096);
     const cwd = boundedOptionalString(value.cwd, 4096);
     const model = boundedOptionalString(value.model, 200);
     if (profileId) agent.profileId = profileId;
+    if (executablePath) agent.executablePath = executablePath;
     if (cwd) agent.cwd = cwd;
     if (model) agent.model = model;
     if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
@@ -434,6 +436,7 @@ function snapshot(): string {
                     permissionMode,
                     ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
                     ...(agent.profileId ? { profileId: agent.profileId } : {}),
+                    ...(agent.executablePath ? { executablePath: agent.executablePath } : {}),
                     ...(agent.cwd ? { cwd: agent.cwd } : {}),
                     ...(agent.model ? { model: agent.model } : {}),
                     ...(agent.effort ? { effort: agent.effort } : {}),
@@ -596,23 +599,25 @@ export function applyHydrate(raw: string): HydrationResult {
                     saved.type,
                     saved.permissionMode ?? (saved.skipPermissions ? "bypass" : "workspace-write"),
                 );
-                const executablePath = saved.profileId
-                    ? providerProfiles.find((profile) => profile.id === saved.profileId && profile.provider === saved.type)?.executablePath
+                const profile = saved.profileId
+                    ? providerProfiles.find((item) => item.id === saved.profileId && item.provider === saved.type)
                     : undefined;
+                const executablePath = profile?.executablePath || saved.executablePath;
+                const launchOptions = {
+                    model: saved.model,
+                    effort: saved.effort,
+                    configPath: profile?.configPath,
+                    environmentKeys: profile?.environmentKeys,
+                };
                 if (saved.profileId && !providerProfiles.some((profile) => profile.id === saved.profileId && profile.provider === saved.type)) {
                     delete saved.profileId;
                 }
                 agents[saved.id] = {
                     ...saved,
                     permissionMode,
-                    startup: agentStartup(saved.type, saved.resumeId, permissionMode, executablePath, {
-                        model: saved.model,
-                        effort: saved.effort,
-                    }),
-                    directCommand: agentDirectCommand(saved.type, saved.resumeId, permissionMode, executablePath, {
-                        model: saved.model,
-                        effort: saved.effort,
-                    }),
+                    executablePath,
+                    startup: agentStartup(saved.type, saved.resumeId, permissionMode, executablePath, launchOptions),
+                    directCommand: agentDirectCommand(saved.type, saved.resumeId, permissionMode, executablePath, launchOptions),
                     launchState: "dormant",
                 };
                 agentsBySession[sid].push(saved.id);

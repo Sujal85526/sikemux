@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invokeCommand as invoke } from "../api/invoke";
 import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
@@ -8,6 +8,7 @@ import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { installPendingUpdate, isUpdateBusy, updateStatusLabel } from "../api/updater";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
+import { selectedAgentRuntimeProfiles } from "../agentProfiles";
 import {
     getKeybindingAction,
     keybindingLabelForAction,
@@ -106,7 +107,10 @@ function pressedOnboardingKey(event: KeyboardEvent, overrides: KeybindingOverrid
 export function Onboarding() {
     const open = useStore((s) => s.onboardingOpen);
     const overrides = useStore((s) => s.keybindingOverrides);
-    const catalog = useResource(agentCatalogR);
+    const profiles = useStore((s) => s.providerProfiles);
+    const profileSelections = useStore((s) => s.selectedProviderProfileIds);
+    const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
+    const catalog = useResource(agentCatalogR, runtimeProfiles);
     const [health, setHealth] = useState<IntegrationHealth | null>(null);
     const [healthUnavailable, setHealthUnavailable] = useState(false);
     const [step, setStep] = useState(0);
@@ -264,7 +268,7 @@ export function Onboarding() {
         action: getKeybindingAction(id),
         label: keybindingLabelForAction(overrides, id),
     });
-    const detectedAgents = catalog.data?.map((agent) => agent.label) ?? [];
+    const detectedAgents = catalog.data?.filter((agent) => agent.available !== false).map((agent) => agent.label) ?? [];
     const healthSignals = health
         ? [
               { label: `shell ${health.shell || "unknown"}`, ready: !!health.shell },

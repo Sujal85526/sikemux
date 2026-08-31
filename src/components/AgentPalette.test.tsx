@@ -104,6 +104,62 @@ describe("AgentPalette", () => {
         expect(getState().agentPaletteOpen).toBe(false);
     });
 
+    it("uses the health-checked executable and selected profile directory", async () => {
+        const user = userEvent.setup();
+        setState({
+            providerProfiles: [{ id: "codex-work", name: "Codex Work", provider: "codex", accent: "#10a37f", configPath: "~/.codex-work" }],
+            selectedProviderProfileIds: { codex: "codex-work" },
+        });
+        mocks.available.mockResolvedValue([
+            {
+                type: "codex",
+                label: "Codex",
+                command: "/Applications/ChatGPT.app/Contents/Resources/codex",
+                available: true,
+                profileId: "codex-work",
+                configPath: "~/.codex-work",
+                defaultModel: null,
+                defaultEffort: null,
+            },
+        ]);
+        invalidate((kind) => kind === "agents.catalog");
+        render(<AgentPalette />);
+
+        await user.click(await screen.findByRole("button", { name: "+ new Codex in Normal mode" }));
+
+        const id = getState().agentsBySession["sess-project"][0];
+        expect(getState().agents[id]).toMatchObject({
+            profileId: "codex-work",
+            executablePath: "/Applications/ChatGPT.app/Contents/Resources/codex",
+            directCommand: {
+                program: "/Applications/ChatGPT.app/Contents/Resources/codex",
+                profile: { configPath: "~/.codex-work" },
+            },
+        });
+    });
+
+    it("shows a broken selected profile without opening a dead terminal", async () => {
+        const user = userEvent.setup();
+        mocks.available.mockResolvedValue([
+            {
+                type: "codex",
+                label: "Codex",
+                command: "/opt/homebrew/bin/codex",
+                available: false,
+                error: "saved OpenCodex launcher is missing",
+                defaultModel: null,
+                defaultEffort: null,
+            },
+        ]);
+        invalidate((kind) => kind === "agents.catalog");
+        render(<AgentPalette />);
+
+        expect(await screen.findByText("saved OpenCodex launcher is missing")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "+ new Codex in Normal mode" }));
+        expect(getState().agentsBySession["sess-project"]).toEqual([]);
+        expect(getState().agentPaletteOpen).toBe(true);
+    });
+
     it("resumes a historical session with the selected mode", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);

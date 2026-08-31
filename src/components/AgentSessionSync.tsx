@@ -11,11 +11,13 @@ import { swallow } from "../state/toast";
 interface AgentSyncGroup {
     type: AgentType;
     cwd: string;
+    configPath?: string;
 }
 
 interface AgentSessionsChanged {
     agent: AgentType;
     cwd: string;
+    configPath?: string;
 }
 
 interface AgentStateChanged {
@@ -31,8 +33,8 @@ interface AgentStateChanged {
 const TITLE_RETRY_MS = 1_500;
 const TITLE_RETRY_LIMIT = 20;
 
-function groupKey(type: AgentType, cwd: string): string {
-    return `${type}\0${cwd}`;
+function groupKey(type: AgentType, cwd: string, configPath?: string): string {
+    return `${type}\0${cwd}\0${configPath ?? ""}`;
 }
 
 function collectAgentSyncGroups(): AgentSyncGroup[] {
@@ -46,7 +48,10 @@ function collectAgentSyncGroups(): AgentSyncGroup[] {
             const agent = st.agents[agentId];
             if (!agent || agent.launchState === "dormant") continue;
             const cwd = agent.cwd || session.cwd;
-            groups.set(groupKey(agent.type, cwd), { type: agent.type, cwd });
+            const configPath = agent.profileId
+                ? st.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
+                : undefined;
+            groups.set(groupKey(agent.type, cwd, configPath), { type: agent.type, cwd, configPath });
         }
     }
 
@@ -62,7 +67,12 @@ function useAgentSyncKey(): string {
             for (const agentId of s.agentsBySession[sessionId] ?? []) {
                 const agent = s.agents[agentId];
                 if (!agent || agent.launchState === "dormant") continue;
-                parts.push(`${agent.id}:${agent.type}:${agent.cwd || session.cwd}:${agent.resumeId ?? ""}:${agent.createdAt ?? 0}`);
+                const configPath = agent.profileId
+                    ? s.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
+                    : undefined;
+                parts.push(
+                    `${agent.id}:${agent.type}:${agent.cwd || session.cwd}:${configPath ?? ""}:${agent.resumeId ?? ""}:${agent.createdAt ?? 0}`,
+                );
             }
         }
         return parts.sort().join("|");
@@ -103,30 +113,38 @@ export function AgentSessionSync() {
         const listenerController = new AbortController();
         const watchIds: number[] = [];
         const groups = collectAgentSyncGroups();
-        const activeGroups = new Set(groups.map((group) => groupKey(group.type, group.cwd)));
+        const activeGroups = new Set(groups.map((group) => groupKey(group.type, group.cwd, group.configPath)));
 
-        const syncGroup = (type: AgentType, cwd: string) => {
-            void fetchResource(agentSessionsR, type, cwd)
-                .then((rows) => cmd.reconcileAgentSessions(type, cwd, rows))
+        const syncGroup = (type: AgentType, cwd: string, configPath?: string) => {
+            void fetchResource(agentSessionsR, type, cwd, configPath)
+                .then((rows) => cmd.reconcileAgentSessions(type, cwd, configPath, rows))
                 .catch(swallow("agent sessions"));
         };
 
-        const groupNeedsMetadata = ({ type, cwd }: AgentSyncGroup): boolean => {
+        const groupNeedsMetadata = ({ type, cwd, configPath }: AgentSyncGroup): boolean => {
             const state = getState();
             return state.sessionOrder.some((sessionId) => {
                 const session = state.sessions[sessionId];
                 if (session?.kind !== "project") return false;
                 return (state.agentsBySession[sessionId] ?? []).some((agentId) => {
                     const agent = state.agents[agentId];
-                    return agent?.type === type && (agent.cwd || session.cwd) === cwd && cmd.agentSessionMetadataPending(agent);
+                    const agentConfigPath = agent?.profileId
+                        ? state.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
+                        : undefined;
+                    return (
+                        agent?.type === type &&
+                        (agent.cwd || session.cwd) === cwd &&
+                        agentConfigPath === configPath &&
+                        cmd.agentSessionMetadataPending(agent)
+                    );
                 });
             });
         };
 
         for (const group of groups) {
-            syncGroup(group.type, group.cwd);
+            syncGroup(group.type, group.cwd, group.configPath);
             void agentApi
-                .watchStart(group.type, group.cwd)
+                .watchStart(group.type, group.cwd, group.configPath)
                 .then((id) => {
                     if (cancelled) {
                         void agentApi.watchStop(id).catch(swallow("agent sessions watch stop"));
@@ -141,9 +159,9 @@ export function AgentSessionSync() {
             .subscribe<AgentSessionsChanged>(
                 "agent_sessions_changed",
                 (event) => {
-                    const { agent, cwd } = event.payload;
-                    if (!activeGroups.has(groupKey(agent, cwd))) return;
-                    syncGroup(agent, cwd);
+                    const { agent, cwd, configPath } = event.payload;
+                    if (!activeGroups.has(groupKey(agent, cwd, configPath))) return;
+                    syncGroup(agent, cwd, configPath);
                 },
                 { signal: listenerController.signal },
             )
@@ -167,7 +185,7 @@ export function AgentSessionSync() {
                 return;
             }
             titleRetries += 1;
-            for (const group of pending) syncGroup(group.type, group.cwd);
+            for (const group of pending) syncGroup(group.type, group.cwd, group.configPath);
         }, TITLE_RETRY_MS);
 
         return () => {

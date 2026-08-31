@@ -2,7 +2,7 @@ import { agentLaunchArgs } from "../../agentLaunch";
 import { IS_WINDOWS } from "../../lib/platform";
 import type { AgentEffort, AgentPermissionMode, AgentType, PtyDirectCommand } from "../types";
 
-type LaunchOptions = { model?: string; effort?: AgentEffort };
+type LaunchOptions = { model?: string; effort?: AgentEffort; configPath?: string; environmentKeys?: string[] };
 
 function shellQuote(value: string): string {
     if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;
@@ -19,11 +19,16 @@ export function agentDirectCommand(
 ): PtyDirectCommand {
     const permissionMode: AgentPermissionMode =
         typeof permissionModeOrSkip === "boolean" ? (permissionModeOrSkip ? "bypass" : "workspace-write") : permissionModeOrSkip;
+    const profile =
+        options.configPath || options.environmentKeys?.length
+            ? { configPath: options.configPath, environmentKeys: options.environmentKeys }
+            : undefined;
     return {
         program: executablePath?.trim() || type,
         // Prompts are deliberately absent. They are delivered to a direct
         // child PTY after spawn, never exposed in argv or interpreted by a shell.
         args: agentLaunchArgs(type, { resumeId, permissionMode, model: options.model, effort: options.effort }),
+        ...(profile ? { profile } : {}),
     };
 }
 

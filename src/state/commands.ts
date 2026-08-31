@@ -58,6 +58,7 @@ import type {
     FocusDir,
     PickerMode,
     PaneKind,
+    ProviderProfile,
     RundeckLevel,
     RundeckView,
     Session,
@@ -1584,9 +1585,13 @@ export function cycleTabs(delta: number): void {
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
 
-function profileExecutable(profileId: string | undefined, type: AgentType): string | undefined {
-    if (!profileId) return undefined;
-    return getState().providerProfiles.find((profile) => profile.id === profileId && profile.provider === type)?.executablePath;
+function profileLaunchOptions(profile: ProviderProfile | undefined, model?: string, effort?: AgentEffort) {
+    return {
+        model,
+        effort,
+        configPath: profile?.configPath,
+        environmentKeys: profile?.environmentKeys,
+    };
 }
 
 function usableAgentSessionTitle(row: AgentSession, current: string): string {
@@ -1605,6 +1610,10 @@ export function agentSessionMetadataPending(agent: Agent): boolean {
 
 export function setAgentPermissionMode(id: string, requestedMode: AgentPermissionMode): void {
     mutate((d) => {
+        const currentAgent = d.agents[id];
+        const profile = currentAgent?.profileId
+            ? d.providerProfiles.find((item) => item.id === currentAgent.profileId && item.provider === currentAgent.type)
+            : undefined;
         const a = d.agents[id];
         if (!a) return;
         const next = normalizePermissionMode(a.type, requestedMode);
@@ -1612,14 +1621,10 @@ export function setAgentPermissionMode(id: string, requestedMode: AgentPermissio
         if (next === current) return;
         a.permissionMode = next;
         a.skipPermissions = next === "bypass";
-        a.startup = agentStartup(a.type, a.resumeId, next, profileExecutable(a.profileId, a.type), {
-            model: a.model,
-            effort: a.effort,
-        });
-        a.directCommand = agentDirectCommand(a.type, a.resumeId, next, profileExecutable(a.profileId, a.type), {
-            model: a.model,
-            effort: a.effort,
-        });
+        const launchOptions = profileLaunchOptions(profile, a.model, a.effort);
+        const executablePath = profile?.executablePath || a.executablePath;
+        a.startup = agentStartup(a.type, a.resumeId, next, executablePath, launchOptions);
+        a.directCommand = agentDirectCommand(a.type, a.resumeId, next, executablePath, launchOptions);
     });
 }
 
@@ -1649,6 +1654,7 @@ export interface AddAgentOptions {
     cwd?: string;
     /** Pin launches to the project that opened the picker. */
     sessionId?: string;
+    detectedExecutablePath?: string;
 }
 
 export function addAgent(type: AgentType, resumeId?: string, title?: string, options: AddAgentOptions = {}): boolean {
@@ -1677,23 +1683,20 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             : undefined;
         const cwd = options.cwd || session.cwd;
         const model = options.model?.trim() || undefined;
-        const executablePath = profileId ? d.providerProfiles.find((profile) => profile.id === profileId)?.executablePath : undefined;
+        const profile = profileId ? d.providerProfiles.find((item) => item.id === profileId) : undefined;
+        const executablePath = profile?.executablePath || options.detectedExecutablePath;
+        const launchOptions = profileLaunchOptions(profile, model, options.effort);
         const agent: Agent = {
             id: newId("agent"),
             type,
             title: title ?? type,
-            startup: agentStartup(type, resumeId, permissionMode, executablePath, {
-                model,
-                effort: options.effort,
-            }),
-            directCommand: agentDirectCommand(type, resumeId, permissionMode, executablePath, {
-                model,
-                effort: options.effort,
-            }),
+            startup: agentStartup(type, resumeId, permissionMode, executablePath, launchOptions),
+            directCommand: agentDirectCommand(type, resumeId, permissionMode, executablePath, launchOptions),
             resumeId,
             createdAt: Date.now(),
             permissionMode,
             profileId,
+            executablePath,
             cwd,
             model,
             effort: options.effort,
@@ -1704,7 +1707,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         // reconciliation never adopts the session you were just in. The rail
         // keeps this list warm; on a cold cache we fall back to an mtime check.
         if (!resumeId) {
-            const known = options.baselineSessionIds ?? peekResource(agentSessionsR, type, cwd)?.map((row) => row.id);
+            const known = options.baselineSessionIds ?? peekResource(agentSessionsR, type, cwd, profile?.configPath)?.map((row) => row.id);
             if (known) agent.baselineSessionIds = [...new Set(known)];
         }
         d.agents[agent.id] = agent;
@@ -1716,7 +1719,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
     return attached;
 }
 
-export function reconcileAgentSessions(type: AgentType, cwd: string, rows: AgentSession[]): void {
+export function reconcileAgentSessions(type: AgentType, cwd: string, configPath: string | undefined, rows: AgentSession[]): void {
     if (rows.length === 0) return;
     mutate((d) => {
         const rowById = new Map(rows.map((row) => [row.id, row]));
@@ -1726,7 +1729,10 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             if (session?.kind !== "project") continue;
             for (const agentId of d.agentsBySession[sessionId] ?? []) {
                 const agent = d.agents[agentId];
-                if (agent?.type === type && (agent.cwd || session.cwd) === cwd) matchingAgents.push(agent);
+                const agentConfigPath = agent?.profileId
+                    ? d.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
+                    : undefined;
+                if (agent?.type === type && (agent.cwd || session.cwd) === cwd && agentConfigPath === configPath) matchingAgents.push(agent);
             }
         }
         if (matchingAgents.length === 0) return;
@@ -1761,19 +1767,23 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
             const [row] = candidates.splice(idx, 1);
             agent.resumeId = row.id;
             agent.title = usableAgentSessionTitle(row, agent.title);
+            const profile = agent.profileId
+                ? d.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type)
+                : undefined;
+            const launchOptions = profileLaunchOptions(profile, agent.model, agent.effort);
             agent.startup = agentStartup(
                 agent.type,
                 agent.resumeId,
                 agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write"),
-                profileExecutable(agent.profileId, agent.type),
-                { model: agent.model, effort: agent.effort },
+                profile?.executablePath || agent.executablePath,
+                launchOptions,
             );
             agent.directCommand = agentDirectCommand(
                 agent.type,
                 agent.resumeId,
                 agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write"),
-                profileExecutable(agent.profileId, agent.type),
-                { model: agent.model, effort: agent.effort },
+                profile?.executablePath || agent.executablePath,
+                launchOptions,
             );
             delete agent.baselineSessionIds;
             claimed.add(row.id);

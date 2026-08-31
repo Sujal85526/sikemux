@@ -91,6 +91,8 @@ export interface Agent {
     permissionMode?: AgentPermissionMode;
     /** Non-secret provider profile selected for this launch. */
     profileId?: string;
+    /** Health-checked executable used for this launch. */
+    executablePath?: string;
     /** Effective launch directory. */
     cwd?: string;
     /** Optional provider model override selected at launch. */
@@ -115,6 +117,10 @@ export interface Agent {
 export interface PtyDirectCommand {
     program: string;
     args: string[];
+    profile?: {
+        configPath?: string;
+        environmentKeys?: string[];
+    };
 }
 
 export type AgentBackendState = "unknown" | "working" | "blocked" | "idle" | "stopped";
