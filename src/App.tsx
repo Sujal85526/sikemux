@@ -771,14 +771,18 @@ export default function App() {
         <div className="shell">
             <CliOpenBridge />
             <AgentSessionSync />
-            <TopBar />
-            <div className="body">
+            <div className={`shell-frame${leftOpen ? " has-left-rail" : ""}`}>
                 {leftOpen && <SideRail />}
-                <main className={`stage${settingsOpen ? " stage--settings" : ""}`}>
-                    <Workspace />
-                    {settingsOpen && <SettingsPanel />}
-                </main>
-                {rightOpen && activeSessionIsProject && <AgentRail />}
+                <div className="shell-main">
+                    <TopBar />
+                    <div className="body">
+                        <main className={`stage${settingsOpen ? " stage--settings" : ""}`}>
+                            <Workspace />
+                            {settingsOpen && <SettingsPanel />}
+                        </main>
+                        {rightOpen && activeSessionIsProject && <AgentRail />}
+                    </div>
+                </div>
             </div>
             {pickerOpen && <SeshPicker />}
             {agentPaletteOpen && <AgentPalette />}
