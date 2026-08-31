@@ -12,8 +12,8 @@ import { applyPtyShellMetadataEvent, type PtyShellMetadataEvent } from "../api/p
 import type { PtyShellMetadataSnapshot } from "./ptyController";
 import { basename } from "../lib/paths";
 
-const SWITCH_KEEPALIVE_MS = 30_000;
-const MAX_HIDDEN_RENDERERS = 4;
+const SWITCH_KEEPALIVE_MS = 10_000;
+const MAX_HIDDEN_RENDERERS = 1;
 const hiddenRendererEvictions = new Map<symbol, () => void>();
 
 function enforceHiddenRendererBudget() {

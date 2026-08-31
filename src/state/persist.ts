@@ -368,6 +368,7 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (cwd) agent.cwd = cwd;
     if (model) agent.model = model;
     if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
+    if (value.keepAlive === true) agent.keepAlive = true;
     return agent;
 }
 
@@ -436,6 +437,7 @@ function snapshot(): string {
                     ...(agent.cwd ? { cwd: agent.cwd } : {}),
                     ...(agent.model ? { model: agent.model } : {}),
                     ...(agent.effort ? { effort: agent.effort } : {}),
+                    ...(agent.keepAlive ? { keepAlive: true } : {}),
                 };
             });
     }
@@ -611,7 +613,7 @@ export function applyHydrate(raw: string): HydrationResult {
                         model: saved.model,
                         effort: saved.effort,
                     }),
-                    launchState: "live",
+                    launchState: "dormant",
                 };
                 agentsBySession[sid].push(saved.id);
             }

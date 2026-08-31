@@ -69,7 +69,8 @@ export function Workspace() {
                 const aIds = agentsBySession[session.id] ?? [];
                 const sessTabs = view === "agent" && aIds.length > 0;
                 const sessHasTermTabs = winIds.some((id) => windowsById[id]?.role === "term");
-                const windowLayers = winIds.map((wid) => {
+                const renderedWindowIds = isActive && view === "windows" ? [session.activeWindowId] : [];
+                const windowLayers = renderedWindowIds.map((wid) => {
                     const win = windowsById[wid];
                     if (!win) return null;
                     const layerTermTab = win.role === "term";
@@ -88,16 +89,10 @@ export function Workspace() {
                 const agentLayers = aIds.map((aid) => {
                     const agent = agentsById[aid];
                     if (!agent) return null;
+                    const visible = isActive && view === "agent" && aid === session.activeAgentId;
+                    if (!visible && agent.launchState === "dormant") return null;
                     const key = `${aid}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}`;
-                    return (
-                        <AgentLayer
-                            key={key}
-                            session={session}
-                            agent={agent}
-                            tabsShown={sessTabs}
-                            visible={isActive && view === "agent" && aid === session.activeAgentId}
-                        />
-                    );
+                    return <AgentLayer key={key} session={session} agent={agent} tabsShown={sessTabs} visible={visible} />;
                 });
                 return [...windowLayers, ...agentLayers];
             })}
@@ -152,6 +147,20 @@ function AgentTabsBar({ session, agents }: { session: Session; agents: Agent[] }
         if (!a) return [];
         const others = agents.filter((x) => x.id !== id);
         const items: CtxItem[] = [
+            ...(a.launchState === "dormant"
+                ? [{ label: "Resume", run: () => cmd.selectAgent(id) }]
+                : a.resumeId
+                  ? [{ label: "Sleep", run: () => cmd.sleepAgent(id) }]
+                  : []),
+            ...(a.resumeId && a.launchState !== "dormant"
+                ? [
+                      {
+                          label: a.keepAlive ? "Allow Auto-Sleep" : "Keep Alive",
+                          run: () => cmd.setAgentKeepAlive(id, !a.keepAlive),
+                      },
+                  ]
+                : []),
+            ...(a.resumeId ? [{ sep: true as const }] : []),
             { label: "Close", hint: "⌥W", run: () => cmd.closeAgent(id) },
             { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((x) => cmd.closeAgent(x.id)) },
             { label: "Close All", run: () => agents.forEach((x) => cmd.closeAgent(x.id)) },
@@ -258,9 +267,9 @@ const AgentLayer = memo(function AgentLayer({
                         {agent.launchState === "dormant" ? (
                             <div className="agent-dormant" role="group" aria-label={`${agent.title} is ready to resume`}>
                                 <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
-                                <span className="agent-dormant-kicker">imported</span>
+                                <span className="agent-dormant-kicker">sleeping</span>
                                 <strong>{agent.title}</strong>
-                                <span>Agents from an imported session stay inert until you start them yourself.</span>
+                                <span>This resumable agent is using no live terminal process.</span>
                                 <button type="button" onClick={() => cmd.resumeAgent(agent.id)}>
                                     Resume {agent.type}
                                 </button>
@@ -272,7 +281,7 @@ const AgentLayer = memo(function AgentLayer({
                                 directCommand={agent.directCommand}
                                 active={visible}
                                 visible={visible}
-                                spawnWhen={visible || !!agent.resumeId}
+                                spawnWhen={visible}
                                 context={{
                                     sessionId: session.id,
                                     sessionName: session.name,

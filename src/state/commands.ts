@@ -1783,11 +1783,18 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, rows: Agent
 
 export function selectAgent(id: string): void {
     withActiveSession((d, session) => {
+        const agent = d.agents[id];
+        if (!agent) return;
         const sess = d.sessions[session.id];
         sess.activeAgentId = id;
         sess.view = "agent";
         // Picking a real agent tab replaces the draft, exactly like any other tab.
         d.agentPaletteOpen = false;
+        if (agent.launchState === "dormant") {
+            agent.launchState = "live";
+            delete d.agentActivity[id];
+            return;
+        }
         const activity = d.agentActivity[id];
         if (activity) {
             activity.unread = false;
@@ -1799,8 +1806,55 @@ export function selectAgent(id: string): void {
 export function resumeAgent(id: string): void {
     mutate((d) => {
         const agent = d.agents[id];
-        if (agent) agent.launchState = "live";
+        if (!agent) return;
+        agent.launchState = "live";
+        delete d.agentActivity[id];
     });
+}
+
+export function sleepAgents(ids: readonly string[]): string[] {
+    const sleeping = new Set(ids);
+    const slept: string[] = [];
+    mutate((d) => {
+        for (const id of sleeping) {
+            const agent = d.agents[id];
+            if (!agent?.resumeId || agent.launchState === "dormant") continue;
+            agent.launchState = "dormant";
+            slept.push(id);
+        }
+    });
+    return slept;
+}
+
+export function sleepAgent(id: string): boolean {
+    const agent = getState().agents[id];
+    if (!agent?.resumeId) {
+        notify("info", "This agent is still establishing its resumable session");
+        return false;
+    }
+    return sleepAgents([id]).length === 1;
+}
+
+export function setAgentKeepAlive(id: string, keepAlive: boolean): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (!agent) return;
+        if (keepAlive) agent.keepAlive = true;
+        else delete agent.keepAlive;
+    });
+}
+
+export function sleepIdleAgents(): number {
+    const state = getState();
+    const ids = Object.values(state.agents)
+        .filter(
+            (agent) =>
+                agent.launchState !== "dormant" && !!agent.resumeId && !agent.keepAlive && state.agentActivity[agent.id]?.backendState === "idle",
+        )
+        .map((agent) => agent.id);
+    const count = sleepAgents(ids).length;
+    notify("info", count === 0 ? "No idle resumable agents to sleep" : `Put ${count} idle agent${count === 1 ? "" : "s"} to sleep`);
+    return count;
 }
 
 export function noteAgentActivity(id: string, event: "working" | "complete" | import("./agentStatus").AgentStateEvent): void {

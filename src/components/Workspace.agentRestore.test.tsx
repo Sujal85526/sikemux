@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import type { TerminalPane } from "../terminal/TerminalPane";
@@ -52,12 +52,12 @@ function arrangeRestoredAgents(resumeId: string | undefined): void {
 }
 
 describe("restored agent lifecycle", () => {
-    it("spawns a hidden restored agent that has a session to resume", () => {
+    it("does not start a hidden resumable agent", () => {
         arrangeRestoredAgents("hidden-session");
         render(<Workspace />);
 
         expect(screen.getByTestId("terminal-agent-hidden")).toHaveAttribute("data-visible", "false");
-        expect(screen.getByTestId("terminal-agent-hidden")).toHaveAttribute("data-spawn-when", "true");
+        expect(screen.getByTestId("terminal-agent-hidden")).toHaveAttribute("data-spawn-when", "false");
     });
 
     it("leaves a hidden agent with nothing to resume inert until it is shown", () => {
@@ -65,5 +65,20 @@ describe("restored agent lifecycle", () => {
         render(<Workspace />);
 
         expect(screen.getByTestId("terminal-agent-hidden")).toHaveAttribute("data-spawn-when", "false");
+    });
+
+    it("mounts no terminal process for a sleeping agent and resumes it on demand", () => {
+        arrangeRestoredAgents("hidden-session");
+        setState((state) => ({
+            agents: {
+                ...state.agents,
+                "agent-visible": { ...state.agents["agent-visible"], launchState: "dormant" },
+            },
+        }));
+        render(<Workspace />);
+
+        expect(screen.queryByTestId("terminal-agent-visible")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Resume codex" }));
+        expect(screen.getByTestId("terminal-agent-visible")).toHaveAttribute("data-spawn-when", "true");
     });
 });

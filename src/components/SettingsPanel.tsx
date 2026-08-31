@@ -408,10 +408,15 @@ function AgentsPage() {
                 sub="Only confirmed native agent session IDs are saved. Raw startup commands and terminal evidence never touch disk.">
                 <ToggleSetting
                     label="Restore agent tabs"
-                    detail="Bring resumable agent tabs back and start them when Sikemux opens."
+                    detail="Bring resumable tabs back asleep. They start only when you select them."
                     checked={restore}
                     onChange={cmd.setRestoreAgentTabs}
                 />
+                <div className="command-editor-actions">
+                    <button className="settings-btn" type="button" onClick={cmd.sleepIdleAgents}>
+                        Sleep idle agents now
+                    </button>
+                </div>
             </SettingsSection>
             <SettingsSection title="Rail density" sub="Compact mode fits more sessions while keeping state symbols visible.">
                 <Dropdown

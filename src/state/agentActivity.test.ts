@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearAgentUnread, noteAgentActivity, selectAgent } from "./commands";
+import { clearAgentUnread, noteAgentActivity, selectAgent, sleepAgent } from "./commands";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -40,5 +40,17 @@ describe("agent activity", () => {
 
         clearAgentUnread(id);
         expect(getState().agentActivity[id].unread).toBe(false);
+    });
+
+    it("sleeps only resumable agents and resumes a sleeping agent on selection", () => {
+        const id = installAgent();
+        expect(sleepAgent(id)).toBe(false);
+
+        setState((state) => ({ agents: { ...state.agents, [id]: { ...state.agents[id], resumeId: "session-1" } } }));
+        expect(sleepAgent(id)).toBe(true);
+        expect(getState().agents[id].launchState).toBe("dormant");
+
+        selectAgent(id);
+        expect(getState().agents[id].launchState).toBe("live");
     });
 });

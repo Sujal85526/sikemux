@@ -7,6 +7,7 @@ import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
 import { AgentSessionSync } from "./components/AgentSessionSync";
+import { AgentLifecycleManager } from "./components/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./components/AgentPalettePortal";
 import { FilePalette } from "./components/FilePalette";
 import { SeshPicker } from "./components/SeshPicker";
@@ -771,6 +772,7 @@ export default function App() {
         <div className="shell">
             <CliOpenBridge />
             <AgentSessionSync />
+            <AgentLifecycleManager />
             <div className={`shell-frame${leftOpen ? " has-left-rail" : ""}`}>
                 {leftOpen && <SideRail />}
                 <div className="shell-main">

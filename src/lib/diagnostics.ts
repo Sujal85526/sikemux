@@ -144,6 +144,12 @@ function storeSnapshot() {
         sessions: Object.keys(s.sessions).length,
         windows: Object.keys(s.windows).length,
         agents: Object.keys(s.agents).length,
+        agentLifecycle: {
+            live: Object.values(s.agents).filter((agent) => agent.launchState !== "dormant").length,
+            sleeping: Object.values(s.agents).filter((agent) => agent.launchState === "dormant").length,
+            keptAlive: Object.values(s.agents).filter((agent) => agent.keepAlive === true).length,
+            resumable: Object.values(s.agents).filter((agent) => !!agent.resumeId).length,
+        },
         agentActivity: Object.fromEntries(
             ["unknown", "working", "blocked", "done", "idle"].map((state) => [
                 state,

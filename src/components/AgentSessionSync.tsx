@@ -44,7 +44,7 @@ function collectAgentSyncGroups(): AgentSyncGroup[] {
         if (session?.kind !== "project" || !session.cwd) continue;
         for (const agentId of st.agentsBySession[sessionId] ?? []) {
             const agent = st.agents[agentId];
-            if (!agent) continue;
+            if (!agent || agent.launchState === "dormant") continue;
             const cwd = agent.cwd || session.cwd;
             groups.set(groupKey(agent.type, cwd), { type: agent.type, cwd });
         }
@@ -61,7 +61,7 @@ function useAgentSyncKey(): string {
             if (session?.kind !== "project" || !session.cwd) continue;
             for (const agentId of s.agentsBySession[sessionId] ?? []) {
                 const agent = s.agents[agentId];
-                if (!agent) continue;
+                if (!agent || agent.launchState === "dormant") continue;
                 parts.push(`${agent.id}:${agent.type}:${agent.cwd || session.cwd}:${agent.resumeId ?? ""}:${agent.createdAt ?? 0}`);
             }
         }

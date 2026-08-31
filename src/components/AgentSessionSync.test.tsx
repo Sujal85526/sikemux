@@ -71,4 +71,18 @@ describe("AgentSessionSync IPC events", () => {
         expect(transport.eventListenerCount).toBe(0);
         await waitFor(() => expect(agentApi.watchStop).toHaveBeenCalledWith(17));
     });
+
+    it("does not watch transcript directories for sleeping agents", async () => {
+        setState((state) => ({
+            agents: {
+                ...state.agents,
+                "agent-1": { ...state.agents["agent-1"], resumeId: "session-1", launchState: "dormant" },
+            },
+        }));
+
+        render(<AgentSessionSync />);
+        await waitFor(() => expect(transport.eventListenerCount).toBe(1));
+        expect(resources.fetchResource).not.toHaveBeenCalled();
+        expect(agentApi.watchStart).not.toHaveBeenCalled();
+    });
 });

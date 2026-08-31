@@ -108,6 +108,8 @@ export interface Agent {
     baselineSessionIds?: string[];
     /** Restored tabs stay dormant until the user explicitly resumes them. */
     launchState?: "live" | "dormant";
+    /** Exempts a resumable live agent from automatic idle sleeping. */
+    keepAlive?: boolean;
 }
 
 export interface PtyDirectCommand {

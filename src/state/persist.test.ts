@@ -173,7 +173,7 @@ describe("frontend persistence", () => {
         expect(getState().sessions[sid]).toMatchObject({ view: "windows", activeAgentId: null });
     });
 
-    it("restores confirmed agent sessions live without trusting saved startup", async () => {
+    it("restores confirmed agent sessions asleep without trusting saved startup", async () => {
         const sid = getState().activeSessionId;
         const agent = {
             id: "agent-resumable",
@@ -182,6 +182,7 @@ describe("frontend persistence", () => {
             startup: "malicious saved startup",
             resumeId: "session-123",
             launchState: "live" as const,
+            keepAlive: true,
         };
         setState((s) => ({
             sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", view: "agent", activeAgentId: agent.id } },
@@ -194,13 +195,13 @@ describe("frontend persistence", () => {
         expect(raw).not.toContain("malicious saved startup");
         const saved = JSON.parse(raw);
         expect(saved.agentsBySession[sid]).toEqual([
-            { id: agent.id, type: "codex", title: agent.title, resumeId: agent.resumeId, permissionMode: "workspace-write" },
+            { id: agent.id, type: "codex", title: agent.title, resumeId: agent.resumeId, permissionMode: "workspace-write", keepAlive: true },
         ]);
 
         saved.agentsBySession[sid][0].startup = "still malicious";
         applyHydrate(JSON.stringify(saved));
         const restored = getState().agents[agent.id];
-        expect(restored).toMatchObject({ launchState: "live" });
+        expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true });
         expect(restored.startup).toMatch(/^codex resume\b/);
         expect(restored.startup).toContain("session-123");
         expect(restored.startup).not.toContain("still malicious");
@@ -279,7 +280,7 @@ describe("frontend persistence", () => {
             skipPermissions: true,
             profileId: "builtin-claude",
             cwd: legacy.cwd,
-            launchState: "live",
+            launchState: "dormant",
         });
         expect(getState().agents[legacy.id]).not.toHaveProperty("worktreePath");
         expect(getState().agents[legacy.id].startup).toContain("--dangerously-skip-permissions");
