@@ -7,7 +7,7 @@ import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
 import { AgentSessionSync } from "./components/AgentSessionSync";
-import { AgentPalette } from "./components/AgentPalette";
+import { AgentPalettePortal as AgentPalette } from "./components/AgentPalettePortal";
 import { FilePalette } from "./components/FilePalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
