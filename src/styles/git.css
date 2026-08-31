@@ -912,18 +912,8 @@
 .merge-file-status {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 3px;
     padding-right: 9px;
-}
-.merge-file-badge {
-    font-size: 9.5px;
-    line-height: 1;
-}
-.merge-file-badge.staged {
-    color: var(--live);
-}
-.merge-file-badge.unstaged {
-    color: var(--warn);
 }
 .merge-review-content {
     min-width: 0;
@@ -957,19 +947,6 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 55%), transparent);
-}
-.merge-section-title::before {
-    content: "";
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: currentColor;
-}
-.merge-section-title.staged {
-    color: var(--live);
-}
-.merge-section-title.unstaged {
-    color: var(--warn);
 }
 .diff-editor {
     flex: 1;

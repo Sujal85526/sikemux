@@ -12,17 +12,9 @@ import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { Tooltip } from "./Tooltip";
+import { gitFileDecoration } from "./git/gitFileStatus";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
-
-function gitDecoration(f: GitFile): { letter: string; cls: string } {
-    if (f.index === "?" || f.worktree === "?") return { letter: "U", cls: "u" };
-    if (f.worktree === "D" || f.index === "D") return { letter: "D", cls: "d" };
-    if (f.index === "A") return { letter: "A", cls: "a" };
-    if (f.index === "R" || f.worktree === "R") return { letter: "R", cls: "r" };
-    if (f.worktree === "M" || f.index === "M") return { letter: "M", cls: "m" };
-    return { letter: f.worktree.trim() || f.index.trim(), cls: "m" };
-}
 
 interface FileTreeProps {
     cwd: string;
@@ -556,7 +548,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 );
             } else {
                 const gf = gitMap.get(normalizePath(e.path));
-                const gd = gf ? gitDecoration(gf) : null;
+                const gd = gf ? gitFileDecoration(gf) : null;
                 const isRenaming = renaming === e.path;
                 if (isRenaming) {
                     items.push(

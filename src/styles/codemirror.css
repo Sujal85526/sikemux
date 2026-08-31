@@ -9,20 +9,33 @@
     flex: 0 0 auto;
 }
 
-.tree-row.git-m {
+.tree-row.git-m,
+.git-status-symbol.git-m {
     color: #e2c08d;
 }
-.tree-row.git-u {
+.tree-row.git-u,
+.git-status-symbol.git-u {
     color: #73c991;
 }
-.tree-row.git-a {
+.tree-row.git-a,
+.git-status-symbol.git-a {
     color: #81b88b;
 }
-.tree-row.git-d {
+.tree-row.git-d,
+.git-status-symbol.git-d {
     color: #c74e39;
 }
-.tree-row.git-r {
+.tree-row.git-r,
+.git-status-symbol.git-r {
     color: #6c8cd5;
+}
+.git-status-symbol {
+    display: inline-flex;
+    justify-content: center;
+    width: 11px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
 }
 .tree-git {
     font-size: 10px;

@@ -30,6 +30,10 @@ describe("MergeReview", () => {
         expect(screen.getByTestId("diff:both.ts:HEAD::index")).toBeInTheDocument();
         expect(screen.getByTestId("diff:both.ts::index:working")).toBeInTheDocument();
         expect(screen.getByTestId("diff:working.ts:HEAD:working")).toBeInTheDocument();
+        expect(screen.queryByText(/^staged$/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/^unstaged$/i)).not.toBeInTheDocument();
+        expect(screen.getAllByLabelText("Index status: M")).toHaveLength(3);
+        expect(screen.getAllByLabelText("Working tree status: M")).toHaveLength(3);
 
         fireEvent.click(screen.getByRole("button", { name: "Collapse both.ts" }));
         expect(screen.getByText("3 files · 2 expanded")).toBeInTheDocument();

@@ -5,6 +5,7 @@ import { IconChevron } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
 import { basename, joinPath } from "../lib/paths";
+import { gitStatusDecoration, type GitStatusDecoration } from "./git/gitFileStatus";
 
 const deferredCallbacks = new Map<Element, (visible: boolean) => void>();
 let deferredObserver: IntersectionObserver | null = null;
@@ -106,8 +107,9 @@ export function MergeReview({
                     const path = file.path;
                     const open = !collapsed.has(path);
                     const focused = path === focusPath;
-                    const staged = isStaged(file);
                     const unstaged = hasUnstaged(file);
+                    const indexStatus = gitStatusDecoration(file.index);
+                    const worktreeStatus = gitStatusDecoration(file.worktree);
                     return (
                         <div
                             className={`acc-item merge-review-item${focused ? " focused" : ""}`}
@@ -135,8 +137,8 @@ export function MergeReview({
                                     </button>
                                 </Tooltip>
                                 <span className="merge-file-status">
-                                    {staged && <span className="merge-file-badge staged">staged</span>}
-                                    {unstaged && <span className="merge-file-badge unstaged">unstaged</span>}
+                                    <GitStatusSymbol status={indexStatus} source="Index" />
+                                    <GitStatusSymbol status={worktreeStatus} source="Working tree" />
                                 </span>
                             </div>
                             {open && <DeferredMergeFileDiff repo={repo} file={file} editable={focused && unstaged} onSaved={onSaved} />}
@@ -145,6 +147,18 @@ export function MergeReview({
                 })}
             </div>
         </div>
+    );
+}
+
+function GitStatusSymbol({ status, source }: { status: GitStatusDecoration | null; source: string }) {
+    if (!status) return null;
+    return (
+        <span
+            className={`git-status-symbol git-${status.cls}`}
+            title={`${source}: ${status.label}`}
+            aria-label={`${source} status: ${status.letter}`}>
+            {status.letter}
+        </span>
     );
 }
 
@@ -194,17 +208,23 @@ function MergeFileDiff({ repo, file, editable, onSaved }: { repo: string; file: 
     const path = file.path;
     const staged = isStaged(file);
     const unstaged = hasUnstaged(file);
+    const indexStatus = gitStatusDecoration(file.index);
+    const worktreeStatus = gitStatusDecoration(file.worktree);
 
     return (
         <div className="merge-review-content">
             {staged && unstaged ? (
                 <div className="merge-sections">
                     <div className="merge-section">
-                        <div className="merge-section-title staged">staged</div>
+                        <div className="merge-section-title">
+                            <GitStatusSymbol status={indexStatus} source="Index" />
+                        </div>
                         <DiffEditor repo={repo} path={path} baseRev="HEAD" headRev=":index" editable={false} autoHeight />
                     </div>
                     <div className="merge-section">
-                        <div className="merge-section-title unstaged">unstaged</div>
+                        <div className="merge-section-title">
+                            <GitStatusSymbol status={worktreeStatus} source="Working tree" />
+                        </div>
                         <DiffEditor repo={repo} path={path} baseRev=":index" editable={editable} onSaved={onSaved} autoHeight />
                     </div>
                 </div>
