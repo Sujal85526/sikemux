@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { Agent, Divider, Rect, Session, Window as WindowT } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
@@ -29,6 +29,7 @@ export function Workspace() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agentsBySession = useStore((s) => s.agentsBySession);
     const activeSessionId = useStore((s) => s.activeSessionId);
+    const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const areaRef = useRef<HTMLDivElement>(null);
 
     const sessions = sessionOrder.map((id) => sessionsById[id]);
@@ -39,6 +40,10 @@ export function Workspace() {
     const inAgentView = !!activeSession && sessionView(activeSession) === "agent";
     const showAgentTabs = inAgentView && activeAgents.length > 0;
     const showAgentEmpty = inAgentView && activeAgents.length === 0;
+
+    useEffect(() => {
+        if (showAgentEmpty && !agentPaletteOpen) cmd.openAgentPalette();
+    }, [agentPaletteOpen, activeSessionId, showAgentEmpty]);
 
     const activeWindowList = activeSession ? (windowsBySession[activeSession.id] ?? []).map((id) => windowsById[id]) : [];
     const termTabs =

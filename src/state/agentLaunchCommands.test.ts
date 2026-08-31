@@ -27,12 +27,18 @@ beforeEach(() => {
 });
 
 describe("agent launch commands", () => {
-    it("enters an empty project's agent view without opening input UI", () => {
+    it("opens and pins the agent picker when entering an empty project's agent view", () => {
         focusAgents();
 
         expect(getState().sessions.project.view).toBe("agent");
-        expect(getState().agentPaletteOpen).toBe(false);
+        expect(getState().agentPaletteOpen).toBe(true);
 
+        closeAgentPalette();
+        expect(getState().agentPaletteOpen).toBe(true);
+
+        setState((state) => ({
+            sessions: { ...state.sessions, project: { ...state.sessions.project, view: "windows" } },
+        }));
         closeAgentPalette();
         expect(getState().agentPaletteOpen).toBe(false);
     });

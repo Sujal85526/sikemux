@@ -1863,6 +1863,7 @@ export function focusAgents(): void {
         const sess = d.sessions[session.id];
         sess.view = "agent";
         sess.activeAgentId = session.activeAgentId ?? ids[0] ?? null;
+        if (ids.length === 0) d.agentPaletteOpen = true;
         d.zoomedPaneId = null;
     });
     emit({ type: "agent-focus", sessionId: getState().activeSessionId });
@@ -1884,7 +1885,13 @@ export const openAgentPalette = (): void =>
         d.zoomedPaneId = null;
         session.view = "agent";
     });
-export const closeAgentPalette = (): void => setState({ agentPaletteOpen: false });
+export const closeAgentPalette = (): void => {
+    const state = getState();
+    const session = state.sessions[state.activeSessionId];
+    if (session?.kind === "project" && session.view === "agent" && (state.agentsBySession[session.id] ?? []).length === 0) return;
+    setState({ agentPaletteOpen: false });
+};
+export const forceCloseAgentPalette = (): void => setState({ agentPaletteOpen: false });
 export const openCommandPalette = (): void => setState({ commandPaletteOpen: true });
 export const closeCommandPalette = (): void => setState({ commandPaletteOpen: false });
 export const toggleCommandPalette = (): void => setState((s) => ({ commandPaletteOpen: !s.commandPaletteOpen }));

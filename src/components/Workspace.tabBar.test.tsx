@@ -99,7 +99,7 @@ describe("workspace tab bars", () => {
         expect(screen.getByRole("button", { name: /yolo/i })).toHaveAttribute("aria-pressed", "true");
     });
 
-    it("keeps the empty agent stage free of input UI", () => {
+    it("requests the agent picker for the empty agent stage", () => {
         const state = getState();
         const sessionId = state.activeSessionId;
         setState({
@@ -114,5 +114,6 @@ describe("workspace tab bars", () => {
 
         expect(screen.getByText("no agents in this project")).toBeInTheDocument();
         expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+        expect(getState().agentPaletteOpen).toBe(true);
     });
 });

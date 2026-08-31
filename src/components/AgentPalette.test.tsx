@@ -156,7 +156,7 @@ describe("AgentPalette", () => {
         expect(getState().agents[id]).toMatchObject({ resumeId: "codex-old", title: "Fix terminal tabs" });
     });
 
-    it("dismisses with Escape and retries CLI detection failures", async () => {
+    it("retries CLI detection failures and only dismisses after leaving an empty agent view", async () => {
         const user = userEvent.setup();
         mocks.available
             .mockRejectedValueOnce(new Error("missing PATH"))
@@ -167,6 +167,12 @@ describe("AgentPalette", () => {
         expect(await screen.findByText(/missing PATH/)).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "try again" }));
         await waitFor(() => expect(screen.getByRole("button", { name: "+ new Codex in Normal mode" })).toBeInTheDocument());
+        fireEvent.keyDown(screen.getByRole("textbox", { name: "Search agent sessions" }), { key: "Escape" });
+        expect(getState().agentPaletteOpen).toBe(true);
+
+        setState((state) => ({
+            sessions: { ...state.sessions, "sess-project": { ...state.sessions["sess-project"], view: "windows" } },
+        }));
         fireEvent.keyDown(screen.getByRole("textbox", { name: "Search agent sessions" }), { key: "Escape" });
         expect(getState().agentPaletteOpen).toBe(false);
     });

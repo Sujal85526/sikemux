@@ -85,7 +85,7 @@ export function AgentPalette() {
     }, [agents]);
 
     useEffect(() => {
-        if (session && session.id !== origin.current.sessionId) cmd.closeAgentPalette();
+        if (session && session.id !== origin.current.sessionId) cmd.forceCloseAgentPalette();
     }, [session]);
 
     const items = useMemo(() => {
