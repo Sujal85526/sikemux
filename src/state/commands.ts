@@ -748,6 +748,7 @@ export function closeSession(id: string): void {
 function closeSessionNow(id: string): void {
     const beforeClose = getState();
     const closingCwd = beforeClose.sessions[id]?.cwd;
+    const closingAgentIds = beforeClose.agentsBySession[id] ?? [];
     const taskPaneIds = (beforeClose.windowsBySession[id] ?? []).flatMap((windowId) => {
         const window = beforeClose.windows[windowId];
         return window
@@ -797,6 +798,9 @@ function closeSessionNow(id: string): void {
     });
     if (!getState().sessions[id]) {
         for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
+        for (const agentId of closingAgentIds) {
+            void browserApi.closeAgent(agentId).catch(reportError("close agent browser"));
+        }
     }
     if (closingCwd) {
         const stillOpen = Object.values(getState().sessions).some((s) => s.cwd === closingCwd);
@@ -1901,6 +1905,7 @@ export function clearAgentUnread(id: string): void {
 }
 
 export function closeAgent(id: string): void {
+    const existed = !!getState().agents[id];
     mutate((d) => {
         const ownerId = d.sessionOrder.find((sid) => (d.agentsBySession[sid] ?? []).includes(id));
         if (!ownerId) return;
@@ -1915,6 +1920,9 @@ export function closeAgent(id: string): void {
             if (ownedIds.length === 0) owner.view = "windows";
         }
     });
+    if (existed && !getState().agents[id]) {
+        void browserApi.closeAgent(id).catch(reportError("close agent browser"));
+    }
 }
 
 export function focusAgents(): void {

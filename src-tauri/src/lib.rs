@@ -159,6 +159,7 @@ pub fn run() {
             pty::agent_detection_reload,
             browser::browser_snapshot,
             browser::browser_new_tab,
+            browser::browser_close_agent,
             browser::browser_switch_tab,
             browser::browser_close_tab,
             browser::browser_navigate,

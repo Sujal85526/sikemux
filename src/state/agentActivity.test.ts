@@ -1,10 +1,15 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { clearAgentUnread, noteAgentActivity, selectAgent, sleepAgent } from "./commands";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
+import { clearAgentUnread, closeAgent, noteAgentActivity, selectAgent, sleepAgent } from "./commands";
 import { getState, setState } from "./store";
 
 const initial = getState();
 
-beforeEach(() => setState(initial, true));
+beforeEach(() => {
+    resetIpcTransportForTests();
+    setState(initial, true);
+});
+afterEach(resetIpcTransportForTests);
 
 function installAgent() {
     const state = getState();
@@ -52,5 +57,19 @@ describe("agent activity", () => {
 
         selectAgent(id);
         expect(getState().agents[id].launchState).toBe("live");
+    });
+
+    it("closes browser targets when an agent is removed", async () => {
+        const id = installAgent();
+        const transport = new MemoryIpcTransport();
+        const closed: unknown[] = [];
+        transport.register("browser_close_agent", (args) => closed.push(args));
+        installIpcTransportForTests(transport);
+
+        closeAgent(id);
+        await Promise.resolve();
+
+        expect(getState().agents[id]).toBeUndefined();
+        expect(closed).toEqual([{ agentId: id }]);
     });
 });

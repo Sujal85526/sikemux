@@ -27,6 +27,7 @@
     "allow-agent-detection-reload",
     "allow-browser-snapshot",
     "allow-browser-new-tab",
+    "allow-browser-close-agent",
     "allow-browser-switch-tab",
     "allow-browser-close-tab",
     "allow-browser-navigate",

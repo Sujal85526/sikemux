@@ -14,6 +14,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "agent_detection_reload",
     "browser_snapshot",
     "browser_new_tab",
+    "browser_close_agent",
     "browser_switch_tab",
     "browser_close_tab",
     "browser_navigate",

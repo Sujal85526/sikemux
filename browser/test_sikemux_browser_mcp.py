@@ -1,7 +1,10 @@
 import asyncio
+import json
 import os
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from mcp.types import ListToolsRequest
@@ -26,9 +29,13 @@ class SikemuxBrowserServerTests(unittest.TestCase):
 
             first._register_target("target-one")
             second._register_target("target-two")
+            first._write_active("target-one")
+            second._write_active("target-two")
 
             self.assertEqual(first._owned_target_ids(), {"target-one"})
             self.assertEqual(second._owned_target_ids(), {"target-two"})
+            self.assertEqual(first._read_active(), "target-one")
+            self.assertEqual(second._read_active(), "target-two")
             with self.assertRaises(ValueError):
                 first._resolve_owned_tab("two")
 
@@ -45,11 +52,47 @@ class SikemuxBrowserServerTests(unittest.TestCase):
             self.assertFalse(tools & HIDDEN_TOOLS)
             self.assertIn("browser_get_state", tools)
             self.assertIn("browser_switch_tab", tools)
+            self.assertNotIn("browser_extract_content", tools)
 
     def test_rejects_agent_ids_that_can_escape_state_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(SystemExit):
                 self.server("../agent", Path(directory))
+
+    def test_requests_cdp_from_authenticated_lazy_broker(self):
+        received = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.append((self.path, self.headers.get("Authorization")))
+                body = json.dumps({"cdpUrl": "http://127.0.0.1:9222"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        broker = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=broker.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                os.environ.pop("SIKEMUX_BROWSER_CDP_URL", None)
+                os.environ.update(
+                    SIKEMUX_BROWSER_AGENT_ID="agent-one",
+                    SIKEMUX_BROWSER_STATE_DIR=directory,
+                    SIKEMUX_BROWSER_BROKER_URL=f"http://127.0.0.1:{broker.server_port}",
+                    SIKEMUX_BROWSER_BROKER_TOKEN="secret",
+                )
+                server = SikemuxBrowserServer()
+                self.assertEqual(server._request_cdp_url(), "http://127.0.0.1:9222")
+                self.assertEqual(received, [("/cdp", "Bearer secret")])
+        finally:
+            broker.shutdown()
+            broker.server_close()
+            thread.join(timeout=5)
 
 
 if __name__ == "__main__":

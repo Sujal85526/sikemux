@@ -10,6 +10,7 @@ vi.mock("../api/browser", async () => {
         browserApi: {
             snapshot: vi.fn(),
             newTab: vi.fn(),
+            closeAgent: vi.fn(),
             switchTab: vi.fn(),
             closeTab: vi.fn(),
             navigate: vi.fn(),
@@ -41,6 +42,7 @@ beforeEach(() => {
     vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
     for (const operation of [
         browserApi.newTab,
+        browserApi.closeAgent,
         browserApi.switchTab,
         browserApi.closeTab,
         browserApi.navigate,
@@ -104,5 +106,30 @@ describe("AgentBrowserShell", () => {
         fireEvent.pointerDown(viewport, { clientX: 12, clientY: 18 });
         fireEvent.wheel(viewport, { deltaY: 100 });
         expect(browserApi.pointer).not.toHaveBeenCalled();
+    });
+
+    it("captures pointer drags and releases Chromium on cancellation", async () => {
+        const { container } = render(
+            <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
+                <div>terminal</div>
+            </AgentBrowserShell>,
+        );
+        await waitFor(() => expect(container.querySelector(".browser-viewport > img")).not.toBeNull());
+        const viewport = container.querySelector<HTMLElement>(".browser-viewport")!;
+        const capture = vi.fn();
+        const release = vi.fn();
+        Object.defineProperties(viewport, {
+            setPointerCapture: { value: capture },
+            hasPointerCapture: { value: () => true },
+            releasePointerCapture: { value: release },
+        });
+
+        fireEvent.pointerDown(viewport, { pointerId: 7, clientX: 12, clientY: 18 });
+        fireEvent.pointerCancel(viewport, { pointerId: 7, clientX: 20, clientY: 24 });
+
+        expect(capture).toHaveBeenCalledWith(7);
+        expect(release).toHaveBeenCalledWith(7);
+        expect(browserApi.pointer).toHaveBeenCalledWith("agent-one", expect.objectContaining({ kind: "down" }));
+        expect(browserApi.pointer).toHaveBeenCalledWith("agent-one", expect.objectContaining({ kind: "up" }));
     });
 });

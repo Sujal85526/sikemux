@@ -4,7 +4,9 @@ import os
 import re
 import sqlite3
 import sys
+from contextlib import closing
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
 os.environ.setdefault("BROWSER_USE_CLOUD_SYNC", "false")
@@ -26,6 +28,7 @@ HIDDEN_TOOLS = {
     "browser_list_sessions",
     "browser_close_session",
     "browser_close_all",
+    "browser_extract_content",
 }
 
 
@@ -35,7 +38,11 @@ class SikemuxBrowserServer(BrowserUseServer):
         if not re.fullmatch(r"[A-Za-z0-9_:-]{1,128}", self.agent_id):
             raise SystemExit("Invalid SIKEMUX_BROWSER_AGENT_ID")
         self.state_dir = Path(required_env("SIKEMUX_BROWSER_STATE_DIR"))
-        self.cdp_url = required_env("SIKEMUX_BROWSER_CDP_URL")
+        self.cdp_url = os.environ.get("SIKEMUX_BROWSER_CDP_URL", "").strip() or None
+        self.broker_url = os.environ.get("SIKEMUX_BROWSER_BROKER_URL", "").strip() or None
+        self.broker_token = os.environ.get("SIKEMUX_BROWSER_BROKER_TOKEN", "").strip() or None
+        if not self.cdp_url and not (self.broker_url and self.broker_token):
+            raise SystemExit("Missing Sikemux browser endpoint; launch this MCP through Sikemux.")
         self.database = self.state_dir / "tabs.sqlite3"
         self.active_target_id: str | None = None
         super().__init__(session_timeout_minutes=24 * 60)
@@ -54,8 +61,9 @@ class SikemuxBrowserServer(BrowserUseServer):
     async def _init_browser_session(self, allowed_domains: list[str] | None = None, **kwargs):
         if self.browser_session:
             return
+        cdp_url = self.cdp_url or await asyncio.to_thread(self._request_cdp_url)
         profile = BrowserProfile(
-            cdp_url=self.cdp_url,
+            cdp_url=cdp_url,
             is_local=False,
             keep_alive=True,
             headless=True,
@@ -71,6 +79,21 @@ class SikemuxBrowserServer(BrowserUseServer):
         self._track_session(self.browser_session)
         self.tools = Tools()
         self.file_system = FileSystem(base_dir=self.state_dir / "files")
+
+    def _request_cdp_url(self) -> str:
+        assert self.broker_url and self.broker_token
+        request = Request(
+            f"{self.broker_url.rstrip('/')}/cdp",
+            method="POST",
+            headers={"Authorization": f"Bearer {self.broker_token}"},
+        )
+        with urlopen(request, timeout=20) as response:
+            value = json.loads(response.read())
+        cdp_url = value.get("cdpUrl")
+        if not isinstance(cdp_url, str) or not cdp_url:
+            raise RuntimeError("Sikemux browser broker returned no CDP endpoint")
+        self.cdp_url = cdp_url
+        return cdp_url
 
     async def _execute_tool(self, tool_name: str, arguments: dict):
         if tool_name in HIDDEN_TOOLS:
@@ -92,13 +115,9 @@ class SikemuxBrowserServer(BrowserUseServer):
         available = {tab.target_id for tab in tabs}
         self._prune_targets(available)
         owned &= available
-        active_path = self.state_dir / f"active-{self.agent_id}.json"
-        try:
-            requested = json.loads(active_path.read_text()).get("targetId")
-            if isinstance(requested, str) and requested in owned:
-                self.active_target_id = requested
-        except (OSError, ValueError, AttributeError):
-            pass
+        requested = self._read_active()
+        if requested in owned:
+            self.active_target_id = requested
         if self.active_target_id not in owned:
             self.active_target_id = next(iter(owned), None)
         if self.active_target_id is None:
@@ -187,14 +206,17 @@ class SikemuxBrowserServer(BrowserUseServer):
         connection.execute(
             "CREATE TABLE IF NOT EXISTS browser_tabs (target_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()))"
         )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS browser_active_tabs (agent_id TEXT PRIMARY KEY, target_id TEXT NOT NULL)"
+        )
         return connection
 
     def _owned_target_ids(self) -> set[str]:
-        with self._connect_registry() as connection:
+        with closing(self._connect_registry()) as connection, connection:
             return {row[0] for row in connection.execute("SELECT target_id FROM browser_tabs WHERE agent_id = ?", (self.agent_id,))}
 
     def _claim_target(self, target_id: str) -> bool:
-        with self._connect_registry() as connection:
+        with closing(self._connect_registry()) as connection, connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO browser_tabs (target_id, agent_id) VALUES (?, ?)",
                 (target_id, self.agent_id),
@@ -205,18 +227,18 @@ class SikemuxBrowserServer(BrowserUseServer):
             return bool(owner and owner[0] == self.agent_id)
 
     def _register_target(self, target_id: str) -> None:
-        with self._connect_registry() as connection:
+        with closing(self._connect_registry()) as connection, connection:
             connection.execute(
                 "INSERT OR REPLACE INTO browser_tabs (target_id, agent_id) VALUES (?, ?)",
                 (target_id, self.agent_id),
             )
 
     def _unregister_target(self, target_id: str) -> None:
-        with self._connect_registry() as connection:
+        with closing(self._connect_registry()) as connection, connection:
             connection.execute("DELETE FROM browser_tabs WHERE target_id = ? AND agent_id = ?", (target_id, self.agent_id))
 
     def _prune_targets(self, available: set[str]) -> None:
-        with self._connect_registry() as connection:
+        with closing(self._connect_registry()) as connection, connection:
             owned = [row[0] for row in connection.execute("SELECT target_id FROM browser_tabs WHERE agent_id = ?", (self.agent_id,))]
             connection.executemany(
                 "DELETE FROM browser_tabs WHERE target_id = ? AND agent_id = ?",
@@ -230,10 +252,22 @@ class SikemuxBrowserServer(BrowserUseServer):
         return matches[0]
 
     def _write_active(self, target_id: str | None) -> None:
-        temporary = self.state_dir / f"active-{self.agent_id}.tmp"
-        destination = self.state_dir / f"active-{self.agent_id}.json"
-        temporary.write_text(json.dumps({"targetId": target_id}))
-        temporary.replace(destination)
+        with closing(self._connect_registry()) as connection, connection:
+            if target_id is None:
+                connection.execute("DELETE FROM browser_active_tabs WHERE agent_id = ?", (self.agent_id,))
+            else:
+                connection.execute(
+                    "INSERT INTO browser_active_tabs (agent_id, target_id) VALUES (?, ?) "
+                    "ON CONFLICT(agent_id) DO UPDATE SET target_id = excluded.target_id",
+                    (self.agent_id, target_id),
+                )
+
+    def _read_active(self) -> str | None:
+        with closing(self._connect_registry()) as connection, connection:
+            row = connection.execute(
+                "SELECT target_id FROM browser_active_tabs WHERE agent_id = ?", (self.agent_id,)
+            ).fetchone()
+        return row[0] if row else None
 
 
 def required_env(name: str) -> str:

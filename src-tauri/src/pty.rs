@@ -2066,6 +2066,8 @@ pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_TASK_SOURCE",
     "SIKEMUX_BROWSER_STATE_DIR",
     "SIKEMUX_BROWSER_CDP_URL",
+    "SIKEMUX_BROWSER_BROKER_URL",
+    "SIKEMUX_BROWSER_BROKER_TOKEN",
     "SIKEMUX_BROWSER_AGENT_ID",
     // Markers an agent CLI exports for processes it starts. If Sikemux was
     // itself launched from inside one, every terminal it opens looks like a

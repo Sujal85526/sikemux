@@ -41,6 +41,7 @@ export const browserApi = {
     snapshot: (agentId: string, includeFrame: boolean, viewport?: BrowserViewport, signal?: AbortSignal) =>
         invoke<BrowserSnapshot>("browser_snapshot", { agentId, includeFrame, viewport: viewport ?? null }, signal ? { signal } : undefined),
     newTab: (agentId: string, url?: string) => invoke<string>("browser_new_tab", { agentId, url: url ?? null }),
+    closeAgent: (agentId: string) => invoke<void>("browser_close_agent", { agentId }),
     switchTab: (agentId: string, targetId: string) => invoke<void>("browser_switch_tab", { agentId, targetId }),
     closeTab: (agentId: string, targetId: string) => invoke<void>("browser_close_tab", { agentId, targetId }),
     navigate: (agentId: string, url: string) => invoke<void>("browser_navigate", { agentId, url }),

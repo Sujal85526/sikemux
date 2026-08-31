@@ -10,6 +10,8 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -22,6 +24,14 @@ const VIEWPORT_HEIGHT: u32 = 800;
 pub struct BrowserManager {
     runtime: Mutex<BrowserRuntime>,
     child: std::sync::Mutex<Option<Child>>,
+    broker: std::sync::Mutex<Option<BrowserBroker>>,
+    generation: AtomicU64,
+}
+
+struct BrowserBroker {
+    url: String,
+    token: String,
+    shutdown: oneshot::Sender<()>,
 }
 
 pub struct BrowserMcpLaunch {
@@ -122,10 +132,19 @@ impl CdpClient {
             self.pending.lock().await.remove(&id);
             return Err(AppError::Other("browser CDP connection closed".into()));
         }
-        let response = tokio::time::timeout(Duration::from_secs(15), receive)
-            .await
-            .map_err(|_| AppError::Other(format!("browser CDP {method} timed out")))?
-            .map_err(|_| AppError::Other("browser CDP response channel closed".into()))?;
+        let response = match tokio::time::timeout(Duration::from_secs(15), receive).await {
+            Ok(Ok(response)) => response,
+            Ok(Err(_)) => {
+                self.pending.lock().await.remove(&id);
+                return Err(AppError::Other(
+                    "browser CDP response channel closed".into(),
+                ));
+            }
+            Err(_) => {
+                self.pending.lock().await.remove(&id);
+                return Err(AppError::Other(format!("browser CDP {method} timed out")));
+            }
+        };
         if let Some(error) = response.get("error") {
             return Err(AppError::Other(format!(
                 "browser CDP {method} failed: {error}"
@@ -188,14 +207,22 @@ pub struct BrowserViewport {
 }
 
 impl BrowserManager {
-    fn is_started(&self) -> bool {
+    async fn is_started(&self) -> bool {
         self.runtime
-            .try_lock()
-            .ok()
-            .is_some_and(|runtime| runtime.cdp.is_some())
+            .lock()
+            .await
+            .cdp
+            .as_ref()
+            .is_some_and(|cdp| !cdp.is_closed())
     }
 
     pub fn drain(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        if let Ok(mut broker) = self.broker.lock() {
+            if let Some(broker) = broker.take() {
+                let _ = broker.shutdown.send(());
+            }
+        }
         if let Ok(mut child) = self.child.lock() {
             if let Some(mut child) = child.take() {
                 let _ = child.kill();
@@ -207,7 +234,60 @@ impl BrowserManager {
         }
     }
 
+    async fn ensure_broker(&self, app: &AppHandle) -> AppResult<(String, String)> {
+        if let Ok(broker) = self.broker.lock() {
+            if let Some(broker) = broker.as_ref() {
+                return Ok((broker.url.clone(), broker.token.clone()));
+            }
+        }
+
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .map_err(|error| AppError::Other(format!("browser broker bind failed: {error}")))?;
+        let address = listener.local_addr().map_err(|error| {
+            AppError::Other(format!("browser broker address unavailable: {error}"))
+        })?;
+        let url = format!("http://{address}");
+        let token = uuid::Uuid::new_v4().to_string();
+        let (shutdown, mut stop) = oneshot::channel();
+
+        {
+            let mut broker = self
+                .broker
+                .lock()
+                .map_err(|_| AppError::Other("browser broker lock poisoned".into()))?;
+            if let Some(existing) = broker.as_ref() {
+                return Ok((existing.url.clone(), existing.token.clone()));
+            }
+            *broker = Some(BrowserBroker {
+                url: url.clone(),
+                token: token.clone(),
+                shutdown,
+            });
+        }
+
+        let app = app.clone();
+        let expected_token = token.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut stop => break,
+                    accepted = listener.accept() => {
+                        let Ok((stream, _)) = accepted else { break };
+                        let app = app.clone();
+                        let token = expected_token.clone();
+                        tokio::spawn(async move {
+                            let _ = serve_broker_connection(stream, app, &token).await;
+                        });
+                    }
+                }
+            }
+        });
+        Ok((url, token))
+    }
+
     pub async fn ensure_started(&self, app: &AppHandle) -> AppResult<()> {
+        let generation = self.generation.load(Ordering::Acquire);
         let mut runtime = self.runtime.lock().await;
         if let Some(cdp) = runtime.cdp.as_ref() {
             if !cdp.is_closed() {
@@ -216,13 +296,7 @@ impl BrowserManager {
             runtime.cdp = None;
         }
 
-        let state_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| {
-                AppError::Other(format!("browser data directory unavailable: {error}"))
-            })?
-            .join("browser");
+        let state_dir = browser_state_dir(app)?;
         let profile_dir = state_dir.join("profile");
         std::fs::create_dir_all(&profile_dir)?;
         initialize_registry(&state_dir)?;
@@ -283,6 +357,11 @@ impl BrowserManager {
                 return Err(error);
             }
         };
+        if self.generation.load(Ordering::Acquire) != generation {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(AppError::Other("browser startup was canceled".into()));
+        }
         std::fs::write(
             state_dir.join("runtime.json"),
             serde_json::to_vec(
@@ -307,21 +386,16 @@ impl BrowserManager {
         agent_id: &str,
     ) -> AppResult<Vec<(String, String)>> {
         validate_agent_id(agent_id)?;
-        self.ensure_started(app).await?;
-        let runtime = self.runtime.lock().await;
-        let state_dir = runtime
-            .state_dir
-            .as_ref()
-            .ok_or_else(|| AppError::Other("browser state directory unavailable".into()))?;
+        let state_dir = browser_state_dir(app)?;
+        initialize_registry(&state_dir)?;
+        let (broker_url, broker_token) = self.ensure_broker(app).await?;
         Ok(vec![
             (
                 "SIKEMUX_BROWSER_STATE_DIR".into(),
                 state_dir.to_string_lossy().into_owned(),
             ),
-            (
-                "SIKEMUX_BROWSER_CDP_URL".into(),
-                runtime.cdp_http_url.clone().unwrap_or_default(),
-            ),
+            ("SIKEMUX_BROWSER_BROKER_URL".into(), broker_url),
+            ("SIKEMUX_BROWSER_BROKER_TOKEN".into(), broker_token),
             ("SIKEMUX_BROWSER_AGENT_ID".into(), agent_id.to_owned()),
         ])
     }
@@ -451,15 +525,7 @@ impl BrowserManager {
             .collect::<std::collections::HashSet<_>>();
         prune_owned_targets(&state_dir, agent_id, &available)?;
         let owned = owned_target_ids(&state_dir, agent_id)?;
-        let active_from_agent = std::fs::read(state_dir.join(format!("active-{agent_id}.json")))
-            .ok()
-            .and_then(|contents| serde_json::from_slice::<Value>(&contents).ok())
-            .and_then(|value| {
-                value
-                    .get("targetId")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            });
+        let active_from_agent = read_active_target(&state_dir, agent_id)?;
         let active = active_from_agent.or_else(|| {
             self.runtime
                 .try_lock()
@@ -492,6 +558,7 @@ impl BrowserManager {
             .collect::<Vec<_>>();
         if !tabs.is_empty() && !tabs.iter().any(|tab| tab.active) {
             tabs[0].active = true;
+            write_active_target(&state_dir, agent_id, Some(&tabs[0].id))?;
             self.runtime
                 .lock()
                 .await
@@ -521,6 +588,151 @@ impl BrowserManager {
             .get(agent_id)
             .cloned()
     }
+
+    async fn close_agent(&self, app: &AppHandle, agent_id: &str) -> AppResult<()> {
+        validate_agent_id(agent_id)?;
+        let state_dir = browser_state_dir(app)?;
+        if !state_dir.join("tabs.sqlite3").is_file() {
+            return Ok(());
+        }
+        initialize_registry(&state_dir)?;
+        let target_ids = owned_target_ids(&state_dir, agent_id)?;
+        let cdp = self.runtime.lock().await.cdp.clone();
+        let mut close_errors = Vec::new();
+        if let Some(cdp) = cdp.filter(|cdp| !cdp.is_closed()) {
+            for target_id in &target_ids {
+                if let Err(error) = cdp
+                    .call("Target.closeTarget", json!({ "targetId": target_id }), None)
+                    .await
+                {
+                    close_errors.push(error.to_string());
+                }
+            }
+        }
+        clear_agent_registry(&state_dir, agent_id)?;
+        let mut runtime = self.runtime.lock().await;
+        runtime.active_targets.remove(agent_id);
+        for target_id in target_ids {
+            runtime.target_sessions.remove(&target_id);
+        }
+        if close_errors.is_empty() {
+            Ok(())
+        } else {
+            Err(AppError::Other(format!(
+                "browser target cleanup failed: {}",
+                close_errors.join("; ")
+            )))
+        }
+    }
+}
+
+fn browser_state_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|error| AppError::Other(format!("browser data directory unavailable: {error}")))?
+        .join("browser"))
+}
+
+async fn serve_broker_connection(
+    mut stream: TcpStream,
+    app: AppHandle,
+    expected_token: &str,
+) -> AppResult<()> {
+    let mut request = Vec::with_capacity(1024);
+    loop {
+        let mut chunk = [0_u8; 1024];
+        let count = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut chunk))
+            .await
+            .map_err(|_| AppError::Other("browser broker request timed out".into()))?
+            .map_err(|error| AppError::Other(format!("browser broker read failed: {error}")))?;
+        if count == 0 {
+            return Ok(());
+        }
+        request.extend_from_slice(&chunk[..count]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+        if request.len() > 8 * 1024 {
+            write_broker_response(&mut stream, 413, json!({ "error": "request too large" }))
+                .await?;
+            return Ok(());
+        }
+    }
+
+    let request = String::from_utf8_lossy(&request);
+    if !broker_request_authorized(&request, expected_token) {
+        write_broker_response(&mut stream, 401, json!({ "error": "unauthorized" })).await?;
+        return Ok(());
+    }
+
+    let manager = app.state::<BrowserManager>();
+    let broker_is_current = manager
+        .broker
+        .lock()
+        .ok()
+        .and_then(|broker| broker.as_ref().map(|broker| broker.token == expected_token))
+        .unwrap_or(false);
+    if !broker_is_current {
+        write_broker_response(
+            &mut stream,
+            503,
+            json!({ "error": "browser broker stopped" }),
+        )
+        .await?;
+        return Ok(());
+    }
+    match manager.ensure_started(&app).await {
+        Ok(()) => {
+            let cdp_url = manager
+                .runtime
+                .lock()
+                .await
+                .cdp_http_url
+                .clone()
+                .ok_or_else(|| AppError::Other("browser CDP URL unavailable".into()))?;
+            write_broker_response(&mut stream, 200, json!({ "cdpUrl": cdp_url })).await?;
+        }
+        Err(error) => {
+            write_broker_response(&mut stream, 503, json!({ "error": error.to_string() })).await?;
+        }
+    }
+    Ok(())
+}
+
+fn broker_request_authorized(request: &str, expected_token: &str) -> bool {
+    let mut lines = request.lines();
+    if lines.next() != Some("POST /cdp HTTP/1.1") {
+        return false;
+    }
+    lines.any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        name.eq_ignore_ascii_case("authorization")
+            && value
+                .trim()
+                .strip_prefix("Bearer ")
+                .is_some_and(|token| token == expected_token)
+    })
+}
+
+async fn write_broker_response(stream: &mut TcpStream, status: u16, body: Value) -> AppResult<()> {
+    let body = body.to_string();
+    let reason = match status {
+        200 => "OK",
+        401 => "Unauthorized",
+        413 => "Payload Too Large",
+        _ => "Service Unavailable",
+    };
+    let response = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(response.as_bytes())
+        .await
+        .map_err(|error| AppError::Other(format!("browser broker write failed: {error}")))
 }
 
 fn initialize_registry(state_dir: &Path) -> AppResult<()> {
@@ -538,6 +750,10 @@ fn initialize_registry(state_dir: &Path) -> AppResult<()> {
                 target_id TEXT PRIMARY KEY,
                 agent_id TEXT NOT NULL,
                 created_at INTEGER NOT NULL DEFAULT (unixepoch())
+            );
+            CREATE TABLE IF NOT EXISTS browser_active_tabs (
+                agent_id TEXT PRIMARY KEY,
+                target_id TEXT NOT NULL
             );",
         )
         .map_err(|error| AppError::State(error.to_string()))?;
@@ -687,14 +903,61 @@ fn unregister_target(state_dir: &Path, target_id: &str) -> AppResult<()> {
 }
 
 fn write_active_target(state_dir: &Path, agent_id: &str, target_id: Option<&str>) -> AppResult<()> {
-    let temporary = state_dir.join(format!("active-{agent_id}.tmp"));
-    let destination = state_dir.join(format!("active-{agent_id}.json"));
-    std::fs::write(
-        &temporary,
-        serde_json::to_vec(&json!({ "targetId": target_id }))?,
-    )?;
-    std::fs::rename(temporary, destination)?;
+    let connection = Connection::open(state_dir.join("tabs.sqlite3"))
+        .map_err(|error| AppError::State(error.to_string()))?;
+    if let Some(target_id) = target_id {
+        connection
+            .execute(
+                "INSERT INTO browser_active_tabs (agent_id, target_id) VALUES (?1, ?2)
+                 ON CONFLICT(agent_id) DO UPDATE SET target_id = excluded.target_id",
+                params![agent_id, target_id],
+            )
+            .map_err(|error| AppError::State(error.to_string()))?;
+    } else {
+        connection
+            .execute(
+                "DELETE FROM browser_active_tabs WHERE agent_id = ?1",
+                [agent_id],
+            )
+            .map_err(|error| AppError::State(error.to_string()))?;
+    }
     Ok(())
+}
+
+fn read_active_target(state_dir: &Path, agent_id: &str) -> AppResult<Option<String>> {
+    let connection = Connection::open(state_dir.join("tabs.sqlite3"))
+        .map_err(|error| AppError::State(error.to_string()))?;
+    let mut statement = connection
+        .prepare("SELECT target_id FROM browser_active_tabs WHERE agent_id = ?1")
+        .map_err(|error| AppError::State(error.to_string()))?;
+    let mut rows = statement
+        .query([agent_id])
+        .map_err(|error| AppError::State(error.to_string()))?;
+    rows.next()
+        .map_err(|error| AppError::State(error.to_string()))?
+        .map(|row| row.get(0))
+        .transpose()
+        .map_err(|error| AppError::State(error.to_string()))
+}
+
+fn clear_agent_registry(state_dir: &Path, agent_id: &str) -> AppResult<()> {
+    let mut connection = Connection::open(state_dir.join("tabs.sqlite3"))
+        .map_err(|error| AppError::State(error.to_string()))?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| AppError::State(error.to_string()))?;
+    transaction
+        .execute("DELETE FROM browser_tabs WHERE agent_id = ?1", [agent_id])
+        .map_err(|error| AppError::State(error.to_string()))?;
+    transaction
+        .execute(
+            "DELETE FROM browser_active_tabs WHERE agent_id = ?1",
+            [agent_id],
+        )
+        .map_err(|error| AppError::State(error.to_string()))?;
+    transaction
+        .commit()
+        .map_err(|error| AppError::State(error.to_string()))
 }
 
 async fn wait_for_debug_endpoint(path: &Path) -> AppResult<(String, String)> {
@@ -832,7 +1095,7 @@ pub async fn browser_snapshot(
     include_frame: bool,
     viewport: Option<BrowserViewport>,
 ) -> AppResult<BrowserSnapshot> {
-    if !include_frame && !manager.is_started() {
+    if !include_frame && !manager.is_started().await {
         return Ok(BrowserSnapshot {
             tabs: Vec::new(),
             active_tab_id: None,
@@ -895,6 +1158,7 @@ pub async fn browser_new_tab(
     agent_id: String,
     url: Option<String>,
 ) -> AppResult<String> {
+    validate_agent_id(&agent_id)?;
     if let Some(url) = url.as_deref() {
         validate_url_input(url)?;
     }
@@ -920,6 +1184,15 @@ pub async fn browser_new_tab(
         .active_targets
         .insert(agent_id, target_id.clone());
     Ok(target_id)
+}
+
+#[tauri::command]
+pub async fn browser_close_agent(
+    app: AppHandle,
+    manager: State<'_, BrowserManager>,
+    agent_id: String,
+) -> AppResult<()> {
+    manager.close_agent(&app, &agent_id).await
 }
 
 #[tauri::command]
@@ -1148,8 +1421,9 @@ pub async fn browser_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_url, pointer_params, validate_agent_id, validate_target_id, validate_url_input,
-        BrowserPointerInput,
+        broker_request_authorized, clear_agent_registry, initialize_registry, normalize_url,
+        owned_target_ids, pointer_params, read_active_target, register_target, validate_agent_id,
+        validate_target_id, validate_url_input, write_active_target, BrowserPointerInput,
     };
 
     #[test]
@@ -1206,5 +1480,43 @@ mod tests {
         assert_eq!(wheel["type"], "mouseWheel");
         assert!(wheel.get("button").is_none());
         assert!(wheel.get("clickCount").is_none());
+    }
+
+    #[test]
+    fn active_tabs_and_agent_cleanup_are_transactional() {
+        let directory = tempfile::tempdir().unwrap();
+        initialize_registry(directory.path()).unwrap();
+        register_target(directory.path(), "agent-one", "target-one").unwrap();
+        register_target(directory.path(), "agent-one", "target-two").unwrap();
+        write_active_target(directory.path(), "agent-one", Some("target-two")).unwrap();
+
+        assert_eq!(
+            read_active_target(directory.path(), "agent-one").unwrap(),
+            Some("target-two".into())
+        );
+        clear_agent_registry(directory.path(), "agent-one").unwrap();
+        assert!(owned_target_ids(directory.path(), "agent-one")
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            read_active_target(directory.path(), "agent-one").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn broker_requires_the_exact_bearer_token() {
+        assert!(broker_request_authorized(
+            "POST /cdp HTTP/1.1\r\nauthorization: Bearer secret\r\n\r\n",
+            "secret"
+        ));
+        assert!(!broker_request_authorized(
+            "POST /cdp HTTP/1.1\r\nAuthorization: Bearer wrong\r\n\r\n",
+            "secret"
+        ));
+        assert!(!broker_request_authorized(
+            "GET /cdp HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n",
+            "secret"
+        ));
     }
 }

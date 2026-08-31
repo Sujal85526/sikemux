@@ -120,6 +120,8 @@ function BrowserPane({
     const [address, setAddress] = useState("");
     const [viewport, setViewport] = useState<BrowserViewport>({ width: 960, height: 640 });
     const lastPointerMove = useRef(0);
+    const pointerPressed = useRef(false);
+    const lastPointerPoint = useRef({ x: 0, y: 0 });
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const blank = activeTab?.url === "about:blank" || activeTab?.url === "chrome://newtab/";
 
@@ -158,6 +160,15 @@ function BrowserPane({
         };
     }, [blank, refresh, viewport, visible]);
 
+    useEffect(
+        () => () => {
+            if (!pointerPressed.current) return;
+            pointerPressed.current = false;
+            void browserApi.pointer(agentId, { kind: "up", ...lastPointerPoint.current, button: "left" }).catch(() => {});
+        },
+        [agentId],
+    );
+
     const run = (operation: Promise<unknown>, label: string) => {
         void operation.then(() => refresh(false)).catch(reportError(label));
     };
@@ -171,11 +182,23 @@ function BrowserPane({
     };
 
     const pointer = (event: React.PointerEvent<HTMLDivElement>, kind: "move" | "down" | "up") => {
-        if (blank || !snapshot.frame) return;
+        if ((blank || !snapshot.frame) && kind !== "up") return;
         if (kind === "move" && performance.now() - lastPointerMove.current < 24) return;
         if (kind === "move") lastPointerMove.current = performance.now();
         const next = point(event);
-        if (kind === "down") event.currentTarget.focus();
+        lastPointerPoint.current = next;
+        if (kind === "down") {
+            pointerPressed.current = true;
+            event.currentTarget.focus();
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+        }
+        if (kind === "up") {
+            if (!pointerPressed.current) return;
+            pointerPressed.current = false;
+            if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                event.currentTarget.releasePointerCapture?.(event.pointerId);
+            }
+        }
         const request = browserApi.pointer(agentId, { kind, ...next, button: kind === "move" ? "none" : "left" });
         if (kind === "move") void request.catch(() => {});
         else void request.catch(reportError("browser pointer"));
@@ -248,6 +271,7 @@ function BrowserPane({
                 onPointerMove={(event) => pointer(event, "move")}
                 onPointerDown={(event) => pointer(event, "down")}
                 onPointerUp={(event) => pointer(event, "up")}
+                onPointerCancel={(event) => pointer(event, "up")}
                 onWheel={(event) => {
                     if (blank || !snapshot.frame) return;
                     const next = point(event as unknown as React.PointerEvent<HTMLDivElement>);
