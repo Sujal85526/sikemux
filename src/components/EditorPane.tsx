@@ -227,7 +227,7 @@ export function EditorPane({
     const saveSequenceRef = useRef<Map<string, number>>(new Map());
     const conflictedRef = useRef<Set<string>>(new Set());
     const showConflictRef = useRef<(path: string, detail: string) => void>(() => {});
-    const reloadFromDiskRef = useRef<(path: string) => Promise<void>>(async () => {});
+    const reloadFromDiskRef = useRef<(path: string, announce?: boolean) => Promise<void>>(async () => {});
 
     const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
     const dirtyRef = useRef(dirty);
@@ -306,6 +306,10 @@ export function EditorPane({
         const path = currentRef.current;
         const view = viewRef.current;
         if (!path || !view || isImagePath(path)) return false;
+        if (!dirtyRef.current.has(path)) {
+            void reloadFromDiskRef.current(path, false).catch(swallow("refresh clean editor"));
+            return true;
+        }
         const text = view.state.doc.toString();
         const sequence = (saveSequenceRef.current.get(path) ?? 0) + 1;
         saveSequenceRef.current.set(path, sequence);
@@ -426,7 +430,7 @@ export function EditorPane({
         [editableCompartment, languageHint, scheduleChange],
     );
 
-    reloadFromDiskRef.current = async (path: string) => {
+    reloadFromDiskRef.current = async (path: string, announce = true) => {
         const snapshot = await documentIORef.current.read(path);
         saveSequenceRef.current.set(path, (saveSequenceRef.current.get(path) ?? 0) + 1);
         savedRef.current.set(path, snapshot.content);
@@ -448,10 +452,14 @@ export function EditorPane({
             next.delete(path);
             return next;
         });
-        notify("success", `reloaded ${basename(path)} from disk`);
+        if (announce) notify("success", `reloaded ${basename(path)} from disk`);
     };
 
     showConflictRef.current = (path, detail) => {
+        if (!dirtyRef.current.has(path)) {
+            void reloadFromDiskRef.current(path, false).catch(swallow("refresh clean editor"));
+            return;
+        }
         conflictedRef.current.add(path);
         notify("error", `${basename(path)} has an external change. Your editor buffer was preserved. ${detail}`, {
             timeoutMs: null,
@@ -713,8 +721,7 @@ export function EditorPane({
                     const snapshot = await documentIORef.current.read(path);
                     fresh = snapshot.content;
                 } catch (error) {
-                    setDirty((dirtyPaths) => new Set(dirtyPaths).add(path));
-                    if (!conflictedRef.current.has(path)) showConflictRef.current(path, errMessage(error));
+                    swallow("refresh clean editor")(error);
                     continue;
                 }
                 if (cancelled) return;
@@ -778,8 +785,7 @@ export function EditorPane({
                         const snapshot = await documentIORef.current.read(path);
                         fresh = snapshot.content;
                     } catch (error) {
-                        setDirty((dirtyPaths) => new Set(dirtyPaths).add(path));
-                        if (!conflictedRef.current.has(path)) showConflictRef.current(path, errMessage(error));
+                        swallow("refresh clean editor")(error);
                         continue;
                     }
                     const isActive = currentRef.current === path;
