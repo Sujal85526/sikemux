@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DiffEditor } from "./DiffEditor";
 import { FileIcon } from "./FileIcon";
 import { IconChevron } from "./Icons";
@@ -22,7 +22,7 @@ function observeViewportRange(element: Element, onVisibilityChange: (visible: bo
                 callback?.(entry.isIntersecting);
             }
         },
-        { rootMargin: "900px 0px" },
+        { rootMargin: "260px 0px" },
     );
     deferredCallbacks.set(element, onVisibilityChange);
     deferredObserver.observe(element);
@@ -54,6 +54,7 @@ export function MergeReview({
 }) {
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const itemRefs = useRef(new Map<string, HTMLDivElement>());
+    const directExpansion = useRef<string | null>(null);
     const pathsKey = files.map((file) => file.path).join("\0");
     const paths = useMemo(() => (pathsKey ? pathsKey.split("\0") : []), [pathsKey]);
     const pathSet = useMemo(() => new Set(paths), [paths]);
@@ -76,12 +77,18 @@ export function MergeReview({
         window.requestAnimationFrame(() => itemRefs.current.get(focusPath)?.scrollIntoView?.({ block: "start" }));
     }, [focusPath, pathSet]);
 
-    const toggle = (path: string) =>
+    useLayoutEffect(() => {
+        directExpansion.current = null;
+    });
+
+    const toggle = (path: string) => {
+        directExpansion.current = collapsed.has(path) ? path : null;
         setCollapsed((current) => {
             const next = new Set(current);
             next.has(path) ? next.delete(path) : next.add(path);
             return next;
         });
+    };
 
     const expandedCount = paths.filter((path) => !collapsed.has(path)).length;
 
@@ -94,11 +101,21 @@ export function MergeReview({
                 <button
                     type="button"
                     className="merge-review-action"
-                    onClick={() => setCollapsed(new Set())}
+                    onClick={() => {
+                        directExpansion.current = null;
+                        setCollapsed(new Set());
+                    }}
                     disabled={expandedCount === files.length}>
                     expand all
                 </button>
-                <button type="button" className="merge-review-action" onClick={() => setCollapsed(new Set(paths))} disabled={expandedCount === 0}>
+                <button
+                    type="button"
+                    className="merge-review-action"
+                    onClick={() => {
+                        directExpansion.current = null;
+                        setCollapsed(new Set(paths));
+                    }}
+                    disabled={expandedCount === 0}>
                     collapse all
                 </button>
             </div>
@@ -141,7 +158,15 @@ export function MergeReview({
                                     <GitStatusSymbol status={worktreeStatus} source="Working tree" />
                                 </span>
                             </div>
-                            {open && <DeferredMergeFileDiff repo={repo} file={file} editable={focused && unstaged} onSaved={onSaved} />}
+                            {open && (
+                                <DeferredMergeFileDiff
+                                    repo={repo}
+                                    file={file}
+                                    editable={focused && unstaged}
+                                    priority={focused || directExpansion.current === path}
+                                    onSaved={onSaved}
+                                />
+                            )}
                         </div>
                     );
                 })}
@@ -162,13 +187,25 @@ function GitStatusSymbol({ status, source }: { status: GitStatusDecoration | nul
     );
 }
 
-function DeferredMergeFileDiff({ repo, file, editable, onSaved }: { repo: string; file: GitFile; editable: boolean; onSaved: () => void }) {
+function DeferredMergeFileDiff({
+    repo,
+    file,
+    editable,
+    priority,
+    onSaved,
+}: {
+    repo: string;
+    file: GitFile;
+    editable: boolean;
+    priority: boolean;
+    onSaved: () => void;
+}) {
     const hostRef = useRef<HTMLDivElement>(null);
-    const [mounted, setMounted] = useState(() => editable || !canObserveViewport());
+    const [mounted, setMounted] = useState(() => priority || !canObserveViewport());
     const [placeholderHeight, setPlaceholderHeight] = useState(220);
 
     useEffect(() => {
-        if (editable) {
+        if (priority) {
             setMounted(true);
             return;
         }
@@ -187,7 +224,7 @@ function DeferredMergeFileDiff({ repo, file, editable, onSaved }: { repo: string
             if (measuredHeight > 0) setPlaceholderHeight(Math.ceil(measuredHeight));
             setMounted(false);
         });
-    }, [editable]);
+    }, [priority]);
 
     return (
         <div ref={hostRef} className="merge-review-deferred">
