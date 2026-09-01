@@ -281,7 +281,7 @@ function isRecent(value: unknown): value is RecentEntry {
     return isRecord(value) && SESSION_KINDS.has(value.kind as Session["kind"]) && typeof value.name === "string" && typeof value.cwd === "string";
 }
 
-const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode"]);
+const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode", "omp", "grok"]);
 const AGENT_PROVIDERS = new Set<AgentProvider>(["claude", "codex", "gemini"]);
 const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>(["read-only", "workspace-write", "full-access", "bypass"]);
 
@@ -346,7 +346,7 @@ function boundedOptionalString(value: unknown, max: number): string | undefined 
     return typeof value === "string" && value.trim() && !/[\0\r\n]/.test(value) ? value.slice(0, max) : undefined;
 }
 
-const AGENT_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max", "ultra"]);
+const AGENT_EFFORTS = new Set(["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (!isRecord(value) || typeof value.id !== "string" || !value.id || !AGENT_TYPES.has(value.type as AgentType)) return null;
     if (typeof value.title !== "string" || !value.title.trim() || typeof value.resumeId !== "string" || !value.resumeId.trim()) return null;

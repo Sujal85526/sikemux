@@ -2121,8 +2121,12 @@ fn pi_title(path: &Path) -> Option<String> {
 }
 
 fn omp_sessions(cwd: &str) -> Vec<AgentSession> {
+    omp_sessions_from_dirs(cwd, omp_session_dirs())
+}
+
+fn omp_sessions_from_dirs(cwd: &str, roots: Vec<PathBuf>) -> Vec<AgentSession> {
     let mut files = Vec::new();
-    for root in omp_session_dirs() {
+    for root in roots {
         collect_jsonl(&root, &mut files, 0);
     }
     files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
@@ -2581,12 +2585,12 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 mod executable_tests {
     use super::{
         agent_config_root, allowed_agent_path, cached_title, claude_sessions, codex_indexed_titles,
-        codex_sessions, codex_title, grok_session, json_effort, omp_title, parse_claude_models,
-        parse_claude_usage, parse_codex_models, parse_codex_usage_result, parse_grok_models,
-        parse_hermes_models, parse_line_models, parse_omp_models, parse_pi_models, percent_decode,
-        qualify_model, title_cache_stamp, toml_effort, toml_model, toml_section_string,
-        yaml_agent_reasoning_effort, yaml_model_section, yaml_top_level_scalar, AgentModelInfo,
-        AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
+        codex_sessions, codex_title, grok_session, json_effort, omp_sessions_from_dirs, omp_title,
+        parse_claude_models, parse_claude_usage, parse_codex_models, parse_codex_usage_result,
+        parse_grok_models, parse_hermes_models, parse_line_models, parse_omp_models,
+        parse_pi_models, percent_decode, qualify_model, title_cache_stamp, toml_effort, toml_model,
+        toml_section_string, yaml_agent_reasoning_effort, yaml_model_section,
+        yaml_top_level_scalar, AgentModelInfo, AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
     use super::{
@@ -3172,6 +3176,26 @@ mod executable_tests {
             omp_title(transcript.path()).as_deref(),
             Some("Renamed session")
         );
+    }
+
+    #[test]
+    fn omp_session_listing_accepts_title_before_header() {
+        let root = tempfile::tempdir().unwrap();
+        let transcript = root.path().join("session.jsonl");
+        std::fs::write(
+            &transcript,
+            concat!(
+                "{\"type\":\"title\",\"title\":\"Ship OMP support\"}\n",
+                "{\"type\":\"session\",\"id\":\"session-1\",\"cwd\":\"/repo\"}\n",
+                "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"Fallback\"}}\n"
+            ),
+        )
+        .unwrap();
+
+        let sessions = omp_sessions_from_dirs("/repo", vec![root.path().to_path_buf()]);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, transcript.to_string_lossy());
+        assert_eq!(sessions[0].title, "Ship OMP support");
     }
 
     #[test]

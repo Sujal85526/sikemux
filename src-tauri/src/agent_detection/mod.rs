@@ -29,6 +29,8 @@ const BUNDLED_MANIFESTS: &[(AgentKind, &str)] = &[
     (AgentKind::Hermes, include_str!("manifests/hermes.json")),
     (AgentKind::Pi, include_str!("manifests/pi.json")),
     (AgentKind::OpenCode, include_str!("manifests/opencode.json")),
+    (AgentKind::Omp, include_str!("manifests/omp.json")),
+    (AgentKind::Grok, include_str!("manifests/grok.json")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -39,15 +41,19 @@ pub enum AgentKind {
     Hermes,
     Pi,
     OpenCode,
+    Omp,
+    Grok,
 }
 
 impl AgentKind {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 7] = [
         Self::Claude,
         Self::Codex,
         Self::Hermes,
         Self::Pi,
         Self::OpenCode,
+        Self::Omp,
+        Self::Grok,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -57,6 +63,8 @@ impl AgentKind {
             Self::Hermes => "hermes",
             Self::Pi => "pi",
             Self::OpenCode => "opencode",
+            Self::Omp => "omp",
+            Self::Grok => "grok",
         }
     }
 
@@ -67,6 +75,8 @@ impl AgentKind {
             "hermes" | "hermes-agent" => Some(Self::Hermes),
             "pi" => Some(Self::Pi),
             "opencode" | "open-code" => Some(Self::OpenCode),
+            "omp" | "oh-my-pi" => Some(Self::Omp),
+            "grok" | "grok-build" => Some(Self::Grok),
             _ => None,
         }
     }
@@ -1072,6 +1082,24 @@ mod tests {
                 .detect(
                     AgentKind::OpenCode,
                     DetectionInput::screen("△ Permission required\n↑↓ select · enter confirm")
+                )
+                .state,
+            AgentDetectionState::Blocked
+        );
+        assert_eq!(
+            registry
+                .detect(
+                    AgentKind::Omp,
+                    DetectionInput::screen("Working... esc to interrupt")
+                )
+                .state,
+            AgentDetectionState::Working
+        );
+        assert_eq!(
+            registry
+                .detect(
+                    AgentKind::Grok,
+                    DetectionInput::screen("Allow once · Always allow · Deny\nEnter to confirm")
                 )
                 .state,
             AgentDetectionState::Blocked

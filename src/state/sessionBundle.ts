@@ -2,7 +2,7 @@ import type { AgentType, SessionKind, Window } from "./types";
 import { isRecord, validatePersistedWindow, type LayoutValidationLimits } from "./persistValidation";
 
 const SESSION_KINDS = new Set<SessionKind>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
-const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode"]);
+const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode", "omp", "grok"]);
 
 export const SESSION_BUNDLE_LIMITS = {
     maxBytes: 1_048_576,

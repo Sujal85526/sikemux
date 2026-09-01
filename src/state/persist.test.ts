@@ -208,6 +208,40 @@ describe("frontend persistence", () => {
         expect(getState().sessions[sid]).toMatchObject({ view: "agent", activeAgentId: agent.id });
     });
 
+    it("preserves OMP and Grok reasoning levels across sleep", async () => {
+        const sid = getState().activeSessionId;
+        const agents = {
+            omp: {
+                id: "agent-omp",
+                type: "omp" as const,
+                title: "OMP task",
+                startup: "omp",
+                resumeId: "/sessions/omp.jsonl",
+                effort: "off" as const,
+            },
+            grok: {
+                id: "agent-grok",
+                type: "grok" as const,
+                title: "Grok task",
+                startup: "grok",
+                resumeId: "018f0000-0000-7000-8000-000000000000",
+                effort: "minimal" as const,
+            },
+        };
+        setState((state) => ({
+            sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project", view: "agent", activeAgentId: agents.omp.id } },
+            agents: { [agents.omp.id]: agents.omp, [agents.grok.id]: agents.grok },
+            agentsBySession: { ...state.agentsBySession, [sid]: [agents.omp.id, agents.grok.id] },
+        }));
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().agents[agents.omp.id]).toMatchObject({ type: "omp", effort: "off", launchState: "dormant" });
+        expect(getState().agents[agents.grok.id]).toMatchObject({ type: "grok", effort: "minimal", launchState: "dormant" });
+    });
+
     it("persists non-secret provider profiles and defensively hydrates selections", async () => {
         setState({
             providerProfiles: [

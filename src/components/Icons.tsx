@@ -281,6 +281,26 @@ export function IconOpenCode({ size, className }: IconProps) {
     );
 }
 
+export function IconOmp({ size, className }: IconProps) {
+    return (
+        <Svg size={size} className={className} viewBox="0 0 24 24">
+            <path d="M5 5v6a7 7 0 0 0 14 0V5" />
+            <path d="M5 19h4M15 19h4" />
+            <path d="M9 15v4M15 15v4" />
+        </Svg>
+    );
+}
+
+export function IconGrok({ size, className }: IconProps) {
+    return (
+        <Svg size={size} className={className} viewBox="0 0 24 24">
+            <path d="M4 20 20 4" />
+            <path d="M9 4h11v11" />
+            <path d="m4 5 15 15" />
+        </Svg>
+    );
+}
+
 export function IconHermes({ size, className }: IconProps) {
     return (
         <Svg size={size} className={className} viewBox="-4 -4 32 32" fill="currentColor">
@@ -301,6 +321,8 @@ export function AgentIcon({ type, size, className }: { type: AgentType; size?: n
     if (type === "hermes") return <IconHermes size={size} className={className} />;
     if (type === "pi") return <IconPi size={size} className={className} />;
     if (type === "opencode") return <IconOpenCode size={size} className={className} />;
+    if (type === "omp") return <IconOmp size={size} className={className} />;
+    if (type === "grok") return <IconGrok size={size} className={className} />;
     return <IconClaude size={size} className={className} />;
 }
 

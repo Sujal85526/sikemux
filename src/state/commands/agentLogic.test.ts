@@ -8,8 +8,10 @@ describe("agent command logic", () => {
             claude: "--dangerously-skip-permissions",
             hermes: "--yolo",
             codex: "--dangerously-bypass-approvals-and-sandbox",
+            omp: "--approval-mode yolo",
+            grok: "--permission-mode bypassPermissions",
         });
-        const supported: AgentType[] = ["claude", "hermes", "codex"];
+        const supported: AgentType[] = ["claude", "hermes", "codex", "omp", "grok"];
         const unsupported: AgentType[] = ["pi", "opencode"];
         for (const type of supported) expect(agentSupportsSkipPermissions(type)).toBe(true);
         for (const type of unsupported) expect(agentSupportsSkipPermissions(type)).toBe(false);
