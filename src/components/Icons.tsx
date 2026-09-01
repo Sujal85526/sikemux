@@ -1,6 +1,5 @@
 import type { AgentType } from "../state/types";
 
-const grokLogo = new URL("../assets/agent-logos/grok.svg", import.meta.url).href;
 const ompLogo = new URL("../assets/agent-logos/omp.svg", import.meta.url).href;
 
 interface IconProps {
@@ -289,21 +288,10 @@ export function IconOmp({ size, className }: IconProps) {
 }
 
 export function IconGrok({ size, className }: IconProps) {
-    const dimension = size ?? 16;
     return (
-        <span
-            className={className}
-            aria-hidden="true"
-            style={{
-                display: "inline-block",
-                width: dimension,
-                height: dimension,
-                flex: "0 0 auto",
-                backgroundColor: "currentColor",
-                WebkitMask: `url(${grokLogo}) center / contain no-repeat`,
-                mask: `url(${grokLogo}) center / contain no-repeat`,
-            }}
-        />
+        <svg width={size ?? 16} height={size ?? 16} viewBox="0 0 1024 1024" fill="currentColor" className={className} aria-hidden="true">
+            <path d="M395.479 633.828 735.91 381.105C752.599 368.715 776.454 373.548 784.406 392.792 826.26 494.285 807.561 616.253 724.288 699.996 641.016 783.739 525.151 802.104 419.247 760.277L303.556 814.143C469.49 928.202 670.987 899.995 796.901 773.282 896.776 672.843 927.708 535.937 898.785 412.476L899.047 412.739C857.105 231.37 909.358 158.874 1016.4 10.6326 1018.93 7.11771 1021.47 3.60279 1024 0L883.144 141.651V141.212L395.392 633.916M325.226 695.251C206.128 580.84 226.662 403.776 328.285 301.668 403.431 226.097 526.549 195.254 634.026 240.596L749.454 186.994C728.657 171.88 702.007 155.623 671.424 144.2 533.19 86.9942 367.693 115.465 255.323 228.382 147.234 337.081 113.244 504.215 171.613 646.833 215.216 753.423 143.739 828.818 71.7385 904.916 46.2237 931.893 20.6216 958.87 0 987.429L325.139 695.339" />
+        </svg>
     );
 }
 
