@@ -266,7 +266,7 @@ export function IconPi({ size, className }: IconProps) {
 
 export function IconOpenCode({ size, className }: IconProps) {
     return (
-        <svg width={size ?? 16} height={size ?? 16} viewBox="0 0 300 300" fill="currentColor" className={className} aria-hidden="true">
+        <svg width={size ?? 16} height={size ?? 16} viewBox="-50 -50 400 400" fill="currentColor" className={className} aria-hidden="true">
             <g transform="translate(30, 0)">
                 <path d="M180 240H60V120H180V240Z" opacity="0.45" />
                 <path fillRule="evenodd" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z" />
