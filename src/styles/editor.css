@@ -311,7 +311,8 @@
     display: flex;
     align-items: center;
     margin-left: auto;
-    padding: 3px 4px;
+    margin-right: calc(0px - var(--space-1));
+    padding: 3px 0 3px 4px;
     position: sticky;
     right: 0;
     background: var(--rail);
@@ -330,16 +331,20 @@
     color: var(--danger);
     background: var(--rail-2);
 }
-.ed-markdown-toggle {
+.ed-markdown-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.ed-markdown-tab {
     min-height: 26px;
-    min-width: 84px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 5px 11px 6px;
+    gap: 5px;
+    padding: 5px 10px 6px;
     border: 0;
-    border-radius: 4.5px;
+    border-radius: 3px;
     outline: none;
     background: transparent;
     color: var(--ink-faint);
@@ -353,20 +358,20 @@
         color 0.12s,
         background 0.12s;
 }
-.ed-markdown-toggle:hover,
-.ed-markdown-toggle[aria-pressed="true"] {
+.ed-markdown-tab:hover {
     color: var(--ink);
     background: var(--rail-2);
 }
-.ed-markdown-toggle[aria-pressed="true"] {
+.ed-markdown-tab.active {
+    color: var(--ink);
     background: var(--acc-soft);
 }
-.ed-markdown-toggle:focus-visible {
+.ed-markdown-tab:focus-visible {
     outline: none;
     text-decoration: underline;
     text-underline-offset: 3px;
 }
-.ed-markdown-toggle:active {
+.ed-markdown-tab:active {
     transform: translateY(1px);
 }
 

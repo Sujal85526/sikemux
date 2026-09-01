@@ -1003,17 +1003,26 @@ export function EditorPane({
                         isMarkdownPath(activePath) || onCloseWindow ? (
                             <>
                                 {isMarkdownPath(activePath) && (
-                                    <button
-                                        type="button"
-                                        className="ed-markdown-toggle"
-                                        aria-label={
-                                            previewingMarkdown ? `Show source for ${basename(activePath)}` : `Preview ${basename(activePath)}`
-                                        }
-                                        aria-pressed={previewingMarkdown}
-                                        onClick={toggleMarkdownPreview}>
-                                        {previewingMarkdown ? <IconEditor size={13} /> : <IconEye size={13} />}
-                                        <span>{previewingMarkdown ? "Source" : "Preview"}</span>
-                                    </button>
+                                    <div className="ed-markdown-tabs" role="group" aria-label={`Markdown view for ${basename(activePath)}`}>
+                                        <button
+                                            type="button"
+                                            className={`ed-markdown-tab${previewingMarkdown ? "" : " active"}`}
+                                            aria-label={`Show source for ${basename(activePath)}`}
+                                            aria-pressed={!previewingMarkdown}
+                                            onClick={() => previewingMarkdown && toggleMarkdownPreview()}>
+                                            <IconEditor size={13} />
+                                            <span>Source</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`ed-markdown-tab${previewingMarkdown ? " active" : ""}`}
+                                            aria-label={`Preview ${basename(activePath)}`}
+                                            aria-pressed={previewingMarkdown}
+                                            onClick={() => !previewingMarkdown && toggleMarkdownPreview()}>
+                                            <IconEye size={13} />
+                                            <span>Preview</span>
+                                        </button>
+                                    </div>
                                 )}
                                 {onCloseWindow && (
                                     <button type="button" className="tabbar-window-close" title="Close SSH config" onClick={onCloseWindow}>
