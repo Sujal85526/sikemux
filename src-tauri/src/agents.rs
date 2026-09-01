@@ -1663,8 +1663,7 @@ fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
         .filter_map(|path| {
             let id = path.file_stem().and_then(|s| s.to_str())?;
             let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || claude_title(path))
-                .unwrap_or_else(|| id.chars().take(8).collect());
+            let title = cached_title(path, title_cache_stamp(path), || claude_title(path))?;
             Some(AgentSession {
                 id: id.to_string(),
                 title,
@@ -2103,12 +2102,12 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 #[cfg(test)]
 mod executable_tests {
     use super::{
-        agent_config_root, allowed_agent_path_for_home, cached_title, codex_indexed_titles,
-        codex_sessions, codex_title, json_effort, parse_claude_models, parse_claude_usage,
-        parse_codex_models, parse_codex_usage_result, parse_hermes_models, parse_line_models,
-        parse_pi_models, qualify_model, title_cache_stamp, toml_effort, toml_model,
-        yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo, AgentUsageResetAt,
-        CLAUDE_MODEL_CATALOG_ARGS,
+        agent_config_root, allowed_agent_path_for_home, cached_title, claude_sessions,
+        codex_indexed_titles, codex_sessions, codex_title, json_effort, parse_claude_models,
+        parse_claude_usage, parse_codex_models, parse_codex_usage_result, parse_hermes_models,
+        parse_line_models, parse_pi_models, qualify_model, title_cache_stamp, toml_effort,
+        toml_model, yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo,
+        AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
     use super::{
@@ -2555,6 +2554,33 @@ mod executable_tests {
         let sessions = codex_sessions("/repo", root.path().to_str());
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].title, "Add draggable project sorting");
+    }
+
+    #[test]
+    fn claude_sessions_omit_titleless_command_artifacts() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("projects").join("-repo");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::write(
+            sessions_dir.join("conversation.jsonl"),
+            "{\"type\":\"user\",\"message\":{\"content\":\"Fix top bar overlaps\"}}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("usage-command.jsonl"),
+            "{\"type\":\"user\",\"message\":{\"content\":\"<command-name>/usage</command-name>\"}}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("cancelled-resume.jsonl"),
+            "{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"<command-name>/resume</command-name>\"}\n",
+        )
+        .unwrap();
+
+        let sessions = claude_sessions("/repo", root.path().to_str());
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, "conversation");
+        assert_eq!(sessions[0].title, "Fix top bar overlaps");
     }
 
     #[test]
