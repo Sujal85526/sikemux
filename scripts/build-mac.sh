@@ -96,6 +96,7 @@ BROWSER_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-browser-mcp"
 BROWSER_ARCHS="$(/usr/bin/lipo -archs "$BROWSER_EXECUTABLE")"
 [[ "$BROWSER_ARCHS" == "$ARCHS" ]] || fail "browser sidecar architecture ($BROWSER_ARCHS) differs from app ($ARCHS)"
 find "$APP_PATH/Contents/Resources/browser-runtime" -type f \( -name Chromium -o -name chrome -o -name chrome-headless-shell -o -name 'Google Chrome for Testing' \) -perm -111 -print -quit | grep -q . || fail "bundled Chromium runtime is missing"
+[[ -s "$APP_PATH/Contents/Resources/sikemux_pi_browser.ts" ]] || fail "bundled Pi browser extension is missing"
 
 # Packaged apps must never depend on libraries from the build machine's
 # Homebrew/MacPorts installation. Such binaries pass codesign verification but

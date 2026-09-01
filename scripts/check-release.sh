@@ -56,6 +56,7 @@ if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon 
 if (windowsConfig.bundle?.windows?.nsis?.installMode !== "currentUser") fail("unexpected Windows install mode");
 if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor", "binaries/sikemux-browser-mcp"])) fail("sidecar bundle mapping is incomplete");
 if (sidecarConfig.bundle?.resources?.["browser-runtime"] !== "browser-runtime") fail("Chromium resource mapping is missing");
+if (sidecarConfig.bundle?.resources?.["resources/sikemux_pi_browser.ts"] !== "sikemux_pi_browser.ts") fail("Pi browser extension resource mapping is missing");
 if (!pkg.scripts?.["build:windows"]?.includes("build:sidecar")) fail("Windows build does not build sidecars");
 if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("Windows build does not bundle the CLI sidecar");
 if (!macBuild.includes("build-cli-sidecar.mjs")) fail("macOS build does not build the CLI sidecar");

@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -34,6 +35,70 @@ def wait_for_cdp(path: Path) -> str:
         except (OSError, IndexError):
             time.sleep(0.1)
     raise RuntimeError("Chromium did not expose a CDP endpoint")
+
+
+def run_agent_smoke(command: list[str], environment: dict[str, str], label: str) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(command, env=environment, text=True, capture_output=True, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(f"{label} browser smoke failed: {(result.stderr or result.stdout).strip()[:1000]}")
+    return result
+
+
+def exercise_agent_hosts(args, cdp_url: str, root: Path) -> None:
+    agent_state = root / "agent-state"
+    agent_state.mkdir()
+    base_environment = {
+        **os.environ,
+        "SIKEMUX_BROWSER_STATE_DIR": str(agent_state),
+        "SIKEMUX_BROWSER_CDP_URL": cdp_url,
+        "SIKEMUX_BROWSER_AGENT_ID": "agent-host-smoke",
+    }
+    if args.hermes:
+        hermes_home = root / "hermes"
+        hermes_home.mkdir()
+        hermes_home.joinpath("config.yaml").write_text(
+            "mcp_servers:\n"
+            "  sikemux_browser:\n"
+            f"    command: {json.dumps(str(args.sidecar))}\n"
+            "    args: []\n"
+            "    enabled: true\n"
+        )
+        result = run_agent_smoke(
+            [str(args.hermes), "mcp", "test", "sikemux_browser"],
+            {**base_environment, "HERMES_HOME": str(hermes_home)},
+            "Hermes",
+        )
+        if "sikemux_browser" not in result.stdout:
+            raise RuntimeError("Hermes MCP probe did not report sikemux_browser")
+    if args.pi and args.pi_extension:
+        result = run_agent_smoke(
+            [str(args.pi), "--extension", str(args.pi_extension), "--list-models", "sikemux-no-model-match"],
+            {
+                **base_environment,
+                "SIKEMUX_BROWSER_MCP_COMMAND": str(args.sidecar),
+                "SIKEMUX_BROWSER_MCP_ARGS": "[]",
+            },
+            "Pi",
+        )
+        if "[sikemux-browser]" in result.stderr:
+            raise RuntimeError(f"Pi browser extension failed: {result.stderr.strip()[:1000]}")
+    if args.opencode:
+        config = {
+            "mcp": {
+                "sikemux_browser": {
+                    "type": "local",
+                    "command": [str(args.sidecar)],
+                    "enabled": True,
+                }
+            }
+        }
+        result = run_agent_smoke(
+            [str(args.opencode), "mcp", "list"],
+            {**base_environment, "OPENCODE_CONFIG_CONTENT": json.dumps(config)},
+            "OpenCode",
+        )
+        if "sikemux_browser" not in result.stdout:
+            raise RuntimeError("OpenCode MCP probe did not report sikemux_browser")
 
 
 async def exercise_sidecar(sidecar: Path, cdp_url: str, state_dir: Path, page_url: str) -> None:
@@ -76,6 +141,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sidecar", type=Path, required=True)
     parser.add_argument("--browser", type=Path, required=True)
+    parser.add_argument("--hermes", type=Path)
+    parser.add_argument("--pi", type=Path)
+    parser.add_argument("--pi-extension", type=Path)
+    parser.add_argument("--opencode", type=Path)
     args = parser.parse_args()
     if not args.sidecar.is_file() or not args.browser.is_file():
         raise SystemExit("sidecar or browser executable is missing")
@@ -108,6 +177,7 @@ def main() -> None:
             cdp_url = wait_for_cdp(profile / "DevToolsActivePort")
             page_url = f"http://127.0.0.1:{server.server_port}/"
             asyncio.run(exercise_sidecar(args.sidecar, cdp_url, state, page_url))
+            exercise_agent_hosts(args, cdp_url, root)
         finally:
             browser.terminate()
             try:
