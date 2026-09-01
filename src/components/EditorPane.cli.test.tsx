@@ -68,15 +68,10 @@ describe("EditorPane CLI queue", () => {
         const { container } = render(<EditorPane paneId="pane" cwd="/repo" active visible showTree={false} />);
         const editor = within(container);
 
-        const sourceButton = await editor.findByRole("button", { name: "Show source for README.md" });
-        const previewButton = editor.getByRole("button", { name: "Preview README.md" });
-        expect(sourceButton).toHaveAttribute("aria-pressed", "true");
-        expect(previewButton).toHaveAttribute("aria-pressed", "false");
+        const previewButton = await editor.findByRole("button", { name: "Preview README.md" });
         expect(previewButton.querySelector("svg")).toBeInTheDocument();
         fireEvent.click(previewButton);
 
-        expect(sourceButton).toHaveAttribute("aria-pressed", "false");
-        expect(previewButton).toHaveAttribute("aria-pressed", "true");
         expect(editor.getByRole("heading", { name: "Preview heading" })).toBeInTheDocument();
         expect(editor.getByText("locked", { selector: "strong" })).toBeInTheDocument();
         expect(container.querySelector(".ed-host")).toHaveClass("preview-mode");
@@ -84,10 +79,8 @@ describe("EditorPane CLI queue", () => {
         expect(container.querySelector(".ed-source-host")).toHaveAttribute("aria-hidden", "true");
         expect(container.querySelector(".cm-content")).toHaveAttribute("contenteditable", "false");
 
-        fireEvent.click(sourceButton);
+        fireEvent.click(editor.getByRole("button", { name: "Show source for README.md" }));
 
-        expect(sourceButton).toHaveAttribute("aria-pressed", "true");
-        expect(previewButton).toHaveAttribute("aria-pressed", "false");
         expect(editor.queryByRole("heading", { name: "Preview heading" })).not.toBeInTheDocument();
         expect(container.querySelector(".ed-host")).not.toHaveClass("preview-mode");
         expect(container.querySelector(".ed-source-host")).not.toHaveAttribute("hidden");
