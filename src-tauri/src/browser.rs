@@ -1729,10 +1729,12 @@ pub async fn browser_key(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use super::mirror_agent_home;
     use super::{
         broker_request_authorized, clear_agent_registry, codex_browser_args, initialize_registry,
-        mirror_agent_home, normalize_url, opencode_browser_config, owned_target_ids,
-        pointer_params, read_active_target, register_target, validate_agent_id, validate_target_id,
+        normalize_url, opencode_browser_config, owned_target_ids, pointer_params,
+        read_active_target, register_target, validate_agent_id, validate_target_id,
         validate_url_input, write_active_target, BrowserMcpLaunch, BrowserPointerInput,
     };
 

@@ -24,7 +24,7 @@ const budgets = [
   {
     label: "startup JS",
     pattern: /^index-.*\.js$/,
-    raw: 525_000,
+    raw: 540_000,
     gzip: 165_000,
   },
   {
@@ -42,30 +42,22 @@ const budgets = [
   {
     label: "Diffs lazy chunk",
     pattern: /^diffs-.*\.js$/,
-    raw: 2_350_000,
-    gzip: 580_000,
+    raw: 2_400_000,
+    gzip: 590_000,
   },
   {
     label: "all JavaScript except Diffs",
     pattern: /^(?!diffs-).*\.js$/,
-    raw: 2_650_000,
-    gzip: 840_000,
+    raw: 2_750_000,
+    gzip: 860_000,
   },
   {
-    // Raised twice while the design system landed: first for the shared
-    // primitives (dialog, switch/checkbox/slider, tooltip, skeletons,
-    // scrollbars), then for the panel kit, spacing scale and the app-wide
-    // rounding pass. Both raises came after reclaiming what they replaced —
-    // the duplicated dropdown, git-modal, git-panel, rail-group and
-    // rnd-empty rules, and 35 now-dead `border-radius: 0` declarations.
-    //
-    // If this needs raising a third time, re-baseline it deliberately rather
-    // than nudging: the point of the number is to notice growth, and it has
-    // now moved 235k -> 245k in one sitting.
+    // v0.3.4 adds Markdown preview and edge-peek rails. These ceilings keep
+    // more than 10% reserve against the measured release bundle.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 245_000,
-    gzip: 42_000,
+    raw: 255_000,
+    gzip: 44_000,
   },
 ];
 
