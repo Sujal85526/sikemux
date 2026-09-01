@@ -19,8 +19,13 @@ describe("EditorPane CLI queue", () => {
         setState(initial, true);
         invoke.mockReset();
         invoke.mockImplementation(async (command: string) => {
-            if (command === "read_file") return "# Preview heading\n\n**locked**\nthird";
-            if (command === "read_file_versioned") return { content: "# Preview heading\n\n**locked**\nthird", version: "version-1" };
+            if (command === "read_file") return "# Preview heading\n\n**locked**\n\n| Key | Action |\n| --- | --- |\n| ⌘P | Open project |";
+            if (command === "read_file_versioned") {
+                return {
+                    content: "# Preview heading\n\n**locked**\n\n| Key | Action |\n| --- | --- |\n| ⌘P | Open project |",
+                    version: "version-1",
+                };
+            }
             if (command === "cli_open_result") return undefined;
             if (command === "repo_watch_start") return 1;
             return null;
@@ -74,6 +79,9 @@ describe("EditorPane CLI queue", () => {
 
         expect(editor.getByRole("heading", { name: "Preview heading" })).toBeInTheDocument();
         expect(editor.getByText("locked", { selector: "strong" })).toBeInTheDocument();
+        expect(editor.getByRole("table")).toBeInTheDocument();
+        expect(editor.getByRole("columnheader", { name: "Key" })).toBeInTheDocument();
+        expect(editor.getByRole("cell", { name: "Open project" })).toBeInTheDocument();
         expect(container.querySelector(".ed-host")).toHaveClass("preview-mode");
         expect(container.querySelector(".ed-source-host")).toHaveAttribute("hidden");
         expect(container.querySelector(".ed-source-host")).toHaveAttribute("aria-hidden", "true");

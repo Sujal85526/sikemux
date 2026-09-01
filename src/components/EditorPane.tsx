@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { invokeCommand as invoke } from "../api/invoke";
 import { Compartment, EditorState, Prec, type Text } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
@@ -191,7 +192,9 @@ function MarkdownPreview({ source }: { source: string }) {
     return (
         <div className="ed-markdown-preview">
             <article className="ed-markdown-body">
-                <Markdown skipHtml>{source}</Markdown>
+                <Markdown remarkPlugins={[remarkGfm]} skipHtml>
+                    {source}
+                </Markdown>
             </article>
         </div>
     );
