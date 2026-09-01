@@ -88,6 +88,12 @@ export const IconSearch = makeSvgIcon(
         <path d="M10.4 10.4 14 14" />
     </>,
 );
+export const IconEye = makeSvgIcon(
+    <>
+        <path d="M1.6 8s2.3-4 6.4-4 6.4 4 6.4 4-2.3 4-6.4 4S1.6 8 1.6 8Z" />
+        <circle cx="8" cy="8" r="1.8" />
+    </>,
+);
 export const IconEditor = makeSvgIcon(<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3M9.3 3.4 6.7 12.6" />);
 export const IconRun = makeSvgIcon(<path d="M4.7 3.4 12.4 8l-7.7 4.6z" stroke="none" />, { fill: "currentColor" });
 export const IconGit = makeSvgIcon(

@@ -69,17 +69,22 @@ describe("EditorPane CLI queue", () => {
         const editor = within(container);
 
         const previewButton = await editor.findByRole("button", { name: "Preview README.md" });
+        expect(previewButton.querySelector("svg")).toBeInTheDocument();
         fireEvent.click(previewButton);
 
         expect(editor.getByRole("heading", { name: "Preview heading" })).toBeInTheDocument();
         expect(editor.getByText("locked", { selector: "strong" })).toBeInTheDocument();
         expect(container.querySelector(".ed-host")).toHaveClass("preview-mode");
+        expect(container.querySelector(".ed-source-host")).toHaveAttribute("hidden");
+        expect(container.querySelector(".ed-source-host")).toHaveAttribute("aria-hidden", "true");
         expect(container.querySelector(".cm-content")).toHaveAttribute("contenteditable", "false");
 
         fireEvent.click(editor.getByRole("button", { name: "Show source for README.md" }));
 
         expect(editor.queryByRole("heading", { name: "Preview heading" })).not.toBeInTheDocument();
         expect(container.querySelector(".ed-host")).not.toHaveClass("preview-mode");
+        expect(container.querySelector(".ed-source-host")).not.toHaveAttribute("hidden");
+        expect(container.querySelector(".ed-source-host")).toHaveAttribute("aria-hidden", "false");
         expect(container.querySelector(".cm-content")).toHaveAttribute("contenteditable", "true");
     });
 });

@@ -29,7 +29,7 @@ import { useGitBaseline } from "../hooks/useGitBaseline";
 import { useGitBlame } from "../hooks/useGitBlame";
 import type { CliPendingEditorOpen } from "../state/types";
 import { FileTree, type CtxItem } from "./FileTree";
-import { IconClose, IconFile } from "./Icons";
+import { IconClose, IconEditor, IconEye, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { TabBar } from "./TabBar";
 import { EditorFindBar } from "./EditorFindBar";
@@ -1011,7 +1011,8 @@ export function EditorPane({
                                         }
                                         aria-pressed={previewingMarkdown}
                                         onClick={toggleMarkdownPreview}>
-                                        {previewingMarkdown ? "source" : "preview"}
+                                        {previewingMarkdown ? <IconEditor size={13} /> : <IconEye size={13} />}
+                                        <span>{previewingMarkdown ? "Source" : "Preview"}</span>
                                     </button>
                                 )}
                                 {onCloseWindow && (
@@ -1023,7 +1024,13 @@ export function EditorPane({
                         ) : undefined
                     }
                 />
-                <div className={`ed-host${activeImage ? " image-mode" : ""}${previewingMarkdown ? " preview-mode" : ""}`} ref={hostRef}>
+                <div className={`ed-host${activeImage ? " image-mode" : ""}${previewingMarkdown ? " preview-mode" : ""}`}>
+                    <div
+                        className="ed-source-host"
+                        hidden={!!activeImage || previewingMarkdown}
+                        aria-hidden={!!activeImage || previewingMarkdown}
+                        ref={hostRef}
+                    />
                     {!activeImage && !previewingMarkdown && (
                         <EditorFindBar
                             getView={() => viewRef.current}

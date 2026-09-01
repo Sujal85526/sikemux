@@ -331,14 +331,23 @@
     background: var(--rail-2);
 }
 .ed-markdown-toggle {
-    min-width: 68px;
-    padding: 0 12px;
+    height: 100%;
+    min-width: 84px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 11px;
     border: 0;
+    border-radius: 0;
+    outline: none;
     background: transparent;
     color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: 10.5px;
-    letter-spacing: 0.04em;
+    font-family: var(--ui);
+    font-size: 11px;
+    font-weight: 560;
+    line-height: 1;
+    letter-spacing: 0.01em;
     cursor: pointer;
     transition:
         color 0.12s,
@@ -351,6 +360,15 @@
 }
 .ed-markdown-toggle[aria-pressed="true"] {
     box-shadow: inset 0 -2px 0 var(--acc);
+}
+.ed-markdown-toggle:focus-visible {
+    outline: none;
+    box-shadow:
+        inset 0 0 0 1px var(--acc-line),
+        inset 0 -2px 0 var(--acc);
+}
+.ed-markdown-toggle:active {
+    transform: translateY(1px);
 }
 
 /* variant: editor file tabs */
@@ -431,14 +449,21 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    position: relative;
 }
-.ed-host .cm-editor {
+.ed-source-host {
     height: 100%;
 }
-.ed-host.preview-mode > .cm-editor {
+.ed-source-host[hidden] {
     display: none;
 }
+.ed-source-host .cm-editor {
+    height: 100%;
+}
 .ed-markdown-preview {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
     height: 100%;
     overflow: auto;
     background: var(--bg);
@@ -578,9 +603,6 @@
 .ed-markdown-body img {
     max-width: 100%;
     height: auto;
-}
-.ed-host.image-mode > .cm-editor {
-    visibility: hidden;
 }
 .ed-image-viewer {
     position: absolute;
