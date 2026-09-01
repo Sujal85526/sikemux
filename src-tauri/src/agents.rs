@@ -1765,10 +1765,41 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
     }
 }
 
+fn codex_indexed_titles(root: &Path) -> HashMap<String, String> {
+    let Ok(file) = fs::File::open(root.join("session_index.jsonl")) else {
+        return HashMap::new();
+    };
+    let mut titles = HashMap::new();
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        let Some(id) = value
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        else {
+            continue;
+        };
+        let Some(title) = value
+            .get("thread_name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+        else {
+            continue;
+        };
+        titles.insert(id.to_string(), title.to_string());
+    }
+    titles
+}
+
 fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
     let Some(root) = agent_config_root("codex", config_path) else {
         return Vec::new();
     };
+    let indexed_titles = codex_indexed_titles(&root);
     let mut files = Vec::new();
     collect_jsonl(&root.join("sessions"), &mut files, 0);
     files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
@@ -1790,7 +1821,10 @@ fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
             }
             let id = payload.get("id").and_then(|i| i.as_str())?;
             let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || codex_title(path))
+            let title = indexed_titles
+                .get(id)
+                .cloned()
+                .or_else(|| cached_title(path, title_cache_stamp(path), || codex_title(path)))
                 .unwrap_or_else(|| id.chars().take(8).collect());
             Some(AgentSession {
                 id: id.to_string(),
@@ -2069,11 +2103,12 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 #[cfg(test)]
 mod executable_tests {
     use super::{
-        agent_config_root, allowed_agent_path_for_home, cached_title, codex_title, json_effort,
-        parse_claude_models, parse_claude_usage, parse_codex_models, parse_codex_usage_result,
-        parse_hermes_models, parse_line_models, parse_pi_models, qualify_model, title_cache_stamp,
-        toml_effort, toml_model, yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo,
-        AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
+        agent_config_root, allowed_agent_path_for_home, cached_title, codex_indexed_titles,
+        codex_sessions, codex_title, json_effort, parse_claude_models, parse_claude_usage,
+        parse_codex_models, parse_codex_usage_result, parse_hermes_models, parse_line_models,
+        parse_pi_models, qualify_model, title_cache_stamp, toml_effort, toml_model,
+        yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo, AgentUsageResetAt,
+        CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
     use super::{
@@ -2490,6 +2525,36 @@ mod executable_tests {
             codex_title(transcript.path()).as_deref(),
             Some("Explain this codebase")
         );
+    }
+
+    #[test]
+    fn codex_sessions_use_the_latest_indexed_thread_name() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        std::fs::create_dir(&sessions_dir).unwrap();
+        std::fs::write(
+            root.path().join("session_index.jsonl"),
+            concat!(
+                "{\"id\":\"session-1\",\"thread_name\":\"Initial title\"}\n",
+                "{\"id\":\"session-1\",\"thread_name\":\"Add draggable project sorting\"}\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("rollout-session-1.jsonl"),
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"session-1\",\"cwd\":\"/repo\"}}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            codex_indexed_titles(root.path())
+                .get("session-1")
+                .map(String::as_str),
+            Some("Add draggable project sorting")
+        );
+        let sessions = codex_sessions("/repo", root.path().to_str());
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].title, "Add draggable project sorting");
     }
 
     #[test]
