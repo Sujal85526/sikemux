@@ -99,6 +99,34 @@ def exercise_agent_hosts(args, cdp_url: str, root: Path) -> None:
         )
         if "sikemux_browser" not in result.stdout:
             raise RuntimeError("OpenCode MCP probe did not report sikemux_browser")
+    if args.omp and args.pi_extension:
+        result = run_agent_smoke(
+            [str(args.omp), "models", "--extension", str(args.pi_extension), "sikemux-no-model-match"],
+            {
+                **base_environment,
+                "SIKEMUX_BROWSER_MCP_COMMAND": str(args.sidecar),
+                "SIKEMUX_BROWSER_MCP_ARGS": "[]",
+            },
+            "OMP",
+        )
+        if "[sikemux-browser]" in result.stderr:
+            raise RuntimeError(f"OMP browser extension failed: {result.stderr.strip()[:1000]}")
+    if args.grok:
+        grok_home = root / "grok"
+        grok_home.mkdir()
+        grok_environment = {**base_environment, "GROK_HOME": str(grok_home)}
+        run_agent_smoke(
+            [str(args.grok), "mcp", "add", "sikemux_browser", "--", str(args.sidecar)],
+            grok_environment,
+            "Grok config",
+        )
+        result = run_agent_smoke(
+            [str(args.grok), "mcp", "doctor", "sikemux_browser", "--json"],
+            grok_environment,
+            "Grok",
+        )
+        if "sikemux_browser" not in result.stdout:
+            raise RuntimeError("Grok MCP probe did not report sikemux_browser")
 
 
 async def exercise_sidecar(sidecar: Path, cdp_url: str, state_dir: Path, page_url: str) -> None:
@@ -145,6 +173,8 @@ def main() -> None:
     parser.add_argument("--pi", type=Path)
     parser.add_argument("--pi-extension", type=Path)
     parser.add_argument("--opencode", type=Path)
+    parser.add_argument("--omp", type=Path)
+    parser.add_argument("--grok", type=Path)
     args = parser.parse_args()
     if not args.sidecar.is_file() or not args.browser.is_file():
         raise SystemExit("sidecar or browser executable is missing")

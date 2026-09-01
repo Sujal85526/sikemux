@@ -2022,6 +2022,8 @@ pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_BROWSER_MCP_ARGS",
     "SIKEMUX_BROWSER_AGENT_ID",
     "OPENCODE_CONFIG_CONTENT",
+    "HERMES_HOME",
+    "GROK_HOME",
     // Markers an agent CLI exports for processes it starts. If Sikemux was
     // itself launched from inside one, every terminal it opens looks like a
     // child of that session — the CLI then disables transcript saving, and the
@@ -2409,7 +2411,10 @@ pub async fn pty_spawn(
             match (context.agent_id.as_deref(), context.agent_type.as_deref()) {
                 (
                     Some(agent_id),
-                    Some(agent_type @ ("codex" | "claude" | "hermes" | "pi" | "opencode")),
+                    Some(
+                        agent_type @ ("codex" | "claude" | "hermes" | "pi" | "opencode" | "omp"
+                        | "grok"),
+                    ),
                 ) => match browser
                     .agent_integration(&app, agent_id, agent_type, &command.program)
                     .await
