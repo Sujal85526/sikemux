@@ -61,9 +61,11 @@ describe("MergeReview", () => {
     it("mounts only the selected and near-viewport diff bodies", () => {
         const observed: Element[] = [];
         let callback: IntersectionObserverCallback | undefined;
+        let options: IntersectionObserverInit | undefined;
         class MockIntersectionObserver {
-            constructor(next: IntersectionObserverCallback) {
+            constructor(next: IntersectionObserverCallback, nextOptions?: IntersectionObserverInit) {
                 callback = next;
+                options = nextOptions;
             }
             observe(element: Element) {
                 observed.push(element);
@@ -84,6 +86,7 @@ describe("MergeReview", () => {
         expect(screen.queryByTestId("diff:staged.ts:HEAD::index")).not.toBeInTheDocument();
         expect(screen.queryByTestId("diff:both.ts:HEAD::index")).not.toBeInTheDocument();
         expect(observed).toHaveLength(2);
+        expect(options?.rootMargin).toBe("260px 0px");
 
         const target = observed[0];
         act(() => callback?.([{ target, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
@@ -94,5 +97,33 @@ describe("MergeReview", () => {
         act(() => callback?.([{ target, isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver));
         expect(screen.queryByTestId("diff:staged.ts:HEAD::index")).not.toBeInTheDocument();
         expect(screen.getByLabelText("Diff for staged.ts loads when scrolled near")).toBeInTheDocument();
+    });
+
+    it("mounts a selected staged diff and a directly expanded diff without waiting for the observer", () => {
+        const observed: Element[] = [];
+        class MockIntersectionObserver {
+            constructor(_callback: IntersectionObserverCallback, _options?: IntersectionObserverInit) {}
+            observe(element: Element) {
+                observed.push(element);
+            }
+            unobserve(element: Element) {
+                const index = observed.indexOf(element);
+                if (index >= 0) observed.splice(index, 1);
+            }
+            disconnect() {}
+        }
+        vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+
+        render(<MergeReview repo="/repo" files={files} focusPath="staged.ts" onOpenFile={() => {}} onSaved={() => {}} />);
+
+        expect(screen.getByTestId("diff:staged.ts:HEAD::index")).toHaveAttribute("data-editable", "false");
+        expect(screen.queryByTestId("diff:both.ts:HEAD::index")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Collapse both.ts" }));
+        fireEvent.click(screen.getByRole("button", { name: "Expand both.ts" }));
+
+        expect(screen.getByTestId("diff:both.ts:HEAD::index")).toBeInTheDocument();
+        expect(screen.getByTestId("diff:both.ts::index:working")).toBeInTheDocument();
+        expect(observed).toHaveLength(1);
     });
 });

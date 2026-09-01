@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     readTextFileLimited: vi.fn(),
     writeFile: vi.fn(),
     currentTheme: vi.fn(),
+    preloadHighlighter: vi.fn(),
     themeListener: null as ((theme: ReturnType<typeof themeById>) => void) | null,
     diffProps: null as Record<string, any> | null,
     registeredThemes: [] as Array<{ name: string; loader: () => Promise<unknown> }>,
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@pierre/diffs", () => ({
     registerCustomTheme: (name: string, loader: () => Promise<unknown>) => mocks.registeredThemes.push({ name, loader }),
+    preloadHighlighter: mocks.preloadHighlighter,
 }));
 vi.mock("@pierre/diffs/edit", () => ({ Editor: class {} }));
 vi.mock("@pierre/diffs/react", () => ({
@@ -47,6 +49,7 @@ beforeEach(() => {
     mocks.readTextFileLimited.mockReset().mockResolvedValue("const value = 2;\n");
     mocks.writeFile.mockReset().mockResolvedValue(undefined);
     mocks.currentTheme.mockReset().mockReturnValue(themeById("aura"));
+    mocks.preloadHighlighter.mockReset().mockResolvedValue(undefined);
     mocks.themeListener = null;
     mocks.diffProps = null;
 });
@@ -66,6 +69,9 @@ describe("DiffEditor", () => {
             themeType: "dark",
             disableBackground: false,
             disableFileHeader: true,
+            lineDiffType: "word-alt",
+            maxLineDiffLength: 512,
+            tokenizeMaxLength: 4000,
         });
         expect(mocks.diffProps?.style["--diffs-bg"]).toContain("var(--window-opacity, 1)");
         expect(mocks.diffProps?.style["--diffs-addition-color-override"]).toBe("var(--live)");
@@ -113,5 +119,22 @@ describe("DiffEditor", () => {
         expect(mocks.fileAt).toHaveBeenCalledTimes(2);
         expect(mocks.fileAt).toHaveBeenCalledWith("/repo", "HEAD", "src/shared.ts");
         expect(mocks.fileAt).toHaveBeenCalledWith("/repo", ":index", "src/shared.ts");
+    });
+
+    it("starts renderer preparation alongside content reads and skips word diffing for read-only views", async () => {
+        const resolveReads: Array<(value: string) => void> = [];
+        mocks.fileAt.mockImplementation(() => new Promise<string>((resolve) => resolveReads.push(resolve)));
+
+        const { queryByTestId } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" headRev=":index" editable={false} />);
+
+        expect(mocks.fileAt).toHaveBeenCalledTimes(2);
+        expect(mocks.preloadHighlighter).toHaveBeenCalledWith({
+            themes: [expect.stringMatching(/^sikemux-aura-/)],
+            langs: ["typescript"],
+        });
+        expect(queryByTestId("pierre-diff")).not.toBeInTheDocument();
+
+        resolveReads.forEach((resolve) => resolve("const value = 1;\n"));
+        await waitFor(() => expect(mocks.diffProps?.options.lineDiffType).toBe("none"));
     });
 });

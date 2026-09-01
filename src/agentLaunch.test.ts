@@ -33,6 +33,8 @@ describe("agent launch policy", () => {
     it("presents only Normal and YOLO, without inventing unsupported provider flags", () => {
         expect(supportedPermissionModes("codex")).toEqual(["workspace-write", "bypass"]);
         expect(supportedPermissionModes("hermes")).toEqual(["workspace-write", "bypass"]);
+        expect(supportedPermissionModes("omp")).toEqual(["workspace-write", "bypass"]);
+        expect(supportedPermissionModes("grok")).toEqual(["workspace-write", "bypass"]);
         expect(supportedPermissionModes("pi")).toEqual(["workspace-write"]);
         expect(normalizePermissionMode("opencode", "read-only")).toBe("workspace-write");
         expect(permissionCopyForType("pi", "workspace-write").label).toBe("Normal");
@@ -76,12 +78,39 @@ describe("agent launch policy", () => {
             "max",
         ]);
         expect(agentLaunchArgs("opencode", { model: "openai/gpt-5", effort: "high" })).toEqual(["--model", "openai/gpt-5"]);
+        expect(
+            agentLaunchArgs("omp", {
+                resumeId: "/sessions/omp.jsonl",
+                model: "openai-codex/gpt-5.6-sol",
+                effort: "xhigh",
+                permissionMode: "bypass",
+            }),
+        ).toEqual(["--model", "openai-codex/gpt-5.6-sol", "--thinking", "xhigh", "--approval-mode", "yolo", "--resume", "/sessions/omp.jsonl"]);
+        expect(
+            agentLaunchArgs("grok", {
+                resumeId: "018f0000-0000-7000-8000-000000000000",
+                model: "grok-4.5",
+                effort: "max",
+                permissionMode: "bypass",
+            }),
+        ).toEqual([
+            "--model",
+            "grok-4.5",
+            "--reasoning-effort",
+            "max",
+            "--permission-mode",
+            "bypassPermissions",
+            "--resume",
+            "018f0000-0000-7000-8000-000000000000",
+        ]);
     });
 
     it("reports effort support without inventing provider capabilities", () => {
         expect(supportedEfforts("claude")).toEqual(["low", "medium", "high", "xhigh", "max"]);
         expect(supportedEfforts("hermes")).toContain("ultra");
         expect(supportedEfforts("opencode")).toEqual([]);
+        expect(supportedEfforts("omp")).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+        expect(supportedEfforts("grok")).toEqual(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
         expect(normalizeAgentEffort("codex", "ultra")).toBe("max");
         expect(normalizeAgentEffort("opencode", "high")).toBeUndefined();
     });

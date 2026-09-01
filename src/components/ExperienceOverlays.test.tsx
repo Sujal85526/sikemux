@@ -20,7 +20,7 @@ import { keybindingLabel } from "../keybindings";
 import * as cmd from "../state/commands";
 import { flushPersist, resetPersistenceForTests } from "../state/persist";
 import { getState, setState } from "../state/store";
-import { Onboarding } from "./ExperienceOverlays";
+import { Onboarding, WhatsNewOverlay } from "./ExperienceOverlays";
 
 const initial = getState();
 const health = { shell: "/bin/zsh", git: true, aws: false, rnd: true };
@@ -211,5 +211,27 @@ describe("Onboarding", () => {
 
         expect(getState()).toMatchObject({ onboardingOpen: false, onboardingComplete: true, pickerOpen: true, pickerMode: "projects" });
         await expectPersistedComplete();
+    });
+});
+
+describe("WhatsNewOverlay", () => {
+    it("renders release notes as Markdown", async () => {
+        setState({
+            whatsNewOpen: true,
+            pendingUpdate: null,
+            lastReleaseNotes: {
+                version: "0.3.3",
+                date: null,
+                notes: "# Sikemux v0.3.3\n\nA sharper release.\n\n## Browser automation\n\n- Embedded browser\n- Isolated tabs",
+            },
+        });
+
+        render(<WhatsNewOverlay />);
+
+        expect(screen.getByRole("heading", { name: "Sikemux v0.3.3", level: 1 })).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "Browser automation", level: 2 })).toBeInTheDocument();
+        expect(screen.getByRole("list")).toBeInTheDocument();
+        expect(screen.getAllByRole("listitem")).toHaveLength(2);
+        expect(await screen.findByText(/You are on Sikemux vtest\./)).toBeInTheDocument();
     });
 });

@@ -119,6 +119,16 @@ const AGENT_DEFS: &[AgentDef] = &[
         label: "OpenCode",
         command: "opencode",
     },
+    AgentDef {
+        kind: "omp",
+        label: "OMP",
+        command: "omp",
+    },
+    AgentDef {
+        kind: "grok",
+        label: "Grok",
+        command: "grok",
+    },
 ];
 
 #[derive(Deserialize, Clone, Copy)]
@@ -129,6 +139,8 @@ pub enum AgentKind {
     Hermes,
     Pi,
     Opencode,
+    Omp,
+    Grok,
 }
 
 impl AgentKind {
@@ -139,6 +151,8 @@ impl AgentKind {
             AgentKind::Hermes => "hermes",
             AgentKind::Pi => "pi",
             AgentKind::Opencode => "opencode",
+            AgentKind::Omp => "omp",
+            AgentKind::Grok => "grok",
         }
     }
 }
@@ -163,7 +177,14 @@ pub fn watch_count() -> usize {
 
 static NEXT_WATCH_ID: AtomicU32 = AtomicU32::new(1);
 
-const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+const AGENT_UPDATE_RETRY_TIMEOUT: Duration = Duration::from_secs(8);
+const AGENT_UPDATE_SETTLE_DELAY: Duration = Duration::from_millis(350);
+
+fn healthy_agent_executables() -> &'static Mutex<HashMap<String, PathBuf>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 fn expand_user_path(value: &str) -> PathBuf {
     if value == "~" {
@@ -225,6 +246,12 @@ fn automatic_agent_candidates(def: &AgentDef) -> Vec<PathBuf> {
         push_agent_candidate(&mut candidates, home.join(".claude/local/claude"));
         push_agent_candidate(&mut candidates, home.join(".claude/bin/claude"));
     }
+    if def.kind == "opencode" {
+        push_agent_candidate(&mut candidates, home.join(".opencode/bin/opencode"));
+    }
+    if def.kind == "grok" {
+        push_agent_candidate(&mut candidates, home.join(".grok/bin/grok"));
+    }
     #[cfg(target_os = "macos")]
     if def.kind == "codex" {
         push_agent_candidate(
@@ -246,7 +273,11 @@ fn explicit_agent_candidates(value: &str) -> Vec<PathBuf> {
     crate::system::find_executables_matching(value, |_| true)
 }
 
-async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String, String> {
+async fn probe_agent_executable_with_timeout(
+    agent: &str,
+    executable: &Path,
+    timeout: Duration,
+) -> Result<String, String> {
     #[cfg(windows)]
     let mut command = if matches!(
         executable.extension().and_then(|value| value.to_str()),
@@ -278,7 +309,7 @@ async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String
     if agent == "claude" {
         command.env_remove("CLAUDECODE");
     }
-    let output = tokio::time::timeout(AGENT_PROBE_TIMEOUT, command.output())
+    let output = tokio::time::timeout(timeout, command.output())
         .await
         .map_err(|_| "version check timed out".to_string())?
         .map_err(|error| format!("could not start: {error}"))?;
@@ -296,18 +327,58 @@ async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String
         .to_string())
 }
 
+async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String, String> {
+    probe_agent_executable_with_timeout(agent, executable, AGENT_PROBE_TIMEOUT).await
+}
+
 async fn first_healthy_agent_candidate(
     agent: &str,
     candidates: Vec<PathBuf>,
 ) -> (Option<PathBuf>, Vec<String>) {
     let mut failures = Vec::new();
+    let cached = healthy_agent_executables()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(agent).cloned());
+    let mut temporarily_unverified = None;
     for candidate in candidates {
         match probe_agent_executable(agent, &candidate).await {
-            Ok(_) => return (Some(candidate), failures),
+            Ok(_) => {
+                if let Ok(mut cache) = healthy_agent_executables().lock() {
+                    cache.insert(agent.to_string(), candidate.clone());
+                }
+                return (Some(candidate), failures);
+            }
+            Err(error) if error == "version check timed out" => {
+                tokio::time::sleep(AGENT_UPDATE_SETTLE_DELAY).await;
+                match probe_agent_executable_with_timeout(
+                    agent,
+                    &candidate,
+                    AGENT_UPDATE_RETRY_TIMEOUT,
+                )
+                .await
+                {
+                    Ok(_) => {
+                        if let Ok(mut cache) = healthy_agent_executables().lock() {
+                            cache.insert(agent.to_string(), candidate.clone());
+                        }
+                        return (Some(candidate), failures);
+                    }
+                    Err(retry_error) => {
+                        failures.push(format!(
+                            "{}: {retry_error} after update retry",
+                            candidate.display()
+                        ));
+                        if cached.as_ref() == Some(&candidate) {
+                            temporarily_unverified = Some(candidate);
+                        }
+                    }
+                }
+            }
             Err(error) => failures.push(format!("{}: {error}", candidate.display())),
         }
     }
-    (None, failures)
+    (temporarily_unverified, failures)
 }
 
 /// Agent CLIs that are installed for the current user. The app's PATH is fixed
@@ -398,6 +469,19 @@ pub async fn agent_models(
         AgentKind::Opencode => run_model_catalog("opencode", &["models"])
             .await
             .map(|text| parse_line_models(&text)),
+        AgentKind::Omp => {
+            run_model_catalog_executable("omp", &executable, &["models", "--json"], None, None)
+                .await
+                .and_then(|text| {
+                    parse_omp_models(&text)
+                        .ok_or_else(|| "OMP returned an unreadable model catalog".to_string())
+                })
+        }
+        AgentKind::Grok => {
+            run_model_catalog_executable("grok", &executable, &["models"], None, None)
+                .await
+                .map(|text| parse_grok_models(&text))
+        }
     }
 }
 
@@ -959,6 +1043,45 @@ fn parse_line_models(text: &str) -> Vec<AgentModelInfo> {
         .collect()
 }
 
+fn parse_omp_models(text: &str) -> Option<Vec<AgentModelInfo>> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    Some(
+        value
+            .get("models")?
+            .as_array()?
+            .iter()
+            .filter_map(|model| {
+                model_info(
+                    model.get("selector")?.as_str()?,
+                    model.get("name").and_then(Value::as_str),
+                )
+            })
+            .collect(),
+    )
+}
+
+fn parse_grok_models(text: &str) -> Vec<AgentModelInfo> {
+    let mut in_models = false;
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line == "Available models:" {
+                in_models = true;
+                return None;
+            }
+            if !in_models {
+                return None;
+            }
+            let id = line
+                .strip_prefix("* ")
+                .or_else(|| line.strip_prefix("- "))?
+                .trim_end_matches(" (default)")
+                .trim();
+            model_info(id, None)
+        })
+        .collect()
+}
+
 fn hermes_cached_models() -> Result<Vec<AgentModelInfo>, String> {
     let Some(home) = home_path() else {
         return Ok(Vec::new());
@@ -998,13 +1121,81 @@ fn model_info(id: &str, label: Option<&str>) -> Option<AgentModelInfo> {
 
 const MAX_MODEL_LENGTH: usize = 256;
 
+fn environment_path(key: &str) -> Option<PathBuf> {
+    std::env::var_os(key).map(PathBuf::from).or_else(|| {
+        crate::system::login_shell_environment()
+            .get(key)
+            .map(PathBuf::from)
+    })
+}
+
+fn environment_string(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .or_else(|| crate::system::login_shell_environment().get(key).cloned())
+}
+
+fn omp_profile_name() -> Option<String> {
+    let raw = environment_string("OMP_PROFILE").or_else(|| environment_string("PI_PROFILE"))?;
+    let name = raw.trim();
+    (!name.is_empty()
+        && name != "default"
+        && name != "."
+        && name != ".."
+        && name.len() <= 64
+        && !name.contains(['/', '\\']))
+    .then(|| name.to_string())
+}
+
+fn omp_config_root() -> Option<PathBuf> {
+    let home = home_path()?;
+    let config = environment_string("PI_CONFIG_DIR").unwrap_or_else(|| ".omp".to_string());
+    Some(home.join(config.trim_start_matches(['/', '\\'])))
+}
+
+fn omp_agent_root() -> Option<PathBuf> {
+    if let Some(profile) = omp_profile_name() {
+        return Some(
+            omp_config_root()?
+                .join("profiles")
+                .join(profile)
+                .join("agent"),
+        );
+    }
+    environment_path("PI_CODING_AGENT_DIR").or_else(|| Some(omp_config_root()?.join("agent")))
+}
+
+fn omp_session_dirs() -> Vec<PathBuf> {
+    if let Some(path) = environment_path("PI_CODING_AGENT_SESSION_DIR") {
+        return vec![path];
+    }
+    let mut dirs = Vec::new();
+    if let Some(root) = omp_agent_root() {
+        dirs.push(root.join("sessions"));
+    }
+    if let Some(xdg) = environment_path("XDG_DATA_HOME") {
+        let root = xdg.join("omp");
+        let sessions = omp_profile_name()
+            .map(|profile| root.join("profiles").join(profile).join("sessions"))
+            .unwrap_or_else(|| root.join("sessions"));
+        if sessions.exists() && !dirs.contains(&sessions) {
+            dirs.push(sessions);
+        }
+    }
+    dirs
+}
+
+fn grok_root() -> Option<PathBuf> {
+    environment_path("GROK_HOME").or_else(|| Some(home_path()?.join(".grok")))
+}
+
 fn agent_config_root(kind: &str, configured: Option<&str>) -> Option<PathBuf> {
     let home = home_path()?;
     if let Some(configured) = configured.map(str::trim).filter(|value| !value.is_empty()) {
         let path = expand_user_path(configured);
         let is_config_file = matches!(
             path.file_name().and_then(|value| value.to_str()),
-            Some("config.toml" | "settings.json" | "settings.local.json")
+            Some("config.toml" | "config.yml" | "settings.json" | "settings.local.json")
         );
         return if is_config_file {
             path.parent().map(Path::to_path_buf)
@@ -1012,18 +1203,13 @@ fn agent_config_root(kind: &str, configured: Option<&str>) -> Option<PathBuf> {
             Some(path)
         };
     }
-    let environment_path = |key: &str| {
-        std::env::var_os(key).map(PathBuf::from).or_else(|| {
-            crate::system::login_shell_environment()
-                .get(key)
-                .map(PathBuf::from)
-        })
-    };
     match kind {
         "claude" => {
             Some(environment_path("CLAUDE_CONFIG_DIR").unwrap_or_else(|| home.join(".claude")))
         }
         "codex" => Some(environment_path("CODEX_HOME").unwrap_or_else(|| home.join(".codex"))),
+        "omp" => omp_agent_root(),
+        "grok" => grok_root(),
         _ => Some(home),
     }
 }
@@ -1082,6 +1268,15 @@ fn configured_default_model(kind: &str, config_path: Option<&str>) -> Option<Str
                 });
             json_model(&path, "model")
         }
+        "omp" => fs::read_to_string(omp_agent_root()?.join("config.yml"))
+            .ok()
+            .and_then(|text| yaml_top_level_scalar(&text, "defaultModel"))
+            .and_then(|value| clean_model(&value)),
+        "grok" => fs::read_to_string(grok_root()?.join("config.toml"))
+            .ok()
+            .and_then(|text| toml_section_string(&text, "models", "default"))
+            .and_then(|value| clean_model(&value))
+            .or_else(|| Some("grok-build".to_string())),
         _ => None,
     }
 }
@@ -1117,6 +1312,14 @@ fn configured_default_effort(kind: &str, config_path: Option<&str>) -> Option<St
                 .unwrap_or_else(|| home.join(".pi/agent"));
             json_effort(&root.join("settings.json"), "defaultThinkingLevel", kind)
         }
+        "omp" => fs::read_to_string(omp_agent_root()?.join("config.yml"))
+            .ok()
+            .and_then(|text| yaml_top_level_scalar(&text, "defaultThinkingLevel"))
+            .and_then(|value| clean_effort(kind, &value)),
+        "grok" => fs::read_to_string(grok_root()?.join("config.toml"))
+            .ok()
+            .and_then(|text| toml_section_string(&text, "models", "default_reasoning_effort"))
+            .and_then(|value| clean_effort(kind, &value)),
         _ => None,
     }
 }
@@ -1134,7 +1337,8 @@ fn clean_effort(kind: &str, value: &str) -> Option<String> {
         "hermes" => &[
             "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
         ],
-        "pi" => &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "pi" | "omp" => &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "grok" => &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
         _ => &[],
     };
     allowed.contains(&value.as_str()).then_some(value)
@@ -1178,6 +1382,28 @@ fn toml_effort(text: &str) -> Option<String> {
         .get("model_reasoning_effort")
         .and_then(toml::Value::as_str)
         .and_then(|value| clean_effort("codex", value))
+}
+
+fn toml_section_string(text: &str, section: &str, key: &str) -> Option<String> {
+    toml::from_str::<toml::Value>(text)
+        .ok()?
+        .get(section)?
+        .get(key)?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn yaml_top_level_scalar(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || line.len() != line.trim_start().len() {
+            return None;
+        }
+        let (candidate, raw) = trimmed.split_once(':')?;
+        (candidate.trim() == key)
+            .then(|| yaml_scalar(raw))
+            .flatten()
+    })
 }
 
 /// Extract only `provider` and `default` from Hermes' top-level `model` map.
@@ -1270,6 +1496,8 @@ pub fn agent_sessions(
         AgentKind::Hermes => hermes_sessions(),
         AgentKind::Pi => pi_sessions(&cwd),
         AgentKind::Opencode => opencode_sessions(&cwd),
+        AgentKind::Omp => omp_sessions(&cwd),
+        AgentKind::Grok => grok_sessions(&cwd),
     }
 }
 
@@ -1348,6 +1576,16 @@ fn agent_watch_dirs(
         AgentKind::Opencode => {
             for dir in opencode_data_dirs() {
                 push_existing_or_parent(&mut out, dir, RecursiveMode::NonRecursive);
+            }
+        }
+        AgentKind::Omp => {
+            for dir in omp_session_dirs() {
+                push_existing_or_parent(&mut out, dir, RecursiveMode::Recursive);
+            }
+        }
+        AgentKind::Grok => {
+            if let Some(root) = grok_root() {
+                push_existing_or_parent(&mut out, root.join("sessions"), RecursiveMode::Recursive);
             }
         }
     }
@@ -1448,24 +1686,8 @@ pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
     Ok(())
 }
 
-fn allowed_agent_path(agent: &str, path: &Path) -> bool {
-    if agent != "opencode" {
-        return true;
-    }
-    let Ok(home) = std::env::var("HOME") else {
-        return true;
-    };
-    allowed_agent_path_for_home(agent, path, Path::new(&home))
-}
-
-fn allowed_agent_path_for_home(agent: &str, path: &Path, home: &Path) -> bool {
-    if agent != "opencode" {
-        return true;
-    }
-    // OpenCode leaves a runnable self-contained binary under ~/.opencode/bin.
-    // Treat that as app data/cache rather than a user-visible system install;
-    // otherwise stale copies keep showing up in the agent rail after uninstall.
-    path.parent() != Some(home.join(".opencode").join("bin").as_path())
+fn allowed_agent_path(_agent: &str, _path: &Path) -> bool {
+    true
 }
 
 fn mtime_of(path: &Path) -> u64 {
@@ -1612,8 +1834,7 @@ fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
         .filter_map(|path| {
             let id = path.file_stem().and_then(|s| s.to_str())?;
             let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || claude_title(path))
-                .unwrap_or_else(|| id.chars().take(8).collect());
+            let title = cached_title(path, title_cache_stamp(path), || claude_title(path))?;
             Some(AgentSession {
                 id: id.to_string(),
                 title,
@@ -1714,10 +1935,41 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
     }
 }
 
+fn codex_indexed_titles(root: &Path) -> HashMap<String, String> {
+    let Ok(file) = fs::File::open(root.join("session_index.jsonl")) else {
+        return HashMap::new();
+    };
+    let mut titles = HashMap::new();
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        let Some(id) = value
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        else {
+            continue;
+        };
+        let Some(title) = value
+            .get("thread_name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+        else {
+            continue;
+        };
+        titles.insert(id.to_string(), title.to_string());
+    }
+    titles
+}
+
 fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
     let Some(root) = agent_config_root("codex", config_path) else {
         return Vec::new();
     };
+    let indexed_titles = codex_indexed_titles(&root);
     let mut files = Vec::new();
     collect_jsonl(&root.join("sessions"), &mut files, 0);
     files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
@@ -1739,7 +1991,10 @@ fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
             }
             let id = payload.get("id").and_then(|i| i.as_str())?;
             let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || codex_title(path))
+            let title = indexed_titles
+                .get(id)
+                .cloned()
+                .or_else(|| cached_title(path, title_cache_stamp(path), || codex_title(path)))
                 .unwrap_or_else(|| id.chars().take(8).collect());
             Some(AgentSession {
                 id: id.to_string(),
@@ -1863,6 +2118,317 @@ fn pi_title(path: &Path) -> Option<String> {
         }
     }
     named.or(first_user)
+}
+
+fn omp_sessions(cwd: &str) -> Vec<AgentSession> {
+    omp_sessions_from_dirs(cwd, omp_session_dirs())
+}
+
+fn omp_sessions_from_dirs(cwd: &str, roots: Vec<PathBuf>) -> Vec<AgentSession> {
+    let mut files = Vec::new();
+    for root in roots {
+        collect_jsonl(&root, &mut files, 0);
+    }
+    files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    files.dedup();
+    files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
+
+    let mut out: Vec<AgentSession> = files
+        .par_iter()
+        .filter_map(|path| {
+            let file = fs::File::open(path).ok()?;
+            let header = BufReader::new(file)
+                .lines()
+                .take(40)
+                .map_while(Result::ok)
+                .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+                .find(|value| value.get("type").and_then(Value::as_str) == Some("session"))?;
+            if header.get("cwd").and_then(Value::as_str) != Some(cwd) {
+                return None;
+            }
+            let mtime = mtime_of(path);
+            let title = cached_title(path, title_cache_stamp(path), || omp_title(path))
+                .or_else(|| {
+                    header
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .and_then(condense)
+                })
+                .or_else(|| header.get("id").and_then(Value::as_str).and_then(condense))
+                .unwrap_or_else(|| {
+                    path.file_stem()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("session")
+                        .chars()
+                        .take(13)
+                        .collect()
+                });
+            Some(AgentSession {
+                id: path.to_string_lossy().into_owned(),
+                title,
+                mtime,
+            })
+        })
+        .collect();
+    out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
+    out
+}
+
+fn scan_omp_line(line: &str, named: &mut Option<String>, first_user: &mut Option<String>) {
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
+        return;
+    };
+    match value.get("type").and_then(Value::as_str) {
+        Some("title" | "session_info") => {
+            if let Some(title) = value
+                .get("title")
+                .or_else(|| value.get("name"))
+                .and_then(Value::as_str)
+                .and_then(condense)
+            {
+                *named = Some(title);
+            }
+        }
+        Some("session") if named.is_none() => {
+            *named = value
+                .get("title")
+                .and_then(Value::as_str)
+                .and_then(condense);
+        }
+        Some("message") if first_user.is_none() => {
+            let Some(message) = value.get("message") else {
+                return;
+            };
+            if message.get("role").and_then(Value::as_str) == Some("user") {
+                *first_user = message
+                    .get("content")
+                    .and_then(text_from_content)
+                    .and_then(|text| condense(&text));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn omp_title(path: &Path) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let mut named = None;
+    let mut first_user = None;
+    let head = read_prefix(&mut file, CLAUDE_HEAD_BYTES.min(len))?;
+    for line in head.lines() {
+        scan_omp_line(line, &mut named, &mut first_user);
+    }
+    if len > CLAUDE_HEAD_BYTES {
+        if let Some(tail) = read_suffix(&mut file, len.saturating_sub(CLAUDE_TAIL_BYTES)) {
+            for line in tail.lines().skip(1) {
+                scan_omp_line(line, &mut named, &mut first_user);
+            }
+        }
+    }
+    named.or(first_user)
+}
+
+fn collect_grok_session_dirs(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(groups) = fs::read_dir(root.join("sessions")) else {
+        return out;
+    };
+    for group in groups
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+    {
+        if out.len() >= MAX_AGENT_TRANSCRIPT_PATHS {
+            break;
+        }
+        let Ok(sessions) = fs::read_dir(group) else {
+            continue;
+        };
+        for session in sessions
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+        {
+            if out.len() >= MAX_AGENT_TRANSCRIPT_PATHS {
+                break;
+            }
+            if session.join("updates.jsonl").is_file()
+                || session.join("chat_history.jsonl").is_file()
+            {
+                out.push(session);
+            }
+        }
+    }
+    out
+}
+
+fn percent_decode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            out.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        let hex = |byte: u8| match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        };
+        out.push(hex(*bytes.get(index + 1)?)? * 16 + hex(*bytes.get(index + 2)?)?);
+        index += 3;
+    }
+    String::from_utf8(out).ok()
+}
+
+fn grok_group_cwd(group: &Path) -> Option<PathBuf> {
+    let explicit = fs::read_to_string(group.join(".cwd")).ok();
+    if let Some(cwd) = explicit
+        .as_deref()
+        .map(str::trim)
+        .filter(|cwd| !cwd.is_empty())
+    {
+        return Some(PathBuf::from(cwd));
+    }
+    let name = group.file_name()?.to_str()?;
+    percent_decode(name)
+        .filter(|cwd| !cwd.is_empty())
+        .map(PathBuf::from)
+}
+
+fn grok_content_text(content: &Value) -> Option<String> {
+    if let Some(text) = content.as_str() {
+        return Some(text.to_string());
+    }
+    if let Some(text) = content.get("text").and_then(Value::as_str) {
+        return Some(text.to_string());
+    }
+    content.as_array().map(|parts| {
+        parts
+            .iter()
+            .filter_map(|part| {
+                part.as_str()
+                    .or_else(|| part.get("text").and_then(Value::as_str))
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    })
+}
+
+fn grok_user_query(text: &str) -> &str {
+    text.split_once("<user_query>")
+        .and_then(|(_, rest)| rest.split_once("</user_query>"))
+        .map(|(body, _)| body)
+        .unwrap_or(text)
+}
+
+fn grok_first_user(session_dir: &Path) -> Option<String> {
+    if let Ok(file) = fs::File::open(session_dir.join("updates.jsonl")) {
+        let mut chunks = String::new();
+        for line in BufReader::new(file).lines().take(300).map_while(Result::ok) {
+            let Ok(value) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            let Some(update) = value.pointer("/params/update") else {
+                continue;
+            };
+            match update.get("sessionUpdate").and_then(Value::as_str) {
+                Some("user_message_chunk") => {
+                    if let Some(text) = update.get("content").and_then(grok_content_text) {
+                        chunks.push_str(&text);
+                    }
+                }
+                Some(_) if !chunks.is_empty() => break,
+                _ => {}
+            }
+        }
+        if let Some(title) = condense(grok_user_query(&chunks)) {
+            return Some(title);
+        }
+    }
+    let file = fs::File::open(session_dir.join("chat_history.jsonl")).ok()?;
+    for line in BufReader::new(file).lines().take(300).map_while(Result::ok) {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) != Some("user")
+            || value.get("synthetic_reason").is_some()
+        {
+            continue;
+        }
+        let text = value.get("content").and_then(grok_content_text)?;
+        if let Some(title) = condense(grok_user_query(&text)) {
+            return Some(title);
+        }
+    }
+    None
+}
+
+fn grok_session_mtime(session_dir: &Path) -> u64 {
+    ["summary.json", "updates.jsonl", "chat_history.jsonl"]
+        .iter()
+        .map(|name| mtime_of(&session_dir.join(name)))
+        .max()
+        .unwrap_or(0)
+}
+
+fn grok_session(session_dir: &Path, cwd: &str) -> Option<AgentSession> {
+    let summary_path = session_dir.join("summary.json");
+    let summary = fs::read_to_string(&summary_path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let workspace = summary
+        .as_ref()
+        .and_then(|value| value.pointer("/info/cwd"))
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .or_else(|| session_dir.parent().and_then(grok_group_cwd))?;
+    if workspace != Path::new(cwd) {
+        return None;
+    }
+    let id = summary
+        .as_ref()
+        .and_then(|value| value.pointer("/info/id"))
+        .and_then(Value::as_str)
+        .or_else(|| session_dir.file_name().and_then(|name| name.to_str()))?;
+    let title = summary
+        .as_ref()
+        .and_then(|value| value.get("generated_title"))
+        .and_then(Value::as_str)
+        .and_then(condense)
+        .or_else(|| {
+            summary
+                .as_ref()
+                .and_then(|value| value.get("session_summary"))
+                .and_then(Value::as_str)
+                .and_then(condense)
+        })
+        .or_else(|| grok_first_user(session_dir))
+        .unwrap_or_else(|| id.chars().take(13).collect());
+    Some(AgentSession {
+        id: id.to_string(),
+        title,
+        mtime: grok_session_mtime(session_dir),
+    })
+}
+
+fn grok_sessions(cwd: &str) -> Vec<AgentSession> {
+    let Some(root) = grok_root() else {
+        return Vec::new();
+    };
+    let mut dirs = collect_grok_session_dirs(&root);
+    dirs.sort_unstable_by_key(|path| std::cmp::Reverse(grok_session_mtime(path)));
+    dirs.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
+    let mut out: Vec<_> = dirs
+        .par_iter()
+        .filter_map(|path| grok_session(path, cwd))
+        .collect();
+    out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
+    out
 }
 
 // ---- hermes — `sessions` table in ~/.hermes/state.db (SQLite) -----------
@@ -2018,35 +2584,31 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 #[cfg(test)]
 mod executable_tests {
     use super::{
-        agent_config_root, allowed_agent_path_for_home, cached_title, codex_title, json_effort,
+        agent_config_root, allowed_agent_path, cached_title, claude_sessions, codex_indexed_titles,
+        codex_sessions, codex_title, grok_session, json_effort, omp_sessions_from_dirs, omp_title,
         parse_claude_models, parse_claude_usage, parse_codex_models, parse_codex_usage_result,
-        parse_hermes_models, parse_line_models, parse_pi_models, qualify_model, title_cache_stamp,
-        toml_effort, toml_model, yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo,
-        AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
+        parse_grok_models, parse_hermes_models, parse_line_models, parse_omp_models,
+        parse_pi_models, percent_decode, qualify_model, title_cache_stamp, toml_effort, toml_model,
+        toml_section_string, yaml_agent_reasoning_effort, yaml_model_section,
+        yaml_top_level_scalar, AgentModelInfo, AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
     use super::{
-        first_healthy_agent_candidate, probe_agent_executable, run_model_catalog_executable,
-        MODEL_CATALOG_ERROR_DETAIL_LIMIT,
+        first_healthy_agent_candidate, probe_agent_executable, probe_agent_executable_with_timeout,
+        run_model_catalog_executable, MODEL_CATALOG_ERROR_DETAIL_LIMIT,
     };
     use std::io::Write;
     use std::path::Path;
 
     #[test]
-    fn opencode_cache_executables_are_rejected_with_any_windows_suffix() {
+    fn opencode_installer_directory_is_a_valid_agent_location() {
         let home = Path::new("/home/tester");
         for name in ["opencode", "opencode.exe", "opencode.cmd"] {
-            assert!(!allowed_agent_path_for_home(
+            assert!(allowed_agent_path(
                 "opencode",
-                &home.join(".opencode").join("bin").join(name),
-                home,
+                &home.join(".opencode").join("bin").join(name)
             ));
         }
-        assert!(allowed_agent_path_for_home(
-            "opencode",
-            Path::new("/usr/local/bin/opencode"),
-            home,
-        ));
     }
 
     #[test]
@@ -2097,6 +2659,29 @@ mod executable_tests {
         .await;
         assert_eq!(selected.as_deref(), Some(healthy.path()));
         assert_eq!(failures.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn executable_probe_bounds_temporarily_busy_updaters() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut busy = tempfile::NamedTempFile::new().unwrap();
+        writeln!(busy, "#!/bin/sh\nsleep 1\nprintf 'claude test\\n'").unwrap();
+        let mut permissions = busy.as_file().metadata().unwrap().permissions();
+        permissions.set_mode(0o755);
+        busy.as_file().set_permissions(permissions).unwrap();
+
+        assert_eq!(
+            probe_agent_executable_with_timeout(
+                "claude",
+                busy.path(),
+                std::time::Duration::from_millis(20)
+            )
+            .await
+            .unwrap_err(),
+            "version check timed out"
+        );
     }
 
     #[test]
@@ -2373,6 +2958,55 @@ mod executable_tests {
     }
 
     #[test]
+    fn omp_and_grok_catalogs_keep_cli_model_ids() {
+        assert_eq!(
+            parse_omp_models(
+                r#"{"models":[{"selector":"openai-codex/gpt-5.6-sol","name":"GPT-5.6 Sol"}]}"#
+            ),
+            Some(vec![AgentModelInfo {
+                id: "openai-codex/gpt-5.6-sol".into(),
+                label: "GPT-5.6 Sol".into()
+            }])
+        );
+        assert_eq!(
+            parse_grok_models(
+                "Default model: grok-4.5\n\nAvailable models:\n  * grok-4.5 (default)\n  - custom-model\n"
+            ),
+            vec![
+                AgentModelInfo {
+                    id: "grok-4.5".into(),
+                    label: "grok-4.5".into()
+                },
+                AgentModelInfo {
+                    id: "custom-model".into(),
+                    label: "custom-model".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn omp_and_grok_defaults_use_their_native_config_sections() {
+        assert_eq!(
+            yaml_top_level_scalar(
+                "defaultModel: openai/gpt-5\ndefaultThinkingLevel: high\n",
+                "defaultModel"
+            )
+            .as_deref(),
+            Some("openai/gpt-5")
+        );
+        assert_eq!(
+            toml_section_string(
+                "[models]\ndefault = \"grok-build\"\ndefault_reasoning_effort = \"xhigh\"\n",
+                "models",
+                "default_reasoning_effort"
+            )
+            .as_deref(),
+            Some("xhigh")
+        );
+    }
+
+    #[test]
     fn hermes_catalog_uses_only_the_configured_provider() {
         let models = parse_hermes_models(
             r#"{
@@ -2419,6 +3053,63 @@ mod executable_tests {
     }
 
     #[test]
+    fn codex_sessions_use_the_latest_indexed_thread_name() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        std::fs::create_dir(&sessions_dir).unwrap();
+        std::fs::write(
+            root.path().join("session_index.jsonl"),
+            concat!(
+                "{\"id\":\"session-1\",\"thread_name\":\"Initial title\"}\n",
+                "{\"id\":\"session-1\",\"thread_name\":\"Add draggable project sorting\"}\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("rollout-session-1.jsonl"),
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"session-1\",\"cwd\":\"/repo\"}}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            codex_indexed_titles(root.path())
+                .get("session-1")
+                .map(String::as_str),
+            Some("Add draggable project sorting")
+        );
+        let sessions = codex_sessions("/repo", root.path().to_str());
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].title, "Add draggable project sorting");
+    }
+
+    #[test]
+    fn claude_sessions_omit_titleless_command_artifacts() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("projects").join("-repo");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::write(
+            sessions_dir.join("conversation.jsonl"),
+            "{\"type\":\"user\",\"message\":{\"content\":\"Fix top bar overlaps\"}}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("usage-command.jsonl"),
+            "{\"type\":\"user\",\"message\":{\"content\":\"<command-name>/usage</command-name>\"}}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("cancelled-resume.jsonl"),
+            "{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"<command-name>/resume</command-name>\"}\n",
+        )
+        .unwrap();
+
+        let sessions = claude_sessions("/repo", root.path().to_str());
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, "conversation");
+        assert_eq!(sessions[0].title, "Fix top bar overlaps");
+    }
+
+    #[test]
     fn title_cache_rechecks_a_transcript_after_a_same_tick_append() {
         let mut transcript = tempfile::NamedTempFile::new().unwrap();
         writeln!(
@@ -2450,5 +3141,79 @@ mod executable_tests {
             .as_deref(),
             Some("Hello")
         );
+    }
+
+    #[test]
+    fn omp_title_prefers_the_latest_explicit_name() {
+        let mut transcript = tempfile::NamedTempFile::new().unwrap();
+        writeln!(
+            transcript,
+            "{}",
+            serde_json::json!({"type":"title","title":"Initial title"})
+        )
+        .unwrap();
+        writeln!(
+            transcript,
+            "{}",
+            serde_json::json!({"type":"session","id":"session-1","cwd":"/repo"})
+        )
+        .unwrap();
+        writeln!(
+            transcript,
+            "{}",
+            serde_json::json!({"type":"message","message":{"role":"user","content":"Fallback prompt"}})
+        )
+        .unwrap();
+        writeln!(
+            transcript,
+            "{}",
+            serde_json::json!({"type":"title","title":"Renamed session"})
+        )
+        .unwrap();
+        transcript.flush().unwrap();
+
+        assert_eq!(
+            omp_title(transcript.path()).as_deref(),
+            Some("Renamed session")
+        );
+    }
+
+    #[test]
+    fn omp_session_listing_accepts_title_before_header() {
+        let root = tempfile::tempdir().unwrap();
+        let transcript = root.path().join("session.jsonl");
+        std::fs::write(
+            &transcript,
+            concat!(
+                "{\"type\":\"title\",\"title\":\"Ship OMP support\"}\n",
+                "{\"type\":\"session\",\"id\":\"session-1\",\"cwd\":\"/repo\"}\n",
+                "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"Fallback\"}}\n"
+            ),
+        )
+        .unwrap();
+
+        let sessions = omp_sessions_from_dirs("/repo", vec![root.path().to_path_buf()]);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, transcript.to_string_lossy());
+        assert_eq!(sessions[0].title, "Ship OMP support");
+    }
+
+    #[test]
+    fn grok_summary_maps_workspace_title_and_resume_id() {
+        let root = tempfile::tempdir().unwrap();
+        let session = root.path().join("%2Frepo").join("session-1");
+        std::fs::create_dir_all(&session).unwrap();
+        std::fs::write(
+            session.join("summary.json"),
+            r#"{"info":{"id":"session-1","cwd":"/repo"},"generated_title":"Fix flaky tests"}"#,
+        )
+        .unwrap();
+        std::fs::write(session.join("updates.jsonl"), "{}\n").unwrap();
+
+        let result = grok_session(&session, "/repo").unwrap();
+        assert_eq!(result.id, "session-1");
+        assert_eq!(result.title, "Fix flaky tests");
+        assert_eq!(percent_decode("%2Frepo").as_deref(), Some("/repo"));
+        assert!(grok_session(&session, "/another").is_none());
     }
 }

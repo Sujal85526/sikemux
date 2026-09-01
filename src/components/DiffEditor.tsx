@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { FileContents, FileDiffOptions } from "@pierre/diffs";
+import { preloadHighlighter, type FileContents, type FileDiffOptions } from "@pierre/diffs";
 import { Editor, type EditorOptions } from "@pierre/diffs/edit";
 import { EditProvider, MultiFileDiff } from "@pierre/diffs/react";
 import { git } from "../api/git";
@@ -39,6 +39,9 @@ const DIFF_UNSAFE_CSS = `
 [contenteditable="true"] { caret-color: var(--acc); outline: none; }
 ::selection { background: var(--acc-soft); }
 `;
+
+const DIFF_TOKENIZE_MAX_LINES = 4000;
+const DIFF_WORD_MAX_LENGTH = 512;
 
 function createEditor(options: EditorOptions<undefined>) {
     return new Editor(options);
@@ -87,6 +90,10 @@ export function DiffEditor({
     useEffect(() => subscribeTheme((theme) => setDiffTheme(resolveDiffTheme(theme))), []);
 
     useEffect(() => {
+        void preloadHighlighter({ themes: [diffTheme.name], langs: [diffLanguage(path)] }).catch(swallow("diff renderer preload"));
+    }, [diffTheme.name, path]);
+
+    useEffect(() => {
         let cancelled = false;
         setContent(null);
         setError(null);
@@ -130,14 +137,16 @@ export function DiffEditor({
             diffIndicators: "bars",
             disableBackground: !diffTheme.dark,
             hunkSeparators: "line-info-basic",
-            lineDiffType: "word-alt",
+            lineDiffType: editable ? "word-alt" : "none",
+            maxLineDiffLength: DIFF_WORD_MAX_LENGTH,
+            tokenizeMaxLength: DIFF_TOKENIZE_MAX_LINES,
             collapsedContextThreshold: 1,
             expansionLineCount: 50,
             overflow: "scroll",
             disableFileHeader: true,
             unsafeCSS: DIFF_UNSAFE_CSS,
         }),
-        [diffTheme],
+        [diffTheme, editable],
     );
 
     const editorOptions = useMemo<EditorOptions<undefined>>(
@@ -220,7 +229,7 @@ function contentHash(value: string): string {
     return (result >>> 0).toString(36);
 }
 
-function diffLanguage(path: string): FileContents["lang"] {
+function diffLanguage(path: string): NonNullable<FileContents["lang"]> {
     const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
     if (name === "dockerfile") return "shellscript";
     if (name === "makefile") return "shellscript";

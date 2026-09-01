@@ -3,7 +3,8 @@
   "bundle": {
     "externalBin": ["binaries/sikemux-editor", "binaries/sikemux-browser-mcp"],
     "resources": {
-      "browser-runtime": "browser-runtime"
+      "browser-runtime": "browser-runtime",
+      "resources/sikemux_pi_browser.ts": "sikemux_pi_browser.ts"
     }
   }
 }

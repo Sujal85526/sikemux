@@ -39,7 +39,7 @@ export interface Window {
     transient?: true;
 }
 
-export type AgentType = "claude" | "codex" | "hermes" | "pi" | "opencode";
+export type AgentType = "claude" | "codex" | "hermes" | "pi" | "opencode" | "omp" | "grok";
 
 /** The permission boundary applied when starting an agent process. */
 export type AgentPermissionMode = "read-only" | "workspace-write" | "full-access" | "bypass";

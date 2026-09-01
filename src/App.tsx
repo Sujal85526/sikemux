@@ -6,6 +6,7 @@ import { checkForUpdate } from "./api/updater";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
+import { SidebarPeek } from "./components/SidebarPeek";
 import { AgentSessionSync } from "./components/AgentSessionSync";
 import { AgentLifecycleManager } from "./components/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./components/AgentPalettePortal";
@@ -201,8 +202,10 @@ export default function App() {
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
     const zen = useStore((s) => s.zenMode);
-    const leftOpen = useStore((s) => s.leftRailOpen) && !zen;
-    const rightOpen = useStore((s) => s.rightRailOpen) && !zen;
+    const leftRailOpen = useStore((s) => s.leftRailOpen);
+    const rightRailOpen = useStore((s) => s.rightRailOpen);
+    const leftOpen = leftRailOpen && !zen;
+    const rightOpen = rightRailOpen && !zen;
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
@@ -777,6 +780,11 @@ export default function App() {
             <TopBar />
             <div className="body">
                 {leftOpen && <SideRail />}
+                {!leftRailOpen && !zen && (
+                    <SidebarPeek side="left">
+                        <SideRail />
+                    </SidebarPeek>
+                )}
                 <main className={`stage${settingsOpen ? " stage--settings" : ""}`}>
                     <Workspace />
                     {settingsOpen && (
@@ -786,6 +794,11 @@ export default function App() {
                     )}
                 </main>
                 {rightOpen && activeSessionIsProject && <AgentRail />}
+                {!rightRailOpen && !zen && activeSessionIsProject && (
+                    <SidebarPeek side="right">
+                        <AgentRail />
+                    </SidebarPeek>
+                )}
             </div>
             {pickerOpen && <SeshPicker />}
             {agentPaletteOpen && <AgentPalette />}

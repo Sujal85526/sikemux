@@ -45,6 +45,8 @@
     --brand-hermes: #e0a050;
     --brand-pi: #7dd3fc;
     --brand-opencode: #a78bfa;
+    --brand-omp: #f97316;
+    --brand-grok: #fcfcfc;
 }
 .agent-glyph {
     display: flex;
@@ -63,6 +65,12 @@
 }
 .agent-glyph.opencode {
     color: var(--brand-opencode);
+}
+.agent-glyph.omp {
+    color: var(--brand-omp);
+}
+.agent-glyph.grok {
+    color: var(--brand-grok);
 }
 .agent-title {
     flex: 1;
@@ -158,6 +166,12 @@
 }
 .agent-dormant-notch.opencode {
     background: var(--brand-opencode);
+}
+.agent-dormant-notch.omp {
+    background: var(--brand-omp);
+}
+.agent-dormant-notch.grok {
+    background: var(--brand-grok);
 }
 .agent-dormant-kicker {
     color: var(--live);
@@ -372,6 +386,12 @@
 
 .agent-header-btn.opencode {
     --agent-provider: var(--brand-opencode);
+}
+.agent-header-btn.omp {
+    --agent-provider: var(--brand-omp);
+}
+.agent-header-btn.grok {
+    --agent-provider: var(--brand-grok);
 }
 /* Provider plan telemetry — a branded readout that borrows the rail's
    group-head grammar, then answers “how much is left?” with a big tabular

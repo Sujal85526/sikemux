@@ -17,12 +17,16 @@ const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
     // The interactive OpenCode command has --model and --prompt, but its
     // provider-specific --variant effort flag belongs to `opencode run`.
     opencode: [],
+    omp: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+    grok: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
 };
 
 export const AGENT_PERMISSION_MODES: readonly AgentPermissionMode[] = ["workspace-write", "bypass"];
 
 export function supportedPermissionModes(type: AgentType): readonly AgentPermissionMode[] {
-    return type === "claude" || type === "codex" || type === "hermes" ? AGENT_PERMISSION_MODES : ["workspace-write"];
+    return type === "claude" || type === "codex" || type === "hermes" || type === "omp" || type === "grok"
+        ? AGENT_PERMISSION_MODES
+        : ["workspace-write"];
 }
 
 export function normalizePermissionMode(type: AgentType, mode: AgentPermissionMode): AgentPermissionMode {
@@ -94,6 +98,8 @@ export function agentLaunchArgs(type: AgentType, options: AgentLaunchOptions = {
         else if (type === "codex") providerArgs.push("--config", `model_reasoning_effort="${effort}"`);
         else if (type === "hermes") providerArgs.push("--reasoning", effort);
         else if (type === "pi") providerArgs.push("--thinking", effort);
+        else if (type === "omp") providerArgs.push("--thinking", effort);
+        else if (type === "grok") providerArgs.push("--reasoning-effort", effort);
     }
     if (options.permissionMode) providerArgs.push(...permissionArgs(type, options.permissionMode));
 
@@ -107,7 +113,7 @@ export function agentLaunchArgs(type: AgentType, options: AgentLaunchOptions = {
 }
 
 function resumeArgsForType(type: AgentType, id: string): string[] {
-    if (type === "claude" || type === "hermes") return ["--resume", id];
+    if (type === "claude" || type === "hermes" || type === "omp" || type === "grok") return ["--resume", id];
     if (type === "pi" || type === "opencode") return ["--session", id];
     return ["resume", id];
 }
@@ -126,6 +132,8 @@ export function permissionArgs(type: AgentType, mode: AgentPermissionMode): stri
         return ["--permission-mode", "default"];
     }
     if (type === "hermes" && mode === "bypass") return ["--yolo"];
+    if (type === "omp" && mode === "bypass") return ["--approval-mode", "yolo"];
+    if (type === "grok" && mode === "bypass") return ["--permission-mode", "bypassPermissions"];
     return [];
 }
 

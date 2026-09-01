@@ -1,5 +1,7 @@
 import type { AgentType } from "../state/types";
 
+const ompLogo = new URL("../assets/agent-logos/omp.svg", import.meta.url).href;
+
 interface IconProps {
     size?: number;
     className?: string;
@@ -86,6 +88,12 @@ export const IconSearch = makeSvgIcon(
     <>
         <circle cx="7" cy="7" r="4.4" />
         <path d="M10.4 10.4 14 14" />
+    </>,
+);
+export const IconEye = makeSvgIcon(
+    <>
+        <path d="M1.6 8s2.3-4 6.4-4 6.4 4 6.4 4-2.3 4-6.4 4S1.6 8 1.6 8Z" />
+        <circle cx="8" cy="8" r="1.8" />
     </>,
 );
 export const IconEditor = makeSvgIcon(<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3M9.3 3.4 6.7 12.6" />);
@@ -266,11 +274,23 @@ export function IconPi({ size, className }: IconProps) {
 
 export function IconOpenCode({ size, className }: IconProps) {
     return (
-        <svg width={size ?? 16} height={size ?? 16} viewBox="0 0 300 300" fill="currentColor" className={className} aria-hidden="true">
+        <svg width={size ?? 16} height={size ?? 16} viewBox="-50 -50 400 400" fill="currentColor" className={className} aria-hidden="true">
             <g transform="translate(30, 0)">
                 <path d="M180 240H60V120H180V240Z" opacity="0.45" />
                 <path fillRule="evenodd" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z" />
             </g>
+        </svg>
+    );
+}
+
+export function IconOmp({ size, className }: IconProps) {
+    return <img src={ompLogo} width={size ?? 16} height={size ?? 16} className={className} alt="" aria-hidden="true" />;
+}
+
+export function IconGrok({ size, className }: IconProps) {
+    return (
+        <svg width={size ?? 16} height={size ?? 16} viewBox="-72 -72 1168 1168" fill="currentColor" className={className} aria-hidden="true">
+            <path d="M395.479 633.828 735.91 381.105C752.599 368.715 776.454 373.548 784.406 392.792 826.26 494.285 807.561 616.253 724.288 699.996 641.016 783.739 525.151 802.104 419.247 760.277L303.556 814.143C469.49 928.202 670.987 899.995 796.901 773.282 896.776 672.843 927.708 535.937 898.785 412.476L899.047 412.739C857.105 231.37 909.358 158.874 1016.4 10.6326 1018.93 7.11771 1021.47 3.60279 1024 0L883.144 141.651V141.212L395.392 633.916M325.226 695.251C206.128 580.84 226.662 403.776 328.285 301.668 403.431 226.097 526.549 195.254 634.026 240.596L749.454 186.994C728.657 171.88 702.007 155.623 671.424 144.2 533.19 86.9942 367.693 115.465 255.323 228.382 147.234 337.081 113.244 504.215 171.613 646.833 215.216 753.423 143.739 828.818 71.7385 904.916 46.2237 931.893 20.6216 958.87 0 987.429L325.139 695.339" />
         </svg>
     );
 }
@@ -295,6 +315,8 @@ export function AgentIcon({ type, size, className }: { type: AgentType; size?: n
     if (type === "hermes") return <IconHermes size={size} className={className} />;
     if (type === "pi") return <IconPi size={size} className={className} />;
     if (type === "opencode") return <IconOpenCode size={size} className={className} />;
+    if (type === "omp") return <IconOmp size={size} className={className} />;
+    if (type === "grok") return <IconGrok size={size} className={className} />;
     return <IconClaude size={size} className={className} />;
 }
 

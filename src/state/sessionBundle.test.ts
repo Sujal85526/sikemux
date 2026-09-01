@@ -25,6 +25,24 @@ describe("session clipboard bundle validation", () => {
         });
     });
 
+    it("accepts OMP and Grok resume claims", () => {
+        expect(
+            parseSessionBundle(
+                JSON.stringify(
+                    bundle({
+                        agents: [
+                            { type: "omp", title: "OMP task", resumeId: "/sessions/omp.jsonl" },
+                            { type: "grok", title: "Grok task", resumeId: "018f0000-0000-7000-8000-000000000000" },
+                        ],
+                    }),
+                ),
+            ).agents,
+        ).toEqual([
+            { type: "omp", title: "OMP task", resumeId: "/sessions/omp.jsonl" },
+            { type: "grok", title: "Grok task", resumeId: "018f0000-0000-7000-8000-000000000000" },
+        ]);
+    });
+
     it.each([
         ["future version", { version: 2 }, "version is unsupported"],
         ["unsupported session kind", { session: { name: "demo", cwd: "/work", kind: "docker" } }, "kind is unsupported"],

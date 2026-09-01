@@ -1992,56 +1992,6 @@ fn apply_agent_profile(
     }
 }
 
-fn inject_browser_mcp(
-    app: &AppHandle,
-    command: &mut PtyDirectCommand,
-    agent_type: &str,
-    launch: &crate::browser::BrowserMcpLaunch,
-) -> AppResult<()> {
-    match agent_type {
-        "codex" => {
-            let command_value = serde_json::to_string(&launch.command)?;
-            let args_value = serde_json::to_string(&launch.args)?;
-            let mut injected = vec![
-                "-c".into(),
-                format!("mcp_servers.sikemux_browser.command={command_value}"),
-                "-c".into(),
-                format!("mcp_servers.sikemux_browser.args={args_value}"),
-            ];
-            injected.append(&mut command.args);
-            command.args = injected;
-        }
-        "claude" => {
-            let directory = app
-                .path()
-                .app_data_dir()
-                .map_err(|error| {
-                    AppError::Other(format!("browser MCP config directory unavailable: {error}"))
-                })?
-                .join("browser");
-            std::fs::create_dir_all(&directory)?;
-            let path = directory.join("claude-mcp.json");
-            let config = serde_json::json!({
-                "mcpServers": {
-                    "sikemux-browser": {
-                        "type": "stdio",
-                        "command": launch.command,
-                        "args": launch.args,
-                    }
-                }
-            });
-            let temporary = directory.join(format!(".claude-mcp-{}.json", uuid::Uuid::new_v4()));
-            std::fs::write(&temporary, serde_json::to_vec_pretty(&config)?)?;
-            std::fs::rename(temporary, &path)?;
-            let mut injected = vec!["--mcp-config".into(), path.to_string_lossy().into_owned()];
-            injected.append(&mut command.args);
-            command.args = injected;
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
 pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_SHELL",
     "SIKEMUX_SESSION_ID",
@@ -2068,7 +2018,12 @@ pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_BROWSER_CDP_URL",
     "SIKEMUX_BROWSER_BROKER_URL",
     "SIKEMUX_BROWSER_BROKER_TOKEN",
+    "SIKEMUX_BROWSER_MCP_COMMAND",
+    "SIKEMUX_BROWSER_MCP_ARGS",
     "SIKEMUX_BROWSER_AGENT_ID",
+    "OPENCODE_CONFIG_CONTENT",
+    "HERMES_HOME",
+    "GROK_HOME",
     // Markers an agent CLI exports for processes it starts. If Sikemux was
     // itself launched from inside one, every terminal it opens looks like a
     // child of that session — the CLI then disables transcript saving, and the
@@ -2454,31 +2409,26 @@ pub async fn pty_spawn(
     let browser_environment =
         if let (Some(command), Some(context)) = (direct_command.as_mut(), context.as_ref()) {
             match (context.agent_id.as_deref(), context.agent_type.as_deref()) {
-                (Some(agent_id), Some(agent_type @ ("codex" | "claude"))) => {
-                    match browser.environment(&app, agent_id).await {
-                        Ok(environment) => match browser.mcp_launch(&app) {
-                            Ok(launch) => {
-                                match inject_browser_mcp(&app, command, agent_type, &launch) {
-                                    Ok(()) => Some(environment),
-                                    Err(error) => {
-                                        eprintln!(
-                                            "Sikemux browser integration is unavailable: {error}"
-                                        );
-                                        None
-                                    }
-                                }
-                            }
-                            Err(error) => {
-                                eprintln!("Sikemux browser integration is unavailable: {error}");
-                                None
-                            }
-                        },
-                        Err(error) => {
-                            eprintln!("Sikemux browser integration is unavailable: {error}");
-                            None
-                        }
+                (
+                    Some(agent_id),
+                    Some(
+                        agent_type @ ("codex" | "claude" | "hermes" | "pi" | "opencode" | "omp"
+                        | "grok"),
+                    ),
+                ) => match browser
+                    .agent_integration(&app, agent_id, agent_type, &command.program)
+                    .await
+                {
+                    Ok(mut integration) => {
+                        integration.args_prefix.append(&mut command.args);
+                        command.args = integration.args_prefix;
+                        Some(integration.environment)
                     }
-                }
+                    Err(error) => {
+                        eprintln!("Sikemux browser integration is unavailable: {error}");
+                        None
+                    }
+                },
                 _ => None,
             }
         } else {
