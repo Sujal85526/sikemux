@@ -46,4 +46,26 @@ describe("SidebarPeek", () => {
 
         expect(screen.getByText("agents").parentElement).toHaveClass("sidebar-peek-panel--open");
     });
+
+    it("stays open while focus remains inside the rail", () => {
+        vi.useFakeTimers();
+        render(
+            <SidebarPeek side="right">
+                <button>search agents</button>
+            </SidebarPeek>,
+        );
+
+        const peek = screen.getByTestId("sidebar-peek-right");
+        fireEvent.pointerEnter(peek);
+        const search = screen.getByRole("button", { name: "search agents" });
+        search.focus();
+        fireEvent.pointerLeave(peek);
+        act(() => vi.advanceTimersByTime(180));
+
+        expect(search).toBeInTheDocument();
+
+        fireEvent.blur(search, { relatedTarget: document.body });
+        act(() => vi.advanceTimersByTime(180));
+        expect(screen.queryByRole("button", { name: "search agents" })).not.toBeInTheDocument();
+    });
 });

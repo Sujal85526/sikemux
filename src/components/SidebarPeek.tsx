@@ -12,6 +12,7 @@ const CLOSE_DURATION_MS = 180;
 
 export function SidebarPeek({ side, children }: SidebarPeekProps) {
     const [phase, setPhase] = useState<PeekPhase>("closed");
+    const rootRef = useRef<HTMLDivElement>(null);
     const closeTimer = useRef<number | null>(null);
 
     const clearCloseTimer = () => {
@@ -25,7 +26,8 @@ export function SidebarPeek({ side, children }: SidebarPeekProps) {
         setPhase("open");
     };
 
-    const close = () => {
+    const close = (ignoreFocus = false) => {
+        if (!ignoreFocus && rootRef.current?.contains(document.activeElement)) return;
         clearCloseTimer();
         setPhase("closing");
         closeTimer.current = window.setTimeout(() => {
@@ -43,13 +45,14 @@ export function SidebarPeek({ side, children }: SidebarPeekProps) {
 
     return (
         <div
+            ref={rootRef}
             className={`sidebar-peek sidebar-peek--${side}`}
             data-testid={`sidebar-peek-${side}`}
             onPointerEnter={open}
-            onPointerLeave={close}
+            onPointerLeave={() => close()}
             onFocusCapture={open}
             onBlurCapture={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) close();
+                if (!event.currentTarget.contains(event.relatedTarget)) close(true);
             }}>
             <div className="sidebar-peek-sensor" aria-hidden="true" />
             {phase !== "closed" && (
