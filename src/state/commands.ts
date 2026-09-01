@@ -1905,7 +1905,7 @@ export function clearAgentUnread(id: string): void {
 }
 
 export function closeAgent(id: string): void {
-    const existed = !!getState().agents[id];
+    const closedType = getState().agents[id]?.type;
     mutate((d) => {
         const ownerId = d.sessionOrder.find((sid) => (d.agentsBySession[sid] ?? []).includes(id));
         if (!ownerId) return;
@@ -1920,8 +1920,11 @@ export function closeAgent(id: string): void {
             if (ownedIds.length === 0) owner.view = "windows";
         }
     });
-    if (existed && !getState().agents[id]) {
+    if (closedType && !getState().agents[id]) {
         void browserApi.closeAgent(id).catch(reportError("close agent browser"));
+        if (closedType === "claude" || closedType === "codex") {
+            invalidate((kind) => kind === "agents.catalog" || kind === "agents.models" || kind === "agents.usage");
+        }
     }
 }
 
@@ -1948,7 +1951,8 @@ export const setTerminalTitle = (paneId: string, title: string): void =>
 export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, rundeckJobPaletteOpen: false });
 export const closePicker = (): void => setState({ pickerOpen: false });
 // The agent picker is project-scoped and opens over the agent view.
-export const openAgentPalette = (): void =>
+export const openAgentPalette = (): void => {
+    invalidate((kind) => kind === "agents.catalog" || kind === "agents.models" || kind === "agents.usage");
     mutate((d) => {
         const session = d.sessions[d.activeSessionId];
         if (session?.kind !== "project") return;
@@ -1957,6 +1961,7 @@ export const openAgentPalette = (): void =>
         d.zoomedPaneId = null;
         session.view = "agent";
     });
+};
 export const closeAgentPalette = (): void => {
     const state = getState();
     const session = state.sessions[state.activeSessionId];

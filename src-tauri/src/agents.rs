@@ -163,7 +163,14 @@ pub fn watch_count() -> usize {
 
 static NEXT_WATCH_ID: AtomicU32 = AtomicU32::new(1);
 
-const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+const AGENT_UPDATE_RETRY_TIMEOUT: Duration = Duration::from_secs(8);
+const AGENT_UPDATE_SETTLE_DELAY: Duration = Duration::from_millis(350);
+
+fn healthy_agent_executables() -> &'static Mutex<HashMap<String, PathBuf>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 fn expand_user_path(value: &str) -> PathBuf {
     if value == "~" {
@@ -246,7 +253,11 @@ fn explicit_agent_candidates(value: &str) -> Vec<PathBuf> {
     crate::system::find_executables_matching(value, |_| true)
 }
 
-async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String, String> {
+async fn probe_agent_executable_with_timeout(
+    agent: &str,
+    executable: &Path,
+    timeout: Duration,
+) -> Result<String, String> {
     #[cfg(windows)]
     let mut command = if matches!(
         executable.extension().and_then(|value| value.to_str()),
@@ -278,7 +289,7 @@ async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String
     if agent == "claude" {
         command.env_remove("CLAUDECODE");
     }
-    let output = tokio::time::timeout(AGENT_PROBE_TIMEOUT, command.output())
+    let output = tokio::time::timeout(timeout, command.output())
         .await
         .map_err(|_| "version check timed out".to_string())?
         .map_err(|error| format!("could not start: {error}"))?;
@@ -296,18 +307,58 @@ async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String
         .to_string())
 }
 
+async fn probe_agent_executable(agent: &str, executable: &Path) -> Result<String, String> {
+    probe_agent_executable_with_timeout(agent, executable, AGENT_PROBE_TIMEOUT).await
+}
+
 async fn first_healthy_agent_candidate(
     agent: &str,
     candidates: Vec<PathBuf>,
 ) -> (Option<PathBuf>, Vec<String>) {
     let mut failures = Vec::new();
+    let cached = healthy_agent_executables()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(agent).cloned());
+    let mut temporarily_unverified = None;
     for candidate in candidates {
         match probe_agent_executable(agent, &candidate).await {
-            Ok(_) => return (Some(candidate), failures),
+            Ok(_) => {
+                if let Ok(mut cache) = healthy_agent_executables().lock() {
+                    cache.insert(agent.to_string(), candidate.clone());
+                }
+                return (Some(candidate), failures);
+            }
+            Err(error) if error == "version check timed out" => {
+                tokio::time::sleep(AGENT_UPDATE_SETTLE_DELAY).await;
+                match probe_agent_executable_with_timeout(
+                    agent,
+                    &candidate,
+                    AGENT_UPDATE_RETRY_TIMEOUT,
+                )
+                .await
+                {
+                    Ok(_) => {
+                        if let Ok(mut cache) = healthy_agent_executables().lock() {
+                            cache.insert(agent.to_string(), candidate.clone());
+                        }
+                        return (Some(candidate), failures);
+                    }
+                    Err(retry_error) => {
+                        failures.push(format!(
+                            "{}: {retry_error} after update retry",
+                            candidate.display()
+                        ));
+                        if cached.as_ref() == Some(&candidate) {
+                            temporarily_unverified = Some(candidate);
+                        }
+                    }
+                }
+            }
             Err(error) => failures.push(format!("{}: {error}", candidate.display())),
         }
     }
-    (None, failures)
+    (temporarily_unverified, failures)
 }
 
 /// Agent CLIs that are installed for the current user. The app's PATH is fixed
@@ -2026,8 +2077,8 @@ mod executable_tests {
     };
     #[cfg(unix)]
     use super::{
-        first_healthy_agent_candidate, probe_agent_executable, run_model_catalog_executable,
-        MODEL_CATALOG_ERROR_DETAIL_LIMIT,
+        first_healthy_agent_candidate, probe_agent_executable, probe_agent_executable_with_timeout,
+        run_model_catalog_executable, MODEL_CATALOG_ERROR_DETAIL_LIMIT,
     };
     use std::io::Write;
     use std::path::Path;
@@ -2097,6 +2148,29 @@ mod executable_tests {
         .await;
         assert_eq!(selected.as_deref(), Some(healthy.path()));
         assert_eq!(failures.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn executable_probe_bounds_temporarily_busy_updaters() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut busy = tempfile::NamedTempFile::new().unwrap();
+        writeln!(busy, "#!/bin/sh\nsleep 1\nprintf 'claude test\\n'").unwrap();
+        let mut permissions = busy.as_file().metadata().unwrap().permissions();
+        permissions.set_mode(0o755);
+        busy.as_file().set_permissions(permissions).unwrap();
+
+        assert_eq!(
+            probe_agent_executable_with_timeout(
+                "claude",
+                busy.path(),
+                std::time::Duration::from_millis(20)
+            )
+            .await
+            .unwrap_err(),
+            "version check timed out"
+        );
     }
 
     #[test]
