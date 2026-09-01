@@ -232,6 +232,9 @@ fn automatic_agent_candidates(def: &AgentDef) -> Vec<PathBuf> {
         push_agent_candidate(&mut candidates, home.join(".claude/local/claude"));
         push_agent_candidate(&mut candidates, home.join(".claude/bin/claude"));
     }
+    if def.kind == "opencode" {
+        push_agent_candidate(&mut candidates, home.join(".opencode/bin/opencode"));
+    }
     #[cfg(target_os = "macos")]
     if def.kind == "codex" {
         push_agent_candidate(
@@ -1499,24 +1502,8 @@ pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
     Ok(())
 }
 
-fn allowed_agent_path(agent: &str, path: &Path) -> bool {
-    if agent != "opencode" {
-        return true;
-    }
-    let Ok(home) = std::env::var("HOME") else {
-        return true;
-    };
-    allowed_agent_path_for_home(agent, path, Path::new(&home))
-}
-
-fn allowed_agent_path_for_home(agent: &str, path: &Path, home: &Path) -> bool {
-    if agent != "opencode" {
-        return true;
-    }
-    // OpenCode leaves a runnable self-contained binary under ~/.opencode/bin.
-    // Treat that as app data/cache rather than a user-visible system install;
-    // otherwise stale copies keep showing up in the agent rail after uninstall.
-    path.parent() != Some(home.join(".opencode").join("bin").as_path())
+fn allowed_agent_path(_agent: &str, _path: &Path) -> bool {
+    true
 }
 
 fn mtime_of(path: &Path) -> u64 {
@@ -2102,12 +2089,12 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 #[cfg(test)]
 mod executable_tests {
     use super::{
-        agent_config_root, allowed_agent_path_for_home, cached_title, claude_sessions,
-        codex_indexed_titles, codex_sessions, codex_title, json_effort, parse_claude_models,
-        parse_claude_usage, parse_codex_models, parse_codex_usage_result, parse_hermes_models,
-        parse_line_models, parse_pi_models, qualify_model, title_cache_stamp, toml_effort,
-        toml_model, yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo,
-        AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
+        agent_config_root, allowed_agent_path, cached_title, claude_sessions, codex_indexed_titles,
+        codex_sessions, codex_title, json_effort, parse_claude_models, parse_claude_usage,
+        parse_codex_models, parse_codex_usage_result, parse_hermes_models, parse_line_models,
+        parse_pi_models, qualify_model, title_cache_stamp, toml_effort, toml_model,
+        yaml_agent_reasoning_effort, yaml_model_section, AgentModelInfo, AgentUsageResetAt,
+        CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
     use super::{
@@ -2118,20 +2105,14 @@ mod executable_tests {
     use std::path::Path;
 
     #[test]
-    fn opencode_cache_executables_are_rejected_with_any_windows_suffix() {
+    fn opencode_installer_directory_is_a_valid_agent_location() {
         let home = Path::new("/home/tester");
         for name in ["opencode", "opencode.exe", "opencode.cmd"] {
-            assert!(!allowed_agent_path_for_home(
+            assert!(allowed_agent_path(
                 "opencode",
-                &home.join(".opencode").join("bin").join(name),
-                home,
+                &home.join(".opencode").join("bin").join(name)
             ));
         }
-        assert!(allowed_agent_path_for_home(
-            "opencode",
-            Path::new("/usr/local/bin/opencode"),
-            home,
-        ));
     }
 
     #[test]
