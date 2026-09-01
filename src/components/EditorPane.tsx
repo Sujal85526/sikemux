@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
 import { invokeCommand as invoke } from "../api/invoke";
-import { EditorState, Prec, type Text } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type Text } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
@@ -38,6 +39,10 @@ import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null, treeWidth: 210 };
 const EMPTY_CLI_OPENS: CliPendingEditorOpen[] = [];
+
+function isMarkdownPath(path: string | null): path is string {
+    return !!path && /\.(?:md|markdown)$/i.test(path);
+}
 
 function readSelection(view: EditorView): string | null {
     const sel = view.state.selection.main;
@@ -182,6 +187,16 @@ function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: 
     );
 }
 
+function MarkdownPreview({ source }: { source: string }) {
+    return (
+        <div className="ed-markdown-preview">
+            <article className="ed-markdown-body">
+                <Markdown skipHtml>{source}</Markdown>
+            </article>
+        </div>
+    );
+}
+
 export function EditorPane({
     paneId,
     cwd,
@@ -201,6 +216,7 @@ export function EditorPane({
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    const editableCompartment = useRef(new Compartment()).current;
     const states = useRef<Map<string, EditorState>>(new Map());
     const currentRef = useRef<string | null>(null);
     const hydratedRef = useRef(false);
@@ -220,6 +236,7 @@ export function EditorPane({
     const savedRef = useRef<Map<string, string>>(new Map());
     const imagesRef = useRef<Map<string, FileBlob>>(new Map());
     const [activeImage, setActiveImage] = useState<ImageState | null>(null);
+    const [markdownPreview, setMarkdownPreview] = useState<{ path: string; content: string } | null>(null);
 
     const [findState, setFindState] = useState<{
         open: boolean;
@@ -242,6 +259,7 @@ export function EditorPane({
     const tabs = view.openTabs;
     const activePath = view.activePath;
     const treeWidth = view.treeWidth;
+    const previewingMarkdown = markdownPreview?.path === activePath;
 
     const setTreeWidth = (w: number) => cmd.setEditorView(paneId, { treeWidth: w });
 
@@ -332,6 +350,7 @@ export function EditorPane({
                 doc: content,
                 extensions: [
                     basicSetup,
+                    editableCompartment.of(EditorView.editable.of(true)),
                     search({ top: true }),
                     heavy ? editorThemeOnlyExtensions() : auraExtensions,
                     ...(heavy && !languageHint ? [] : language),
@@ -404,7 +423,7 @@ export function EditorPane({
                 ],
             });
         },
-        [languageHint, scheduleChange],
+        [editableCompartment, languageHint, scheduleChange],
     );
 
     reloadFromDiskRef.current = async (path: string) => {
@@ -422,6 +441,7 @@ export function EditorPane({
         } else {
             states.current.set(path, makeState(path, snapshot.content));
         }
+        setMarkdownPreview((preview) => (preview?.path === path ? { path, content: snapshot.content } : preview));
         setDirty((dirtyPaths) => {
             if (!dirtyPaths.has(path)) return dirtyPaths;
             const next = new Set(dirtyPaths);
@@ -454,8 +474,16 @@ export function EditorPane({
     }, [makeState]);
 
     useEffect(() => {
-        if (active && !activeImage) viewRef.current?.focus();
-    }, [active, activePath, activeImage]);
+        const editorView = viewRef.current;
+        if (!editorView) return;
+        editorView.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(!previewingMarkdown)) });
+        if (previewingMarkdown) editorView.contentDOM.blur();
+        else if (active && !activeImage) editorView.focus();
+    }, [active, activePath, activeImage, editableCompartment, previewingMarkdown]);
+
+    useEffect(() => {
+        setMarkdownPreview(null);
+    }, [activePath]);
 
     const showImage = useCallback((path: string, force = false) => {
         const cached = force ? undefined : imagesRef.current.get(path);
@@ -903,6 +931,18 @@ export function EditorPane({
     const copyText = (text: string, label: string) =>
         navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 
+    const toggleMarkdownPreview = () => {
+        if (!isMarkdownPath(activePath)) return;
+        if (previewingMarkdown) {
+            setMarkdownPreview(null);
+            return;
+        }
+        const editorView = viewRef.current;
+        if (!editorView || currentRef.current !== activePath) return;
+        setFindState((state) => ({ ...state, open: false }));
+        setMarkdownPreview({ path: activePath, content: editorView.state.doc.toString() });
+    };
+
     const buildTabMenu = (path: string): CtxItem[] => {
         const idx = tabs.indexOf(path);
         const others = tabs.filter((t) => t !== path);
@@ -954,15 +994,31 @@ export function EditorPane({
                     onClose={(path) => closeTabs([path])}
                     buildMenu={onCloseWindow ? undefined : buildTabMenu}
                     trailing={
-                        onCloseWindow ? (
-                            <button type="button" className="tabbar-window-close" title="Close SSH config" onClick={onCloseWindow}>
-                                <IconClose size={12} />
-                            </button>
+                        isMarkdownPath(activePath) || onCloseWindow ? (
+                            <>
+                                {isMarkdownPath(activePath) && (
+                                    <button
+                                        type="button"
+                                        className="ed-markdown-toggle"
+                                        aria-label={
+                                            previewingMarkdown ? `Show source for ${basename(activePath)}` : `Preview ${basename(activePath)}`
+                                        }
+                                        aria-pressed={previewingMarkdown}
+                                        onClick={toggleMarkdownPreview}>
+                                        {previewingMarkdown ? "source" : "preview"}
+                                    </button>
+                                )}
+                                {onCloseWindow && (
+                                    <button type="button" className="tabbar-window-close" title="Close SSH config" onClick={onCloseWindow}>
+                                        <IconClose size={12} />
+                                    </button>
+                                )}
+                            </>
                         ) : undefined
                     }
                 />
-                <div className={`ed-host${activeImage ? " image-mode" : ""}`} ref={hostRef}>
-                    {!activeImage && (
+                <div className={`ed-host${activeImage ? " image-mode" : ""}${previewingMarkdown ? " preview-mode" : ""}`} ref={hostRef}>
+                    {!activeImage && !previewingMarkdown && (
                         <EditorFindBar
                             getView={() => viewRef.current}
                             open={findState.open}
@@ -973,6 +1029,7 @@ export function EditorPane({
                         />
                     )}
                     {activeImage && <ImageViewer image={activeImage} onReload={reloadImage} />}
+                    {previewingMarkdown && <MarkdownPreview source={markdownPreview.content} />}
                 </div>
                 {showTree && cwd && (
                     <EditorInsights
