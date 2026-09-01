@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import Markdown from "react-markdown";
 import { getVersion } from "@tauri-apps/api/app";
 import { invokeCommand as invoke } from "../api/invoke";
 import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
@@ -590,13 +591,15 @@ export function WhatsNewOverlay() {
                 You are on Sikemux v{version || "…"}. Release notes stay reachable here instead of disappearing into an update tooltip.
             </p>
             <div className="release-notes">
-                {pending?.notes ||
-                    installedNotes?.notes ||
-                    (pending
-                        ? `Version ${pending.version} is ready.`
-                        : installedNotes
-                          ? `Updated to ${installedNotes.version}.`
-                          : "You are up to date. No newer release notes are available yet.")}
+                <Markdown skipHtml>
+                    {pending?.notes ||
+                        installedNotes?.notes ||
+                        (pending
+                            ? `Version ${pending.version} is ready.`
+                            : installedNotes
+                              ? `Updated to ${installedNotes.version}.`
+                              : "You are up to date. No newer release notes are available yet.")}
+                </Markdown>
             </div>
             <footer>
                 {pending && (

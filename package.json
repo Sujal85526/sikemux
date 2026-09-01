@@ -75,6 +75,7 @@
     "immer": "^11.1.16",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
     "shiki": "^4.4.3",
     "zustand": "^5.0.14"
   },
