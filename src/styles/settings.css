@@ -113,6 +113,9 @@
     color: var(--ink);
     font: 400 12px/1 var(--ui);
 }
+.settings-search-input::-webkit-search-cancel-button {
+    appearance: none;
+}
 .settings-search-clear {
     display: grid;
     place-items: center;
