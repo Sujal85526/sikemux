@@ -289,7 +289,22 @@ export function IconOmp({ size, className }: IconProps) {
 }
 
 export function IconGrok({ size, className }: IconProps) {
-    return <img src={grokLogo} width={size ?? 16} height={size ?? 16} className={className} alt="" aria-hidden="true" />;
+    const dimension = size ?? 16;
+    return (
+        <span
+            className={className}
+            aria-hidden="true"
+            style={{
+                display: "inline-block",
+                width: dimension,
+                height: dimension,
+                flex: "0 0 auto",
+                backgroundColor: "currentColor",
+                WebkitMask: `url(${grokLogo}) center / contain no-repeat`,
+                mask: `url(${grokLogo}) center / contain no-repeat`,
+            }}
+        />
+    );
 }
 
 export function IconHermes({ size, className }: IconProps) {
