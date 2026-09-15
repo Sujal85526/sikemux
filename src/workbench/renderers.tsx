@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import type { PaneKind, PaneNode, PtyContext, Session, Window as WindowT } from "../state/types";
 import * as cmd from "../state/commands";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { AgentPane } from "../components/AgentPane";
 
 export interface WorkbenchItemRendererProps {
     pane: PaneNode;
@@ -78,6 +79,7 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<PaneKind, (props: Workbench
             <SearchPane sessionId={session.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
         </Suspense>
     ),
+    agent: ({ pane, session, visible }) => <AgentPane paneId={pane.id} session={session} visible={visible} />,
     terminal: ({ pane, session, win, active, visible }) => (
         <TerminalPane
             cwd={paneCwd(pane, session) || undefined}

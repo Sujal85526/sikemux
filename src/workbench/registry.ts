@@ -42,6 +42,7 @@ export interface BuiltinWorkbenchItemState {
     search: null;
     rundeck: null;
     bruno: null;
+    agent: null;
 }
 
 /**
@@ -218,6 +219,7 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     search: builtinDefinition("search", "search", NULL_CODEC),
     rundeck: builtinDefinition("rundeck", "rundeck", NULL_CODEC),
     bruno: builtinDefinition("bruno", "bruno", NULL_CODEC),
+    agent: builtinDefinition("agent", "agent", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {

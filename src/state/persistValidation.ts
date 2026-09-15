@@ -1,7 +1,18 @@
 import { isBuiltinWorkbenchItemKind, isValidWorkbenchItemId } from "../workbench/registry";
 import type { LayoutNode, Window, WindowRole } from "./types";
 
-export const PERSISTED_WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "search", "aws", "rundeck", "bruno", "ssh-config", "named"]);
+export const PERSISTED_WINDOW_ROLES = new Set<WindowRole>([
+    "term",
+    "files",
+    "git",
+    "search",
+    "aws",
+    "rundeck",
+    "bruno",
+    "ssh-config",
+    "named",
+    "agent",
+]);
 
 export interface LayoutValidationLimits {
     maxDepth: number;

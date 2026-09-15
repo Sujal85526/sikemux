@@ -1,5 +1,5 @@
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
-import { lazy, memo, Suspense, useMemo, useRef } from "react";
+import { memo, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, WindowRole, WorkspaceTabRef } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
@@ -12,7 +12,7 @@ import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentIcon, IconCommand, IconGlobe, IconPlus, WindowIcon } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
-import { AgentBrowserShell } from "./BrowserPane";
+import { AgentPane } from "./AgentPane";
 import { FileIcon } from "./FileIcon";
 import { fsapi } from "../api/fs";
 import { useResourceEnabled } from "../state/resources";
@@ -24,8 +24,6 @@ import { notify, reportError } from "../state/toast";
 
 const copyPath = (_path: string, text: string, label: string) =>
     navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
-
-const AgentSurface = lazy(() => import("../chat/AgentSurface").then((module) => ({ default: module.AgentSurface })));
 
 const TABS_H = 34;
 
@@ -40,6 +38,7 @@ const PANE_ROLE: Record<PaneKind, WindowRole> = {
     search: "search",
     rundeck: "rundeck",
     bruno: "bruno",
+    agent: "agent",
 };
 const pct = (n: number) => `${n * 100}%`;
 export function Workspace() {
@@ -108,6 +107,7 @@ const ROLE_LABEL: Record<WindowRole, string> = {
     bruno: "Bruno",
     "ssh-config": "SSH config",
     named: "Window",
+    agent: "Agent",
 };
 
 function WorkspaceTabsBar({ session }: { session: Session }) {
@@ -351,7 +351,6 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
 }
 
 const AgentLayer = memo(function AgentLayer({ session, agent, visible }: { session: Session; agent: Agent; visible: boolean }) {
-    const profile = useStore((state) => (agent.profileId ? state.providerProfiles.find((candidate) => candidate.id === agent.profileId) : undefined));
     return (
         <div
             className={`window-layer${visible ? " visible" : ""}`}
@@ -361,24 +360,8 @@ const AgentLayer = memo(function AgentLayer({ session, agent, visible }: { sessi
             aria-hidden={!visible}
             inert={!visible}>
             <div className="pane-cell" style={{ left: 0, top: `${TABS_H}px`, width: "100%", height: `calc(100% - ${TABS_H}px)` }}>
-                <div className="pane pane-terminal">
-                    <AgentBrowserShell agentId={agent.id} agentType={agent.type} visible={visible}>
-                        {agent.launchState === "dormant" ? (
-                            <div className="agent-dormant" role="group" aria-label={`${agent.title} is ready to resume`}>
-                                <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
-                                <span className="agent-dormant-kicker">sleeping</span>
-                                <strong>{agent.title}</strong>
-                                <span>This resumable agent is using no live terminal process.</span>
-                                <button type="button" onClick={() => cmd.resumeAgent(agent.id)}>
-                                    Resume {agent.type}
-                                </button>
-                            </div>
-                        ) : (
-                            <Suspense fallback={<div className="agent-transport-switching">Opening agent session…</div>}>
-                                <AgentSurface agent={agent} session={session} profile={profile} visible={visible} />
-                            </Suspense>
-                        )}
-                    </AgentBrowserShell>
+                <div className="pane pane-agent">
+                    <AgentPane paneId={agent.id} session={session} visible={visible} />
                 </div>
             </div>
         </div>

@@ -710,7 +710,8 @@
     background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
     overflow: hidden;
 }
-.pane-terminal {
+.pane-terminal,
+.pane-agent {
     padding: 6px;
 }
 

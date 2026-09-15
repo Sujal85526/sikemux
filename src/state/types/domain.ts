@@ -6,7 +6,7 @@
  * are tabs, and the active pane decides which is on top.
  */
 export type SplitDir = "row" | "column" | "stack";
-export type PaneKind = "terminal" | "editor" | "git" | "diff" | "aws" | "search" | "rundeck" | "bruno";
+export type PaneKind = "terminal" | "editor" | "git" | "diff" | "aws" | "search" | "rundeck" | "bruno" | "agent";
 
 export interface PaneNode {
     type: "pane";
@@ -33,7 +33,7 @@ export type LayoutNode = PaneNode | SplitNode;
 
 export type SessionKind = "project" | "command" | "ssh" | "aws" | "rundeck" | "bruno";
 
-export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "aws" | "rundeck" | "bruno" | "ssh-config" | "named";
+export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "aws" | "rundeck" | "bruno" | "ssh-config" | "named" | "agent";
 
 export interface Window {
     id: string;
