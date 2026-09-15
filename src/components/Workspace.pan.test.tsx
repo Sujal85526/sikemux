@@ -48,6 +48,9 @@ function sessionOfScreens(): void {
 
 const slotOf = (layer: Element) => Number((layer as HTMLElement).style.getPropertyValue("--slot"));
 
+/** What `--pan` reads once the track has been slid `screens` screens to the left. */
+const slidLeft = (screens: number) => `calc(${-screens} * (100% + var(--window-card-gap)))`;
+
 describe("workspace pan", () => {
     /*
      * The whole cost claim of the pan is here: a jump across a session paints the
@@ -104,7 +107,7 @@ describe("workspace pan", () => {
 
         const track = container.querySelector(".window-track") as HTMLElement;
         expect(track).toHaveClass("panning");
-        expect(track.style.getPropertyValue("--pan")).toBe(`${-(parked + 1) * 100}%`);
+        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(parked + 1));
     });
 
     /*
@@ -121,7 +124,7 @@ describe("workspace pan", () => {
 
         for (const agent of ["agent-9", "agent-4", "agent-1", "agent-0"]) {
             act(() => cmd.selectWindowId(agentWindowId(getState(), agent)!));
-            expect(track.style.getPropertyValue("--pan")).toBe(`${-parkedAt() * 100}%`);
+            expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(parkedAt()));
         }
 
         expect(parkedAt()).toBe(-1);
@@ -225,13 +228,13 @@ describe("workspace wheel pan", () => {
         expect(track).not.toHaveClass("sliding");
         expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(2);
         act(() => void vi.advanceTimersByTime(20));
-        expect(track.style.getPropertyValue("--pan")).toBe(`${-(index + 0.6) * 100}%`);
+        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index + 0.6));
 
         act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).toHaveClass("sliding");
-        expect(track.style.getPropertyValue("--pan")).toBe(`${-(index + 1) * 100}%`);
+        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index + 1));
     });
 
     /*
@@ -248,7 +251,7 @@ describe("workspace wheel pan", () => {
 
         expect(activeWindow()).toBe(before);
         expect(track).toHaveClass("sliding");
-        expect(track.style.getPropertyValue("--pan")).toBe(`${-index * 100}%`);
+        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index));
     });
 
     /*

@@ -8,8 +8,9 @@ export const PAN_MS = 280;
 /** Falls back to this when no `transitionend` arrives, so a pan can never get stuck. */
 const SETTLE_GUARD_MS = PAN_MS + 120;
 
-/** How far the track is slid left, in screen widths, to bring `index` to the front. */
-export const panOffset = (index: number) => `${-index * 100}%`;
+/** How far the track is slid left to bring `index` to the front. One screen of
+ *  travel is the stage plus the gap the cards keep between them. */
+export const panOffset = (index: number) => `calc(${-index} * (100% + var(--window-card-gap)))`;
 
 interface Pan {
     /** A drag is written to the element frame by frame; a slide travels on a transition. */

@@ -12,13 +12,20 @@ interface Gesture {
     /** The screen the gesture started on. If the session leaves it, the gesture is over. */
     readonly window: string;
     readonly slot: number;
-    readonly width: number;
+    /** One screen of finger travel in pixels: the stage plus the gap between cards. */
+    readonly stride: number;
     readonly samples: WheelSample[];
     raw: number;
     offset: number;
     toward: string | null;
     started: boolean;
     frame: number | null;
+}
+
+/** The gap the cards keep between them, which only the stylesheet knows. */
+function cardGap(area: HTMLElement): number {
+    // jsdom reports no custom properties, so a test stage has no gap.
+    return Number.parseFloat(getComputedStyle(area).getPropertyValue("--window-card-gap")) || 0;
 }
 
 /** Everything between the wheel event and its screen that might want to scroll sideways instead. */
@@ -95,14 +102,14 @@ export function useWheelPan(
             // there is nothing left for the gesture to drag.
             if (gesture && gesture.window !== active) forget();
             if (!gesture) {
-                const width = area.clientWidth;
+                const stride = area.clientWidth + cardGap(area);
                 const index = active === null ? -1 : order.indexOf(active);
-                if (width <= 0 || index < 0 || active === null) return;
+                if (stride <= 0 || index < 0 || active === null) return;
                 gesture = {
                     claimed: claimsWheel(scrollersUnder(event.target), event.deltaX, event.deltaY),
                     window: active,
                     slot: index,
-                    width,
+                    stride,
                     samples: [],
                     raw: 0,
                     offset: 0,
@@ -119,7 +126,7 @@ export function useWheelPan(
             // that turns wheel gestures into cursor keys.
             event.preventDefault();
 
-            const delta = event.deltaX / moving.width;
+            const delta = event.deltaX / moving.stride;
             moving.raw += delta;
             moving.samples.push({ delta, at: event.timeStamp });
             moving.offset = dragOffset(moving.raw, endsAt(moving.slot));

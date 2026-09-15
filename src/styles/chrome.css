@@ -676,6 +676,10 @@
     z-index: 1;
     --window-strip-h: 0px;
     --window-strip-gap: 0px;
+    /* Empty track between one screen and the next, so a swipe shows a channel of
+       shell between two cards instead of their two edges meeting as one line.
+       Twice the gutter above the card, so it reads as a choice next to it. */
+    --window-card-gap: var(--space-3);
     /* The track slides its neighbouring screens in from off stage, so the stage
        has to clip them. The clip cannot live on the track itself: a transformed
        box carries its own overflow, and the visible window would slide with it. */
@@ -722,7 +726,7 @@
     overflow: hidden;
 }
 .window-track.panning .window-layer {
-    transform: translate(calc(var(--slot) * 100%), 0);
+    transform: translate(calc(var(--slot) * (100% + var(--window-card-gap))), 0);
 }
 /* A layer paints while it is the tab on screen, and also while it is sliding in
    or out of a pan. Hidden layers keep their layout so terminals and editors stay
