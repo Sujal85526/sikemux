@@ -31,6 +31,10 @@ export interface TabDescriptor {
 
 export type TabVariant = "editor" | "agent" | "browser" | "stack";
 
+function reducedMotion(): boolean {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
 interface TabBarProps {
     variant: TabVariant;
     tabs: TabDescriptor[];
@@ -66,10 +70,22 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
         enabled: virtualized,
     });
     const activeIndex = tabs.findIndex((tab) => tab.active);
+    const activeId = tabs[activeIndex]?.id;
 
     useLayoutEffect(() => {
         if (virtualized && activeIndex >= 0) tabVirtualizer.scrollToIndex(activeIndex, { align: "auto" });
     }, [activeIndex, tabVirtualizer, virtualized]);
+
+    useLayoutEffect(() => {
+        if (activeId === undefined) return;
+        // jsdom has no `scrollIntoView`, and a virtualized strip may not have
+        // mounted the pill yet — the virtualizer above has it roughly in view.
+        tabRefs.current.get(activeId)?.scrollIntoView?.({
+            behavior: reducedMotion() ? "auto" : "smooth",
+            block: "nearest",
+            inline: "nearest",
+        });
+    }, [activeId]);
 
     const focusTabAt = (index: number) => {
         const tab = tabs[index];
