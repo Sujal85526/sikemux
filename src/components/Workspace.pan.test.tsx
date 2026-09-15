@@ -217,19 +217,50 @@ describe("workspace wheel pan", () => {
      * heading for paints beside the one on stage, and nothing transitions while
      * the gesture is still going.
      */
-    it("commits the screen next door when a swipe crosses half of it", () => {
+    it("follows the finger while the swipe is still short of the threshold", () => {
         const { container, track, live, index } = stageOfScreens();
-        const neighbour = order()[index + 1];
 
-        expect(swipe(live, 300)).toBe(false);
-        swipe(live, 300);
+        expect(swipe(live, 100)).toBe(false);
+        swipe(live, 100);
 
         expect(track).toHaveClass("panning");
         expect(track).not.toHaveClass("sliding");
         expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(2);
         act(() => void vi.advanceTimersByTime(20));
-        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index + 0.6));
+        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index + 0.2));
+    });
 
+    /*
+     * A trackpad keeps talking long after the fingers leave, so waiting for it to
+     * stop is waiting for nothing. Crossing the threshold is the landing.
+     */
+    it("lands the screen next door the moment the swipe crosses the threshold", () => {
+        const { track, live, index } = stageOfScreens();
+        const neighbour = order()[index + 1];
+
+        swipe(live, 300);
+        swipe(live, 300);
+
+        expect(activeWindow()).toBe(neighbour);
+        expect(track).toHaveClass("sliding");
+        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index + 1));
+    });
+
+    /*
+     * The events that arrive after the fingers leave belong to the swipe that has
+     * already landed, not to a new one: they must move nothing and scroll nothing.
+     */
+    it("spends the gesture on the screen it landed, tail and all", () => {
+        const { track, live, index } = stageOfScreens();
+        const neighbour = order()[index + 1];
+
+        swipe(live, 300);
+        swipe(live, 300);
+
+        for (const delta of [240, 180, 120, 60, 20]) {
+            act(() => void vi.advanceTimersByTime(16));
+            expect(swipe(live, delta)).toBe(false);
+        }
         act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
 
         expect(activeWindow()).toBe(neighbour);
@@ -240,18 +271,46 @@ describe("workspace wheel pan", () => {
     /*
      * The settle transition has to run from where the finger left the track, and
      * for a swipe that is put back React has no reason to write `--pan` at all —
-     * the track is heading for the screen it was already on.
+     * the track is heading for the screen it was already on. This is the one case
+     * that waits, so it may not wait long.
      */
-    it("puts the screen back when the swipe never gets halfway", () => {
+    it("puts the screen back promptly when the swipe never shows intent", () => {
         const { track, live, index } = stageOfScreens();
         const before = activeWindow();
 
-        swipe(live, 200);
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        swipe(live, 100);
+        act(() => void vi.advanceTimersByTime(GESTURE_END_MS - 1));
+        expect(track).not.toHaveClass("sliding");
+
+        act(() => void vi.advanceTimersByTime(1));
 
         expect(activeWindow()).toBe(before);
         expect(track).toHaveClass("sliding");
         expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index));
+    });
+
+    /*
+     * A trackpad goes on sending events after the fingers leave, and nothing in
+     * them says so. They belong to the same swipe and still move it, so a run of
+     * them that carries the drag over the line lands the screen right there —
+     * part way through the run, not once the run is over.
+     */
+    it("lands the screen when the events after the fingers carry it over", () => {
+        const { live, index } = stageOfScreens();
+        const neighbour = order()[index + 1];
+        const creep = (times: number) => {
+            for (let step = 0; step < times; step += 1) {
+                swipe(live, 12);
+                act(() => void vi.advanceTimersByTime(16));
+            }
+        };
+
+        creep(4);
+        expect(activeWindow()).not.toBe(neighbour);
+
+        creep(45);
+
+        expect(activeWindow()).toBe(neighbour);
     });
 
     /*
@@ -303,8 +362,8 @@ describe("workspace wheel pan", () => {
         const { live, index } = stageOfScreens();
         const chosen = order()[index + 4];
 
-        swipe(live, 300);
-        swipe(live, 300);
+        swipe(live, 100);
+        swipe(live, 100);
         act(() => cmd.selectWindowId(chosen));
         act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
 
@@ -321,10 +380,8 @@ describe("workspace wheel pan", () => {
         const neighbour = order()[index + 1];
 
         swipe(live, 300);
-        swipe(live, 300);
         expect(track).toHaveClass("panning");
-
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        swipe(live, 300);
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).not.toHaveClass("panning");

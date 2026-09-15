@@ -1,5 +1,9 @@
-/** A trackpad sends no gesture-end event, so this much quiet counts as the end of one. */
-export const GESTURE_END_MS = 90;
+/**
+ * A trackpad sends no gesture-end event, so this much quiet counts as the end of
+ * one. Only a swipe too small to land waits for it, and three missed frames is
+ * long enough to ride out a stutter without the wait being felt.
+ */
+export const GESTURE_END_MS = 60;
 /** How many of the last wheel events the flick estimate looks at. */
 export const VELOCITY_SAMPLES = 5;
 /** Below this the gesture is diagonal enough to belong to whatever is under it. */
@@ -8,6 +12,8 @@ const HORIZONTAL_RATIO = 1.5;
 const OVERSCROLL = 0.15;
 /** Screens per millisecond that counts as a flick however short the drag was. */
 const FLICK = 0.0015;
+/** How far a flick still has to have moved the track, so one stray fast event is not one. */
+const FLICK_TRAVEL = 0.06;
 
 /** One element between the wheel event's target and the screen it happened on. */
 export interface PaneScroller {
@@ -76,13 +82,15 @@ export function wheelVelocity(samples: readonly WheelSample[]): number {
 const towards = (n: number): SnapStep => (n > 0 ? 1 : n < 0 ? -1 : 0);
 
 /**
- * Which screen the gesture settles on, counted from the one it started on. Never
- * more than one away, so a single flick cannot skip a screen.
+ * Which screen the gesture lands on, counted from the one it started on. Asked
+ * on every event of a gesture rather than once at the end, so the answer is the
+ * moment the swipe showed what it wanted. Never more than one screen away, so a
+ * single flick cannot skip one.
  */
 export function snapTarget(offset: number, velocity: number, ends: PanEnds): SnapStep {
     const drag = towards(offset);
     if (drag === 0) return 0;
-    const flick = Math.abs(velocity) >= FLICK ? towards(velocity) : 0;
+    const flick = Math.abs(velocity) >= FLICK && Math.abs(offset) >= FLICK_TRAVEL ? towards(velocity) : 0;
     // A flick back the way it came puts the screen it started on back, however far it got.
     if (flick !== 0 && flick !== drag) return 0;
     if (flick === 0 && Math.abs(offset) < 0.5) return 0;

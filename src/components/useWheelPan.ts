@@ -4,7 +4,7 @@ import * as cmd from "../state/commands";
 import { panOffset } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
 import { claimsWheel, dragOffset, GESTURE_END_MS, snapTarget, wheelVelocity } from "./wheelPan";
-import type { PaneScroller, WheelSample } from "./wheelPan";
+import type { PaneScroller, SnapStep, WheelSample } from "./wheelPan";
 
 interface Gesture {
     /** Whether the stage took this gesture, decided once on its first event. */
@@ -19,6 +19,8 @@ interface Gesture {
     offset: number;
     toward: string | null;
     started: boolean;
+    /** Whether the gesture has already landed a screen, which spends it for good. */
+    committed: boolean;
     frame: number | null;
 }
 
@@ -41,12 +43,18 @@ function scrollersUnder(target: EventTarget | null): PaneScroller[] {
 }
 
 /**
- * Drags the track sideways with a two-finger trackpad swipe and settles it on a
- * screen when the fingers stop.
+ * Drags the track sideways with a two-finger trackpad swipe and lands it on a
+ * screen the moment the swipe shows which one it wants.
  *
  * The track follows the finger by hand — `--pan` straight onto the element from
- * a frame loop, no React state per frame — and the settle is handed back to
+ * a frame loop, no React state per frame — and the landing is handed back to
  * `useWindowPan`, so a swipe and a click end the same way.
+ *
+ * A trackpad keeps sending events after the fingers leave, for a second or more,
+ * and nothing in them says the fingers have gone. So the decision cannot wait
+ * for the events to stop: it is taken during the swipe, and once taken the rest
+ * of the events are swallowed. Only a swipe too small to land anywhere has to
+ * wait for quiet, because only then is there nothing to decide.
  */
 export function useWheelPan(
     areaRef: RefObject<HTMLElement | null>,
@@ -80,24 +88,45 @@ export function useWheelPan(
             latest.current.pan.trackRef.current?.style.setProperty("--pan", panOffset(moving.slot + moving.offset));
         };
 
+        // Nothing is left to decide here: a swipe that had somewhere to go went
+        // there while it was still moving, so quiet can only mean putting it back.
         const settle = () => {
             const done = gesture;
             forget();
-            if (!done?.claimed) return;
-            const { pan: current, windowIds: order, activeWindowId: active } = latest.current;
+            if (!done?.claimed || done.committed) return;
+            const { pan: current, activeWindowId: active } = latest.current;
             // A switch from somewhere else already moved the session on, and the
             // pan the gesture was dragging is that switch's slide by now.
             if (active !== done.window) return;
-            const index = order.indexOf(done.window);
-            const step = snapTarget(done.offset, wheelVelocity(done.samples), endsAt(index));
             current.release();
-            if (step !== 0) cmd.selectWindowId(order[index + step]);
+        };
+
+        const rearm = () => {
+            if (quiet != null) window.clearTimeout(quiet);
+            quiet = window.setTimeout(settle, GESTURE_END_MS);
+        };
+
+        /** Lands the screen the swipe asked for, and spends the gesture so its tail asks for nothing. */
+        const land = (moving: Gesture, step: SnapStep) => {
+            const { pan: current, windowIds: order } = latest.current;
+            moving.committed = true;
+            if (moving.frame != null) cancelAnimationFrame(moving.frame);
+            moving.frame = null;
+            current.release();
+            cmd.selectWindowId(order[moving.slot + step]);
         };
 
         const onWheel = (event: WheelEvent) => {
             // The strip sits on the stage and scrolls itself.
             if (event.target instanceof Element && event.target.closest(".tabbar")) return;
             const { pan: current, windowIds: order, activeWindowId: active } = latest.current;
+            // The tail of a swipe that already landed. It may not drag the screen
+            // it just brought in, but the pane underneath may not scroll on it either.
+            if (gesture?.committed) {
+                rearm();
+                event.preventDefault();
+                return;
+            }
             // A switch from somewhere else mid-gesture takes the track away, and
             // there is nothing left for the gesture to drag.
             if (gesture && gesture.window !== active) forget();
@@ -115,12 +144,12 @@ export function useWheelPan(
                     offset: 0,
                     toward: null,
                     started: false,
+                    committed: false,
                     frame: null,
                 };
             }
             const moving = gesture;
-            if (quiet != null) window.clearTimeout(quiet);
-            quiet = window.setTimeout(settle, GESTURE_END_MS);
+            rearm();
             if (!moving.claimed) return;
             // Whatever is underneath must not scroll as well, including a terminal
             // that turns wheel gestures into cursor keys.
@@ -132,10 +161,18 @@ export function useWheelPan(
             moving.offset = dragOffset(moving.raw, endsAt(moving.slot));
             const toward =
                 moving.offset > 0 ? (order[moving.slot + 1] ?? null) : moving.offset < 0 ? (order[moving.slot - 1] ?? null) : moving.toward;
-            if (!moving.started || toward !== moving.toward) {
+            const handedOver = moving.started && toward === moving.toward;
+            if (!handedOver) {
                 moving.started = true;
                 moving.toward = toward;
                 current.drag(moving.window, toward);
+            }
+            // The handover only reaches the track on the next render, so a swipe
+            // cannot land on the very event that asked for the track.
+            const step = handedOver ? snapTarget(moving.offset, wheelVelocity(moving.samples), endsAt(moving.slot)) : 0;
+            if (step !== 0) {
+                land(moving, step);
+                return;
             }
             if (moving.frame == null) moving.frame = requestAnimationFrame(paint);
         };

@@ -124,6 +124,15 @@ describe("snapTarget", () => {
     });
 
     /*
+     * Every event of a gesture asks this, so the first fast one arrives when the
+     * track has barely moved. That is a scroll getting going, not a flick.
+     */
+    it("wants a flick to have moved the track before it counts as one", () => {
+        expect(snapTarget(0.02, 0.004, bothWays)).toBe(0);
+        expect(snapTarget(-0.02, -0.004, bothWays)).toBe(0);
+    });
+
+    /*
      * Dragging a long way and then throwing the screen back is how you cancel a
      * swipe you changed your mind about.
      */
