@@ -406,6 +406,19 @@
     background: var(--surface-raised);
 }
 
+/* variant: the panes stacked in one spot inside a window */
+.tabbar.v-stack {
+    height: var(--stack-strip-h);
+    min-height: var(--stack-strip-h);
+    align-items: center;
+    padding-inline: var(--space-1);
+    gap: var(--space-1);
+    border-bottom: 1px solid var(--border);
+}
+.tabbar.v-stack .tab {
+    padding: 0 8px;
+}
+
 /* variant: agent + terminal tabs (overlaid at the top of the window area) */
 .tabbar.v-agent {
     position: absolute;

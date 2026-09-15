@@ -690,6 +690,20 @@
     position: absolute;
 }
 
+/* A stack shows one pane at a time, so its strip sits along the top of the
+   stack's own area and the panes under it start below the strip. */
+.window-layer {
+    --stack-strip-h: 26px;
+}
+.stack-strip {
+    position: absolute;
+    z-index: 3;
+    height: var(--stack-strip-h);
+}
+.pane-cell.in-stack .pane {
+    top: var(--stack-strip-h);
+}
+
 .pane {
     position: absolute;
     inset: 0;

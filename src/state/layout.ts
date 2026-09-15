@@ -123,6 +123,19 @@ function holdsPane(node: LayoutNode, paneId: string): boolean {
     return node.type === "pane" ? node.id === paneId : node.children.some((child) => holdsPane(child, paneId));
 }
 
+/** The pane a subtree speaks for when it is one tab of a stack. */
+function leadPane(node: LayoutNode): PaneNode {
+    return node.type === "pane" ? node : leadPane(node.children[0]);
+}
+
+/** One stack's tab strip: where it sits and which panes it offers. */
+export interface StackStrip {
+    splitId: string;
+    rect: Rect;
+    tabs: PaneNode[];
+    activePaneId: string;
+}
+
 /**
  * Where every pane sits, given which one is active.
  *
@@ -137,10 +150,14 @@ export function computeLayout(
     panes: Map<string, Rect>;
     dividers: Divider[];
     stacked: Map<string, Rect>;
+    stacks: StackStrip[];
+    inStack: Set<string>;
 } {
     const panes = new Map<string, Rect>();
     const stacked = new Map<string, Rect>();
     const dividers: Divider[] = [];
+    const stacks: StackStrip[] = [];
+    const inStack = new Set<string>();
     function cover(node: LayoutNode, rect: Rect): void {
         if (node.type === "pane") {
             stacked.set(node.id, rect);
@@ -156,6 +173,8 @@ export function computeLayout(
         if (node.dir === "stack") {
             const top = node.children.find((child) => activePaneId !== undefined && holdsPane(child, activePaneId)) ?? node.children[0];
             if (!top) return;
+            stacks.push({ splitId: node.id, rect, tabs: node.children.map(leadPane), activePaneId: leadPane(top).id });
+            for (const leaf of collectPanes(node)) inStack.add(leaf.id);
             for (const child of node.children) {
                 if (child === top) walk(child, rect);
                 else cover(child, rect);
@@ -177,7 +196,7 @@ export function computeLayout(
         });
     }
     walk(root, { x: 0, y: 0, w: 1, h: 1 });
-    return { panes, dividers, stacked };
+    return { panes, dividers, stacked, stacks, inStack };
 }
 
 export function neighborPane(panes: Map<string, Rect>, activeId: string, dir: FocusDir): string | null {

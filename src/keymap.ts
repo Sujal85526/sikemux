@@ -95,6 +95,9 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "pane.splitColumn":
             cmd.splitActivePane("column");
             return true;
+        case "pane.splitStack":
+            cmd.splitActivePane("stack");
+            return true;
         case "pane.focusLeft":
             cmd.moveFocus("left");
             return true;

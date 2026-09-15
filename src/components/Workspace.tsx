@@ -1,7 +1,7 @@
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { lazy, memo, Suspense, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, Divider, Rect, Session, Window as WindowT, WindowRole, WorkspaceTabRef } from "../state/types";
+import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, WindowRole, WorkspaceTabRef } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
@@ -30,6 +30,17 @@ const AgentSurface = lazy(() => import("../chat/AgentSurface").then((module) => 
 const TABS_H = 34;
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
+
+const PANE_ROLE: Record<PaneKind, WindowRole> = {
+    terminal: "term",
+    editor: "files",
+    git: "git",
+    diff: "diff",
+    aws: "aws",
+    search: "search",
+    rundeck: "rundeck",
+    bruno: "bruno",
+};
 const pct = (n: number) => `${n * 100}%`;
 export function Workspace() {
     const sessionsById = useStore((s) => s.sessions);
@@ -390,7 +401,8 @@ const WindowLayer = memo(function WindowLayer({
     const brunoView = useStore((s) => s.brunoViews[session.id]);
     const active = activeTabRef(session, { [win.id]: win }, editorView ? { [win.activePaneId]: editorView } : {}, brunoView);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
-    const { panes, dividers, stacked } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
+    const { panes, dividers, stacked, stacks, inStack } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
+    const terminalTitles = useStore((s) => s.terminalTitles);
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);
     const zoomActive = visible && zoomedPaneId != null;
 
@@ -416,7 +428,7 @@ const WindowLayer = memo(function WindowLayer({
                 return (
                     <div
                         key={p.id}
-                        className="pane-cell"
+                        className={`pane-cell${inStack.has(p.id) ? " in-stack" : ""}`}
                         style={{
                             left: pct(rect.x),
                             top: pct(rect.y),
@@ -433,6 +445,31 @@ const WindowLayer = memo(function WindowLayer({
                     </div>
                 );
             })}
+            {!zoomActive &&
+                stacks.map((stack) => (
+                    <div
+                        key={stack.splitId}
+                        className="stack-strip"
+                        style={{ left: pct(stack.rect.x), top: pct(stack.rect.y), width: pct(stack.rect.w) }}>
+                        <TabBar
+                            variant="stack"
+                            ariaLabel="Panes in this stack"
+                            tabs={stack.tabs.map((pane) => ({
+                                id: pane.id,
+                                label: terminalTitles[pane.id] || pane.title,
+                                title: terminalTitles[pane.id] || pane.title,
+                                active: pane.id === stack.activePaneId,
+                                icon: (
+                                    <span className="agent-glyph">
+                                        <WindowIcon role={PANE_ROLE[pane.kind]} size={12} />
+                                    </span>
+                                ),
+                                closable: false,
+                            }))}
+                            onSelect={(paneId) => visible && cmd.focusPane(paneId)}
+                        />
+                    </div>
+                ))}
             {visible &&
                 !zoomActive &&
                 dividers.map((d) => <DividerHandle key={`${d.splitId}:${d.index}`} d={d} windowId={win.id} areaRef={areaRef} />)}

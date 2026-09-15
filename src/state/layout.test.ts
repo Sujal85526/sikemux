@@ -139,6 +139,33 @@ describe("stack splits", () => {
         expect(panes.has("b")).toBe(false);
     });
 
+    it("reports a strip naming every tab and the one on top", () => {
+        const { stacks, inStack } = computeLayout(stack([pane("a"), pane("b")]), "b");
+
+        expect(stacks).toHaveLength(1);
+        expect(stacks[0].tabs.map((t) => t.id)).toEqual(["a", "b"]);
+        expect(stacks[0].activePaneId).toBe("b");
+        expect(stacks[0].rect).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+        expect([...inStack].sort()).toEqual(["a", "b"]);
+    });
+
+    /*
+     * A tab may be a whole split rather than a single pane, so the strip speaks
+     * for it with the first pane inside it.
+     */
+    it("names a tab by the first pane inside it when that tab is itself a split", () => {
+        const nested: LayoutNode = { type: "split", id: "row", dir: "row", children: [pane("b1"), pane("b2")], sizes: [0.5, 0.5] };
+        const { stacks, inStack } = computeLayout(stack([pane("a"), nested]), "b2");
+
+        expect(stacks[0].tabs.map((t) => t.id)).toEqual(["a", "b1"]);
+        expect(stacks[0].activePaneId).toBe("b1");
+        expect([...inStack].sort()).toEqual(["a", "b1", "b2"]);
+    });
+
+    it("reports no strips for a layout with no stack in it", () => {
+        expect(computeLayout(pane("solo"), "solo").stacks).toEqual([]);
+    });
+
     /* Nothing sits between stacked panes, so there is no edge to drag. */
     it("draws no dividers", () => {
         expect(computeLayout(stack([pane("a"), pane("b")]), "a").dividers).toEqual([]);

@@ -29,7 +29,7 @@ export interface TabDescriptor {
     accessory?: ReactNode;
 }
 
-export type TabVariant = "editor" | "agent" | "browser";
+export type TabVariant = "editor" | "agent" | "browser" | "stack";
 
 interface TabBarProps {
     variant: TabVariant;

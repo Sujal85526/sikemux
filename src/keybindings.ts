@@ -105,9 +105,16 @@ const keybindingActions = [
     {
         id: "pane.splitColumn",
         label: "Split pane down",
-        detail: "Create a stacked pane",
+        detail: "Create a pane below",
         category: "Panes",
         defaultBinding: "Alt+Minus",
+    },
+    {
+        id: "pane.splitStack",
+        label: "Split pane into tabs",
+        detail: "Create a pane in the same place, reached by tab",
+        category: "Panes",
+        defaultBinding: "Alt+Equal",
     },
     {
         id: "pane.focusLeft",
