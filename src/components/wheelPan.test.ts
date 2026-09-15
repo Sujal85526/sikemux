@@ -111,10 +111,10 @@ describe("wheelVelocity", () => {
 });
 
 describe("snapTarget", () => {
-    it("takes the neighbour once the drag is past half a screen", () => {
-        expect(snapTarget(0.6, 0, bothWays)).toBe(1);
-        expect(snapTarget(-0.6, 0, bothWays)).toBe(-1);
-        expect(snapTarget(0.4, 0, bothWays)).toBe(0);
+    it("takes the neighbour once the drag is past a third of a screen", () => {
+        expect(snapTarget(0.35, 0, bothWays)).toBe(1);
+        expect(snapTarget(-0.35, 0, bothWays)).toBe(-1);
+        expect(snapTarget(0.25, 0, bothWays)).toBe(0);
     });
 
     it("takes the neighbour on a flick that never got halfway", () => {

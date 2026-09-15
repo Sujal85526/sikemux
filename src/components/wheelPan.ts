@@ -10,8 +10,10 @@ export const VELOCITY_SAMPLES = 5;
 const HORIZONTAL_RATIO = 1.5;
 /** How far a gesture can pull past the first or last screen of the session. */
 const OVERSCROLL = 0.15;
+/** How far a gesture has to pull before it lands on the screen next door. */
+const COMMIT = 0.3;
 /** Screens per millisecond that counts as a flick however short the drag was. */
-const FLICK = 0.0015;
+const FLICK = 0.0009;
 /** How far a flick still has to have moved the track, so one stray fast event is not one. */
 const FLICK_TRAVEL = 0.06;
 
@@ -93,7 +95,7 @@ export function snapTarget(offset: number, velocity: number, ends: PanEnds): Sna
     const flick = Math.abs(velocity) >= FLICK && Math.abs(offset) >= FLICK_TRAVEL ? towards(velocity) : 0;
     // A flick back the way it came puts the screen it started on back, however far it got.
     if (flick !== 0 && flick !== drag) return 0;
-    if (flick === 0 && Math.abs(offset) < 0.5) return 0;
+    if (flick === 0 && Math.abs(offset) < COMMIT) return 0;
     if (drag > 0) return ends.hasNext ? 1 : 0;
     return ends.hasPrevious ? -1 : 0;
 }
