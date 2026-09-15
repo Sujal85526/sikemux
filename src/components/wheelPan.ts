@@ -1,9 +1,10 @@
 /**
- * A trackpad sends no gesture-end event, so this much quiet counts as the end of
- * one. The track glides with the events the whole time, so the wait is motion
- * rather than a pause, and three missed frames rides out a stutter.
+ * A trackpad says nothing when the fingers stop and nothing when they leave, so
+ * this much quiet is the only sign a gesture is over. It has to outlast holding
+ * still mid-swipe, which is a pause a person measures in tenths of a second —
+ * anything shorter closes the swipe under fingers that are still on the glass.
  */
-export const GESTURE_END_MS = 60;
+export const GESTURE_END_MS = 320;
 /** Below this the gesture is diagonal enough to belong to whatever is under it. */
 const HORIZONTAL_RATIO = 1.5;
 /** How far a gesture can pull past the first or last screen of the session. */

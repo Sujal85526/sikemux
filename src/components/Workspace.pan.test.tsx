@@ -306,6 +306,29 @@ describe("workspace wheel pan", () => {
     });
 
     /*
+     * Holding still mid-swipe sends nothing at all, which looks exactly like the
+     * fingers having left. Closing the swipe on that would take the track away
+     * from a finger still on the glass, so a pause has to outlast the wait.
+     */
+    it("keeps following a finger that holds still part way through", () => {
+        const { track, live, index } = stageOfScreens();
+        // Long enough to be a person pausing, short enough that the swipe is not over.
+        const pause = GESTURE_END_MS - 100;
+
+        swipe(live, 300);
+        act(() => void vi.advanceTimersByTime(pause));
+
+        expect(track).not.toHaveClass("sliding");
+        expect(panOf(track)).toBe(slidLeft(index + 0.3));
+
+        swipe(live, 300);
+        act(() => void vi.advanceTimersByTime(pause));
+
+        expect(track).not.toHaveClass("sliding");
+        expect(panOf(track)).toBe(slidLeft(index + 0.6));
+    });
+
+    /*
      * A swipe that never pulled a screen halfway on has not chosen it, so quiet
      * puts the one it started on back. This is the shortest travel there is, and
      * it may not crawl.
