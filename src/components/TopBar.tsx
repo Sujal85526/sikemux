@@ -29,7 +29,7 @@ import { branchKind } from "./rundeck/branchStyle";
 import { CopyButton } from "./CopyButton";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
-import { isUpdateBusy, updateStatusLabel } from "../api/updater";
+import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -262,6 +262,7 @@ export function UpdateChip() {
     const state = pending.state;
     const busy = isUpdateBusy(state);
     const statusLabel = updateStatusLabel(pending);
+    const percent = state === "downloading" ? updateDownloadPercent(pending) : null;
     const onClick = () => {
         if (busy) return;
         cmd.openWhatsNew();
@@ -276,7 +277,8 @@ export function UpdateChip() {
                       ? `${statusLabel} v${pending.version}`
                       : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`
             }>
-            <button className={`tb-update tb-update-${state}`} onClick={onClick} disabled={busy}>
+            <button className={`tb-update tb-update-${state}${percent === null ? "" : " tb-update-measured"}`} onClick={onClick} disabled={busy}>
+                {percent !== null && <span className="tb-update-fill" style={{ transform: `scaleX(${percent / 100})` }} aria-hidden="true" />}
                 <UpdateArrow size={12} />
                 <span className="tb-update-label">{statusLabel}</span>
             </button>

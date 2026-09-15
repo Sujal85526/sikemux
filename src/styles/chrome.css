@@ -212,6 +212,8 @@
 }
 
 .tb-update {
+    position: relative;
+    overflow: hidden;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -263,7 +265,22 @@
         opacity: 0.55;
     }
 }
+/* A known download size earns a real bar, so the pulse stands for waiting only. */
+.tb-update-fill {
+    position: absolute;
+    inset: 0 0 0 0;
+    z-index: 0;
+    transform-origin: left center;
+    background: color-mix(in srgb, var(--warn) 20%, transparent);
+    transition: transform 0.18s linear;
+    pointer-events: none;
+}
+.tb-update-measured {
+    animation: none;
+}
 .tb-update-label {
+    position: relative;
+    z-index: 1;
     line-height: 1;
     flex: 1 1 auto;
     min-width: 0;
@@ -272,6 +289,8 @@
     white-space: nowrap;
 }
 .tb-update > svg {
+    position: relative;
+    z-index: 1;
     flex: 0 0 auto;
 }
 
