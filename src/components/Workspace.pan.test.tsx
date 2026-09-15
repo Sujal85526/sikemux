@@ -7,6 +7,7 @@ import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 import { performanceTelemetry } from "../lib/performance";
 import { GESTURE_END_MS } from "./wheelPan";
+import { PAN_MS } from "./useWindowPan";
 import type { Agent } from "../state/types";
 
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div>Terminal output</div> }));
@@ -70,7 +71,10 @@ describe("workspace pan", () => {
 
         const painted = container.querySelectorAll(".window-layer.painted");
         expect(painted).toHaveLength(2);
-        expect(container.querySelector(".window-track")).toHaveClass("panning");
+        const track = container.querySelector(".window-track") as HTMLElement;
+        expect(track).toHaveClass("panning");
+        // A switch travels a whole screen, so it takes a whole screen's time.
+        expect(track.style.getPropertyValue("--window-pan-ms")).toBe(`${PAN_MS}ms`);
 
         // Parked beside the screen being left rather than nine screens away, so
         // the track travels one screen either way.
@@ -211,6 +215,7 @@ describe("workspace wheel pan", () => {
     }
 
     const swipe = (over: Element, deltaX: number, deltaY = 0) => fireEvent.wheel(over, { deltaX, deltaY });
+    const settleTime = (track: HTMLElement) => Number.parseFloat(track.style.getPropertyValue("--window-pan-ms"));
 
     /*
      * The finger drives the track directly: the offsets are on, the screen it is
@@ -244,6 +249,9 @@ describe("workspace wheel pan", () => {
         expect(activeWindow()).toBe(neighbour);
         expect(track).toHaveClass("sliding");
         expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index + 1));
+        // The slide covers what the finger left, not a whole screen, so it is quicker than a switch.
+        expect(settleTime(track)).toBeGreaterThan(0);
+        expect(settleTime(track)).toBeLessThan(PAN_MS);
     });
 
     /*
@@ -287,6 +295,8 @@ describe("workspace wheel pan", () => {
         expect(activeWindow()).toBe(before);
         expect(track).toHaveClass("sliding");
         expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(index));
+        // A tenth of a screen to put back takes nothing like a screen's worth of time.
+        expect(settleTime(track)).toBeLessThan(PAN_MS / 2);
     });
 
     /*

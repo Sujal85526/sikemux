@@ -86,7 +86,7 @@ export function Workspace() {
                         className={`window-track${isActive && pan.panning ? " panning" : ""}${isActive && pan.sliding ? " sliding" : ""}`}
                         style={
                             {
-                                "--window-pan-ms": `${PAN_MS}ms`,
+                                "--window-pan-ms": `${isActive ? pan.ms : PAN_MS}ms`,
                                 "--pan": panOffset(isActive ? pan.at : order.indexOf(session.activeWindowId)),
                             } as CSSProperties
                         }>
@@ -120,7 +120,7 @@ export function Workspace() {
                 );
             })}
             {activeSession && activeOrder.length > 1 && (
-                <WindowScrollIndicator count={activeOrder.length} index={activeOrder.indexOf(activeSession.activeWindowId)} />
+                <WindowScrollIndicator count={activeOrder.length} index={activeOrder.indexOf(activeSession.activeWindowId)} ms={pan.ms} />
             )}
         </div>
     );
@@ -132,9 +132,9 @@ export function Workspace() {
  * has it parked on, so a jump of several screens travels the whole way here
  * while the canvas next door slides one.
  */
-function WindowScrollIndicator({ count, index }: { count: number; index: number }) {
+function WindowScrollIndicator({ count, index, ms }: { count: number; index: number; ms: number }) {
     return (
-        <div className="window-scroll" aria-hidden="true" style={{ "--window-pan-ms": `${PAN_MS}ms` } as CSSProperties}>
+        <div className="window-scroll" aria-hidden="true" style={{ "--window-pan-ms": `${ms}ms` } as CSSProperties}>
             <div className="window-scroll-thumb" style={{ width: `${100 / count}%`, transform: `translateX(${Math.max(0, index) * 100}%)` }} />
         </div>
     );

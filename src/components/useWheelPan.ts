@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import * as cmd from "../state/commands";
-import { panOffset } from "./useWindowPan";
+import { panOffset, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
 import { claimsWheel, dragOffset, GESTURE_END_MS, snapTarget, wheelVelocity } from "./wheelPan";
 import type { PaneScroller, SnapStep, WheelSample } from "./wheelPan";
@@ -98,7 +98,7 @@ export function useWheelPan(
             // A switch from somewhere else already moved the session on, and the
             // pan the gesture was dragging is that switch's slide by now.
             if (active !== done.window) return;
-            current.release();
+            current.release(settleMs(Math.abs(done.offset)));
         };
 
         const rearm = () => {
@@ -112,7 +112,7 @@ export function useWheelPan(
             moving.committed = true;
             if (moving.frame != null) cancelAnimationFrame(moving.frame);
             moving.frame = null;
-            current.release();
+            current.release(settleMs(1 - Math.abs(moving.offset)));
             cmd.selectWindowId(order[moving.slot + step]);
         };
 
