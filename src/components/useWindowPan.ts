@@ -20,6 +20,8 @@ interface Pan {
 export interface WindowPan {
     readonly trackRef: RefObject<HTMLDivElement | null>;
     readonly panning: boolean;
+    /** Whether the track is past its parked position and actually travelling. */
+    readonly sliding: boolean;
     /** Where the track sits now, in screen widths from its left edge. */
     readonly at: number;
     /** Where a layer sits now, which is its own slot unless it is the target being parked next door. */
@@ -91,6 +93,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
     return {
         trackRef,
         panning: pan !== null,
+        sliding: pan !== null && running,
         at: pan ? (running ? pan.slot : pan.at) : (activeWindowId ? (slots.get(activeWindowId) ?? 0) : 0),
         slotOf: (windowId, slot) => (pan && pan.to === windowId ? pan.slot : slot),
         paints: (windowId) => (pan ? windowId === pan.from || windowId === pan.to : windowId === activeWindowId),

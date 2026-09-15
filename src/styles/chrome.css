@@ -685,16 +685,20 @@
     position: absolute;
     inset: 0;
     --pan: 0%;
-    transform: translate3d(var(--pan), 0, 0);
 }
-/* Only while a slide is running: a track left promoted at rest costs a
-   full-screen texture per session for nothing. */
+/* A transform here would trap the `position: fixed` overlays panes put on
+   screen, so the screens are only offset for the length of a slide. */
 .window-track.panning {
-    transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
+    transform: translate(var(--pan), 0);
     will-change: transform;
 }
+/* Those offsets have to be on screen before the travel starts, or the track
+   would animate in from nothing on the first frame. */
+.window-track.sliding {
+    transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
 @media (prefers-reduced-motion: reduce) {
-    .window-track.panning {
+    .window-track.sliding {
         transition: none;
     }
 }
@@ -702,7 +706,9 @@
     position: absolute;
     inset: 0;
     --slot: 0;
-    transform: translate3d(calc(var(--slot) * 100%), 0, 0);
+}
+.window-track.panning .window-layer {
+    transform: translate(calc(var(--slot) * 100%), 0);
 }
 /* A layer paints while it is the tab on screen, and also while it is sliding in
    or out of a pan. Hidden layers keep their layout so terminals and editors stay

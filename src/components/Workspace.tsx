@@ -80,7 +80,7 @@ export function Workspace() {
                     <div
                         key={session.id}
                         ref={isActive ? pan.trackRef : undefined}
-                        className={`window-track${isActive && pan.panning ? " panning" : ""}`}
+                        className={`window-track${isActive && pan.panning ? " panning" : ""}${isActive && pan.sliding ? " sliding" : ""}`}
                         style={
                             {
                                 top: TABS_H,
