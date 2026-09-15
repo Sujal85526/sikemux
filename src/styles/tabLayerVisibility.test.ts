@@ -13,7 +13,7 @@ function stylesheets(dir: string): string[] {
 }
 
 describe("tab layer visibility", () => {
-    // Only the active tab's `.window-layer` is on screen; the rest are hidden with
+    // Only a painted `.window-layer` is on screen; the rest are hidden with
     // `visibility: hidden`. A descendant that declares `visibility: visible` undoes
     // that for its own subtree, so the hidden tab paints over the live one.
     it("no stylesheet re-enables visibility inside a hidden layer", () => {
@@ -22,6 +22,6 @@ describe("tab layer visibility", () => {
                 .split("\n")
                 .flatMap((line, index) => (/^\s*visibility:\s*visible\s*(!important)?\s*;/.test(line) ? [`${path}:${index + 1}`] : [])),
         );
-        expect(offenders, "hide with `:not(.visible) { visibility: hidden }` instead").toEqual([]);
+        expect(offenders, "hide with `:not(.painted) { visibility: hidden }` instead").toEqual([]);
     });
 });

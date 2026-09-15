@@ -679,10 +679,13 @@
     position: absolute;
     inset: 0;
 }
-/* One tab's surface is on screen at a time. Hidden layers keep their layout so
-   terminals and editors stay measured, but must not paint or take a click. */
-.window-layer:not(.visible) {
+/* A layer paints while it is the tab on screen, and also while it is sliding in
+   or out of a pan. Hidden layers keep their layout so terminals and editors stay
+   measured. Only the live tab takes a click, so a layer flying past cannot. */
+.window-layer:not(.painted) {
     visibility: hidden;
+}
+.window-layer:not(.live) {
     pointer-events: none;
 }
 

@@ -72,14 +72,14 @@ export function Workspace() {
                 return (windowsBySession[session.id] ?? []).map((wid) => {
                     const win = windowsById[wid];
                     if (!win) return null;
-                    const visible = isActive && activeWindowId === wid;
-                    if (visible && (win.role === "git" || win.role === "files" || win.role === "term")) mountedWorkbenchWindows.current.add(wid);
+                    const live = isActive && activeWindowId === wid;
+                    if (live && (win.role === "git" || win.role === "files" || win.role === "term")) mountedWorkbenchWindows.current.add(wid);
                     // A live agent keeps its process whether or not it is on screen;
                     // a sleeping one has nothing to keep.
                     const keepsProcess =
                         win.role === "agent" ? agentsById[win.activePaneId]?.launchState !== "dormant" : mountedWorkbenchWindows.current.has(wid);
-                    if (!visible && wid !== session.activeWindowId && !keepsProcess) return null;
-                    return <WindowLayer key={wid} session={session} win={win} areaRef={areaRef} topInset={TABS_H} visible={visible} />;
+                    if (!live && wid !== session.activeWindowId && !keepsProcess) return null;
+                    return <WindowLayer key={wid} session={session} win={win} areaRef={areaRef} topInset={TABS_H} live={live} painted={live} />;
                 });
             })}
         </div>
@@ -346,13 +346,17 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
 const WindowLayer = memo(function WindowLayer({
     session,
     win,
-    visible,
+    live,
+    painted,
     areaRef,
     topInset = 0,
 }: {
     session: Session;
     win: WindowT;
-    visible: boolean;
+    /** Whether this window is the one the session is on: panes spawn, hydrate and poll on it. */
+    live: boolean;
+    /** Whether the layer paints at all. A painted layer that is not live shows what it already has. */
+    painted: boolean;
     areaRef: RefObject<HTMLDivElement | null>;
     topInset?: number;
 }) {
@@ -368,16 +372,16 @@ const WindowLayer = memo(function WindowLayer({
     const { panes, dividers, stacked, stacks, inStack } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
     const terminalTitles = useStore((s) => s.terminalTitles);
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);
-    const zoomActive = visible && zoomedPaneId != null;
+    const zoomActive = live && zoomedPaneId != null;
 
     return (
         <div
-            className={`window-layer${visible ? " visible" : ""}`}
-            id={visible ? `workspace-content-${session.id}` : undefined}
+            className={`window-layer${live ? " live" : ""}${painted ? " painted" : ""}`}
+            id={live ? `workspace-content-${session.id}` : undefined}
             role="tabpanel"
             aria-labelledby={active ? `workspace-tab-${session.id}-${encodeURIComponent(tabRefKey(active))}` : undefined}
-            aria-hidden={!visible}
-            inert={!visible}
+            aria-hidden={!live}
+            inert={!live}
             style={topInset ? { top: `${topInset}px` } : undefined}>
             {leaves.map((p) => {
                 const isZoomed = zoomedPaneId === p.id;
@@ -387,7 +391,7 @@ const WindowLayer = memo(function WindowLayer({
                 const shown = (!zoomActive || isZoomed) && !behind;
                 const rect = isZoomed ? FULL : (panes.get(p.id) ?? stacked.get(p.id))!;
                 const isActive = p.id === win.activePaneId;
-                const paneVisible = visible && shown;
+                const paneVisible = live && shown;
                 const paneActive = paneVisible && isActive;
                 return (
                     <div
@@ -401,7 +405,7 @@ const WindowLayer = memo(function WindowLayer({
                             visibility: shown ? undefined : "hidden",
                             zIndex: isZoomed ? 2 : 1,
                         }}>
-                        <div className={`pane pane-${p.kind}`} onMouseDown={() => visible && cmd.focusPane(p.id)}>
+                        <div className={`pane pane-${p.kind}`} onMouseDown={() => live && cmd.focusPane(p.id)}>
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible })}
                             </ErrorBoundary>
@@ -430,11 +434,11 @@ const WindowLayer = memo(function WindowLayer({
                                 ),
                                 closable: false,
                             }))}
-                            onSelect={(paneId) => visible && cmd.focusPane(paneId)}
+                            onSelect={(paneId) => live && cmd.focusPane(paneId)}
                         />
                     </div>
                 ))}
-            {visible &&
+            {live &&
                 !zoomActive &&
                 dividers.map((d) => <DividerHandle key={`${d.splitId}:${d.index}`} d={d} windowId={win.id} areaRef={areaRef} />)}
         </div>

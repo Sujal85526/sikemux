@@ -132,10 +132,10 @@ function domSnapshot() {
             dom: document.querySelectorAll('[data-terminal-renderer="dom"]').length,
             webgl: document.querySelectorAll('[data-terminal-renderer="webgl"]').length,
         },
-        visibleTerminals: document.querySelectorAll(".window-layer.visible .xterm").length,
-        hiddenTerminals: document.querySelectorAll(".window-layer:not(.visible) .xterm").length,
+        visibleTerminals: document.querySelectorAll(".window-layer.live .xterm").length,
+        hiddenTerminals: document.querySelectorAll(".window-layer:not(.live) .xterm").length,
         codeMirrorEditors: document.querySelectorAll(".cm-editor").length,
-        visibleWindowLayers: document.querySelectorAll(".window-layer.visible").length,
+        visibleWindowLayers: document.querySelectorAll(".window-layer.live").length,
     };
 }
 

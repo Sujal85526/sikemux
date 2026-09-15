@@ -70,7 +70,7 @@ describe("workspace tab bars", () => {
 
         expect(screen.getByRole("tablist")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "New terminal" })).toBeInTheDocument();
-        expect(container.querySelector(".window-layer.visible")).toHaveStyle({ top: "34px" });
+        expect(container.querySelector(".window-layer.live")).toHaveStyle({ top: "34px" });
     });
 
     it("keeps the agent tab bar and new-agent action visible with one agent", () => {
@@ -81,7 +81,7 @@ describe("workspace tab bars", () => {
         expect(screen.getByRole("tablist")).toBeInTheDocument();
         const addAgent = screen.getByRole("button", { name: "New agent" });
         expect(addAgent).toBeInTheDocument();
-        expect(container.querySelector(".window-layer.visible")).toHaveStyle({ top: "34px" });
+        expect(container.querySelector(".window-layer.live")).toHaveStyle({ top: "34px" });
 
         fireEvent.click(addAgent);
         expect(getState().agentPaletteOpen).toBe(true);
@@ -193,7 +193,7 @@ describe("stage layers", () => {
 
         const { container } = render(<Workspace />);
 
-        expect(container.querySelectorAll(".window-layer.visible")).toHaveLength(1);
+        expect(container.querySelectorAll(".window-layer.live")).toHaveLength(1);
     });
 
     it("still renders the editor layer when it holds no document", () => {
@@ -201,6 +201,6 @@ describe("stage layers", () => {
 
         const { container } = render(<Workspace />);
 
-        expect(container.querySelectorAll(".window-layer.visible")).toHaveLength(1);
+        expect(container.querySelectorAll(".window-layer.live")).toHaveLength(1);
     });
 });
