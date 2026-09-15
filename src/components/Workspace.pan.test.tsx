@@ -292,6 +292,23 @@ describe("workspace wheel pan", () => {
     });
 
     /*
+     * A switch made while the fingers are still moving takes the session off the
+     * screen the swipe was dragging, so the swipe has nothing left to land on. Its
+     * snap would otherwise override the screen already chosen.
+     */
+    it("lands nothing when the session has already left the screen it swiped", () => {
+        const { live, index } = stageOfScreens();
+        const chosen = order()[index + 4];
+
+        swipe(live, 300);
+        swipe(live, 300);
+        act(() => cmd.selectWindowId(chosen));
+        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+
+        expect(activeWindow()).toBe(chosen);
+    });
+
+    /*
      * Dragging is direct manipulation rather than animation, so it still follows
      * the finger with motion reduced; only the settle stops being a slide.
      */

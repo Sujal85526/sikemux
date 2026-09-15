@@ -77,7 +77,10 @@ export function useWheelPan(
             const done = gesture;
             forget();
             if (!done?.claimed) return;
-            const { pan: current, windowIds: order } = latest.current;
+            const { pan: current, windowIds: order, activeWindowId: active } = latest.current;
+            // A switch from somewhere else already moved the session on, and the
+            // pan the gesture was dragging is that switch's slide by now.
+            if (active !== done.window) return;
             const index = order.indexOf(done.window);
             const step = snapTarget(done.offset, wheelVelocity(done.samples), endsAt(index));
             current.release();
