@@ -70,7 +70,8 @@ export function validatePersistedLayout(value: unknown, limits: LayoutValidation
         }
 
         if (current.value.type !== "split") return { ok: false, reason: `unsupported layout node type: ${String(current.value.type)}` };
-        if (current.value.dir !== "row" && current.value.dir !== "column") return { ok: false, reason: "split direction is invalid" };
+        if (current.value.dir !== "row" && current.value.dir !== "column" && current.value.dir !== "stack")
+            return { ok: false, reason: "split direction is invalid" };
         if (!Array.isArray(current.value.children) || current.value.children.length === 0)
             return { ok: false, reason: "split must contain children" };
         if (current.value.children.length > limits.maxChildren)
