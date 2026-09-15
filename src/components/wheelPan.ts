@@ -1,23 +1,22 @@
 /**
  * A trackpad sends no gesture-end event, so this much quiet counts as the end of
- * one. Only a swipe too small to land waits for it, and three missed frames is
- * long enough to ride out a stutter without the wait being felt.
+ * one. The track glides with the events the whole time, so the wait is motion
+ * rather than a pause, and three missed frames rides out a stutter.
  */
 export const GESTURE_END_MS = 60;
-/** How many of the last wheel events the flick estimate looks at. */
-export const VELOCITY_SAMPLES = 5;
 /** Below this the gesture is diagonal enough to belong to whatever is under it. */
 const HORIZONTAL_RATIO = 1.5;
 /** How far a gesture can pull past the first or last screen of the session. */
 const OVERSCROLL = 0.15;
 /** How much of the pull gets through before the resistance takes over. */
 const GIVE = 0.55;
-/** How far a gesture has to pull before it lands on the screen next door. */
-const COMMIT = 0.3;
-/** Screens per millisecond that counts as a flick however short the drag was. */
-const FLICK = 0.0009;
-/** How far a flick still has to have moved the track, so one stray fast event is not one. */
-const FLICK_TRAVEL = 0.06;
+/**
+ * How far the track has to slide off a screen before the one arriving is the one
+ * you are on. Half a screen, because the screen it leaves behind is then half a
+ * screen the other way, and anything closer would hand the session back and
+ * forth across a single threshold.
+ */
+const HANDOVER = 0.5;
 
 /** One element between the wheel event's target and the screen it happened on. */
 export interface PaneScroller {
@@ -27,18 +26,20 @@ export interface PaneScroller {
     readonly scrollLeft: number;
 }
 
-/** Whether the session has another screen on either side of the one a gesture started on. */
+/** Whether the session has another screen on either side of the one a gesture is on. */
 export interface PanEnds {
     readonly hasPrevious: boolean;
     readonly hasNext: boolean;
 }
 
-export type SnapStep = -1 | 0 | 1;
-
-/** One wheel event's contribution, in screens and milliseconds. */
-export interface WheelSample {
-    readonly delta: number;
-    readonly at: number;
+/** Where a pull has put the track, in screens along it. */
+export interface Panned {
+    /** The screen the pull has moved onto, which the rest of it counts from. */
+    readonly slot: number;
+    /** What is left of the pull once that screen has been taken off it. */
+    readonly raw: number;
+    /** How far past that screen the finger is, after the ends of the session resist it. */
+    readonly offset: number;
 }
 
 const scrollsSideways = (node: PaneScroller) => (node.overflowX === "auto" || node.overflowX === "scroll") && node.scrollWidth > node.clientWidth;
@@ -68,40 +69,28 @@ const resisted = (past: number) => (OVERSCROLL * GIVE * past) / (GIVE * past + O
 
 /**
  * Where the track sits after a gesture has dragged `raw` screens, in screens
- * from the one it started on. A gesture never uncovers more than the screen
- * next door, and past the first or last screen there is nothing to uncover.
+ * from the one it is on. The finger is followed one for one, except past the
+ * first or last screen, where there is nothing to uncover.
  */
 export function dragOffset(raw: number, ends: PanEnds): number {
-    if (raw > 0) return ends.hasNext ? Math.min(raw, 1) : resisted(raw);
-    if (raw < 0) return ends.hasPrevious ? Math.max(raw, -1) : -resisted(-raw);
-    return 0;
+    if (raw > 0 && !ends.hasNext) return resisted(raw);
+    if (raw < 0 && !ends.hasPrevious) return -resisted(-raw);
+    return raw;
 }
-
-/** Screens per millisecond over the last few events, which is what tells a flick from a drag. */
-export function wheelVelocity(samples: readonly WheelSample[]): number {
-    const recent = samples.slice(-VELOCITY_SAMPLES);
-    const first = recent[0];
-    const last = recent.at(-1);
-    if (!first || !last || last.at <= first.at) return 0;
-    const moved = recent.slice(1).reduce((sum, sample) => sum + sample.delta, 0);
-    return moved / (last.at - first.at);
-}
-
-const towards = (n: number): SnapStep => (n > 0 ? 1 : n < 0 ? -1 : 0);
 
 /**
- * Which screen the gesture lands on, counted from the one it started on. Asked
- * on every event of a gesture rather than once at the end, so the answer is the
- * moment the swipe showed what it wanted. Never more than one screen away, so a
- * single flick cannot skip one.
+ * Where a pull of `raw` screens from `slot` puts the track. A screen pulled more
+ * than halfway on is the screen the track is now counted from, and a screen
+ * comes off the pull so the finger carries straight on into the next one. Done
+ * over and over, so one long pull runs through as many screens as it reaches.
  */
-export function snapTarget(offset: number, velocity: number, ends: PanEnds): SnapStep {
-    const drag = towards(offset);
-    if (drag === 0) return 0;
-    const flick = Math.abs(velocity) >= FLICK && Math.abs(offset) >= FLICK_TRAVEL ? towards(velocity) : 0;
-    // A flick back the way it came puts the screen it started on back, however far it got.
-    if (flick !== 0 && flick !== drag) return 0;
-    if (flick === 0 && Math.abs(offset) < COMMIT) return 0;
-    if (drag > 0) return ends.hasNext ? 1 : 0;
-    return ends.hasPrevious ? -1 : 0;
+export function panned(raw: number, slot: number, screens: number): Panned {
+    for (;;) {
+        const ends = { hasPrevious: slot > 0, hasNext: slot < screens - 1 };
+        const offset = dragOffset(raw, ends);
+        const step = offset > HANDOVER && ends.hasNext ? 1 : offset < -HANDOVER && ends.hasPrevious ? -1 : 0;
+        if (step === 0) return { slot, raw, offset };
+        slot += step;
+        raw -= step;
+    }
 }

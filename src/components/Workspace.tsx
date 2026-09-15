@@ -61,7 +61,7 @@ export function Workspace() {
     const activeOrder = windowsBySession[activeSessionId] ?? EMPTY_IDS;
     const activeSlots = useMemo(() => new Map(activeOrder.map((wid, slot) => [wid, slot])), [activeOrder]);
     const pan = useWindowPan(activeSessionId, activeSession?.activeWindowId ?? null, activeSlots);
-    useWheelPan(areaRef, pan, activeOrder, activeSession?.activeWindowId ?? null);
+    useWheelPan(areaRef, pan);
     // Counts what the strip would actually show, by asking the list the strip
     // renders: a project holding only rail-driven surfaces has no tabs, and no
     // strip, while an editor or Bruno workspace counts its open documents.

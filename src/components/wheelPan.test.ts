@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsWheel, dragOffset, snapTarget, wheelVelocity } from "./wheelPan";
+import { claimsWheel, dragOffset, panned } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 const plain: PaneScroller = { overflowX: "visible", scrollWidth: 100, clientWidth: 100, scrollLeft: 0 };
@@ -53,11 +53,16 @@ describe("claimsWheel", () => {
 });
 
 describe("dragOffset", () => {
-    it("follows the finger up to the screen next door", () => {
+    /*
+     * There is no ceiling on the pull any more: a drag that runs past a screen
+     * hands the session on to that screen and carries on from there, so the
+     * number this returns is only ever the finger itself.
+     */
+    it("follows the finger one for one", () => {
         expect(dragOffset(0.4, bothWays)).toBeCloseTo(0.4);
         expect(dragOffset(-0.4, bothWays)).toBeCloseTo(-0.4);
-        expect(dragOffset(1.8, bothWays)).toBe(1);
-        expect(dragOffset(-1.8, bothWays)).toBe(-1);
+        expect(dragOffset(1.8, bothWays)).toBeCloseTo(1.8);
+        expect(dragOffset(-1.8, bothWays)).toBeCloseTo(-1.8);
     });
 
     /*
@@ -88,71 +93,57 @@ describe("dragOffset", () => {
     });
 });
 
-describe("wheelVelocity", () => {
-    it("measures the screens covered over the time the last events took", () => {
-        expect(
-            wheelVelocity([
-                { delta: 0.1, at: 0 },
-                { delta: 0.1, at: 50 },
-                { delta: 0.1, at: 100 },
-            ]),
-        ).toBeCloseTo(0.002);
-    });
+describe("panned", () => {
+    const SCREENS = 6;
 
-    it("has no opinion about a single event or a stalled one", () => {
-        expect(wheelVelocity([])).toBe(0);
-        expect(wheelVelocity([{ delta: 0.3, at: 10 }])).toBe(0);
-        expect(
-            wheelVelocity([
-                { delta: 0.3, at: 10 },
-                { delta: 0.3, at: 10 },
-            ]),
-        ).toBe(0);
+    it("leaves the track where the finger is until a screen is more than half on", () => {
+        expect(panned(0.5, 2, SCREENS)).toEqual({ slot: 2, raw: 0.5, offset: 0.5 });
+        expect(panned(-0.5, 2, SCREENS)).toEqual({ slot: 2, raw: -0.5, offset: -0.5 });
     });
 
     /*
-     * A swipe that ran on and then stopped dead should read as stopped, so only
-     * the tail of the gesture counts.
+     * Stepping on takes a whole screen off the pull, so the track does not move
+     * an inch: it was 0.6 of a screen past screen two and is now 0.4 of a screen
+     * short of screen three, which is the same place.
      */
-    it("only looks at the tail of a long gesture", () => {
-        const long = Array.from({ length: 20 }, (_, index) => ({ delta: index < 15 ? 0.2 : 0, at: index * 10 }));
-        expect(wheelVelocity(long)).toBe(0);
-    });
-});
-
-describe("snapTarget", () => {
-    it("takes the neighbour once the drag is past a third of a screen", () => {
-        expect(snapTarget(0.35, 0, bothWays)).toBe(1);
-        expect(snapTarget(-0.35, 0, bothWays)).toBe(-1);
-        expect(snapTarget(0.25, 0, bothWays)).toBe(0);
-    });
-
-    it("takes the neighbour on a flick that never got halfway", () => {
-        expect(snapTarget(0.1, 0.004, bothWays)).toBe(1);
-        expect(snapTarget(-0.1, -0.004, bothWays)).toBe(-1);
-        expect(snapTarget(0.1, 0.0005, bothWays)).toBe(0);
+    it("counts from the screen more than half on without moving the track", () => {
+        const now = panned(0.6, 2, SCREENS);
+        expect(now.slot).toBe(3);
+        expect(now.offset).toBeCloseTo(-0.4);
+        expect(now.slot + now.offset).toBeCloseTo(2.6);
     });
 
     /*
-     * Every event of a gesture asks this, so the first fast one arrives when the
-     * track has barely moved. That is a scroll getting going, not a flick.
+     * Half a screen is the only threshold that can do this: the screen just
+     * stepped off is exactly that far the other way, so anything shorter would
+     * step straight back and the session would flicker between the two.
      */
-    it("wants a flick to have moved the track before it counts as one", () => {
-        expect(snapTarget(0.02, 0.004, bothWays)).toBe(0);
-        expect(snapTarget(-0.02, -0.004, bothWays)).toBe(0);
+    it("never steps back onto the screen it has just left", () => {
+        for (const pull of [0.501, 0.6, 0.9, 1]) {
+            expect(panned(pull, 2, SCREENS).slot).toBe(3);
+        }
+    });
+
+    it("runs through as many screens as one long pull reaches", () => {
+        const now = panned(2.7, 1, SCREENS);
+        expect(now.slot).toBe(4);
+        expect(now.slot + now.offset).toBeCloseTo(3.7);
+        expect(panned(-2.7, 4, SCREENS).slot).toBe(1);
     });
 
     /*
-     * Dragging a long way and then throwing the screen back is how you cancel a
-     * swipe you changed your mind about.
+     * There is nothing past the last screen to step onto, so however hard the
+     * pull is it only ever buys a little give.
      */
-    it("puts the screen back when the flick goes against the drag", () => {
-        expect(snapTarget(0.8, -0.004, bothWays)).toBe(0);
-        expect(snapTarget(-0.8, 0.004, bothWays)).toBe(0);
-    });
+    it("stops at the ends of the session and resists instead", () => {
+        const end = panned(3, SCREENS - 1, SCREENS);
+        expect(end.slot).toBe(SCREENS - 1);
+        expect(end.offset).toBeGreaterThan(0);
+        expect(end.offset).toBeLessThan(0.15);
 
-    it("has nowhere to go past the ends of the session", () => {
-        expect(snapTarget(0.1, 0.004, lastScreen)).toBe(0);
-        expect(snapTarget(-0.1, -0.004, firstScreen)).toBe(0);
+        const start = panned(-3, 0, SCREENS);
+        expect(start.slot).toBe(0);
+        expect(start.offset).toBeLessThan(0);
+        expect(start.offset).toBeGreaterThan(-0.15);
     });
 });

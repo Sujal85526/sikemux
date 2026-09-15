@@ -1,26 +1,27 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import * as cmd from "../state/commands";
+import { getState } from "../state/store";
 import { panOffset, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
-import { claimsWheel, dragOffset, GESTURE_END_MS, snapTarget, wheelVelocity } from "./wheelPan";
-import type { PaneScroller, SnapStep, WheelSample } from "./wheelPan";
+import { claimsWheel, GESTURE_END_MS, panned } from "./wheelPan";
+import type { PaneScroller } from "./wheelPan";
 
 interface Gesture {
     /** Whether the stage took this gesture, decided once on its first event. */
     readonly claimed: boolean;
-    /** The screen the gesture started on. If the session leaves it, the gesture is over. */
-    readonly window: string;
-    readonly slot: number;
     /** One screen of finger travel in pixels: the stage plus the gap between cards. */
     readonly stride: number;
-    readonly samples: WheelSample[];
+    /** The screen the track is based on, which a crossing moves along. */
+    slot: number;
+    /** Screens dragged from that screen, before the ends of the session resist the pull. */
     raw: number;
+    /** How far past that screen the track sits, which is what reaches `--pan`. */
     offset: number;
+    /** The screen showing beside it, which is the one the drag is heading for. */
     toward: string | null;
-    started: boolean;
-    /** Whether the gesture has already landed a screen, which spends it for good. */
-    committed: boolean;
+    /** Whether React has been handed the pair of screens the gesture is between. */
+    held: boolean;
     frame: number | null;
 }
 
@@ -43,33 +44,39 @@ function scrollersUnder(target: EventTarget | null): PaneScroller[] {
 }
 
 /**
- * Drags the track sideways with a two-finger trackpad swipe and lands it on a
- * screen the moment the swipe shows which one it wants.
+ * Drags the track sideways with a two-finger trackpad swipe, the way a paged
+ * scroller does: the track follows the finger for as long as the finger moves,
+ * and a screen dragged more than halfway on is the screen the session is on.
  *
- * The track follows the finger by hand — `--pan` straight onto the element from
- * a frame loop, no React state per frame — and the landing is handed back to
- * `useWindowPan`, so a swipe and a click end the same way.
+ * Making it active is not a landing. The track keeps following the finger from
+ * the new screen, so a long swipe runs through as many screens as it has reach
+ * while only the two either side of the finger ever paint. Only when the events
+ * stop does anything animate, and then only to close the last half screen.
  *
- * A trackpad keeps sending events after the fingers leave, for a second or more,
- * and nothing in them says the fingers have gone. So the decision cannot wait
- * for the events to stop: it is taken during the swipe, and once taken the rest
- * of the events are swallowed. Only a swipe too small to land anywhere has to
- * wait for quiet, because only then is there nothing to decide.
+ * Nothing here may wait on React. `--pan` is written straight to the element
+ * from a frame loop, the session is read back out of the store rather than off
+ * a prop, and React is told two things: which screen is active and which layers
+ * paint.
  */
-export function useWheelPan(
-    areaRef: RefObject<HTMLElement | null>,
-    pan: WindowPan,
-    windowIds: readonly string[],
-    activeWindowId: string | null,
-): void {
-    const latest = useRef({ pan, windowIds, activeWindowId });
-    latest.current = { pan, windowIds, activeWindowId };
+export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowPan): void {
+    const latest = useRef(pan);
+    latest.current = pan;
 
     useEffect(() => {
         const area = areaRef.current;
         if (!area) return;
         let gesture: Gesture | null = null;
         let quiet: number | null = null;
+
+        /** The live session's screens and the one it is on, read where the gesture
+         *  put them rather than where a render would have them. */
+        const session = () => {
+            const state = getState();
+            return {
+                order: state.windowsBySession[state.activeSessionId] ?? [],
+                on: state.sessions[state.activeSessionId]?.activeWindowId ?? null,
+            };
+        };
 
         const forget = () => {
             if (gesture?.frame != null) cancelAnimationFrame(gesture.frame);
@@ -78,101 +85,67 @@ export function useWheelPan(
             quiet = null;
         };
 
-        const endsAt = (index: number) => ({ hasPrevious: index > 0, hasNext: index >= 0 && index < latest.current.windowIds.length - 1 });
-
         const paint = () => {
             const moving = gesture;
             if (!moving) return;
             moving.frame = null;
-            if (latest.current.activeWindowId !== moving.window) return;
-            latest.current.pan.trackRef.current?.style.setProperty("--pan", panOffset(moving.slot + moving.offset));
+            const { order, on } = session();
+            if (order[moving.slot] !== on) return;
+            latest.current.trackRef.current?.style.setProperty("--pan", panOffset(moving.slot + moving.offset));
         };
 
-        // Nothing is left to decide here: a swipe that had somewhere to go went
-        // there while it was still moving, so quiet can only mean putting it back.
+        // Whatever screen the gesture left the session on is the one the track
+        // closes onto, which is at most half a screen away.
         const settle = () => {
             const done = gesture;
             forget();
-            if (!done?.claimed || done.committed) return;
-            const { pan: current, activeWindowId: active } = latest.current;
-            // A switch from somewhere else already moved the session on, and the
-            // pan the gesture was dragging is that switch's slide by now.
-            if (active !== done.window) return;
-            current.release(settleMs(Math.abs(done.offset)));
-        };
-
-        const rearm = () => {
-            if (quiet != null) window.clearTimeout(quiet);
-            quiet = window.setTimeout(settle, GESTURE_END_MS);
-        };
-
-        /** Lands the screen the swipe asked for, and spends the gesture so its tail asks for nothing. */
-        const land = (moving: Gesture, step: SnapStep) => {
-            const { pan: current, windowIds: order } = latest.current;
-            moving.committed = true;
-            if (moving.frame != null) cancelAnimationFrame(moving.frame);
-            moving.frame = null;
-            current.release(settleMs(1 - Math.abs(moving.offset)));
-            cmd.selectWindowId(order[moving.slot + step]);
+            if (!done?.claimed || !done.held) return;
+            const { order, on } = session();
+            if (on !== null && order[done.slot] === on) latest.current.snap(on, done.toward, settleMs(Math.abs(done.offset)));
         };
 
         const onWheel = (event: WheelEvent) => {
             // The strip sits on the stage and scrolls itself.
             if (event.target instanceof Element && event.target.closest(".tabbar")) return;
-            const { pan: current, windowIds: order, activeWindowId: active } = latest.current;
-            // The tail of a swipe that already landed. It may not drag the screen
-            // it just brought in, but the pane underneath may not scroll on it either.
-            if (gesture?.committed) {
-                rearm();
-                event.preventDefault();
-                return;
-            }
-            // A switch from somewhere else mid-gesture takes the track away, and
-            // there is nothing left for the gesture to drag.
-            if (gesture && gesture.window !== active) forget();
+            const { order, on } = session();
+            // A switch from somewhere else takes the track away, and the pan the
+            // gesture was driving is that switch's slide by now.
+            if (gesture && order[gesture.slot] !== on) forget();
             if (!gesture) {
                 const stride = area.clientWidth + cardGap(area);
-                const index = active === null ? -1 : order.indexOf(active);
-                if (stride <= 0 || index < 0 || active === null) return;
+                const slot = on === null ? -1 : order.indexOf(on);
+                if (stride <= 0 || slot < 0) return;
                 gesture = {
                     claimed: claimsWheel(scrollersUnder(event.target), event.deltaX, event.deltaY),
-                    window: active,
-                    slot: index,
                     stride,
-                    samples: [],
+                    slot,
                     raw: 0,
                     offset: 0,
                     toward: null,
-                    started: false,
-                    committed: false,
+                    held: false,
                     frame: null,
                 };
             }
             const moving = gesture;
-            rearm();
+            if (quiet != null) window.clearTimeout(quiet);
+            quiet = window.setTimeout(settle, GESTURE_END_MS);
             if (!moving.claimed) return;
             // Whatever is underneath must not scroll as well, including a terminal
             // that turns wheel gestures into cursor keys.
             event.preventDefault();
 
-            const delta = event.deltaX / moving.stride;
-            moving.raw += delta;
-            moving.samples.push({ delta, at: event.timeStamp });
-            moving.offset = dragOffset(moving.raw, endsAt(moving.slot));
+            const was = moving.slot;
+            const now = panned(moving.raw + event.deltaX / moving.stride, moving.slot, order.length);
+            moving.slot = now.slot;
+            moving.raw = now.raw;
+            moving.offset = now.offset;
             const toward =
                 moving.offset > 0 ? (order[moving.slot + 1] ?? null) : moving.offset < 0 ? (order[moving.slot - 1] ?? null) : moving.toward;
-            const handedOver = moving.started && toward === moving.toward;
-            if (!handedOver) {
-                moving.started = true;
+            if (moving.slot !== was) cmd.selectWindowId(order[moving.slot]);
+            if (!moving.held || moving.slot !== was || toward !== moving.toward) {
+                moving.held = true;
                 moving.toward = toward;
-                current.drag(moving.window, toward);
-            }
-            // The handover only reaches the track on the next render, so a swipe
-            // cannot land on the very event that asked for the track.
-            const step = handedOver ? snapTarget(moving.offset, wheelVelocity(moving.samples), endsAt(moving.slot)) : 0;
-            if (step !== 0) {
-                land(moving, step);
-                return;
+                latest.current.grab(order[moving.slot], toward);
             }
             if (moving.frame == null) moving.frame = requestAnimationFrame(paint);
         };
