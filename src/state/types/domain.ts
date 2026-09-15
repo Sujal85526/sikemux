@@ -1,4 +1,11 @@
-export type SplitDir = "row" | "column";
+/**
+ * How a split arranges its children.
+ *
+ * `row` and `column` tile them side by side. `stack` puts them in the same
+ * place and shows one at a time, which is what a tab strip is — the children
+ * are tabs, and the active pane decides which is on top.
+ */
+export type SplitDir = "row" | "column" | "stack";
 export type PaneKind = "terminal" | "editor" | "git" | "diff" | "aws" | "search" | "rundeck" | "bruno";
 
 export interface PaneNode {

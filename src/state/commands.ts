@@ -1374,7 +1374,7 @@ export function focusPane(paneId: string): void {
 
 export function moveFocus(dir: FocusDir): void {
     withActiveWindow((d, w) => {
-        const { panes } = computeLayout(w.root);
+        const { panes } = computeLayout(w.root, w.activePaneId);
         const next = neighborPane(panes, w.activePaneId, dir);
         if (!next) return;
         const win = d.windows[w.id];

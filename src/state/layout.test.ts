@@ -102,3 +102,52 @@ describe("layout helpers", () => {
         expect(resized.sizes[1]).toBeCloseTo(MIN_FRAC);
     });
 });
+
+describe("stack splits", () => {
+    const stack = (children: LayoutNode[]): LayoutNode => ({ type: "split", id: "s", dir: "stack", children, sizes: [0.5, 0.5] });
+
+    it("gives the whole rect to the pane holding focus and covers the rest", () => {
+        const { panes, stacked } = computeLayout(stack([pane("a"), pane("b")]), "b");
+
+        expect(panes.get("b")).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+        expect(panes.has("a")).toBe(false);
+        expect(stacked.get("a")).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    });
+
+    /*
+     * A covered pane keeps the stack's size rather than none, so a terminal
+     * coming back to the top does not briefly believe it is zero-sized and
+     * reflow its scrollback.
+     */
+    it("measures a covered pane at the stack's rect, not at nothing", () => {
+        const layout: LayoutNode = {
+            type: "split",
+            id: "row",
+            dir: "row",
+            children: [pane("left"), stack([pane("a"), pane("b")])],
+            sizes: [0.25, 0.75],
+        };
+        const { stacked } = computeLayout(layout, "a");
+
+        expect(stacked.get("b")).toEqual({ x: 0.25, y: 0, w: 0.75, h: 1 });
+    });
+
+    it("shows the first pane when focus is elsewhere", () => {
+        const { panes } = computeLayout(stack([pane("a"), pane("b")]), "somewhere-else");
+
+        expect(panes.has("a")).toBe(true);
+        expect(panes.has("b")).toBe(false);
+    });
+
+    /* Nothing sits between stacked panes, so there is no edge to drag. */
+    it("draws no dividers", () => {
+        expect(computeLayout(stack([pane("a"), pane("b")]), "a").dividers).toEqual([]);
+    });
+
+    /* A stack has no axis to give space along, so resizing walks past it. */
+    it("is skipped when resizing towards a neighbour", () => {
+        const layout = stack([pane("a"), pane("b")]);
+
+        expect(resizeTowards(layout, "a", "right")).toBe(layout);
+    });
+});

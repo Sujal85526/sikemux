@@ -390,7 +390,7 @@ const WindowLayer = memo(function WindowLayer({
     const brunoView = useStore((s) => s.brunoViews[session.id]);
     const active = activeTabRef(session, { [win.id]: win }, editorView ? { [win.activePaneId]: editorView } : {}, brunoView);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
-    const { panes, dividers } = useMemo(() => computeLayout(win.root), [win.root]);
+    const { panes, dividers, stacked } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);
     const zoomActive = visible && zoomedPaneId != null;
 
@@ -405,8 +405,11 @@ const WindowLayer = memo(function WindowLayer({
             style={topInset ? { top: `${topInset}px` } : undefined}>
             {leaves.map((p) => {
                 const isZoomed = zoomedPaneId === p.id;
-                const shown = !zoomActive || isZoomed;
-                const rect = isZoomed ? FULL : panes.get(p.id)!;
+                // A pane a stack is covering keeps its cell, and its size, so it
+                // does not have to re-measure when it comes back to the top.
+                const behind = !panes.has(p.id);
+                const shown = (!zoomActive || isZoomed) && !behind;
+                const rect = isZoomed ? FULL : (panes.get(p.id) ?? stacked.get(p.id))!;
                 const isActive = p.id === win.activePaneId;
                 const paneVisible = visible && shown;
                 const paneActive = paneVisible && isActive;

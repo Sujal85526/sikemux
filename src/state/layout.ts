@@ -119,15 +119,47 @@ function pathToPane(root: LayoutNode, paneId: string): { split: SplitNode; index
     return rec(root) ? path : null;
 }
 
-export function computeLayout(root: LayoutNode): {
+function holdsPane(node: LayoutNode, paneId: string): boolean {
+    return node.type === "pane" ? node.id === paneId : node.children.some((child) => holdsPane(child, paneId));
+}
+
+/**
+ * Where every pane sits, given which one is active.
+ *
+ * `panes` holds what is on screen and `stacked` what a stack is covering, at
+ * the same rect so it stays measured while hidden — a terminal behind a tab
+ * must not come back believing it is zero-sized.
+ */
+export function computeLayout(
+    root: LayoutNode,
+    activePaneId?: string,
+): {
     panes: Map<string, Rect>;
     dividers: Divider[];
+    stacked: Map<string, Rect>;
 } {
     const panes = new Map<string, Rect>();
+    const stacked = new Map<string, Rect>();
     const dividers: Divider[] = [];
+    function cover(node: LayoutNode, rect: Rect): void {
+        if (node.type === "pane") {
+            stacked.set(node.id, rect);
+            return;
+        }
+        for (const child of node.children) cover(child, rect);
+    }
     function walk(node: LayoutNode, rect: Rect): void {
         if (node.type === "pane") {
             panes.set(node.id, rect);
+            return;
+        }
+        if (node.dir === "stack") {
+            const top = node.children.find((child) => activePaneId !== undefined && holdsPane(child, activePaneId)) ?? node.children[0];
+            if (!top) return;
+            for (const child of node.children) {
+                if (child === top) walk(child, rect);
+                else cover(child, rect);
+            }
             return;
         }
         let off = 0;
@@ -145,7 +177,7 @@ export function computeLayout(root: LayoutNode): {
         });
     }
     walk(root, { x: 0, y: 0, w: 1, h: 1 });
-    return { panes, dividers };
+    return { panes, dividers, stacked };
 }
 
 export function neighborPane(panes: Map<string, Rect>, activeId: string, dir: FocusDir): string | null {
