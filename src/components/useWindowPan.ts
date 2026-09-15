@@ -100,7 +100,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         trackRef,
         panning: pan !== null,
         sliding: pan !== null && running,
-        at: pan ? (running ? pan.slot : pan.fromSlot) : (activeWindowId ? (slots.get(activeWindowId) ?? 0) : 0),
+        at: pan ? (running ? pan.slot : pan.fromSlot) : activeWindowId ? (slots.get(activeWindowId) ?? 0) : 0,
         slotOf: (windowId, slot) => {
             if (!pan) return slot;
             if (windowId === pan.to) return pan.slot;

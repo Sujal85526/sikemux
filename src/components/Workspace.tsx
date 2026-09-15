@@ -477,9 +477,7 @@ const WindowLayer = memo(function WindowLayer({
                         />
                     </div>
                 ))}
-            {live &&
-                !zoomActive &&
-                dividers.map((d) => <DividerHandle key={`${d.splitId}:${d.index}`} d={d} windowId={win.id} areaRef={areaRef} />)}
+            {live && !zoomActive && dividers.map((d) => <DividerHandle key={`${d.splitId}:${d.index}`} d={d} windowId={win.id} areaRef={areaRef} />)}
         </div>
     );
 });
