@@ -552,16 +552,16 @@ function AboutPage() {
             <SettingsSection
                 title="Update channel"
                 meta={updateChannel}
-                sub="Stable follows the latest signed release. Preview follows the signed moving preview release.">
+                sub="Stable follows the latest signed release. Nightly follows the newest signed prerelease build.">
                 <Dropdown
                     className="settings-dd"
                     label="update channel"
                     value={updateChannel}
                     options={[
                         { value: "stable", label: "stable", detail: "Latest signed release" },
-                        { value: "preview", label: "preview", detail: "Signed moving preview release" },
+                        { value: "nightly", label: "nightly", detail: "Newest signed prerelease build" },
                     ]}
-                    onChange={(value) => cmd.setUpdateChannel(value as "stable" | "preview")}
+                    onChange={(value) => cmd.setUpdateChannel(value as "stable" | "nightly")}
                 />
                 <div className="about-actions">
                     <button className="settings-btn" disabled={isUpdateBusy(pendingUpdate?.state)} onClick={() => void cmd.checkForUpdates()}>

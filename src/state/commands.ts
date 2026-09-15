@@ -2431,7 +2431,7 @@ export function deleteProviderProfile(id: string): void {
 }
 export const checkForUpdates = (): Promise<void> => checkForUpdateNow();
 
-export const setUpdateChannel = (value: "stable" | "preview"): void => {
+export const setUpdateChannel = (value: "stable" | "nightly"): void => {
     if (getState().updateChannel === value) return;
     // The other channel's result says nothing about this one, and waiting out
     // the 30-minute poll to learn what the new channel offers reads as broken.

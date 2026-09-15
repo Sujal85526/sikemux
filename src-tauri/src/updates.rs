@@ -8,8 +8,8 @@ use crate::observability::{global_observability, Metadata, ScalarValue, SpanCont
 
 const STABLE_ENDPOINT: &str =
     "https://github.com/nodelike/sikemux/releases/latest/download/latest.json";
-const PREVIEW_ENDPOINT: &str =
-    "https://github.com/nodelike/sikemux/releases/download/preview/latest.json";
+const NIGHTLY_ENDPOINT: &str =
+    "https://github.com/nodelike/sikemux/releases/download/nightly/latest.json";
 const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const UPDATE_INSTALL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 // GitHub serves release assets from four addresses, and a network can blackhole
@@ -91,8 +91,8 @@ impl DownloadProgressReporter {
 fn updater(app: &AppHandle, channel: &str, timeout: Duration) -> AppResult<Updater> {
     let endpoint = match channel {
         "stable" => STABLE_ENDPOINT,
-        "preview" => PREVIEW_ENDPOINT,
-        _ => return Err(AppError::BadArg("update channel must be stable or preview")),
+        "nightly" => NIGHTLY_ENDPOINT,
+        _ => return Err(AppError::BadArg("update channel must be stable or nightly")),
     };
     let url = endpoint
         .parse()

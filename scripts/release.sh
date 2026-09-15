@@ -11,12 +11,12 @@ NOTARIZED="${RELEASE_NOTARIZED:-0}"
 CHANNEL="${RELEASE_CHANNEL:-stable}"
 for arg in "${@:3}"; do
   [[ "$arg" == "--publish" ]] && PUBLISH=1
-  [[ "$arg" == "--preview" ]] && CHANNEL=preview
-  [[ "$arg" != "--publish" && "$arg" != "--preview" ]] && { echo "Unknown option: $arg" >&2; exit 2; }
+  [[ "$arg" == "--nightly" ]] && CHANNEL=nightly
+  [[ "$arg" != "--publish" && "$arg" != "--nightly" ]] && { echo "Unknown option: $arg" >&2; exit 2; }
 done
 
 if [[ -z "$VERSION" ]]; then
-  echo "Usage: $0 <version> <notes> [--preview] [--publish]" >&2
+  echo "Usage: $0 <version> <notes> [--nightly] [--publish]" >&2
   exit 2
 fi
 if ! VERSION="$VERSION" node - <<'NODE'
@@ -31,17 +31,17 @@ if [[ "$NOTARIZED" != "0" && "$NOTARIZED" != "1" ]]; then
   echo "RELEASE_NOTARIZED must be 0 or 1" >&2
   exit 2
 fi
-if [[ "$CHANNEL" != "stable" && "$CHANNEL" != "preview" ]]; then
-  echo "RELEASE_CHANNEL must be stable or preview" >&2
+if [[ "$CHANNEL" != "stable" && "$CHANNEL" != "nightly" ]]; then
+  echo "RELEASE_CHANNEL must be stable or nightly" >&2
   exit 2
 fi
 VERSION_WITHOUT_BUILD="${VERSION%%+*}"
-if [[ "$CHANNEL" == "preview" && "$VERSION_WITHOUT_BUILD" != *-* ]]; then
-  echo "Preview releases require a prerelease semver such as 0.2.0-beta.1" >&2
+if [[ "$CHANNEL" == "nightly" && "$VERSION_WITHOUT_BUILD" != *-* ]]; then
+  echo "Nightly releases require a prerelease semver such as 0.4.0-nightly.1" >&2
   exit 2
 fi
 if [[ "$CHANNEL" == "stable" && "$VERSION_WITHOUT_BUILD" == *-* ]]; then
-  echo "Stable releases cannot use a prerelease semver; pass --preview instead" >&2
+  echo "Stable releases cannot use a prerelease semver; pass --nightly instead" >&2
   exit 2
 fi
 
@@ -81,7 +81,13 @@ if [[ "$NOTARIZED" == "1" ]]; then
   [[ -x /usr/sbin/spctl && -x /usr/bin/xcrun ]] || fail "Gatekeeper and Xcode tools are required for a notarized release"
 fi
 [[ -z "$(git status --porcelain --untracked-files=all)" ]] || fail "working tree must be clean"
-[[ "$(git branch --show-current)" == "main" ]] || fail "releases must be cut from main"
+# Stable ships from a release line so a hotfix can go out while main runs ahead.
+BRANCH="$(git branch --show-current)"
+if [[ "$CHANNEL" == "stable" ]]; then
+  [[ "$BRANCH" == release/* ]] || fail "stable releases must be cut from a release/<line> branch, not '${BRANCH:-a detached HEAD}'"
+else
+  [[ "$BRANCH" == "main" ]] || fail "nightly releases must be cut from main, not '${BRANCH:-a detached HEAD}'"
+fi
 [[ -n "$NOTES" ]] || fail "release notes must not be empty"
 pnpm install --frozen-lockfile || fail "frozen frontend dependency install failed"
 
@@ -141,10 +147,8 @@ fi
 if [[ "$PUBLISH" == "1" ]]; then
   command -v gh >/dev/null || fail "gh is required with --publish"
   gh auth status >/dev/null 2>&1 || fail "gh is not authenticated"
-  if [[ "$CHANNEL" == "stable" ]]; then
-    gh api "repos/nodelike/sikemux/git/ref/tags/v$VERSION" >/dev/null 2>&1 && fail "remote tag v$VERSION already exists"
-    gh release view "v$VERSION" >/dev/null 2>&1 && fail "GitHub release v$VERSION already exists"
-  fi
+  gh api "repos/nodelike/sikemux/git/ref/tags/v$VERSION" >/dev/null 2>&1 && fail "remote tag v$VERSION already exists"
+  gh release view "v$VERSION" >/dev/null 2>&1 && fail "GitHub release v$VERSION already exists"
 fi
 
 if [[ "${RELEASE_PREFLIGHT_ONLY:-0}" == "1" ]]; then
@@ -167,6 +171,7 @@ SUCCESS=0
 EXTRACTED=""
 DMG_MOUNT=""
 DMG_ATTACHED=0
+MANIFEST_DIR=""
 restore_on_failure() {
   status=$?
   trap - EXIT INT TERM
@@ -175,6 +180,8 @@ restore_on_failure() {
   fi
   [[ -n "$EXTRACTED" ]] && rm -rf "$EXTRACTED"
   [[ -n "$DMG_MOUNT" ]] && rm -rf "$DMG_MOUNT"
+  # Runs on success too, after the manifest has been uploaded.
+  [[ -n "$MANIFEST_DIR" ]] && rm -rf "$MANIFEST_DIR"
   if [[ "$SUCCESS" != "1" ]]; then
     echo "Release failed; restoring version metadata." >&2
     for file in "${FILES[@]}"; do
@@ -279,10 +286,18 @@ for arch in $ARCHS; do
 done
 
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Artifacts live on a tag that never moves. The nightly release carries only
+# latest.json, because shipped clients resolve that URL and cannot be repointed.
 RELEASE_TAG="v$VERSION"
-[[ "$CHANNEL" == "preview" ]] && RELEASE_TAG=preview
 TAR_URL="https://github.com/nodelike/sikemux/releases/download/$RELEASE_TAG/${APP_NAME}.app.tar.gz"
-PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" python3 - <<'PY'
+# A nightly cut must not overwrite the tracked stable manifest.
+if [[ "$CHANNEL" == "stable" ]]; then
+  MANIFEST="$ROOT/latest.json"
+else
+  MANIFEST_DIR="$(mktemp -d)"
+  MANIFEST="$MANIFEST_DIR/latest.json"
+fi
+PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" MANIFEST="$MANIFEST" python3 - <<'PY'
 import json, os, pathlib
 entry = {
     "signature": pathlib.Path(os.environ["SIG"]).read_text().strip(),
@@ -294,35 +309,43 @@ manifest = {
     "pub_date": os.environ["PUB_DATE"],
     "platforms": {platform: dict(entry) for platform in os.environ["PLATFORM_LIST"].split()},
 }
-pathlib.Path("latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+pathlib.Path(os.environ["MANIFEST"]).write_text(json.dumps(manifest, indent=2) + "\n")
 PY
-python3 -m json.tool latest.json >/dev/null
+python3 -m json.tool "$MANIFEST" >/dev/null
 
-STABLE_GH_CMD=(gh release create "v$VERSION" --target "$(git rev-parse HEAD)" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" latest.json)
+HEAD_SHA="$(git rev-parse HEAD)"
+STABLE_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$MANIFEST")
+NIGHTLY_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG")
+POINTER_NOTES="Update feed for the nightly channel.
+
+The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).
+
+This release carries only \`latest.json\`. Its \`nightly\` tag is a fixed URL anchor that shipped clients resolve against, not a source revision — do not attach builds here."
 if [[ "$PUBLISH" == "1" && "$CHANNEL" == "stable" ]]; then
   echo "→ Publishing stable v$VERSION"
   "${STABLE_GH_CMD[@]}"
   echo "✓ Released stable v$VERSION"
 elif [[ "$PUBLISH" == "1" ]]; then
-  echo "→ Publishing preview v$VERSION"
-  if gh release view preview >/dev/null 2>&1; then
-    gh release upload preview "$DMG" "$TAR" "$SIG" latest.json --clobber
-    gh release edit preview --title "v$VERSION preview" --notes "$NOTES" --prerelease
+  echo "→ Publishing nightly v$VERSION"
+  "${NIGHTLY_GH_CMD[@]}"
+  if gh release view nightly >/dev/null 2>&1; then
+    gh release upload nightly "$MANIFEST" --clobber
+    gh release edit nightly --title "Nightly feed (v$VERSION)" --notes "$POINTER_NOTES" --prerelease
   else
-    gh release create preview --target "$(git rev-parse HEAD)" --title "v$VERSION preview" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" latest.json
+    gh release create nightly --target "$HEAD_SHA" --title "Nightly feed (v$VERSION)" --notes "$POINTER_NOTES" --prerelease "$MANIFEST"
   fi
-  echo "✓ Released preview v$VERSION"
+  echo "✓ Released nightly v$VERSION; nightly feed now points at v$VERSION"
 else
   echo "✓ Verified $CHANNEL release v$VERSION ($ARCHS)"
   echo "  $DMG"
   echo "  $TAR"
   echo "  $SIG"
-  echo "  $ROOT/latest.json"
+  echo "  $MANIFEST"
   echo "To publish:"
   if [[ "$CHANNEL" == "stable" ]]; then
     printf '  '; printf '%q ' "${STABLE_GH_CMD[@]}"; echo
   else
-    echo "  rerun with --preview --publish (updates the moving preview release)"
+    echo "  rerun with --nightly --publish (creates v$VERSION, then repoints the nightly feed)"
   fi
 fi
 

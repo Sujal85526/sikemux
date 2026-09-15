@@ -737,7 +737,7 @@ export function applyHydrate(raw: string): HydrationResult {
                   : cur.onboardingComplete,
         lastSeenVersion: typeof prefs.lastSeenVersion === "string" ? prefs.lastSeenVersion : cur.lastSeenVersion,
         customCommands: normaliseCustomCommands(prefs.customCommands),
-        updateChannel: prefs.updateChannel === "preview" || prefs.updateChannel === "stable" ? prefs.updateChannel : cur.updateChannel,
+        updateChannel: prefs.updateChannel === "nightly" || prefs.updateChannel === "stable" ? prefs.updateChannel : cur.updateChannel,
         lastReleaseNotes:
             isRecord(prefs.lastReleaseNotes) && typeof prefs.lastReleaseNotes.version === "string"
                 ? {

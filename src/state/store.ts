@@ -72,7 +72,7 @@ export interface DomainState {
     onboardingComplete: boolean;
     lastSeenVersion: string;
     customCommands: CustomCommand[];
-    updateChannel: "stable" | "preview";
+    updateChannel: "stable" | "nightly";
     lastReleaseNotes: { version: string; notes: string | null; date: string | null } | null;
     recentCommandKeys: string[];
     /** Non-secret launch profiles and the per-agent defaults that reference them. */
@@ -98,7 +98,7 @@ export interface PendingUpdate {
  *  other surface, so About reads this instead of leaving the app silent. */
 export interface UpdateCheckOutcome {
     at: number;
-    channel: "stable" | "preview";
+    channel: "stable" | "nightly";
     error: string | null;
 }
 

@@ -18,12 +18,12 @@ node --check scripts/build-cli-sidecar.mjs
 node --check scripts/build-browser-sidecar.mjs
 /usr/bin/plutil -lint src-tauri/Info.plist >/dev/null
 
-if RELEASE_CHANNEL=nightly scripts/release.sh 0.2.0-beta.1 fixture >/dev/null 2>&1; then
+if RELEASE_CHANNEL=preview scripts/release.sh 0.2.0-beta.1 fixture >/dev/null 2>&1; then
   echo "release tooling accepted an unsupported channel" >&2
   exit 1
 fi
-if scripts/release.sh 0.2.0 fixture --preview >/dev/null 2>&1; then
-  echo "release tooling accepted a stable semver for the preview channel" >&2
+if scripts/release.sh 0.2.0 fixture --nightly >/dev/null 2>&1; then
+  echo "release tooling accepted a stable semver for the nightly channel" >&2
   exit 1
 fi
 if scripts/release.sh 0.2.0-beta.1 fixture >/dev/null 2>&1; then
@@ -77,16 +77,41 @@ const packet = Buffer.from(publicLines[1], "base64");
 if (packet.length !== 42 || packet.subarray(0, 2).toString("ascii") !== "Ed") fail("invalid updater Ed25519 public key");
 NODE
 
-grep -Fq 'RELEASE_TAG=preview' scripts/release.sh || {
-  echo "preview updater release tag is not configured" >&2
+# Shipped clients resolve this exact URL, so the endpoint is a fixed contract.
+grep -Fq 'releases/download/nightly/latest.json' src-tauri/src/updates.rs || {
+  echo "nightly updater endpoint is missing" >&2
   exit 1
 }
-grep -Fq 'gh release upload preview' scripts/release.sh || {
-  echo "preview updater publishing path is missing" >&2
+# shellcheck disable=SC2016
+grep -Fq 'gh release upload nightly "$MANIFEST" --clobber' scripts/release.sh || {
+  echo "nightly feed no longer repoints its latest.json" >&2
   exit 1
 }
-grep -Fq 'releases/download/preview/latest.json' src-tauri/src/updates.rs || {
-  echo "preview updater endpoint is missing" >&2
+# shellcheck disable=SC2016
+grep -Fq 'NIGHTLY_GH_CMD=(gh release create "v$VERSION"' scripts/release.sh || {
+  echo "nightly channel does not publish an immutable versioned release" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+if grep -E 'gh release (create|upload|edit) nightly' scripts/release.sh | grep -qE '\$(DMG|TAR|SIG)'; then
+  echo "nightly channel still attaches builds to the moving pointer release" >&2
+  exit 1
+fi
+# shellcheck disable=SC2016
+grep -Fq 'MANIFEST_DIR="$(mktemp -d)"' scripts/release.sh || {
+  echo "nightly manifest is not written to a temp dir" >&2
+  exit 1
+}
+grep -Fq 'pathlib.Path("latest.json").write_text' scripts/release.sh && {
+  echo "release tooling still hardcodes the repo-root manifest path" >&2
+  exit 1
+}
+grep -Fq 'stable releases must be cut from a release/<line> branch' scripts/release.sh || {
+  echo "stable releases are not pinned to a release branch" >&2
+  exit 1
+}
+grep -Fq 'nightly releases must be cut from main' scripts/release.sh || {
+  echo "nightly releases are not pinned to main" >&2
   exit 1
 }
 

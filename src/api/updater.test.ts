@@ -206,8 +206,8 @@ describe("update checks", () => {
     it("labels the last check outcome for the About page", () => {
         const at = new Date("2026-08-17T06:02:47Z").getTime();
         expect(updateCheckLabel({ at, channel: "stable", error: null })).toBe(`Checked stable at ${new Date(at).toLocaleTimeString()}.`);
-        expect(updateCheckLabel({ at, channel: "preview", error: "boom" })).toBe(
-            `Last preview check failed at ${new Date(at).toLocaleTimeString()} — boom`,
+        expect(updateCheckLabel({ at, channel: "nightly", error: "boom" })).toBe(
+            `Last nightly check failed at ${new Date(at).toLocaleTimeString()} — boom`,
         );
     });
 });

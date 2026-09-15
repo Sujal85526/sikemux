@@ -79,7 +79,7 @@ export interface PersistedPrefs {
     onboardingComplete?: boolean;
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];
-    updateChannel?: "stable" | "preview";
+    updateChannel?: "stable" | "nightly";
     lastReleaseNotes?: { version: string; notes: string | null; date: string | null } | null;
     recentCommandKeys?: string[];
     /** Non-secret provider launch profiles. Credential values are never part of this shape. */
