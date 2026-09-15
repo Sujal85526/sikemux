@@ -27,8 +27,6 @@ import { useDocumentSlide } from "./useDocumentSlide";
 const copyPath = (_path: string, text: string, label: string) =>
     navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 
-const TABS_H = 34;
-
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 
 const PANE_ROLE: Record<PaneKind, WindowRole> = {
@@ -69,9 +67,13 @@ export function Workspace() {
     // strip, while an editor or Bruno workspace counts its open documents.
     const tabCount = useStore((state) => (state.sessions[state.activeSessionId] ? selectTabRefs(state, state.activeSessionId).length : 0));
 
+    // The strip is what the screens start below, so its absence is what the
+    // stage has to know about: with no tabs there is nothing to start below.
+    const strip = activeSession && tabCount > 0 ? <WorkspaceTabsBar session={activeSession} /> : null;
+
     return (
-        <div className="window-area" ref={areaRef}>
-            {activeSession && tabCount > 0 && <WorkspaceTabsBar session={activeSession} />}
+        <div className={`window-area${strip ? " window-area--strip" : ""}`} ref={areaRef}>
+            {strip}
             {sessions.map((session) => {
                 const isActive = session.id === activeSessionId;
                 const active = activeTabRef(session, windowsById, editorViews, brunoViews);
@@ -84,7 +86,6 @@ export function Workspace() {
                         className={`window-track${isActive && pan.panning ? " panning" : ""}${isActive && pan.sliding ? " sliding" : ""}`}
                         style={
                             {
-                                top: TABS_H,
                                 "--window-pan-ms": `${PAN_MS}ms`,
                                 "--pan": panOffset(isActive ? pan.at : order.indexOf(session.activeWindowId)),
                             } as CSSProperties
@@ -346,7 +347,6 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     return (
         <TabBar
             variant="agent"
-            style={{ height: TABS_H }}
             tabs={tabs.map((tab) => ({
                 ...tab,
                 tabId: `workspace-tab-${session.id}-${encodeURIComponent(tab.id)}`,

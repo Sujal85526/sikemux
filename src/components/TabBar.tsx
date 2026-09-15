@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { prefersReducedMotion } from "../lib/motion";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { IconClose } from "./Icons";
@@ -45,12 +45,11 @@ interface TabBarProps {
     /** Spoken name for the add button, when the tooltip's wording reads badly aloud. */
     addLabel?: string;
     trailing?: ReactNode;
-    style?: CSSProperties;
     /** Names the strip for assistive tech when more than one is on screen. */
     ariaLabel?: string;
 }
 
-export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, addIcon, addTitle, addLabel, trailing, style, ariaLabel }: TabBarProps) {
+export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, addIcon, addTitle, addLabel, trailing, ariaLabel }: TabBarProps) {
     const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
     const menuItems = menu && buildMenu ? buildMenu(menu.id) : null;
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -102,7 +101,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
         : tabs.map((tab, index) => ({ tab, index }));
 
     return (
-        <div ref={scrollRef} className={`tabbar v-${variant}`} style={style} role="tablist" aria-label={ariaLabel}>
+        <div ref={scrollRef} className={`tabbar v-${variant}`} role="tablist" aria-label={ariaLabel}>
             {virtualized && <div aria-hidden="true" style={{ flex: `0 0 ${firstVirtual?.start ?? 0}px` }} />}
             {visibleTabs.map(({ tab: t, index }) => {
                 const closable = t.closable ?? !!onClose;

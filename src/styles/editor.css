@@ -426,6 +426,7 @@
     left: 0;
     right: 0;
     z-index: 3;
+    height: var(--window-strip-h);
     background: var(--surface);
     border-bottom: 1px solid var(--border);
 }

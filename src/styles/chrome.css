@@ -674,16 +674,22 @@
     position: absolute;
     inset: 0;
     z-index: 1;
+    --window-strip-h: 0px;
     /* The track slides its neighbouring screens in from off stage, so the stage
        has to clip them. The clip cannot live on the track itself: a transformed
        box carries its own overflow, and the visible window would slide with it. */
     overflow: hidden;
 }
+/* A session whose surfaces all come from the rails shows no strip, and then the
+   screens have nothing to start below. */
+.window-area--strip {
+    --window-strip-h: 34px;
+}
 /* One session's screens laid end to end. The track slides sideways to bring a
    screen to the front, and owns the tab strip inset once for all of them. */
 .window-track {
     position: absolute;
-    inset: 0;
+    inset: var(--window-strip-h) 0 0;
     --pan: 0%;
 }
 /* A transform here would trap the `position: fixed` overlays panes put on
