@@ -8,6 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "vite",
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "build": "tsc --noEmit && vite build && pnpm bundle:check",
@@ -26,6 +27,8 @@
     "ipc:generate": "node scripts/generate-ipc-contracts.mjs",
     "ipc:check": "node scripts/generate-ipc-contracts.mjs --check",
     "deps:audit": "node scripts/check-dependency-health.mjs",
+    "audit:rust": "cargo audit --file src-tauri/Cargo.lock",
+    "shell:lint": "shellcheck scripts/*.sh",
     "browser:test": "uv run --project browser python -m unittest discover -s browser -p 'test_*.py'",
     "dev-launcher:test": "node --test scripts/dev-desktop.node-test.mjs",
     "browser:audit": "uv run --project browser --with pip-audit==2.10.1 pip-audit --local",
@@ -34,11 +37,12 @@
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml --all-targets --all-features",
     "release:check": "./scripts/check-release.sh",
-    "check": "pnpm ipc:check && pnpm deps:audit && pnpm browser:audit && pnpm browser:test && pnpm dev-launcher:test && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm perf:budget && pnpm rust:fmt:check && pnpm rust:clippy && pnpm rust:test",
+    "check": "pnpm ipc:check && pnpm deps:audit && pnpm audit:rust && pnpm shell:lint && pnpm browser:audit && pnpm browser:test && pnpm dev-launcher:test && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build && pnpm perf:budget && pnpm release:check && pnpm rust:fmt:check && pnpm rust:clippy && pnpm rust:test",
     "tauri": "tauri",
     "build:sidecar": "node scripts/build-cli-sidecar.mjs && node scripts/build-browser-sidecar.mjs",
     "build:mac": "./scripts/build-mac.sh",
-    "build:windows": "pnpm build:sidecar && tauri build --bundles nsis --config src-tauri/tauri.sidecar.conf.json"
+    "build:windows": "pnpm build:sidecar && tauri build --bundles nsis --config src-tauri/tauri.sidecar.conf.json",
+    "prepush": "./scripts/pre-push.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

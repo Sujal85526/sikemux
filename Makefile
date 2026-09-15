@@ -1,4 +1,4 @@
-.PHONY: dev build run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test release-check check ci clean clean-dev
+.PHONY: dev build run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test rust-audit shell-lint release-check hooks prepush check ci clean clean-dev
 
 icons:
 	./scripts/icons.sh
@@ -43,10 +43,22 @@ rust-clippy:
 rust-test:
 	pnpm rust:test
 
+rust-audit:
+	pnpm audit:rust
+
+shell-lint:
+	pnpm shell:lint
+
 release-check:
 	pnpm release:check
 
-check: format-check lint tsc test rust-clippy rust-test release-check
+hooks:
+	git config core.hooksPath .githooks
+
+prepush:
+	pnpm prepush
+
+check: format-check shell-lint lint tsc test-coverage rust-audit rust-clippy rust-test release-check
 
 ci: check
 	pnpm build

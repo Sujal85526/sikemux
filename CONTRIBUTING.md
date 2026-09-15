@@ -9,9 +9,12 @@ Thanks for taking the time to contribute. Sikemux is a Tauri + Rust + React desk
 ```bash
 git clone git@github.com:nodelike/sikemux.git
 cd sikemux
-pnpm install
+pnpm install        # also points core.hooksPath at .githooks
 pnpm tauri dev      # hot-reload Vite + Tauri on macOS or Windows
 ```
+
+`pnpm install` installs a `pre-push` hook that runs the CI gates for whatever you
+are about to push. Install it by hand in an existing clone with `make hooks`.
 
 ## Project layout
 
@@ -24,15 +27,24 @@ pnpm tauri dev      # hot-reload Vite + Tauri on macOS or Windows
 
 ## Before you open a PR
 
-Run the same checks CI does and make sure they pass:
+The `pre-push` hook already runs these for you. To check without pushing:
 
 ```bash
-make check            # all formatting, lint, typecheck, frontend test, and Rust gates
-make test-coverage    # truthful all-source frontend coverage report
+make prepush          # the CI gates, limited to what your commits touched
+make check            # every gate, regardless of what changed
 pnpm build            # production frontend build
 ```
 
-`make check` runs Prettier in check mode, ESLint, TypeScript, frontend tests with `NODE_ENV=test`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. These are the same quality gates enforced by CI.
+`make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests with `NODE_ENV=test`, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. These are the same quality gates enforced by CI.
+
+Two CI jobs cannot run on a macOS workstation, so a green `make check` does not guarantee green CI:
+
+- **Windows backend and installer smoke build** — Rust tests and the NSIS build run on `windows-latest`. Tests that assume POSIX absolute paths pass locally and fail there.
+- **macOS launched desktop E2E** — runnable with `pnpm test:e2e:desktop`, but it builds the whole app, so the hook leaves it to CI.
+
+`cargo audit` reads a database that changes daily, so a push that was clean can go red later with no code change. That is the advisory database moving, not your commit.
+
+Skip the hook for a work-in-progress push with `git push --no-verify`, or `SKIP_PREPUSH=1 git push`. Force every gate to run with `PREPUSH_FULL=1`.
 
 Release tooling supports two explicit modes. The default community mode requires the Tauri updater private key but no Apple membership and produces an updater-signed, ad-hoc code-signed release. `RELEASE_NOTARIZED=1` additionally requires a Developer ID and Apple notarization credentials and enforces Gatekeeper and stapled-ticket verification.
 

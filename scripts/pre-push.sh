@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Runs the CI gates against the commits being pushed, skipping groups nothing touched.
+set -uo pipefail
+
+cd "$(dirname "$0")/.." || exit 1
+
+ZERO='0000000000000000000000000000000000000000'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+RESET=$'\033[0m'
+
+FAILED=()
+SKIPPED=()
+
+pushed_files() {
+  if [ -t 0 ]; then
+    git diff --name-only '@{upstream}'..HEAD 2>/dev/null || git diff --name-only HEAD~1..HEAD
+    return
+  fi
+  while read -r _ local_sha _ remote_sha; do
+    [ "$local_sha" = "$ZERO" ] && continue
+    if [ "$remote_sha" != "$ZERO" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+      git diff --name-only "$remote_sha" "$local_sha"
+    else
+      base="$(git merge-base origin/main "$local_sha" 2>/dev/null || true)"
+      git diff --name-only "${base:-${local_sha}^}" "$local_sha" 2>/dev/null
+    fi
+  done
+}
+
+touches() {
+  printf '%s\n' "$CHANGED" | grep -qE "$1"
+}
+
+step() {
+  label="$1"
+  shift
+  printf '\n%s→ %s%s\n' "$BOLD" "$label" "$RESET"
+  if "$@"; then
+    return 0
+  fi
+  FAILED+=("$label")
+  return 1
+}
+
+needs() {
+  command -v "$1" >/dev/null 2>&1 && return 0
+  SKIPPED+=("$2 — install $1")
+  printf '\n%s⚠ skipping %s (%s not installed; CI still runs it)%s\n' "$YELLOW" "$2" "$1" "$RESET"
+  return 1
+}
+
+summary() {
+  for entry in "${SKIPPED[@]+"${SKIPPED[@]}"}"; do
+    printf '%s⚠ unverified: %s%s\n' "$YELLOW" "$entry" "$RESET"
+  done
+  if [ "${#FAILED[@]}" -eq 0 ]; then
+    printf '\n%s✓ local CI gates passed%s\n' "$GREEN" "$RESET"
+    return 0
+  fi
+  printf '\n%s✗ %d gate(s) failed — CI would fail too:%s\n' "$RED" "${#FAILED[@]}" "$RESET"
+  for entry in "${FAILED[@]}"; do
+    printf '%s    %s%s\n' "$RED" "$entry" "$RESET"
+  done
+  printf '%s  push anyway with: git push --no-verify%s\n' "$DIM" "$RESET"
+  return 1
+}
+
+if [ "${SKIP_PREPUSH:-}" = "1" ]; then
+  printf '%sSKIP_PREPUSH=1 — skipping local CI gates%s\n' "$YELLOW" "$RESET"
+  exit 0
+fi
+
+CHANGED="$(pushed_files | sort -u)"
+if [ "${PREPUSH_FULL:-}" = "1" ] || [ -z "$CHANGED" ]; then
+  CHANGED='(full run)'
+  RUST=1 FRONTEND=1 BROWSER=1 SHELL_SCRIPTS=1 RELEASE=1
+else
+  RUST=0 FRONTEND=0 BROWSER=0 SHELL_SCRIPTS=0 RELEASE=0
+  touches '^src-tauri/' && RUST=1
+  touches '^(src/|public/|index\.html|package\.json|pnpm-lock\.yaml|vite\.config\.ts|eslint\.config\.js|tsconfig\.json)' && FRONTEND=1
+  touches '^browser/' && BROWSER=1
+  touches '^scripts/.*\.sh$' && SHELL_SCRIPTS=1
+  touches '^(scripts/|package\.json|latest\.json|src-tauri/tauri.*\.conf\.json)' && RELEASE=1
+fi
+
+printf '%sChecking %s commits against the CI gates%s\n' "$BOLD" "$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')" "$RESET"
+
+# Cheap gates first, so a stray format error does not cost a full test run.
+step 'prettier format' pnpm format:check
+[ "$SHELL_SCRIPTS" = 1 ] && needs shellcheck 'shell lint' && step 'shell lint' shellcheck scripts/*.sh
+[ "$RUST" = 1 ] && step 'cargo fmt' pnpm rust:fmt:check
+[ "$RUST" = 1 ] && needs cargo-audit 'rust security audit' && step 'rust security audit' cargo audit --file src-tauri/Cargo.lock
+[ "$FRONTEND" = 1 ] && step 'eslint' pnpm lint
+[ "$FRONTEND" = 1 ] && step 'typescript' pnpm typecheck
+[ "$FRONTEND" = 1 ] && step 'ipc contracts' pnpm ipc:check
+
+if [ "${#FAILED[@]}" -ne 0 ]; then
+  summary
+  exit 1
+fi
+
+[ "$BROWSER" = 1 ] && needs uv 'browser bridge' && {
+  step 'browser tests' pnpm browser:test
+  step 'browser audit' pnpm browser:audit
+}
+[ "$RUST" = 1 ] && step 'clippy' pnpm rust:clippy
+[ "$RUST" = 1 ] && step 'rust tests' pnpm rust:test
+[ "$FRONTEND" = 1 ] && step 'frontend tests' pnpm test:coverage
+[ "$FRONTEND" = 1 ] && step 'frontend build' pnpm build
+[ "$FRONTEND" = 1 ] && step 'performance budget' pnpm perf:budget
+[ "$RELEASE" = 1 ] && step 'release tooling' pnpm release:check
+
+summary
