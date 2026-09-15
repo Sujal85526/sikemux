@@ -261,11 +261,13 @@ The updater and Apple Gatekeeper trust different signatures. By default, `script
 
 Existing community installations can receive in-app updates. Fresh downloads are not notarized by Apple, so macOS may ask you to remove quarantine again. Keep the updater private key secure. Clients reject archives that do not match the public key bundled with the app.
 
-Stable builds create a versioned GitHub release and update `latest.json`. Preview builds require a prerelease semantic version and update the moving `preview` release used by the opt-in Preview channel.
+Both channels create a versioned GitHub release holding the build. A stable cut also updates the tracked `latest.json`, which the default channel follows. A nightly cut requires a prerelease semantic version, publishes its release as a prerelease, and repoints the moving `nightly` release that the opt-in Nightly channel follows.
+
+Stable is cut from a `release/<major.minor>` branch and nightly from `main`, so a patch can ship while `main` runs ahead on the next minor. Nightly versions target that next minor, leaving the patch numbers free for hotfixes.
 
 ```bash
-./scripts/release.sh 0.2.0 "Release notes" --publish
-./scripts/release.sh 0.3.0-beta.1 "Preview notes" --preview --publish
+./scripts/release.sh 0.3.5 "Release notes" --publish
+./scripts/release.sh 0.4.0-nightly.1 "Nightly notes" --nightly --publish
 ```
 
 Leave out `--publish` to build, sign, and verify the release without changing GitHub.
