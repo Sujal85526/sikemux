@@ -88,6 +88,7 @@ if [[ "$CHANNEL" == "stable" ]]; then
 else
   [[ "$BRANCH" == "main" ]] || fail "nightly releases must be cut from main, not '${BRANCH:-a detached HEAD}'"
 fi
+HEAD_SHA="$(git rev-parse HEAD)"
 [[ -n "$NOTES" ]] || fail "release notes must not be empty"
 pnpm install --frozen-lockfile || fail "frozen frontend dependency install failed"
 
@@ -149,6 +150,7 @@ if [[ "$PUBLISH" == "1" ]]; then
   gh auth status >/dev/null 2>&1 || fail "gh is not authenticated"
   gh api "repos/nodelike/sikemux/git/ref/tags/v$VERSION" >/dev/null 2>&1 && fail "remote tag v$VERSION already exists"
   gh release view "v$VERSION" >/dev/null 2>&1 && fail "GitHub release v$VERSION already exists"
+  gh api "repos/nodelike/sikemux/commits/$HEAD_SHA" >/dev/null 2>&1 || fail "HEAD is not on the remote; push before publishing"
 fi
 
 if [[ "${RELEASE_PREFLIGHT_ONLY:-0}" == "1" ]]; then
@@ -168,6 +170,7 @@ for file in "${FILES[@]}"; do
   [[ -e "$file" ]] && { mkdir -p "$BACKUP/$(dirname "$file")"; cp "$file" "$BACKUP/$file"; }
 done
 SUCCESS=0
+EXPECTED=""
 EXTRACTED=""
 DMG_MOUNT=""
 DMG_ATTACHED=0
@@ -182,11 +185,25 @@ restore_on_failure() {
   if [[ "$SUCCESS" != "1" ]]; then
     echo "Release failed; restoring version metadata." >&2
     for file in "${FILES[@]}"; do
+      # Only undo what this script wrote. Anything edited meanwhile is someone
+      # else's and would be silently reverted.
+      if [[ -n "$EXPECTED" ]] && ! cmp -s "$EXPECTED/$file" "$file"; then
+        echo "! $file changed during the release; left as it is." >&2
+        continue
+      fi
       if [[ -e "$BACKUP/$file" ]]; then cp "$BACKUP/$file" "$file"; else rm -f "$file"; fi
     done
   fi
   rm -rf "$BACKUP"
+  [[ -n "$EXPECTED" ]] && rm -rf "$EXPECTED"
   exit "$status"
+}
+snapshot_expected() {
+  [[ -n "$EXPECTED" ]] && rm -rf "$EXPECTED"
+  EXPECTED="$(mktemp -d)"
+  for file in "${FILES[@]}"; do
+    [[ -e "$file" ]] && { mkdir -p "$EXPECTED/$(dirname "$file")"; cp "$file" "$EXPECTED/$file"; }
+  done
 }
 trap restore_on_failure EXIT INT TERM
 
@@ -209,6 +226,7 @@ PY
 # so the bump has to reach the lock file or the build fails partway through.
 cargo metadata --manifest-path src-tauri/Cargo.toml --offline --format-version 1 >/dev/null \
   || fail "could not refresh Cargo.lock for $VERSION"
+snapshot_expected
 
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
 APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
@@ -313,8 +331,9 @@ manifest = {
 pathlib.Path(os.environ["MANIFEST"]).write_text(json.dumps(manifest, indent=2) + "\n")
 PY
 python3 -m json.tool "$MANIFEST" >/dev/null
+snapshot_expected
 
-HEAD_SHA="$(git rev-parse HEAD)"
+[[ "$(git rev-parse HEAD)" == "$HEAD_SHA" ]] || fail "HEAD moved during the release; rebuild from a settled tree"
 STABLE_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$MANIFEST")
 NIGHTLY_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG")
 POINTER_NOTES="Update feed for the nightly channel.
