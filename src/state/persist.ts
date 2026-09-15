@@ -41,7 +41,7 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-const VERSION = 8;
+export const VERSION = 8;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const RETRY_MS = 1500;
