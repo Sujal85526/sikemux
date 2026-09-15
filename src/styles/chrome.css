@@ -714,8 +714,10 @@
     position: absolute;
     inset: 0;
     --slot: 0;
-    /* Rounded and clipped so a screen reads as a card of its own: what a swipe
-       moves is then a surface with edges, not content under a fixed frame. */
+    /* The frame belongs to the thing that moves: a screen carries its own edge,
+       rounds it and clips to it, so a swipe slides a card rather than sliding
+       content behind a frame that stays put. */
+    border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     overflow: hidden;
 }
