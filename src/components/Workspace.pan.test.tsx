@@ -311,3 +311,37 @@ describe("workspace wheel pan", () => {
         vi.unstubAllGlobals();
     });
 });
+
+describe("window scroll indicator", () => {
+    const sessionId = () => getState().activeSessionId;
+    const order = () => getState().windowsBySession[sessionId()];
+
+    /*
+     * The thumb says where the window really is in the session. A far jump parks
+     * the canvas next door and slides one screen, and the thumb has to cross the
+     * whole gap regardless, or it would report the parked screen as the place.
+     */
+    it("sizes the thumb by screen count and places it by the real index", () => {
+        sessionOfScreens();
+        const { container } = render(<Workspace />);
+        const thumb = () => container.querySelector(".window-scroll-thumb") as HTMLElement;
+        const count = order().length;
+
+        expect(thumb().style.width).toBe(`${100 / count}%`);
+        expect(thumb().style.transform).toBe(`translateX(${order().indexOf(getState().sessions[sessionId()].activeWindowId) * 100}%)`);
+
+        const to = agentWindowId(getState(), "agent-9")!;
+        const index = order().indexOf(to);
+        act(() => cmd.selectWindowId(to));
+
+        expect(thumb().style.transform).toBe(`translateX(${index * 100}%)`);
+        expect(slotOf(container.querySelector(".window-layer.live")!)).not.toBe(index);
+    });
+
+    it("has nothing to show for a session of one screen", () => {
+        const { container } = render(<Workspace />);
+
+        expect(order()).toHaveLength(1);
+        expect(container.querySelector(".window-scroll")).toBeNull();
+    });
+});

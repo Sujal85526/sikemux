@@ -720,6 +720,28 @@
     pointer-events: none;
 }
 
+/* How far along its screens the session is. A readout only: it never takes a
+   click, and the bar itself paints nothing so the stage keeps the ground. */
+.window-scroll {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    z-index: 2;
+    pointer-events: none;
+}
+.window-scroll-thumb {
+    height: 100%;
+    background: var(--ink-faint);
+    transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+    .window-scroll-thumb {
+        transition: none;
+    }
+}
+
 .pane-cell {
     position: absolute;
 }

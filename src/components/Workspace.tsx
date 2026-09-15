@@ -117,6 +117,23 @@ export function Workspace() {
                     </div>
                 );
             })}
+            {activeSession && activeOrder.length > 1 && (
+                <WindowScrollIndicator count={activeOrder.length} index={activeOrder.indexOf(activeSession.activeWindowId)} />
+            )}
+        </div>
+    );
+}
+
+/**
+ * Where the session sits along its screens, as a thumb the width of one screen.
+ * It reads the window's real place in the session rather than the screen a slide
+ * has it parked on, so a jump of several screens travels the whole way here
+ * while the canvas next door slides one.
+ */
+function WindowScrollIndicator({ count, index }: { count: number; index: number }) {
+    return (
+        <div className="window-scroll" aria-hidden="true" style={{ "--window-pan-ms": `${PAN_MS}ms` } as CSSProperties}>
+            <div className="window-scroll-thumb" style={{ width: `${100 / count}%`, transform: `translateX(${Math.max(0, index) * 100}%)` }} />
         </div>
     );
 }
