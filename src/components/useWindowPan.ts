@@ -10,8 +10,8 @@ const SETTLE_GUARD_MS = PAN_MS + 120;
 interface Pan {
     readonly from: string;
     readonly to: string;
-    /** Where the track sits before the slide, in screen widths from its left edge. */
-    readonly at: number;
+    /** Where the window being left sits for the whole slide, in screen widths from the track's left edge. */
+    readonly fromSlot: number;
     /** Where the target is parked for the slide, so the travel is one screen however far the jump was. */
     readonly slot: number;
     readonly distance: number;
@@ -24,7 +24,7 @@ export interface WindowPan {
     readonly sliding: boolean;
     /** Where the track sits now, in screen widths from its left edge. */
     readonly at: number;
-    /** Where a layer sits now, which is its own slot unless it is the target being parked next door. */
+    /** Where a layer sits now, which is its own slot unless a slide has it parked somewhere else. */
     slotOf(windowId: string, slot: number): number;
     paints(windowId: string): boolean;
 }
@@ -33,13 +33,16 @@ function reducedMotion(): boolean {
     return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
-function planPan(from: string | null, to: string | null, slots: ReadonlyMap<string, number>): Pan | null {
+function planPan(from: string | null, to: string | null, slots: ReadonlyMap<string, number>, running: Pan | null): Pan | null {
     if (!from || !to || from === to || reducedMotion()) return null;
-    const fromSlot = slots.get(from);
+    const home = slots.get(from);
     const toSlot = slots.get(to);
     // A window that has left the session has nothing to slide out, so the switch cuts.
-    if (fromSlot === undefined || toSlot === undefined) return null;
-    return { from, to, at: fromSlot, slot: fromSlot + (toSlot > fromSlot ? 1 : -1), distance: Math.abs(toSlot - fromSlot) };
+    if (home === undefined || toSlot === undefined) return null;
+    // A switch made mid-slide leaves the window the slide was bringing in, which
+    // is sitting where that slide parked it rather than on its own screen.
+    const fromSlot = running?.to === from ? running.slot : home;
+    return { from, to, fromSlot, slot: fromSlot + (toSlot > home ? 1 : -1), distance: Math.abs(toSlot - home) };
 }
 
 /**
@@ -61,8 +64,11 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         const was = previous.current;
         previous.current = { sessionId, activeWindowId };
         // Another session is another track, so its switch is not a slide along this one.
-        setPan(was.sessionId === sessionId ? planPan(was.activeWindowId, activeWindowId, slots) : null);
-        setRunning(false);
+        const next = was.sessionId === sessionId ? planPan(was.activeWindowId, activeWindowId, slots, pan) : null;
+        setPan(next);
+        // A slide chaining onto the one already travelling starts from where the
+        // track is, so only a fresh one has to park first.
+        setRunning(running && next !== null && pan?.to === next.from);
     }
 
     useLayoutEffect(() => {
@@ -94,8 +100,12 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         trackRef,
         panning: pan !== null,
         sliding: pan !== null && running,
-        at: pan ? (running ? pan.slot : pan.at) : (activeWindowId ? (slots.get(activeWindowId) ?? 0) : 0),
-        slotOf: (windowId, slot) => (pan && pan.to === windowId ? pan.slot : slot),
+        at: pan ? (running ? pan.slot : pan.fromSlot) : (activeWindowId ? (slots.get(activeWindowId) ?? 0) : 0),
+        slotOf: (windowId, slot) => {
+            if (!pan) return slot;
+            if (windowId === pan.to) return pan.slot;
+            return windowId === pan.from ? pan.fromSlot : slot;
+        },
         paints: (windowId) => (pan ? windowId === pan.from || windowId === pan.to : windowId === activeWindowId),
     };
 }

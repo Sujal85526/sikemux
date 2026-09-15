@@ -80,6 +80,53 @@ describe("workspace pan", () => {
     });
 
     /*
+     * Holding the switch shortcut down starts the next slide while the last one is
+     * still travelling. The window it leaves behind is the one that slide parked
+     * next door, so the next slide has to start from there and not from that
+     * window's own screen, or the canvas crosses everything in between.
+     */
+    it("travels one screen for a switch made while a slide is running", async () => {
+        sessionOfScreens();
+        const { container } = render(<Workspace />);
+        await act(async () => {});
+
+        act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-9")!));
+        const parked = slotOf(container.querySelector(".window-layer.live")!);
+
+        act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-11")!));
+
+        const painted = container.querySelectorAll(".window-layer.painted");
+        expect(painted).toHaveLength(2);
+        const slots = Array.from(painted, slotOf).sort((left, right) => left - right);
+        expect(slots[1] - slots[0]).toBe(1);
+        expect(slots).toContain(parked);
+
+        const track = container.querySelector(".window-track") as HTMLElement;
+        expect(track).toHaveClass("panning");
+        expect(track.style.getPropertyValue("--pan")).toBe(`${-(parked + 1) * 100}%`);
+    });
+
+    /*
+     * Chained slides walk the parked screen along one step at a time, and stepping
+     * left far enough takes it past the track's own left edge. The offset has to
+     * follow it there or the screen arriving never reaches the stage.
+     */
+    it("parks a screen left of the track when the chain keeps stepping left", async () => {
+        sessionOfScreens();
+        const { container } = render(<Workspace />);
+        await act(async () => {});
+        const track = container.querySelector(".window-track") as HTMLElement;
+        const parkedAt = () => slotOf(container.querySelector(".window-layer.live")!);
+
+        for (const agent of ["agent-9", "agent-4", "agent-1", "agent-0"]) {
+            act(() => cmd.selectWindowId(agentWindowId(getState(), agent)!));
+            expect(track.style.getPropertyValue("--pan")).toBe(`${-parkedAt() * 100}%`);
+        }
+
+        expect(parkedAt()).toBe(-1);
+    });
+
+    /*
      * The store commits the new window before the slide starts, so the tab pill and
      * the keyboard are already on the target. The layer being left must therefore be
      * out of the a11y tree and unfocusable from the first frame, even while it paints.

@@ -122,7 +122,7 @@ export function Workspace() {
 }
 
 /** How far the track is slid left, in screen widths, to bring `index` to the front. */
-const panOffset = (index: number) => `${-Math.max(0, index) * 100}%`;
+const panOffset = (index: number) => `${-index * 100}%`;
 
 const EMPTY_IDS: readonly string[] = [];
 
