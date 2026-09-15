@@ -72,6 +72,16 @@ describe("dragOffset", () => {
         expect(dragOffset(-0.4, firstScreen)).toBeLessThan(0);
     });
 
+    /*
+     * All of the give spent in the first fraction of the pull is a stop, not a
+     * wall: the rest of the finger travel moves nothing and reads as broken.
+     */
+    it("spreads the give over a screen of pull rather than spending it at once", () => {
+        expect(dragOffset(0.25, lastScreen)).toBeLessThan(0.075);
+        expect(dragOffset(1.5, lastScreen)).toBeGreaterThan(0.12);
+        expect(dragOffset(1.5, lastScreen)).toBeGreaterThan(dragOffset(0.5, lastScreen));
+    });
+
     it("still runs free towards the end that has a screen", () => {
         expect(dragOffset(0.4, firstScreen)).toBeCloseTo(0.4);
         expect(dragOffset(-0.4, lastScreen)).toBeCloseTo(-0.4);

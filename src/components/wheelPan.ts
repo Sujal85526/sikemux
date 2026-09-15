@@ -10,6 +10,8 @@ export const VELOCITY_SAMPLES = 5;
 const HORIZONTAL_RATIO = 1.5;
 /** How far a gesture can pull past the first or last screen of the session. */
 const OVERSCROLL = 0.15;
+/** How much of the pull gets through before the resistance takes over. */
+const GIVE = 0.55;
 /** How far a gesture has to pull before it lands on the screen next door. */
 const COMMIT = 0.3;
 /** Screens per millisecond that counts as a flick however short the drag was. */
@@ -57,8 +59,12 @@ export function claimsWheel(chain: readonly PaneScroller[], deltaX: number, delt
     return Math.abs(deltaX) > HORIZONTAL_RATIO * Math.abs(deltaY);
 }
 
-/** Pulls hard at first and then barely at all, so the ends of a session feel like ends. */
-const resisted = (past: number) => (OVERSCROLL * past) / (past + OVERSCROLL);
+/**
+ * Gives a little and then less and less, so the ends of a session feel like ends
+ * rather than like something broken. Spread over about a screen of pull: give it
+ * all away in the first fraction and the rest of the pull moves nothing at all.
+ */
+const resisted = (past: number) => (OVERSCROLL * GIVE * past) / (GIVE * past + OVERSCROLL);
 
 /**
  * Where the track sits after a gesture has dragged `raw` screens, in screens
