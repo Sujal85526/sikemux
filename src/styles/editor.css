@@ -443,26 +443,10 @@
     padding: 0 12px;
 }
 
-/* variant: Bruno request tabs */
-.tabbar.v-bruno {
-    gap: 1px;
-    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
-    border-bottom: 1px solid var(--border);
-}
-.tabbar.v-bruno .tab {
-    padding: 6px 8px 6px 10px;
-    max-width: 200px;
-    color: var(--text-secondary);
-}
-.tabbar.v-bruno .tab:hover {
-    background: var(--surface-raised);
-}
-.tabbar.v-bruno .tab-x {
-    padding: 0 1px;
-}
-.tabbar.v-bruno .bruno-method {
+/* The request tree aligns its method badges in a fixed column; in a tab the
+   badge sits next to the name instead, so it takes only the width it needs. */
+.tabbar .bruno-method {
     width: auto;
-    flex: 0 0 auto;
 }
 .ed-host {
     flex: 1;

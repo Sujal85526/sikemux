@@ -424,8 +424,7 @@ textarea:focus,
 }
 
 .tabbar.v-agent,
-.tabbar.v-editor,
-.tabbar.v-bruno {
+.tabbar.v-editor {
     /* No fill: the stage under the strip already is the surface, and a second
      * near-identical tint on top of it drew a seam across the window. */
     background: transparent;

@@ -11,13 +11,8 @@ import { buildScope, findRequest, requestVars, selectedEnvOf } from "../../bruno
 import { mergeScope, type Scope } from "../../bruno/interpolate";
 import { runRequest, type RunResult } from "../../bruno/run";
 import type { BruRequest, BruScope } from "../../bruno/types";
-import { basename, relativePath as pathRelative } from "../../lib/paths";
-import { FILE_MANAGER_NAME } from "../../lib/platform";
-import { fsapi } from "../../api/fs";
-import { notify, reportError } from "../../state/toast";
+import { basename } from "../../lib/paths";
 import { confirmDialog } from "../../state/dialog";
-import { type CtxItem } from "../FileTree";
-import { TabBar } from "../TabBar";
 import { IconBruno } from "../Icons";
 import { BrunoEnvSelect } from "./BrunoEnvSelect";
 import { BrunoTree } from "./BrunoTree";
@@ -84,20 +79,6 @@ export function BrunoPane({ sessionId, active }: Props) {
         return buildScope({ collection, env, secretVars, folderScopes: located?.folderScopes ?? [] });
     }, [collection, env, secretVars, located]);
     const scope = useMemo(() => mergeScope(runtime, requestVars(effectiveRequest), inheritedScope), [runtime, effectiveRequest, inheritedScope]);
-
-    const openTabs = useMemo(
-        () =>
-            view.openPaths.map((p) => {
-                const loc = collection ? findRequest(collection.tree, p) : null;
-                return {
-                    path: p,
-                    name: loc?.request.meta.name || basename(p).replace(/\.bru$/, ""),
-                    method: loc?.request.method ?? "get",
-                    dirty: drafts[p] != null,
-                };
-            }),
-        [view.openPaths, collection, drafts],
-    );
 
     const onChange = useCallback(
         (next: BruRequest) => {
@@ -196,30 +177,6 @@ export function BrunoPane({ sessionId, active }: Props) {
         });
     }, [sessionId, onSend]);
 
-    const relativePath = (p: string) => pathRelative(p, collectionPath) ?? basename(p);
-    const copyText = (text: string, label: string) =>
-        navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
-
-    const buildTabMenu = (tabPath: string): CtxItem[] => {
-        const open = view.openPaths;
-        const idx = open.indexOf(tabPath);
-        const others = open.filter((p) => p !== tabPath);
-        const toLeft = open.slice(0, idx);
-        const toRight = open.slice(idx + 1);
-        return [
-            { label: "Close", hint: "⌥W", run: () => cmd.brunoCloseTab(sessionId, tabPath) },
-            { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
-            { label: "Close to the Left", disabled: toLeft.length === 0, run: () => toLeft.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
-            { label: "Close to the Right", disabled: toRight.length === 0, run: () => toRight.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
-            { label: "Close All", run: () => open.forEach((p) => cmd.brunoCloseTab(sessionId, p)) },
-            { sep: true },
-            { label: "Copy Path", run: () => void copyText(tabPath, "path") },
-            { label: "Copy Relative Path", run: () => void copyText(relativePath(tabPath), "relative path") },
-            { sep: true },
-            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(tabPath).catch(reportError("reveal")) },
-        ];
-    };
-
     if (!bruno) return <div className="bruno-pane bruno-empty">not a Bruno workspace</div>;
 
     return (
@@ -255,32 +212,8 @@ export function BrunoPane({ sessionId, active }: Props) {
                     onReload={() => void coll.refresh()}
                 />
                 <div className="bruno-main">
-                    {openTabs.length > 0 && (
-                        <TabBar
-                            variant="bruno"
-                            tabs={openTabs.map((t) => ({
-                                id: t.path,
-                                tabId: `bruno-tab-${sessionId}-${encodeURIComponent(t.path)}`,
-                                panelId: `bruno-content-${sessionId}`,
-                                label: t.name,
-                                title: t.path,
-                                active: t.path === path,
-                                dirty: t.dirty,
-                                icon: <span className={`bruno-method m-${t.method}`}>{t.method.toUpperCase()}</span>,
-                            }))}
-                            onSelect={(p) => cmd.brunoSelectRequest(sessionId, p)}
-                            onClose={(p) => cmd.brunoCloseTab(sessionId, p)}
-                            buildMenu={buildTabMenu}
-                        />
-                    )}
                     {effectiveRequest && path ? (
-                        <div
-                            id={`bruno-content-${sessionId}`}
-                            role="tabpanel"
-                            aria-labelledby={`bruno-tab-${sessionId}-${encodeURIComponent(path)}`}
-                            className="bruno-workbench"
-                            ref={splitRef}
-                            style={{ "--bruno-req-pct": `${reqPanePct}%` } as CSSProperties}>
+                        <div className="bruno-workbench" ref={splitRef} style={{ "--bruno-req-pct": `${reqPanePct}%` } as CSSProperties}>
                             <BrunoRequestView
                                 request={effectiveRequest}
                                 tab={view.reqTab}

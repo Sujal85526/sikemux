@@ -4,6 +4,8 @@ import type { StoreState } from "./store";
 
 const win = (id: string, role: string) => ({ id, role, activePaneId: `${id}-pane` }) as unknown as StoreState["windows"][string];
 const agent = () => ({}) as StoreState["agents"][string];
+const brunoView = (openPaths: string[], activeRequestPath: string | null = null) =>
+    ({ openPaths, activeRequestPath }) as StoreState["brunoViews"][string];
 
 describe("roleHasTab", () => {
     /*
@@ -68,6 +70,21 @@ describe("expandTabRefs", () => {
         expect(refs.map(tabRefKey)).toEqual(["window:t1", "file:e1:/a.ts", "agent:a1"]);
     });
 
+    it("expands a Bruno workspace into one tab per open request, in their open order", () => {
+        const refs = expandTabRefs(["b1"], [], { b1: win("b1", "bruno") }, {}, {}, brunoView(["/a.bru", "/b.bru"]));
+
+        expect(refs.map(tabRefKey)).toEqual(["request:b1:/a.bru", "request:b1:/b.bru"]);
+    });
+
+    /*
+     * The Bruno pane's own tree is how you open the first request, so an empty
+     * workspace needs no tab — the same rule the editor follows.
+     */
+    it("gives a Bruno workspace holding nothing no tab at all", () => {
+        expect(expandTabRefs(["b1"], [], { b1: win("b1", "bruno") }, {}, {}, brunoView([]))).toEqual([]);
+        expect(expandTabRefs(["b1"], [], { b1: win("b1", "bruno") }, {}, {})).toEqual([]);
+    });
+
     it("orders windows before agents and drops ids with no record", () => {
         const refs = expandTabRefs(["t1", "gone"], ["a1", "vanished"], { t1: win("t1", "term") }, { a1: agent() });
 
@@ -101,6 +118,18 @@ describe("activeTabRef", () => {
         expect(ref && tabRefKey(ref)).toBe("window:e1");
     });
 
+    it("resolves an active Bruno workspace to the request it is showing", () => {
+        const ref = activeTabRef(session({ kind: "bruno", activeWindowId: "b1" }), { b1: win("b1", "bruno") }, {}, brunoView(["/a.bru"], "/a.bru"));
+
+        expect(ref && tabRefKey(ref)).toBe("request:b1:/a.bru");
+    });
+
+    it("keeps an empty Bruno workspace a window ref so its layer still renders", () => {
+        const ref = activeTabRef(session({ kind: "bruno", activeWindowId: "b1" }), { b1: win("b1", "bruno") }, {}, brunoView([]));
+
+        expect(ref && tabRefKey(ref)).toBe("window:b1");
+    });
+
     it("still names the window itself for every other role", () => {
         const ref = activeTabRef(session({ activeWindowId: "t1" }), { t1: win("t1", "term") }, {});
 
@@ -116,6 +145,10 @@ describe("tabRefWindowId", () => {
      */
     it("points a document tab at the editor holding it", () => {
         expect(tabRefWindowId({ kind: "file", id: "e1", path: "/a.ts" })).toBe("e1");
+    });
+
+    it("points a request tab at the Bruno workspace holding it", () => {
+        expect(tabRefWindowId({ kind: "request", id: "b1", path: "/a.bru" })).toBe("b1");
     });
 
     it("points a window tab at itself and an agent tab at no window", () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getState, setState } from "./store";
+import type { StoreState } from "./store";
 import {
     selectActiveSession,
     selectActiveWindow,
@@ -39,5 +40,17 @@ describe("narrow store selectors", () => {
         expect(selectItemState(state, "terminal", "pane")).toBeUndefined();
         expect(selectItemState(state, "aws", "pane")).toBeUndefined();
         expect(selectItemState(state, "editor", "missing")).toBeUndefined();
+    });
+
+    /*
+     * Bruno keeps its view state per session while the others key by item, so
+     * looking it up by pane id silently found nothing.
+     */
+    it("reads Bruno view state by session rather than by item", () => {
+        const view = { openPaths: ["/a.bru"], activeRequestPath: "/a.bru" } as StoreState["brunoViews"][string];
+        setState({ brunoViews: { s1: view } });
+
+        expect(selectItemState(getState(), "bruno", "s1")).toBeUndefined();
+        expect(selectItemState(getState(), "bruno", "pane", "s1")).toBe(view);
     });
 });

@@ -1526,6 +1526,11 @@ export function selectTab(ref: WorkspaceTabRef): void {
         selectWindowId(ref.id);
         return;
     }
+    if (ref.kind === "request") {
+        brunoSelectRequest(getState().activeSessionId, ref.path);
+        selectWindowId(ref.id);
+        return;
+    }
     selectWindowId(ref.id);
 }
 
@@ -1539,6 +1544,10 @@ export function closeTab(ref: WorkspaceTabRef): void {
         // for each document, so closing goes through it rather than around it.
         const win = getState().windows[ref.id];
         if (win) emit({ type: "close-file", paneId: win.activePaneId, path: ref.path });
+        return;
+    }
+    if (ref.kind === "request") {
+        brunoCloseTab(getState().activeSessionId, ref.path);
         return;
     }
     closeWindowById(ref.id);

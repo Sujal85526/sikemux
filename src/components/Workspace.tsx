@@ -5,7 +5,7 @@ import type { Agent, Divider, Rect, Session, Window as WindowT, WindowRole, Work
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
-import { activeTabRef, expandTabRefs, roleHasTab, tabRefKey, tabRefWindowId } from "../state/selectors";
+import { activeTabRef, expandTabRefs, selectTabRefs, tabRefKey, tabRefWindowId } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
@@ -15,6 +15,9 @@ import { renderWorkbenchItem } from "../workbench/renderers";
 import { AgentBrowserShell } from "./BrowserPane";
 import { FileIcon } from "./FileIcon";
 import { fsapi } from "../api/fs";
+import { useResourceEnabled } from "../state/resources";
+import { brunoCollectionR } from "../state/resources.defs";
+import { findRequest } from "../bruno/resolve";
 import { basename, relativePath } from "../lib/paths";
 import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
@@ -37,6 +40,7 @@ export function Workspace() {
     const agentsBySession = useStore((s) => s.agentsBySession);
     const activeSessionId = useStore((s) => s.activeSessionId);
     const editorViews = useStore((s) => s.editorViews);
+    const brunoViews = useStore((s) => s.brunoViews);
     const areaRef = useRef<HTMLDivElement>(null);
     const mountedWorkbenchWindows = useRef(new Set<string>());
     for (const id of mountedWorkbenchWindows.current) {
@@ -45,21 +49,17 @@ export function Workspace() {
 
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const activeSession = sessionsById[activeSessionId];
-    // Counts what the strip would actually show: a project holding only
-    // rail-driven surfaces has no tabs, and no strip.
-    const tabCount = activeSession
-        ? (windowsBySession[activeSession.id] ?? []).filter((id) => {
-              const role = windowsById[id]?.role;
-              return role !== undefined && roleHasTab(role);
-          }).length + (agentsBySession[activeSession.id]?.length ?? 0)
-        : 0;
+    // Counts what the strip would actually show, by asking the list the strip
+    // renders: a project holding only rail-driven surfaces has no tabs, and no
+    // strip, while an editor or Bruno workspace counts its open documents.
+    const tabCount = useStore((state) => (state.sessions[state.activeSessionId] ? selectTabRefs(state, state.activeSessionId).length : 0));
 
     return (
         <div className="window-area" ref={areaRef}>
             {activeSession && tabCount > 0 && <WorkspaceTabsBar session={activeSession} />}
             {sessions.flatMap((session) => {
                 const isActive = session.id === activeSessionId;
-                const active = activeTabRef(session, windowsById, editorViews);
+                const active = activeTabRef(session, windowsById, editorViews, brunoViews[session.id]);
                 const activeWindowId = tabRefWindowId(active);
                 const winIds = windowsBySession[session.id] ?? [];
                 const aIds = agentsBySession[session.id] ?? [];
@@ -111,13 +111,19 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     const agentIds = useStore((s) => s.agentsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
+    const brunoView = useStore((s) => s.brunoViews[session.id]);
+    const collectionPath = session.bruno?.collectionPath ?? "";
+    const drafts = session.bruno?.drafts;
+    // A request's name and method live in the collection on disk, not the store,
+    // so the strip reads the same resource the Bruno pane does.
+    const collection = useResourceEnabled(!!collectionPath, brunoCollectionR, collectionPath).data;
     // Shared with cycleTab through selectTabRefs, so the strip and the keyboard
     // can never disagree about what the tabs are.
     const refs = useMemo(
-        () => expandTabRefs(windowIds ?? EMPTY_IDS, agentIds ?? EMPTY_IDS, windowsById, agentsById, editorViews),
-        [windowIds, agentIds, windowsById, agentsById, editorViews],
+        () => expandTabRefs(windowIds ?? EMPTY_IDS, agentIds ?? EMPTY_IDS, windowsById, agentsById, editorViews, brunoView),
+        [windowIds, agentIds, windowsById, agentsById, editorViews, brunoView],
     );
-    const active = activeTabRef(session, windowsById, editorViews);
+    const active = activeTabRef(session, windowsById, editorViews, brunoView);
     const activeKey = active ? tabRefKey(active) : null;
 
     const windowMenu = (win: WindowT): CtxItem[] => {
@@ -152,6 +158,30 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
             {
                 label: "Copy Relative Path",
                 run: () => void copyPath(ref.path, relativePath(ref.path, session.cwd) ?? basename(ref.path), "relative path"),
+            },
+            { sep: true },
+            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(ref.path).catch(reportError("reveal")) },
+        ];
+    };
+
+    const requestMenu = (ref: Extract<WorkspaceTabRef, { kind: "request" }>): CtxItem[] => {
+        const open = brunoView?.openPaths ?? [];
+        const index = open.indexOf(ref.path);
+        const close = (paths: string[]) => paths.forEach((path) => cmd.closeTab({ kind: "request", id: ref.id, path }));
+        const others = open.filter((path) => path !== ref.path);
+        const toLeft = index > 0 ? open.slice(0, index) : [];
+        const toRight = index >= 0 ? open.slice(index + 1) : [];
+        return [
+            { label: "Close", hint: "⌥W", run: () => close([ref.path]) },
+            { label: "Close Others", disabled: others.length === 0, run: () => close(others) },
+            { label: "Close to the Left", disabled: toLeft.length === 0, run: () => close(toLeft) },
+            { label: "Close to the Right", disabled: toRight.length === 0, run: () => close(toRight) },
+            { label: "Close All", run: () => close(open) },
+            { sep: true },
+            { label: "Copy Path", run: () => void copyPath(ref.path, ref.path, "path") },
+            {
+                label: "Copy Relative Path",
+                run: () => void copyPath(ref.path, relativePath(ref.path, collectionPath) ?? basename(ref.path), "relative path"),
             },
             { sep: true },
             { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(ref.path).catch(reportError("reveal")) },
@@ -202,6 +232,20 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
                         </span>
                     ),
                     accessory: state ? <AgentStateIndicator state={state.state} /> : undefined,
+                },
+            ];
+        }
+        if (ref.kind === "request") {
+            const located = collection ? findRequest(collection.tree, ref.path) : null;
+            const method = located?.request.method ?? "get";
+            return [
+                {
+                    id: key,
+                    label: located?.request.meta.name || basename(ref.path).replace(/\.bru$/, ""),
+                    title: ref.path,
+                    active: key === activeKey,
+                    dirty: drafts?.[ref.path] != null,
+                    icon: <span className={`bruno-method m-${method}`}>{method.toUpperCase()}</span>,
                 },
             ];
         }
@@ -262,6 +306,7 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
                 const ref = refByKey.get(key);
                 if (!ref) return [];
                 if (ref.kind === "file") return fileMenu(ref);
+                if (ref.kind === "request") return requestMenu(ref);
                 if (ref.kind === "agent") {
                     const agent = agentsById[ref.id];
                     return agent ? agentMenu(agent) : [];
@@ -342,7 +387,8 @@ const WindowLayer = memo(function WindowLayer({
     topInset?: number;
 }) {
     const editorView = useStore((s) => s.editorViews[win.activePaneId]);
-    const active = activeTabRef(session, { [win.id]: win }, editorView ? { [win.activePaneId]: editorView } : {});
+    const brunoView = useStore((s) => s.brunoViews[session.id]);
+    const active = activeTabRef(session, { [win.id]: win }, editorView ? { [win.activePaneId]: editorView } : {}, brunoView);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
     const { panes, dividers } = useMemo(() => computeLayout(win.root), [win.root]);
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);

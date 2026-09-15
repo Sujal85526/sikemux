@@ -1003,7 +1003,6 @@ body.bruno-resizing {
 /* ── window-opacity passthrough ──────────────────────── */
 html.is-transparent .bruno-head,
 html.is-transparent .bruno-tree,
-html.is-transparent .tabbar.v-bruno,
 html.is-transparent .dd-btn,
 html.is-transparent .bruno-save,
 html.is-transparent .bruno-icon-btn,
