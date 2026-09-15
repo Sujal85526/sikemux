@@ -628,8 +628,24 @@ async fn run_model_catalog_executable(
     input: Option<&str>,
     config_path: Option<&str>,
 ) -> Result<String, String> {
+    run_model_catalog_executable_without_env(agent, executable, args, input, config_path, &[]).await
+}
+
+/// Clears `removed_env` after the login-shell import, so a variable the
+/// captured profile set is dropped too, not just an inherited one.
+async fn run_model_catalog_executable_without_env(
+    agent: &str,
+    executable: &Path,
+    args: &[&str],
+    input: Option<&str>,
+    config_path: Option<&str>,
+    removed_env: &[&str],
+) -> Result<String, String> {
     let mut command = Command::new(executable);
     apply_login_environment(&mut command);
+    for key in removed_env {
+        command.env_remove(key);
+    }
     command
         .args(args)
         .kill_on_drop(true)
@@ -735,22 +751,63 @@ const CODEX_USAGE_REQUEST_ID: u64 = 2;
 const USAGE_LOOKUP_TIMEOUT: Duration = Duration::from_secs(12);
 const USAGE_LOOKUP_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
 
-async fn claude_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
+/// Each of these makes the Claude CLI authenticate as something other than the
+/// claude.ai login, and none of them reports subscription limits.
+const CLAUDE_SUBSCRIPTION_OVERRIDE_ENV: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+];
+
+fn claude_subscription_override_present() -> bool {
+    CLAUDE_SUBSCRIPTION_OVERRIDE_ENV.iter().any(|key| {
+        std::env::var_os(key).is_some_and(|value| !value.is_empty())
+            || crate::system::login_shell_environment()
+                .get(*key)
+                .is_some_and(|value| !value.is_empty())
+    })
+}
+
+async fn read_claude_usage(
+    executable: &Path,
+    config_path: Option<&str>,
+    removed_env: &[&str],
+) -> Result<AgentUsage, String> {
     let request = format!(
         "{{\"type\":\"control_request\",\"request_id\":\"{CLAUDE_USAGE_REQUEST_ID}\",\"request\":{{\"subtype\":\"get_usage\"}}}}\n"
     );
-    run_model_catalog_executable(
+    run_model_catalog_executable_without_env(
         "claude",
         executable,
         CLAUDE_MODEL_CATALOG_ARGS,
         Some(&request),
         config_path,
+        removed_env,
     )
     .await
     .and_then(|text| {
         parse_claude_usage(&text, CLAUDE_USAGE_REQUEST_ID)
             .ok_or_else(|| "Claude returned an unreadable usage snapshot".to_string())
     })
+}
+
+async fn claude_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
+    let usage = read_claude_usage(executable, config_path, &[]).await?;
+    // An API key inherited from whichever shell launched Sikemux outranks the
+    // claude.ai login, so a subscriber sees no limits purely because of how the
+    // app was started. A key-only login fails the retry and keeps this answer.
+    if usage.unavailable_reason.is_none() || !claude_subscription_override_present() {
+        return Ok(usage);
+    }
+    Ok(
+        read_claude_usage(executable, config_path, CLAUDE_SUBSCRIPTION_OVERRIDE_ENV)
+            .await
+            .ok()
+            .filter(|retry| retry.unavailable_reason.is_none())
+            .unwrap_or(usage),
+    )
 }
 
 async fn codex_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
@@ -2678,7 +2735,8 @@ mod executable_tests {
     #[cfg(unix)]
     use super::{
         first_healthy_agent_candidate, probe_agent_executable, probe_agent_executable_with_timeout,
-        run_model_catalog_executable, MODEL_CATALOG_ERROR_DETAIL_LIMIT,
+        run_model_catalog_executable, run_model_catalog_executable_without_env,
+        MODEL_CATALOG_ERROR_DETAIL_LIMIT,
     };
     use std::io::Write;
     use std::path::Path;
@@ -3066,6 +3124,35 @@ mod executable_tests {
         .unwrap();
 
         assert_eq!(output, r#"{"models":[]}"#);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn model_catalog_subprocess_drops_removed_environment() {
+        const READ_HOME: &str = "printf '%s' \"${HOME-unset}\"";
+        let kept = run_model_catalog_executable_without_env(
+            "test-agent",
+            Path::new("/bin/sh"),
+            &["-c", READ_HOME],
+            None,
+            None,
+            &[],
+        )
+        .await
+        .unwrap();
+        let dropped = run_model_catalog_executable_without_env(
+            "test-agent",
+            Path::new("/bin/sh"),
+            &["-c", READ_HOME],
+            None,
+            None,
+            &["HOME"],
+        )
+        .await
+        .unwrap();
+
+        assert_ne!(kept, "unset");
+        assert_eq!(dropped, "unset");
     }
 
     #[cfg(unix)]
