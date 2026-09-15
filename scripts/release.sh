@@ -171,7 +171,6 @@ SUCCESS=0
 EXTRACTED=""
 DMG_MOUNT=""
 DMG_ATTACHED=0
-MANIFEST_DIR=""
 restore_on_failure() {
   status=$?
   trap - EXIT INT TERM
@@ -180,8 +179,6 @@ restore_on_failure() {
   fi
   [[ -n "$EXTRACTED" ]] && rm -rf "$EXTRACTED"
   [[ -n "$DMG_MOUNT" ]] && rm -rf "$DMG_MOUNT"
-  # Runs on success too, after the manifest has been uploaded.
-  [[ -n "$MANIFEST_DIR" ]] && rm -rf "$MANIFEST_DIR"
   if [[ "$SUCCESS" != "1" ]]; then
     echo "Release failed; restoring version metadata." >&2
     for file in "${FILES[@]}"; do
@@ -294,12 +291,12 @@ PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # latest.json, because shipped clients resolve that URL and cannot be repointed.
 RELEASE_TAG="v$VERSION"
 TAR_URL="https://github.com/nodelike/sikemux/releases/download/$RELEASE_TAG/${APP_NAME}.app.tar.gz"
-# A nightly cut must not overwrite the tracked stable manifest.
+# Only a stable cut owns the tracked manifest. A nightly one lands beside its
+# artifacts, which git ignores, so it cannot overwrite the stable feed.
 if [[ "$CHANNEL" == "stable" ]]; then
   MANIFEST="$ROOT/latest.json"
 else
-  MANIFEST_DIR="$(mktemp -d)"
-  MANIFEST="$MANIFEST_DIR/latest.json"
+  MANIFEST="$BUNDLE/latest.json"
 fi
 PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" MANIFEST="$MANIFEST" python3 - <<'PY'
 import json, os, pathlib

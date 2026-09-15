@@ -98,8 +98,8 @@ if grep -E 'gh release (create|upload|edit) nightly' scripts/release.sh | grep -
   exit 1
 fi
 # shellcheck disable=SC2016
-grep -Fq 'MANIFEST_DIR="$(mktemp -d)"' scripts/release.sh || {
-  echo "nightly manifest is not written to a temp dir" >&2
+grep -Fq 'MANIFEST="$BUNDLE/latest.json"' scripts/release.sh || {
+  echo "nightly manifest is not written beside its artifacts" >&2
   exit 1
 }
 grep -Fq 'pathlib.Path("latest.json").write_text' scripts/release.sh && {
