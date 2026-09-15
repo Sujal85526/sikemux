@@ -6,7 +6,7 @@ import { getState, setState } from "../state/store";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 import { performanceTelemetry } from "../lib/performance";
-import { GESTURE_END_MS } from "./wheelPan";
+import { HELD_END_MS } from "./wheelPan";
 import { PAN_MS } from "./useWindowPan";
 import type { Agent } from "../state/types";
 
@@ -296,7 +296,7 @@ describe("workspace wheel pan", () => {
         swipe(live, 600);
         expect(track).not.toHaveClass("sliding");
 
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        act(() => void vi.advanceTimersByTime(HELD_END_MS));
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).toHaveClass("sliding");
@@ -313,7 +313,7 @@ describe("workspace wheel pan", () => {
     it("keeps following a finger that holds still part way through", () => {
         const { track, live, index } = stageOfScreens();
         // Long enough to be a person pausing, short enough that the swipe is not over.
-        const pause = GESTURE_END_MS - 100;
+        const pause = HELD_END_MS - 100;
 
         swipe(live, 300);
         act(() => void vi.advanceTimersByTime(pause));
@@ -340,7 +340,7 @@ describe("workspace wheel pan", () => {
         swipe(live, 100);
         expect(track).not.toHaveClass("sliding");
 
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        act(() => void vi.advanceTimersByTime(HELD_END_MS));
 
         expect(activeWindow()).toBe(before);
         expect(track).toHaveClass("sliding");
@@ -386,7 +386,7 @@ describe("workspace wheel pan", () => {
         expect(swipe(pane, 300)).toBe(false);
         pane.scrollLeft = 500;
         expect(swipe(pane, 300)).toBe(false);
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        act(() => void vi.advanceTimersByTime(HELD_END_MS));
 
         expect(track).not.toHaveClass("panning");
         expect(activeWindow()).toBe(before);
@@ -396,7 +396,7 @@ describe("workspace wheel pan", () => {
         const { track, live } = stageOfScreens();
 
         expect(swipe(live, 60, 50)).toBe(false);
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        act(() => void vi.advanceTimersByTime(HELD_END_MS));
 
         expect(track).not.toHaveClass("panning");
     });
@@ -420,7 +420,7 @@ describe("workspace wheel pan", () => {
 
         swipe(live, 100);
         act(() => cmd.selectWindowId(chosen));
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        act(() => void vi.advanceTimersByTime(HELD_END_MS));
 
         expect(activeWindow()).toBe(chosen);
     });
@@ -438,7 +438,7 @@ describe("workspace wheel pan", () => {
         expect(track).toHaveClass("panning");
         expect(panOf(track)).toBe(slidLeft(index + 0.6));
 
-        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+        act(() => void vi.advanceTimersByTime(HELD_END_MS));
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).not.toHaveClass("panning");

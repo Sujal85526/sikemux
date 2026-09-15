@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsWheel, dragOffset, panned } from "./wheelPan";
+import { claimsWheel, dragOffset, endDelay, HELD_END_MS, panned, SPENT_END_MS } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 const plain: PaneScroller = { overflowX: "visible", scrollWidth: 100, clientWidth: 100, scrollLeft: 0 };
@@ -145,5 +145,29 @@ describe("panned", () => {
         expect(start.slot).toBe(0);
         expect(start.offset).toBeLessThan(0);
         expect(start.offset).toBeGreaterThan(-0.15);
+    });
+});
+
+describe("endDelay", () => {
+    /*
+     * A trackpad is silent while the fingers rest on it and silent once they have
+     * gone, so the only thing telling the two apart is what the last event looked
+     * like. Cutting the wait short under a resting hand takes the track away from
+     * a swipe still being made.
+     */
+    it("waits out a hand that might still be there", () => {
+        expect(endDelay(40)).toBe(HELD_END_MS);
+        expect(endDelay(-40)).toBe(HELD_END_MS);
+        expect(endDelay(2)).toBe(HELD_END_MS);
+    });
+
+    /*
+     * A swipe let go of coasts to a stop rather than stopping dead, so deltas this
+     * small are the tail running out. Nothing is holding the track by then.
+     */
+    it("closes promptly once the swipe has coasted to a stop", () => {
+        expect(endDelay(0.4)).toBe(SPENT_END_MS);
+        expect(endDelay(-0.4)).toBe(SPENT_END_MS);
+        expect(endDelay(0)).toBe(SPENT_END_MS);
     });
 });

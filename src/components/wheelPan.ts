@@ -1,10 +1,20 @@
 /**
- * A trackpad says nothing when the fingers stop and nothing when they leave, so
- * this much quiet is the only sign a gesture is over. It has to outlast holding
- * still mid-swipe, which is a pause a person measures in tenths of a second —
- * anything shorter closes the swipe under fingers that are still on the glass.
+ * Quiet is the only sign a swipe is over, because a trackpad says nothing while
+ * the fingers rest on it and nothing once they have gone. So the wait has to
+ * outlast a person holding still part way through a swipe.
  */
-export const GESTURE_END_MS = 320;
+export const HELD_END_MS = 600;
+/**
+ * Except when the events were dying away rather than stopping: a swipe carries
+ * on by itself after the fingers leave, and fades out instead of cutting off.
+ * Nothing is holding the track by then, so it closes without the long wait.
+ */
+export const SPENT_END_MS = 100;
+/** Smaller than a finger ever pushes, and where a swipe coasting to a stop ends up. */
+const SPENT_DELTA = 1;
+
+/** How long to let the quiet run before a swipe counts as finished. */
+export const endDelay = (deltaX: number) => (Math.abs(deltaX) < SPENT_DELTA ? SPENT_END_MS : HELD_END_MS);
 /** Below this the gesture is diagonal enough to belong to whatever is under it. */
 const HORIZONTAL_RATIO = 1.5;
 /** How far a gesture can pull past the first or last screen of the session. */

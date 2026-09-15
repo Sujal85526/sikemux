@@ -4,7 +4,7 @@ import * as cmd from "../state/commands";
 import { getState } from "../state/store";
 import { panOffset, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
-import { claimsWheel, GESTURE_END_MS, panned } from "./wheelPan";
+import { claimsWheel, endDelay, panned } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 interface Gesture {
@@ -128,7 +128,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             }
             const moving = gesture;
             if (quiet != null) window.clearTimeout(quiet);
-            quiet = window.setTimeout(settle, GESTURE_END_MS);
+            quiet = window.setTimeout(settle, endDelay(event.deltaX));
             if (!moving.claimed) return;
             // Whatever is underneath must not scroll as well, including a terminal
             // that turns wheel gestures into cursor keys.
