@@ -9,6 +9,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -187,6 +188,30 @@ if (!runtimeIsCurrent) {
   );
   writeFileSync(runtimeMarker, `${runtimeFingerprint}\n`);
 }
+
+// Tauri follows symlinks when it copies bundle resources, so a framework's
+// top-level alias lands in the app as a second full copy of the payload it
+// points at. Chrome reaches the framework through Versions/<version>/ instead.
+function pruneFrameworkAliases(directory) {
+  let removed = 0;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
+    const path = join(directory, entry.name);
+    if (entry.name.endsWith(".framework")) {
+      for (const alias of readdirSync(path, { withFileTypes: true })) {
+        if (!alias.isSymbolicLink()) continue;
+        unlinkSync(join(path, alias.name));
+        removed += 1;
+      }
+    }
+    removed += pruneFrameworkAliases(path);
+  }
+  return removed;
+}
+
+const prunedAliases = pruneFrameworkAliases(runtimeDir);
+if (prunedAliases > 0)
+  console.log(`  pruned ${prunedAliases} framework alias(es) from the runtime`);
 
 const browserExecutable = findBrowserRuntime(runtimeDir);
 if (!browserExecutable)
