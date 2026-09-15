@@ -4,7 +4,7 @@ Thanks for taking the time to contribute. Sikemux is a Tauri + Rust + React desk
 
 ## Getting started
 
-**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). macOS bundles require Xcode; Windows development requires Microsoft C++ Build Tools and WebView2. Published releases currently target Apple Silicon, while Windows support is validated in CI as an NSIS installer.
+**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). macOS bundles require Xcode; Windows development requires Microsoft C++ Build Tools and WebView2. Published releases target Apple Silicon. Windows is not a current target and CI no longer builds or tests it, so the NSIS installer is best-effort and only as good as the last manual `pnpm build:windows` on a Windows machine.
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git
@@ -37,10 +37,7 @@ pnpm build            # production frontend build
 
 `make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests with `NODE_ENV=test`, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. These are the same quality gates enforced by CI.
 
-Two CI jobs cannot run on a macOS workstation, so a green `make check` does not guarantee green CI:
-
-- **Windows backend and installer smoke build** — Rust tests and the NSIS build run on `windows-latest`. Tests that assume POSIX absolute paths pass locally and fail there.
-- **macOS launched desktop E2E** — runnable with `pnpm test:e2e:desktop`, but it builds the whole app, so the hook leaves it to CI.
+One CI job stays out of the hook: **macOS launched desktop E2E**. Run it with `pnpm test:e2e:desktop` if you touched the launch path — it builds the whole app, so the hook leaves it to CI.
 
 `cargo audit` reads a database that changes daily, so a push that was clean can go red later with no code change. That is the advisory database moving, not your commit.
 
