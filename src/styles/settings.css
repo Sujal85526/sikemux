@@ -58,6 +58,11 @@
     justify-content: center;
     align-items: stretch;
     padding: 0;
+    /* It fills the stage the way a screen does, so it carries the same edge
+       rather than borrowing one from the stage behind it. */
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
     color: var(--text-primary);
     font-family: var(--ui);
 
