@@ -22,6 +22,7 @@
 import type { ShaderMountUniforms } from "@paper-design/shaders";
 import type { Theme } from "../themes";
 import { currentTheme, subscribeTheme } from "../themes/bus";
+import { prefersReducedMotion } from "./motion";
 
 type Shaders = typeof import("@paper-design/shaders");
 
@@ -105,7 +106,7 @@ function webglAvailable(): boolean {
 // Motion is the decoration; the field itself is not. Asked for less of it, the
 // shaders render one static frame rather than disappearing.
 function shouldAnimate(): boolean {
-    return !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    return !prefersReducedMotion();
 }
 
 function loadRuntime(): Promise<Runtime | null> {

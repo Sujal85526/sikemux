@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { prefersReducedMotion } from "../lib/motion";
 import { performanceTelemetry } from "../lib/performance";
 
 /** How long the track takes to travel one screen. */
@@ -39,12 +40,8 @@ export interface WindowPan {
     release(): void;
 }
 
-function reducedMotion(): boolean {
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-}
-
 function planPan(from: string | null, to: string | null, slots: ReadonlyMap<string, number>, running: Pan | null): Pan | null {
-    if (!from || !to || from === to || reducedMotion()) return null;
+    if (!from || !to || from === to || prefersReducedMotion()) return null;
     const home = slots.get(from);
     const toSlot = slots.get(to);
     // A window that has left the session has nothing to slide out, so the switch cuts.
@@ -126,7 +123,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
 
     const release = () => {
         if (pan?.kind !== "drag") return;
-        if (reducedMotion()) {
+        if (prefersReducedMotion()) {
             // Nothing transitions, so the track goes back by hand: React's `--pan`
             // has not moved since the gesture took the track over.
             trackRef.current?.style.setProperty("--pan", panOffset(pan.fromSlot));

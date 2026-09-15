@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { prefersReducedMotion } from "../lib/motion";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { IconClose } from "./Icons";
 import { Tooltip } from "./Tooltip";
@@ -30,10 +31,6 @@ export interface TabDescriptor {
 }
 
 export type TabVariant = "editor" | "agent" | "browser" | "stack";
-
-function reducedMotion(): boolean {
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-}
 
 interface TabBarProps {
     variant: TabVariant;
@@ -81,7 +78,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
         // jsdom has no `scrollIntoView`, and a virtualized strip may not have
         // mounted the pill yet — the virtualizer above has it roughly in view.
         tabRefs.current.get(activeId)?.scrollIntoView?.({
-            behavior: reducedMotion() ? "auto" : "smooth",
+            behavior: prefersReducedMotion() ? "auto" : "smooth",
             block: "nearest",
             inline: "nearest",
         });

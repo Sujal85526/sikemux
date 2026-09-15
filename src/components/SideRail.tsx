@@ -3,6 +3,7 @@ import { createPortal, flushSync } from "react-dom";
 import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
 import type { Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
+import { prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
 import {
@@ -89,10 +90,6 @@ function projectRects(): Map<string, DOMRect> {
     );
 }
 
-function reducedMotion(): boolean {
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-}
-
 export function SideRail() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
@@ -151,7 +148,7 @@ export function SideRail() {
     }, []);
 
     const animateProjectOrder = useCallback((sourceId: string, drop: { targetId: string; placement: ProjectDropPlacement }) => {
-        const before = reducedMotion() ? null : projectRects();
+        const before = prefersReducedMotion() ? null : projectRects();
         const previousOrder = getState().sessionOrder;
         flushSync(() => cmd.reorderSession(sourceId, drop.targetId, drop.placement));
         if (!before || getState().sessionOrder === previousOrder) return;
@@ -188,7 +185,7 @@ export function SideRail() {
     const settleProjectGhost = useCallback((drag: ProjectDragSession) => {
         const ghost = projectGhostRef.current;
         const destination = projectElement(drag.sourceId)?.querySelector<HTMLElement>("[data-project-drop-row]");
-        if (!ghost || !destination || reducedMotion() || typeof ghost.animate !== "function") {
+        if (!ghost || !destination || prefersReducedMotion() || typeof ghost.animate !== "function") {
             projectGhostPointRef.current = null;
             setProjectDragVisual(null);
             return;
