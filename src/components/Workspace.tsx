@@ -5,7 +5,7 @@ import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, Window
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
-import { activeTabRef, expandTabRefs, selectTabRefs, tabRefKey, tabRefWindowId } from "../state/selectors";
+import { activeTabRef, brunoPaneId, expandTabRefs, selectTabRefs, tabRefKey, tabRefWindowId } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
@@ -70,7 +70,7 @@ export function Workspace() {
             {activeSession && tabCount > 0 && <WorkspaceTabsBar session={activeSession} />}
             {sessions.flatMap((session) => {
                 const isActive = session.id === activeSessionId;
-                const active = activeTabRef(session, windowsById, editorViews, brunoViews[session.id]);
+                const active = activeTabRef(session, windowsById, editorViews, brunoViews);
                 const activeWindowId = tabRefWindowId(active);
                 const winIds = windowsBySession[session.id] ?? [];
                 const aIds = agentsBySession[session.id] ?? [];
@@ -122,7 +122,8 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     const agentIds = useStore((s) => s.agentsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
-    const brunoView = useStore((s) => s.brunoViews[session.id]);
+    const brunoViews = useStore((s) => s.brunoViews);
+    const brunoView = brunoViews[useStore((s) => brunoPaneId(s, session.id)) ?? ""];
     const collectionPath = session.bruno?.collectionPath ?? "";
     const drafts = session.bruno?.drafts;
     // A request's name and method live in the collection on disk, not the store,
@@ -131,10 +132,10 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     // Shared with cycleTab through selectTabRefs, so the strip and the keyboard
     // can never disagree about what the tabs are.
     const refs = useMemo(
-        () => expandTabRefs(windowIds ?? EMPTY_IDS, agentIds ?? EMPTY_IDS, windowsById, agentsById, editorViews, brunoView),
-        [windowIds, agentIds, windowsById, agentsById, editorViews, brunoView],
+        () => expandTabRefs(windowIds ?? EMPTY_IDS, agentIds ?? EMPTY_IDS, windowsById, agentsById, editorViews, brunoViews),
+        [windowIds, agentIds, windowsById, agentsById, editorViews, brunoViews],
     );
-    const active = activeTabRef(session, windowsById, editorViews, brunoView);
+    const active = activeTabRef(session, windowsById, editorViews, brunoViews);
     const activeKey = active ? tabRefKey(active) : null;
 
     const windowMenu = (win: WindowT): CtxItem[] => {
@@ -398,8 +399,13 @@ const WindowLayer = memo(function WindowLayer({
     topInset?: number;
 }) {
     const editorView = useStore((s) => s.editorViews[win.activePaneId]);
-    const brunoView = useStore((s) => s.brunoViews[session.id]);
-    const active = activeTabRef(session, { [win.id]: win }, editorView ? { [win.activePaneId]: editorView } : {}, brunoView);
+    const brunoView = useStore((s) => s.brunoViews[win.activePaneId]);
+    const active = activeTabRef(
+        session,
+        { [win.id]: win },
+        editorView ? { [win.activePaneId]: editorView } : {},
+        brunoView ? { [win.activePaneId]: brunoView } : {},
+    );
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
     const { panes, dividers, stacked, stacks, inStack } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
     const terminalTitles = useStore((s) => s.terminalTitles);

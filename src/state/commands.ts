@@ -28,7 +28,7 @@ import { confirmDialog } from "./dialog";
 import { agentSupportsSkipPermissions } from "./commands/agentLogic";
 import { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
 import { parseSessionBundle } from "./sessionBundle";
-import { nextInCycle, selectTabRefs, stripOrder, tabRefKey, type TabSource } from "./selectors";
+import { brunoPaneId, nextInCycle, selectTabRefs, stripOrder, tabRefKey, type TabSource } from "./selectors";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
@@ -484,53 +484,50 @@ export function openBrunoSession(collectionPath: string): void {
     });
 }
 
-function patchBrunoView(sessionId: string, patch: Partial<BrunoView>): void {
+/**
+ * A Bruno session's commands are addressed by session, since a workspace is
+ * its session; the view they change belongs to the pane, like an editor's.
+ */
+function patchBrunoView(sessionId: string, patch: (cur: BrunoView) => BrunoView | void): void {
     mutate((d) => {
-        const cur = d.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW;
-        d.brunoViews[sessionId] = { ...cur, ...patch };
+        const paneId = brunoPaneId(d, sessionId);
+        if (!paneId) return;
+        const cur = d.brunoViews[paneId] ?? DEFAULT_BRUNO_VIEW;
+        d.brunoViews[paneId] = patch(cur) ?? cur;
     });
 }
 
 /** Open a request in a tab (adding it if not already open) and activate it. */
 export function brunoSelectRequest(sessionId: string, path: string | null): void {
-    mutate((d) => {
-        const cur = d.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW;
-        if (path == null) {
-            d.brunoViews[sessionId] = { ...cur, activeRequestPath: null };
-            return;
-        }
+    patchBrunoView(sessionId, (cur) => {
+        if (path == null) return { ...cur, activeRequestPath: null };
         const openPaths = cur.openPaths.includes(path) ? cur.openPaths : [...cur.openPaths, path];
-        d.brunoViews[sessionId] = { ...cur, openPaths, activeRequestPath: path };
+        return { ...cur, openPaths, activeRequestPath: path };
     });
 }
 
 /** Close an open request tab; if it was active, activate a neighbour. Unsaved drafts are kept. */
 export function brunoCloseTab(sessionId: string, path: string): void {
-    mutate((d) => {
-        const cur = d.brunoViews[sessionId];
-        if (!cur) return;
+    patchBrunoView(sessionId, (cur) => {
         const idx = cur.openPaths.indexOf(path);
         if (idx === -1) return;
         const openPaths = cur.openPaths.filter((p) => p !== path);
         let activeRequestPath = cur.activeRequestPath;
         if (activeRequestPath === path) activeRequestPath = openPaths[Math.min(idx, openPaths.length - 1)] ?? null;
-        d.brunoViews[sessionId] = { ...cur, openPaths, activeRequestPath };
+        return { ...cur, openPaths, activeRequestPath };
     });
 }
 export function brunoSetReqTab(sessionId: string, tab: BrunoReqTab): void {
-    patchBrunoView(sessionId, { reqTab: tab });
+    patchBrunoView(sessionId, (cur) => ({ ...cur, reqTab: tab }));
 }
 export function brunoSetResTab(sessionId: string, tab: BrunoResTab): void {
-    patchBrunoView(sessionId, { resTab: tab });
+    patchBrunoView(sessionId, (cur) => ({ ...cur, resTab: tab }));
 }
 export function brunoSetReqPanePct(sessionId: string, reqPanePct: number): void {
-    patchBrunoView(sessionId, { reqPanePct });
+    patchBrunoView(sessionId, (cur) => ({ ...cur, reqPanePct }));
 }
 export function brunoToggleSecrets(sessionId: string, open?: boolean): void {
-    mutate((d) => {
-        const cur = d.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW;
-        d.brunoViews[sessionId] = { ...cur, secretsOpen: open ?? !cur.secretsOpen };
-    });
+    patchBrunoView(sessionId, (cur) => ({ ...cur, secretsOpen: open ?? !cur.secretsOpen }));
 }
 export function brunoSelectEnv(sessionId: string, collectionPath: string, envId: string | null): void {
     mutate((d) => {
@@ -579,7 +576,7 @@ export function brunoSaveActive(): void {
     const st = getState();
     const s = st.sessions[st.activeSessionId];
     if (s?.kind !== "bruno") return;
-    const path = st.brunoViews[s.id]?.activeRequestPath;
+    const path = st.brunoViews[brunoPaneId(st, s.id) ?? ""]?.activeRequestPath;
     if (path) void brunoSaveRequest(s.id, path);
 }
 
@@ -633,12 +630,11 @@ export async function brunoRenameRequest(sessionId: string, path: string, name: 
         brunoSetDraft(sessionId, path, null);
         reloadBruno(s.bruno.collectionPath);
         // keep the tab pointing at the renamed file
-        mutate((d) => {
-            const v = d.brunoViews[sessionId];
-            if (!v) return;
-            v.openPaths = v.openPaths.map((p) => (p === path ? newPath : p));
-            if (v.activeRequestPath === path) v.activeRequestPath = newPath;
-        });
+        patchBrunoView(sessionId, (v) => ({
+            ...v,
+            openPaths: v.openPaths.map((p) => (p === path ? newPath : p)),
+            activeRequestPath: v.activeRequestPath === path ? newPath : v.activeRequestPath,
+        }));
         notify("success", `Renamed to ${name.trim()}`);
     } catch (e) {
         reportError("rename request")(e);
@@ -843,7 +839,6 @@ function closeSessionNow(id: string): void {
         }
         delete d.windowsBySession[id];
         delete d.agentsBySession[id];
-        delete d.brunoViews[id];
         delete d.rundeckViews[id];
         delete d.globalSearchBySession[id];
         delete d.sessions[id];
@@ -1260,6 +1255,7 @@ function disposePaneState(d: StoreState, paneId: string): void {
     delete d.gitViews[paneId];
     delete d.ecsViews[paneId];
     delete d.rundeckViews[paneId];
+    delete d.brunoViews[paneId];
     delete d.terminalTitles[paneId];
 }
 
@@ -1342,7 +1338,7 @@ export function closeActiveFocusTarget(): void {
 
     if (session.kind === "bruno") {
         // ⌥W closes the active request tab, not the whole Bruno workspace.
-        const path = st.brunoViews[session.id]?.activeRequestPath;
+        const path = st.brunoViews[brunoPaneId(st, session.id) ?? ""]?.activeRequestPath;
         if (path) brunoCloseTab(session.id, path);
         return;
     }
@@ -1628,14 +1624,14 @@ export function cycleTabs(delta: number): void {
         return;
     }
 
-    if (session.kind === "bruno") {
-        const next = nextTabIn({ kind: "requests", sessionId: session.id }, delta);
+    const win = st.windows[session.activeWindowId];
+    if (!win) return;
+
+    if (win.role === "bruno") {
+        const next = nextTabIn({ kind: "requests", paneId: win.activePaneId }, delta);
         if (next) brunoSelectRequest(session.id, next);
         return;
     }
-
-    const win = st.windows[session.activeWindowId];
-    if (!win) return;
 
     if (win.role === "term") {
         const next = nextTabIn({ kind: "terminals", sessionId: session.id }, delta);

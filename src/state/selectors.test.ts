@@ -42,15 +42,10 @@ describe("narrow store selectors", () => {
         expect(selectItemState(state, "editor", "missing")).toBeUndefined();
     });
 
-    /*
-     * Bruno keeps its view state per session while the others key by item, so
-     * looking it up by pane id silently found nothing.
-     */
-    it("reads Bruno view state by session rather than by item", () => {
+    it("reads Bruno view state by its pane like every other item", () => {
         const view = { openPaths: ["/a.bru"], activeRequestPath: "/a.bru" } as StoreState["brunoViews"][string];
-        setState({ brunoViews: { s1: view } });
+        setState({ brunoViews: { pane: view } });
 
-        expect(selectItemState(getState(), "bruno", "s1")).toBeUndefined();
-        expect(selectItemState(getState(), "bruno", "pane", "s1")).toBe(view);
+        expect(selectItemState(getState(), "bruno", "pane")).toBe(view);
     });
 });

@@ -1,4 +1,4 @@
-import type { BrunoView, PaneKind, Session, Window, WorkspaceTabRef } from "./types";
+import type { PaneKind, Session, Window, WorkspaceTabRef } from "./types";
 import type { StoreState } from "./store";
 
 export const selectSessionIds = (state: StoreState): readonly string[] => state.sessionOrder;
@@ -55,26 +55,43 @@ export function roleHasTab(role: string): boolean {
  * is derived rather than stored, so a window or agent can never exist without
  * its tab.
  */
+/**
+ * The documents a window holds, when its role holds any.
+ *
+ * This is the one place that knows which roles expand into a tab per
+ * document and where each keeps its list, so a new document-holding kind is
+ * a case here and nowhere else.
+ */
+export function documentsOf(
+    win: Window,
+    editorViews: StoreState["editorViews"],
+    brunoViews: StoreState["brunoViews"],
+): { kind: "file" | "request"; ids: readonly string[]; activeId: string | null } | null {
+    if (win.role === "files") {
+        const view = editorViews[win.activePaneId];
+        return { kind: "file", ids: view?.openTabs ?? EMPTY_IDS, activeId: view?.activePath ?? null };
+    }
+    if (win.role === "bruno") {
+        const view = brunoViews[win.activePaneId];
+        return { kind: "request", ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
+    }
+    return null;
+}
+
 export function expandTabRefs(
     windowIds: readonly string[],
     agentIds: readonly string[],
     windows: StoreState["windows"],
     agents: StoreState["agents"],
     editorViews: StoreState["editorViews"] = {},
-    brunoView?: BrunoView,
+    brunoViews: StoreState["brunoViews"] = {},
 ): WorkspaceTabRef[] {
     return [
         ...windowIds.flatMap((id): WorkspaceTabRef[] => {
             const win = windows[id];
             if (!win) return [];
-            if (win.role === "files") {
-                const openTabs = editorViews[win.activePaneId]?.openTabs ?? EMPTY_IDS;
-                return openTabs.map((path): WorkspaceTabRef => ({ kind: "file", id, path }));
-            }
-            if (win.role === "bruno") {
-                const openPaths = brunoView?.openPaths ?? EMPTY_IDS;
-                return openPaths.map((path): WorkspaceTabRef => ({ kind: "request", id, path }));
-            }
+            const documents = documentsOf(win, editorViews, brunoViews);
+            if (documents) return documents.ids.map((path): WorkspaceTabRef => ({ kind: documents.kind, id, path }));
             return roleHasTab(win.role) ? [{ kind: "window", id }] : [];
         }),
         ...agentIds.filter((id) => agents[id]).map((id): WorkspaceTabRef => ({ kind: "agent", id })),
@@ -91,36 +108,31 @@ export function selectTabRefs(state: StoreState, sessionId: string): WorkspaceTa
         state.windows,
         state.agents,
         state.editorViews,
-        state.brunoViews[sessionId],
+        state.brunoViews,
     );
 }
 
 /**
  * Which tab of `session` is live. `view` is the discriminator, not a mode.
  *
- * `editorViews` and `brunoView` resolve a window to the document it is showing,
- * since the strip holds those documents rather than the window itself.
+ * The view maps resolve a window to the document it is showing, since the
+ * strip holds those documents rather than the window itself.
  */
 export function activeTabRef(
     session: Session,
-    windows?: StoreState["windows"],
-    editorViews?: StoreState["editorViews"],
-    brunoView?: BrunoView,
+    windows: StoreState["windows"] = {},
+    editorViews: StoreState["editorViews"] = {},
+    brunoViews: StoreState["brunoViews"] = {},
 ): WorkspaceTabRef | null {
     if (session.kind === "project" && session.view === "agent") {
         return session.activeAgentId ? { kind: "agent", id: session.activeAgentId } : null;
     }
     if (!session.activeWindowId) return null;
-    const win = windows?.[session.activeWindowId];
+    const win = windows[session.activeWindowId];
+    const documents = win ? documentsOf(win, editorViews, brunoViews) : null;
     // A window showing nothing stays a window ref: it has no document tab to
     // point at, but its layer still has to render the empty state.
-    if (win?.role === "files") {
-        const activePath = editorViews?.[win.activePaneId]?.activePath;
-        if (activePath) return { kind: "file", id: win.id, path: activePath };
-    }
-    if (win?.role === "bruno" && brunoView?.activeRequestPath) {
-        return { kind: "request", id: win.id, path: brunoView.activeRequestPath };
-    }
+    if (documents?.activeId) return { kind: documents.kind, id: session.activeWindowId, path: documents.activeId };
     return { kind: "window", id: session.activeWindowId };
 }
 
@@ -151,7 +163,7 @@ export type TabSource =
     | { kind: "agents"; sessionId: string }
     | { kind: "terminals"; sessionId: string }
     | { kind: "documents"; paneId: string }
-    | { kind: "requests"; sessionId: string };
+    | { kind: "requests"; paneId: string };
 
 export interface StripOrder {
     ids: readonly string[];
@@ -169,7 +181,7 @@ export function stripOrder(state: StoreState, source: TabSource): StripOrder {
     switch (source.kind) {
         case "workspace": {
             const session = state.sessions[source.sessionId];
-            const active = session ? activeTabRef(session, state.windows, state.editorViews, state.brunoViews[source.sessionId]) : null;
+            const active = session ? activeTabRef(session, state.windows, state.editorViews, state.brunoViews) : null;
             return {
                 ids: selectTabRefs(state, source.sessionId).map(tabRefKey),
                 activeId: active ? tabRefKey(active) : null,
@@ -190,7 +202,7 @@ export function stripOrder(state: StoreState, source: TabSource): StripOrder {
             return { ids: view?.openTabs ?? EMPTY_IDS, activeId: view?.activePath ?? null };
         }
         case "requests": {
-            const view = state.brunoViews[source.sessionId];
+            const view = state.brunoViews[source.paneId];
             return { ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
         }
     }
@@ -208,6 +220,15 @@ export function nextInCycle(order: StripOrder, delta: number): string | null {
     const index = activeId ? ids.indexOf(activeId) : -1;
     const base = index < 0 ? 0 : index;
     return ids[(base + delta + ids.length) % ids.length] ?? null;
+}
+
+/** The pane a Bruno session keeps its request view in. A Bruno session has exactly one. */
+export function brunoPaneId(state: StoreState, sessionId: string): string | null {
+    for (const id of state.windowsBySession[sessionId] ?? EMPTY_IDS) {
+        const win = state.windows[id];
+        if (win?.role === "bruno") return win.activePaneId;
+    }
+    return null;
 }
 
 export const selectActiveWindow = (state: StoreState): Window | undefined => {
@@ -233,7 +254,7 @@ export function selectItemState(state: StoreState, kind: PaneKind, itemId: strin
         case "rundeck":
             return state.rundeckViews[itemId];
         case "bruno":
-            return sessionId ? state.brunoViews[sessionId] : undefined;
+            return state.brunoViews[itemId];
         case "search":
             return sessionId ? state.globalSearchBySession[sessionId] : undefined;
         case "terminal":

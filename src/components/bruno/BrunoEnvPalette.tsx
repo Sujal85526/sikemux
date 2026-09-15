@@ -5,6 +5,7 @@ import { findRequest } from "../../bruno/resolve";
 import { useResourceEnabled } from "../../state/resources";
 import { brunoCollectionR } from "../../state/resources.defs";
 import { useStore } from "../../state/store";
+import { brunoPaneId } from "../../state/selectors";
 import { DEFAULT_BRUNO_VIEW } from "../../state/types";
 import { useMouseActive } from "../../hooks/useMouseActive";
 import { IconCheck, IconSearch } from "../Icons";
@@ -24,7 +25,7 @@ export function BrunoEnvPalette() {
     const sessionId = session?.id ?? "";
     const collectionPath = session?.kind === "bruno" ? (session.bruno?.collectionPath ?? "") : "";
     const selectedEnvs = session?.kind === "bruno" ? (session.bruno?.selectedEnvs ?? {}) : {};
-    const view = useStore((s) => s.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW);
+    const view = useStore((s) => s.brunoViews[brunoPaneId(s, sessionId) ?? ""] ?? DEFAULT_BRUNO_VIEW);
 
     const [query, setQuery] = useState("");
     const [sel, setSel] = useState(0);

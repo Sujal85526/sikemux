@@ -33,11 +33,11 @@ function safeParse(text: string, fallback: BruRequest | null): BruRequest | null
     }
 }
 
-export function BrunoPane({ sessionId, active }: Props) {
+export function BrunoPane({ paneId, sessionId, active }: Props) {
     const session = useStore((s) => s.sessions[sessionId]);
     const bruno = session?.bruno ?? null;
     const collectionPath = bruno?.collectionPath ?? "";
-    const view = useStore((s) => s.brunoViews[sessionId] ?? DEFAULT_BRUNO_VIEW);
+    const view = useStore((s) => s.brunoViews[paneId] ?? DEFAULT_BRUNO_VIEW);
     const drafts = useMemo(() => bruno?.drafts ?? {}, [bruno?.drafts]);
     const secretVars = useMemo(() => bruno?.secretVars ?? {}, [bruno?.secretVars]);
     const selectedEnvs = bruno?.selectedEnvs ?? {};
