@@ -16,8 +16,6 @@ function session(id: string, kind: SessionKind): Session {
         deploy: null,
         pinned: false,
         activeWindowId: "",
-        activeAgentId: null,
-        view: "windows",
     };
 }
 

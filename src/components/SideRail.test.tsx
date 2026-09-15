@@ -15,8 +15,6 @@ function session(id: string, kind: SessionKind): Session {
         deploy: null,
         pinned: false,
         activeWindowId: "",
-        activeAgentId: null,
-        view: "windows",
     };
 }
 
@@ -36,7 +34,6 @@ beforeEach(() => {
         windows: {},
         windowsBySession: Object.fromEntries(Object.keys(sessions).map((id) => [id, []])),
         agents: {},
-        agentsBySession: Object.fromEntries(Object.keys(sessions).map((id) => [id, []])),
     });
 });
 

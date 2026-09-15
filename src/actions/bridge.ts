@@ -1,6 +1,7 @@
 import type { ActionContextInput } from "./registry";
 import type { ApplicationActionExtensionManifest, ApplicationActionMatch, ApplicationActionRuntime, ApplicationResolvedAction } from "./application";
 import type { InternalExtensionRegistration } from "../extensions/host";
+import { activeAgentId } from "../state/selectors";
 import type { StoreState } from "../state/store";
 import type { LayoutNode, PaneNode } from "../state/types";
 
@@ -100,7 +101,8 @@ export function applicationActionContext(state: StoreState, focusTarget: EventTa
     const session = state.sessions[state.activeSessionId] ?? null;
     const window = session ? (state.windows[session.activeWindowId] ?? null) : null;
     const pane = window ? findPane(window.root, window.activePaneId) : null;
-    const agent = session?.activeAgentId ? (state.agents[session.activeAgentId] ?? null) : null;
+    const agentId = activeAgentId(state, session ?? undefined);
+    const agent = agentId ? (state.agents[agentId] ?? null) : null;
     const activity = agent ? state.agentActivity[agent.id] : null;
     return Object.freeze({
         focusedItem: pane ? { id: pane.id, kind: pane.kind } : null,
@@ -118,7 +120,8 @@ export function applicationActionContextFingerprint(state: StoreState): string {
     const session = state.sessions[state.activeSessionId];
     const window = session ? state.windows[session.activeWindowId] : undefined;
     const pane = window ? findPane(window.root, window.activePaneId) : null;
-    const agent = session?.activeAgentId ? state.agents[session.activeAgentId] : undefined;
+    const agentId = activeAgentId(state, session);
+    const agent = agentId ? state.agents[agentId] : undefined;
     const activity = agent ? state.agentActivity[agent.id] : undefined;
     return JSON.stringify([session?.id, session?.kind, session?.cwd, window?.id, pane?.id, pane?.kind, agent?.id, agent?.type, activity?.state]);
 }

@@ -4,6 +4,8 @@ import type { WindowRole } from "../state/types";
 import { getState, setState } from "../state/store";
 import { SideRail } from "./SideRail";
 import { TopBar } from "./TopBar";
+import { agentWindowId } from "../state/selectors";
+import { withAgents } from "../test/agents";
 
 const { gitStatus } = vi.hoisted(() => ({
     gitStatus: {
@@ -55,27 +57,11 @@ beforeEach(() => {
     );
     setState({
         sessions: {
-            [sessionId]: {
-                ...state.sessions[sessionId],
-                kind: "project",
-                cwd: "/repo",
-                view: "windows",
-                activeWindowId: "window-term",
-                activeAgentId: "agent-only",
-            },
+            [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo", activeWindowId: "window-term" },
         },
-        windows,
-        agents: {
-            "agent-only": {
-                id: "agent-only",
-                type: "codex",
-                title: "agent",
-                startup: "codex",
-                launchState: "live",
-            },
-        },
-        windowsBySession: { [sessionId]: roles.map((role) => `window-${role}`) },
-        agentsBySession: { [sessionId]: ["agent-only"] },
+        ...withAgents({ windows, windowsBySession: { [sessionId]: roles.map((role) => `window-${role}`) }, agents: {} }, sessionId, [
+            { id: "agent-only", type: "codex", title: "agent", startup: "codex", launchState: "live" },
+        ]),
     });
 });
 
@@ -101,14 +87,14 @@ describe("project Git branch chrome", () => {
         for (const role of ["files", "git", "search", "term"] satisfies WindowRole[]) {
             act(() => {
                 const session = getState().sessions[sessionId];
-                setState({ sessions: { [sessionId]: { ...session, view: "windows", activeWindowId: `window-${role}` } } });
+                setState({ sessions: { [sessionId]: { ...session, activeWindowId: `window-${role}` } } });
             });
             expectOneTopBarBranch();
         }
 
         act(() => {
             const session = getState().sessions[sessionId];
-            setState({ sessions: { [sessionId]: { ...session, view: "agent" } } });
+            setState({ sessions: { [sessionId]: { ...session, activeWindowId: agentWindowId(getState(), "agent-only")! } } });
         });
         expectOneTopBarBranch();
     });

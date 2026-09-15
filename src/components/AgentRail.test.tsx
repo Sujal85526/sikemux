@@ -24,6 +24,7 @@ vi.stubGlobal(
 import { invalidate } from "../state/resources";
 import { getState, setState } from "../state/store";
 import { AgentRailBody } from "./AgentRail";
+import { agentIdsOf } from "../state/selectors";
 
 const initial = getState();
 
@@ -39,14 +40,11 @@ beforeEach(() => {
                 deploy: null,
                 pinned: false,
                 activeWindowId: "win-project",
-                activeAgentId: null,
-                view: "agent" as const,
             },
         },
         sessionOrder: ["sess-project"],
         activeSessionId: "sess-project",
         agents: {},
-        agentsBySession: { "sess-project": [] },
     });
     mocks.available.mockResolvedValue([{ type: "codex", label: "Codex", command: "codex", defaultModel: "gpt-5.6-sol", defaultEffort: "high" }]);
     mocks.sessions.mockResolvedValue([
@@ -83,8 +81,8 @@ describe("agent rail", () => {
         expect(screen.queryByRole("button", { name: /Build launch page/ })).not.toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: /Fix terminal focus/ }));
-        await waitFor(() => expect(getState().agentsBySession["sess-project"]).toHaveLength(1));
-        const agent = getState().agents[getState().agentsBySession["sess-project"][0]];
+        await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(1));
+        const agent = getState().agents[agentIdsOf(getState(), "sess-project")[0]];
         expect(agent).toMatchObject({ resumeId: "older", title: "Fix terminal focus", cwd: "/code/sikemux" });
     });
 

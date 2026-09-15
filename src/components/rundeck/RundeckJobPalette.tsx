@@ -19,7 +19,7 @@ interface JobRow {
 export function RundeckJobPalette() {
     const paneId = useStore((s) => {
         const sess = s.sessions[s.activeSessionId];
-        if (!sess || sess.kind !== "rundeck" || sess.view !== "windows") return null;
+        if (!sess || sess.kind !== "rundeck") return null;
         return s.windows[sess.activeWindowId]?.activePaneId ?? null;
     });
 

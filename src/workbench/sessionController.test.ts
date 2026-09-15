@@ -12,8 +12,6 @@ const session = (activeWindowId = "window-1"): Session => ({
     cwd: "/repo",
     pinned: false,
     activeWindowId,
-    activeAgentId: null,
-    view: "windows",
 });
 
 const window = (paneId: string, kind: "terminal" | "editor" = "terminal"): Window => ({

@@ -5,6 +5,7 @@ import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTe
 import { loadProjectConfig } from "../projectConfig";
 import { trustProjectConfig } from "../projectConfigRuntime";
 import { handleHarnessRequest, harnessTasks, type HarnessRequest } from "./service";
+import { withAgents } from "../test/agents";
 
 vi.mock("../projectConfig", async (original) => ({ ...(await original<object>()), loadProjectConfig: vi.fn() }));
 vi.mock("../projectConfigRuntime", async (original) => ({ ...(await original<object>()), trustProjectConfig: vi.fn() }));
@@ -87,10 +88,7 @@ describe("harness command service", () => {
     it("opens the configured preview in the requesting agent's browser", async () => {
         const state = useStore.getState();
         const session = Object.values(state.sessions).find((session) => session.cwd === "/one")!;
-        useStore.setState({
-            agents: { ...state.agents, "fixture-agent": { id: "fixture-agent", type: "codex", title: "Fixture", startup: "" } },
-            agentsBySession: { ...state.agentsBySession, [session.id]: ["fixture-agent"] },
-        });
+        useStore.setState(withAgents(state, session.id, [{ id: "fixture-agent", type: "codex", title: "Fixture", startup: "" }]));
         const open = vi.fn(() => "fixture-tab");
         transport.register("browser_new_tab", open);
         const result = await handleHarnessRequest({ ...request("ui.open", { kind: "preview" }), agentId: "fixture-agent" });

@@ -2,6 +2,8 @@ import { createElement } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getState, setState } from "../state/store";
+import { agentWindowId } from "../state/selectors";
+import { withAgents } from "../test/agents";
 import {
     AGENT_IDLE_SLEEP_MS,
     MAX_WARM_IDLE_AGENTS,
@@ -58,9 +60,8 @@ function arrangeAgents(count: number) {
         ]),
     );
     setState({
-        sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], kind: "project", view: "windows", activeAgentId: null } },
-        agents,
-        agentsBySession: { ...state.agentsBySession, [sessionId]: Object.keys(agents) },
+        sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], kind: "project" } },
+        ...withAgents(state, sessionId, Object.values(agents)),
         agentActivity,
     });
 }
@@ -97,7 +98,7 @@ describe("agent sleep policy", () => {
         setState((current) => ({
             sessions: {
                 ...current.sessions,
-                [sessionId]: { ...current.sessions[sessionId], view: "agent", activeAgentId: "agent-0" },
+                [sessionId]: { ...current.sessions[sessionId], activeWindowId: agentWindowId(current, "agent-0")! },
             },
             agents: {
                 ...current.agents,

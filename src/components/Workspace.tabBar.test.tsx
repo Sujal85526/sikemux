@@ -6,6 +6,8 @@ import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { acpApi } from "../api/acp";
 import { Workspace } from "./Workspace";
+import { agentIdsOf, agentWindowId } from "../state/selectors";
+import { withAgents } from "../test/agents";
 
 vi.mock("../api/acp", () => ({
     acpApi: {
@@ -37,27 +39,27 @@ function projectWithAgent(resumable = true): string {
     const state = getState();
     const sessionId = state.activeSessionId;
     const session = state.sessions[sessionId];
+    const slices = withAgents(state, sessionId, [
+        {
+            id: "agent-only",
+            type: "codex",
+            title: "only agent",
+            startup: "codex",
+            directCommand: {
+                program: "codex",
+                args: resumable ? ["resume", "--sandbox", "workspace-write", "session-only"] : ["--sandbox", "workspace-write"],
+            },
+            ...(resumable ? { resumeId: "session-only" } : {}),
+            permissionMode: "workspace-write",
+            launchState: "live",
+        },
+    ]);
     setState({
+        ...slices,
         sessions: {
             ...state.sessions,
-            [sessionId]: { ...session, kind: "project", view: "agent", activeAgentId: "agent-only", cwd: "/repo" },
+            [sessionId]: { ...session, kind: "project", cwd: "/repo", activeWindowId: agentWindowId(slices, "agent-only")! },
         },
-        agents: {
-            "agent-only": {
-                id: "agent-only",
-                type: "codex",
-                title: "only agent",
-                startup: "codex",
-                directCommand: {
-                    program: "codex",
-                    args: resumable ? ["resume", "--sandbox", "workspace-write", "session-only"] : ["--sandbox", "workspace-write"],
-                },
-                ...(resumable ? { resumeId: "session-only" } : {}),
-                permissionMode: "workspace-write",
-                launchState: "live",
-            },
-        },
-        agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-only"] },
     });
     return sessionId;
 }
@@ -79,7 +81,7 @@ describe("workspace tab bars", () => {
         expect(screen.getByRole("tablist")).toBeInTheDocument();
         const addAgent = screen.getByRole("button", { name: "New agent" });
         expect(addAgent).toBeInTheDocument();
-        expect(container.querySelector(".window-layer.visible .pane-cell")).toHaveStyle({ top: "34px", height: "calc(100% - 34px)" });
+        expect(container.querySelector(".window-layer.visible")).toHaveStyle({ top: "34px" });
 
         fireEvent.click(addAgent);
         expect(getState().agentPaletteOpen).toBe(true);
@@ -107,11 +109,15 @@ describe("workspace tab bars", () => {
         render(<Workspace />);
         await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(1));
         await act(async () => {
-            setState((state) => ({ sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], view: "windows" } } }));
+            setState((state) => ({
+                sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: state.windowsBySession[sessionId][0] } },
+            }));
         });
         expect(acpApi.stop).not.toHaveBeenCalled();
         await act(async () => {
-            setState((state) => ({ sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], view: "agent" } } }));
+            setState((state) => ({
+                sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: agentWindowId(state, "agent-only")! } },
+            }));
         });
         expect(acpApi.start).toHaveBeenCalledTimes(1);
     });
@@ -127,7 +133,7 @@ describe("workspace tab bars", () => {
         await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(2));
         expect(acpApi.start).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: "agent-only", provider: "claude", resumeId: undefined }));
         expect(acpApi.stop).toHaveBeenCalledWith("agent-only");
-        expect(getState().agentsBySession[sessionId]).toEqual(["agent-only"]);
+        expect(agentIdsOf(getState(), sessionId)).toEqual(["agent-only"]);
         expect(getState().agents["agent-only"]).toMatchObject({ type: "claude", title: "claude" });
         expect(editor).toHaveValue("Keep this draft");
         expect(screen.getByRole("button", { name: "Agent" })).toHaveTextContent("Claude");
@@ -167,20 +173,13 @@ describe("workspace tab bars", () => {
 
         fireEvent.click(windowTab!);
 
-        expect(getState().sessions[sessionId].view).toBe("windows");
         expect(getState().sessions[sessionId].activeWindowId).toBe(windowId);
     });
 });
 
 describe("stage layers", () => {
     function addAgentTo(sessionId: string) {
-        setState((s) => ({
-            agents: {
-                ...s.agents,
-                "agent-two": { id: "agent-two", type: "codex", title: "second agent", startup: "codex", launchState: "live" } as never,
-            },
-            agentsBySession: { ...s.agentsBySession, [sessionId]: [...(s.agentsBySession[sessionId] ?? []), "agent-two"] },
-        }));
+        setState((s) => withAgents(s, sessionId, [{ id: "agent-two", type: "codex", title: "second agent", startup: "codex", launchState: "live" }]));
     }
 
     /*

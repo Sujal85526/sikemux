@@ -6,6 +6,10 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 import { applyHydrate, flushPersist, hydrationAllowsPersistence, resetPersistenceForTests, subscribePersist } from "./persist";
 import * as cmd from "./commands";
 import { getState, setState } from "./store";
+import { activeAgentId, agentIdsOf, agentWindowId } from "./selectors";
+import { agentWindow } from "./agentWindow";
+import { withAgents } from "../test/agents";
+import type { Agent } from "./types";
 import { useToasts } from "./toast";
 
 function deferred<T>() {
@@ -87,7 +91,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 8,
+                    version: 9,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -178,32 +182,33 @@ describe("frontend persistence", () => {
 
     it("never persists or hydrates live agent commands", async () => {
         const sid = getState().activeSessionId;
-        const agent = {
-            id: "agent-live",
-            type: "claude" as const,
-            title: "live",
-            startup: "claude --resume should-never-auto-run",
-        };
-        setState((s) => ({
-            sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", view: "agent", activeAgentId: agent.id } },
-            agents: { [agent.id]: agent },
-            agentsBySession: { ...s.agentsBySession, [sid]: [agent.id] },
-        }));
+        const terminalWindowId = getState().sessions[sid].activeWindowId;
+        const agent: Agent = { id: "agent-live", type: "claude", title: "live", startup: "claude --resume should-never-auto-run" };
+        setState((s) => {
+            const slices = withAgents(s, sid, [agent]);
+            return {
+                ...slices,
+                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
+            };
+        });
         invoke.mockResolvedValue(undefined);
 
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.agentsBySession[sid]).toEqual([]);
-        expect(saved.sessions[0]).toMatchObject({ view: "windows", activeAgentId: null });
+        // With no resume id there is nothing to come back to, so neither the
+        // agent nor its window is written, and the session falls back to a
+        // window that is.
+        expect(saved.agents).toEqual([]);
+        expect(saved.windowsBySession[sid].map((w: { role: string }) => w.role)).not.toContain("agent");
+        expect(saved.sessions[0].activeWindowId).toBe(terminalWindowId);
         expect(JSON.stringify(saved)).not.toContain("should-never-auto-run");
 
-        saved.agentsBySession[sid] = [agent];
-        saved.sessions[0].view = "agent";
-        saved.sessions[0].activeAgentId = agent.id;
+        saved.agents = [agent];
+        saved.windowsBySession[sid].push(agentWindow(agent, "/repo"));
         applyHydrate(JSON.stringify(saved));
-        expect(getState().agentsBySession[sid]).toEqual([]);
+        expect(agentIdsOf(getState(), sid)).toEqual([]);
         expect(getState().agents).toEqual({});
-        expect(getState().sessions[sid]).toMatchObject({ view: "windows", activeAgentId: null });
+        expect(getState().windows[getState().sessions[sid].activeWindowId].role).not.toBe("agent");
     });
 
     it("restores confirmed agent sessions asleep without trusting saved startup", async () => {
@@ -217,28 +222,31 @@ describe("frontend persistence", () => {
             launchState: "live" as const,
             keepAlive: true,
         };
-        setState((s) => ({
-            sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", view: "agent", activeAgentId: agent.id } },
-            agents: { [agent.id]: agent },
-            agentsBySession: { ...s.agentsBySession, [sid]: [agent.id] },
-        }));
+        setState((s) => {
+            const slices = withAgents(s, sid, [agent]);
+            return {
+                ...slices,
+                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
+            };
+        });
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const raw = invoke.mock.calls[0][1].data as string;
         expect(raw).not.toContain("malicious saved startup");
         const saved = JSON.parse(raw);
-        expect(saved.agentsBySession[sid]).toEqual([
+        expect(saved.agents).toEqual([
             { id: agent.id, type: "codex", title: agent.title, resumeId: agent.resumeId, permissionMode: "workspace-write", keepAlive: true },
         ]);
+        expect(saved.windowsBySession[sid].map((w: { role: string }) => w.role)).toContain("agent");
 
-        saved.agentsBySession[sid][0].startup = "still malicious";
+        saved.agents[0].startup = "still malicious";
         applyHydrate(JSON.stringify(saved));
         const restored = getState().agents[agent.id];
         expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true });
         expect(restored.startup).toMatch(/^codex resume\b/);
         expect(restored.startup).toContain("session-123");
         expect(restored.startup).not.toContain("still malicious");
-        expect(getState().sessions[sid]).toMatchObject({ view: "agent", activeAgentId: agent.id });
+        expect(activeAgentId(getState(), getState().sessions[sid])).toBe(agent.id);
     });
 
     it("preserves OMP and Grok reasoning levels across sleep", async () => {
@@ -262,9 +270,8 @@ describe("frontend persistence", () => {
             },
         };
         setState((state) => ({
-            sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project", view: "agent", activeAgentId: agents.omp.id } },
-            agents: { [agents.omp.id]: agents.omp, [agents.grok.id]: agents.grok },
-            agentsBySession: { ...state.agentsBySession, [sid]: [agents.omp.id, agents.grok.id] },
+            sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project" } },
+            ...withAgents(state, sid, [agents.omp, agents.grok]),
         }));
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
@@ -338,10 +345,12 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        saved.version = 7;
         saved.sessions[0] = { ...session, kind: "project", view: "agent", activeAgentId: legacy.id };
-        saved.agentsBySession[sid] = [legacy];
+        saved.agentsBySession = { [sid]: [legacy] };
 
         applyHydrate(JSON.stringify(saved));
+        expect(activeAgentId(getState(), getState().sessions[sid])).toBe(legacy.id);
         expect(getState().agents[legacy.id]).toMatchObject({
             permissionMode: "bypass",
             skipPermissions: true,
@@ -362,8 +371,8 @@ describe("frontend persistence", () => {
         saved.prefs.providerProfiles = [
             { id: "moved-profile", name: "Now Codex", provider: "codex", accent: "#abcdef", executablePath: "/opt/codex" },
         ];
-        saved.sessions[0] = { ...session, kind: "project", view: "agent", activeAgentId: "claude-agent" };
-        saved.agentsBySession[sid] = [
+        saved.sessions[0] = { ...session, kind: "project" };
+        saved.agents = [
             {
                 id: "claude-agent",
                 type: "claude",
@@ -373,6 +382,7 @@ describe("frontend persistence", () => {
                 profileId: "moved-profile",
             },
         ];
+        saved.windowsBySession[sid].push(agentWindow({ id: "claude-agent", title: "Claude" }, "/repo"));
 
         applyHydrate(JSON.stringify(saved));
 
@@ -380,7 +390,7 @@ describe("frontend persistence", () => {
         expect(getState().agents["claude-agent"].startup).toMatch(/^claude /);
     });
 
-    it("writes v7 item envelopes and migrates bounded v6 editor views", async () => {
+    it("writes item envelopes and migrates bounded v6 editor views", async () => {
         const sid = getState().activeSessionId;
         const window = getState().windows[getState().sessions[sid].activeWindowId];
         const editorPane = { type: "pane", id: "editor-v7", cwd: "/repo", kind: "editor", title: "editor" } as const;
@@ -395,7 +405,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(7);
+        expect(saved.version).toBe(8);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -539,7 +549,43 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(7);
+        expect(JSON.parse(migrated).version).toBe(8);
+    });
+
+    /*
+     * Before v8 an agent sat beside its session and the session named the one it
+     * was looking at. Each becomes a window, and that one becomes the active window.
+     */
+    it("migrates v7 agents into windows and keeps the one being looked at active", async () => {
+        const sid = getState().activeSessionId;
+        const session = getState().sessions[sid];
+        const window = getState().windows[session.activeWindowId];
+        const legacyAgent = (id: string) => ({ id, type: "codex", title: `task ${id}`, resumeId: `resume-${id}`, permissionMode: "workspace-write" });
+        applyHydrate(
+            JSON.stringify({
+                version: 7,
+                sessions: [{ ...session, kind: "project", cwd: "/repo", view: "agent", activeAgentId: "a2" }],
+                windowsBySession: { [sid]: [window] },
+                agentsBySession: { [sid]: [legacyAgent("a1"), legacyAgent("a2")] },
+                sessionOrder: [sid],
+                activeSessionId: sid,
+                prefs: {},
+                itemStates: {},
+            }),
+        );
+
+        expect(agentIdsOf(getState(), sid)).toEqual(["a1", "a2"]);
+        expect(activeAgentId(getState(), getState().sessions[sid])).toBe("a2");
+        expect(getState().windowsBySession[sid][0]).toBe(window.id);
+        expect(getState().agents.a1).toMatchObject({ launchState: "dormant", resumeId: "resume-a1" });
+
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.version).toBe(8);
+        expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
+        expect(saved).not.toHaveProperty("agentsBySession");
+        expect(saved.sessions[0]).not.toHaveProperty("view");
     });
 
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {

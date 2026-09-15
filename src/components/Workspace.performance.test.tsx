@@ -4,6 +4,8 @@ import { Workspace } from "./Workspace";
 import { getState, setState, type StoreState } from "../state/store";
 import { selectSession, selectTab } from "../state/commands";
 import type { PaneNode } from "../state/types";
+import { agentWindow } from "../state/agentWindow";
+import { agentWindowId } from "../state/selectors";
 
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div>Terminal output</div> }));
 vi.mock("../chat/AgentSurface", () => ({ AgentSurface: () => <div>Agent output</div> }));
@@ -26,7 +28,6 @@ function fixture(projects: number): StoreState {
         editorViews: {},
         sessionOrder: [],
         windowsBySession: {},
-        agentsBySession: {},
         activeSessionId: "project-0",
     };
     for (let index = 0; index < projects; index++) {
@@ -34,7 +35,6 @@ function fixture(projects: number): StoreState {
         const cwd = `/repo/${id}`;
         state.sessionOrder.push(id);
         state.windowsBySession[id] = [];
-        state.agentsBySession[id] = [];
         for (let tab = 0; tab < 12; tab++) {
             const windowId = `${id}-window-${tab}`;
             const pane: PaneNode = {
@@ -60,7 +60,9 @@ function fixture(projects: number): StoreState {
         for (let tab = 0; tab < 5; tab++) {
             const agentId = `${id}-agent-${tab}`;
             state.agents[agentId] = { id: agentId, type: "codex", title: agentId, startup: "codex", launchState: "live" };
-            state.agentsBySession[id].push(agentId);
+            const win = agentWindow(state.agents[agentId], cwd);
+            state.windows[win.id] = win;
+            state.windowsBySession[id].push(win.id);
         }
         state.sessions[id] = {
             id,
@@ -70,8 +72,6 @@ function fixture(projects: number): StoreState {
             deploy: null,
             pinned: false,
             activeWindowId: state.windowsBySession[id][0],
-            activeAgentId: null,
-            view: "windows",
         };
     }
     return state;
@@ -88,7 +88,7 @@ for (const projects of [1, 10, 50]) {
             const start = performance.now();
             await act(async () => {
                 selectSession(projectId);
-                if (index % 4 === 0) selectTab({ kind: "agent", id: `${projectId}-agent-${index % 5}` });
+                if (index % 4 === 0) selectTab({ kind: "window", id: agentWindowId(getState(), `${projectId}-agent-${index % 5}`)! });
                 else if (index % 4 === 1)
                     selectTab({ kind: "file", id: `${projectId}-window-10`, path: `/repo/${projectId}/file-${index % 100}.ts` });
                 else selectTab({ kind: "window", id: `${projectId}-window-${index % 4 === 2 ? 11 : index % 10}` });

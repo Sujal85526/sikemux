@@ -6,6 +6,8 @@ import { IS_MACOS } from "./lib/platform";
 import type { Session } from "./state/types";
 import { getState, setState } from "./state/store";
 import { useKeymap } from "./keymap";
+import { activeAgentId, agentWindowId } from "./state/selectors";
+import { withAgents } from "./test/agents";
 
 const initial = getState();
 
@@ -17,9 +19,18 @@ function session(id: string, kind: Session["kind"] = "project"): Session {
         cwd: `/tmp/${id}`,
         pinned: false,
         activeWindowId: `${id}-window`,
-        activeAgentId: null,
-        view: "windows",
     };
+}
+
+/** Puts an agent in `sessionId` and makes it the window on screen. */
+function lookAtAgent(sessionId: string, agentId: string): void {
+    setState((state) => {
+        const slices = withAgents(state, sessionId, [{ id: agentId, type: "codex", title: agentId, startup: "codex", launchState: "live" }]);
+        return {
+            ...slices,
+            sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: agentWindowId(slices, agentId)! } },
+        };
+    });
 }
 
 function KeymapHarness() {
@@ -76,24 +87,20 @@ describe("Alt+Tab session switching", () => {
 
 describe("agent picker shortcut", () => {
     it("opens the agent picker modal with Alt+N from the agent view", () => {
-        setState((state) => ({
-            sessions: { ...state.sessions, one: { ...state.sessions.one, view: "agent" } },
-        }));
+        lookAtAgent("one", "agent-one");
         render(<KeymapHarness />);
 
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "n", code: "KeyN", altKey: true, bubbles: true, cancelable: true }));
 
         expect(getState().agentPaletteOpen).toBe(true);
-        expect(getState().sessions.one.view).toBe("agent");
+        expect(activeAgentId(getState(), getState().sessions.one)).toBe("agent-one");
     });
 });
 
 describe("embedded browser shortcuts", () => {
     it("opens the new-tab chooser with Command+T rather than a browser tab", () => {
         const open = vi.spyOn(browserApi, "newTab").mockResolvedValue("browser-tab");
-        setState((state) => ({
-            sessions: { ...state.sessions, one: { ...state.sessions.one, view: "agent", activeAgentId: "agent-one" } },
-        }));
+        lookAtAgent("one", "agent-one");
         render(<KeymapHarness />);
 
         window.dispatchEvent(
@@ -113,9 +120,7 @@ describe("embedded browser shortcuts", () => {
 
     it("opens a browser tab for the active agent with Command+Shift+T", async () => {
         const open = vi.spyOn(browserApi, "newTab").mockResolvedValue("browser-tab");
-        setState((state) => ({
-            sessions: { ...state.sessions, one: { ...state.sessions.one, view: "agent", activeAgentId: "agent-one" } },
-        }));
+        lookAtAgent("one", "agent-one");
         render(<KeymapHarness />);
 
         window.dispatchEvent(

@@ -24,7 +24,7 @@ describe("CLI open routing", () => {
         expect(result).toEqual([]);
         const st = getState();
         const session = st.sessions[st.activeSessionId];
-        expect(session).toMatchObject({ kind: "project", cwd: "/repo", view: "windows" });
+        expect(session).toMatchObject({ kind: "project", cwd: "/repo" });
         const win = st.windows[session.activeWindowId];
         expect(win.role).toBe("files");
         const pane = collectPanes(win.root).find((candidate) => candidate.kind === "editor");

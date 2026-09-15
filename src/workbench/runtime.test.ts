@@ -18,8 +18,6 @@ describe("WorkbenchRuntime", () => {
             cwd: "/repo",
             pinned: false,
             activeWindowId: window.id,
-            activeAgentId: null,
-            view: "windows",
         };
         const runtime = new WorkbenchRuntime();
         setState({

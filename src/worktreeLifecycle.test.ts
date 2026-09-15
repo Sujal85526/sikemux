@@ -10,8 +10,6 @@ describe("worktree lifecycle", () => {
             cwd: "/work/lane",
             pinned: false,
             activeWindowId: "window",
-            activeAgentId: null,
-            view: "windows" as const,
         };
         expect(worktreeHasLiveOwners({ sessions: { project }, agents: {} }, "/work/lane")).toBe(true);
         expect(

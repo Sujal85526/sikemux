@@ -5,6 +5,7 @@ import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTe
 import * as resources from "../state/resources";
 import { getState, setState } from "../state/store";
 import { AgentSessionSync } from "./AgentSessionSync";
+import { withAgents } from "../test/agents";
 
 const initial = getState();
 let transport: MemoryIpcTransport;
@@ -16,18 +17,9 @@ beforeEach(() => {
     setState({
         sessions: {
             ...state.sessions,
-            [sessionId]: {
-                ...state.sessions[sessionId],
-                kind: "project",
-                cwd: "/repo",
-                view: "windows",
-                activeAgentId: "agent-1",
-            },
+            [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo" },
         },
-        agents: {
-            "agent-1": { id: "agent-1", type: "codex", title: "Codex", startup: "codex", cwd: "/repo" },
-        },
-        agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-1"] },
+        ...withAgents(state, sessionId, [{ id: "agent-1", type: "codex", title: "Codex", startup: "codex", cwd: "/repo" }]),
     });
     resetIpcTransportForTests();
     transport = new MemoryIpcTransport();
@@ -93,13 +85,7 @@ describe("AgentSessionSync IPC events", () => {
 
         const sessionId = getState().activeSessionId;
         act(() =>
-            setState((state) => ({
-                agents: {
-                    ...state.agents,
-                    "agent-2": { id: "agent-2", type: "codex", title: "Other", startup: "codex", cwd: "/other" },
-                },
-                agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-1", "agent-2"] },
-            })),
+            setState((state) => withAgents(state, sessionId, [{ id: "agent-2", type: "codex", title: "Other", startup: "codex", cwd: "/other" }])),
         );
 
         await waitFor(() => expect(agentApi.watchStart).toHaveBeenCalledTimes(2));

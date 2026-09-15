@@ -4,6 +4,7 @@ import { loadProjectConfig } from "../projectConfig";
 import { trustProjectConfig } from "../projectConfigRuntime";
 import { joinPath } from "../lib/paths";
 import { collectPanes } from "../state/layout";
+import { agentIdsOf } from "../state/selectors";
 import { useStore, setState } from "../state/store";
 import * as commands from "../state/commands";
 import { appTaskRuntime } from "../tasks/application";
@@ -30,8 +31,7 @@ function preserveFocus<T>(operation: () => T): T {
         const sessions = { ...current.sessions };
         for (const [id, session] of Object.entries(sessions)) {
             const previous = before.sessions[id];
-            if (previous)
-                sessions[id] = { ...session, activeWindowId: previous.activeWindowId, activeAgentId: previous.activeAgentId, view: previous.view };
+            if (previous) sessions[id] = { ...session, activeWindowId: previous.activeWindowId };
         }
         setState({
             activeSessionId: before.activeSessionId,
@@ -67,8 +67,7 @@ function projectSession(request: HarnessRequest) {
     const state = useStore.getState();
     const session = Object.values(state.sessions).find((session) => session.kind === "project" && session.cwd === request.project);
     if (!session) throw new Error("Project is not open in Sikemux");
-    if (request.agentId && !(state.agentsBySession[session.id] ?? []).includes(request.agentId))
-        throw new Error("Agent does not belong to this project");
+    if (request.agentId && !agentIdsOf(state, session.id).includes(request.agentId)) throw new Error("Agent does not belong to this project");
     return session;
 }
 

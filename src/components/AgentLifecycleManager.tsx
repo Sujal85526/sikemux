@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { performanceTelemetry } from "../lib/performance";
 import * as cmd from "../state/commands";
 import { getState, useStore, type StoreState } from "../state/store";
+import { activeAgentId } from "../state/selectors";
 
 export const AGENT_IDLE_SLEEP_MS = 10 * 60_000;
 export const AGENT_SLEEP_POLICY_INTERVAL_MS = 30_000;
@@ -10,8 +11,7 @@ export const MAX_WARM_IDLE_AGENTS = 3;
 export type HiddenAgentTimes = Map<string, number>;
 
 function visibleAgentId(state: StoreState): string | null {
-    const session = state.sessions[state.activeSessionId];
-    return session?.view === "agent" ? session.activeAgentId : null;
+    return activeAgentId(state, state.sessions[state.activeSessionId]);
 }
 
 export function reconcileHiddenAgentTimes(state: StoreState, hiddenSince: HiddenAgentTimes, now: number): void {
@@ -60,7 +60,7 @@ export function AgentLifecycleManager() {
     const activeSessionId = useStore((state) => state.activeSessionId);
     const sessions = useStore((state) => state.sessions);
     const agents = useStore((state) => state.agents);
-    const agentsBySession = useStore((state) => state.agentsBySession);
+    const windows = useStore((state) => state.windows);
     const agentActivity = useStore((state) => state.agentActivity);
     const hiddenSinceRef = useRef<HiddenAgentTimes>(new Map());
 
@@ -73,7 +73,7 @@ export function AgentLifecycleManager() {
         if (slept.length > 0) performanceTelemetry.incrementCounter("agent.sleep.auto", slept.length);
     }, []);
 
-    useEffect(enforcePolicy, [activeSessionId, sessions, agents, agentsBySession, agentActivity, enforcePolicy]);
+    useEffect(enforcePolicy, [activeSessionId, sessions, windows, agents, agentActivity, enforcePolicy]);
 
     useEffect(() => {
         const timer = window.setInterval(enforcePolicy, AGENT_SLEEP_POLICY_INTERVAL_MS);

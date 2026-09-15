@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getState, setState } from "./store";
 import type { StoreState } from "./store";
-import {
-    selectActiveSession,
-    selectActiveWindow,
-    selectAgentIds,
-    selectItemState,
-    selectSession,
-    selectSessionIds,
-    selectWindowIds,
-} from "./selectors";
+import { selectActiveSession, selectActiveWindow, selectItemState, selectSession, selectSessionIds, selectWindowIds } from "./selectors";
 
 describe("narrow store selectors", () => {
     it("returns stable entity and index references across unrelated updates", () => {
@@ -18,7 +10,6 @@ describe("narrow store selectors", () => {
         const session = selectSession(sessionId)(before);
         const sessionIds = selectSessionIds(before);
         const windowIds = selectWindowIds(sessionId)(before);
-        const agentIds = selectAgentIds(sessionId)(before);
 
         setState({ commandPaletteOpen: !before.commandPaletteOpen });
         const after = getState();
@@ -26,7 +17,6 @@ describe("narrow store selectors", () => {
         expect(selectSession(sessionId)(after)).toBe(session);
         expect(selectSessionIds(after)).toBe(sessionIds);
         expect(selectWindowIds(sessionId)(after)).toBe(windowIds);
-        expect(selectAgentIds(sessionId)(after)).toBe(agentIds);
     });
 
     it("derives the active session and window without projecting whole maps", () => {

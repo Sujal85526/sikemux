@@ -17,8 +17,18 @@ vi.mock("../api/agents", () => ({
 import { invalidate } from "../state/resources";
 import { getState, setState } from "../state/store";
 import { AgentPalette } from "./AgentPalette";
+import { agentIdsOf } from "../state/selectors";
 
 const initial = getState();
+
+/** The picker only stays pinned while the project has nothing else to show. */
+function openTerminal(): void {
+    const pane = { type: "pane" as const, id: "win-project-pane", cwd: "/code/sikemux", kind: "terminal" as const, title: "1" };
+    setState((state) => ({
+        windows: { ...state.windows, "win-project": { id: "win-project", name: "1", role: "term" as const, root: pane, activePaneId: pane.id } },
+        windowsBySession: { ...state.windowsBySession, "sess-project": ["win-project"] },
+    }));
+}
 
 beforeEach(() => {
     setState(initial, true);
@@ -30,15 +40,12 @@ beforeEach(() => {
         deploy: null,
         pinned: false,
         activeWindowId: "win-project",
-        activeAgentId: null,
-        view: "agent" as const,
     };
     setState({
         sessions: { [project.id]: project },
         sessionOrder: [project.id],
         activeSessionId: project.id,
         agents: {},
-        agentsBySession: { [project.id]: [] },
         agentPaletteOpen: true,
         defaultAgentPermissionMode: "workspace-write",
     });
@@ -112,7 +119,7 @@ describe("AgentPalette", () => {
 
         await user.click(await screen.findByRole("button", { name: "+ new Codex in Normal mode" }));
 
-        const id = getState().agentsBySession["sess-project"][0];
+        const id = agentIdsOf(getState(), "sess-project")[0];
         expect(getState().agents[id]).toMatchObject({
             type: "codex",
             cwd: "/code/sikemux",
@@ -148,7 +155,7 @@ describe("AgentPalette", () => {
 
         await user.click(await screen.findByRole("button", { name: "+ new Codex in Normal mode" }));
 
-        const id = getState().agentsBySession["sess-project"][0];
+        const id = agentIdsOf(getState(), "sess-project")[0];
         expect(getState().agents[id]).toMatchObject({
             profileId: "codex-work",
             executablePath: "/Applications/ChatGPT.app/Contents/Resources/codex",
@@ -177,7 +184,7 @@ describe("AgentPalette", () => {
 
         expect(await screen.findByText("saved OpenCodex launcher is missing")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "+ new Codex in Normal mode" }));
-        expect(getState().agentsBySession["sess-project"]).toEqual([]);
+        expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
         expect(getState().agentPaletteOpen).toBe(true);
     });
 
@@ -188,7 +195,7 @@ describe("AgentPalette", () => {
         await user.click(screen.getByRole("radio", { name: "yolo" }));
         await user.click(await screen.findByRole("button", { name: "Fix terminal tabs in YOLO mode" }));
 
-        const id = getState().agentsBySession["sess-project"][0];
+        const id = agentIdsOf(getState(), "sess-project")[0];
         expect(getState().agents[id]).toMatchObject({
             type: "codex",
             title: "Fix terminal tabs",
@@ -209,7 +216,7 @@ describe("AgentPalette", () => {
         const yolo = screen.getByRole("radio", { name: "yolo" });
         yolo.focus();
         fireEvent.keyDown(yolo, { key: "Enter" });
-        expect(getState().agentsBySession["sess-project"]).toEqual([]);
+        expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
         await user.click(yolo);
         expect(yolo).toBeChecked();
         expect(screen.getByRole("button", { name: "+ new Pi in YOLO mode" })).toBeDisabled();
@@ -229,7 +236,7 @@ describe("AgentPalette", () => {
         expect(screen.queryByRole("button", { name: "+ new Codex in Normal mode" })).not.toBeInTheDocument();
         fireEvent.keyDown(search, { key: "Enter" });
 
-        const id = getState().agentsBySession["sess-project"][0];
+        const id = agentIdsOf(getState(), "sess-project")[0];
         expect(getState().agents[id]).toMatchObject({ resumeId: "codex-old", title: "Fix terminal tabs" });
     });
 
@@ -247,9 +254,7 @@ describe("AgentPalette", () => {
         fireEvent.keyDown(screen.getByRole("textbox", { name: "Search agent sessions" }), { key: "Escape" });
         expect(getState().agentPaletteOpen).toBe(true);
 
-        setState((state) => ({
-            sessions: { ...state.sessions, "sess-project": { ...state.sessions["sess-project"], view: "windows" } },
-        }));
+        openTerminal();
         fireEvent.keyDown(screen.getByRole("textbox", { name: "Search agent sessions" }), { key: "Escape" });
         expect(getState().agentPaletteOpen).toBe(false);
     });
@@ -260,9 +265,7 @@ describe("AgentPalette", () => {
      * byte to its PTY and stops there — left it with no way out.
      */
     it("contains attempted outside focus and still captures Escape", async () => {
-        setState((state) => ({
-            sessions: { ...state.sessions, "sess-project": { ...state.sessions["sess-project"], view: "windows" } },
-        }));
+        openTerminal();
         render(<AgentPalette />);
         await waitFor(() => expect(screen.getByRole("textbox", { name: "Search agent sessions" })).toBeInTheDocument());
 

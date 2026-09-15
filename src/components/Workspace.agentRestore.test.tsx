@@ -4,6 +4,8 @@ import type { ComponentProps } from "react";
 import type { TerminalPane } from "../terminal/TerminalPane";
 import { getState, setState } from "../state/store";
 import { Workspace } from "./Workspace";
+import { agentWindowId } from "../state/selectors";
+import { withAgents } from "../test/agents";
 
 vi.mock("../api/acp", () => ({
     acpApi: {
@@ -35,30 +37,23 @@ function arrangeRestoredAgents(resumeId: string | undefined): void {
     const state = getState();
     const sessionId = state.activeSessionId;
     const session = state.sessions[sessionId];
+    const slices = withAgents(state, sessionId, [
+        {
+            id: "agent-visible",
+            type: "codex",
+            title: "visible",
+            startup: "codex resume visible-session",
+            resumeId: "visible-session",
+            launchState: "live",
+        },
+        { id: "agent-hidden", type: "claude", title: "hidden", startup: "claude --resume hidden-session", resumeId, launchState: "live" },
+    ]);
     setState({
+        ...slices,
         sessions: {
             ...state.sessions,
-            [sessionId]: { ...session, kind: "project", view: "agent", activeAgentId: "agent-visible", cwd: "/repo" },
+            [sessionId]: { ...session, kind: "project", cwd: "/repo", activeWindowId: agentWindowId(slices, "agent-visible")! },
         },
-        agents: {
-            "agent-visible": {
-                id: "agent-visible",
-                type: "codex",
-                title: "visible",
-                startup: "codex resume visible-session",
-                resumeId: "visible-session",
-                launchState: "live",
-            },
-            "agent-hidden": {
-                id: "agent-hidden",
-                type: "claude",
-                title: "hidden",
-                startup: "claude --resume hidden-session",
-                resumeId,
-                launchState: "live",
-            },
-        },
-        agentsBySession: { ...state.agentsBySession, [sessionId]: ["agent-visible", "agent-hidden"] },
     });
 }
 

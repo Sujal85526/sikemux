@@ -42,7 +42,10 @@ export interface PersistedSnapshot {
     version: number;
     sessions: PersistedSession[];
     windowsBySession: Record<string, Window[]>;
-    agentsBySession: Record<string, PersistedAgent[]>;
+    /** Launch records for the agent windows above; the window says which session owns it. */
+    agents: PersistedAgent[];
+    /** v3-v7 input; agents lived beside their session rather than in a window. */
+    agentsBySession?: Record<string, PersistedAgent[]>;
     sessionOrder: string[];
     activeSessionId: string;
     recent: RecentEntry[];

@@ -11,6 +11,7 @@ import { notify, reportError, swallow } from "../state/toast";
 import { awsIdentityR, gitStatusR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { envFolderOf } from "../state/rundeckShape";
 import { useStore } from "../state/store";
+import { activeAgentId } from "../state/selectors";
 import {
     IconAgent,
     IconAws,
@@ -335,7 +336,10 @@ function ClockChip() {
 export function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const win = useStore((s) => (session ? s.windows[session.activeWindowId] : undefined));
-    const agent = useStore((s) => (session?.activeAgentId ? s.agents[session.activeAgentId] : undefined));
+    const agent = useStore((s) => {
+        const id = activeAgentId(s, session);
+        return id ? s.agents[id] : undefined;
+    });
     const zoomed = useStore((s) => s.zoomedPaneId != null);
     const sideRailOpen = useStore((s) => s.sideRailOpen);
     const agentRailOpen = useStore((s) => s.agentRailOpen);
@@ -397,7 +401,7 @@ export function TopBar() {
                         <>
                             <IconChevron size={11} className="crumb-sep" />
                             <span className="crumb-win">
-                                {session.view === "agent" ? (
+                                {win.role === "agent" ? (
                                     <span className="crumb-name">{agent?.title ?? "agent"}</span>
                                 ) : (
                                     <>

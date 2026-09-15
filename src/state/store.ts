@@ -39,7 +39,6 @@ export interface DomainState {
 
     sessionOrder: string[];
     windowsBySession: Record<string, string[]>;
-    agentsBySession: Record<string, string[]>;
 
     activeSessionId: string;
 
@@ -172,8 +171,6 @@ function initialSession(): {
         deploy: null,
         pinned: false,
         activeWindowId: win.id,
-        activeAgentId: null,
-        view: "windows",
     };
     return { session, window: win };
 }
@@ -186,7 +183,6 @@ export const useStore = create<StoreState>(() => {
         agents: {},
         sessionOrder: [session.id],
         windowsBySession: { [session.id]: [window.id] },
-        agentsBySession: { [session.id]: [] },
         activeSessionId: session.id,
         recent: [],
         projectRoots: [],

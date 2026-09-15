@@ -35,7 +35,6 @@ it("reveals the agents rail when navigating to Agents", () => {
     render(<SideRail />);
     fireEvent.click(screen.getByRole("button", { name: "Agents" }));
     expect(getState().agentRailOpen).toBe(true);
-    expect(getState().sessions[getState().activeSessionId].view).toBe("agent");
     expect(getState().agentPaletteOpen).toBe(true);
 });
 

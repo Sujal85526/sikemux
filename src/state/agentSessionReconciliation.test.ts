@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { agentSessionMetadataPending, reconcileAgentSessions, noteAcpAgentState } from "./commands";
 import { getState, setState } from "./store";
+import { agentWindowId } from "./selectors";
+import { withAgents } from "../test/agents";
 
 const initial = getState();
 
@@ -12,23 +14,15 @@ describe("agent session reconciliation", () => {
         const sessionId = state.activeSessionId;
         const agentId = "agent-new";
         const transcriptId = "019fd81d-c861-7920-bc88-a41a6b17aca4";
+        const slices = withAgents(state, sessionId, [
+            { id: agentId, type: "codex", title: "codex", startup: "codex", createdAt: 100_000, baselineSessionIds: [], launchState: "live" },
+        ]);
         setState({
+            ...slices,
             sessions: {
                 ...state.sessions,
-                [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo", activeAgentId: agentId, view: "agent" },
+                [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo", activeWindowId: agentWindowId(slices, agentId)! },
             },
-            agents: {
-                [agentId]: {
-                    id: agentId,
-                    type: "codex",
-                    title: "codex",
-                    startup: "codex",
-                    createdAt: 100_000,
-                    baselineSessionIds: [],
-                    launchState: "live",
-                },
-            },
-            agentsBySession: { ...state.agentsBySession, [sessionId]: [agentId] },
         });
 
         reconcileAgentSessions("codex", "/repo", undefined, [{ id: transcriptId, title: transcriptId.slice(0, 8), mtime: 101 }]);
@@ -45,8 +39,9 @@ describe("agent session reconciliation", () => {
         const agentId = "acp-new";
         setState({
             sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo" } },
-            agents: { [agentId]: { id: agentId, type: "codex", title: "codex", startup: "codex", createdAt: 100_000, baselineSessionIds: [] } },
-            agentsBySession: { ...state.agentsBySession, [sessionId]: [agentId] },
+            ...withAgents(state, sessionId, [
+                { id: agentId, type: "codex", title: "codex", startup: "codex", createdAt: 100_000, baselineSessionIds: [] },
+            ]),
         });
         noteAcpAgentState(agentId, "working");
         reconcileAgentSessions("codex", "/repo", undefined, [{ id: "another-session", title: "Another chat", mtime: 101 }]);

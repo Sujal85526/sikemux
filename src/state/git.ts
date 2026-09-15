@@ -6,7 +6,7 @@ import { getState, setState } from "./store";
 function currentPaneId(): string | null {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
-    if (!session || session.view !== "windows") return null;
+    if (!session) return null;
     return st.windows[session.activeWindowId]?.activePaneId ?? null;
 }
 

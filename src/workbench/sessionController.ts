@@ -187,10 +187,7 @@ export class SessionController {
 
         const activeWindow = windows.find((window) => window.id === session.activeWindowId);
         const activePane = activeWindow ? collectPanes(activeWindow.root).find((pane) => pane.id === activeWindow.activePaneId) : undefined;
-        const nextActiveId =
-            activeSessionId === session.id && session.view === "windows" && activePane
-                ? createWorkbenchItemRef(activePane.id, activePane.kind).id
-                : null;
+        const nextActiveId = activeSessionId === session.id && activePane ? createWorkbenchItemRef(activePane.id, activePane.kind).id : null;
         this.activeItemId = nextActiveId && this.items.has(nextActiveId) ? nextActiveId : null;
 
         for (const [id, current] of this.items) {

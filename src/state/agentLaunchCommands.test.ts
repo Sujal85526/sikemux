@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, setAgentPermissionMode } from "./commands";
 import { getState, setState } from "./store";
+import { activeAgentId, agentIdsOf } from "./selectors";
 
 const initial = getState();
 
@@ -14,30 +15,28 @@ beforeEach(() => {
         deploy: null,
         pinned: false,
         activeWindowId: "window",
-        activeAgentId: null,
-        view: "windows" as const,
     };
     setState({
         sessions: { project: session },
         sessionOrder: ["project"],
         activeSessionId: "project",
         agents: {},
-        agentsBySession: { project: [] },
     });
 });
 
 describe("agent launch commands", () => {
-    it("opens and pins the agent picker when entering an empty project's agent view", () => {
+    it("opens and pins the agent picker when an empty project has nothing else to show", () => {
         focusAgents();
 
-        expect(getState().sessions.project.view).toBe("agent");
         expect(getState().agentPaletteOpen).toBe(true);
 
         closeAgentPalette();
         expect(getState().agentPaletteOpen).toBe(true);
 
+        const pane = { type: "pane" as const, id: "window-pane", cwd: "/code/project", kind: "terminal" as const, title: "1" };
         setState((state) => ({
-            sessions: { ...state.sessions, project: { ...state.sessions.project, view: "windows" } },
+            windows: { ...state.windows, window: { id: "window", name: "1", role: "term" as const, root: pane, activePaneId: pane.id } },
+            windowsBySession: { ...state.windowsBySession, project: ["window"] },
         }));
         closeAgentPalette();
         expect(getState().agentPaletteOpen).toBe(false);
@@ -46,13 +45,12 @@ describe("agent launch commands", () => {
     it("focuses an existing agent without opening the picker", () => {
         addAgent("codex");
         setState((state) => ({
-            sessions: { ...state.sessions, project: { ...state.sessions.project, view: "windows" } },
+            sessions: { ...state.sessions, project: { ...state.sessions.project, activeWindowId: "window" } },
         }));
 
         focusAgents();
 
-        expect(getState().sessions.project.view).toBe("agent");
-        expect(getState().sessions.project.activeAgentId).toBe(getState().agentsBySession.project[0]);
+        expect(activeAgentId(getState(), getState().sessions.project)).toBe(agentIdsOf(getState(), "project")[0]);
         expect(getState().agentPaletteOpen).toBe(false);
     });
 
@@ -72,7 +70,7 @@ describe("agent launch commands", () => {
 
         addAgent("claude", undefined, undefined, { profileId: "codex-only", permissionMode: "workspace-write" });
 
-        const agent = getState().agents[getState().agentsBySession.project[0]];
+        const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
         expect(agent.profileId).toBeUndefined();
         expect(agent.startup).toMatch(/^claude /);
     });
@@ -80,7 +78,7 @@ describe("agent launch commands", () => {
     it("normalizes legacy modes to Normal", () => {
         addAgent("pi", undefined, undefined, { permissionMode: "read-only" });
 
-        const agent = getState().agents[getState().agentsBySession.project[0]];
+        const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
         expect(agent.permissionMode).toBe("workspace-write");
         expect(agent.startup).toBe("pi");
     });
@@ -91,14 +89,13 @@ describe("agent launch commands", () => {
             sessions: { ...state.sessions, other },
             sessionOrder: ["project", "other"],
             activeSessionId: "other",
-            agentsBySession: { ...state.agentsBySession, other: [] },
         }));
 
         const attached = addAgent("codex", undefined, undefined, { sessionId: "project", cwd: "/code/project-lane" });
 
         expect(attached).toBe(true);
-        expect(getState().agentsBySession.project).toHaveLength(1);
-        expect(getState().agentsBySession.other).toHaveLength(0);
+        expect(agentIdsOf(getState(), "project")).toHaveLength(1);
+        expect(agentIdsOf(getState(), "other")).toHaveLength(0);
         expect(getState().activeSessionId).toBe("other");
     });
 
@@ -109,7 +106,7 @@ describe("agent launch commands", () => {
             baselineSessionIds: ["existing-one", "existing-two"],
         });
 
-        const agent = getState().agents[getState().agentsBySession.project[0]];
+        const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
         expect(agent).toMatchObject({
             model: "gpt-5.6-codex",
             effort: "high",
@@ -124,7 +121,7 @@ describe("agent launch commands", () => {
 
     it("relaunches a resumable session in Normal or YOLO mode", () => {
         addAgent("codex", "session-42", "Resumable task", { permissionMode: "workspace-write" });
-        const id = getState().agentsBySession.project[0];
+        const id = agentIdsOf(getState(), "project")[0];
 
         setAgentPermissionMode(id, "bypass");
         expect(getState().agents[id]).toMatchObject({ permissionMode: "bypass", skipPermissions: true });
@@ -137,7 +134,7 @@ describe("agent launch commands", () => {
 
     it("relaunches a fresh CLI when its live PTY mode changes", () => {
         addAgent("claude", undefined, "Fresh task", { permissionMode: "workspace-write" });
-        const id = getState().agentsBySession.project[0];
+        const id = agentIdsOf(getState(), "project")[0];
 
         setAgentPermissionMode(id, "bypass");
 

@@ -28,7 +28,19 @@ import { confirmDialog } from "./dialog";
 import { agentSupportsSkipPermissions } from "./commands/agentLogic";
 import { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
 import { parseSessionBundle } from "./sessionBundle";
-import { brunoPaneId, nextInCycle, selectTabRefs, stripOrder, tabRefKey, type TabSource } from "./selectors";
+import {
+    activeAgentId,
+    agentIdsOf,
+    agentWindowId,
+    brunoPaneId,
+    nextInCycle,
+    ownerSessionId,
+    selectTabRefs,
+    stripOrder,
+    tabRefKey,
+    type TabSource,
+} from "./selectors";
+import { agentWindow } from "./agentWindow";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
@@ -137,8 +149,6 @@ function makeSession(kind: SessionKind, name: string, cwd: string, activeWindowI
         deploy: null,
         pinned: false,
         activeWindowId,
-        activeAgentId: null,
-        view: "windows",
     };
 }
 
@@ -167,7 +177,6 @@ function ensureRoleWindow(role: WindowRole, kind: PaneKind, name: string, seedEd
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), w.id];
         if (seedEditorPath) d.editorViews[w.activePaneId] = { openTabs: [seedEditorPath], activePath: seedEditorPath };
         sess.activeWindowId = w.id;
-        sess.view = "windows";
         d.zoomedPaneId = null;
     });
 }
@@ -216,13 +225,11 @@ export function pruneOnDemandWindows(): void {
     });
 }
 
-function attachSession(d: StoreState, session: Session, windows: Window[], agents: Agent[] = []): void {
+function attachSession(d: StoreState, session: Session, windows: Window[]): void {
     d.sessions[session.id] = session;
     d.sessionOrder.push(session.id);
     for (const w of windows) d.windows[w.id] = w;
-    for (const a of agents) d.agents[a.id] = a;
     d.windowsBySession[session.id] = windows.map((w) => w.id);
-    d.agentsBySession[session.id] = agents.map((a) => a.id);
     d.activeSessionId = session.id;
     d.zoomedPaneId = null;
     d.pickerOpen = false;
@@ -325,7 +332,6 @@ export function routeCliOpenRequest(request: CliOpenRequest): CliOpenResult[] {
                 const session = d.sessions[ownerId];
                 if (!session) return;
                 d.activeSessionId = ownerId;
-                session.view = "windows";
                 d.zoomedPaneId = null;
                 d.pickerOpen = false;
                 d.settingsOpen = false;
@@ -371,7 +377,6 @@ export function routeCliOpenRequest(request: CliOpenRequest): CliOpenResult[] {
             if (!session || !win) return;
             d.activeSessionId = ownerId;
             session.activeWindowId = win.id;
-            session.view = "windows";
             win.activePaneId = editorPane.id;
             d.zoomedPaneId = null;
             d.pickerOpen = false;
@@ -805,7 +810,7 @@ export function closeSession(id: string): void {
 function closeSessionNow(id: string): void {
     const beforeClose = getState();
     const closingCwd = beforeClose.sessions[id]?.cwd;
-    const closingAgentIds = beforeClose.agentsBySession[id] ?? [];
+    const closingAgentIds = agentIdsOf(beforeClose, id);
     const taskPaneIds = (beforeClose.windowsBySession[id] ?? []).flatMap((windowId) => {
         const window = beforeClose.windows[windowId];
         return window
@@ -820,7 +825,6 @@ function closeSessionNow(id: string): void {
         if (!closed) return;
         const idx = d.sessionOrder.indexOf(id);
         const winIds = d.windowsBySession[id] ?? [];
-        const agentIds = d.agentsBySession[id] ?? [];
         const isSshConfig = winIds.some((windowId) => d.windows[windowId]?.role === "ssh-config");
 
         for (const wid of winIds) {
@@ -833,12 +837,7 @@ function closeSessionNow(id: string): void {
             }
             delete d.windows[wid];
         }
-        for (const aid of agentIds) {
-            delete d.agents[aid];
-            delete d.agentActivity[aid];
-        }
         delete d.windowsBySession[id];
-        delete d.agentsBySession[id];
         delete d.rundeckViews[id];
         delete d.globalSearchBySession[id];
         delete d.sessions[id];
@@ -1036,7 +1035,6 @@ export function runCustomCommand(custom: import("../commands/registry").CustomCo
             window.root = replacePane(window.root, window.activePaneId, pane);
             window.activePaneId = pane.id;
         }
-        current.view = "windows";
         d.zoomedPaneId = null;
     });
 }
@@ -1089,7 +1087,6 @@ export function openTaskTerminal(request: TaskTerminalPresentationRequest): stri
             candidate.name = label;
             candidate.activePaneId = pane.id;
             owner.activeWindowId = candidate.id;
-            owner.view = "windows";
             d.activeSessionId = owner.id;
             d.zoomedPaneId = null;
             paneId = pane.id;
@@ -1105,7 +1102,6 @@ export function openTaskTerminal(request: TaskTerminalPresentationRequest): stri
         d.windows[created.id] = created;
         d.windowsBySession[owner.id] = [...windowIds, created.id];
         owner.activeWindowId = created.id;
-        owner.view = "windows";
         d.activeSessionId = owner.id;
         d.zoomedPaneId = null;
         paneId = created.root.id;
@@ -1143,8 +1139,8 @@ export async function exportActiveSession(): Promise<void> {
         ...session,
         bruno: session.bruno ? { collectionPath: session.bruno.collectionPath, selectedEnvs: session.bruno.selectedEnvs } : undefined,
     };
-    const windows = (state.windowsBySession[session.id] ?? []).map((id) => state.windows[id]).filter(Boolean);
-    const agents = (state.agentsBySession[session.id] ?? [])
+    const windows = (state.windowsBySession[session.id] ?? []).map((id) => state.windows[id]).filter((w): w is Window => !!w && w.role !== "agent");
+    const agents = agentIdsOf(state, session.id)
         .map((id) => state.agents[id])
         .filter((agent): agent is Agent => !!agent?.resumeId)
         .map(({ type, title, resumeId }) => ({ type, title, resumeId }));
@@ -1188,8 +1184,6 @@ export async function importSessionFromClipboard(): Promise<void> {
             pinned: false,
             deploy: null,
             activeWindowId: importedWindows[0].id,
-            activeAgentId: null,
-            view: "windows",
         };
         if (sourceKind === "bruno") session.bruno = { collectionPath: sourceCwd, selectedEnvs: {}, secretVars: {}, drafts: {} };
         attachSession(d as unknown as StoreState, session, importedWindows);
@@ -1204,7 +1198,9 @@ export async function importSessionFromClipboard(): Promise<void> {
                 directCommand: agentDirectCommand(row.type, row.resumeId),
                 launchState: "dormant",
             };
-            d.agentsBySession[sessionId].push(id);
+            const win = agentWindow(d.agents[id], sourceCwd);
+            d.windows[win.id] = win;
+            d.windowsBySession[sessionId].push(win.id);
         }
     });
     notify("success", "Imported session as a safe, dormant copy");
@@ -1257,6 +1253,8 @@ function disposePaneState(d: StoreState, paneId: string): void {
     delete d.rundeckViews[paneId];
     delete d.brunoViews[paneId];
     delete d.terminalTitles[paneId];
+    delete d.agents[paneId];
+    delete d.agentActivity[paneId];
 }
 
 function pruneWindowViews(d: StoreState, win: Window): void {
@@ -1277,13 +1275,11 @@ function replaceWithFreshTerminalTab(d: StoreState, session: Session, closing: W
     d.windowsBySession[session.id] = winIds.map((id) => (id === closing.id ? fresh.id : id));
     const sess = d.sessions[session.id];
     sess.activeWindowId = fresh.id;
-    sess.view = "windows";
     d.zoomedPaneId = null;
 }
 
 function closeActiveTerminalTab(): void {
     withActiveSession((d, session) => {
-        if (session.view !== "windows") return;
         const closing = d.windows[session.activeWindowId];
         if (!closing || closing.role !== "term") return;
 
@@ -1308,29 +1304,27 @@ function closeActiveTerminalTab(): void {
         d.windowsBySession[session.id] = remaining;
         const sess = d.sessions[session.id];
         sess.activeWindowId = nextId;
-        sess.view = "windows";
         d.zoomedPaneId = null;
     });
 }
-
-// Agent view only ever applies to project sessions; other groups may carry a
-// stale `view: "agent"` but must be treated as windowed everywhere.
-const inAgentView = (s: Session): boolean => s.kind === "project" && s.view === "agent";
 
 export function closeActiveFocusTarget(): void {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     if (!session) return;
 
-    if (inAgentView(session)) {
-        // The agent picker is frontmost while open, so ⌥W dismisses it before
-        // it reaches a running agent.
-        if (st.agentPaletteOpen) closeAgentPalette();
-        else if (session.activeAgentId) closeAgent(session.activeAgentId);
+    // The agent picker is frontmost while open, so ⌥W dismisses it before it
+    // reaches whatever is behind it.
+    if (st.agentPaletteOpen) {
+        closeAgentPalette();
         return;
     }
 
     const win = st.windows[session.activeWindowId];
+    if (win?.role === "agent") {
+        closeAgent(win.activePaneId);
+        return;
+    }
     if (win?.role === "ssh-config") {
         closeSession(session.id);
         return;
@@ -1391,7 +1385,6 @@ export function toggleZoom(): void {
             d.zoomedPaneId = null;
             return;
         }
-        if (session.view !== "windows") return;
         const w = d.windows[session.activeWindowId];
         if (w) d.zoomedPaneId = w.activePaneId;
     });
@@ -1418,7 +1411,6 @@ export function newWindow(): void {
         d.windowsBySession[session.id] = [...winIds, w.id];
         const sess = d.sessions[session.id];
         sess.activeWindowId = w.id;
-        sess.view = "windows";
         d.zoomedPaneId = null;
     });
 }
@@ -1427,7 +1419,7 @@ export function duplicateWindow(id: string): void {
     mutate((d) => {
         const source = d.windows[id];
         const ownerId = d.sessionOrder.find((sid) => d.windowsBySession[sid]?.includes(id));
-        if (!source || !ownerId) return;
+        if (!source || !ownerId || source.role === "agent") return;
         const root = cloneLayout(source.root);
         const activePane = collectPanes(root)[0];
         const duplicate: Window = {
@@ -1444,7 +1436,6 @@ export function duplicateWindow(id: string): void {
         const index = ids.indexOf(id);
         d.windowsBySession[ownerId] = [...ids.slice(0, index + 1), duplicate.id, ...ids.slice(index + 1)];
         d.sessions[ownerId].activeWindowId = duplicate.id;
-        d.sessions[ownerId].view = "windows";
     });
 }
 
@@ -1461,9 +1452,12 @@ function closeWindowNow(id: string): void {
     const taskPaneIds = collectPanes(closing.root)
         .filter((pane) => pane.externalPty)
         .map((pane) => pane.id);
-    withActiveSession((d, session) => {
+    const closingAgent = closing.role === "agent" ? getState().agents[closing.activePaneId] : undefined;
+    mutate((d) => {
+        const sessionId = ownerSessionId(d, id);
+        const session = sessionId ? d.sessions[sessionId] : undefined;
+        if (!session) return;
         const winIds = d.windowsBySession[session.id] ?? [];
-        if (!winIds.includes(id)) return;
         // A project may sit on zero windows, showing agents or nothing until a
         // tab is opened. Other session kinds are their window, so keep one.
         if (winIds.length <= 1 && session.kind !== "project") return;
@@ -1489,6 +1483,12 @@ function closeWindowNow(id: string): void {
     });
     if (!getState().windows[id]) {
         for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
+        if (closingAgent) {
+            void browserApi.closeAgent(closingAgent.id).catch(reportError("close agent browser"));
+            if (closingAgent.type === "claude" || closingAgent.type === "codex") {
+                invalidate((kind) => kind === "agents.catalog" || kind === "agents.models" || kind === "agents.usage");
+            }
+        }
     }
 }
 
@@ -1502,20 +1502,15 @@ export function selectWindowId(id: string): void {
         const winIds = d.windowsBySession[session.id] ?? [];
         if (!winIds.includes(id)) return;
         const sess = d.sessions[session.id];
-        if (sess.activeWindowId === id && sess.view === "windows" && d.zoomedPaneId === null) {
+        if (sess.activeWindowId === id && d.zoomedPaneId === null) {
             return;
         }
         sess.activeWindowId = id;
-        sess.view = "windows";
         d.zoomedPaneId = null;
     });
 }
 
 export function selectTab(ref: WorkspaceTabRef): void {
-    if (ref.kind === "agent") {
-        selectAgent(ref.id);
-        return;
-    }
     if (ref.kind === "file") {
         const win = getState().windows[ref.id];
         if (win) setEditorView(win.activePaneId, { activePath: ref.path });
@@ -1531,10 +1526,6 @@ export function selectTab(ref: WorkspaceTabRef): void {
 }
 
 export function closeTab(ref: WorkspaceTabRef): void {
-    if (ref.kind === "agent") {
-        closeAgent(ref.id);
-        return;
-    }
     if (ref.kind === "file") {
         // The editor owns the unsaved-changes prompt and the CodeMirror state
         // for each document, so closing goes through it rather than around it.
@@ -1599,19 +1590,6 @@ export function selectWindowByRole(role: WindowRole): void {
     }
 }
 
-export function cycleAgent(delta: number): void {
-    const sessionId = getState().activeSessionId;
-    const next = nextTabIn({ kind: "agents", sessionId }, delta);
-    if (!next) return;
-    mutate((d) => {
-        const sess = d.sessions[sessionId];
-        if (!sess) return;
-        sess.activeAgentId = next;
-        sess.view = "agent";
-        d.zoomedPaneId = null;
-    });
-}
-
 /** ⌥./⌥, — cycle whichever tab strip is currently on screen: agent tabs, terminal
  *  tabs, or the focused editor pane's open file tabs. */
 export function cycleTabs(delta: number): void {
@@ -1619,13 +1597,14 @@ export function cycleTabs(delta: number): void {
     const session = st.sessions[st.activeSessionId];
     if (!session) return;
 
-    if (inAgentView(session)) {
-        cycleAgent(delta);
-        return;
-    }
-
     const win = st.windows[session.activeWindowId];
     if (!win) return;
+
+    if (win.role === "agent") {
+        const next = nextTabIn({ kind: "agents", sessionId: session.id }, delta);
+        if (next) selectWindowId(next);
+        return;
+    }
 
     if (win.role === "bruno") {
         const next = nextTabIn({ kind: "requests", paneId: win.activePaneId }, delta);
@@ -1741,8 +1720,7 @@ export function toggleAgentSkipPermissions(id: string): void {
 export function toggleActiveAgentSkipPermissions(): void {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
-    if (!session || !inAgentView(session)) return;
-    const id = session.activeAgentId;
+    const id = activeAgentId(st, session);
     if (id) toggleAgentSkipPermissions(id);
 }
 
@@ -1765,15 +1743,18 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         const session = d.sessions[options.sessionId ?? d.activeSessionId];
         if (!session) return;
         if (session.kind !== "project") return;
-        const ownedIds = d.agentsBySession[session.id] ?? [];
-        const existing = resumeId ? ownedIds.map((id) => d.agents[id]).find((a) => a && a.type === type && a.resumeId === resumeId) : undefined;
+        const existing = resumeId
+            ? agentIdsOf(d, session.id)
+                  .map((id) => d.agents[id])
+                  .find((a) => a && a.type === type && a.resumeId === resumeId)
+            : undefined;
         const sess = d.sessions[session.id];
         d.zoomedPaneId = null;
         // A successful launch closes the picker and activates the new PTY.
         d.agentPaletteOpen = false;
         if (existing) {
-            sess.activeAgentId = existing.id;
-            sess.view = "agent";
+            const winId = agentWindowId(d, existing.id);
+            if (winId) sess.activeWindowId = winId;
             attached = true;
             return;
         }
@@ -1812,9 +1793,10 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             if (known) agent.baselineSessionIds = [...new Set(known)];
         }
         d.agents[agent.id] = agent;
-        d.agentsBySession[session.id] = [...ownedIds, agent.id];
-        sess.activeAgentId = agent.id;
-        sess.view = "agent";
+        const win = agentWindow(agent, cwd);
+        d.windows[win.id] = win;
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), win.id];
+        sess.activeWindowId = win.id;
         attached = true;
     });
     return attached;
@@ -1828,7 +1810,7 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
         for (const sessionId of d.sessionOrder) {
             const session = d.sessions[sessionId];
             if (session?.kind !== "project") continue;
-            for (const agentId of d.agentsBySession[sessionId] ?? []) {
+            for (const agentId of agentIdsOf(d, sessionId)) {
                 const agent = d.agents[agentId];
                 const agentConfigPath = agent?.profileId
                     ? d.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
@@ -1847,6 +1829,8 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
             const nextTitle = usableAgentSessionTitle(row, agent.title);
             if (nextTitle !== agent.title) {
                 agent.title = nextTitle;
+                const winId = agentWindowId(d, agent.id);
+                if (winId) d.windows[winId].name = nextTitle;
             }
         }
 
@@ -1935,10 +1919,10 @@ export function setAgentTitle(id: string, title: string): void {
 export function selectAgent(id: string): void {
     withActiveSession((d, session) => {
         const agent = d.agents[id];
-        if (!agent) return;
+        const winId = agentWindowId(d, id);
+        if (!agent || !winId || !(d.windowsBySession[session.id] ?? []).includes(winId)) return;
         const sess = d.sessions[session.id];
-        sess.activeAgentId = id;
-        sess.view = "agent";
+        sess.activeWindowId = winId;
         // Picking a real agent tab replaces the draft, exactly like any other tab.
         d.agentPaletteOpen = false;
         if (agent.launchState === "dormant") {
@@ -2022,9 +2006,7 @@ export function noteAcpAgentState(id: string, state: import("./types").AgentBack
 export function noteAgentActivity(id: string, event: "working" | "complete" | import("./agentStatus").AgentStateEvent): void {
     mutate((d) => {
         if (!d.agents[id]) return;
-        const ownerId = d.sessionOrder.find((sid) => (d.agentsBySession[sid] ?? []).includes(id));
-        const owner = ownerId ? d.sessions[ownerId] : undefined;
-        const visible = !!owner && owner.id === d.activeSessionId && owner.view === "agent" && owner.activeAgentId === id;
+        const visible = activeAgentId(d, d.sessions[d.activeSessionId]) === id;
         const previous = d.agentActivity[id];
         const semantic =
             typeof event === "string"
@@ -2052,28 +2034,10 @@ export function clearAgentUnread(id: string): void {
     });
 }
 
+/** An agent closes as its window does; the window's close handles its browser. */
 export function closeAgent(id: string): void {
-    const closedType = getState().agents[id]?.type;
-    mutate((d) => {
-        const ownerId = d.sessionOrder.find((sid) => (d.agentsBySession[sid] ?? []).includes(id));
-        if (!ownerId) return;
-        const owner = d.sessions[ownerId];
-        const ownedIds = (d.agentsBySession[ownerId] ?? []).filter((aid) => aid !== id);
-        const wasActive = owner.activeAgentId === id;
-        delete d.agents[id];
-        delete d.agentActivity[id];
-        d.agentsBySession[ownerId] = ownedIds;
-        if (wasActive) {
-            owner.activeAgentId = ownedIds[0] ?? null;
-            if (ownedIds.length === 0) owner.view = "windows";
-        }
-    });
-    if (closedType && !getState().agents[id]) {
-        void browserApi.closeAgent(id).catch(reportError("close agent browser"));
-        if (closedType === "claude" || closedType === "codex") {
-            invalidate((kind) => kind === "agents.catalog" || kind === "agents.models" || kind === "agents.usage");
-        }
-    }
+    const winId = agentWindowId(getState(), id);
+    if (winId) closeWindowById(winId);
 }
 
 export function focusAgents(): void {
@@ -2082,13 +2046,13 @@ export function focusAgents(): void {
     // The agent pane shortcut (⌥4) is a no-op there.
     if (getState().sessions[getState().activeSessionId]?.kind !== "project") return;
     withActiveSession((d, session) => {
-        const ids = d.agentsBySession[session.id] ?? [];
         const sess = d.sessions[session.id];
-        sess.view = "agent";
         d.agentRailOpen = true;
-        sess.activeAgentId = session.activeAgentId ?? ids[0] ?? null;
-        if (ids.length === 0) d.agentPaletteOpen = true;
         d.zoomedPaneId = null;
+        if (d.windows[sess.activeWindowId]?.role === "agent") return;
+        const first = (d.windowsBySession[session.id] ?? []).find((id) => d.windows[id]?.role === "agent");
+        if (first) sess.activeWindowId = first;
+        else d.agentPaletteOpen = true;
     });
     emit({ type: "agent-focus", sessionId: getState().activeSessionId });
 }
@@ -2108,13 +2072,13 @@ export const openAgentPalette = (): void => {
         d.agentPaletteOpen = true;
         d.rundeckJobPaletteOpen = false;
         d.zoomedPaneId = null;
-        session.view = "agent";
     });
 };
 export const closeAgentPalette = (): void => {
     const state = getState();
     const session = state.sessions[state.activeSessionId];
-    if (session?.kind === "project" && session.view === "agent" && (state.agentsBySession[session.id] ?? []).length === 0) return;
+    // A project with nothing open keeps the picker, or it would show a blank stage.
+    if (session?.kind === "project" && (state.windowsBySession[session.id] ?? []).length === 0) return;
     setState({ agentPaletteOpen: false });
 };
 export const forceCloseAgentPalette = (): void => setState({ agentPaletteOpen: false });
@@ -2208,7 +2172,6 @@ export async function openSshConfigEditor(): Promise<void> {
 
         configSession.activeWindowId = target.id;
         target.activePaneId = editorPane.id;
-        configSession.view = "windows";
         d.zoomedPaneId = null;
         d.settingsOpen = false;
     });
@@ -2330,8 +2293,8 @@ export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrow
 function activeBrowserAgentId(): string | null {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
-    if (!session || session.kind !== "project" || session.view !== "agent") return null;
-    return session.activeAgentId;
+    if (session?.kind !== "project") return null;
+    return activeAgentId(st, session);
 }
 
 export function newBrowserTab(): boolean {

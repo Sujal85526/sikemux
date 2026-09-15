@@ -6,6 +6,7 @@ import * as cmd from "../state/commands";
 import { type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
+import { activeAgentId, agentIdsOf } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
@@ -44,7 +45,8 @@ export function AgentRail() {
 export function AgentRailBody() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
-    const agentsBySession = useStore((s) => s.agentsBySession);
+    const windowsBySession = useStore((s) => s.windowsBySession);
+    const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
@@ -134,9 +136,11 @@ export function AgentRailBody() {
 
     if (!session) return null;
 
-    const opens = ((agentsBySession[session.id] ?? []).map((id) => agentsById[id]).filter(Boolean) as Agent[]).filter((a) =>
-        availableTypes.has(a.type),
-    );
+    const opens = (
+        agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
+            .map((id) => agentsById[id])
+            .filter(Boolean) as Agent[]
+    ).filter((a) => availableTypes.has(a.type));
 
     const activeOpenKeys = new Set(opens.map((a) => sessionKey(a.type, persistedSessionIdOf(a))));
     const needle = query.trim().toLowerCase();
@@ -234,7 +238,7 @@ export function AgentRailBody() {
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Open" rule />
                         {opens.map((a) => {
-                            const active = session.view === "agent" && a.id === session.activeAgentId;
+                            const active = activeAgentId({ windows: windowsById }, session) === a.id;
                             return (
                                 <div key={a.id} className="agent-row-wrap">
                                     <button className={`agent-row closable${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>

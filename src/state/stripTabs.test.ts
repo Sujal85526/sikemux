@@ -3,7 +3,6 @@ import { activeTabRef, expandTabRefs, nextInCycle, roleHasTab, stripOrder, tabRe
 import type { StoreState } from "./store";
 
 const win = (id: string, role: string) => ({ id, role, activePaneId: `${id}-pane` }) as unknown as StoreState["windows"][string];
-const agent = () => ({}) as StoreState["agents"][string];
 const brunoViews = (paneId: string, openPaths: string[], activeRequestPath: string | null = null) =>
     ({ [paneId]: { openPaths, activeRequestPath } }) as StoreState["brunoViews"];
 
@@ -36,42 +35,41 @@ describe("roleHasTab", () => {
 
 describe("expandTabRefs", () => {
     it("leaves out rail-driven windows and keeps the rest", () => {
-        const refs = expandTabRefs(
-            ["t1", "e1", "d1", "s1", "g1"],
-            [],
-            { t1: win("t1", "term"), e1: win("e1", "files"), d1: win("d1", "diff"), s1: win("s1", "search"), g1: win("g1", "git") },
-            {},
-        );
+        const refs = expandTabRefs(["t1", "e1", "d1", "s1", "g1"], {
+            t1: win("t1", "term"),
+            e1: win("e1", "files"),
+            d1: win("d1", "diff"),
+            s1: win("s1", "search"),
+            g1: win("g1", "git"),
+        });
 
         expect(refs.map(tabRefKey)).toEqual(["window:t1", "window:g1"]);
     });
 
     it("expands an editor into one tab per open document, in their open order", () => {
-        const refs = expandTabRefs(["e1"], [], { e1: win("e1", "files") }, {}, { "e1-pane": { openTabs: ["/a.ts", "/b.ts"], activePath: "/b.ts" } });
+        const refs = expandTabRefs(["e1"], { e1: win("e1", "files") }, { "e1-pane": { openTabs: ["/a.ts", "/b.ts"], activePath: "/b.ts" } });
 
         expect(refs.map(tabRefKey)).toEqual(["file:e1:/a.ts", "file:e1:/b.ts"]);
     });
 
     it("gives an editor holding nothing no tab at all", () => {
-        const refs = expandTabRefs(["e1"], [], { e1: win("e1", "files") }, {}, { "e1-pane": { openTabs: [], activePath: null } });
+        const refs = expandTabRefs(["e1"], { e1: win("e1", "files") }, { "e1-pane": { openTabs: [], activePath: null } });
 
         expect(refs).toEqual([]);
     });
 
     it("keeps a document's tab beside the terminals and agents it shares a strip with", () => {
         const refs = expandTabRefs(
-            ["t1", "e1"],
-            ["a1"],
-            { t1: win("t1", "term"), e1: win("e1", "files") },
-            { a1: agent() },
+            ["t1", "e1", "a1"],
+            { t1: win("t1", "term"), e1: win("e1", "files"), a1: win("a1", "agent") },
             { "e1-pane": { openTabs: ["/a.ts"], activePath: "/a.ts" } },
         );
 
-        expect(refs.map(tabRefKey)).toEqual(["window:t1", "file:e1:/a.ts", "agent:a1"]);
+        expect(refs.map(tabRefKey)).toEqual(["window:t1", "file:e1:/a.ts", "window:a1"]);
     });
 
     it("expands a Bruno workspace into one tab per open request, in their open order", () => {
-        const refs = expandTabRefs(["b1"], [], { b1: win("b1", "bruno") }, {}, {}, brunoViews("b1-pane", ["/a.bru", "/b.bru"]));
+        const refs = expandTabRefs(["b1"], { b1: win("b1", "bruno") }, {}, brunoViews("b1-pane", ["/a.bru", "/b.bru"]));
 
         expect(refs.map(tabRefKey)).toEqual(["request:b1:/a.bru", "request:b1:/b.bru"]);
     });
@@ -81,26 +79,25 @@ describe("expandTabRefs", () => {
      * workspace needs no tab — the same rule the editor follows.
      */
     it("gives a Bruno workspace holding nothing no tab at all", () => {
-        expect(expandTabRefs(["b1"], [], { b1: win("b1", "bruno") }, {}, {}, brunoViews("b1-pane", []))).toEqual([]);
-        expect(expandTabRefs(["b1"], [], { b1: win("b1", "bruno") }, {}, {})).toEqual([]);
+        expect(expandTabRefs(["b1"], { b1: win("b1", "bruno") }, {}, brunoViews("b1-pane", []))).toEqual([]);
+        expect(expandTabRefs(["b1"], { b1: win("b1", "bruno") })).toEqual([]);
     });
 
-    it("orders windows before agents and drops ids with no record", () => {
-        const refs = expandTabRefs(["t1", "gone"], ["a1", "vanished"], { t1: win("t1", "term") }, { a1: agent() });
+    it("drops ids with no record", () => {
+        const refs = expandTabRefs(["t1", "gone"], { t1: win("t1", "term") });
 
-        expect(refs.map(tabRefKey)).toEqual(["window:t1", "agent:a1"]);
+        expect(refs.map(tabRefKey)).toEqual(["window:t1"]);
     });
 
     it("yields no tabs for a project holding only rail-driven surfaces", () => {
-        const refs = expandTabRefs(["e1", "d1"], [], { e1: win("e1", "files"), d1: win("d1", "diff") }, {});
+        const refs = expandTabRefs(["e1", "d1"], { e1: win("e1", "files"), d1: win("d1", "diff") });
 
         expect(refs).toEqual([]);
     });
 });
 
 describe("activeTabRef", () => {
-    const session = (over: Record<string, unknown> = {}) =>
-        ({ kind: "project", view: "windows", activeWindowId: "e1", activeAgentId: null, ...over }) as unknown as Parameters<typeof activeTabRef>[0];
+    const session = (over: Record<string, unknown> = {}) => ({ activeWindowId: "e1", ...over }) as unknown as Parameters<typeof activeTabRef>[0];
 
     it("resolves an active editor to the document it is showing", () => {
         const ref = activeTabRef(session(), { e1: win("e1", "files") }, { "e1-pane": { openTabs: ["/a.ts", "/b.ts"], activePath: "/b.ts" } });
@@ -156,9 +153,8 @@ describe("tabRefWindowId", () => {
         expect(tabRefWindowId({ kind: "request", id: "b1", path: "/a.bru" })).toBe("b1");
     });
 
-    it("points a window tab at itself and an agent tab at no window", () => {
+    it("points a window tab at itself", () => {
         expect(tabRefWindowId({ kind: "window", id: "t1" })).toBe("t1");
-        expect(tabRefWindowId({ kind: "agent", id: "a1" })).toBeNull();
         expect(tabRefWindowId(null)).toBeNull();
     });
 });
@@ -171,7 +167,6 @@ const storeState = (over: Partial<StoreState>): StoreState =>
         editorViews: {},
         brunoViews: {},
         windowsBySession: {},
-        agentsBySession: {},
         ...over,
     }) as unknown as StoreState;
 
@@ -203,26 +198,26 @@ describe("nextInCycle", () => {
 describe("stripOrder", () => {
     it("reads the workspace strip as keys with the active one named", () => {
         const state = storeState({
-            sessions: { s1: { id: "s1", kind: "project", view: "windows", activeWindowId: "t2" } },
-            windows: { t1: win("t1", "term"), t2: win("t2", "term") },
-            windowsBySession: { s1: ["t1", "t2"] },
-            agentsBySession: { s1: ["a1"] },
-            agents: { a1: agent() },
+            sessions: { s1: { id: "s1", kind: "project", activeWindowId: "t2" } },
+            windows: { t1: win("t1", "term"), t2: win("t2", "term"), a1: win("a1", "agent") },
+            windowsBySession: { s1: ["t1", "t2", "a1"] },
         } as unknown as Partial<StoreState>);
 
         expect(stripOrder(state, { kind: "workspace", sessionId: "s1" })).toEqual({
-            ids: ["window:t1", "window:t2", "agent:a1"],
+            ids: ["window:t1", "window:t2", "window:a1"],
             activeId: "window:t2",
         });
     });
 
-    it("reads a session's agents", () => {
+    /* ⌥. inside an agent walks the agent windows only, by window id, since that is what gets selected. */
+    it("reads a session's agent windows", () => {
         const state = storeState({
-            sessions: { s1: { id: "s1", activeAgentId: "a2" } },
-            agentsBySession: { s1: ["a1", "a2"] },
+            sessions: { s1: { id: "s1", activeWindowId: "w2" } },
+            windows: { w1: win("w1", "agent"), t1: win("t1", "term"), w2: win("w2", "agent") },
+            windowsBySession: { s1: ["w1", "t1", "w2"] },
         } as unknown as Partial<StoreState>);
 
-        expect(stripOrder(state, { kind: "agents", sessionId: "s1" })).toEqual({ ids: ["a1", "a2"], activeId: "a2" });
+        expect(stripOrder(state, { kind: "agents", sessionId: "s1" })).toEqual({ ids: ["w1", "w2"], activeId: "w2" });
     });
 
     /*

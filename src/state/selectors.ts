@@ -19,10 +19,33 @@ export const selectWindowIds =
     (sessionId: string) =>
     (state: StoreState): readonly string[] =>
         state.windowsBySession[sessionId] ?? EMPTY_IDS;
-export const selectAgentIds =
-    (sessionId: string) =>
-    (state: StoreState): readonly string[] =>
-        state.agentsBySession[sessionId] ?? EMPTY_IDS;
+/**
+ * The agents a session holds, in strip order. An agent is a window whose one
+ * pane carries its id, so this is a read over the windows, not a second list.
+ */
+export function agentIdsOf(state: Pick<StoreState, "windowsBySession" | "windows">, sessionId: string): string[] {
+    return (state.windowsBySession[sessionId] ?? EMPTY_IDS).flatMap((id) => {
+        const win = state.windows[id];
+        return win?.role === "agent" ? [win.activePaneId] : [];
+    });
+}
+
+/** The window an agent lives in, wherever it is. */
+export function agentWindowId(state: Pick<StoreState, "windows">, agentId: string): string | null {
+    for (const win of Object.values(state.windows)) if (win.role === "agent" && win.activePaneId === agentId) return win.id;
+    return null;
+}
+
+/** The agent a session is looking at, if its active window is one. */
+export function activeAgentId(state: Pick<StoreState, "windows">, session: Pick<Session, "activeWindowId"> | undefined): string | null {
+    const win = session ? state.windows[session.activeWindowId] : undefined;
+    return win?.role === "agent" ? win.activePaneId : null;
+}
+
+/** The session a window belongs to. */
+export function ownerSessionId(state: Pick<StoreState, "sessionOrder" | "windowsBySession">, windowId: string): string | null {
+    return state.sessionOrder.find((sid) => state.windowsBySession[sid]?.includes(windowId)) ?? null;
+}
 
 /**
  * Roles the workspace rail drives, which therefore have no tab of their own.
@@ -44,7 +67,7 @@ export function roleHasTab(role: string): boolean {
 }
 
 /**
- * Expand one session's windows and agents into strip entries.
+ * Expand one session's windows into strip entries.
  *
  * Rail-driven roles contribute nothing: the rail reaches them and the stage
  * renders them, so a tab would be a second handle on one surface. An editor
@@ -52,8 +75,7 @@ export function roleHasTab(role: string): boolean {
  * request, which is what puts them in this strip rather than a second bar
  * inside the pane; with nothing open they contribute nothing, because an empty
  * one is not worth a tab. Everything else gets exactly one entry, and the list
- * is derived rather than stored, so a window or agent can never exist without
- * its tab.
+ * is derived rather than stored, so a window can never exist without its tab.
  */
 /**
  * The documents a window holds, when its role holds any.
@@ -80,53 +102,36 @@ export function documentsOf(
 
 export function expandTabRefs(
     windowIds: readonly string[],
-    agentIds: readonly string[],
     windows: StoreState["windows"],
-    agents: StoreState["agents"],
     editorViews: StoreState["editorViews"] = {},
     brunoViews: StoreState["brunoViews"] = {},
 ): WorkspaceTabRef[] {
-    return [
-        ...windowIds.flatMap((id): WorkspaceTabRef[] => {
-            const win = windows[id];
-            if (!win) return [];
-            const documents = documentsOf(win, editorViews, brunoViews);
-            if (documents) return documents.ids.map((path): WorkspaceTabRef => ({ kind: documents.kind, id, path }));
-            return roleHasTab(win.role) ? [{ kind: "window", id }] : [];
-        }),
-        ...agentIds.filter((id) => agents[id]).map((id): WorkspaceTabRef => ({ kind: "agent", id })),
-    ];
+    return windowIds.flatMap((id): WorkspaceTabRef[] => {
+        const win = windows[id];
+        if (!win) return [];
+        const documents = documentsOf(win, editorViews, brunoViews);
+        if (documents) return documents.ids.map((path): WorkspaceTabRef => ({ kind: documents.kind, id, path }));
+        return roleHasTab(win.role) ? [{ kind: "window", id }] : [];
+    });
 }
 
-/**
- * The session's tabs as one ordered list: its windows, then its agents.
- */
+/** The session's tabs as one ordered list. */
 export function selectTabRefs(state: StoreState, sessionId: string): WorkspaceTabRef[] {
-    return expandTabRefs(
-        state.windowsBySession[sessionId] ?? EMPTY_IDS,
-        state.agentsBySession[sessionId] ?? EMPTY_IDS,
-        state.windows,
-        state.agents,
-        state.editorViews,
-        state.brunoViews,
-    );
+    return expandTabRefs(state.windowsBySession[sessionId] ?? EMPTY_IDS, state.windows, state.editorViews, state.brunoViews);
 }
 
 /**
- * Which tab of `session` is live. `view` is the discriminator, not a mode.
+ * Which tab of `session` is live.
  *
  * The view maps resolve a window to the document it is showing, since the
  * strip holds those documents rather than the window itself.
  */
 export function activeTabRef(
-    session: Session,
+    session: Pick<Session, "activeWindowId">,
     windows: StoreState["windows"] = {},
     editorViews: StoreState["editorViews"] = {},
     brunoViews: StoreState["brunoViews"] = {},
 ): WorkspaceTabRef | null {
-    if (session.kind === "project" && session.view === "agent") {
-        return session.activeAgentId ? { kind: "agent", id: session.activeAgentId } : null;
-    }
     if (!session.activeWindowId) return null;
     const win = windows[session.activeWindowId];
     const documents = win ? documentsOf(win, editorViews, brunoViews) : null;
@@ -137,15 +142,14 @@ export function activeTabRef(
 }
 
 /**
- * The window a strip entry lives in, or null for an agent.
+ * The window a strip entry lives in.
  *
  * Layer visibility asks this rather than matching on `kind`, so a document tab
  * shows the editor holding it and the strip and the stage cannot disagree about
  * which surface is live.
  */
 export function tabRefWindowId(ref: WorkspaceTabRef | null): string | null {
-    if (!ref) return null;
-    return ref.kind === "agent" ? null : ref.id;
+    return ref?.id ?? null;
 }
 
 export const tabRefKey = (ref: WorkspaceTabRef): string =>
@@ -154,9 +158,10 @@ export const tabRefKey = (ref: WorkspaceTabRef): string =>
 /**
  * Which ordered list of tabs a cycle acts on.
  *
- * `workspace` is the session's own strip; the rest are the inner lists a pane
- * or view owns. Naming the list rather than the caller is what lets one cycle
- * serve the keyboard, the strip and anything else that walks tabs.
+ * `workspace` is the session's own strip; `agents` and `terminals` are the
+ * windows of one role within it; the rest are the inner lists a pane owns.
+ * Naming the list rather than the caller is what lets one cycle serve the
+ * keyboard, the strip and anything else that walks tabs.
  */
 export type TabSource =
     | { kind: "workspace"; sessionId: string }
@@ -187,11 +192,11 @@ export function stripOrder(state: StoreState, source: TabSource): StripOrder {
                 activeId: active ? tabRefKey(active) : null,
             };
         }
-        case "agents":
-            return {
-                ids: state.agentsBySession[source.sessionId] ?? EMPTY_IDS,
-                activeId: state.sessions[source.sessionId]?.activeAgentId ?? null,
-            };
+        case "agents": {
+            const ids = (state.windowsBySession[source.sessionId] ?? EMPTY_IDS).filter((id) => state.windows[id]?.role === "agent");
+            const activeWindowId = state.sessions[source.sessionId]?.activeWindowId ?? null;
+            return { ids, activeId: activeWindowId && ids.includes(activeWindowId) ? activeWindowId : null };
+        }
         case "terminals": {
             const ids = (state.windowsBySession[source.sessionId] ?? EMPTY_IDS).filter((id) => state.windows[id]?.role === "term");
             const activeWindowId = state.sessions[source.sessionId]?.activeWindowId ?? null;

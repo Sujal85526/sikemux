@@ -23,6 +23,7 @@ import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
 import { AgentStateIndicator } from "./AgentStateIndicator";
+import { agentIdsOf } from "../state/selectors";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -97,7 +98,6 @@ export function SideRail() {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const windowsById = useStore((s) => s.windows);
     const windowsBySession = useStore((s) => s.windowsBySession);
-    const agentsBySession = useStore((s) => s.agentsBySession);
     const agentsById = useStore((s) => s.agents);
     const activityById = useStore((s) => s.agentActivity);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
@@ -318,8 +318,9 @@ export function SideRail() {
         const active = s.id === activeSessionId;
         const winIds = windowsBySession[s.id] ?? [];
         const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
-        const agentIds = agentsBySession[s.id] ?? [];
-        const agents = agentIds.map((id) => agentsById[id]).filter(Boolean);
+        const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
+            .map((id) => agentsById[id])
+            .filter(Boolean);
         const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
         const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
@@ -361,12 +362,7 @@ export function SideRail() {
 
         const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
         const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
-        const inAgentView = s.view === "agent";
-        const inWindowsView = s.view === "windows";
-        const isSubActive = (role: WindowRole | "agents"): boolean => {
-            if (role === "agents") return inAgentView;
-            return inWindowsView && activeRole === role;
-        };
+        const isSubActive = (role: WindowRole | "agents"): boolean => activeRole === (role === "agents" ? "agent" : role);
 
         const onSubClick = (role: WindowRole | "agents") => {
             if (role === "agents") {

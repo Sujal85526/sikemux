@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { clearAgentUnread, closeAgent, noteAgentActivity, selectAgent, sleepAgent } from "./commands";
 import { getState, setState } from "./store";
+import { withAgents } from "../test/agents";
 
 const initial = getState();
 
@@ -16,9 +17,8 @@ function installAgent() {
     const sid = state.activeSessionId;
     const agent = { id: "agent-1", type: "claude" as const, title: "Claude", startup: "claude" };
     setState({
-        sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project", view: "windows", activeAgentId: agent.id } },
-        agents: { [agent.id]: agent },
-        agentsBySession: { ...state.agentsBySession, [sid]: [agent.id] },
+        sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project" } },
+        ...withAgents(state, sid, [agent]),
     });
     return agent.id;
 }

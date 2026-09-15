@@ -12,7 +12,6 @@ import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentIcon, IconCommand, IconGlobe, IconPlus, WindowIcon } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
-import { AgentPane } from "./AgentPane";
 import { FileIcon } from "./FileIcon";
 import { fsapi } from "../api/fs";
 import { useResourceEnabled } from "../state/resources";
@@ -47,7 +46,6 @@ export function Workspace() {
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
     const windowsBySession = useStore((s) => s.windowsBySession);
-    const agentsBySession = useStore((s) => s.agentsBySession);
     const activeSessionId = useStore((s) => s.activeSessionId);
     const editorViews = useStore((s) => s.editorViews);
     const brunoViews = useStore((s) => s.brunoViews);
@@ -71,24 +69,18 @@ export function Workspace() {
                 const isActive = session.id === activeSessionId;
                 const active = activeTabRef(session, windowsById, editorViews, brunoViews);
                 const activeWindowId = tabRefWindowId(active);
-                const winIds = windowsBySession[session.id] ?? [];
-                const aIds = agentsBySession[session.id] ?? [];
-                const windowLayers = winIds.map((wid) => {
+                return (windowsBySession[session.id] ?? []).map((wid) => {
                     const win = windowsById[wid];
                     if (!win) return null;
                     const visible = isActive && activeWindowId === wid;
                     if (visible && (win.role === "git" || win.role === "files" || win.role === "term")) mountedWorkbenchWindows.current.add(wid);
-                    if (!visible && wid !== session.activeWindowId && !mountedWorkbenchWindows.current.has(wid)) return null;
+                    // A live agent keeps its process whether or not it is on screen;
+                    // a sleeping one has nothing to keep.
+                    const keepsProcess =
+                        win.role === "agent" ? agentsById[win.activePaneId]?.launchState !== "dormant" : mountedWorkbenchWindows.current.has(wid);
+                    if (!visible && wid !== session.activeWindowId && !keepsProcess) return null;
                     return <WindowLayer key={wid} session={session} win={win} areaRef={areaRef} topInset={TABS_H} visible={visible} />;
                 });
-                const agentLayers = aIds.map((aid) => {
-                    const agent = agentsById[aid];
-                    if (!agent) return null;
-                    const visible = isActive && active?.kind === "agent" && active.id === aid;
-                    if (!visible && agent.launchState === "dormant") return null;
-                    return <AgentLayer key={aid} session={session} agent={agent} visible={visible} />;
-                });
-                return [...windowLayers, ...agentLayers];
             })}
         </div>
     );
@@ -119,7 +111,6 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     const terminalTitles = useStore((s) => s.terminalTitles);
     const activity = useStore((s) => s.agentActivity);
     const windowIds = useStore((s) => s.windowsBySession[session.id]);
-    const agentIds = useStore((s) => s.agentsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
     const brunoViews = useStore((s) => s.brunoViews);
@@ -132,15 +123,15 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     // Shared with cycleTab through selectTabRefs, so the strip and the keyboard
     // can never disagree about what the tabs are.
     const refs = useMemo(
-        () => expandTabRefs(windowIds ?? EMPTY_IDS, agentIds ?? EMPTY_IDS, windowsById, agentsById, editorViews, brunoViews),
-        [windowIds, agentIds, windowsById, agentsById, editorViews, brunoViews],
+        () => expandTabRefs(windowIds ?? EMPTY_IDS, windowsById, editorViews, brunoViews),
+        [windowIds, windowsById, editorViews, brunoViews],
     );
     const active = activeTabRef(session, windowsById, editorViews, brunoViews);
     const activeKey = active ? tabRefKey(active) : null;
 
     const windowMenu = (win: WindowT): CtxItem[] => {
         const siblings = refs.flatMap((ref) => (ref.kind === "window" ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
-        const others = siblings.filter((t) => t.id !== win.id && !t.fixed);
+        const others = siblings.filter((t) => t.id !== win.id && !t.fixed && t.role !== "agent");
         return [
             { label: "Duplicate", run: () => cmd.duplicateWindow(win.id) },
             { label: "Close", hint: "⌥W", disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
@@ -201,7 +192,12 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     };
 
     const agentMenu = (agent: Agent): CtxItem[] => {
-        const agents = refs.flatMap((ref) => (ref.kind === "agent" ? [agentsById[ref.id]] : [])).filter(Boolean) as Agent[];
+        const agents = refs
+            .flatMap((ref) => {
+                const win = ref.kind === "window" ? windowsById[ref.id] : undefined;
+                return win?.role === "agent" ? [agentsById[win.activePaneId]] : [];
+            })
+            .filter(Boolean) as Agent[];
         const others = agents.filter((x) => x.id !== agent.id);
         const items: CtxItem[] = [
             ...(agent.launchState === "dormant"
@@ -228,25 +224,6 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
 
     const tabs: TabDescriptor[] = refs.flatMap((ref): TabDescriptor[] => {
         const key = tabRefKey(ref);
-        if (ref.kind === "agent") {
-            const agent = agentsById[ref.id];
-            if (!agent) return [];
-            const state = activity[agent.id];
-            return [
-                {
-                    id: key,
-                    label: agent.title,
-                    title: agent.title,
-                    active: key === activeKey,
-                    icon: (
-                        <span className={`agent-glyph ${agent.type}`}>
-                            <AgentIcon type={agent.type} size={14} />
-                        </span>
-                    ),
-                    accessory: state ? <AgentStateIndicator state={state.state} /> : undefined,
-                },
-            ];
-        }
         if (ref.kind === "request") {
             const located = collection ? findRequest(collection.tree, ref.path) : null;
             const method = located?.request.method ?? "get";
@@ -278,6 +255,25 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
         }
         const win = windowsById[ref.id];
         if (!win) return [];
+        if (win.role === "agent") {
+            const agent = agentsById[win.activePaneId];
+            if (!agent) return [];
+            const state = activity[agent.id];
+            return [
+                {
+                    id: key,
+                    label: agent.title,
+                    title: agent.title,
+                    active: key === activeKey,
+                    icon: (
+                        <span className={`agent-glyph ${agent.type}`}>
+                            <AgentIcon type={agent.type} size={14} />
+                        </span>
+                    ),
+                    accessory: state ? <AgentStateIndicator state={state.state} /> : undefined,
+                },
+            ];
+        }
         const label = win.role === "term" ? terminalTitles[win.activePaneId] || win.name : ROLE_LABEL[win.role];
         return [
             {
@@ -319,12 +315,13 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
                 if (!ref) return [];
                 if (ref.kind === "file") return fileMenu(ref);
                 if (ref.kind === "request") return requestMenu(ref);
-                if (ref.kind === "agent") {
-                    const agent = agentsById[ref.id];
+                const win = windowsById[ref.id];
+                if (!win) return [];
+                if (win.role === "agent") {
+                    const agent = agentsById[win.activePaneId];
                     return agent ? agentMenu(agent) : [];
                 }
-                const win = windowsById[ref.id];
-                return win ? windowMenu(win) : [];
+                return windowMenu(win);
             }}
             onAdd={() => cmd.openAgentPalette()}
             addIcon={<IconPlus size={13} />}
@@ -349,24 +346,6 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
         />
     );
 }
-
-const AgentLayer = memo(function AgentLayer({ session, agent, visible }: { session: Session; agent: Agent; visible: boolean }) {
-    return (
-        <div
-            className={`window-layer${visible ? " visible" : ""}`}
-            id={visible ? `workspace-content-${session.id}` : undefined}
-            role="tabpanel"
-            aria-labelledby={`workspace-tab-${session.id}-${encodeURIComponent(tabRefKey({ kind: "agent", id: agent.id }))}`}
-            aria-hidden={!visible}
-            inert={!visible}>
-            <div className="pane-cell" style={{ left: 0, top: `${TABS_H}px`, width: "100%", height: `calc(100% - ${TABS_H}px)` }}>
-                <div className="pane pane-agent">
-                    <AgentPane paneId={agent.id} session={session} visible={visible} />
-                </div>
-            </div>
-        </div>
-    );
-});
 
 const WindowLayer = memo(function WindowLayer({
     session,

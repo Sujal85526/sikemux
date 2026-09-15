@@ -7,6 +7,7 @@ import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agentLaunch";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentDirectCommand, agentStartup } from "./commands";
+import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { validatePersistedLayout } from "./persistValidation";
@@ -40,7 +41,7 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-const VERSION = 7;
+const VERSION = 8;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const RETRY_MS = 1500;
@@ -58,7 +59,6 @@ const PERSISTED_KEYS = [
     "agents",
     "sessionOrder",
     "windowsBySession",
-    "agentsBySession",
     "activeSessionId",
     "recent",
     "editorViews",
@@ -241,9 +241,7 @@ function toSession(value: unknown): Session | null {
         !SESSION_KINDS.has(value.kind as Session["kind"]) ||
         typeof value.cwd !== "string" ||
         typeof value.pinned !== "boolean" ||
-        typeof value.activeWindowId !== "string" ||
-        !(value.activeAgentId === null || typeof value.activeAgentId === "string") ||
-        !(value.view === "windows" || value.view === "agent")
+        typeof value.activeWindowId !== "string"
     ) {
         return null;
     }
@@ -261,8 +259,6 @@ function toSession(value: unknown): Session | null {
         deploy,
         pinned: value.pinned,
         activeWindowId: value.activeWindowId,
-        activeAgentId: value.activeAgentId,
-        view: value.view,
     };
     if (session.kind === "bruno") {
         const bruno = isRecord(value.bruno) ? value.bruno : {};
@@ -376,15 +372,41 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     return agent;
 }
 
-function persistedSession(sess: Session, activeAgentId: string | null, view: Session["view"]): PersistedSession {
+function persistedSession(sess: Session): PersistedSession {
     const { bruno, ...base } = sess;
-    if (sess.kind !== "bruno" || !bruno) return { ...base, activeAgentId, view };
+    if (sess.kind !== "bruno" || !bruno) return base;
+    return { ...base, bruno: { collectionPath: bruno.collectionPath, selectedEnvs: bruno.selectedEnvs } };
+}
+
+/** Startup commands are rebuilt from the type and resume id on restore, never saved. */
+function persistedAgent(agent: Agent): PersistedAgent {
+    const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
     return {
-        ...base,
-        activeAgentId,
-        view,
-        bruno: { collectionPath: bruno.collectionPath, selectedEnvs: bruno.selectedEnvs },
+        id: agent.id,
+        type: agent.type,
+        title: agent.title,
+        resumeId: agent.resumeId,
+        permissionMode,
+        ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
+        ...(agent.profileId ? { profileId: agent.profileId } : {}),
+        ...(agent.executablePath ? { executablePath: agent.executablePath } : {}),
+        ...(agent.cwd ? { cwd: agent.cwd } : {}),
+        ...(agent.model ? { model: agent.model } : {}),
+        ...(agent.effort ? { effort: agent.effort } : {}),
+        ...(agent.keepAlive ? { keepAlive: true } : {}),
     };
+}
+
+/**
+ * A window worth writing. A task terminal is runtime-only, and an agent that
+ * has not yet earned a resume id could not be brought back, so neither goes to
+ * disk.
+ */
+function durableWindow(s: StoreState, id: string): Window | null {
+    const window = s.windows[id];
+    if (!window || window.transient) return null;
+    if (window.role === "agent" && !s.agents[window.activePaneId]?.resumeId) return null;
+    return window;
 }
 
 function snapshot(): string {
@@ -393,20 +415,23 @@ function snapshot(): string {
         .map((id) => s.sessions[id])
         .filter(Boolean)
         .map((sess) => {
-            const safeAgentIds = (s.agentsBySession[sess.id] ?? []).filter((id) => !!s.agents[id]?.resumeId);
-            const activeAgentId = sess.activeAgentId && safeAgentIds.includes(sess.activeAgentId) ? sess.activeAgentId : null;
-            const durableWindowIds = (s.windowsBySession[sess.id] ?? []).filter((id) => !!s.windows[id] && !s.windows[id].transient);
+            const durableWindowIds = (s.windowsBySession[sess.id] ?? []).filter((id) => durableWindow(s, id));
             const activeWindowId = durableWindowIds.includes(sess.activeWindowId) ? sess.activeWindowId : (durableWindowIds[0] ?? "");
-            return persistedSession({ ...sess, activeWindowId }, activeAgentId, sess.view === "agent" && activeAgentId ? "agent" : "windows");
+            return persistedSession({ ...sess, activeWindowId });
         });
     const windowsBySession: Record<string, Window[]> = {};
-    const agentsBySession: Record<string, PersistedAgent[]> = {};
+    const agents: PersistedAgent[] = [];
     const itemStates: PersistedSnapshot["itemStates"] = {};
     for (const sess of sessions) {
-        windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? [])
-            .map((id) => s.windows[id])
-            .filter((window): window is Window => !!window && !window.transient);
+        windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).flatMap((id) => {
+            const window = durableWindow(s, id);
+            return window ? [window] : [];
+        });
         for (const window of windowsBySession[sess.id]) {
+            if (window.role === "agent") {
+                const agent = s.agents[window.activePaneId];
+                if (agent) agents.push(persistedAgent(agent));
+            }
             const pending = [window.root];
             while (pending.length > 0) {
                 const node = pending.pop()!;
@@ -425,32 +450,12 @@ function snapshot(): string {
                 }
             }
         }
-        agentsBySession[sess.id] = (s.agentsBySession[sess.id] ?? [])
-            .map((id) => s.agents[id])
-            .filter((agent): agent is Agent => !!agent?.resumeId)
-            .map((agent) => {
-                const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
-                return {
-                    id: agent.id,
-                    type: agent.type,
-                    title: agent.title,
-                    resumeId: agent.resumeId,
-                    permissionMode,
-                    ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
-                    ...(agent.profileId ? { profileId: agent.profileId } : {}),
-                    ...(agent.executablePath ? { executablePath: agent.executablePath } : {}),
-                    ...(agent.cwd ? { cwd: agent.cwd } : {}),
-                    ...(agent.model ? { model: agent.model } : {}),
-                    ...(agent.effort ? { effort: agent.effort } : {}),
-                    ...(agent.keepAlive ? { keepAlive: true } : {}),
-                };
-            });
     }
     const snap: PersistedSnapshot = {
         version: VERSION,
         sessions,
         windowsBySession,
-        agentsBySession,
+        agents,
         sessionOrder: sessions.map((s) => s.id),
         activeSessionId: s.activeSessionId,
         recent: s.recent,
@@ -554,7 +559,6 @@ export function applyHydrate(raw: string): HydrationResult {
     const windows: Record<string, Window> = {};
     const agents: Record<string, Agent> = {};
     const windowsBySession: Record<string, string[]> = {};
-    const agentsBySession: Record<string, string[]> = {};
     const rawWindows = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
     const usedLayoutIds = new Set<string>();
     for (const sid of Object.keys(sessions)) {
@@ -579,67 +583,84 @@ export function applyHydrate(raw: string): HydrationResult {
             windows[row.id] = restored;
             windowsBySession[sid].push(row.id);
         }
-        agentsBySession[sid] = [];
     }
     const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
     const cur = getState();
     const providerProfiles = normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
-    const rawAgents = isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {};
-    const claimedResumeIds = new Set<string>();
-    if (restoreAgentTabs) {
-        for (const sid of Object.keys(sessions)) {
-            if (sessions[sid].kind !== "project") continue;
-            const rows = Array.isArray(rawAgents[sid]) ? rawAgents[sid] : [];
-            for (const row of rows) {
-                const saved = toPersistedAgent(row);
-                if (!saved || agents[saved.id]) continue;
-                const claim = `${saved.type}\0${saved.resumeId}`;
-                if (claimedResumeIds.has(claim)) continue;
-                claimedResumeIds.add(claim);
-                const permissionMode = normalizePermissionMode(
-                    saved.type,
-                    saved.permissionMode ?? (saved.skipPermissions ? "bypass" : "workspace-write"),
-                );
-                const profile = saved.profileId
-                    ? providerProfiles.find((item) => item.id === saved.profileId && item.provider === saved.type)
-                    : undefined;
-                const executablePath = profile?.executablePath || saved.executablePath;
-                const launchOptions = {
-                    model: saved.model,
-                    effort: saved.effort,
-                    configPath: profile?.configPath,
-                    environmentKeys: profile?.environmentKeys,
-                };
-                if (saved.profileId && !providerProfiles.some((profile) => profile.id === saved.profileId && profile.provider === saved.type)) {
-                    delete saved.profileId;
-                }
-                agents[saved.id] = {
-                    ...saved,
-                    permissionMode,
-                    executablePath,
-                    startup: agentStartup(saved.type, saved.resumeId, permissionMode, executablePath, launchOptions),
-                    directCommand: agentDirectCommand(saved.type, saved.resumeId, permissionMode, executablePath, launchOptions),
-                    launchState: "dormant",
-                };
-                agentsBySession[sid].push(saved.id);
+    // Before v8 an agent sat beside its session rather than in a window, and
+    // the session recorded which agent it was looking at. Each becomes a window
+    // here, and that focus becomes the active window.
+    const agentRows: Array<{ sid: string | null; row: unknown }> =
+        decoded.version >= 8
+            ? (Array.isArray(decoded.agents) ? decoded.agents : []).map((row) => ({ sid: null, row }))
+            : Object.entries(isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {}).flatMap(([sid, rows]) =>
+                  Array.isArray(rows) ? rows.map((row) => ({ sid, row })) : [],
+              );
+    const legacyAgentFocus = new Map<string, string>();
+    if (decoded.version < 8) {
+        for (const row of decoded.sessions) {
+            if (isRecord(row) && typeof row.id === "string" && row.view === "agent" && typeof row.activeAgentId === "string") {
+                legacyAgentFocus.set(row.id, row.activeAgentId);
             }
         }
     }
-    // Startup is rebuilt from the
-    // trusted agent type/resume id pair above and never read from disk.
+    const claimedResumeIds = new Set<string>();
+    if (restoreAgentTabs) {
+        for (const { sid, row } of agentRows) {
+            if (sid !== null && sessions[sid]?.kind !== "project") continue;
+            const saved = toPersistedAgent(row);
+            if (!saved || agents[saved.id]) continue;
+            const claim = `${saved.type}\0${saved.resumeId}`;
+            if (claimedResumeIds.has(claim)) continue;
+            claimedResumeIds.add(claim);
+            const permissionMode = normalizePermissionMode(
+                saved.type,
+                saved.permissionMode ?? (saved.skipPermissions ? "bypass" : "workspace-write"),
+            );
+            const profile = saved.profileId
+                ? providerProfiles.find((item) => item.id === saved.profileId && item.provider === saved.type)
+                : undefined;
+            const executablePath = profile?.executablePath || saved.executablePath;
+            const launchOptions = {
+                model: saved.model,
+                effort: saved.effort,
+                configPath: profile?.configPath,
+                environmentKeys: profile?.environmentKeys,
+            };
+            if (saved.profileId && !providerProfiles.some((profile) => profile.id === saved.profileId && profile.provider === saved.type)) {
+                delete saved.profileId;
+            }
+            // Startup is rebuilt from the trusted type/resume id pair, never read from disk.
+            agents[saved.id] = {
+                ...saved,
+                permissionMode,
+                executablePath,
+                startup: agentStartup(saved.type, saved.resumeId, permissionMode, executablePath, launchOptions),
+                directCommand: agentDirectCommand(saved.type, saved.resumeId, permissionMode, executablePath, launchOptions),
+                launchState: "dormant",
+            };
+            if (sid !== null) {
+                const session = sessions[sid];
+                const win = agentWindow(agents[saved.id], saved.cwd ?? session.cwd);
+                windows[win.id] = win;
+                windowsBySession[sid].push(win.id);
+                if (legacyAgentFocus.get(sid) === saved.id) sessions[sid] = { ...session, activeWindowId: win.id };
+            }
+        }
+    }
+    // An agent window whose record did not come back has nothing to show.
     for (const sid of Object.keys(sessions)) {
+        windowsBySession[sid] = windowsBySession[sid].filter((id) => {
+            const win = windows[id];
+            if (win?.role !== "agent") return true;
+            if (sessions[sid].kind === "project" && agents[win.activePaneId]) return true;
+            delete windows[id];
+            return false;
+        });
         const session = sessions[sid];
-        const agentIds = agentsBySession[sid];
         const windowIds = windowsBySession[sid];
-        const savedActiveAgentId = session.activeAgentId && agentIds.includes(session.activeAgentId) ? session.activeAgentId : null;
-        const activeAgentId = savedActiveAgentId ?? (session.view === "agent" ? (agentIds[0] ?? null) : null);
-        sessions[sid] = {
-            ...session,
-            activeWindowId: windowIds.includes(session.activeWindowId) ? session.activeWindowId : (windowIds[0] ?? ""),
-            activeAgentId,
-            view: session.view === "agent" && activeAgentId ? "agent" : "windows",
-        };
+        sessions[sid] = { ...session, activeWindowId: windowIds.includes(session.activeWindowId) ? session.activeWindowId : (windowIds[0] ?? "") };
     }
 
     const panesById = new Map<string, ReturnType<typeof workbenchItemRefFromPane>>();
@@ -685,7 +706,6 @@ export function applyHydrate(raw: string): HydrationResult {
         agents,
         sessionOrder,
         windowsBySession,
-        agentsBySession,
         agentActivity: {},
         activeSessionId,
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
@@ -765,7 +785,7 @@ export function applyHydrate(raw: string): HydrationResult {
     pruneOnDemandWindows();
     registerCustomThemes(getState().customThemes);
     // Preserve the actual disk payload as the saved marker. The subscription
-    // rewrites migrations and sanitized legacy credentials in canonical v7 form.
+    // rewrites migrations and sanitized legacy credentials in canonical v8 form.
     lastSaved = raw;
     lastSlices = takeSlices(getState());
     return "applied";

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { actionForEvent, type KeybindingActionId } from "./keybindings";
 import * as cmd from "./state/commands";
+import { activeAgentId } from "./state/selectors";
 import { emit } from "./state/bus";
 import { getState, type StoreState } from "./state/store";
 import type { KeyModifier } from "./state/types";
@@ -134,7 +135,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.closeActiveFocusTarget();
             return true;
         case "session.newContextual":
-            if (active?.kind === "project" && active.view === "agent") cmd.openAgentPalette();
+            if (active?.kind === "project" && activeAgentId(st, active)) cmd.openAgentPalette();
             else if (active?.kind === "project") cmd.newWindow();
             else if (active?.kind === "command") cmd.createCommandSession();
             else if (active?.kind === "ssh") cmd.openPicker("ssh");
@@ -201,7 +202,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.cycleSessionGroup(1);
             return true;
         case "agent.permissions":
-            if (active?.kind !== "project" || active.view !== "agent") return false;
+            if (active?.kind !== "project" || !activeAgentId(st, active)) return false;
             cmd.toggleActiveAgentSkipPermissions();
             return true;
         case "palette.newTab":

@@ -198,8 +198,6 @@ export interface Session {
     bruno?: BrunoSessionState | null;
     pinned: boolean;
     activeWindowId: string;
-    activeAgentId: string | null;
-    view: "windows" | "agent";
 }
 
 /**
@@ -209,13 +207,11 @@ export interface Session {
  * than a single entry for itself, so they sit in the strip beside terminals and
  * agents instead of in a second tab bar inside the pane: an editor expands into
  * `file` entries, a Bruno workspace into `request` entries. `id` is the window
- * in every case; those entries name the document they select within it.
+ * in every case; those entries name the document they select within it. An
+ * agent is a window like any other, so it needs no entry of its own.
  */
 export type WorkspaceTabRef =
-    | { kind: "window"; id: string }
-    | { kind: "agent"; id: string }
-    | { kind: "file"; id: string; path: string }
-    | { kind: "request"; id: string; path: string };
+    { kind: "window"; id: string } | { kind: "file"; id: string; path: string } | { kind: "request"; id: string; path: string };
 
 export interface RecentEntry {
     kind: SessionKind;

@@ -4,6 +4,7 @@ import { getIpcTransport } from "../api/transport";
 import { fetchResource } from "../state/resources";
 import { agentSessionsR } from "../state/resources.defs";
 import { getState, useStore } from "../state/store";
+import { activeAgentId, agentIdsOf } from "../state/selectors";
 import type { AgentType } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
@@ -51,7 +52,7 @@ function collectAgentSyncGroups(): AgentSyncGroup[] {
     for (const sessionId of st.sessionOrder) {
         const session = st.sessions[sessionId];
         if (session?.kind !== "project" || !session.cwd) continue;
-        for (const agentId of st.agentsBySession[sessionId] ?? []) {
+        for (const agentId of agentIdsOf(st, sessionId)) {
             const agent = st.agents[agentId];
             if (!agent || agent.launchState === "dormant") continue;
             const cwd = agent.cwd || session.cwd;
@@ -76,7 +77,7 @@ function groupNeedsMetadata({ type, cwd, configPath }: AgentSyncGroup): boolean 
     return state.sessionOrder.some((sessionId) => {
         const session = state.sessions[sessionId];
         if (session?.kind !== "project") return false;
-        return (state.agentsBySession[sessionId] ?? []).some((agentId) => {
+        return agentIdsOf(state, sessionId).some((agentId) => {
             const agent = state.agents[agentId];
             const agentConfigPath = agent?.profileId
                 ? state.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
@@ -94,7 +95,7 @@ function useAgentSyncKey(): string {
         for (const sessionId of s.sessionOrder) {
             const session = s.sessions[sessionId];
             if (session?.kind !== "project" || !session.cwd) continue;
-            for (const agentId of s.agentsBySession[sessionId] ?? []) {
+            for (const agentId of agentIdsOf(s, sessionId)) {
                 const agent = s.agents[agentId];
                 if (!agent || agent.launchState === "dormant") continue;
                 const configPath = agent.profileId
@@ -112,10 +113,7 @@ function useAgentSyncKey(): string {
 export function AgentSessionSync() {
     const syncKey = useAgentSyncKey();
     const watchesRef = useRef(new Map<string, AgentWatchRecord>());
-    const visibleAgentId = useStore((s) => {
-        const session = s.sessions[s.activeSessionId];
-        return session?.view === "agent" ? session.activeAgentId : null;
-    });
+    const visibleAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
 
     useEffect(() => {
         const controller = new AbortController();

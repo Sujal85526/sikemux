@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
+import { agentIdsOf } from "../state/selectors";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { IconAgent, IconCommit, IconEditor, IconGlobe, IconRun, IconSearch } from "./Icons";
 
@@ -15,10 +16,11 @@ interface TabChoice {
 
 export function NewTabPalette() {
     const session = useStore((state) => state.sessions[state.activeSessionId]);
-    const agentIds = useStore((state) => state.agentsBySession[state.activeSessionId]);
-    const agents = useStore((state) => state.agents);
+    const browserAgent = useStore((state) => {
+        const id = agentIdsOf(state, state.activeSessionId)[0];
+        return id ? state.agents[id] : undefined;
+    });
     const project = session?.kind === "project";
-    const browserAgent = (agentIds ?? []).map((id) => agents[id]).find(Boolean);
     const [selected, setSelected] = useState(0);
     const selectedRef = useRef(0);
     const modalRef = useRef<HTMLDivElement>(null);
