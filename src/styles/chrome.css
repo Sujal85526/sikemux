@@ -736,12 +736,13 @@
 
 /* How far along its screens the session is. A readout only: it never takes a
    click, and the bar itself paints nothing so the screen keeps the ground. It
-   stops where the screen's rounded corners start, rather than crossing them. */
+   sits inside the screen's border and stops where its corners start, rather
+   than crossing either. */
 .window-scroll {
     position: absolute;
     left: var(--radius-panel);
     right: var(--radius-panel);
-    bottom: 0;
+    bottom: 1px;
     height: 2px;
     z-index: 2;
     pointer-events: none;

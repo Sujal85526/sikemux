@@ -745,8 +745,7 @@ textarea:focus,
 }
 
 .side-rail,
-.workspace-rail,
-.stage {
+.workspace-rail {
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
 }
@@ -759,7 +758,8 @@ textarea:focus,
     border-right-width: 1px;
 }
 
-/* The surface itself is set once, with the rails, further down. */
+/* The stage draws no edge and no corner of its own — the strip and the screen
+   each carry theirs — so this only clips the screens waiting off to the side. */
 .stage {
     overflow: hidden;
 }
@@ -854,8 +854,9 @@ textarea,
     border-radius: var(--radius-2) !important;
 }
 
-/* Panels: the frame's own surfaces, which stay put. */
-.shell :where(.side-rail, .workspace-rail, .stage, .agent-usage, .agent-empty) {
+/* Panels: the frame's own surfaces, which stay put. `.stage` is not one of
+ * them any more — it is the gutter the strip and the screen sit in. */
+.shell :where(.side-rail, .workspace-rail, .agent-usage, .agent-empty) {
     border-radius: var(--radius-3) !important;
 }
 
