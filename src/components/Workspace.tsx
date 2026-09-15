@@ -1,11 +1,11 @@
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { memo, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, WindowRole, WorkspaceTabRef } from "../state/types";
+import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, WindowRole } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
-import { activeTabRef, brunoPaneId, expandTabRefs, selectTabRefs, tabRefKey, tabRefWindowId } from "../state/selectors";
+import { activeTabRef, brunoPaneId, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
@@ -68,7 +68,7 @@ export function Workspace() {
             {sessions.flatMap((session) => {
                 const isActive = session.id === activeSessionId;
                 const active = activeTabRef(session, windowsById, editorViews, brunoViews);
-                const activeWindowId = tabRefWindowId(active);
+                const activeWindowId = active?.id ?? null;
                 return (windowsBySession[session.id] ?? []).map((wid) => {
                     const win = windowsById[wid];
                     if (!win) return null;
@@ -130,7 +130,7 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     const activeKey = active ? tabRefKey(active) : null;
 
     const windowMenu = (win: WindowT): CtxItem[] => {
-        const siblings = refs.flatMap((ref) => (ref.kind === "window" ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
+        const siblings = refs.flatMap((ref) => (ref.doc === undefined ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
         const others = siblings.filter((t) => t.id !== win.id && !t.fixed && t.role !== "agent");
         return [
             { label: "Duplicate", run: () => cmd.duplicateWindow(win.id) },
@@ -139,62 +139,61 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
         ];
     };
 
-    const fileMenu = (ref: Extract<WorkspaceTabRef, { kind: "file" }>): CtxItem[] => {
-        const win = windowsById[ref.id];
-        const open = win ? (editorViews[win.activePaneId]?.openTabs ?? []) : [];
-        const dirty = new Set(win ? (dirtyEditorPaths[win.activePaneId] ?? []) : []);
-        const index = open.indexOf(ref.path);
-        const close = (paths: string[]) => paths.forEach((path) => cmd.closeTab({ kind: "file", id: ref.id, path }));
-        const others = open.filter((path) => path !== ref.path);
+    const fileMenu = (win: WindowT, doc: string): CtxItem[] => {
+        const open = editorViews[win.activePaneId]?.openTabs ?? [];
+        const dirty = new Set(dirtyEditorPaths[win.activePaneId] ?? []);
+        const index = open.indexOf(doc);
+        const close = (paths: string[]) => paths.forEach((path) => cmd.closeTab({ id: win.id, doc: path }));
+        const others = open.filter((path) => path !== doc);
         const toLeft = index > 0 ? open.slice(0, index) : [];
         const toRight = index >= 0 ? open.slice(index + 1) : [];
         const saved = open.filter((path) => !dirty.has(path));
         return [
-            { label: "Close", hint: `${PRIMARY_SHORTCUT}W`, run: () => close([ref.path]) },
+            { label: "Close", hint: `${PRIMARY_SHORTCUT}W`, run: () => close([doc]) },
             { label: "Close Others", disabled: others.length === 0, run: () => close(others) },
             { label: "Close to the Left", disabled: toLeft.length === 0, run: () => close(toLeft) },
             { label: "Close to the Right", disabled: toRight.length === 0, run: () => close(toRight) },
             { label: "Close Saved", disabled: saved.length === 0, run: () => close(saved) },
             { label: "Close All", run: () => close(open) },
             { sep: true },
-            { label: "Copy Path", run: () => void copyPath(ref.path, ref.path, "path") },
+            { label: "Copy Path", run: () => void copyPath(doc, doc, "path") },
             {
                 label: "Copy Relative Path",
-                run: () => void copyPath(ref.path, relativePath(ref.path, session.cwd) ?? basename(ref.path), "relative path"),
+                run: () => void copyPath(doc, relativePath(doc, session.cwd) ?? basename(doc), "relative path"),
             },
             { sep: true },
-            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(ref.path).catch(reportError("reveal")) },
+            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(doc).catch(reportError("reveal")) },
         ];
     };
 
-    const requestMenu = (ref: Extract<WorkspaceTabRef, { kind: "request" }>): CtxItem[] => {
+    const requestMenu = (win: WindowT, doc: string): CtxItem[] => {
         const open = brunoView?.openPaths ?? [];
-        const index = open.indexOf(ref.path);
-        const close = (paths: string[]) => paths.forEach((path) => cmd.closeTab({ kind: "request", id: ref.id, path }));
-        const others = open.filter((path) => path !== ref.path);
+        const index = open.indexOf(doc);
+        const close = (paths: string[]) => paths.forEach((path) => cmd.closeTab({ id: win.id, doc: path }));
+        const others = open.filter((path) => path !== doc);
         const toLeft = index > 0 ? open.slice(0, index) : [];
         const toRight = index >= 0 ? open.slice(index + 1) : [];
         return [
-            { label: "Close", hint: "⌥W", run: () => close([ref.path]) },
+            { label: "Close", hint: "⌥W", run: () => close([doc]) },
             { label: "Close Others", disabled: others.length === 0, run: () => close(others) },
             { label: "Close to the Left", disabled: toLeft.length === 0, run: () => close(toLeft) },
             { label: "Close to the Right", disabled: toRight.length === 0, run: () => close(toRight) },
             { label: "Close All", run: () => close(open) },
             { sep: true },
-            { label: "Copy Path", run: () => void copyPath(ref.path, ref.path, "path") },
+            { label: "Copy Path", run: () => void copyPath(doc, doc, "path") },
             {
                 label: "Copy Relative Path",
-                run: () => void copyPath(ref.path, relativePath(ref.path, collectionPath) ?? basename(ref.path), "relative path"),
+                run: () => void copyPath(doc, relativePath(doc, collectionPath) ?? basename(doc), "relative path"),
             },
             { sep: true },
-            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(ref.path).catch(reportError("reveal")) },
+            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(doc).catch(reportError("reveal")) },
         ];
     };
 
     const agentMenu = (agent: Agent): CtxItem[] => {
         const agents = refs
             .flatMap((ref) => {
-                const win = ref.kind === "window" ? windowsById[ref.id] : undefined;
+                const win = ref.doc === undefined ? windowsById[ref.id] : undefined;
                 return win?.role === "agent" ? [agentsById[win.activePaneId]] : [];
             })
             .filter(Boolean) as Agent[];
@@ -224,37 +223,35 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
 
     const tabs: TabDescriptor[] = refs.flatMap((ref): TabDescriptor[] => {
         const key = tabRefKey(ref);
-        if (ref.kind === "request") {
-            const located = collection ? findRequest(collection.tree, ref.path) : null;
+        const win = windowsById[ref.id];
+        if (!win) return [];
+        if (ref.doc !== undefined && win.role === "bruno") {
+            const located = collection ? findRequest(collection.tree, ref.doc) : null;
             const method = located?.request.method ?? "get";
             return [
                 {
                     id: key,
-                    label: located?.request.meta.name || basename(ref.path).replace(/\.bru$/, ""),
-                    title: ref.path,
+                    label: located?.request.meta.name || basename(ref.doc).replace(/\.bru$/, ""),
+                    title: ref.doc,
                     active: key === activeKey,
-                    dirty: drafts?.[ref.path] != null,
+                    dirty: drafts?.[ref.doc] != null,
                     icon: <span className={`bruno-method m-${method}`}>{method.toUpperCase()}</span>,
                 },
             ];
         }
-        if (ref.kind === "file") {
-            const win = windowsById[ref.id];
-            if (!win) return [];
-            const name = basename(ref.path);
+        if (ref.doc !== undefined) {
+            const name = basename(ref.doc);
             return [
                 {
                     id: key,
                     label: name,
-                    title: ref.path,
+                    title: ref.doc,
                     active: key === activeKey,
-                    dirty: (dirtyEditorPaths[win.activePaneId] ?? []).includes(ref.path),
+                    dirty: (dirtyEditorPaths[win.activePaneId] ?? []).includes(ref.doc),
                     icon: <FileIcon name={name} size={16} />,
                 },
             ];
         }
-        const win = windowsById[ref.id];
-        if (!win) return [];
         if (win.role === "agent") {
             const agent = agentsById[win.activePaneId];
             if (!agent) return [];
@@ -313,10 +310,9 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
             buildMenu={(key) => {
                 const ref = refByKey.get(key);
                 if (!ref) return [];
-                if (ref.kind === "file") return fileMenu(ref);
-                if (ref.kind === "request") return requestMenu(ref);
                 const win = windowsById[ref.id];
                 if (!win) return [];
+                if (ref.doc !== undefined) return win.role === "bruno" ? requestMenu(win, ref.doc) : fileMenu(win, ref.doc);
                 if (win.role === "agent") {
                     const agent = agentsById[win.activePaneId];
                     return agent ? agentMenu(agent) : [];

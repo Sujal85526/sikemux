@@ -80,7 +80,7 @@ import type {
     SplitDir,
     Window,
     WindowRole,
-    WorkspaceTabRef,
+    TabRef,
     DiffTarget,
 } from "./types";
 
@@ -1510,31 +1510,29 @@ export function selectWindowId(id: string): void {
     });
 }
 
-export function selectTab(ref: WorkspaceTabRef): void {
-    if (ref.kind === "file") {
-        const win = getState().windows[ref.id];
-        if (win) setEditorView(win.activePaneId, { activePath: ref.path });
-        selectWindowId(ref.id);
-        return;
-    }
-    if (ref.kind === "request") {
-        brunoSelectRequest(getState().activeSessionId, ref.path);
-        selectWindowId(ref.id);
-        return;
-    }
+/** Shows `doc` in the window holding it; the window's role says which view keeps it. */
+function selectDocument(win: Window, doc: string): void {
+    if (win.role === "files") setEditorView(win.activePaneId, { activePath: doc });
+    if (win.role === "bruno") brunoSelectRequest(getState().activeSessionId, doc);
+}
+
+function closeDocument(win: Window, doc: string): void {
+    // The editor owns the unsaved-changes prompt and the CodeMirror state for
+    // each document, so closing goes through it rather than around it.
+    if (win.role === "files") emit({ type: "close-file", paneId: win.activePaneId, path: doc });
+    if (win.role === "bruno") brunoCloseTab(getState().activeSessionId, doc);
+}
+
+export function selectTab(ref: TabRef): void {
+    const win = getState().windows[ref.id];
+    if (win && ref.doc !== undefined) selectDocument(win, ref.doc);
     selectWindowId(ref.id);
 }
 
-export function closeTab(ref: WorkspaceTabRef): void {
-    if (ref.kind === "file") {
-        // The editor owns the unsaved-changes prompt and the CodeMirror state
-        // for each document, so closing goes through it rather than around it.
-        const win = getState().windows[ref.id];
-        if (win) emit({ type: "close-file", paneId: win.activePaneId, path: ref.path });
-        return;
-    }
-    if (ref.kind === "request") {
-        brunoCloseTab(getState().activeSessionId, ref.path);
+export function closeTab(ref: TabRef): void {
+    const win = getState().windows[ref.id];
+    if (win && ref.doc !== undefined) {
+        closeDocument(win, ref.doc);
         return;
     }
     closeWindowById(ref.id);

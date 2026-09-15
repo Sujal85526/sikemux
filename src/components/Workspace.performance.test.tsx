@@ -88,10 +88,9 @@ for (const projects of [1, 10, 50]) {
             const start = performance.now();
             await act(async () => {
                 selectSession(projectId);
-                if (index % 4 === 0) selectTab({ kind: "window", id: agentWindowId(getState(), `${projectId}-agent-${index % 5}`)! });
-                else if (index % 4 === 1)
-                    selectTab({ kind: "file", id: `${projectId}-window-10`, path: `/repo/${projectId}/file-${index % 100}.ts` });
-                else selectTab({ kind: "window", id: `${projectId}-window-${index % 4 === 2 ? 11 : index % 10}` });
+                if (index % 4 === 0) selectTab({ id: agentWindowId(getState(), `${projectId}-agent-${index % 5}`)! });
+                else if (index % 4 === 1) selectTab({ id: `${projectId}-window-10`, doc: `/repo/${projectId}/file-${index % 100}.ts` });
+                else selectTab({ id: `${projectId}-window-${index % 4 === 2 ? 11 : index % 10}` });
             });
             samples.push(performance.now() - start);
             expect(getState().activeSessionId).toBe(projectId);

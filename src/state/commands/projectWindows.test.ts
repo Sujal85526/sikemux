@@ -180,7 +180,7 @@ describe("file tabs in the session strip", () => {
         cmd.openEditorTab(paneId, "/work/demo/b.ts");
         const windowId = projectWindows().find((win) => win.role === "files")!.id;
 
-        cmd.selectTab({ kind: "file", id: windowId, path: "/work/demo/a.ts" });
+        cmd.selectTab({ id: windowId, doc: "/work/demo/a.ts" });
 
         expect(getState().editorViews[paneId].activePath).toBe("/work/demo/a.ts");
         expect(getState().sessions[getState().activeSessionId].activeWindowId).toBe(windowId);
@@ -194,7 +194,7 @@ describe("file tabs in the session strip", () => {
         const seen: { paneId: string; path: string }[] = [];
         const stop = subscribe("close-file", (event) => seen.push({ paneId: event.paneId, path: event.path }));
 
-        cmd.closeTab({ kind: "file", id: windowId, path: "/work/demo/a.ts" });
+        cmd.closeTab({ id: windowId, doc: "/work/demo/a.ts" });
         stop();
 
         // The editor owns the unsaved-changes prompt, so the tab survives until

@@ -1,4 +1,4 @@
-import type { PaneKind, Session, Window, WorkspaceTabRef } from "./types";
+import type { PaneKind, Session, TabRef, Window } from "./types";
 import type { StoreState } from "./store";
 
 export const selectSessionIds = (state: StoreState): readonly string[] => state.sessionOrder;
@@ -67,17 +67,6 @@ export function roleHasTab(role: string): boolean {
 }
 
 /**
- * Expand one session's windows into strip entries.
- *
- * Rail-driven roles contribute nothing: the rail reaches them and the stage
- * renders them, so a tab would be a second handle on one surface. An editor
- * contributes one entry per open document and a Bruno workspace one per open
- * request, which is what puts them in this strip rather than a second bar
- * inside the pane; with nothing open they contribute nothing, because an empty
- * one is not worth a tab. Everything else gets exactly one entry, and the list
- * is derived rather than stored, so a window can never exist without its tab.
- */
-/**
  * The documents a window holds, when its role holds any.
  *
  * This is the one place that knows which roles expand into a tab per
@@ -88,35 +77,46 @@ export function documentsOf(
     win: Window,
     editorViews: StoreState["editorViews"],
     brunoViews: StoreState["brunoViews"],
-): { kind: "file" | "request"; ids: readonly string[]; activeId: string | null } | null {
+): { ids: readonly string[]; activeId: string | null } | null {
     if (win.role === "files") {
         const view = editorViews[win.activePaneId];
-        return { kind: "file", ids: view?.openTabs ?? EMPTY_IDS, activeId: view?.activePath ?? null };
+        return { ids: view?.openTabs ?? EMPTY_IDS, activeId: view?.activePath ?? null };
     }
     if (win.role === "bruno") {
         const view = brunoViews[win.activePaneId];
-        return { kind: "request", ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
+        return { ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
     }
     return null;
 }
 
+/**
+ * Expand one session's windows into strip entries.
+ *
+ * Rail-driven roles contribute nothing: the rail reaches them and the stage
+ * renders them, so a tab would be a second handle on one surface. An editor
+ * contributes one entry per open document and a Bruno workspace one per open
+ * request, which is what puts them in this strip rather than a second bar
+ * inside the pane; with nothing open they contribute nothing, because an empty
+ * one is not worth a tab. Everything else gets exactly one entry, and the list
+ * is derived rather than stored, so a window can never exist without its tab.
+ */
 export function expandTabRefs(
     windowIds: readonly string[],
     windows: StoreState["windows"],
     editorViews: StoreState["editorViews"] = {},
     brunoViews: StoreState["brunoViews"] = {},
-): WorkspaceTabRef[] {
-    return windowIds.flatMap((id): WorkspaceTabRef[] => {
+): TabRef[] {
+    return windowIds.flatMap((id): TabRef[] => {
         const win = windows[id];
         if (!win) return [];
         const documents = documentsOf(win, editorViews, brunoViews);
-        if (documents) return documents.ids.map((path): WorkspaceTabRef => ({ kind: documents.kind, id, path }));
-        return roleHasTab(win.role) ? [{ kind: "window", id }] : [];
+        if (documents) return documents.ids.map((doc): TabRef => ({ id, doc }));
+        return roleHasTab(win.role) ? [{ id }] : [];
     });
 }
 
 /** The session's tabs as one ordered list. */
-export function selectTabRefs(state: StoreState, sessionId: string): WorkspaceTabRef[] {
+export function selectTabRefs(state: StoreState, sessionId: string): TabRef[] {
     return expandTabRefs(state.windowsBySession[sessionId] ?? EMPTY_IDS, state.windows, state.editorViews, state.brunoViews);
 }
 
@@ -131,29 +131,18 @@ export function activeTabRef(
     windows: StoreState["windows"] = {},
     editorViews: StoreState["editorViews"] = {},
     brunoViews: StoreState["brunoViews"] = {},
-): WorkspaceTabRef | null {
+): TabRef | null {
     if (!session.activeWindowId) return null;
     const win = windows[session.activeWindowId];
     const documents = win ? documentsOf(win, editorViews, brunoViews) : null;
     // A window showing nothing stays a window ref: it has no document tab to
     // point at, but its layer still has to render the empty state.
-    if (documents?.activeId) return { kind: documents.kind, id: session.activeWindowId, path: documents.activeId };
-    return { kind: "window", id: session.activeWindowId };
+    if (documents?.activeId) return { id: session.activeWindowId, doc: documents.activeId };
+    return { id: session.activeWindowId };
 }
 
-/**
- * The window a strip entry lives in.
- *
- * Layer visibility asks this rather than matching on `kind`, so a document tab
- * shows the editor holding it and the strip and the stage cannot disagree about
- * which surface is live.
- */
-export function tabRefWindowId(ref: WorkspaceTabRef | null): string | null {
-    return ref?.id ?? null;
-}
-
-export const tabRefKey = (ref: WorkspaceTabRef): string =>
-    ref.kind === "file" || ref.kind === "request" ? `${ref.kind}:${ref.id}:${ref.path}` : `${ref.kind}:${ref.id}`;
+/** A strip entry's identity. Window ids carry no colon, so the two parts cannot blur. */
+export const tabRefKey = (ref: TabRef): string => (ref.doc === undefined ? ref.id : `${ref.id}:${ref.doc}`);
 
 /**
  * Which ordered list of tabs a cycle acts on.

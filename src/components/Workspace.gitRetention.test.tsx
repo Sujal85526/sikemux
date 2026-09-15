@@ -49,7 +49,7 @@ it("retains a visited terminal across switches and releases its layer on close",
         act(() => cmd.openGitWorkbench());
         expect(getByTestId(terminalId)).toBe(terminal);
         expect(terminal.closest('[role="tabpanel"]')).toHaveAttribute("inert");
-        act(() => cmd.selectTab({ kind: "window", id: terminalWindow }));
+        act(() => cmd.selectTab({ id: terminalWindow }));
         expect(getByTestId(terminalId)).toBe(terminal);
         expect(terminal.closest('[role="tabpanel"]')).not.toHaveAttribute("inert");
     }
