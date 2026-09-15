@@ -20,6 +20,7 @@ import { findRequest } from "../bruno/resolve";
 import { basename, relativePath } from "../lib/paths";
 import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
+import { PAN_MS, useWindowPan } from "./useWindowPan";
 
 const copyPath = (_path: string, text: string, label: string) =>
     navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
@@ -57,6 +58,11 @@ export function Workspace() {
 
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const activeSession = sessionsById[activeSessionId];
+    const activeSlots = useMemo(() => {
+        const order = windowsBySession[activeSessionId] ?? EMPTY_IDS;
+        return new Map(order.map((wid, slot) => [wid, slot]));
+    }, [windowsBySession, activeSessionId]);
+    const pan = useWindowPan(activeSessionId, activeSession?.activeWindowId ?? null, activeSlots);
     // Counts what the strip would actually show, by asking the list the strip
     // renders: a project holding only rail-driven surfaces has no tabs, and no
     // strip, while an editor or Bruno workspace counts its open documents.
@@ -73,12 +79,20 @@ export function Workspace() {
                 return (
                     <div
                         key={session.id}
-                        className="window-track"
-                        style={{ top: TABS_H, "--pan": panOffset(order.indexOf(session.activeWindowId)) } as CSSProperties}>
+                        ref={isActive ? pan.trackRef : undefined}
+                        className={`window-track${isActive && pan.panning ? " panning" : ""}`}
+                        style={
+                            {
+                                top: TABS_H,
+                                "--window-pan-ms": `${PAN_MS}ms`,
+                                "--pan": panOffset(isActive ? pan.at : order.indexOf(session.activeWindowId)),
+                            } as CSSProperties
+                        }>
                         {order.map((wid, slot) => {
                             const win = windowsById[wid];
                             if (!win) return null;
                             const live = isActive && activeWindowId === wid;
+                            const painted = isActive && pan.paints(wid);
                             if (live && (win.role === "git" || win.role === "files" || win.role === "term")) mountedWorkbenchWindows.current.add(wid);
                             // A live agent keeps its process whether or not it is on screen;
                             // a sleeping one has nothing to keep.
@@ -86,8 +100,19 @@ export function Workspace() {
                                 win.role === "agent"
                                     ? agentsById[win.activePaneId]?.launchState !== "dormant"
                                     : mountedWorkbenchWindows.current.has(wid);
-                            if (!live && wid !== session.activeWindowId && !keepsProcess) return null;
-                            return <WindowLayer key={wid} session={session} win={win} areaRef={areaRef} slot={slot} live={live} painted={live} />;
+                            // A layer sliding out has to stay mounted for as long as it paints.
+                            if (!live && !painted && wid !== session.activeWindowId && !keepsProcess) return null;
+                            return (
+                                <WindowLayer
+                                    key={wid}
+                                    session={session}
+                                    win={win}
+                                    areaRef={areaRef}
+                                    slot={isActive ? pan.slotOf(wid, slot) : slot}
+                                    live={live}
+                                    painted={painted}
+                                />
+                            );
                         })}
                     </div>
                 );
