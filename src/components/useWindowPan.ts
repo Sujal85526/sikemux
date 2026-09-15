@@ -28,8 +28,6 @@ export interface WindowPan {
     readonly panning: boolean;
     /** Whether the track is past its parked position and actually travelling. */
     readonly sliding: boolean;
-    /** Whether a gesture has the track and is writing `--pan` by hand. */
-    readonly dragging: boolean;
     /** Where the track sits now, in screen widths from its left edge. */
     readonly at: number;
     /** Where a layer sits now, which is its own slot unless a slide has it parked somewhere else. */
@@ -65,6 +63,9 @@ function planPan(from: string | null, to: string | null, slots: ReadonlyMap<stri
  * jump of several screens parks its target next to the one being left and puts
  * it back on settle, which keeps the travel and the number of painted layers
  * the same whether the jump was one screen or twenty.
+ *
+ * A trackpad gesture borrows the track through `drag` and `release` instead of
+ * a switch, and the settle it hands back is the same slide.
  */
 export function useWindowPan(sessionId: string, activeWindowId: string | null, slots: ReadonlyMap<string, number>): WindowPan {
     const trackRef = useRef<HTMLDivElement>(null);
@@ -144,7 +145,6 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         trackRef,
         panning: pan !== null,
         sliding: pan !== null && pan.kind === "slide" && running,
-        dragging: pan?.kind === "drag",
         at: pan ? (running ? pan.slot : pan.fromSlot) : activeWindowId ? (slots.get(activeWindowId) ?? 0) : 0,
         slotOf: (windowId, slot) => {
             if (!pan) return slot;
