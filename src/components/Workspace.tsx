@@ -5,7 +5,7 @@ import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, Window
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
-import { activeTabRef, brunoPaneId, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
+import { activeTabRef, brunoPaneId, documentsOf, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TabBar, type TabDescriptor } from "./TabBar";
@@ -22,6 +22,7 @@ import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
 import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
 import { useWheelPan } from "./useWheelPan";
+import { useDocumentSlide } from "./useDocumentSlide";
 
 const copyPath = (_path: string, text: string, label: string) =>
     navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
@@ -415,12 +416,12 @@ const WindowLayer = memo(function WindowLayer({
 }) {
     const editorView = useStore((s) => s.editorViews[win.activePaneId]);
     const brunoView = useStore((s) => s.brunoViews[win.activePaneId]);
-    const active = activeTabRef(
-        session,
-        { [win.id]: win },
-        editorView ? { [win.activePaneId]: editorView } : {},
-        brunoView ? { [win.activePaneId]: brunoView } : {},
-    );
+    const editorViews = editorView ? { [win.activePaneId]: editorView } : {};
+    const brunoViews = brunoView ? { [win.activePaneId]: brunoView } : {};
+    const active = activeTabRef(session, { [win.id]: win }, editorViews, brunoViews);
+    const documents = documentsOf(win, editorViews, brunoViews);
+    const layerRef = useRef<HTMLDivElement>(null);
+    useDocumentSlide(layerRef, live ? win.activePaneId : null, documents?.activeId ?? null, documents?.ids ?? EMPTY_IDS);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
     const { panes, dividers, stacked, stacks, inStack } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
     const terminalTitles = useStore((s) => s.terminalTitles);
@@ -429,6 +430,7 @@ const WindowLayer = memo(function WindowLayer({
 
     return (
         <div
+            ref={layerRef}
             className={`window-layer${live ? " live" : ""}${painted ? " painted" : ""}`}
             id={live ? `workspace-content-${session.id}` : undefined}
             role="tabpanel"
@@ -458,7 +460,7 @@ const WindowLayer = memo(function WindowLayer({
                             visibility: shown ? undefined : "hidden",
                             zIndex: isZoomed ? 2 : 1,
                         }}>
-                        <div className={`pane pane-${p.kind}`} onMouseDown={() => live && cmd.focusPane(p.id)}>
+                        <div className={`pane pane-${p.kind}`} data-pane-id={p.id} onMouseDown={() => live && cmd.focusPane(p.id)}>
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible })}
                             </ErrorBoundary>

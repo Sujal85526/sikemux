@@ -742,6 +742,27 @@
     }
 }
 
+/* Two documents of one screen swap in place, so the screen itself clips the
+   swap and a still copy of the document leaving travels out of it. */
+.doc-sliding {
+    position: relative;
+    overflow: hidden;
+}
+.doc-snapshot {
+    position: absolute;
+    pointer-events: none;
+}
+/* Promoted and offset only for the length of the slide: a transform here would
+   trap the `position: fixed` overlays a document puts on screen. */
+.doc-sliding > .doc-snapshot,
+.doc-sliding > .doc-slide-in {
+    will-change: transform;
+}
+.doc-sliding.doc-travelling > .doc-snapshot,
+.doc-sliding.doc-travelling > .doc-slide-in {
+    transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .pane-cell {
     position: absolute;
 }
