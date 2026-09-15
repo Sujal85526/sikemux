@@ -1,6 +1,6 @@
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { memo, useMemo, useRef } from "react";
-import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, WindowRole } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
@@ -65,26 +65,39 @@ export function Workspace() {
     return (
         <div className="window-area" ref={areaRef}>
             {activeSession && tabCount > 0 && <WorkspaceTabsBar session={activeSession} />}
-            {sessions.flatMap((session) => {
+            {sessions.map((session) => {
                 const isActive = session.id === activeSessionId;
                 const active = activeTabRef(session, windowsById, editorViews, brunoViews);
                 const activeWindowId = active?.id ?? null;
-                return (windowsBySession[session.id] ?? []).map((wid) => {
-                    const win = windowsById[wid];
-                    if (!win) return null;
-                    const live = isActive && activeWindowId === wid;
-                    if (live && (win.role === "git" || win.role === "files" || win.role === "term")) mountedWorkbenchWindows.current.add(wid);
-                    // A live agent keeps its process whether or not it is on screen;
-                    // a sleeping one has nothing to keep.
-                    const keepsProcess =
-                        win.role === "agent" ? agentsById[win.activePaneId]?.launchState !== "dormant" : mountedWorkbenchWindows.current.has(wid);
-                    if (!live && wid !== session.activeWindowId && !keepsProcess) return null;
-                    return <WindowLayer key={wid} session={session} win={win} areaRef={areaRef} topInset={TABS_H} live={live} painted={live} />;
-                });
+                const order = windowsBySession[session.id] ?? EMPTY_IDS;
+                return (
+                    <div
+                        key={session.id}
+                        className="window-track"
+                        style={{ top: TABS_H, "--pan": panOffset(order.indexOf(session.activeWindowId)) } as CSSProperties}>
+                        {order.map((wid, slot) => {
+                            const win = windowsById[wid];
+                            if (!win) return null;
+                            const live = isActive && activeWindowId === wid;
+                            if (live && (win.role === "git" || win.role === "files" || win.role === "term")) mountedWorkbenchWindows.current.add(wid);
+                            // A live agent keeps its process whether or not it is on screen;
+                            // a sleeping one has nothing to keep.
+                            const keepsProcess =
+                                win.role === "agent"
+                                    ? agentsById[win.activePaneId]?.launchState !== "dormant"
+                                    : mountedWorkbenchWindows.current.has(wid);
+                            if (!live && wid !== session.activeWindowId && !keepsProcess) return null;
+                            return <WindowLayer key={wid} session={session} win={win} areaRef={areaRef} slot={slot} live={live} painted={live} />;
+                        })}
+                    </div>
+                );
             })}
         </div>
     );
 }
+
+/** How far the track is slid left, in screen widths, to bring `index` to the front. */
+const panOffset = (index: number) => `${-Math.max(0, index) * 100}%`;
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -348,8 +361,8 @@ const WindowLayer = memo(function WindowLayer({
     win,
     live,
     painted,
+    slot,
     areaRef,
-    topInset = 0,
 }: {
     session: Session;
     win: WindowT;
@@ -357,8 +370,9 @@ const WindowLayer = memo(function WindowLayer({
     live: boolean;
     /** Whether the layer paints at all. A painted layer that is not live shows what it already has. */
     painted: boolean;
+    /** Which screen along the track this layer sits on, counted from the track's left edge. */
+    slot: number;
     areaRef: RefObject<HTMLDivElement | null>;
-    topInset?: number;
 }) {
     const editorView = useStore((s) => s.editorViews[win.activePaneId]);
     const brunoView = useStore((s) => s.brunoViews[win.activePaneId]);
@@ -382,7 +396,7 @@ const WindowLayer = memo(function WindowLayer({
             aria-labelledby={active ? `workspace-tab-${session.id}-${encodeURIComponent(tabRefKey(active))}` : undefined}
             aria-hidden={!live}
             inert={!live}
-            style={topInset ? { top: `${topInset}px` } : undefined}>
+            style={{ "--slot": slot } as CSSProperties}>
             {leaves.map((p) => {
                 const isZoomed = zoomedPaneId === p.id;
                 // A pane a stack is covering keeps its cell, and its size, so it

@@ -674,10 +674,24 @@
     position: absolute;
     inset: 0;
     z-index: 1;
+    /* The track slides its neighbouring screens in from off stage, so the stage
+       has to clip them. The clip cannot live on the track itself: a transformed
+       box carries its own overflow, and the visible window would slide with it. */
+    overflow: hidden;
+}
+/* One session's screens laid end to end. The track slides sideways to bring a
+   screen to the front, and owns the tab strip inset once for all of them. */
+.window-track {
+    position: absolute;
+    inset: 0;
+    --pan: 0%;
+    transform: translate3d(var(--pan), 0, 0);
 }
 .window-layer {
     position: absolute;
     inset: 0;
+    --slot: 0;
+    transform: translate3d(calc(var(--slot) * 100%), 0, 0);
 }
 /* A layer paints while it is the tab on screen, and also while it is sliding in
    or out of a pan. Hidden layers keep their layout so terminals and editors stay
