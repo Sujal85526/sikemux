@@ -2,10 +2,13 @@
 
 ## Git workflow
 
-- Work directly on the `main` branch.
-- Do not create or use separate branches.
+- Work directly on the `main` branch for day-to-day work and nightly releases.
+- Release branches are the only exception. Cut `release/<major.minor>` from `main`
+  to stabilise a stable release, and cut hotfix branches from `release/*`.
+- Never merge a release branch into `main`. Cherry-pick the fix commit instead, so
+  version-bump commits stay on the release line.
 - Do not create or use Git worktrees.
-- Commit all repository changes directly to `main`.
+- Commit day-to-day changes directly to `main`.
 - Make small, atomic commits as work progresses.
 
 - Do not proactively write comments in code. We prefer code to be self explanatory. When we write comments its because there is something locally unintuitive that a future reader should know. But as we write code our goal is to make all code locally intuitive, removing the need for comments. If we ever do need to write comments, we never introduce jargon. Comments should be understandable to someone who was just dropped into the codebase for the first time. Comments should attempt to be concise, on average 1-2 lines. If you are writing a longer comment its likely there is a lot of useless information, which is bad because the information may become stale as the code changes
