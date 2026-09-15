@@ -208,6 +208,10 @@ if count != 1:
     raise SystemExit("could not update Cargo.toml package version")
 path.write_text(updated)
 PY
+# Cargo.lock records the workspace version and the sidecar builds with --locked,
+# so the bump has to reach the lock file or the build fails partway through.
+cargo metadata --manifest-path src-tauri/Cargo.toml --offline --format-version 1 >/dev/null \
+  || fail "could not refresh Cargo.lock for $VERSION"
 
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
 APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
