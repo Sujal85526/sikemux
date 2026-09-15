@@ -87,7 +87,7 @@
     --browser-agent: #d97757;
 }
 
-.browser-tabstrip {
+.tabbar.v-browser {
     display: flex;
     align-items: end;
     min-width: 0;
@@ -97,7 +97,7 @@
     background: color-mix(in srgb, color-mix(in srgb, var(--rail) 96%, var(--browser-agent) 4%) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
-.browser-tab-wrap {
+.tabbar.v-browser .tab-wrap {
     display: flex;
     align-items: center;
     width: min(168px, 28%);
@@ -110,7 +110,7 @@
     color: var(--ink-faint);
 }
 
-.browser-tab {
+.tabbar.v-browser .tab {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -127,12 +127,12 @@
     cursor: default;
 }
 
-.browser-tab-wrap:hover {
+.tabbar.v-browser .tab-wrap:hover {
     color: var(--ink-dim);
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 80%), transparent);
 }
 
-.browser-tab-wrap.active {
+.tabbar.v-browser .tab-wrap.active {
     border-color: var(--line);
     background: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
@@ -146,12 +146,12 @@
     background: var(--ink-faint);
 }
 
-.browser-tab-wrap.active .browser-tab-status {
+.tabbar.v-browser .tab-wrap.active .browser-tab-status {
     background: var(--browser-agent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--browser-agent) 14%, transparent);
 }
 
-.browser-tab-title {
+.tabbar.v-browser .tab-label {
     min-width: 0;
     flex: 1;
     overflow: hidden;
@@ -159,7 +159,7 @@
     white-space: nowrap;
 }
 
-.browser-tab-close {
+.tabbar.v-browser .tab-x {
     display: grid;
     place-items: center;
     width: 16px;
@@ -175,18 +175,18 @@
     opacity: 0;
 }
 
-.browser-tab-wrap:hover .browser-tab-close,
-.browser-tab-wrap.active .browser-tab-close {
+.tabbar.v-browser .tab-wrap:hover .tab-x,
+.tabbar.v-browser .tab-wrap.active .tab-x {
     opacity: 0.72;
 }
 
-.browser-tab-close:hover {
+.tabbar.v-browser .tab-x:hover {
     background: var(--rail-3);
     color: var(--ink);
     opacity: 1;
 }
 
-.browser-new-tab,
+.tabbar.v-browser .tab-add,
 .browser-toolbar button {
     display: grid;
     place-items: center;
@@ -199,16 +199,22 @@
     cursor: pointer;
 }
 
-.browser-new-tab {
+.tabbar.v-browser .tab-add {
     width: 24px;
     height: 24px;
     margin-bottom: 1px;
 }
 
-.browser-new-tab:hover,
+.tabbar.v-browser .tab-add:hover,
 .browser-toolbar button:hover {
     background: var(--rail-2);
     color: var(--ink);
+}
+
+.tabbar.v-browser .tabbar-trailing {
+    padding: 0;
+    margin-right: 0;
+    background: transparent;
 }
 
 .browser-controller {

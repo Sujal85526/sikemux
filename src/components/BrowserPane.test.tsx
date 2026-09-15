@@ -91,6 +91,31 @@ describe("AgentBrowserShell", () => {
         expect(browserApi.pointer).toHaveBeenCalledWith("agent-one", expect.objectContaining({ kind: "move", x: 240, y: 160 }));
     });
 
+    /*
+     * The strip used to be hand-rolled markup with no key handling at all, so
+     * arrowing between browser tabs did nothing. Sharing TabBar is what gives it
+     * the same roving focus every other strip has.
+     */
+    it("walks browser tabs with the arrow keys", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({
+            tabs: [
+                { id: "tab-one", title: "Example", url: "https://example.com", active: true },
+                { id: "tab-two", title: "Second", url: "https://second.test", active: false },
+            ],
+            activeTabId: "tab-one",
+        });
+        render(
+            <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
+                <div />
+            </AgentBrowserShell>,
+        );
+
+        const first = await screen.findByRole("tab", { name: /Example/ });
+        fireEvent.keyDown(first, { key: "ArrowRight" });
+
+        await waitFor(() => expect(browserApi.switchTab).toHaveBeenCalledWith("agent-one", "tab-two"));
+    });
+
     it("stops hidden streams and ignores frames delivered after cleanup", async () => {
         const stop = vi.fn().mockResolvedValue(undefined);
         let receive: (frame: BrowserFrame) => void = () => {};

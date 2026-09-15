@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { browserApi, type BrowserSnapshot, type BrowserViewport } from "../api/browser";
 import type { AgentType } from "../state/types";
 import { reportError } from "../state/toast";
-import { IconChevron, IconClose, IconPlus, IconRefresh } from "./Icons";
+import { IconChevron, IconPlus, IconRefresh } from "./Icons";
+import { TabBar } from "./TabBar";
 
 const EMPTY_SNAPSHOT: BrowserSnapshot = {
     tabs: [],
@@ -210,38 +211,24 @@ function BrowserPane({
 
     return (
         <section className={`browser-pane ${agentType}`} data-browser-pane data-agent-id={agentId} aria-label={`${agentType} browser`}>
-            <div className="browser-tabstrip" role="tablist" aria-label="Browser tabs">
-                {snapshot.tabs.map((tab) => (
-                    <div key={tab.id} className={`browser-tab-wrap${tab.id === snapshot.activeTabId ? " active" : ""}`} role="presentation">
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={tab.id === snapshot.activeTabId}
-                            className="browser-tab"
-                            title={tab.url}
-                            onClick={() => run(browserApi.switchTab(agentId, tab.id), "switch browser tab")}>
-                            <span className="browser-tab-status" aria-hidden="true" />
-                            <span className="browser-tab-title">{tab.title || (tab.url === "about:blank" ? "New tab" : tab.url)}</span>
-                        </button>
-                        <button
-                            type="button"
-                            className="browser-tab-close"
-                            aria-label={`Close ${tab.title || "tab"}`}
-                            onClick={() => run(browserApi.closeTab(agentId, tab.id), "close browser tab")}>
-                            <IconClose size={11} />
-                        </button>
-                    </div>
-                ))}
-                <button
-                    type="button"
-                    className="browser-new-tab"
-                    aria-label="New browser tab — Command T"
-                    title="New browser tab — ⌘T"
-                    onClick={() => run(browserApi.newTab(agentId), "new browser tab")}>
-                    <IconPlus size={13} />
-                </button>
-                <span className="browser-controller">{agentType}</span>
-            </div>
+            <TabBar
+                variant="browser"
+                ariaLabel="Browser tabs"
+                tabs={snapshot.tabs.map((tab) => ({
+                    id: tab.id,
+                    label: tab.title || (tab.url === "about:blank" ? "New tab" : tab.url),
+                    title: tab.url,
+                    active: tab.id === snapshot.activeTabId,
+                    icon: <span className="browser-tab-status" aria-hidden="true" />,
+                }))}
+                onSelect={(id) => run(browserApi.switchTab(agentId, id), "switch browser tab")}
+                onClose={(id) => run(browserApi.closeTab(agentId, id), "close browser tab")}
+                onAdd={() => run(browserApi.newTab(agentId), "new browser tab")}
+                addIcon={<IconPlus size={13} />}
+                addTitle="New browser tab — ⌘T"
+                addLabel="New browser tab — Command T"
+                trailing={<span className="browser-controller">{agentType}</span>}
+            />
             <form
                 className="browser-toolbar"
                 onSubmit={(event) => {

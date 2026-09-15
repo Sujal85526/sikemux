@@ -29,7 +29,7 @@ export interface TabDescriptor {
     accessory?: ReactNode;
 }
 
-export type TabVariant = "editor" | "agent";
+export type TabVariant = "editor" | "agent" | "browser";
 
 interface TabBarProps {
     variant: TabVariant;
@@ -41,11 +41,15 @@ interface TabBarProps {
     onAdd?: () => void;
     addIcon?: ReactNode;
     addTitle?: string;
+    /** Spoken name for the add button, when the tooltip's wording reads badly aloud. */
+    addLabel?: string;
     trailing?: ReactNode;
     style?: CSSProperties;
+    /** Names the strip for assistive tech when more than one is on screen. */
+    ariaLabel?: string;
 }
 
-export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, addIcon, addTitle, trailing, style }: TabBarProps) {
+export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, addIcon, addTitle, addLabel, trailing, style, ariaLabel }: TabBarProps) {
     const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
     const menuItems = menu && buildMenu ? buildMenu(menu.id) : null;
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -85,7 +89,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
         : tabs.map((tab, index) => ({ tab, index }));
 
     return (
-        <div ref={scrollRef} className={`tabbar v-${variant}`} style={style} role="tablist">
+        <div ref={scrollRef} className={`tabbar v-${variant}`} style={style} role="tablist" aria-label={ariaLabel}>
             {virtualized && <div aria-hidden="true" style={{ flex: `0 0 ${firstVirtual?.start ?? 0}px` }} />}
             {visibleTabs.map(({ tab: t, index }) => {
                 const closable = t.closable ?? !!onClose;
@@ -167,7 +171,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
             )}
             {onAdd && (
                 <Tooltip label={addTitle}>
-                    <button type="button" className="tab-add" aria-label={addTitle} onClick={onAdd}>
+                    <button type="button" className="tab-add" aria-label={addLabel ?? addTitle} onClick={onAdd}>
                         {addIcon}
                     </button>
                 </Tooltip>
