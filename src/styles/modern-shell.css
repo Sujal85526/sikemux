@@ -424,12 +424,11 @@ textarea:focus,
 }
 
 /* The workspace strip is a surface of its own now (the fill is set with the
- * other panels, below). Its bottom corners round off into the gap under it,
- * and that gap is the separation a border used to stand in for. */
+ * other panels, below), so it takes an edge the whole way round like the
+ * screen under it. A border on the bottom only would read as a lid again. */
 .tabbar.v-agent {
-    border-bottom: 0;
-    border-bottom-left-radius: var(--radius-panel);
-    border-bottom-right-radius: var(--radius-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
 }
 
 /* The editor's strip sits inside a pane that already is the surface, and a
@@ -795,10 +794,8 @@ textarea:focus,
 /* Controls: buttons, fields, rows, menu items. The app's default corner.
  *
  * `.tabbar` is deliberately absent. It was listed here once, but a full-width
- * strip is not a control — rounding it put a corner on the strip's bottom edge
- * where it meets the pane, so the two never read as flush. The stage already
- * clips the strip's top corners to the frame's radius, which is the only
- * rounding it should have. */
+ * strip is not a control, and the control corner is not the corner it wants.
+ * The workspace strip rounds itself at the panel radius, up with its border. */
 button,
 input,
 select,
