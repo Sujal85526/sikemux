@@ -28,7 +28,7 @@ import { confirmDialog } from "./dialog";
 import { agentSupportsSkipPermissions } from "./commands/agentLogic";
 import { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
 import { parseSessionBundle } from "./sessionBundle";
-import { activeTabRef, selectTabRefs, tabRefKey } from "./selectors";
+import { nextInCycle, selectTabRefs, stripOrder, tabRefKey, type TabSource } from "./selectors";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import {
     collectPanes,
@@ -1553,16 +1553,25 @@ export function closeTab(ref: WorkspaceTabRef): void {
     closeWindowById(ref.id);
 }
 
+/**
+ * The id `delta` steps to, or null when the strip would not move.
+ *
+ * Landing back on the active tab is not a move, and re-selecting it would
+ * rebuild view state for no reason, so it reads as nothing to do.
+ */
+function nextTabIn(source: TabSource, delta: number): string | null {
+    const order = stripOrder(getState(), source);
+    const next = nextInCycle(order, delta);
+    return next === order.activeId ? null : next;
+}
+
 export function cycleTab(delta: number): void {
     const st = getState();
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return;
-    const refs = selectTabRefs(st, session.id);
-    if (refs.length === 0) return;
-    const current = activeTabRef(session, st.windows, st.editorViews);
-    const index = current ? refs.findIndex((ref) => tabRefKey(ref) === tabRefKey(current)) : -1;
-    const base = index < 0 ? 0 : index;
-    selectTab(refs[(base + delta + refs.length) % refs.length]);
+    const sessionId = st.activeSessionId;
+    if (!st.sessions[sessionId]) return;
+    const nextKey = nextTabIn({ kind: "workspace", sessionId }, delta);
+    const next = nextKey ? selectTabRefs(st, sessionId).find((ref) => tabRefKey(ref) === nextKey) : undefined;
+    if (next) selectTab(next);
 }
 
 export function selectWindowByIndex(index: number): void {
@@ -1595,15 +1604,13 @@ export function selectWindowByRole(role: WindowRole): void {
 }
 
 export function cycleAgent(delta: number): void {
+    const sessionId = getState().activeSessionId;
+    const next = nextTabIn({ kind: "agents", sessionId }, delta);
+    if (!next) return;
     mutate((d) => {
-        const session = d.sessions[d.activeSessionId];
-        if (!session) return;
-        const ids = d.agentsBySession[session.id] ?? [];
-        if (ids.length < 2) return;
-        const idx = session.activeAgentId ? ids.indexOf(session.activeAgentId) : -1;
-        const base = idx < 0 ? 0 : idx;
-        const sess = d.sessions[session.id];
-        sess.activeAgentId = ids[(base + delta + ids.length) % ids.length];
+        const sess = d.sessions[sessionId];
+        if (!sess) return;
+        sess.activeAgentId = next;
         sess.view = "agent";
         d.zoomedPaneId = null;
     });
@@ -1622,12 +1629,8 @@ export function cycleTabs(delta: number): void {
     }
 
     if (session.kind === "bruno") {
-        const open = st.brunoViews[session.id]?.openPaths ?? [];
-        if (open.length < 2) return;
-        const active = st.brunoViews[session.id]?.activeRequestPath;
-        const idx = active ? open.indexOf(active) : -1;
-        const base = idx < 0 ? 0 : idx;
-        brunoSelectRequest(session.id, open[(base + delta + open.length) % open.length]);
+        const next = nextTabIn({ kind: "requests", sessionId: session.id }, delta);
+        if (next) brunoSelectRequest(session.id, next);
         return;
     }
 
@@ -1635,21 +1638,15 @@ export function cycleTabs(delta: number): void {
     if (!win) return;
 
     if (win.role === "term") {
-        const termIds = (st.windowsBySession[session.id] ?? []).filter((id) => st.windows[id]?.role === "term");
-        if (termIds.length < 2) return;
-        const idx = termIds.indexOf(win.id);
-        selectWindowId(termIds[(idx + delta + termIds.length) % termIds.length]);
+        const next = nextTabIn({ kind: "terminals", sessionId: session.id }, delta);
+        if (next) selectWindowId(next);
         return;
     }
 
     const pane = collectPanes(win.root).find((p) => p.id === win.activePaneId);
     if (pane?.kind !== "editor") return;
-    const tabs = st.editorViews[pane.id]?.openTabs ?? [];
-    if (tabs.length < 2) return;
-    const active = st.editorViews[pane.id]?.activePath;
-    const idx = active ? tabs.indexOf(active) : -1;
-    const base = idx < 0 ? 0 : idx;
-    setEditorView(pane.id, { activePath: tabs[(base + delta + tabs.length) % tabs.length] });
+    const next = nextTabIn({ kind: "documents", paneId: pane.id }, delta);
+    if (next) setEditorView(pane.id, { activePath: next });
 }
 
 const FALLBACK_AGENT_TITLE_MAX = 13;

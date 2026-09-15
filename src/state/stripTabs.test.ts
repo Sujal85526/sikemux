@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeTabRef, expandTabRefs, roleHasTab, tabRefKey, tabRefWindowId } from "./selectors";
+import { activeTabRef, expandTabRefs, nextInCycle, roleHasTab, stripOrder, tabRefKey, tabRefWindowId } from "./selectors";
 import type { StoreState } from "./store";
 
 const win = (id: string, role: string) => ({ id, role, activePaneId: `${id}-pane` }) as unknown as StoreState["windows"][string];
@@ -155,5 +155,98 @@ describe("tabRefWindowId", () => {
         expect(tabRefWindowId({ kind: "window", id: "t1" })).toBe("t1");
         expect(tabRefWindowId({ kind: "agent", id: "a1" })).toBeNull();
         expect(tabRefWindowId(null)).toBeNull();
+    });
+});
+
+const storeState = (over: Partial<StoreState>): StoreState =>
+    ({
+        sessions: {},
+        windows: {},
+        agents: {},
+        editorViews: {},
+        brunoViews: {},
+        windowsBySession: {},
+        agentsBySession: {},
+        ...over,
+    }) as unknown as StoreState;
+
+describe("nextInCycle", () => {
+    it("has nowhere to go in an empty list", () => {
+        expect(nextInCycle({ ids: [], activeId: null }, 1)).toBeNull();
+    });
+
+    it("wraps at both ends", () => {
+        const order = { ids: ["a", "b", "c"], activeId: "c" };
+        expect(nextInCycle(order, 1)).toBe("a");
+        expect(nextInCycle({ ...order, activeId: "a" }, -1)).toBe("c");
+    });
+
+    /*
+     * A strip whose active id is gone still has to move somewhere, so the walk
+     * starts from the first entry rather than refusing.
+     */
+    it("starts from the first entry when the active id is not in the list", () => {
+        expect(nextInCycle({ ids: ["a", "b"], activeId: "gone" }, 1)).toBe("b");
+        expect(nextInCycle({ ids: ["a", "b"], activeId: null }, 1)).toBe("b");
+    });
+
+    it("returns the only entry rather than nothing", () => {
+        expect(nextInCycle({ ids: ["a"], activeId: "a" }, 1)).toBe("a");
+    });
+});
+
+describe("stripOrder", () => {
+    it("reads the workspace strip as keys with the active one named", () => {
+        const state = storeState({
+            sessions: { s1: { id: "s1", kind: "project", view: "windows", activeWindowId: "t2" } },
+            windows: { t1: win("t1", "term"), t2: win("t2", "term") },
+            windowsBySession: { s1: ["t1", "t2"] },
+            agentsBySession: { s1: ["a1"] },
+            agents: { a1: agent() },
+        } as unknown as Partial<StoreState>);
+
+        expect(stripOrder(state, { kind: "workspace", sessionId: "s1" })).toEqual({
+            ids: ["window:t1", "window:t2", "agent:a1"],
+            activeId: "window:t2",
+        });
+    });
+
+    it("reads a session's agents", () => {
+        const state = storeState({
+            sessions: { s1: { id: "s1", activeAgentId: "a2" } },
+            agentsBySession: { s1: ["a1", "a2"] },
+        } as unknown as Partial<StoreState>);
+
+        expect(stripOrder(state, { kind: "agents", sessionId: "s1" })).toEqual({ ids: ["a1", "a2"], activeId: "a2" });
+    });
+
+    /*
+     * ⌥. inside a terminal walks terminals only, so a git or editor window
+     * sharing the session must not land in the list.
+     */
+    it("reads only the terminal windows, and drops an active window that is not one", () => {
+        const state = storeState({
+            sessions: { s1: { id: "s1", activeWindowId: "g1" } },
+            windows: { t1: win("t1", "term"), g1: win("g1", "git"), t2: win("t2", "term") },
+            windowsBySession: { s1: ["t1", "g1", "t2"] },
+        } as unknown as Partial<StoreState>);
+
+        expect(stripOrder(state, { kind: "terminals", sessionId: "s1" })).toEqual({ ids: ["t1", "t2"], activeId: null });
+    });
+
+    it("reads an editor pane's documents and a Bruno session's requests", () => {
+        const state = storeState({
+            editorViews: { p1: { openTabs: ["/a.ts", "/b.ts"], activePath: "/b.ts" } },
+            brunoViews: { s1: { openPaths: ["/a.bru"], activeRequestPath: "/a.bru" } },
+        } as unknown as Partial<StoreState>);
+
+        expect(stripOrder(state, { kind: "documents", paneId: "p1" })).toEqual({ ids: ["/a.ts", "/b.ts"], activeId: "/b.ts" });
+        expect(stripOrder(state, { kind: "requests", sessionId: "s1" })).toEqual({ ids: ["/a.bru"], activeId: "/a.bru" });
+    });
+
+    it("reads an absent list as empty rather than throwing", () => {
+        const state = storeState({});
+        expect(stripOrder(state, { kind: "documents", paneId: "missing" })).toEqual({ ids: [], activeId: null });
+        expect(stripOrder(state, { kind: "agents", sessionId: "missing" })).toEqual({ ids: [], activeId: null });
     });
 });

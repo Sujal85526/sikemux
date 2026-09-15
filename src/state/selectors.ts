@@ -139,6 +139,77 @@ export function tabRefWindowId(ref: WorkspaceTabRef | null): string | null {
 export const tabRefKey = (ref: WorkspaceTabRef): string =>
     ref.kind === "file" || ref.kind === "request" ? `${ref.kind}:${ref.id}:${ref.path}` : `${ref.kind}:${ref.id}`;
 
+/**
+ * Which ordered list of tabs a cycle acts on.
+ *
+ * `workspace` is the session's own strip; the rest are the inner lists a pane
+ * or view owns. Naming the list rather than the caller is what lets one cycle
+ * serve the keyboard, the strip and anything else that walks tabs.
+ */
+export type TabSource =
+    | { kind: "workspace"; sessionId: string }
+    | { kind: "agents"; sessionId: string }
+    | { kind: "terminals"; sessionId: string }
+    | { kind: "documents"; paneId: string }
+    | { kind: "requests"; sessionId: string };
+
+export interface StripOrder {
+    ids: readonly string[];
+    activeId: string | null;
+}
+
+/**
+ * One tab list as ids plus which is active.
+ *
+ * Deliberately free of labels, icons and menus: everything that walks tabs
+ * needs the order and the active one, and nothing else. Being a plain function
+ * of state rather than a hook is what lets commands use it outside React.
+ */
+export function stripOrder(state: StoreState, source: TabSource): StripOrder {
+    switch (source.kind) {
+        case "workspace": {
+            const session = state.sessions[source.sessionId];
+            const active = session ? activeTabRef(session, state.windows, state.editorViews, state.brunoViews[source.sessionId]) : null;
+            return {
+                ids: selectTabRefs(state, source.sessionId).map(tabRefKey),
+                activeId: active ? tabRefKey(active) : null,
+            };
+        }
+        case "agents":
+            return {
+                ids: state.agentsBySession[source.sessionId] ?? EMPTY_IDS,
+                activeId: state.sessions[source.sessionId]?.activeAgentId ?? null,
+            };
+        case "terminals": {
+            const ids = (state.windowsBySession[source.sessionId] ?? EMPTY_IDS).filter((id) => state.windows[id]?.role === "term");
+            const activeWindowId = state.sessions[source.sessionId]?.activeWindowId ?? null;
+            return { ids, activeId: activeWindowId && ids.includes(activeWindowId) ? activeWindowId : null };
+        }
+        case "documents": {
+            const view = state.editorViews[source.paneId];
+            return { ids: view?.openTabs ?? EMPTY_IDS, activeId: view?.activePath ?? null };
+        }
+        case "requests": {
+            const view = state.brunoViews[source.sessionId];
+            return { ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
+        }
+    }
+}
+
+/**
+ * The id `delta` steps from the active one, wrapping at both ends.
+ *
+ * An empty list has nothing to move to. A list whose active id is missing
+ * starts from the first entry, so a cycle still goes somewhere sensible.
+ */
+export function nextInCycle(order: StripOrder, delta: number): string | null {
+    const { ids, activeId } = order;
+    if (ids.length === 0) return null;
+    const index = activeId ? ids.indexOf(activeId) : -1;
+    const base = index < 0 ? 0 : index;
+    return ids[(base + delta + ids.length) % ids.length] ?? null;
+}
+
 export const selectActiveWindow = (state: StoreState): Window | undefined => {
     const session = selectActiveSession(state);
     return session ? state.windows[session.activeWindowId] : undefined;
