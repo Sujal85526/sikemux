@@ -675,6 +675,7 @@
     inset: 0;
     z-index: 1;
     --window-strip-h: 0px;
+    --window-strip-gap: 0px;
     /* The track slides its neighbouring screens in from off stage, so the stage
        has to clip them. The clip cannot live on the track itself: a transformed
        box carries its own overflow, and the visible window would slide with it. */
@@ -684,12 +685,13 @@
    screens have nothing to start below. */
 .window-area--strip {
     --window-strip-h: 34px;
+    --window-strip-gap: var(--space-1h);
 }
 /* One session's screens laid end to end. The track slides sideways to bring a
    screen to the front, and owns the tab strip inset once for all of them. */
 .window-track {
     position: absolute;
-    inset: var(--window-strip-h) 0 0;
+    inset: calc(var(--window-strip-h) + var(--window-strip-gap)) 0 0;
     --pan: 0%;
 }
 /* A transform here would trap the `position: fixed` overlays panes put on
@@ -712,6 +714,10 @@
     position: absolute;
     inset: 0;
     --slot: 0;
+    /* Rounded and clipped so a screen reads as a card of its own: what a swipe
+       moves is then a surface with edges, not content under a fixed frame. */
+    border-radius: var(--radius-panel);
+    overflow: hidden;
 }
 .window-track.panning .window-layer {
     transform: translate(calc(var(--slot) * 100%), 0);
@@ -727,11 +733,12 @@
 }
 
 /* How far along its screens the session is. A readout only: it never takes a
-   click, and the bar itself paints nothing so the stage keeps the ground. */
+   click, and the bar itself paints nothing so the screen keeps the ground. It
+   stops where the screen's rounded corners start, rather than crossing them. */
 .window-scroll {
     position: absolute;
-    left: 0;
-    right: 0;
+    left: var(--radius-panel);
+    right: var(--radius-panel);
     bottom: 0;
     height: 2px;
     z-index: 2;

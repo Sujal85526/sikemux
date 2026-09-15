@@ -419,7 +419,8 @@
     padding: 0 8px;
 }
 
-/* variant: agent + terminal tabs (overlaid at the top of the window area) */
+/* variant: agent + terminal tabs (a strip of its own along the top of the
+   window area, with the screens starting below the gap under it) */
 .tabbar.v-agent {
     position: absolute;
     top: 0;
@@ -427,8 +428,6 @@
     right: 0;
     z-index: 3;
     height: var(--window-strip-h);
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
 }
 .tabbar.v-agent .tab {
     height: 100%;

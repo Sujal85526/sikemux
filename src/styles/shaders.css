@@ -150,11 +150,10 @@
 }
 
 /*
- * Panes and the tab strip stop painting grounds of their own — the stage below
- * them carries one surface for the whole content area. Without this each of
- * them would cover it with an opaque copy of the colour it already sits on.
+ * Panes stop painting grounds of their own — the screen they sit on carries one
+ * surface for the whole of it. Without this each pane would cover that with an
+ * opaque copy of the colour it already sits on.
  */
-.pane,
-.tabbar.v-agent {
+.pane {
     background: transparent;
 }
