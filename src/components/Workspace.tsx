@@ -20,7 +20,8 @@ import { findRequest } from "../bruno/resolve";
 import { basename, relativePath } from "../lib/paths";
 import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
-import { PAN_MS, useWindowPan } from "./useWindowPan";
+import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
+import { useWheelPan } from "./useWheelPan";
 
 const copyPath = (_path: string, text: string, label: string) =>
     navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
@@ -58,11 +59,10 @@ export function Workspace() {
 
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const activeSession = sessionsById[activeSessionId];
-    const activeSlots = useMemo(() => {
-        const order = windowsBySession[activeSessionId] ?? EMPTY_IDS;
-        return new Map(order.map((wid, slot) => [wid, slot]));
-    }, [windowsBySession, activeSessionId]);
+    const activeOrder = windowsBySession[activeSessionId] ?? EMPTY_IDS;
+    const activeSlots = useMemo(() => new Map(activeOrder.map((wid, slot) => [wid, slot])), [activeOrder]);
     const pan = useWindowPan(activeSessionId, activeSession?.activeWindowId ?? null, activeSlots);
+    useWheelPan(areaRef, pan, activeOrder, activeSession?.activeWindowId ?? null);
     // Counts what the strip would actually show, by asking the list the strip
     // renders: a project holding only rail-driven surfaces has no tabs, and no
     // strip, while an editor or Bruno workspace counts its open documents.
@@ -120,9 +120,6 @@ export function Workspace() {
         </div>
     );
 }
-
-/** How far the track is slid left, in screen widths, to bring `index` to the front. */
-const panOffset = (index: number) => `${-index * 100}%`;
 
 const EMPTY_IDS: readonly string[] = [];
 

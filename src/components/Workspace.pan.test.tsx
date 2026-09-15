@@ -1,4 +1,4 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Workspace } from "./Workspace";
 import * as cmd from "../state/commands";
@@ -6,6 +6,7 @@ import { getState, setState } from "../state/store";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 import { performanceTelemetry } from "../lib/performance";
+import { GESTURE_END_MS } from "./wheelPan";
 import type { Agent } from "../state/types";
 
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div>Terminal output</div> }));
@@ -181,6 +182,132 @@ describe("workspace pan", () => {
 
         expect(container.querySelector(".window-track")).not.toHaveClass("panning");
         expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(1);
+        vi.unstubAllGlobals();
+    });
+});
+
+describe("workspace wheel pan", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    const STAGE_WIDTH = 1000;
+    const activeWindow = () => getState().sessions[getState().activeSessionId].activeWindowId;
+    const order = () => getState().windowsBySession[getState().activeSessionId];
+
+    /** jsdom lays nothing out, so the stage has to be told how wide a screen is. */
+    function stageOfScreens(): { track: HTMLElement; live: HTMLElement; index: number; container: HTMLElement } {
+        sessionOfScreens();
+        const { container } = render(<Workspace />);
+        Object.defineProperty(container.querySelector(".window-area")!, "clientWidth", { value: STAGE_WIDTH, configurable: true });
+        return {
+            container,
+            track: container.querySelector(".window-track") as HTMLElement,
+            live: container.querySelector(".window-layer.live") as HTMLElement,
+            index: order().indexOf(activeWindow()),
+        };
+    }
+
+    const swipe = (over: Element, deltaX: number, deltaY = 0) => fireEvent.wheel(over, { deltaX, deltaY });
+
+    /*
+     * The finger drives the track directly: the offsets are on, the screen it is
+     * heading for paints beside the one on stage, and nothing transitions while
+     * the gesture is still going.
+     */
+    it("commits the screen next door when a swipe crosses half of it", () => {
+        const { container, track, live, index } = stageOfScreens();
+        const neighbour = order()[index + 1];
+
+        expect(swipe(live, 300)).toBe(false);
+        swipe(live, 300);
+
+        expect(track).toHaveClass("panning");
+        expect(track).not.toHaveClass("sliding");
+        expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(2);
+        act(() => void vi.advanceTimersByTime(20));
+        expect(track.style.getPropertyValue("--pan")).toBe(`${-(index + 0.6) * 100}%`);
+
+        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+
+        expect(activeWindow()).toBe(neighbour);
+        expect(track).toHaveClass("sliding");
+        expect(track.style.getPropertyValue("--pan")).toBe(`${-(index + 1) * 100}%`);
+    });
+
+    /*
+     * The settle transition has to run from where the finger left the track, and
+     * for a swipe that is put back React has no reason to write `--pan` at all —
+     * the track is heading for the screen it was already on.
+     */
+    it("puts the screen back when the swipe never gets halfway", () => {
+        const { track, live, index } = stageOfScreens();
+        const before = activeWindow();
+
+        swipe(live, 200);
+        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+
+        expect(activeWindow()).toBe(before);
+        expect(track).toHaveClass("sliding");
+        expect(track.style.getPropertyValue("--pan")).toBe(`${-index * 100}%`);
+    });
+
+    /*
+     * Whether the stage takes a gesture is decided on its first event and kept
+     * for the rest of it, so scrolling a wide pane to its edge does not throw the
+     * tail of the same swipe at the stage.
+     */
+    it("leaves a swipe to the pane under it, even after that pane runs out of room", () => {
+        const { track, live } = stageOfScreens();
+        const before = activeWindow();
+        const pane = live.appendChild(document.createElement("div"));
+        pane.style.overflowX = "auto";
+        Object.defineProperty(pane, "scrollWidth", { value: 800, configurable: true });
+        Object.defineProperty(pane, "clientWidth", { value: 300, configurable: true });
+        Object.defineProperty(pane, "scrollLeft", { value: 0, writable: true, configurable: true });
+
+        expect(swipe(pane, 300)).toBe(true);
+        pane.scrollLeft = 500;
+        expect(swipe(pane, 300)).toBe(true);
+        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+
+        expect(track).not.toHaveClass("panning");
+        expect(activeWindow()).toBe(before);
+    });
+
+    it("leaves a gesture that is mostly vertical to whatever is under it", () => {
+        const { track, live } = stageOfScreens();
+
+        expect(swipe(live, 60, 50)).toBe(true);
+        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+
+        expect(track).not.toHaveClass("panning");
+    });
+
+    it("keeps the strip's own scrolling to itself", () => {
+        const { container, track } = stageOfScreens();
+        const strip = container.querySelector(".tabbar")!;
+
+        expect(swipe(strip, 300)).toBe(true);
+        expect(track).not.toHaveClass("panning");
+    });
+
+    /*
+     * Dragging is direct manipulation rather than animation, so it still follows
+     * the finger with motion reduced; only the settle stops being a slide.
+     */
+    it("cuts to the screen it lands on when motion is reduced", () => {
+        vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)", media: query }));
+        const { track, live, index } = stageOfScreens();
+        const neighbour = order()[index + 1];
+
+        swipe(live, 300);
+        swipe(live, 300);
+        expect(track).toHaveClass("panning");
+
+        act(() => void vi.advanceTimersByTime(GESTURE_END_MS));
+
+        expect(activeWindow()).toBe(neighbour);
+        expect(track).not.toHaveClass("panning");
         vi.unstubAllGlobals();
     });
 });
