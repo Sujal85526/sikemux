@@ -15,7 +15,7 @@ const MAX_ITEM_COUNT: usize = 4_096;
 const MAX_ITEM_STATE_BYTES: usize = 1024 * 1024;
 const MAX_ITEM_ID_BYTES: usize = 256;
 const MAX_ITEM_KIND_BYTES: usize = 128;
-const APPLICATION_STATE_VERSION: i64 = 7;
+const APPLICATION_STATE_VERSION: i64 = 8;
 const CURRENT_SLOT: i64 = 0;
 const BACKUP_SLOT: i64 = 1;
 const RECOVERY_SNAPSHOT_ID: i64 = 1;
@@ -1125,7 +1125,9 @@ mod tests {
     use super::*;
 
     fn snapshot(theme: &str, items: &str) -> String {
-        format!(r#"{{"version":7,"theme":"{theme}","itemStates":{items}}}"#)
+        format!(
+            r#"{{"version":{APPLICATION_STATE_VERSION},"theme":"{theme}","itemStates":{items}}}"#
+        )
     }
 
     fn expect_snapshot(load: DatabaseLoad) -> String {
@@ -1278,15 +1280,17 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("state.sqlite3");
         save_database(&path, &snapshot("safe", "{}")).unwrap();
-        let future = r#"{"version":8,"theme":"future","itemStates":{}}"#;
+        let future_version = APPLICATION_STATE_VERSION + 1;
+        let future =
+            format!(r#"{{"version":{future_version},"theme":"future","itemStates":{{}}}}"#);
 
-        assert!(save_database(&path, future).is_err());
+        assert!(save_database(&path, &future).is_err());
         assert_eq!(
             theme(&expect_snapshot(load_database(&path).unwrap())),
             "safe"
         );
 
-        let future_snapshot = decompose_snapshot(future).unwrap();
+        let future_snapshot = decompose_snapshot(&future).unwrap();
         let mut connection = open_database(&path).unwrap();
         let transaction = connection.transaction().unwrap();
         replace_slot_snapshot(&transaction, CURRENT_SLOT, &future_snapshot).unwrap();
@@ -1668,7 +1672,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("state.json");
         fs::write(&path, "{").unwrap();
-        fs::write(backup_path(&path), r#"{"version":7,"itemStates":{}}"#).unwrap();
+        fs::write(backup_path(&path), snapshot("backup", "{}")).unwrap();
         assert!(read_valid_json(&path).is_none());
         assert!(read_valid_json(&backup_path(&path)).is_some());
     }
