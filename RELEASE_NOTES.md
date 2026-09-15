@@ -1,28 +1,27 @@
-# Sikemux v0.3.4
+# Sikemux v0.4.0-nightly.1
 
-Sikemux 0.3.4 adds OMP and Grok as first-class coding agents, gives Markdown files a rendered preview, and lets you reveal hidden side rails without leaving a focused workspace.
+The first nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## Agents and browser
+## Agents
 
-- Run OMP and Grok in agent panes with resumable sessions, launch modes, native provider marks, and the same embedded-browser flow available to the other supported agents.
-- Extend embedded-browser setup to Hermes, Pi, and OpenCode, including browser tools and the packaged runtime each CLI needs.
-- Use Codex's indexed task titles, detect standard OpenCode installations, ignore empty Claude sessions, and survive Claude's self-update handoff without losing the launch.
+- Agent panes run over a managed ACP session transport, with live session configuration, model and effort pickers, and a structured session view.
+- Session titles update while a run is still going, and agent panes launch through your configured interactive shell.
+- Harness commands are authenticated and retain task output, exposing project tasks, workspace views and event waits to agents.
 
-## Editor and workspace
+## Workspace
 
-- Switch Markdown files between source and a styled rendered preview. GitHub Flavored Markdown tables, task lists, strikethrough, and links render in the preview, while raw HTML stays disabled.
-- Reload clean editor buffers when their files change on disk while preserving unsaved buffers for conflict handling.
-- The sessions rail and agent rail now sit together on the left, keeping project context beside agent activity while the center pane gets the remaining space.
-- New Claude and Codex tabs now pick up their provider session title while the first turn is still running.
-- Project folders marked "index itself" now appear in the session and project pickers, and open pickers refresh when project indexing settings change.
-- Hover at either window edge to reveal a hidden sessions or agent rail. A revealed rail remains open while it contains keyboard focus, then closes when focus leaves.
+- Editor, diff and search open as tabs in one per-session tab strip, and ⌘T opens a numbered new-tab chooser.
+- Git left its own tab for the workspace rail, which now holds agents, files and changes together.
+- Large file trees, tab strips and diff reviews are virtualized, and reviews render in workers.
 
-## Git, updates, and Windows
+## Appearance
 
-- Load visible review diffs first, defer distant files more aggressively, and cap expensive token and word-diff work so large reviews respond sooner.
-- Render updater release notes as Markdown inside the app.
-- Resolve Windows agent profiles from their real home directories, detect the bundled Chromium runtime on Windows, and keep Unix-only PTY login checks out of ConPTY builds.
+- A token-based design system covers palettes, menus, dialogs and overlays, with one backdrop for the whole window and one radius per role.
+- Interface text scales to 110% or 125% while the workspace stays compact.
 
-The published automatic-update feed continues to target Apple Silicon macOS.
+## Performance
 
-For the complete patch history, compare [`v0.3.3...v0.3.4`](https://github.com/nodelike/sikemux/compare/v0.3.3...v0.3.4).
+- Editor views, Git workbench data and terminal renderers survive tab switches instead of being rebuilt.
+- Project and Git refreshes fan out more narrowly, and resource refreshes are coalesced so activity no longer delays saves.
+
+For the complete patch history, compare [`v0.3.4...v0.4.0-nightly.1`](https://github.com/nodelike/sikemux/compare/v0.3.4...v0.4.0-nightly.1).
