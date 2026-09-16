@@ -922,7 +922,7 @@
 .merge-file-status {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 5px;
     padding-right: 9px;
 }
 .merge-review-content {

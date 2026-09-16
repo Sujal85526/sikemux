@@ -6,7 +6,7 @@ import { IconChevron } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
 import { basename, joinPath } from "../lib/paths";
-import { gitStatusDecoration, type GitStatusDecoration } from "./git/gitFileStatus";
+import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./git/gitFileStatus";
 
 const VIRTUAL_REVIEW_THRESHOLD = 8;
 const REVIEW_ROW_ESTIMATE = 250;
@@ -131,8 +131,6 @@ export function MergeReview({
         const open = !collapsed.has(path);
         const focused = path === focusPath;
         const unstaged = hasUnstaged(file);
-        const indexStatus = gitStatusDecoration(file.index);
-        const worktreeStatus = gitStatusDecoration(file.worktree);
         return (
             <div
                 className={`acc-item merge-review-item${focused ? " focused" : ""}`}
@@ -160,8 +158,9 @@ export function MergeReview({
                         </button>
                     </Tooltip>
                     <span className="merge-file-status">
-                        <GitStatusSymbol status={indexStatus} source="Index" />
-                        <GitStatusSymbol status={worktreeStatus} source="Working tree" />
+                        {gitFileBadges(file).map((badge) => (
+                            <GitStatusSymbol key={badge.source} badge={badge} />
+                        ))}
                     </span>
                 </div>
                 {open && <MergeFileDiff repo={repo} file={file} editable={focused && unstaged} onSaved={onSaved} />}
@@ -170,14 +169,12 @@ export function MergeReview({
     }
 }
 
-function GitStatusSymbol({ status, source }: { status: GitStatusDecoration | null; source: string }) {
-    if (!status) return null;
+function GitStatusSymbol({ badge }: { badge: GitStatusBadge | null }) {
+    if (!badge) return null;
+    const description = badge.source === badge.label ? badge.label : `${badge.source}: ${badge.label}`;
     return (
-        <span
-            className={`git-status-symbol git-${status.cls}`}
-            title={`${source}: ${status.label}`}
-            aria-label={`${source} status: ${status.letter}`}>
-            {status.letter}
+        <span className={`git-status-symbol git-${badge.cls}`} title={description} aria-label={description}>
+            {badge.letter}
         </span>
     );
 }
@@ -186,8 +183,8 @@ function MergeFileDiff({ repo, file, editable, onSaved }: { repo: string; file: 
     const path = file.path;
     const staged = isStaged(file);
     const unstaged = hasUnstaged(file);
-    const indexStatus = gitStatusDecoration(file.index);
-    const worktreeStatus = gitStatusDecoration(file.worktree);
+    const indexBadge = gitStatusBadge(file.index, "staged");
+    const worktreeBadge = gitStatusBadge(file.worktree, "unstaged");
 
     return (
         <div className="merge-review-content">
@@ -195,13 +192,15 @@ function MergeFileDiff({ repo, file, editable, onSaved }: { repo: string; file: 
                 <div className="merge-sections">
                     <div className="merge-section">
                         <div className="merge-section-title">
-                            <GitStatusSymbol status={indexStatus} source="Index" />
+                            <GitStatusSymbol badge={indexBadge} />
+                            <span>staged</span>
                         </div>
                         <DiffEditor repo={repo} path={path} baseRev="HEAD" headRev=":index" editable={false} autoHeight />
                     </div>
                     <div className="merge-section">
                         <div className="merge-section-title">
-                            <GitStatusSymbol status={worktreeStatus} source="Working tree" />
+                            <GitStatusSymbol badge={worktreeBadge} />
+                            <span>unstaged</span>
                         </div>
                         <DiffEditor repo={repo} path={path} baseRev=":index" editable={editable} onSaved={onSaved} autoHeight />
                     </div>
