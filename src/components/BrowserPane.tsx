@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { browserApi, type BrowserSnapshot, type BrowserViewport } from "../api/browser";
+import { browserApi, type BrowserKeyInput, type BrowserSnapshot, type BrowserViewport } from "../api/browser";
 import type { AgentType } from "../state/types";
 import { reportError } from "../state/toast";
 import { IconChevron, IconPlus, IconRefresh } from "./Icons";
@@ -12,6 +12,15 @@ const EMPTY_SNAPSHOT: BrowserSnapshot = {
 
 const MIN_SIDE = 320;
 const DEFAULT_RATIO = 0.52;
+
+/* Chromium takes the held modifiers as a bitmask, not as flags. */
+function cdpModifiers(event: React.KeyboardEvent): number {
+    return (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
+}
+
+function typesText(event: React.KeyboardEvent): boolean {
+    return event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+}
 
 export function AgentBrowserShell({
     agentId,
@@ -109,6 +118,7 @@ function BrowserPane({
     const imageRef = useRef<HTMLImageElement>(null);
     const frameSize = useRef<BrowserViewport>({ width: 960, height: 640 });
     const streamLifecycle = useRef(Promise.resolve());
+    const keystrokes = useRef(Promise.resolve());
     const [frameReady, setFrameReady] = useState(false);
     const [address, setAddress] = useState("");
     const [viewport, setViewport] = useState<BrowserViewport>({ width: 960, height: 640 });
@@ -184,6 +194,10 @@ function BrowserPane({
             x: ((event.clientX - rect.left) / Math.max(rect.width, 1)) * frameSize.current.width,
             y: ((event.clientY - rect.top) / Math.max(rect.height, 1)) * frameSize.current.height,
         };
+    };
+
+    const sendKey = (input: BrowserKeyInput) => {
+        keystrokes.current = keystrokes.current.then(() => browserApi.key(agentId, input)).catch(reportError("send browser key"));
     };
 
     const pointer = (event: React.PointerEvent<HTMLDivElement>, kind: "move" | "down" | "up") => {
@@ -271,18 +285,17 @@ function BrowserPane({
                         .catch(reportError("scroll browser"));
                 }}
                 onKeyDown={(event) => {
-                    if (event.metaKey || event.ctrlKey || event.altKey) return;
                     event.preventDefault();
-                    const text = event.key.length === 1 ? event.key : "";
-                    const input = text
-                        ? { kind: "text" as const, key: event.key, code: event.code, text }
-                        : { kind: "down" as const, key: event.key, code: event.code };
-                    void browserApi.key(agentId, input).catch(reportError("type in browser"));
+                    sendKey(
+                        typesText(event)
+                            ? { kind: "text", key: event.key, code: event.code, text: event.key }
+                            : { kind: "down", key: event.key, code: event.code, modifiers: cdpModifiers(event) },
+                    );
                 }}
                 onKeyUp={(event) => {
-                    if (event.key.length === 1 || event.metaKey || event.ctrlKey || event.altKey) return;
+                    if (typesText(event)) return;
                     event.preventDefault();
-                    void browserApi.key(agentId, { kind: "up", key: event.key, code: event.code }).catch(reportError("release browser key"));
+                    sendKey({ kind: "up", key: event.key, code: event.code, modifiers: cdpModifiers(event) });
                 }}>
                 {blank ? (
                     <div className="browser-blank" aria-label="Blank browser page" />

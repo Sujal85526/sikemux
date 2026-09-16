@@ -551,7 +551,7 @@ export function AgentChatPane({
     useEffect(() => {
         if (!visible || state.connection !== "ready") return;
         const held = document.activeElement;
-        if (held?.closest('input, textarea, [contenteditable="true"]') && !paneRef.current?.contains(held)) return;
+        if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
         const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
         return () => window.cancelAnimationFrame(frame);
     }, [state.connection, visible]);

@@ -206,6 +206,44 @@ describe("AgentBrowserShell", () => {
         expect(browserApi.pointer).not.toHaveBeenCalled();
     });
 
+    /*
+     * Modifier chords used to be dropped on the floor, so Command+A ran the host
+     * webview's own select-all over the sikemux UI instead of the page.
+     */
+    it("hands modifier chords and editing keys to the page", async () => {
+        const { container } = render(
+            <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
+                <div>terminal</div>
+            </AgentBrowserShell>,
+        );
+        await waitFor(() => expect(container.querySelector(".browser-viewport > img[src]")).not.toBeNull());
+        const viewport = container.querySelector(".browser-viewport")!;
+
+        const selectAll = fireEvent.keyDown(viewport, { key: "a", code: "KeyA", metaKey: true });
+        const backspace = fireEvent.keyDown(viewport, { key: "Backspace", code: "Backspace" });
+
+        expect(selectAll).toBe(false);
+        expect(backspace).toBe(false);
+        await waitFor(() => expect(browserApi.key).toHaveBeenCalledWith("agent-one", { kind: "down", key: "a", code: "KeyA", modifiers: 4 }));
+        expect(browserApi.key).toHaveBeenCalledWith("agent-one", { kind: "down", key: "Backspace", code: "Backspace", modifiers: 0 });
+    });
+
+    it("inserts plain characters as text and leaves them without a key release", async () => {
+        const { container } = render(
+            <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
+                <div>terminal</div>
+            </AgentBrowserShell>,
+        );
+        await waitFor(() => expect(container.querySelector(".browser-viewport > img[src]")).not.toBeNull());
+        const viewport = container.querySelector(".browser-viewport")!;
+
+        fireEvent.keyDown(viewport, { key: "j", code: "KeyJ" });
+        fireEvent.keyUp(viewport, { key: "j", code: "KeyJ" });
+
+        await waitFor(() => expect(browserApi.key).toHaveBeenCalledWith("agent-one", { kind: "text", key: "j", code: "KeyJ", text: "j" }));
+        expect(browserApi.key).toHaveBeenCalledOnce();
+    });
+
     it("captures pointer drags and releases Chromium on cancellation", async () => {
         const { container } = render(
             <AgentBrowserShell agentId="agent-one" agentType="codex" visible>

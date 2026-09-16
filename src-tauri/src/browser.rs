@@ -1028,6 +1028,131 @@ fn pointer_params(input: &BrowserPointerInput) -> AppResult<Value> {
     })
 }
 
+const CDP_META: u8 = 4;
+const CDP_SHIFT: u8 = 8;
+
+fn virtual_key_code(code: &str, key: &str) -> u32 {
+    let named = match code {
+        "Backspace" => 8,
+        "Tab" => 9,
+        "Enter" | "NumpadEnter" => 13,
+        "ShiftLeft" | "ShiftRight" => 16,
+        "ControlLeft" | "ControlRight" => 17,
+        "AltLeft" | "AltRight" => 18,
+        "Pause" => 19,
+        "CapsLock" => 20,
+        "Escape" => 27,
+        "Space" => 32,
+        "PageUp" => 33,
+        "PageDown" => 34,
+        "End" => 35,
+        "Home" => 36,
+        "ArrowLeft" => 37,
+        "ArrowUp" => 38,
+        "ArrowRight" => 39,
+        "ArrowDown" => 40,
+        "Insert" => 45,
+        "Delete" => 46,
+        "MetaLeft" => 91,
+        "MetaRight" => 92,
+        "ContextMenu" => 93,
+        "NumpadMultiply" => 106,
+        "NumpadAdd" => 107,
+        "NumpadSubtract" => 109,
+        "NumpadDecimal" => 110,
+        "NumpadDivide" => 111,
+        "NumLock" => 144,
+        "ScrollLock" => 145,
+        "Semicolon" => 186,
+        "Equal" => 187,
+        "Comma" => 188,
+        "Minus" => 189,
+        "Period" => 190,
+        "Slash" => 191,
+        "Backquote" => 192,
+        "BracketLeft" => 219,
+        "Backslash" => 220,
+        "BracketRight" => 221,
+        "Quote" => 222,
+        _ => 0,
+    };
+    if named != 0 {
+        return named;
+    }
+    if let Some(letter) = code.strip_prefix("Key") {
+        if letter.len() == 1 && letter.as_bytes()[0].is_ascii_uppercase() {
+            return letter.as_bytes()[0] as u32;
+        }
+    }
+    if let Some(digit) = code.strip_prefix("Digit") {
+        if let Some(value) = digit.parse::<u32>().ok().filter(|_| digit.len() == 1) {
+            return 48 + value;
+        }
+    }
+    if let Some(digit) = code.strip_prefix("Numpad") {
+        if let Some(value) = digit.parse::<u32>().ok().filter(|_| digit.len() == 1) {
+            return 96 + value;
+        }
+    }
+    if let Some(number) = code.strip_prefix('F') {
+        if let Some(value) = number
+            .parse::<u32>()
+            .ok()
+            .filter(|value| (1..=24).contains(value))
+        {
+            return 111 + value;
+        }
+    }
+    if key.len() == 1 {
+        return key.to_ascii_uppercase().as_bytes()[0] as u32;
+    }
+    0
+}
+
+/* macOS hands Chromium its editing shortcuts as named commands rather than as
+key events, so a bare Command+A arrives in the page as nothing at all. */
+fn editing_commands(key: &str, modifiers: u8) -> Vec<&'static str> {
+    if !cfg!(target_os = "macos") || modifiers & CDP_META == 0 {
+        return Vec::new();
+    }
+    let shifted = modifiers & CDP_SHIFT != 0;
+    let command = match key.to_ascii_lowercase().as_str() {
+        "a" => "selectAll",
+        "c" => "copy",
+        "v" if shifted => "pasteAndMatchStyle",
+        "v" => "paste",
+        "x" => "cut",
+        "z" if shifted => "redo",
+        "z" => "undo",
+        "backspace" => "deleteToBeginningOfLine",
+        "arrowleft" if shifted => "moveToBeginningOfLineAndModifySelection",
+        "arrowleft" => "moveToBeginningOfLine",
+        "arrowright" if shifted => "moveToEndOfLineAndModifySelection",
+        "arrowright" => "moveToEndOfLine",
+        "arrowup" if shifted => "moveToBeginningOfDocumentAndModifySelection",
+        "arrowup" => "moveToBeginningOfDocument",
+        "arrowdown" if shifted => "moveToEndOfDocumentAndModifySelection",
+        "arrowdown" => "moveToEndOfDocument",
+        _ => return Vec::new(),
+    };
+    vec![command]
+}
+
+fn key_params(input: &BrowserKeyInput) -> Value {
+    let down = input.kind != "up";
+    json!({
+        "type": if !down { "keyUp" } else if input.text.is_empty() { "rawKeyDown" } else { "keyDown" },
+        "key": input.key,
+        "code": input.code,
+        "text": input.text,
+        "unmodifiedText": input.text,
+        "windowsVirtualKeyCode": virtual_key_code(&input.code, &input.key),
+        "nativeVirtualKeyCode": virtual_key_code(&input.code, &input.key),
+        "modifiers": input.modifiers,
+        "commands": if down { editing_commands(&input.key, input.modifiers) } else { Vec::new() },
+    })
+}
+
 fn owned_target_ids(
     state_dir: &Path,
     agent_id: &str,
@@ -1675,13 +1800,7 @@ pub async fn browser_key(
     }
     cdp.call(
         "Input.dispatchKeyEvent",
-        json!({
-            "type": if input.kind == "up" { "keyUp" } else { "keyDown" },
-            "key": input.key,
-            "code": input.code,
-            "text": input.text,
-            "modifiers": input.modifiers
-        }),
+        key_params(&input),
         Some(&session_id),
     )
     .await?;
@@ -1691,14 +1810,65 @@ pub async fn browser_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        broker_request_authorized, clear_agent_registry, initialize_registry, normalize_url,
-        owned_target_ids, pointer_params, read_active_target, register_target, validate_agent_id,
-        validate_target_id, validate_url_input, write_active_target, BrowserPointerInput,
+        broker_request_authorized, clear_agent_registry, editing_commands, initialize_registry,
+        key_params, normalize_url, owned_target_ids, pointer_params, read_active_target,
+        register_target, validate_agent_id, validate_target_id, validate_url_input,
+        virtual_key_code, write_active_target, BrowserKeyInput, BrowserPointerInput,
     };
     #[cfg(unix)]
     use super::{configure_browser_process_group, terminate_and_reap_browser_child};
     #[cfg(unix)]
     use std::process::{Command, Stdio};
+
+    fn key_input(kind: &str, key: &str, code: &str, modifiers: u8) -> BrowserKeyInput {
+        BrowserKeyInput {
+            kind: kind.to_string(),
+            key: key.to_string(),
+            code: code.to_string(),
+            text: String::new(),
+            modifiers,
+        }
+    }
+
+    #[test]
+    fn key_events_carry_the_virtual_codes_chromium_acts_on() {
+        assert_eq!(virtual_key_code("Backspace", "Backspace"), 8);
+        assert_eq!(virtual_key_code("KeyA", "a"), 65);
+        assert_eq!(virtual_key_code("Digit7", "7"), 55);
+        assert_eq!(virtual_key_code("Numpad3", "3"), 99);
+        assert_eq!(virtual_key_code("F5", "F5"), 116);
+        assert_eq!(virtual_key_code("", "b"), 66);
+
+        let params = key_params(&key_input("down", "Backspace", "Backspace", 0));
+        assert_eq!(params["type"], "rawKeyDown");
+        assert_eq!(params["windowsVirtualKeyCode"], 8);
+        assert_eq!(params["modifiers"], 0);
+        assert_eq!(
+            key_params(&key_input("up", "Backspace", "Backspace", 0))["type"],
+            "keyUp"
+        );
+    }
+
+    #[test]
+    #[cfg_attr(not(target_os = "macos"), ignore = "macOS supplies editing commands")]
+    fn command_chords_name_the_editing_command_macos_would_have_sent() {
+        assert_eq!(editing_commands("a", 4), vec!["selectAll"]);
+        assert_eq!(editing_commands("z", 12), vec!["redo"]);
+        assert_eq!(
+            editing_commands("ArrowLeft", 4),
+            vec!["moveToBeginningOfLine"]
+        );
+        assert!(editing_commands("a", 0).is_empty());
+        assert!(editing_commands("k", 4).is_empty());
+        assert_eq!(
+            key_params(&key_input("down", "a", "KeyA", 4))["commands"][0],
+            "selectAll"
+        );
+        assert!(key_params(&key_input("up", "a", "KeyA", 4))["commands"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
 
     #[tokio::test]
     #[ignore = "requires SIKEMUX_BROWSER_EXECUTABLE pointing to full Chromium"]
