@@ -448,14 +448,13 @@ textarea:focus,
 }
 
 /*
- * Only the selected tab is a surface.
+ * Every tab is a shape; only the selected one is a surface.
  *
- * Every tab used to carry its own fill and its own 1px edge, on the theory
- * that an unselected tab with no edge reads as loose text. With eight
- * documents open that produced a row of eight boxes competing with the one
- * that mattered, and the strip became the busiest thing in the window. An
- * unselected tab is a label; hover proves it is clickable; only the active one
- * gets a surface.
+ * The edge says where a tab starts and ends, which a bare label leaves the eye
+ * to guess. It stays well under the active tab's: a muted hairline and no
+ * fill, so a strip of eight reads as a row rather than eight boxes competing
+ * with the one that matters. Fill and the accent edge remain the selected
+ * tab's alone.
  */
 .tabbar.v-agent .tab-wrap,
 .tabbar.v-editor .tab-wrap {
@@ -464,16 +463,19 @@ textarea:focus,
     border-right: 0;
     border-radius: var(--radius-2);
     background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 62%, transparent);
     color: var(--text-tertiary);
     overflow: hidden;
     transition:
         background var(--dur-1) linear,
+        box-shadow var(--dur-1) linear,
         color var(--dur-1) linear;
 }
 
 .tabbar.v-agent .tab-wrap:hover,
 .tabbar.v-editor .tab-wrap:hover {
     background: var(--surface-hover);
+    box-shadow: inset 0 0 0 1px var(--border);
     color: var(--text-secondary);
 }
 
