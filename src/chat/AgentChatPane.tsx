@@ -28,7 +28,17 @@ import {
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
-import type { AcpAsyncTask, AcpAvailableCommand, AcpPermissionRequest, AcpSubagent, AcpToolCall, ChatMessage, ChatPart, ChatState } from "./types";
+import type {
+    AcpAsyncTask,
+    AcpAvailableCommand,
+    AcpPermissionRequest,
+    AcpSubagent,
+    AcpTaskNotice,
+    AcpToolCall,
+    ChatMessage,
+    ChatPart,
+    ChatState,
+} from "./types";
 
 const MAX_ATTACHMENTS = 32;
 const MAX_DETAIL_CHARS = 120_000;
@@ -209,6 +219,7 @@ function MessagePart({ part }: { part: ChatPart }) {
     }
     if (part.kind === "tool") return <ToolPart tool={part.tool} />;
     if (part.kind === "subagent") return <SubagentPart subagent={part.subagent} />;
+    if (part.kind === "notice") return <NoticePart notice={part.notice} />;
     return <ContentPart part={part} />;
 }
 
@@ -270,6 +281,17 @@ function PartGroups({ parts }: { parts: ChatPart[] }) {
         ) : (
             <MessagePart key={group.id} part={group.part} />
         ),
+    );
+}
+
+function NoticePart({ notice }: { notice: AcpTaskNotice }) {
+    return (
+        <div className={`chat-notice state-${notice.state}`} role="status">
+            <IconTimer size={12} />
+            <span className="chat-notice-name">{notice.name}</span>
+            <span className="chat-notice-state">{notice.state}</span>
+            {notice.summary && <span className="chat-notice-summary">{notice.summary}</span>}
+        </div>
     );
 }
 
@@ -692,6 +714,9 @@ export function AgentChatPane({
         pinToBottom();
     }, [displayState.messages.length, displayState.revision, pinToBottom, visible]);
 
+    const steerable = state.capabilities.steering === true;
+    const drafted = Boolean(draft.trim()) || attachments.length > 0;
+
     const slashToken = useMemo(() => (slashDismissed ? null : slashTokenAt(draft, caret)), [caret, draft, slashDismissed]);
 
     const slashCommands = useMemo(() => {
@@ -722,7 +747,7 @@ export function AgentChatPane({
         const text = draft.trim();
         if (
             (!text && attachments.length === 0) ||
-            state.running ||
+            (state.running && !steerable) ||
             configPending.current ||
             state.connection !== "ready" ||
             changingPermissions ||
@@ -740,8 +765,12 @@ export function AgentChatPane({
         setAttachments([]);
         setComposerError(null);
         setSlashDismissed(false);
+        const steering = state.running;
         dispatch({ type: "local_prompt", text, paths });
         try {
+            /* A turn that ended between the check and the request hands the
+               message back, and it goes out as a prompt of its own. */
+            if (steering && (await acpApi.steer(agent.id, text, paths)) !== "promptRequired") return;
             await acpApi.prompt(agent.id, text, paths);
         } catch (error) {
             dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
@@ -831,7 +860,9 @@ export function AgentChatPane({
                 : null;
     const composerPlaceholder =
         state.connection === "ready"
-            ? "Ask about this project, or type / for commands"
+            ? state.running && steerable
+                ? "Send to join the running turn"
+                : "Ask about this project, or type / for commands"
             : state.connection === "error" || state.connection === "stopped"
               ? "Reconnect to continue this conversation"
               : state.connection === "installing"
@@ -1043,7 +1074,7 @@ export function AgentChatPane({
                             onConfig={(config, value) => void changeConfig(config, value)}
                         />
                         <span className="chat-composer-spacer" />
-                        {state.running ? (
+                        {state.running && !(steerable && drafted) ? (
                             <button
                                 type="button"
                                 className="chat-send stop"

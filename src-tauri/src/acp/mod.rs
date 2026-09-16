@@ -69,6 +69,11 @@ enum AcpCommand {
         value: String,
         reply: oneshot::Sender<Result<Value, String>>,
     },
+    Steer {
+        text: String,
+        paths: Vec<String>,
+        reply: oneshot::Sender<Result<String, String>>,
+    },
     StopTask {
         task_id: String,
     },
@@ -551,7 +556,10 @@ async fn run_connection(
                     )
                     .block_task()
                     .await?;
-                let capabilities = serde_json::to_value(&initialize.agent_capabilities)?;
+                let mut capabilities = serde_json::to_value(&initialize.agent_capabilities)?;
+                let initialize_meta = serde_json::to_value(&initialize.meta)?;
+                let steering = air::steering_supported(&initialize_meta);
+                capabilities["steering"] = json!(steering);
 
                 let (session_id, mut setup) = if let Some(existing) = resume_id {
                     if !initialize.agent_capabilities.load_session {
@@ -721,6 +729,24 @@ async fn run_connection(
                                         serde_json::to_value(response)
                                             .map_err(|error| error.to_string())
                                     })
+                            };
+                            let _ = reply.send(result);
+                        }
+                        AcpCommand::Steer { text, paths, reply } => {
+                            let result = if !steering {
+                                Err("this agent cannot take a message mid-turn".to_string())
+                            } else if !running.load(Ordering::Acquire) {
+                                Ok("promptRequired".to_string())
+                            } else {
+                                match prompt_blocks(text, paths) {
+                                    Ok(blocks) => connection
+                                        .send_request(air::Steer::new(session_id.clone(), blocks))
+                                        .block_task()
+                                        .await
+                                        .map(|response| response.outcome)
+                                        .map_err(|error| error.to_string()),
+                                    Err(error) => Err(error),
+                                }
                             };
                             let _ = reply.send(result);
                         }
@@ -920,6 +946,30 @@ pub fn acp_prompt(
         .commands
         .send(AcpCommand::Prompt { text, paths })
         .map_err(|_| "ACP session stopped".into())
+}
+
+/// Puts a message into the running turn, answering `promptRequired` when the
+/// turn ended first and the caller should send it as a prompt of its own.
+#[tauri::command]
+pub async fn acp_steer(
+    manager: State<'_, AcpManager>,
+    agent_id: String,
+    text: String,
+    paths: Vec<String>,
+) -> Result<String, String> {
+    let (reply, response) = oneshot::channel();
+    {
+        let Some(connection) = manager.connections.get(&agent_id) else {
+            return Err("ACP session is not running".into());
+        };
+        connection
+            .commands
+            .send(AcpCommand::Steer { text, paths, reply })
+            .map_err(|_| "ACP session stopped".to_string())?;
+    }
+    response
+        .await
+        .map_err(|_| "ACP session stopped".to_string())?
 }
 
 #[tauri::command]

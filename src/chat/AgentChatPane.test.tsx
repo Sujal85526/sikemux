@@ -8,6 +8,7 @@ import { AgentChatPane } from "./AgentChatPane";
 const mocks = vi.hoisted(() => ({
     eventListener: null as ((event: AcpEvent) => void) | null,
     prompt: vi.fn(async () => {}),
+    steer: vi.fn(async () => "injected"),
     setPermissionMode: vi.fn(async () => {}),
     stopTask: vi.fn(async () => {}),
     setConfig: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock("../api/acp", () => ({
         setConfig: mocks.setConfig,
         stop: vi.fn(async () => {}),
         prompt: mocks.prompt,
+        steer: mocks.steer,
         cancel: vi.fn(async () => {}),
         stopTask: mocks.stopTask,
         permissionReply: vi.fn(async () => {}),
@@ -281,6 +283,34 @@ describe("AgentChatPane", () => {
         fireEvent.keyDown(editor, { key: "Enter" });
         expect(mocks.prompt).toHaveBeenCalledTimes(1);
         expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
+    });
+
+    it("puts a second message into the running turn when the agent takes steering", async () => {
+        mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "First" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.change(editor, { target: { value: "Actually, check the other file" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+
+        await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Actually, check the other file", []));
+        expect(mocks.prompt).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends as its own prompt when the turn ended before the steer arrived", async () => {
+        mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
+        mocks.steer.mockResolvedValueOnce("promptRequired");
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "First" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.change(editor, { target: { value: "Carry on" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Carry on", []));
     });
 
     it("keeps saying the turn is alive, and names the tool it is running", async () => {
