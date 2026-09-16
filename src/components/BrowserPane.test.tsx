@@ -20,6 +20,7 @@ vi.mock("../api/browser", async () => {
             reload: vi.fn(),
             pointer: vi.fn(),
             key: vi.fn(),
+            subscribeTabs: vi.fn(),
         },
     };
 });
@@ -38,6 +39,7 @@ beforeEach(() => {
         },
     );
     vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
+    vi.mocked(browserApi.subscribeTabs).mockResolvedValue(vi.fn());
     vi.mocked(browserApi.startFrames).mockImplementation(async (_agent, _target, _viewport, onFrame) => {
         onFrame({ data: "aGVsbG8=", width: 960, height: 640 });
         return vi.fn().mockResolvedValue(undefined);
@@ -89,6 +91,62 @@ describe("AgentBrowserShell", () => {
         vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 480, height: 320 } as DOMRect);
         fireEvent.pointerMove(viewport, { clientX: 120, clientY: 80 });
         expect(browserApi.pointer).toHaveBeenCalledWith("agent-one", expect.objectContaining({ kind: "move", x: 240, y: 160 }));
+    });
+
+    /*
+     * The pane used to find out about a new tab only on its next poll, which
+     * put most of a second between the agent opening a page and it showing up.
+     * Chromium now says so itself and the pane reads on being told.
+     */
+    it("shows a tab as soon as the browser reports one, without waiting for a poll", async () => {
+        let announce = () => {};
+        vi.mocked(browserApi.subscribeTabs).mockImplementation(async (listener) => {
+            announce = listener;
+            return vi.fn<() => void>();
+        });
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
+        render(
+            <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
+                <div>terminal</div>
+            </AgentBrowserShell>,
+        );
+        await waitFor(() => expect(browserApi.subscribeTabs).toHaveBeenCalled());
+        expect(screen.queryByRole("region", { name: "codex browser" })).toBeNull();
+
+        vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
+        await act(async () => {
+            announce();
+        });
+
+        expect(screen.getByRole("region", { name: "codex browser" })).toBeInTheDocument();
+    });
+
+    /* A loading page reports itself several times; each one must not stack up
+       another read on top of the one already running. */
+    it("collapses a burst of tab reports into one read and a follow-up", async () => {
+        let announce = () => {};
+        vi.mocked(browserApi.subscribeTabs).mockImplementation(async (listener) => {
+            announce = listener;
+            return vi.fn<() => void>();
+        });
+        let release: (() => void) | undefined;
+        vi.mocked(browserApi.snapshot).mockImplementation(() => new Promise((resolve) => (release = () => resolve(snapshot))));
+        render(
+            <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
+                <div>terminal</div>
+            </AgentBrowserShell>,
+        );
+        await waitFor(() => expect(release).toBeDefined());
+        expect(browserApi.snapshot).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            announce();
+            announce();
+            announce();
+            release!();
+        });
+
+        expect(browserApi.snapshot).toHaveBeenCalledTimes(2);
     });
 
     /*

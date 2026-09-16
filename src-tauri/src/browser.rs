@@ -9,7 +9,7 @@ use futures::{SinkExt, StreamExt};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
@@ -21,6 +21,7 @@ const VIEWPORT_WIDTH: u32 = 1280;
 const VIEWPORT_HEIGHT: u32 = 800;
 const BROWSER_DRAIN_GRACE: Duration = Duration::from_millis(250);
 const BROWSER_PID_FILE_ENV: &str = "SIKEMUX_BROWSER_PID_FILE";
+const BROWSER_TABS_EVENT: &str = "browser-tabs-changed";
 
 #[derive(Default)]
 pub struct BrowserManager {
@@ -173,8 +174,27 @@ impl Drop for SpawnedBrowserChild {
     }
 }
 
+/// Chromium reports every worker and iframe alongside the tabs, and a loading
+/// page changes its own title several times. Only page-level news can change
+/// what the tab strip shows.
+fn tab_listing_changed(method: &str, message: &Value) -> bool {
+    match method {
+        "Target.targetDestroyed" | "Target.targetCrashed" => true,
+        "Target.targetCreated" | "Target.targetInfoChanged" => {
+            message
+                .pointer("/params/targetInfo/type")
+                .and_then(Value::as_str)
+                == Some("page")
+        }
+        _ => false,
+    }
+}
+
 impl CdpClient {
-    async fn connect(url: &str) -> AppResult<Arc<Self>> {
+    async fn connect(
+        url: &str,
+        on_tabs_changed: impl Fn() + Send + Sync + 'static,
+    ) -> AppResult<Arc<Self>> {
         let (socket, _) = tokio_tungstenite::connect_async(url)
             .await
             .map_err(|error| AppError::Other(format!("browser CDP connect failed: {error}")))?;
@@ -240,6 +260,12 @@ impl CdpClient {
                             .to_string()
                             .into(),
                         ));
+                    }
+                    continue;
+                }
+                if let Some(method) = value.get("method").and_then(Value::as_str) {
+                    if tab_listing_changed(method, &value) {
+                        on_tabs_changed();
                     }
                     continue;
                 }
@@ -522,10 +548,24 @@ impl BrowserManager {
             Ok(endpoint) => endpoint,
             Err(error) => return Err(error),
         };
-        let cdp = match CdpClient::connect(&websocket_url).await {
+        let notify = app.clone();
+        let cdp = match CdpClient::connect(&websocket_url, move || {
+            let _ = notify.emit(BROWSER_TABS_EVENT, ());
+        })
+        .await
+        {
             Ok(cdp) => cdp,
             Err(error) => return Err(error),
         };
+        // Being told about tabs only saves the pane from waiting on its next
+        // read, so a browser that will not report them is still worth keeping.
+        let _ = cdp
+            .call(
+                "Target.setDiscoverTargets",
+                json!({ "discover": true }),
+                None,
+            )
+            .await;
         if self.generation.load(Ordering::Acquire) != generation {
             return Err(AppError::Other("browser startup was canceled".into()));
         }
@@ -1930,12 +1970,26 @@ mod tests {
         let (_, endpoint) = wait_for_debug_endpoint(&profile.path().join("DevToolsActivePort"))
             .await
             .unwrap();
-        let cdp = CdpClient::connect(&endpoint).await.unwrap();
+        let tab_news = Arc::new(AtomicU64::new(0));
+        let counter = tab_news.clone();
+        let cdp = CdpClient::connect(&endpoint, move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        })
+        .await
+        .unwrap();
+        cdp.call("Target.setDiscoverTargets", json!({"discover": true}), None)
+            .await
+            .unwrap();
         let target = cdp
             .call("Target.createTarget", json!({"url": "about:blank"}), None)
             .await
             .unwrap();
         let target = target["targetId"].as_str().unwrap();
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(
+            tab_news.load(Ordering::Relaxed) > 0,
+            "opening a tab told nobody the tab strip changed"
+        );
         let attached = cdp
             .call(
                 "Target.attachToTarget",

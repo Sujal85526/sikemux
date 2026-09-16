@@ -41,7 +41,8 @@ export function AgentBrowserShell({
     const refresh = useCallback(
         async (signal?: AbortSignal) => {
             const next = await browserApi.snapshot(agentId, signal);
-            if (!signal?.aborted) setSnapshot(next);
+            if (signal?.aborted) return;
+            setSnapshot(next);
         },
         [agentId],
     );
@@ -50,18 +51,37 @@ export function AgentBrowserShell({
         if (!visible) return;
         const controller = new AbortController();
         let timer = 0;
-        let stopped = false;
-        const poll = async () => {
+        let reading = false;
+        let again = false;
+
+        /* Chromium reports a tab several times over while its page loads, so a
+           burst collapses into the read already in flight plus one after it. */
+        const sync = async () => {
+            again = true;
+            if (reading) return;
+            reading = true;
             try {
-                await refresh(controller.signal);
+                while (again && !controller.signal.aborted) {
+                    again = false;
+                    await refresh(controller.signal);
+                }
             } catch (error) {
-                if (!controller.signal.aborted) console.warn("browser session poll failed", error);
+                if (!controller.signal.aborted) console.warn("browser session read failed", error);
+            } finally {
+                reading = false;
             }
-            if (!stopped) timer = window.setTimeout(poll, 700);
         };
-        void poll();
+
+        /* Chromium announces its own tabs, so this is only here to notice a
+           browser that went away without getting to say so. */
+        const poll = () => {
+            void sync();
+            timer = window.setTimeout(poll, 1500);
+        };
+
+        void browserApi.subscribeTabs(() => void sync(), controller.signal).catch(() => {});
+        poll();
         return () => {
-            stopped = true;
             controller.abort();
             window.clearTimeout(timer);
         };
@@ -121,7 +141,8 @@ function BrowserPane({
     const keystrokes = useRef(Promise.resolve());
     const [frameReady, setFrameReady] = useState(false);
     const [address, setAddress] = useState("");
-    const [viewport, setViewport] = useState<BrowserViewport>({ width: 960, height: 640 });
+    const [viewport, setViewport] = useState<BrowserViewport | null>(null);
+    const streamed = useRef(false);
     const lastPointerMove = useRef(0);
     const pointerPressed = useRef(false);
     const lastPointerPoint = useRef({ x: 0, y: 0 });
@@ -137,7 +158,7 @@ function BrowserPane({
             const rect = host.getBoundingClientRect();
             const width = Math.min(3840, Math.max(320, Math.round(rect.width)));
             const height = Math.min(2160, Math.max(240, Math.round(rect.height)));
-            setViewport((previous) => (previous.width === width && previous.height === height ? previous : { width, height }));
+            setViewport((previous) => (previous && previous.width === width && previous.height === height ? previous : { width, height }));
         };
         resize();
         const observer = new ResizeObserver(resize);
@@ -148,26 +169,33 @@ function BrowserPane({
     useEffect(() => {
         setFrameReady(false);
         imageRef.current?.removeAttribute("src");
-        if (!visible || blank || !targetId) return;
+        if (!visible || blank || !targetId || !viewport) return;
         let disposed = false;
         let stop: (() => Promise<void>) | undefined;
-        const timer = window.setTimeout(() => {
-            streamLifecycle.current = streamLifecycle.current.then(async () => {
-                if (disposed) return;
-                try {
-                    const stopFrames = await browserApi.startFrames(agentId, targetId, viewport, (frame) => {
-                        if (disposed || !imageRef.current) return;
-                        imageRef.current.src = `data:image/jpeg;base64,${frame.data}`;
-                        frameSize.current = { width: frame.width, height: frame.height };
-                        setFrameReady(true);
-                    });
-                    if (disposed) await stopFrames();
-                    else stop = stopFrames;
-                } catch (error) {
-                    if (!disposed) reportError("stream browser frames")(error);
-                }
-            });
-        }, 80);
+        /* The first attach already knows the measured viewport, so it goes out
+           immediately; later ones debounce so dragging the divider does not
+           restart the stream on every frame. */
+        const timer = window.setTimeout(
+            () => {
+                streamed.current = true;
+                streamLifecycle.current = streamLifecycle.current.then(async () => {
+                    if (disposed) return;
+                    try {
+                        const stopFrames = await browserApi.startFrames(agentId, targetId, viewport, (frame) => {
+                            if (disposed || !imageRef.current) return;
+                            imageRef.current.src = `data:image/jpeg;base64,${frame.data}`;
+                            frameSize.current = { width: frame.width, height: frame.height };
+                            setFrameReady(true);
+                        });
+                        if (disposed) await stopFrames();
+                        else stop = stopFrames;
+                    } catch (error) {
+                        if (!disposed) reportError("stream browser frames")(error);
+                    }
+                });
+            },
+            streamed.current ? 80 : 0,
+        );
         return () => {
             disposed = true;
             window.clearTimeout(timer);

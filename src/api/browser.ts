@@ -1,5 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "./invoke";
+import { getIpcTransport } from "./transport";
 
 export interface BrowserTab {
     id: string;
@@ -59,4 +60,5 @@ export const browserApi = {
     reload: (agentId: string) => invoke<void>("browser_reload", { agentId }),
     pointer: (agentId: string, input: BrowserPointerInput) => invoke<void>("browser_pointer", { agentId, input }),
     key: (agentId: string, input: BrowserKeyInput) => invoke<void>("browser_key", { agentId, input }),
+    subscribeTabs: (listener: () => void, signal: AbortSignal) => getIpcTransport().subscribe("browser-tabs-changed", listener, { signal }),
 };
