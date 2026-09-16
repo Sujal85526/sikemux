@@ -347,11 +347,10 @@ describe("AgentChatPane", () => {
     it("focuses the composer once a chat connects, and again when a hidden one is reopened", async () => {
         const props = { agent, cwd: "/repo", active: true, onBusyChange: () => {} };
         const { rerender } = render(<AgentChatPane {...props} visible />);
-        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
         const editor = screen.getByRole("textbox", { name: "Message agent" });
         expect(editor).toBeDisabled();
 
-        emit("ready", { capabilities: {}, setup: {} });
+        await waitFor(() => expect(editor).toBeEnabled());
         await nextFrame();
         expect(editor).toHaveFocus();
 
