@@ -204,10 +204,10 @@ describe("workspace wheel pan", () => {
     const order = () => getState().windowsBySession[getState().activeSessionId];
 
     /** jsdom lays nothing out, so the stage has to be told how wide a screen is. */
-    function stageOfScreens(): { track: HTMLElement; live: HTMLElement; index: number; container: HTMLElement } {
+    function stageOfScreens(width = STAGE_WIDTH): { track: HTMLElement; live: HTMLElement; index: number; container: HTMLElement } {
         sessionOfScreens();
         const { container } = render(<Workspace />);
-        Object.defineProperty(container.querySelector(".window-area")!, "clientWidth", { value: STAGE_WIDTH, configurable: true });
+        Object.defineProperty(container.querySelector(".window-area")!, "clientWidth", { value: width, configurable: true });
         return {
             container,
             track: container.querySelector(".window-track") as HTMLElement,
@@ -370,6 +370,23 @@ describe("workspace wheel pan", () => {
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).toHaveClass("sliding");
+        expect(panOf(track)).toBe(slidLeft(index + 1));
+    });
+
+    /*
+     * A hand does not move further because the screen it is on is wider, so the
+     * same throw has to carry on a big monitor. Measured against the screen it
+     * would not: this is a fifteenth of a wide stage and over half of a narrow one.
+     */
+    it("carries the same throw however wide the screen is", () => {
+        const { track, live, index } = stageOfScreens(3000);
+        const neighbour = order()[index + 1];
+        setFingersDown(true);
+
+        swipe(live, 200);
+        act(() => setFingersDown(false));
+
+        expect(activeWindow()).toBe(neighbour);
         expect(panOf(track)).toBe(slidLeft(index + 1));
     });
 

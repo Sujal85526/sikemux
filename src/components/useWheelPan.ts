@@ -166,7 +166,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             if (moving.spent) return;
 
             const at = performance.now();
-            moving.pushes = pushed(moving.pushes, at, event.deltaX / moving.stride);
+            moving.pushes = pushed(moving.pushes, at, event.deltaX);
             const was = moving.slot;
             const now = panned(moving.raw + event.deltaX / moving.stride, moving.slot, order.length);
             moving.slot = now.slot;
