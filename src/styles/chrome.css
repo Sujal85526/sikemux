@@ -734,12 +734,20 @@
 }
 /* A layer paints while it is the tab on screen, and also while it is sliding in
    or out of a pan. Hidden layers keep their layout so terminals and editors stay
-   measured. Only the live tab takes a click, so a layer flying past cannot. */
+   measured. */
 .window-layer:not(.painted) {
     visibility: hidden;
 }
-.window-layer:not(.live) {
+/* Every session lays a track of its own across the whole stage, one on top of
+   the next, and a track is an empty box: nothing to see, and until this was
+   here, everything to click. So the screen being read is the only thing on the
+   stage that takes a click — not the track holding it, and not the screens of
+   sessions that are not on screen at all. */
+.window-track {
     pointer-events: none;
+}
+.window-layer.live {
+    pointer-events: auto;
 }
 
 /* How far along its screens the session is. A readout only: it never takes a
