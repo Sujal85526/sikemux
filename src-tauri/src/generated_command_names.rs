@@ -5,6 +5,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "acp_set_permission_mode",
     "acp_set_config",
     "acp_cancel",
+    "acp_stop_task",
     "acp_permission_reply",
     "acp_stop",
     "pty_spawn",

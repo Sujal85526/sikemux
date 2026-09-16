@@ -13,10 +13,22 @@ import { registerPathDrop } from "../state/dropRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
-import { IconArrowDown, IconArrowUp, IconCheck, IconClose, IconCommand, IconFile, IconPlus, IconShieldBolt, IconWarning } from "../components/Icons";
+import {
+    IconAgent,
+    IconArrowDown,
+    IconArrowUp,
+    IconCheck,
+    IconClose,
+    IconCommand,
+    IconFile,
+    IconPlus,
+    IconShieldBolt,
+    IconTimer,
+    IconWarning,
+} from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
-import type { AcpAvailableCommand, AcpPermissionRequest, AcpToolCall, ChatMessage, ChatPart } from "./types";
+import type { AcpAsyncTask, AcpAvailableCommand, AcpPermissionRequest, AcpSubagent, AcpToolCall, ChatMessage, ChatPart, ChatState } from "./types";
 
 const MAX_ATTACHMENTS = 32;
 const MAX_DETAIL_CHARS = 120_000;
@@ -185,6 +197,7 @@ function MessagePart({ part }: { part: ChatPart }) {
         );
     }
     if (part.kind === "tool") return <ToolPart tool={part.tool} />;
+    if (part.kind === "subagent") return <SubagentPart subagent={part.subagent} />;
     return <ContentPart part={part} />;
 }
 
@@ -235,6 +248,96 @@ function groupParts(parts: ChatPart[]): PartGroup[] {
     return groups;
 }
 
+function PartGroups({ parts }: { parts: ChatPart[] }) {
+    return groupParts(parts).map((group) =>
+        "tools" in group ? (
+            <div className="chat-tools" key={group.id}>
+                {group.tools.map((part) => (
+                    <ToolPart key={part.id} tool={part.tool} />
+                ))}
+            </div>
+        ) : (
+            <MessagePart key={group.id} part={group.part} />
+        ),
+    );
+}
+
+function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
+    const parts = subagent.messages.flatMap((message) => message.parts);
+    return (
+        <details className={`chat-subagent state-${subagent.state}`}>
+            <summary>
+                <span className="chat-subagent-mark">
+                    <IconAgent size={11} />
+                </span>
+                <span className="chat-subagent-name">{subagent.name}</span>
+                <span className="chat-subagent-task">{subagent.task}</span>
+                <span className="chat-subagent-state">{subagent.state}</span>
+            </summary>
+            <div className="chat-subagent-body">
+                {parts.length > 0 ? <PartGroups parts={parts} /> : <span className="chat-subagent-empty">No output yet.</span>}
+            </div>
+        </details>
+    );
+}
+
+function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; stopping: string[]; onStop: (taskId: string) => void }) {
+    if (tasks.length === 0) return null;
+    return (
+        <div className="chat-tasks" aria-label="Background tasks">
+            {tasks.map((task) => (
+                <div className={`chat-task state-${task.state}`} key={task.asyncTaskId}>
+                    <IconTimer size={12} />
+                    <span className="chat-task-name">{task.name}</span>
+                    <span className="chat-task-detail">{task.summary || task.description || task.lastToolName || task.taskType}</span>
+                    {task.canStop && (
+                        <button
+                            type="button"
+                            aria-label={`Stop ${task.name}`}
+                            disabled={stopping.includes(task.asyncTaskId)}
+                            onClick={() => onStop(task.asyncTaskId)}>
+                            <IconClose size={10} />
+                        </button>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function connectingLabel(connection: ChatState["connection"]): string | null {
+    if (connection === "installing") return "Installing structured-session adapter…";
+    if (connection === "starting") return "Starting agent adapter…";
+    if (connection === "connecting" || connection === "initializing") return "Connecting to agent session…";
+    return null;
+}
+
+function elapsedLabel(seconds: number): string {
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+/* Keeps its own clock so a ticking second redraws this row alone, not the
+   whole transcript. */
+function ChatActivity({ label }: { label: string }) {
+    const [seconds, setSeconds] = useState(0);
+    useEffect(() => {
+        const started = Date.now();
+        const timer = window.setInterval(() => setSeconds(Math.round((Date.now() - started) / 1000)), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+    return (
+        <div className="chat-activity" role="status">
+            <span className="chat-activity-loader" aria-hidden="true" />
+            <span className="chat-activity-label">{label}</span>
+            {seconds > 0 && (
+                <span className="chat-activity-elapsed" aria-hidden="true">
+                    {elapsedLabel(seconds)}
+                </span>
+            )}
+        </div>
+    );
+}
+
 const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: ChatMessage }) {
     return (
         <article className={`chat-message ${message.role}`}>
@@ -246,17 +349,7 @@ const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: Chat
                         ))}
                     </div>
                 )}
-                {groupParts(message.parts).map((group) =>
-                    "tools" in group ? (
-                        <div className="chat-tools" key={group.id}>
-                            {group.tools.map((part) => (
-                                <ToolPart key={part.id} tool={part.tool} />
-                            ))}
-                        </div>
-                    ) : (
-                        <MessagePart key={group.id} part={group.part} />
-                    ),
-                )}
+                <PartGroups parts={message.parts} />
             </div>
         </article>
     );
@@ -351,6 +444,7 @@ export function AgentChatPane({
     const [slashDismissed, setSlashDismissed] = useState(false);
     const [composerError, setComposerError] = useState<string | null>(null);
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
+    const [stoppingTasks, setStoppingTasks] = useState<string[]>([]);
     const [atBottom, setAtBottom] = useState(true);
     const [restartKey, setRestartKey] = useState(0);
     const paneRef = useRef<HTMLDivElement>(null);
@@ -359,7 +453,7 @@ export function AgentChatPane({
     const stickToBottomRef = useRef(true);
     const lastScrollTopRef = useRef(0);
     const editorRef = useRef<HTMLTextAreaElement>(null);
-    const queuedUpdatesRef = useRef<Record<string, unknown>[]>([]);
+    const queuedUpdatesRef = useRef<[string, Record<string, unknown>][]>([]);
     const updateFrameRef = useRef<number | null>(null);
     const agentRef = useRef(agent);
     agentRef.current = agent;
@@ -435,11 +529,11 @@ export function AgentChatPane({
                 updateFrameRef.current = null;
             }
             const updates = queuedUpdatesRef.current.splice(0);
-            for (const update of updates) dispatch({ type: "session_update", update });
+            for (const [sessionId, update] of updates) dispatch({ type: "session_update", sessionId, update });
         };
 
-        const queueUpdate = (update: Record<string, unknown>) => {
-            queuedUpdatesRef.current.push(update);
+        const queueUpdate = (sessionId: string, update: Record<string, unknown>) => {
+            queuedUpdatesRef.current.push([sessionId, update]);
             if (updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
         };
 
@@ -455,7 +549,8 @@ export function AgentChatPane({
                 });
             } else if (event.kind === "session_update") {
                 const update = recordOf(event.payload.update);
-                if (update) queueUpdate(update);
+                const sessionId = typeof event.payload.sessionId === "string" ? event.payload.sessionId : null;
+                if (update && sessionId) queueUpdate(sessionId, update);
             } else if (event.kind === "turn_started") {
                 if (sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current) {
                     cmd.attachAgentSession(agent.id, sessionIdRef.current);
@@ -639,6 +734,17 @@ export function AgentChatPane({
         }
     };
 
+    const stopTask = async (taskId: string) => {
+        setStoppingTasks((current) => [...current, taskId]);
+        try {
+            await acpApi.stopTask(agent.id, taskId);
+        } catch (error) {
+            setComposerError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setStoppingTasks((current) => current.filter((candidate) => candidate !== taskId));
+        }
+    };
+
     const replyPermission = async (requestId: string, optionId?: string) => {
         setReplyingPermission(requestId);
         try {
@@ -803,6 +909,7 @@ export function AgentChatPane({
             )}
 
             <div className="chat-composer-wrap">
+                <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
                 <div className="chat-composer">
                     {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={slashSelection} onSelect={selectCommand} />}
                     {attachments.length > 0 && (

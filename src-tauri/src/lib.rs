@@ -162,6 +162,7 @@ pub fn run() {
             acp::acp_set_permission_mode,
             acp::acp_set_config,
             acp::acp_cancel,
+            acp::acp_stop_task,
             acp::acp_permission_reply,
             acp::acp_stop,
             pty::pty_spawn,

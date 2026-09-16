@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { chatReducer, initialChatState } from "./reducer";
 import type { ChatState } from "./types";
 
-function update(state: ChatState, value: Record<string, unknown>): ChatState {
-    return chatReducer(state, { type: "session_update", update: value });
+const ROOT_SESSION = "session-1";
+
+function update(state: ChatState, value: Record<string, unknown>, sessionId = ROOT_SESSION): ChatState {
+    return chatReducer(state, { type: "session_update", sessionId, update: value });
 }
 
 describe("chat reducer", () => {
@@ -82,6 +84,73 @@ describe("chat reducer", () => {
             status: "completed",
             rawOutput: { bytes: 42 },
         });
+    });
+
+    it("streams a subagent session into its own thread", () => {
+        const spawned = update(initialChatState, {
+            sessionUpdate: "subagent_spawned",
+            subagentSessionId: "subagent-1",
+            name: "Explore",
+            task: "Find the ACP adapter",
+        });
+        const streamed = update(
+            spawned,
+            { sessionUpdate: "agent_message_chunk", messageId: "child-1", content: { type: "text", text: "Looking" } },
+            "subagent-1",
+        );
+        const finished = update(streamed, {
+            sessionUpdate: "subagent_state_update",
+            subagentSessionId: "subagent-1",
+            state: "completed",
+        });
+
+        const part = finished.messages[0].parts[0];
+        expect(part.kind).toBe("subagent");
+        if (part.kind !== "subagent") throw new Error("expected subagent part");
+        expect(part.subagent.state).toBe("completed");
+        expect(part.subagent.messages[0].parts).toEqual([{ id: "child-1-text-0", kind: "text", text: "Looking" }]);
+    });
+
+    it("keeps subagent output out of the parent transcript", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "subagent-1", name: "Explore", task: "" });
+        const streamed = update(spawned, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "nested" } }, "subagent-1");
+
+        expect(streamed.messages).toHaveLength(1);
+        expect(streamed.messages[0].parts).toHaveLength(1);
+    });
+
+    it("tracks a background task until it reaches an end state", () => {
+        const spawned = update(initialChatState, {
+            sessionUpdate: "async_task_spawned",
+            asyncTaskId: "task-1",
+            name: "pnpm test",
+            taskType: "shell",
+            description: "Run the suite",
+            canStop: true,
+        });
+        const progressed = update(spawned, { sessionUpdate: "async_task_progress", asyncTaskId: "task-1", summary: "12 files passed" });
+        const finished = update(progressed, { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "completed" });
+
+        expect(spawned.tasks).toEqual([
+            {
+                asyncTaskId: "task-1",
+                name: "pnpm test",
+                taskType: "shell",
+                description: "Run the suite",
+                state: "running",
+                canStop: true,
+                outputFilePath: undefined,
+            },
+        ]);
+        expect(progressed.tasks[0].summary).toBe("12 files passed");
+        expect(finished.tasks).toEqual([]);
+    });
+
+    it("drops background tasks when the session stops", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "async_task_spawned", asyncTaskId: "task-1", name: "pnpm test", canStop: true });
+        const stopped = chatReducer(spawned, { type: "status", state: "stopped" });
+
+        expect(stopped.tasks).toEqual([]);
     });
 
     it("replaces slash commands when ACP sends a new command list", () => {

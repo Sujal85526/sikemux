@@ -1,10 +1,22 @@
-import type { AcpAvailableCommand, AcpContentBlock, AcpContentChunk, AcpToolCall, ChatAction, ChatMessage, ChatPart, ChatState } from "./types";
+import type {
+    AcpAsyncTask,
+    AcpAvailableCommand,
+    AcpContentBlock,
+    AcpContentChunk,
+    AcpSubagent,
+    AcpToolCall,
+    ChatAction,
+    ChatMessage,
+    ChatPart,
+    ChatState,
+} from "./types";
 
 export const initialChatState: ChatState = {
     connection: "connecting",
     messages: [],
     commands: [],
     permissions: [],
+    tasks: [],
     capabilities: {},
     setup: {},
     plan: null,
@@ -17,6 +29,10 @@ export const initialChatState: ChatState = {
     nextId: 1,
     revision: 0,
 };
+
+/* The parent session and each subagent session own a transcript of the same
+   shape, so streaming into one is the same work as streaming into the other. */
+type Transcript = { messages: ChatMessage[]; nextId: number };
 
 const textOf = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 const recordOf = (value: unknown): Record<string, unknown> | undefined =>
@@ -31,15 +47,15 @@ function contentChunk(update: Record<string, unknown>): AcpContentChunk | null {
     };
 }
 
-function appendChunk(state: ChatState, role: ChatMessage["role"], partKind: "text" | "thought", chunk: AcpContentChunk): ChatState {
-    if (role === "user" && state.suppressUserEcho) return state;
+function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind: "text" | "thought", chunk: AcpContentChunk): Transcript {
     const contentText = textOf(chunk.content.text);
-    const lastMessage = state.messages.at(-1);
+    const lastMessage = transcript.messages.at(-1);
     const messageId =
-        chunk.messageId ?? (lastMessage?.role === role && !lastMessage.id.startsWith("local-") ? lastMessage.id : `${role}-fallback-${state.nextId}`);
-    const existingIndex = state.messages.findIndex((message) => message.id === messageId);
-    const messages = [...state.messages];
-    let nextId = state.nextId;
+        chunk.messageId ??
+        (lastMessage?.role === role && !lastMessage.id.startsWith("local-") ? lastMessage.id : `${role}-fallback-${transcript.nextId}`);
+    const existingIndex = transcript.messages.findIndex((message) => message.id === messageId);
+    const messages = [...transcript.messages];
+    let nextId = transcript.nextId;
 
     if (existingIndex < 0) {
         const part: ChatPart =
@@ -62,17 +78,22 @@ function appendChunk(state: ChatState, role: ChatMessage["role"], partKind: "tex
         messages[existingIndex] = { ...message, parts };
     }
 
-    return {
-        ...state,
-        messages,
-        nextId,
-        suppressUserEcho: role === "assistant" ? false : state.suppressUserEcho,
-        revision: state.revision + 1,
-    };
+    return { messages, nextId };
 }
 
-function upsertTool(state: ChatState, update: AcpToolCall, merge: boolean): ChatState {
-    const messages = [...state.messages];
+function appendPart(transcript: Transcript, part: ChatPart): Transcript {
+    const messages = [...transcript.messages];
+    const last = messages.at(-1);
+    if (last?.role === "assistant" && !last.id.startsWith("local-")) {
+        messages[messages.length - 1] = { ...last, parts: [...last.parts, part] };
+        return { messages, nextId: transcript.nextId };
+    }
+    messages.push({ id: `agent-part-${transcript.nextId}`, role: "assistant", parts: [part] });
+    return { messages, nextId: transcript.nextId + 1 };
+}
+
+function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean): Transcript {
+    const messages = [...transcript.messages];
     for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
         const message = messages[messageIndex];
         const partIndex = message.parts.findIndex((part) => part.kind === "tool" && part.tool.toolCallId === update.toolCallId);
@@ -86,49 +107,147 @@ function upsertTool(state: ChatState, update: AcpToolCall, merge: boolean): Chat
             tool: merge ? { ...current.tool, ...patch } : update,
         };
         messages[messageIndex] = { ...message, parts };
-        return { ...state, messages, suppressUserEcho: false, revision: state.revision + 1 };
+        return { messages, nextId: transcript.nextId };
     }
 
-    const part: ChatPart = { id: `tool-${update.toolCallId}`, kind: "tool", tool: update };
-    const last = messages.at(-1);
-    if (last?.role === "assistant" && !last.id.startsWith("local-")) {
-        messages[messages.length - 1] = { ...last, parts: [...last.parts, part] };
-        return { ...state, messages, suppressUserEcho: false, revision: state.revision + 1 };
-    }
+    return appendPart(transcript, { id: `tool-${update.toolCallId}`, kind: "tool", tool: update });
+}
 
-    messages.push({ id: `tool-message-${state.nextId}`, role: "assistant", parts: [part] });
+/** Applies the updates a session streams regardless of whose session it is. */
+function transcriptUpdate(transcript: Transcript, update: Record<string, unknown>): Transcript | null {
+    switch (update.sessionUpdate) {
+        case "user_message_chunk":
+        case "agent_message_chunk":
+        case "agent_thought_chunk": {
+            const chunk = contentChunk(update);
+            if (!chunk) return null;
+            const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
+            const partKind = update.sessionUpdate === "agent_thought_chunk" ? "thought" : "text";
+            return appendChunk(transcript, role, partKind, chunk);
+        }
+        case "tool_call": {
+            const toolCallId = textOf(update.toolCallId);
+            const title = textOf(update.title);
+            return toolCallId && title ? upsertTool(transcript, { ...update, toolCallId, title }, false) : null;
+        }
+        case "tool_call_update": {
+            const toolCallId = textOf(update.toolCallId);
+            return toolCallId ? upsertTool(transcript, { ...update, toolCallId, title: textOf(update.title) ?? "" }, true) : null;
+        }
+        default:
+            return null;
+    }
+}
+
+function findSubagent(messages: ChatMessage[], sessionId: string): { messageIndex: number; partIndex: number } | null {
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+        const partIndex = messages[messageIndex].parts.findIndex((part) => part.kind === "subagent" && part.subagent.sessionId === sessionId);
+        if (partIndex >= 0) return { messageIndex, partIndex };
+    }
+    return null;
+}
+
+function patchSubagent(state: ChatState, sessionId: string, patch: (subagent: AcpSubagent) => AcpSubagent): ChatState | null {
+    const found = findSubagent(state.messages, sessionId);
+    if (!found) return null;
+    const message = state.messages[found.messageIndex];
+    const current = message.parts[found.partIndex];
+    if (current.kind !== "subagent") return null;
+    const parts = [...message.parts];
+    parts[found.partIndex] = { ...current, subagent: patch(current.subagent) };
+    const messages = [...state.messages];
+    messages[found.messageIndex] = { ...message, parts };
+    return { ...state, messages, revision: state.revision + 1 };
+}
+
+const SUBAGENT_STATES: AcpSubagent["state"][] = ["running", "completed", "failed", "cancelled", "disconnected"];
+const TASK_STATES: AcpAsyncTask["state"][] = ["running", "paused", "completed", "failed", "stopped"];
+
+function spawnSubagent(state: ChatState, update: Record<string, unknown>): ChatState {
+    const sessionId = textOf(update.subagentSessionId);
+    if (!sessionId || findSubagent(state.messages, sessionId)) return state;
+    const subagent: AcpSubagent = {
+        sessionId,
+        name: textOf(update.name) ?? "Subagent",
+        task: textOf(update.task) ?? "",
+        state: "running",
+        messages: [],
+        nextId: 1,
+    };
     return {
         ...state,
-        messages,
-        nextId: state.nextId + 1,
+        ...appendPart(state, { id: `subagent-${sessionId}`, kind: "subagent", subagent }),
         suppressUserEcho: false,
         revision: state.revision + 1,
     };
 }
 
-function sessionUpdate(state: ChatState, update: Record<string, unknown>): ChatState {
+function spawnTask(state: ChatState, update: Record<string, unknown>): ChatState {
+    const asyncTaskId = textOf(update.asyncTaskId);
+    if (!asyncTaskId || state.tasks.some((task) => task.asyncTaskId === asyncTaskId)) return state;
+    const task: AcpAsyncTask = {
+        asyncTaskId,
+        name: textOf(update.name) ?? "Background task",
+        taskType: textOf(update.taskType) ?? "",
+        description: textOf(update.description) ?? "",
+        state: "running",
+        canStop: update.canStop === true,
+        outputFilePath: textOf(update.outputFilePath),
+    };
+    return { ...state, tasks: [...state.tasks, task], revision: state.revision + 1 };
+}
+
+function patchTask(state: ChatState, update: Record<string, unknown>): ChatState {
+    const asyncTaskId = textOf(update.asyncTaskId);
+    const index = state.tasks.findIndex((task) => task.asyncTaskId === asyncTaskId);
+    if (index < 0) return state;
+    const taskState = TASK_STATES.find((candidate) => candidate === update.state);
+
+    /* A task that reached its end has nothing left to watch or stop, and the
+       tool call it came from keeps the record in the transcript. */
+    if (taskState === "completed" || taskState === "failed" || taskState === "stopped") {
+        return { ...state, tasks: state.tasks.filter((_, position) => position !== index), revision: state.revision + 1 };
+    }
+
+    const current = state.tasks[index];
+    const tasks = [...state.tasks];
+    tasks[index] = {
+        ...current,
+        state: taskState ?? current.state,
+        description: textOf(update.description) ?? current.description,
+        summary: textOf(update.summary) ?? current.summary,
+        lastToolName: textOf(update.lastToolName) ?? current.lastToolName,
+        outputFilePath: textOf(update.outputFilePath) ?? current.outputFilePath,
+        usage: (recordOf(update.usage) as AcpAsyncTask["usage"]) ?? current.usage,
+    };
+    return { ...state, tasks, revision: state.revision + 1 };
+}
+
+function sessionUpdate(state: ChatState, sessionId: string, update: Record<string, unknown>): ChatState {
+    const inSubagent = patchSubagent(state, sessionId, (subagent) => {
+        const next = transcriptUpdate(subagent, update);
+        return next ? { ...subagent, ...next } : subagent;
+    });
+    if (inSubagent) return inSubagent;
+
+    if (update.sessionUpdate === "user_message_chunk" && state.suppressUserEcho) return state;
+    const streamed = transcriptUpdate(state, update);
+    if (streamed) return { ...state, ...streamed, suppressUserEcho: false, revision: state.revision + 1 };
+
     switch (update.sessionUpdate) {
-        case "user_message_chunk": {
-            const chunk = contentChunk(update);
-            return chunk ? appendChunk(state, "user", "text", chunk) : state;
+        case "subagent_spawned":
+            return spawnSubagent(state, update);
+        case "subagent_state_update": {
+            const subagentSessionId = textOf(update.subagentSessionId);
+            const subagentState = SUBAGENT_STATES.find((candidate) => candidate === update.state);
+            if (!subagentSessionId || !subagentState) return state;
+            return patchSubagent(state, subagentSessionId, (subagent) => ({ ...subagent, state: subagentState })) ?? state;
         }
-        case "agent_message_chunk": {
-            const chunk = contentChunk(update);
-            return chunk ? appendChunk(state, "assistant", "text", chunk) : state;
-        }
-        case "agent_thought_chunk": {
-            const chunk = contentChunk(update);
-            return chunk ? appendChunk(state, "assistant", "thought", chunk) : state;
-        }
-        case "tool_call": {
-            const toolCallId = textOf(update.toolCallId);
-            const title = textOf(update.title);
-            return toolCallId && title ? upsertTool(state, { ...update, toolCallId, title }, false) : state;
-        }
-        case "tool_call_update": {
-            const toolCallId = textOf(update.toolCallId);
-            return toolCallId ? upsertTool(state, { ...update, toolCallId, title: textOf(update.title) ?? "" }, true) : state;
-        }
+        case "async_task_spawned":
+            return spawnTask(state, update);
+        case "async_task_progress":
+        case "async_task_state_update":
+            return patchTask(state, update);
         case "plan":
             return { ...state, plan: update, suppressUserEcho: false, revision: state.revision + 1 };
         case "available_commands_update":
@@ -170,6 +289,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 connection: action.state,
                 running: action.state === "stopped" || action.state === "error" ? false : state.running,
                 permissions: action.state === "stopped" || action.state === "error" ? [] : state.permissions,
+                tasks: action.state === "stopped" || action.state === "error" ? [] : state.tasks,
                 error: action.state === "error" ? state.error : null,
             };
         case "ready":
@@ -195,7 +315,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             };
         }
         case "session_update":
-            return sessionUpdate(state, action.update);
+            return sessionUpdate(state, action.sessionId, action.update);
         case "turn_started":
             return { ...state, running: true, stopReason: null, error: null, revision: state.revision + 1 };
         case "turn_completed":

@@ -47,6 +47,7 @@ export const acpApi = {
         invoke("acp_set_config", { agentId, configId, value }),
     prompt: (agentId: string, text: string, paths: string[]): Promise<void> => invoke<void>("acp_prompt", { agentId, text, paths }),
     cancel: (agentId: string): Promise<void> => invoke<void>("acp_cancel", { agentId }),
+    stopTask: (agentId: string, taskId: string): Promise<void> => invoke<void>("acp_stop_task", { agentId, taskId }),
     permissionReply: (agentId: string, requestId: string, optionId?: string): Promise<void> =>
         invoke<void>("acp_permission_reply", { agentId, requestId, optionId: optionId ?? null }),
     stop: (agentId: string): Promise<void> => invoke<void>("acp_stop", { agentId }),

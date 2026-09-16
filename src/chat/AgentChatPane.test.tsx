@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     eventListener: null as ((event: AcpEvent) => void) | null,
     prompt: vi.fn(async () => {}),
     setPermissionMode: vi.fn(async () => {}),
+    stopTask: vi.fn(async () => {}),
     setConfig: vi.fn(),
     setAgentModelPreferences: vi.fn(),
     attachAgentSession: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock("../api/acp", () => ({
         stop: vi.fn(async () => {}),
         prompt: mocks.prompt,
         cancel: vi.fn(async () => {}),
+        stopTask: mocks.stopTask,
         permissionReply: vi.fn(async () => {}),
     },
 }));
@@ -145,7 +147,10 @@ describe("AgentChatPane", () => {
     it("keeps the harness editable for a loaded session without messages", async () => {
         render(<AgentChatPane agent={{ ...agent, resumeId: "empty-session" }} cwd="/repo" active onBusyChange={() => {}} />);
         await waitFor(() => expect(screen.getByRole("button", { name: "Agent" })).toBeEnabled());
-        emit("session_update", { update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Existing message" } } });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Existing message" } },
+        });
         emit("ready", { capabilities: {}, setup: {} });
         await waitFor(() => expect(screen.getByRole("button", { name: "Agent" })).toBeDisabled());
     });
@@ -304,11 +309,39 @@ describe("AgentChatPane", () => {
         await waitFor(() => expect(acpApi.permissionReply).toHaveBeenCalledWith(agent.id, "request-1", "allow"));
     });
 
+    it("lists a background task until it ends, and stops it on request", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "async_task_spawned",
+                asyncTaskId: "task-1",
+                name: "pnpm test",
+                taskType: "shell",
+                description: "Run the suite",
+                canStop: true,
+            },
+        });
+        expect(await screen.findByRole("button", { name: "Stop pnpm test" })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Stop pnpm test" }));
+        await waitFor(() => expect(mocks.stopTask).toHaveBeenCalledWith("agent-1", "task-1"));
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "stopped" },
+        });
+        await waitFor(() => expect(screen.queryByText("pnpm test")).not.toBeInTheDocument());
+    });
+
     it("shows ACP slash commands and inserts the selected command", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());
         emit("ready", { capabilities: {}, setup: {} });
         emit("session_update", {
+            sessionId: "session-1",
             update: {
                 sessionUpdate: "available_commands_update",
                 availableCommands: [{ name: "compact", description: "Compact context", input: { hint: "focus" } }],
@@ -326,7 +359,10 @@ describe("AgentChatPane", () => {
     it("stays pinned while a restored transcript settles, and lets go when the reader scrolls up", async () => {
         render(<AgentChatPane agent={{ ...agent, resumeId: "old-session" }} cwd="/repo" active visible onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());
-        emit("session_update", { update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Earlier question" } } });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Earlier question" } },
+        });
         emit("ready", { capabilities: {}, setup: {} });
 
         const scroller = document.querySelector(".chat-scroll") as HTMLElement;

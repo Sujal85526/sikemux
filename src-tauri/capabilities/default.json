@@ -18,6 +18,7 @@
     "allow-acp-set-permission-mode",
     "allow-acp-set-config",
     "allow-acp-cancel",
+    "allow-acp-stop-task",
     "allow-acp-permission-reply",
     "allow-acp-stop",
     "allow-pty-spawn",

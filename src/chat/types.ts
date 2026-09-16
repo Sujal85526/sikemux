@@ -46,11 +46,36 @@ export interface AcpToolCall {
     [key: string]: unknown;
 }
 
+export interface AcpAsyncTask {
+    asyncTaskId: string;
+    name: string;
+    taskType: string;
+    description: string;
+    state: "running" | "paused" | "completed" | "failed" | "stopped";
+    canStop: boolean;
+    summary?: string;
+    lastToolName?: string;
+    outputFilePath?: string;
+    usage?: { totalTokens: number; toolUses: number; durationMs: number };
+}
+
+/* A subagent runs as its own ACP session, so its transcript is kept whole
+   rather than spliced into the parent's. */
+export interface AcpSubagent {
+    sessionId: string;
+    name: string;
+    task: string;
+    state: "running" | "completed" | "failed" | "cancelled" | "disconnected";
+    messages: ChatMessage[];
+    nextId: number;
+}
+
 export type ChatPart =
     | { id: string; kind: "text"; text: string }
     | { id: string; kind: "thought"; text: string }
     | { id: string; kind: "content"; content: AcpContentBlock }
-    | { id: string; kind: "tool"; tool: AcpToolCall };
+    | { id: string; kind: "tool"; tool: AcpToolCall }
+    | { id: string; kind: "subagent"; subagent: AcpSubagent };
 
 export interface ChatMessage {
     id: string;
@@ -64,6 +89,7 @@ export interface ChatState {
     messages: ChatMessage[];
     commands: AcpAvailableCommand[];
     permissions: AcpPermissionRequest[];
+    tasks: AcpAsyncTask[];
     capabilities: Record<string, unknown>;
     setup: Record<string, unknown>;
     plan: unknown;
@@ -83,7 +109,7 @@ export type ChatAction =
     | { type: "status"; state: ChatState["connection"] }
     | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }
     | { type: "local_prompt"; text: string; paths: string[] }
-    | { type: "session_update"; update: Record<string, unknown> }
+    | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
     | { type: "turn_started" }
     | { type: "turn_completed"; stopReason?: string }
     | { type: "permission_requested"; request: AcpPermissionRequest }

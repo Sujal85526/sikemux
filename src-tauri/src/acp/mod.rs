@@ -1,7 +1,9 @@
+mod air;
+
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, Implementation, InitializeRequest, LoadSessionRequest,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, ResourceLink, SelectedPermissionOutcome, SessionNotification,
+    RequestPermissionResponse, ResourceLink, SelectedPermissionOutcome,
     SetSessionConfigOptionRequest, SetSessionModeRequest,
 };
 use agent_client_protocol::schema::ProtocolVersion;
@@ -66,6 +68,9 @@ enum AcpCommand {
         config_id: String,
         value: String,
         reply: oneshot::Sender<Result<Value, String>>,
+    },
+    StopTask {
+        task_id: String,
     },
     Cancel,
     Stop,
@@ -481,16 +486,13 @@ async fn run_connection(
     agent_client_protocol::Client
         .builder()
         .on_receive_notification(
-            async move |notification: SessionNotification, _connection| {
-                match serde_json::to_value(notification) {
-                    Ok(value) => emit(&event_app, &event_agent_id, "session_update", value),
-                    Err(error) => emit(
-                        &event_app,
-                        &event_agent_id,
-                        "error",
-                        json!({ "message": format!("invalid ACP update: {error}") }),
-                    ),
-                }
+            async move |notification: air::SessionUpdate, _connection| {
+                emit(
+                    &event_app,
+                    &event_agent_id,
+                    "session_update",
+                    notification.0,
+                );
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -544,6 +546,7 @@ async fn run_connection(
                 let initialize = connection
                     .send_request(
                         InitializeRequest::new(ProtocolVersion::V1)
+                            .client_capabilities(air::client_capabilities())
                             .client_info(Implementation::new("sikemux", env!("CARGO_PKG_VERSION"))),
                     )
                     .block_task()
@@ -721,6 +724,36 @@ async fn run_connection(
                             };
                             let _ = reply.send(result);
                         }
+                        AcpCommand::StopTask { task_id } => {
+                            let stop_app = app.clone();
+                            let stop_agent_id = agent_id.clone();
+                            // A background task outlives the turn that spawned
+                            // it, so stopping one must not wait on the turn.
+                            let sent = connection
+                                .send_request(air::StopAsyncTask {
+                                    session_id: session_id.clone(),
+                                    async_task_id: task_id,
+                                })
+                                .on_receiving_result(async move |result| {
+                                    if let Err(error) = result {
+                                        emit(
+                                            &stop_app,
+                                            &stop_agent_id,
+                                            "error",
+                                            json!({ "message": error.to_string() }),
+                                        );
+                                    }
+                                    Ok(())
+                                });
+                            if let Err(error) = sent {
+                                emit(
+                                    &app,
+                                    &agent_id,
+                                    "error",
+                                    json!({ "message": error.to_string() }),
+                                );
+                            }
+                        }
                         AcpCommand::Cancel => {
                             connection
                                 .send_notification(CancelNotification::new(session_id.clone()))?;
@@ -897,6 +930,22 @@ pub fn acp_cancel(manager: State<'_, AcpManager>, agent_id: String) -> Result<()
     connection
         .commands
         .send(AcpCommand::Cancel)
+        .map_err(|_| "ACP session stopped".into())
+}
+
+#[tauri::command]
+pub fn acp_stop_task(
+    manager: State<'_, AcpManager>,
+    agent_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    bounded_text("task id", &task_id, 256)?;
+    let Some(connection) = manager.connections.get(&agent_id) else {
+        return Err("ACP session is not running".into());
+    };
+    connection
+        .commands
+        .send(AcpCommand::StopTask { task_id })
         .map_err(|_| "ACP session stopped".into())
 }
 
