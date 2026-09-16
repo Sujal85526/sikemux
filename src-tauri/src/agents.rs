@@ -2875,8 +2875,17 @@ mod executable_tests {
         .unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
 
+        // Generous beside a `--help` that answers at once, and far short of the
+        // 30s a `--version` would sleep for: a busy machine still passes, a
+        // probe that went back to asking for the version still fails.
         assert_eq!(
-            probe_agent_executable("hermes", &executable).await.unwrap(),
+            probe_agent_executable_with_timeout(
+                "hermes",
+                &executable,
+                std::time::Duration::from_secs(10)
+            )
+            .await
+            .unwrap(),
             "usage: hermes"
         );
         assert!(
