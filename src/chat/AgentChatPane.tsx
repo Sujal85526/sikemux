@@ -783,6 +783,27 @@ export function AgentChatPane({
             setChangingConfig(false);
         }
     };
+    const activeTool = useMemo(() => {
+        const parts = displayState.messages.at(-1)?.parts ?? [];
+        for (let index = parts.length - 1; index >= 0; index -= 1) {
+            const part = parts[index];
+            if (part.kind !== "tool") continue;
+            const status = part.tool.status ?? "pending";
+            return status === "completed" || status === "failed" ? null : toolLabel(part.tool.title).name;
+        }
+        return null;
+    }, [displayState.messages]);
+    const connecting = connectingLabel(displayState.connection);
+    /* A permission card already says what the turn is waiting on, so a spinner
+       beside it would only compete with it. */
+    const activity =
+        displayState.permissions.length > 0
+            ? null
+            : displayState.running
+              ? (activeTool ?? "Thinking…")
+              : displayState.messages.length > 0
+                ? connecting
+                : null;
     const composerPlaceholder =
         state.connection === "ready"
             ? "Ask about this project, or type / for commands"
@@ -815,20 +836,14 @@ export function AgentChatPane({
                 <div className="chat-scroll-content" ref={scrollContentRef}>
                     {displayState.messages.length === 0 && (
                         <div className={`chat-connection-state ${displayState.connection}`} role="status">
+                            {connecting && <span className="chat-activity-loader" aria-hidden="true" />}
                             <span>
-                                {displayState.connection === "ready"
-                                    ? "Start a session with this project."
-                                    : displayState.connection === "installing"
-                                      ? "Installing structured-session adapter…"
-                                      : displayState.connection === "starting"
-                                        ? "Starting agent adapter…"
-                                        : displayState.connection === "initializing"
-                                          ? "Connecting to agent session…"
-                                          : displayState.connection === "error"
-                                            ? "Structured session unavailable."
-                                            : displayState.connection === "stopped"
-                                              ? "Agent session stopped."
-                                              : "Preparing agent session…"}
+                                {connecting ??
+                                    (displayState.connection === "ready"
+                                        ? "Start a session with this project."
+                                        : displayState.connection === "error"
+                                          ? "Structured session unavailable."
+                                          : "Agent session stopped.")}
                             </span>
                             {(displayState.connection === "error" || displayState.connection === "stopped") && (
                                 <button type="button" onClick={() => setRestartKey((value) => value + 1)}>
@@ -866,6 +881,7 @@ export function AgentChatPane({
                             );
                         })}
                     </div>
+                    {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} />}
                     {displayState.plan !== null && (
                         <details className="chat-plan">
                             <summary>Plan</summary>

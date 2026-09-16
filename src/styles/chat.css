@@ -644,6 +644,55 @@
     text-align: center;
 }
 
+.chat-activity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(calc(100% - 40px), 720px);
+    margin: 10px auto 0;
+    color: var(--ink-faint);
+    font-size: var(--text-2xs);
+}
+
+.chat-activity-label {
+    animation: chat-activity-breathe 1.9s ease-in-out infinite;
+}
+
+.chat-activity-elapsed {
+    color: color-mix(in srgb, var(--ink-faint) 68%, transparent);
+    font-family: var(--mono);
+    font-size: 9.5px;
+}
+
+.chat-activity-loader {
+    flex: none;
+    width: 11px;
+    height: 11px;
+    box-sizing: border-box;
+    border: 1.5px solid color-mix(in srgb, currentColor 22%, transparent);
+    border-top-color: var(--live);
+    border-right-color: var(--live);
+    border-radius: 50%;
+    animation: chat-activity-spin 0.72s linear infinite;
+}
+
+.chat-connection-state .chat-activity-loader {
+    width: 14px;
+    height: 14px;
+}
+
+@keyframes chat-activity-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes chat-activity-breathe {
+    50% {
+        opacity: 0.5;
+    }
+}
+
 .chat-connection-state button {
     height: 28px;
     padding: 0 11px;
@@ -1054,6 +1103,16 @@
     .agent-view-switch button,
     .yolo-toggle {
         transition: none;
+    }
+
+    /* The elapsed seconds keep saying the turn is alive without any motion. */
+    .chat-activity-label,
+    .chat-activity-loader {
+        animation: none;
+    }
+
+    .chat-activity-loader {
+        border-color: var(--live);
     }
 
     .yolo-toggle.on::before,

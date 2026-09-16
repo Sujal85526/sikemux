@@ -283,6 +283,30 @@ describe("AgentChatPane", () => {
         expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
     });
 
+    it("keeps saying the turn is alive, and names the tool it is running", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "Check the tests" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(await screen.findByRole("status")).toHaveTextContent("Thinking…");
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "mcp__github__list_issues", status: "in_progress" },
+        });
+        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("list_issues"));
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" },
+        });
+        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Thinking…"));
+
+        emit("turn_completed", { stopReason: "end_turn" });
+        await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    });
+
     it("shows adapter progress and retries failed startup", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());
