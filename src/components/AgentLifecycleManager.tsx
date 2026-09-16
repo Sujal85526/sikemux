@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { performanceTelemetry } from "../lib/performance";
 import * as cmd from "../state/commands";
 import { getState, useStore, type StoreState } from "../state/store";
@@ -63,6 +63,20 @@ export function AgentLifecycleManager() {
     const windows = useStore((state) => state.windows);
     const agentActivity = useStore((state) => state.agentActivity);
     const hiddenSinceRef = useRef<HiddenAgentTimes>(new Map());
+    const focusedRef = useRef<string | null>(null);
+
+    // Landing on a sleeping agent resumes it, so the tab the user switched to is
+    // the one they get. Only the switch wakes it: sleeping the agent in front of
+    // you has to stick.
+    const wakeFocusedAgent = useCallback(() => {
+        const state = getState();
+        const focused = visibleAgentId(state);
+        if (focused === focusedRef.current) return;
+        focusedRef.current = focused;
+        if (focused && state.agents[focused]?.launchState === "dormant") cmd.resumeAgent(focused);
+    }, []);
+
+    useLayoutEffect(wakeFocusedAgent, [activeSessionId, sessions, windows, agents, wakeFocusedAgent]);
 
     const enforcePolicy = useCallback(() => {
         const state = getState();

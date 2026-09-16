@@ -66,6 +66,19 @@ function arrangeAgents(count: number) {
     });
 }
 
+function focusAgent(id: string) {
+    setState((state) => ({
+        sessions: {
+            ...state.sessions,
+            [state.activeSessionId]: { ...state.sessions[state.activeSessionId], activeWindowId: agentWindowId(state, id)! },
+        },
+    }));
+}
+
+function sleep(id: string) {
+    setState((state) => ({ agents: { ...state.agents, [id]: { ...state.agents[id], launchState: "dormant" } } }));
+}
+
 describe("agent sleep policy", () => {
     it("enforces the timeout while mounted", async () => {
         vi.useFakeTimers();
@@ -115,6 +128,27 @@ describe("agent sleep policy", () => {
         reconcileHiddenAgentTimes(getState(), hiddenSince, AGENT_IDLE_SLEEP_MS);
         expect(agentIdsToAutoSleep(getState(), hiddenSince, AGENT_IDLE_SLEEP_MS * 2)).toEqual([]);
         expect(hiddenSince.has("agent-0")).toBe(false);
+    });
+
+    it("resumes the agent the user switches to", () => {
+        arrangeAgents(2);
+        focusAgent("agent-0");
+        sleep("agent-1");
+        render(createElement(AgentLifecycleManager));
+
+        act(() => focusAgent("agent-1"));
+
+        expect(getState().agents["agent-1"].launchState).toBe("live");
+    });
+
+    it("leaves the focused agent asleep once it is put to sleep", () => {
+        arrangeAgents(2);
+        focusAgent("agent-0");
+        render(createElement(AgentLifecycleManager));
+
+        act(() => sleep("agent-0"));
+
+        expect(getState().agents["agent-0"].launchState).toBe("dormant");
     });
 
     it("drops stale and sleeping entries from hidden-time tracking", () => {
