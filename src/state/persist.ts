@@ -41,9 +41,10 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 8;
+export const VERSION = 9;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
+const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -775,8 +776,10 @@ export function applyHydrate(raw: string): HydrationResult {
             providerProfiles,
             cur.selectedProviderProfileIds,
         ),
+        // Every save wrote this boundary out, so an older snapshot cannot say
+        // whether it was chosen or just inherited. Adopt today's default once.
         defaultAgentPermissionMode:
-            prefs.defaultAgentPermissionMode === undefined
+            prefs.defaultAgentPermissionMode === undefined || decoded.version < AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION
                 ? cur.defaultAgentPermissionMode
                 : prefs.defaultAgentPermissionMode === "bypass"
                   ? "bypass"

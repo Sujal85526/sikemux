@@ -91,7 +91,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 9,
+                    version: 10,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -329,6 +329,23 @@ describe("frontend persistence", () => {
         expect(JSON.stringify(getState().providerProfiles)).not.toContain("do-not-hydrate");
     });
 
+    it("adopts the current default safety boundary for snapshots saved before the migration", async () => {
+        setState({ defaultAgentPermissionMode: "bypass" });
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+
+        saved.version = 8;
+        saved.prefs.defaultAgentPermissionMode = "workspace-write";
+        setState({ defaultAgentPermissionMode: "bypass" });
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().defaultAgentPermissionMode).toBe("bypass");
+
+        saved.version = 9;
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().defaultAgentPermissionMode).toBe("workspace-write");
+    });
+
     it("migrates legacy permission bypass and drops retired worktree metadata", async () => {
         const sid = getState().activeSessionId;
         const session = getState().sessions[sid];
@@ -405,7 +422,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(8);
+        expect(saved.version).toBe(9);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -549,7 +566,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(8);
+        expect(JSON.parse(migrated).version).toBe(9);
     });
 
     /*
@@ -582,7 +599,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(8);
+        expect(saved.version).toBe(9);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
