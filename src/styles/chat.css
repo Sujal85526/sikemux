@@ -13,6 +13,9 @@
 }
 
 .agent-surface-header {
+    /* Every control in this row is this tall, so the switch group and the
+       single buttons beside it line up. */
+    --control-h: 31px;
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -40,6 +43,7 @@
     display: flex;
     align-items: center;
     gap: 2px;
+    height: var(--control-h);
     padding: 2px;
     border: 1px solid var(--line);
     border-radius: var(--radius-control);
@@ -51,7 +55,7 @@
     align-items: center;
     justify-content: center;
     gap: 5px;
-    height: 25px;
+    height: 100%;
     padding: 0 8px;
     border-radius: calc(var(--radius-control) - 1px);
     color: var(--ink-faint);
@@ -82,8 +86,8 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    height: 25px;
-    padding: 0 8px;
+    height: var(--control-h);
+    padding: 0 10px;
     border: 1px solid var(--line);
     border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--void) 46%, transparent);
@@ -105,8 +109,8 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    height: 25px;
-    padding: 0 8px;
+    height: var(--control-h);
+    padding: 0 10px;
     border: 1px solid var(--line);
     border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--void) 46%, transparent);
