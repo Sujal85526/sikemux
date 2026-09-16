@@ -106,11 +106,11 @@
     z-index: 0;
     pointer-events: none;
     /*
-     * Back to what a field over a single surface can carry. The shell-wide
-     * value had to stay near invisible because it ran under the whole window;
-     * one surface can take the texture the pane field used to.
+     * High, because both tones are surface tones either side of the ground the
+     * card paints. Opacity buys texture here rather than haze — the value that
+     * had to stay low was the one painting a light ink over a dark surface.
      */
-    --shader-field-strength: 0.2;
+    --shader-field-strength: 0.85;
     /*
      * Weighted to the top and gone by the middle. A screen fills downward —
      * scrollback, a document, a diff — so the top is the one band reliably

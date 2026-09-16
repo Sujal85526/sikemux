@@ -188,18 +188,16 @@ interface Recipe {
 
 const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Recipe> = {
     /*
-     * The whole window's backdrop: two-colour dithering.
+     * The screen's surface: a Bayer grid over simplex noise, so the card being
+     * read carries grain instead of a flat fill.
      *
-     * A Bayer grid over simplex noise, drawn once behind the entire shell —
-     * rails, stage and the gutters between them — so the app sits on one
-     * continuous field instead of a texture that starts where the content area
-     * does. The panels above are near-opaque, so most of what you actually see
-     * is in the gutter and through the glass at the edges.
-     *
-     * Monochrome on purpose. This used to put the accent on the ground, which
-     * made the backdrop the most colourful thing on screen and left selection
-     * with nothing to be. `inkMuted` is the ramp's own grey, so the field reads
-     * as texture and the accent stays spent on state.
+     * Both tones are surface tones — the theme's recess and its raised panel,
+     * straddling the ground the card paints. A light ink lifts the whole
+     * surface toward grey however little of it you use, which is what made this
+     * look washed out; two surface tones either side of the ground read as
+     * relief and leave the mean where it was. It is also the only version that
+     * behaves on a light theme, where a grey ink darkened the surface rather
+     * than texturing it.
      */
     ambient: (runtime, theme) => ({
         /*
@@ -219,7 +217,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
         continuous: true,
         uniforms: {
             u_colorBack: runtime.getShaderColorFromString(theme.chrome.bgDim),
-            u_colorFront: runtime.getShaderColorFromString(theme.chrome.inkMuted),
+            u_colorFront: runtime.getShaderColorFromString(theme.chrome.bgRaised),
             u_shape: runtime.DitheringShapes.simplex,
             u_type: runtime.DitheringTypes["8x8"],
             // The dots are the texture. 1px disappeared into haze at this strength;
