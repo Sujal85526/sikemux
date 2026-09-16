@@ -312,7 +312,7 @@ textarea:focus,
 }
 
 .agent-usage {
-    margin: var(--space-3) var(--gutter-rail) var(--space-2);
+    margin: var(--space-3) var(--gutter-rail) var(--space-4);
     padding: 0;
     border: 0;
     background: none;
