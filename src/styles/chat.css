@@ -212,6 +212,9 @@
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
+    /* The transcript holds its own scroll position; the browser guessing at one
+       as rows resize only fights it. */
+    overflow-anchor: none;
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
     padding: 25px 0 32px;

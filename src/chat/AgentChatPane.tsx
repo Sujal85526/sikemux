@@ -42,6 +42,8 @@ import type {
 
 const MAX_ATTACHMENTS = 32;
 const MAX_DETAIL_CHARS = 120_000;
+// How far above the last line still counts as reading the latest message.
+const BOTTOM_SLACK = 72;
 
 function recordOf(value: unknown): Record<string, unknown> | null {
     return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -486,6 +488,7 @@ export function AgentChatPane({
     const scrollContentRef = useRef<HTMLDivElement>(null);
     const stickToBottomRef = useRef(true);
     const lastScrollTopRef = useRef(0);
+    const lastGestureRef = useRef(0);
     const editorRef = useRef<HTMLTextAreaElement>(null);
     const queuedUpdatesRef = useRef<[string, Record<string, unknown>][]>([]);
     const updateFrameRef = useRef<number | null>(null);
@@ -502,11 +505,16 @@ export function AgentChatPane({
     const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
     const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
 
+    /* A restored transcript opens on estimated row heights, and every row that
+       measures taller or shorter than the estimate moves the bottom. Anchoring
+       to the end makes the list hold the bottom still while that settles. */
     const virtualizer = useVirtualizer({
         count: displayState.messages.length,
         getScrollElement: () => scrollRef.current,
         estimateSize: () => 76,
         overscan: 8,
+        anchorTo: "end",
+        scrollEndThreshold: BOTTOM_SLACK,
         getItemKey: (index) => displayState.messages[index]?.id ?? index,
     });
 
@@ -690,6 +698,10 @@ export function AgentChatPane({
         if (Math.abs(element.scrollTop - target) < 1) return;
         element.scrollTop = target;
         lastScrollTopRef.current = element.scrollTop;
+    }, []);
+
+    const noteGesture = useCallback(() => {
+        lastGestureRef.current = performance.now();
     }, []);
 
     /*
@@ -876,15 +888,23 @@ export function AgentChatPane({
             <div
                 className="chat-scroll"
                 ref={scrollRef}
+                onWheel={noteGesture}
+                onTouchMove={noteGesture}
+                onMouseDown={noteGesture}
+                onKeyDown={noteGesture}
                 onScroll={(event) => {
                     const element = event.currentTarget;
                     const previous = lastScrollTopRef.current;
                     lastScrollTopRef.current = element.scrollTop;
                     const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
-                    // Content that grows or collapses moves the bottom on its
-                    // own. Sitting at the bottom means stuck; only a scroll
-                    // upwards from elsewhere means the reader walked away.
-                    const next = distance < 72 ? true : element.scrollTop < previous - 1 ? false : stickToBottomRef.current;
+                    // The transcript also scrolls itself, to hold the bottom
+                    // still while rows settle into their real heights. Only a
+                    // scroll up that a wheel, key or drag just asked for means
+                    // the reader walked away; sitting at the bottom means stuck.
+                    const gesture = lastGestureRef.current;
+                    lastGestureRef.current = 0;
+                    const walkedAway = element.scrollTop < previous - 1 && performance.now() - gesture < 150;
+                    const next = walkedAway ? false : distance < BOTTOM_SLACK ? true : stickToBottomRef.current;
                     if (next === stickToBottomRef.current) return;
                     stickToBottomRef.current = next;
                     setAtBottom(next);

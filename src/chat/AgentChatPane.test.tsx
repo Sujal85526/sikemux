@@ -106,6 +106,12 @@ function fakeScroller(element: HTMLElement, clientHeight: number) {
     });
     return {
         scrollTo(top: number) {
+            fireEvent.wheel(element);
+            scrollTop = top;
+            fireEvent.scroll(element);
+        },
+        // The transcript moving itself, with no reader behind it.
+        driftTo(top: number) {
             scrollTop = top;
             fireEvent.scroll(element);
         },
@@ -488,6 +494,13 @@ describe("AgentChatPane", () => {
         view.grow(3000);
         expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
         expect(scroller.scrollTop).toBe(2600);
+
+        // Settling also moves the scroller itself, which must not read as the
+        // reader leaving — that left old sessions stranded mid-transcript.
+        view.driftTo(2200);
+        expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
+        view.grow(3600);
+        expect(scroller.scrollTop).toBe(3200);
 
         view.scrollTo(200);
         expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeInTheDocument();
