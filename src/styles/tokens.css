@@ -49,11 +49,18 @@
      * bunches the dark end and the first four steps came out
      * indistinguishable, which is exactly the range chrome lives in.
      *
-     * The fallback matters: `--bg-dim` is written by the theme bus at runtime,
-     * so before the first `applyTheme` the ramp resolves against base.css's
-     * static ground instead of collapsing to black.
+     * Anchored on `--bg`, the theme's *panel* ground — not on `--bg-dim`, its
+     * recess. The recess is the darkest and least saturated of the three
+     * grounds a theme declares, and the ramp lifts it with `--ink`, which is
+     * near-neutral; mixing a grey into the greyest corner stripped the hue out
+     * of every surface and every border. Aura's panels are `#15121e`, and the
+     * ramp was painting them `#131217` — charcoal, not purple.
+     *
+     * The fallback matters: `--bg` is written by the theme bus at runtime, so
+     * before the first `applyTheme` the ramp resolves against base.css's
+     * static panel colour instead of collapsing to black.
      */
-    --gray-base: var(--bg-dim, var(--void));
+    --gray-base: var(--bg, var(--pane));
     --gray-100: color-mix(in oklab, var(--ink) 4%, var(--gray-base));
     --gray-200: color-mix(in oklab, var(--ink) 7%, var(--gray-base));
     --gray-300: color-mix(in oklab, var(--ink) 11%, var(--gray-base));
@@ -72,9 +79,15 @@
      * over everything. The old sheets reach for `--rail`, `--rail-2`, `--pane`
      * and `--void` more or less interchangeably; these say what a surface is
      * for instead of which pane happened to use it first.
+     *
+     * `--surface` is the theme's `--bg` exactly, so it agrees with `--rail` and
+     * `--pane`; the two above it are still lifted off it by the ramp rather
+     * than read from the theme. A theme is free to set `bgRaised` equal to its
+     * `line` — four of them do — and taking both verbatim put a control, its
+     * card and the hairline between them at one colour.
      */
-    --surface-sunken: var(--gray-base);
-    --surface: var(--gray-100);
+    --surface-sunken: var(--bg-dim, var(--void));
+    --surface: var(--gray-base);
     --surface-raised: var(--gray-200);
     --surface-overlay: var(--gray-300);
 
@@ -92,8 +105,8 @@
      * fighting it. This was a hardcoded near-black in three sheets, which is
      * unreadable the moment a theme picks a dark accent.
      */
-    --on-accent: var(--gray-base);
-    --on-danger: var(--gray-base);
+    --on-accent: var(--surface-sunken);
+    --on-danger: var(--surface-sunken);
 
     /* ── Borders ──────────────────────────────────────────────────────────
      *
@@ -161,7 +174,7 @@
      * has to survive sitting on top of a selected row that is already accent
      * tinted — hence a solid inner edge under the soft halo.
      */
-    --focus-ring: 0 0 0 1px var(--gray-base), 0 0 0 3px color-mix(in oklab, var(--acc) 62%, transparent);
+    --focus-ring: 0 0 0 1px var(--surface-sunken), 0 0 0 3px color-mix(in oklab, var(--acc) 62%, transparent);
 
     /* ── Type ─────────────────────────────────────────────────────────────
      *

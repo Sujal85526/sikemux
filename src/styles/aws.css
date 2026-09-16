@@ -983,7 +983,7 @@
     align-items: flex-start;
     justify-content: center;
     padding-top: 9vh;
-    background: color-mix(in oklab, var(--gray-base) 62%, transparent);
+    background: color-mix(in oklab, var(--surface-sunken) 62%, transparent);
 }
 .settings-head {
     display: flex;

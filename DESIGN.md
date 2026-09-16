@@ -79,10 +79,21 @@ Ten steps from the window's ground to full ink, mixed in **oklab** so the steps
 are perceptually even. sRGB bunches the dark end — the first four steps came out
 indistinguishable, which is precisely the range chrome lives in.
 
+**The ramp is anchored on `--bg`, the theme's panel ground — not on `--bg-dim`,
+its recess.** The recess is the darkest and least saturated of the three grounds
+a theme declares, and every step lifts it with `--ink`, which is near-neutral.
+Anchoring there mixed a grey into the greyest corner and the theme's hue did not
+survive: Aura's panels are `#15121e`, and the ramp painted them `#131217`.
+Anchoring on `--bg` also makes `--surface` and the legacy `--rail` / `--pane`
+the same colour, which they had never been.
+
+The recess still exists — it is `--surface-sunken`, read straight from
+`--bg-dim`. A scrim wants that one, not `--gray-base`.
+
 | Token         | Mix                    | Use                                      |
 | ------------- | ---------------------- | ---------------------------------------- |
-| `--gray-base` | the theme's `--bg-dim` | the window recess                        |
-| `--gray-100`  | ink 4%                 | panel surfaces                           |
+| `--gray-base` | the theme's `--bg`     | **panel surfaces** — `--surface` itself  |
+| `--gray-100`  | ink 4%                 | a hair off a panel                       |
 | `--gray-200`  | ink 7%                 | raised off a panel                       |
 | `--gray-300`  | ink 11%                | **the default border**, overlay surfaces |
 | `--gray-400`  | ink 15%                | dividers inside a dense list             |
@@ -209,9 +220,9 @@ says "child of"; tinting the line said it twice.
 Scrim, card, action — in that order. The confirm dialog is the one modal surface
 in the product, so it sets the pattern the palettes follow.
 
-**The scrim dims without tinting.** Mix it from `--gray-base`, never a literal:
-three hardcoded near-blacks used to pull every theme's chrome toward purple on
-the way down. Roughly 44% for a light overlay, 58–68% for a modal.
+**The scrim dims without tinting.** Mix it from `--surface-sunken`, never a
+literal: three hardcoded near-blacks used to pull every theme's chrome toward
+purple on the way down. Roughly 44% for a light overlay, 58–68% for a modal.
 
 **The card floats, so it earns height.** `--surface-overlay`, a `--border`
 hairline, `--radius-4`, and `--shadow-3` for a palette or `--shadow-4` for a
