@@ -28,6 +28,7 @@ mod state;
 mod system;
 mod transparency;
 mod updates;
+mod wheel;
 
 use acp::AcpManager;
 use aws::LogsTailManager;
@@ -125,6 +126,7 @@ pub fn run() {
         })
         .setup(|_app| {
             _app.manage(UiWatchdogState::start()?);
+            wheel::watch(_app.handle());
             let cli_broker = match cli_server::CliBroker::start(_app.handle().clone()) {
                 Ok(cli_broker) => Some(cli_broker),
                 Err(error) => {

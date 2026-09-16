@@ -150,24 +150,21 @@ describe("panned", () => {
 
 describe("endDelay", () => {
     /*
-     * A trackpad is silent while the fingers rest on it and silent once they have
-     * gone, so the only thing telling the two apart is what the last event looked
-     * like. Cutting the wait short under a resting hand takes the track away from
-     * a swipe still being made.
+     * Holding still part way through a swipe sends nothing at all, which is
+     * exactly what having let go sends. Ending the swipe on that takes the track
+     * away from a hand that is still on it, so while the hand is down the wait is
+     * only there so that a swipe can never hold the track for good.
      */
-    it("waits out a hand that might still be there", () => {
-        expect(endDelay(40)).toBe(HELD_END_MS);
-        expect(endDelay(-40)).toBe(HELD_END_MS);
-        expect(endDelay(2)).toBe(HELD_END_MS);
+    it("waits out a hand still on the trackpad", () => {
+        expect(endDelay(true)).toBe(HELD_END_MS);
+        expect(HELD_END_MS).toBeGreaterThan(SPENT_END_MS);
     });
 
     /*
-     * A swipe let go of coasts to a stop rather than stopping dead, so deltas this
-     * small are the tail running out. Nothing is holding the track by then.
+     * Nothing is holding the track once the hand has gone, so the only thing left
+     * to wait for is the next of the events the swipe glides out on.
      */
-    it("closes promptly once the swipe has coasted to a stop", () => {
-        expect(endDelay(0.4)).toBe(SPENT_END_MS);
-        expect(endDelay(-0.4)).toBe(SPENT_END_MS);
-        expect(endDelay(0)).toBe(SPENT_END_MS);
+    it("closes promptly once the hand has gone", () => {
+        expect(endDelay(false)).toBe(SPENT_END_MS);
     });
 });

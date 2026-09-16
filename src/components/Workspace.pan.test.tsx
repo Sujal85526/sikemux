@@ -6,7 +6,8 @@ import { getState, setState } from "../state/store";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 import { performanceTelemetry } from "../lib/performance";
-import { HELD_END_MS } from "./wheelPan";
+import { HELD_END_MS, SPENT_END_MS } from "./wheelPan";
+import { setFingersDown } from "../lib/wheelTouch";
 import { PAN_MS } from "./useWindowPan";
 import type { Agent } from "../state/types";
 
@@ -20,6 +21,7 @@ const initial = getState();
 beforeEach(() => {
     vi.clearAllMocks();
     setState(initial, true);
+    setFingersDown(false);
     performanceTelemetry.reset();
 });
 afterEach(cleanup);
@@ -296,7 +298,7 @@ describe("workspace wheel pan", () => {
         swipe(live, 600);
         expect(track).not.toHaveClass("sliding");
 
-        act(() => void vi.advanceTimersByTime(HELD_END_MS));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).toHaveClass("sliding");
@@ -306,13 +308,15 @@ describe("workspace wheel pan", () => {
     });
 
     /*
-     * Holding still mid-swipe sends nothing at all, which looks exactly like the
-     * fingers having left. Closing the swipe on that would take the track away
-     * from a finger still on the glass, so a pause has to outlast the wait.
+     * Holding still mid-swipe sends nothing at all, which is exactly what having
+     * let go sends. macOS is the only thing that can tell the two apart, and
+     * while it says the hand is down the track stays where the hand left it
+     * however long the pause runs.
      */
     it("keeps following a finger that holds still part way through", () => {
         const { track, live, index } = stageOfScreens();
-        // Long enough to be a person pausing, short enough that the swipe is not over.
+        setFingersDown(true);
+        // Far longer than a person pauses, and still not the end of the swipe.
         const pause = HELD_END_MS - 100;
 
         swipe(live, 300);
@@ -329,6 +333,28 @@ describe("workspace wheel pan", () => {
     });
 
     /*
+     * The hand leaving is the end of the swipe whether or not anything follows
+     * it, so a swipe that was paused when the hand lifted closes on the lift
+     * rather than waiting out the hold.
+     */
+    it("closes as soon as the hand leaves", () => {
+        const { track, live, index } = stageOfScreens();
+        const neighbour = order()[index + 1];
+        setFingersDown(true);
+
+        swipe(live, 600);
+        act(() => void vi.advanceTimersByTime(HELD_END_MS - 100));
+        expect(track).not.toHaveClass("sliding");
+
+        act(() => setFingersDown(false));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
+
+        expect(activeWindow()).toBe(neighbour);
+        expect(track).toHaveClass("sliding");
+        expect(panOf(track)).toBe(slidLeft(index + 1));
+    });
+
+    /*
      * A swipe that never pulled a screen halfway on has not chosen it, so quiet
      * puts the one it started on back. This is the shortest travel there is, and
      * it may not crawl.
@@ -340,7 +366,7 @@ describe("workspace wheel pan", () => {
         swipe(live, 100);
         expect(track).not.toHaveClass("sliding");
 
-        act(() => void vi.advanceTimersByTime(HELD_END_MS));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
 
         expect(activeWindow()).toBe(before);
         expect(track).toHaveClass("sliding");
@@ -386,7 +412,7 @@ describe("workspace wheel pan", () => {
         expect(swipe(pane, 300)).toBe(false);
         pane.scrollLeft = 500;
         expect(swipe(pane, 300)).toBe(false);
-        act(() => void vi.advanceTimersByTime(HELD_END_MS));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
 
         expect(track).not.toHaveClass("panning");
         expect(activeWindow()).toBe(before);
@@ -396,7 +422,7 @@ describe("workspace wheel pan", () => {
         const { track, live } = stageOfScreens();
 
         expect(swipe(live, 60, 50)).toBe(false);
-        act(() => void vi.advanceTimersByTime(HELD_END_MS));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
 
         expect(track).not.toHaveClass("panning");
     });
@@ -420,7 +446,7 @@ describe("workspace wheel pan", () => {
 
         swipe(live, 100);
         act(() => cmd.selectWindowId(chosen));
-        act(() => void vi.advanceTimersByTime(HELD_END_MS));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
 
         expect(activeWindow()).toBe(chosen);
     });
@@ -438,7 +464,7 @@ describe("workspace wheel pan", () => {
         expect(track).toHaveClass("panning");
         expect(panOf(track)).toBe(slidLeft(index + 0.6));
 
-        act(() => void vi.advanceTimersByTime(HELD_END_MS));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).not.toHaveClass("panning");

@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import * as cmd from "../state/commands";
+import { fingersDown, onFingersLift, watchFingers } from "../lib/wheelTouch";
 import { getState } from "../state/store";
 import { panOffset, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
-import { claimsWheel, endDelay, panned } from "./wheelPan";
+import { claimsWheel, endDelay, SPENT_END_MS, panned } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 interface Gesture {
@@ -128,7 +129,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             }
             const moving = gesture;
             if (quiet != null) window.clearTimeout(quiet);
-            quiet = window.setTimeout(settle, endDelay(event.deltaX));
+            quiet = window.setTimeout(settle, endDelay(fingersDown()));
             if (!moving.claimed) return;
             // Whatever is underneath must not scroll as well, including a terminal
             // that turns wheel gestures into cursor keys.
@@ -150,9 +151,20 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             if (moving.frame == null) moving.frame = requestAnimationFrame(paint);
         };
 
+        // A hand leaving the trackpad is the end of the swipe, whether or not any
+        // more events follow it, so it closes the wait the events were holding open.
+        const lifted = onFingersLift(() => {
+            if (!gesture || quiet == null) return;
+            window.clearTimeout(quiet);
+            quiet = window.setTimeout(settle, SPENT_END_MS);
+        });
+        const watching = new AbortController();
+        watchFingers(watching.signal);
         area.addEventListener("wheel", onWheel, { passive: false, capture: true });
         return () => {
             area.removeEventListener("wheel", onWheel, { capture: true });
+            watching.abort();
+            lifted();
             forget();
         };
     }, [areaRef]);
