@@ -87,6 +87,17 @@ function mergePaths(current: string[], incoming: readonly string[]): string[] {
     return merged;
 }
 
+/* The command a draft is naming is the one the caret sits in, so a slash works
+   part-way through a sentence and not only as the first thing typed. */
+function slashTokenAt(text: string, caret: number): { start: number; needle: string } | null {
+    if (caret <= 0) return null;
+    const start = text.lastIndexOf("/", caret - 1);
+    if (start < 0) return null;
+    if (start > 0 && !/\s/.test(text[start - 1])) return null;
+    const needle = text.slice(start + 1, caret);
+    return /\s/.test(needle) ? null : { start, needle };
+}
+
 // Splits `mcp__server__tool` so the server name can be de-emphasized.
 function toolLabel(title: string): { scope?: string; name: string } {
     const segments = title.split("__");
@@ -439,6 +450,7 @@ export function AgentChatPane({
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
     const [draft, setDraft] = useState("");
+    const [caret, setCaret] = useState(0);
     const [attachments, setAttachments] = useState<string[]>([]);
     const [slashSelection, setSlashSelection] = useState(0);
     const [slashDismissed, setSlashDismissed] = useState(false);
@@ -680,18 +692,30 @@ export function AgentChatPane({
         pinToBottom();
     }, [displayState.messages.length, displayState.revision, pinToBottom, visible]);
 
+    const slashToken = useMemo(() => (slashDismissed ? null : slashTokenAt(draft, caret)), [caret, draft, slashDismissed]);
+
     const slashCommands = useMemo(() => {
-        if (slashDismissed || !draft.startsWith("/") || /\s/.test(draft.slice(1))) return [];
-        const needle = draft.slice(1).toLowerCase();
+        if (!slashToken) return [];
+        const needle = slashToken.needle.toLowerCase();
         return state.commands.filter((command) => command.name.toLowerCase().includes(needle)).slice(0, 8);
-    }, [draft, slashDismissed, state.commands]);
+    }, [slashToken, state.commands]);
 
     useEffect(() => setSlashSelection(0), [draft]);
 
     const selectCommand = (command: AcpAvailableCommand) => {
-        setDraft(`/${command.name}${command.input?.hint ? " " : ""}`);
+        if (!slashToken) return;
+        const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
+        const written = `/${command.name}${spaced ? " " : ""}`;
+        const position = slashToken.start + written.length;
+        setDraft(`${draft.slice(0, slashToken.start)}${written}${draft.slice(caret)}`);
+        setCaret(position);
         setSlashDismissed(true);
-        window.requestAnimationFrame(() => editorRef.current?.focus());
+        window.requestAnimationFrame(() => {
+            const editor = editorRef.current;
+            if (!editor) return;
+            editor.focus();
+            editor.setSelectionRange(position, position);
+        });
     };
 
     const send = async () => {
@@ -712,6 +736,7 @@ export function AgentChatPane({
         }
         const paths = [...attachments];
         setDraft("");
+        setCaret(0);
         setAttachments([]);
         setComposerError(null);
         setSlashDismissed(false);
@@ -948,9 +973,11 @@ export function AgentChatPane({
                         rows={3}
                         onChange={(event) => {
                             setDraft(event.target.value);
+                            setCaret(event.target.selectionStart);
                             setComposerError(null);
                             setSlashDismissed(false);
                         }}
+                        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
                         onKeyDown={(event) => {
                             if (slashCommands.length > 0) {
                                 if (event.key === "ArrowDown") {

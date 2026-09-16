@@ -380,6 +380,65 @@ describe("AgentChatPane", () => {
         expect(editor).toHaveValue("/compact ");
     });
 
+    it("offers commands for a slash typed part-way through a draft", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "available_commands_update",
+                availableCommands: [{ name: "compact", description: "Compact context", input: { hint: "focus" } }],
+            },
+        });
+        await act(async () => window.requestAnimationFrame(() => {}));
+
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        fireEvent.change(editor, { target: { value: "tidy up then /comp", selectionStart: 18 } });
+        expect(await screen.findByRole("option", { name: /compact/i })).toBeInTheDocument();
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(editor).toHaveValue("tidy up then /compact ");
+    });
+
+    it("leaves what follows the caret in place when a command is chosen", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "available_commands_update",
+                availableCommands: [{ name: "compact", description: "Compact context", input: { hint: "focus" } }],
+            },
+        });
+        await act(async () => window.requestAnimationFrame(() => {}));
+
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        fireEvent.change(editor, { target: { value: "run /comp then stop", selectionStart: 9 } });
+        expect(await screen.findByRole("option", { name: /compact/i })).toBeInTheDocument();
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(editor).toHaveValue("run /compact then stop");
+    });
+
+    it("keeps a slash inside a word from opening the command menu", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "available_commands_update",
+                availableCommands: [{ name: "compact", description: "Compact context", input: { hint: "focus" } }],
+            },
+        });
+        await act(async () => window.requestAnimationFrame(() => {}));
+
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        fireEvent.change(editor, { target: { value: "src/comp", selectionStart: 8 } });
+        await act(async () => window.requestAnimationFrame(() => {}));
+        expect(screen.queryByRole("option", { name: /compact/i })).not.toBeInTheDocument();
+    });
+
     it("stays pinned while a restored transcript settles, and lets go when the reader scrolls up", async () => {
         render(<AgentChatPane agent={{ ...agent, resumeId: "old-session" }} cwd="/repo" active visible onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());
