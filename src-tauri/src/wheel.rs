@@ -12,7 +12,7 @@ pub const TOUCH_EVENT: &str = "wheel-touch";
 #[cfg(target_os = "macos")]
 mod imp {
     use std::ptr::NonNull;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicI8, Ordering};
 
     use block2::RcBlock;
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventPhase};
@@ -32,10 +32,12 @@ mod imp {
 
     pub fn watch<R: Runtime>(app: &AppHandle<R>) {
         let app = app.clone();
-        let was = AtomicBool::new(false);
+        // Starts as neither, so the first scroll of all is reported whichever way
+        // it goes and the window stops having to guess whether anyone is watching.
+        let was = AtomicI8::new(-1);
         let monitor = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
             let down = touching(unsafe { event.as_ref().phase() });
-            if was.swap(down, Ordering::Relaxed) != down {
+            if was.swap(i8::from(down), Ordering::Relaxed) != i8::from(down) {
                 let _ = app.emit(super::TOUCH_EVENT, down);
             }
             // Handing the event straight back leaves the scroll itself untouched.

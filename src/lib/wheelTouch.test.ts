@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fingersDown, onFingersLift, setFingersDown } from "./wheelTouch";
 
-beforeEach(() => setFingersDown(false));
+beforeEach(() => setFingersDown(null));
 
 describe("wheel touch", () => {
-    it("is down only while macOS says a hand is on the trackpad", () => {
-        expect(fingersDown()).toBe(false);
+    it("is neither until something says a hand is on the trackpad", () => {
+        expect(fingersDown()).toBe(null);
         setFingersDown(true);
         expect(fingersDown()).toBe(true);
         setFingersDown(false);

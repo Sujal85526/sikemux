@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsWheel, dragOffset, endDelay, HELD_END_MS, panned, SPENT_END_MS } from "./wheelPan";
+import { claimsWheel, dragOffset, endDelay, HELD_END_MS, panned, SPENT_END_MS, UNWATCHED_END_MS } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 const plain: PaneScroller = { overflowX: "visible", scrollWidth: 100, clientWidth: 100, scrollLeft: 0 };
@@ -166,5 +166,15 @@ describe("endDelay", () => {
      */
     it("closes promptly once the hand has gone", () => {
         expect(endDelay(false)).toBe(SPENT_END_MS);
+    });
+
+    /*
+     * Nowhere but macOS says anything about the hand, and with nothing to go on
+     * the wait is back to being one number for both, which is what it was before.
+     */
+    it("falls back to one wait where nothing watches the trackpad", () => {
+        expect(endDelay(null)).toBe(UNWATCHED_END_MS);
+        expect(UNWATCHED_END_MS).toBeGreaterThan(SPENT_END_MS);
+        expect(UNWATCHED_END_MS).toBeLessThan(HELD_END_MS);
     });
 });

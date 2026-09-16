@@ -8,9 +8,15 @@
 export const HELD_END_MS = 3000;
 /** Long enough for the next of the events a swipe glides out on, and no longer. */
 export const SPENT_END_MS = 100;
+/**
+ * And where nothing is watching the trackpad, the two are back to looking alike
+ * and no wait suits both. Long enough to sit through a short pause, short enough
+ * that a swipe already over does not hang on.
+ */
+export const UNWATCHED_END_MS = 600;
 
 /** How long to let the quiet run before a swipe counts as finished. */
-export const endDelay = (fingersDown: boolean) => (fingersDown ? HELD_END_MS : SPENT_END_MS);
+export const endDelay = (fingersDown: boolean | null) => (fingersDown === null ? UNWATCHED_END_MS : fingersDown ? HELD_END_MS : SPENT_END_MS);
 /** Below this the gesture is diagonal enough to belong to whatever is under it. */
 const HORIZONTAL_RATIO = 1.5;
 /** How far a gesture can pull past the first or last screen of the session. */
