@@ -19,3 +19,4 @@ src-tauri/binaries/sikemux-browser-mcp-*
 
 # Design scratchpads, like .design/ above.
 scratch/
+.empryo
