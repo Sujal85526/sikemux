@@ -1407,3 +1407,6 @@
 .workspace-rail-git-collapsed [role="tab"] > span + span {
     display: none;
 }
+.workspace-rail[data-density="compact"] .agent-row {
+    height: 27px;
+}

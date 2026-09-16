@@ -837,12 +837,17 @@ textarea,
         .bruno-icon-btn,
         .bruno-secrets-btn,
         .bruno-resp-status,
-        .settings-control,
         .settings-theme-act,
         .settings-knob-num,
+        .settings-depth,
         .settings-rail-item,
         .settings-close,
         .settings-topbar-close,
+        .settings-row-x,
+        .keymap-recorder,
+        .keymap-reset,
+        .theme-editor-tab,
+        .theme-field,
         .gg-ref
     ) {
     border-radius: var(--radius-2) !important;
@@ -858,7 +863,7 @@ textarea,
 /* Rows that are not buttons. A settings row or a keymap row is a div, so the
  * bare `button` rule above never reaches it and it sat square beside rows that
  * happened to be clickable. */
-.shell :where(.settings-list-row, .keymap-row, .git-dd-item, .git-modal-suggestion, .git-modal-suggestions) {
+.shell :where(.git-dd-item, .git-modal-suggestion, .git-modal-suggestions) {
     border-radius: var(--radius-2) !important;
 }
 
@@ -866,7 +871,27 @@ textarea,
  * them any more — it is the gutter the strip and the screen sit in. The cards
  * are the same surface at a smaller size: a bordered block the pane puts in
  * the middle of itself to say it is empty, busy, or asking to sign in. */
-.shell :where(.side-rail, .workspace-rail, .agent-usage, .agent-empty, .aws-empty-card, .git-busy-card, .rnd-login-card) {
+.shell
+    :where(
+        .side-rail,
+        .workspace-rail,
+        .agent-usage,
+        .agent-empty,
+        .aws-empty-card,
+        .git-busy-card,
+        .rnd-login-card,
+        .settings-list,
+        .settings-empty,
+        .settings-theme,
+        .keymap-list,
+        .custom-command-list,
+        .cli-paths,
+        .cli-usage,
+        .provider-profile-layout,
+        .theme-editor,
+        .theme-preview,
+        .agent-mode-settings button
+    ) {
     border-radius: var(--radius-3) !important;
 }
 
@@ -891,8 +916,6 @@ textarea,
     .chat-slash-menu,
     .chat-picker-menu,
     .aws-auth-modal,
-    .settings-theme,
-    .theme-editor,
     .bruno-secrets-pop,
     .dlg,
     [role="menu"],
@@ -900,6 +923,12 @@ textarea,
     [role="listbox"]
 ) {
     border-radius: var(--radius-4) !important;
+}
+
+/* The one dialog that does not float. The settings pane fills the stage the
+ * way a screen does, so it takes the stage's corner, not a palette's. */
+.shell .settings-pane {
+    border-radius: var(--radius-3) !important;
 }
 
 /* Inline marks by role, so a sheet does not have to be listed below to stop

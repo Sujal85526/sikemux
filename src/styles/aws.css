@@ -969,3 +969,60 @@
     color: var(--danger);
     border-color: var(--danger);
 }
+
+/* ---- Sign-in modal chrome -----------------------------------------------
+ * The scrim and title bar the AWS auth modal sits in. These lived in
+ * settings.css, which only loads once the settings pane is opened, so the
+ * modal rendered unstyled for anyone who had not been there yet.
+ */
+.settings-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 9vh;
+    background: color-mix(in oklab, var(--gray-base) 62%, transparent);
+}
+.settings-head {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-3);
+    height: 40px;
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
+}
+.settings-title {
+    flex: 1;
+    color: var(--text-primary);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+}
+.settings-title strong {
+    margin-right: var(--space-1h);
+    color: var(--acc);
+    font-weight: var(--weight-semibold);
+}
+.settings-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition:
+        background var(--dur-1),
+        color var(--dur-1);
+}
+.settings-close:hover {
+    background: color-mix(in oklab, var(--danger) 12%, transparent);
+    color: var(--danger);
+}

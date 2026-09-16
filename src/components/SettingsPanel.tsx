@@ -21,7 +21,24 @@ import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
-import { IconCheck, IconClose, IconFolder, IconPencil, IconPlus, IconRefresh, IconSave, IconTrash } from "./Icons";
+import {
+    IconAgent,
+    IconCheck,
+    IconClose,
+    IconCommand,
+    IconEditor,
+    IconFolder,
+    IconGlobe,
+    IconInfo,
+    IconPencil,
+    IconPlus,
+    IconRefresh,
+    IconRun,
+    IconSave,
+    IconSearch,
+    IconTrash,
+    IconWindow,
+} from "./Icons";
 import { Dropdown, type DropdownOption } from "./Dropdown";
 import { Checkbox, Slider, Switch } from "./Controls";
 import { EmptyState } from "./Panel";
@@ -33,16 +50,35 @@ import "../styles/settings.css";
 
 type Page = "general" | "appearance" | "keybindings" | "commands" | "agents" | "cli" | "cloud" | "about";
 
-const PAGES: { id: Page; name: string; detail: string }[] = [
-    { id: "general", name: "General", detail: "Projects and discovery" },
-    { id: "appearance", name: "Appearance", detail: "Theme and window" },
-    { id: "keybindings", name: "Keybindings", detail: "Commands and navigation" },
-    { id: "commands", name: "Command deck", detail: "Your contextual actions" },
-    { id: "agents", name: "Agents", detail: "Profiles and launch safety" },
-    { id: "cli", name: "CLI", detail: "Shell and editor integration" },
-    { id: "cloud", name: "Cloud", detail: "Sign-in workspace" },
-    { id: "about", name: "About", detail: "Updates and diagnostics" },
+interface PageEntry {
+    id: Page;
+    name: string;
+    icon: ReactNode;
+}
+
+/** Two groups: what the window looks and feels like, then what it talks to. */
+const NAV: { label: string; pages: PageEntry[] }[] = [
+    {
+        label: "Workspace",
+        pages: [
+            { id: "general", name: "General", icon: <IconFolder size={13} /> },
+            { id: "appearance", name: "Appearance", icon: <IconWindow size={13} /> },
+            { id: "keybindings", name: "Keybindings", icon: <IconCommand size={13} /> },
+            { id: "commands", name: "Command deck", icon: <IconRun size={13} /> },
+        ],
+    },
+    {
+        label: "Integrations",
+        pages: [
+            { id: "agents", name: "Agents", icon: <IconAgent size={13} /> },
+            { id: "cli", name: "Command line", icon: <IconEditor size={13} /> },
+            { id: "cloud", name: "Cloud", icon: <IconGlobe size={13} /> },
+            { id: "about", name: "About", icon: <IconInfo size={13} /> },
+        ],
+    },
 ];
+
+const PAGE_TITLES = Object.fromEntries(NAV.flatMap((group) => group.pages).map((entry) => [entry.id, entry.name])) as Record<Page, string>;
 
 export function SettingsPanel() {
     const modalRef = useRef<HTMLDivElement>(null);
@@ -77,30 +113,33 @@ export function SettingsPanel() {
         <div ref={modalRef} tabIndex={-1} className="settings-pane" role="dialog" aria-modal="true" aria-label="Settings">
             <div className="settings-frame">
                 <aside className="settings-rail">
-                    <nav className="settings-rail-list">
-                        {PAGES.map((p) => (
-                            <button
-                                key={p.id}
-                                className={`settings-rail-item${page === p.id ? " active" : ""}`}
-                                onClick={() => setPage(p.id)}
-                                type="button">
-                                <span className="settings-rail-name">{p.name}</span>
-                                <span className="settings-rail-detail">{p.detail}</span>
-                            </button>
+                    <nav className="settings-nav" aria-label="Settings sections">
+                        {NAV.map((group) => (
+                            <div className="settings-nav-group" key={group.label}>
+                                <span className="settings-nav-label">{group.label}</span>
+                                {group.pages.map((entry) => (
+                                    <button
+                                        key={entry.id}
+                                        className={`settings-rail-item${page === entry.id ? " active" : ""}`}
+                                        onClick={() => setPage(entry.id)}
+                                        aria-current={page === entry.id ? "page" : undefined}
+                                        type="button">
+                                        <span className="settings-rail-icon" aria-hidden="true">
+                                            {entry.icon}
+                                        </span>
+                                        <span className="settings-rail-name">{entry.name}</span>
+                                    </button>
+                                ))}
+                            </div>
                         ))}
                     </nav>
 
-                    <div className="settings-rail-foot">
-                        <span className="settings-rail-path">Changes save automatically</span>
-                    </div>
+                    <div className="settings-rail-foot">Changes save automatically</div>
                 </aside>
 
                 <div className="settings-main">
                     <header className="settings-topbar">
-                        <div>
-                            <span className="settings-topbar-kicker">Preferences</span>
-                            <span className="settings-topbar-title">Settings</span>
-                        </div>
+                        <span className="settings-topbar-title">{PAGE_TITLES[page]}</span>
                         <button
                             className="settings-topbar-close"
                             onClick={cmd.closeSettings}
@@ -144,124 +183,110 @@ function blankCommand(): CustomCommand {
 function CommandsPage() {
     const commands = useStore((s) => s.customCommands);
     const [draft, setDraft] = useState<CustomCommand>(() => blankCommand());
+    const editing = commands.some((item) => item.id === draft.id);
     const save = () => {
         if (!draft.title.trim() || !draft.command.trim()) return;
         cmd.upsertCustomCommand({ ...draft, title: draft.title.trim(), detail: draft.detail.trim() });
         setDraft(blankCommand());
     };
     return (
-        <SettingsPage name="command deck" deck="Trusted shell actions that appear beside every built-in Sikemux command.">
-            <SettingsSection
-                title="Custom actions"
-                meta={`${commands.length} saved`}
-                sub="Commands run with the active session as cwd and receive SIKEMUX_SESSION_* and SIKEMUX_PROJECT environment variables. They are unsandboxed—only add commands you trust.">
-                <div className="custom-command-list">
-                    {commands.map((item) => (
-                        <button key={item.id} type="button" onClick={() => setDraft(item)}>
-                            <span>{item.title}</span>
-                            <small>
-                                {item.placement} · {item.contexts.length ? item.contexts.join(", ") : "all contexts"}
-                            </small>
-                        </button>
-                    ))}
-                    {commands.length === 0 && (
-                        <span className="settings-field-help">
-                            No custom commands yet. Built-ins are already searchable with the command-deck shortcut.
-                        </span>
-                    )}
-                </div>
+        <SettingsPage>
+            <SettingsSection title="Your actions" meta={`${commands.length} saved`} sub="Shell commands that sit beside the built-in ones.">
+                {commands.length === 0 ? (
+                    <div className="settings-empty">No custom actions yet. The built-ins are already searchable from the command deck.</div>
+                ) : (
+                    <div className="custom-command-list">
+                        {commands.map((item) => (
+                            <button key={item.id} type="button" onClick={() => setDraft(item)}>
+                                <span>{item.title}</span>
+                                <small>
+                                    {item.placement} · {item.contexts.length ? item.contexts.join(", ") : "all contexts"}
+                                </small>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </SettingsSection>
-            <SettingsSection
-                title={commands.some((item) => item.id === draft.id) ? "Edit action" : "New action"}
-                sub="Choose where output should live: a terminal tab, split, temporary popup, background toast, or replacement pane.">
+
+            <SettingsSection title={editing ? "Edit action" : "New action"}>
                 <div className="command-editor-grid">
-                    <input
-                        className="settings-input"
-                        placeholder="Display name"
-                        value={draft.title}
-                        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                    />
-                    <input
-                        className="settings-input"
-                        placeholder="What it does"
-                        value={draft.detail}
-                        onChange={(e) => setDraft({ ...draft, detail: e.target.value })}
-                    />
+                    <div className="command-editor-row">
+                        <input
+                            className="settings-input"
+                            placeholder="Display name"
+                            value={draft.title}
+                            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                        />
+                        <input
+                            className="settings-input"
+                            placeholder="What it does"
+                            value={draft.detail}
+                            onChange={(e) => setDraft({ ...draft, detail: e.target.value })}
+                        />
+                    </div>
                     <textarea
-                        className="settings-input command-editor-source"
+                        className="settings-input mono command-editor-source"
                         placeholder="shell command"
                         value={draft.command}
                         onChange={(e) => setDraft({ ...draft, command: e.target.value })}
                         spellCheck={false}
                     />
-                    <Dropdown
-                        className="settings-dd"
-                        label="placement"
-                        value={draft.placement}
-                        options={COMMAND_PLACEMENTS.map((value) => ({ value, label: value }))}
-                        onChange={(value) => setDraft({ ...draft, placement: value as CustomCommandPlacement })}
-                    />
-                    <div className="command-contexts">
-                        {COMMAND_CONTEXT_OPTIONS.map((context) => (
-                            <Checkbox
-                                key={context}
-                                checked={draft.contexts.includes(context)}
-                                onChange={(on) =>
-                                    setDraft({
-                                        ...draft,
-                                        contexts: on ? [...draft.contexts, context] : draft.contexts.filter((item) => item !== context),
-                                    })
-                                }>
-                                {context}
-                            </Checkbox>
-                        ))}
-                    </div>
-                    <div className="command-editor-actions">
-                        <button className="settings-btn" type="button" onClick={() => setDraft(blankCommand())}>
-                            new
+                    <p className="settings-hint">
+                        Runs unsandboxed with the active session as its working directory, and gets the <em>SIKEMUX_SESSION_*</em> and{" "}
+                        <em>SIKEMUX_PROJECT</em> variables.
+                    </p>
+                </div>
+
+                <SettingsRows>
+                    <SettingsRow label="Where output lands" desc="A terminal tab, a split, a popup, a background toast, or this pane." wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="placement"
+                            value={draft.placement}
+                            options={COMMAND_PLACEMENTS.map((value) => ({ value, label: value[0].toUpperCase() + value.slice(1) }))}
+                            onChange={(value) => setDraft({ ...draft, placement: value as CustomCommandPlacement })}
+                        />
+                    </SettingsRow>
+                    <SettingsRow label="Contexts" desc="Leave all unticked to offer it everywhere." stack>
+                        <div className="command-contexts">
+                            {COMMAND_CONTEXT_OPTIONS.map((context) => (
+                                <Checkbox
+                                    key={context}
+                                    checked={draft.contexts.includes(context)}
+                                    onChange={(on) =>
+                                        setDraft({
+                                            ...draft,
+                                            contexts: on ? [...draft.contexts, context] : draft.contexts.filter((item) => item !== context),
+                                        })
+                                    }>
+                                    {context}
+                                </Checkbox>
+                            ))}
+                        </div>
+                    </SettingsRow>
+                </SettingsRows>
+
+                <div className="settings-actions">
+                    <button className="settings-btn" type="button" onClick={() => setDraft(blankCommand())}>
+                        New
+                    </button>
+                    {editing && (
+                        <button
+                            className="settings-btn danger"
+                            type="button"
+                            onClick={() => {
+                                cmd.deleteCustomCommand(draft.id);
+                                setDraft(blankCommand());
+                            }}>
+                            <IconTrash size={12} /> Delete
                         </button>
-                        {commands.some((item) => item.id === draft.id) && (
-                            <button
-                                className="settings-btn danger"
-                                type="button"
-                                onClick={() => {
-                                    cmd.deleteCustomCommand(draft.id);
-                                    setDraft(blankCommand());
-                                }}>
-                                <IconTrash size={11} /> delete
-                            </button>
-                        )}
-                        <button className="settings-btn primary" type="button" disabled={!draft.title.trim() || !draft.command.trim()} onClick={save}>
-                            <IconSave size={11} /> save
-                        </button>
-                    </div>
+                    )}
+                    <button className="settings-btn primary" type="button" disabled={!draft.title.trim() || !draft.command.trim()} onClick={save}>
+                        <IconSave size={12} /> Save
+                    </button>
                 </div>
             </SettingsSection>
         </SettingsPage>
-    );
-}
-
-function ToggleSetting({
-    label,
-    detail,
-    checked,
-    disabled = false,
-    onChange,
-}: {
-    label: string;
-    detail: string;
-    checked: boolean;
-    disabled?: boolean;
-    onChange: (value: boolean) => void;
-}) {
-    return (
-        <label className="experience-setting-row">
-            <span>
-                <b>{label}</b>
-                <small>{detail}</small>
-            </span>
-            <Switch checked={checked} disabled={disabled} onChange={onChange} label={label} />
-        </label>
     );
 }
 
@@ -284,11 +309,11 @@ function AgentsPage() {
     const newProfile = () =>
         setDraft({ id: `profile-${Date.now().toString(36)}`, name: "", provider: "claude", accent: "#d97757", environmentKeys: [] });
     return (
-        <SettingsPage name="agents" deck="Provider identity, visible safety boundaries, and isolated launch lanes.">
+        <SettingsPage>
             <SettingsSection
-                title="Default safety boundary"
+                title="Launch boundary"
                 meta={AGENT_PERMISSION_COPY[defaultPermissionMode].label}
-                sub="Every new launch shows this choice before the provider process starts. Providers without matching CLI controls visibly fall back to their own settings.">
+                sub="Offered before every launch. Providers without a matching CLI control fall back to their own settings.">
                 <div className="agent-mode-settings" role="radiogroup" aria-label="Default agent safety boundary">
                     {AGENT_PERMISSION_MODES.map((mode) => {
                         const copy = AGENT_PERMISSION_COPY[mode];
@@ -307,10 +332,11 @@ function AgentsPage() {
                     })}
                 </div>
             </SettingsSection>
+
             <SettingsSection
                 title="Provider profiles"
                 meta={`${profiles.length} configured`}
-                sub="Profiles choose the local provider executable used at launch. Credential values are never saved by Sikemux.">
+                sub="Which local executable a launch uses. Credentials are never saved by Sikemux.">
                 <div className="provider-profile-layout">
                     <div className="provider-profile-list">
                         {profiles.map((profile) => (
@@ -329,21 +355,20 @@ function AgentsPage() {
                             </button>
                         ))}
                         <button type="button" className="provider-profile-new" onClick={newProfile}>
-                            <IconPlus size={11} /> new profile
+                            <IconPlus size={12} /> New profile
                         </button>
                     </div>
                     <div className="provider-profile-editor">
-                        <div className="provider-profile-row two">
-                            <label>
-                                <span>name</span>
+                        <SettingsRows>
+                            <SettingsRow label="Name" wide>
                                 <input
-                                    className="settings-input"
+                                    className="settings-input wide"
+                                    aria-label="name"
                                     value={draft.name}
                                     onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                                 />
-                            </label>
-                            <label>
-                                <span>provider</span>
+                            </SettingsRow>
+                            <SettingsRow label="Provider" wide>
                                 <Dropdown
                                     className="settings-dd"
                                     label="provider"
@@ -356,32 +381,32 @@ function AgentsPage() {
                                     ]}
                                     onChange={(value) => setDraft({ ...draft, provider: value as AgentProvider })}
                                 />
-                            </label>
-                        </div>
-                        <label>
-                            <span>executable path</span>
-                            <input
-                                className="settings-input"
-                                placeholder="Leave empty to use PATH"
-                                value={draft.executablePath ?? ""}
-                                onChange={(event) => setDraft({ ...draft, executablePath: event.target.value || undefined })}
-                            />
-                        </label>
-                        {(draft.provider === "claude" || draft.provider === "codex") && (
-                            <label>
-                                <span>profile directory</span>
+                            </SettingsRow>
+                            <SettingsRow label="Executable path" desc="Empty uses PATH." wide>
                                 <input
-                                    className="settings-input"
-                                    placeholder={draft.provider === "codex" ? "Automatic, or ~/.codex-work" : "Automatic, or ~/.claude-work"}
-                                    value={draft.configPath ?? ""}
-                                    onChange={(event) => setDraft({ ...draft, configPath: event.target.value || undefined })}
+                                    className="settings-input mono wide"
+                                    aria-label="executable path"
+                                    placeholder="Leave empty to use PATH"
+                                    value={draft.executablePath ?? ""}
+                                    onChange={(event) => setDraft({ ...draft, executablePath: event.target.value || undefined })}
                                 />
-                                <small className="settings-field-help">
-                                    Leave empty to use the CLI default. Set this only when keeping multiple {draft.provider} accounts side by side.
-                                </small>
-                            </label>
-                        )}
-                        <div className="command-editor-actions">
+                            </SettingsRow>
+                            {(draft.provider === "claude" || draft.provider === "codex") && (
+                                <SettingsRow
+                                    label="Profile directory"
+                                    desc={`Set this only when keeping several ${draft.provider} accounts side by side.`}
+                                    wide>
+                                    <input
+                                        className="settings-input mono wide"
+                                        aria-label="profile directory"
+                                        placeholder={draft.provider === "codex" ? "Automatic, or ~/.codex-work" : "Automatic, or ~/.claude-work"}
+                                        value={draft.configPath ?? ""}
+                                        onChange={(event) => setDraft({ ...draft, configPath: event.target.value || undefined })}
+                                    />
+                                </SettingsRow>
+                            )}
+                        </SettingsRows>
+                        <div className="settings-actions">
                             {isSaved && !draft.id.startsWith("builtin-") && (
                                 <button
                                     className="settings-btn danger"
@@ -390,7 +415,7 @@ function AgentsPage() {
                                         cmd.deleteProviderProfile(draft.id);
                                         setDraft(profiles.find((profile) => profile.id !== draft.id) ?? draft);
                                     }}>
-                                    <IconTrash size={11} /> delete
+                                    <IconTrash size={12} /> Delete
                                 </button>
                             )}
                             <button
@@ -398,55 +423,65 @@ function AgentsPage() {
                                 type="button"
                                 disabled={!draft.name.trim()}
                                 onClick={() => cmd.saveProviderProfile({ ...draft, name: draft.name.trim() })}>
-                                <IconSave size={11} /> {isSaved ? "save profile" : "add profile"}
+                                <IconSave size={12} /> {isSaved ? "Save profile" : "Add profile"}
                             </button>
                         </div>
                     </div>
                 </div>
-                <div className="provider-defaults">
-                    {(["claude", "codex"] as const).map((type) => {
-                        const options = profiles.filter((profile) => profile.provider === type);
-                        return (
-                            <label key={type}>
-                                <span>{type} default</span>
-                                <Dropdown
-                                    className="settings-dd"
-                                    label={`${type} default`}
-                                    value={selectedProfiles[type] ?? ""}
-                                    options={options.map((profile) => ({ value: profile.id, label: profile.name }))}
-                                    onChange={(value) => cmd.selectProviderProfile(type, value)}
-                                />
-                            </label>
-                        );
-                    })}
-                </div>
+
+                <SettingsRows>
+                    {(["claude", "codex"] as const).map((type) => (
+                        <SettingsRow
+                            key={type}
+                            label={`${type[0].toUpperCase()}${type.slice(1)} default`}
+                            desc={`The profile a new ${type} session launches with.`}
+                            wide>
+                            <Dropdown
+                                className="settings-dd"
+                                label={`${type} default`}
+                                value={selectedProfiles[type] ?? ""}
+                                options={profiles
+                                    .filter((profile) => profile.provider === type)
+                                    .map((profile) => ({
+                                        value: profile.id,
+                                        label: profile.name,
+                                    }))}
+                                onChange={(value) => cmd.selectProviderProfile(type, value)}
+                            />
+                        </SettingsRow>
+                    ))}
+                </SettingsRows>
             </SettingsSection>
-            <SettingsSection
-                title="Restart behavior"
-                sub="Only confirmed native agent session IDs are saved. Raw startup commands and terminal evidence never touch disk.">
-                <ToggleSetting
-                    label="Restore agent tabs"
-                    detail="Bring resumable tabs back asleep. They start only when you select them."
-                    checked={restore}
-                    onChange={cmd.setRestoreAgentTabs}
-                />
-                <div className="command-editor-actions">
-                    <button className="settings-btn" type="button" onClick={cmd.sleepIdleAgents}>
-                        Sleep idle agents now
-                    </button>
-                </div>
-            </SettingsSection>
-            <SettingsSection title="Rail density" sub="Compact mode fits more sessions while keeping state symbols visible.">
-                <Dropdown
-                    className="settings-dd"
-                    label="rail density"
-                    value={density}
-                    options={[
-                        { value: "comfortable", label: "comfortable", detail: "Full labels and generous rows" },
-                        { value: "compact", label: "compact", detail: "More sessions per screen" },
-                    ]}
-                    onChange={(value) => cmd.setRailDensity(value as "comfortable" | "compact")}
-                />
+
+            <SettingsSection title="Sessions">
+                <SettingsRows>
+                    <SettingsRow
+                        label="Restore agent tabs"
+                        desc="Resumable tabs come back asleep and start only when selected."
+                        asLabel
+                        control={<Switch checked={restore} onChange={cmd.setRestoreAgentTabs} label="Restore agent tabs" />}
+                    />
+                    <SettingsRow label="Rail density" desc="Compact fits more sessions while keeping every state symbol visible." wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="rail density"
+                            value={density}
+                            options={[
+                                { value: "comfortable", label: "Comfortable", detail: "Full labels and generous rows" },
+                                { value: "compact", label: "Compact", detail: "More sessions per screen" },
+                            ]}
+                            onChange={(value) => cmd.setRailDensity(value as "comfortable" | "compact")}
+                        />
+                    </SettingsRow>
+                    <SettingsRow label="Idle agents" desc="Put every idle agent to sleep now, freeing its process.">
+                        <button className="settings-btn" type="button" onClick={cmd.sleepIdleAgents}>
+                            Sleep now
+                        </button>
+                    </SettingsRow>
+                </SettingsRows>
+                <p className="settings-hint">
+                    Only confirmed native session IDs are written to disk. Startup commands and terminal output never are.
+                </p>
             </SettingsSection>
         </SettingsPage>
     );
@@ -500,43 +535,41 @@ function CliPage() {
             : "Install CLI";
 
     return (
-        <SettingsPage name="command line" deck="Open files and projects in the running Sikemux app, with editor-style wait semantics.">
+        <SettingsPage>
             <SettingsSection title="Shell integration" meta={stateLabel} sub={status?.message ?? "Checking the packaged command-line integration…"}>
-                <div className="cli-integration">
-                    <div className="cli-integration-paths">
-                        <span>
-                            <b>Commands</b>
-                            <code>sikemux</code>
-                            <code>sikemux-editor</code>
-                        </span>
-                        <span>
-                            <b>Install directory</b>
-                            <code>{status?.installDir || "—"}</code>
-                        </span>
-                    </div>
-                    <div className="cli-integration-actions">
-                        <button className="settings-btn" type="button" disabled={busy} onClick={refresh}>
-                            <IconRefresh size={11} /> Refresh
-                        </button>
-                        <button className="settings-btn primary" type="button" disabled={installDisabled} onClick={() => void install()}>
-                            {status?.state === "installed" && <IconCheck size={11} />}
-                            {buttonLabel}
-                        </button>
-                    </div>
+                <div className="cli-paths">
+                    <span>
+                        <b>Commands</b>
+                        <code>sikemux · sikemux-editor</code>
+                    </span>
+                    <span>
+                        <b>Install directory</b>
+                        <code>{status?.installDir || "—"}</code>
+                    </span>
+                </div>
+                <div className="settings-actions">
+                    <button className="settings-btn" type="button" disabled={busy} onClick={refresh}>
+                        <IconRefresh size={12} /> Refresh
+                    </button>
+                    <button className="settings-btn primary" type="button" disabled={installDisabled} onClick={() => void install()}>
+                        {status?.state === "installed" && <IconCheck size={12} />}
+                        {buttonLabel}
+                    </button>
                 </div>
                 {status?.state === "conflict" && (
-                    <p className="settings-field-help cli-integration-warning">
+                    <p className="settings-hint danger">
                         Sikemux will not overwrite <em>{status.cliPath}</em> or <em>{status.editorPath}</em>. Move the existing file yourself, then
                         refresh.
                     </p>
                 )}
                 {status?.state === "installed" && !status.pathConfigured && (
-                    <p className="settings-field-help">
-                        Add <em>{status.installDir}</em> to your shell’s PATH. Sikemux never edits shell startup files automatically.
+                    <p className="settings-hint">
+                        Add <em>{status.installDir}</em> to your shell’s PATH. Sikemux never edits shell startup files.
                     </p>
                 )}
             </SettingsSection>
-            <SettingsSection title="Usage" sub="Existing files open in an editor tab. Project directories focus or create their workspace.">
+
+            <SettingsSection title="Usage" sub="Existing files open in an editor tab. Directories focus or create their workspace.">
                 <pre className="cli-usage">{`sikemux .\nsikemux src/App.tsx:42:5\nsikemux open --wait README.md\nEDITOR=sikemux-editor git commit`}</pre>
             </SettingsSection>
         </SettingsPage>
@@ -548,30 +581,31 @@ function AboutPage() {
     const lastUpdateCheck = useStore((s) => s.lastUpdateCheck);
     const pendingUpdate = useStore((s) => s.pendingUpdate);
     return (
-        <SettingsPage name="about" deck="Release details, first-run guidance, and redacted runtime health.">
-            <SettingsSection
-                title="Update channel"
-                meta={updateChannel}
-                sub="Stable follows the latest signed release. Nightly follows the newest signed prerelease build.">
-                <Dropdown
-                    className="settings-dd"
-                    label="update channel"
-                    value={updateChannel}
-                    options={[
-                        { value: "stable", label: "stable", detail: "Latest signed release" },
-                        { value: "nightly", label: "nightly", detail: "Newest signed prerelease build" },
-                    ]}
-                    onChange={(value) => cmd.setUpdateChannel(value as "stable" | "nightly")}
-                />
-                <div className="about-actions">
-                    <button className="settings-btn" disabled={isUpdateBusy(pendingUpdate?.state)} onClick={() => void cmd.checkForUpdates()}>
-                        Check for updates
-                    </button>
-                </div>
-                {lastUpdateCheck && <p className="settings-field-help">{updateCheckLabel(lastUpdateCheck)}</p>}
+        <SettingsPage>
+            <SettingsSection title="Updates">
+                <SettingsRows>
+                    <SettingsRow label="Channel" desc="Stable follows the latest signed release; nightly the newest prerelease." wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="update channel"
+                            value={updateChannel}
+                            options={[
+                                { value: "stable", label: "Stable", detail: "Latest signed release" },
+                                { value: "nightly", label: "Nightly", detail: "Newest signed prerelease build" },
+                            ]}
+                            onChange={(value) => cmd.setUpdateChannel(value as "stable" | "nightly")}
+                        />
+                    </SettingsRow>
+                    <SettingsRow label="Last checked" desc={lastUpdateCheck ? updateCheckLabel(lastUpdateCheck) : "Not checked yet this session."}>
+                        <button className="settings-btn" disabled={isUpdateBusy(pendingUpdate?.state)} onClick={() => void cmd.checkForUpdates()}>
+                            Check now
+                        </button>
+                    </SettingsRow>
+                </SettingsRows>
             </SettingsSection>
-            <SettingsSection title="Support deck" sub="These views are also searchable from the command deck.">
-                <div className="about-actions">
+
+            <SettingsSection title="Help" sub="All three are also searchable from the command deck.">
+                <div className="settings-actions start">
                     <button
                         className="settings-btn"
                         onClick={() => {
@@ -598,10 +632,9 @@ function AboutPage() {
                     </button>
                 </div>
             </SettingsSection>
-            <SettingsSection
-                title="Session transfer"
-                sub="Clipboard bundles exclude Bruno secrets, drafts, terminal history, environment values, and all startup commands. Imported agents are dormant.">
-                <div className="about-actions">
+
+            <SettingsSection title="Session transfer" sub="Move a workspace between machines through the clipboard.">
+                <div className="settings-actions start">
                     <button className="settings-btn" onClick={() => void cmd.exportActiveSession().catch(reportError("session export"))}>
                         Copy active session
                     </button>
@@ -609,6 +642,10 @@ function AboutPage() {
                         Import from clipboard
                     </button>
                 </div>
+                <p className="settings-hint">
+                    A bundle leaves out Bruno secrets, drafts, terminal history, environment values and startup commands. Imported agents arrive
+                    dormant.
+                </p>
             </SettingsSection>
         </SettingsPage>
     );
@@ -665,15 +702,16 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
     };
 
     return (
-        <SettingsPage name="general" deck="Where Sikemux looks for the projects in your session picker.">
+        <SettingsPage>
             <SettingsSection
                 title="Project folders"
                 meta={`${projectRoots.length} ${projectRoots.length === 1 ? "folder" : "folders"}`}
-                sub="Each folder is scanned for git repos, as deep as its level allows. Tick “index itself” to also offer the folder as a project in its own right — useful for scratch directories that are not repos.">
+                sub="Each folder is scanned for git repos, as deep as its depth allows.">
                 <div className="settings-add">
                     <input
                         ref={inputRef}
-                        className="settings-input"
+                        className="settings-input mono"
+                        aria-label="Folder to add"
                         placeholder="~/proj    or    /Users/me/work"
                         value={draftPath}
                         onChange={(e) => setDraftPath(e.target.value)}
@@ -690,16 +728,19 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
                     <DepthStepper value={draftDepth} onChange={setDraftDepth} title="Levels to scan" />
                     <Tooltip label="Browse…">
                         <button className="settings-btn" onClick={onPick} type="button" aria-label="Browse for a folder">
-                            <IconFolder size={11} />
+                            <IconFolder size={12} />
                         </button>
                     </Tooltip>
                     <button className="settings-btn primary" onClick={() => void commitDraft()} disabled={!draftPath.trim()} type="button">
-                        <IconPlus size={11} /> Add
+                        <IconPlus size={12} /> Add
                     </button>
                 </div>
                 <Checkbox checked={draftSelfIndex} onChange={setDraftSelfIndex}>
                     Index the folder itself as a project
                 </Checkbox>
+                <p className="settings-hint">
+                    Indexing a folder itself offers it in the picker even when it is not a repo — useful for a scratch directory.
+                </p>
 
                 {projectRoots.length === 0 ? (
                     <EmptyState
@@ -796,19 +837,26 @@ function KeybindingsPage({ overrides }: { overrides: KeybindingOverrides }) {
         setMessage(`${KEYBINDING_ACTIONS.find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.`);
     };
 
+    const matches = (action: (typeof KEYBINDING_ACTIONS)[number]) =>
+        !normalizedQuery ||
+        `${action.label} ${action.detail} ${keybindingLabel(resolvedKeybinding(overrides, action.id as KeybindingActionId))}`
+            .toLowerCase()
+            .includes(normalizedQuery);
+
     return (
-        <SettingsPage name="keybindings" deck="Make the workspace move the way your hands already do. Changes apply instantly.">
+        <SettingsPage>
             <SettingsSection
-                title="Command map"
+                title="Shortcuts"
                 meta={`${KEYBINDING_ACTIONS.length} commands · ${overrideCount} changed`}
-                sub="Select a shortcut, then press a new combination. Conflicts are blocked so every command stays reachable.">
+                sub="Select a keycap, then press a new combination. Conflicts are blocked.">
                 <div className="keymap-toolbar">
                     <label className="keymap-search">
-                        <span>filter</span>
+                        <IconSearch size={12} />
                         <input
                             value={query}
                             onChange={(event) => setQuery(event.target.value)}
-                            placeholder="panes, session, Bruno…"
+                            placeholder="Filter by name, description or key"
+                            aria-label="Filter shortcuts"
                             spellCheck={false}
                         />
                     </label>
@@ -821,7 +869,7 @@ function KeybindingsPage({ overrides }: { overrides: KeybindingOverrides }) {
                             setRecording(null);
                             setMessage("All shortcuts restored to their defaults.");
                         }}>
-                        <IconRefresh size={11} /> reset all
+                        <IconRefresh size={12} /> Reset all
                     </button>
                 </div>
 
@@ -832,16 +880,7 @@ function KeybindingsPage({ overrides }: { overrides: KeybindingOverrides }) {
 
                 <div className="keymap-groups">
                     {KEYBINDING_CATEGORIES.map((category) => {
-                        const actions = KEYBINDING_ACTIONS.filter(
-                            (action) =>
-                                action.category === category &&
-                                (!normalizedQuery ||
-                                    `${action.label} ${action.detail} ${keybindingLabel(
-                                        resolvedKeybinding(overrides, action.id as KeybindingActionId),
-                                    )}`
-                                        .toLowerCase()
-                                        .includes(normalizedQuery)),
-                        );
+                        const actions = KEYBINDING_ACTIONS.filter((action) => action.category === category && matches(action));
                         if (!actions.length) return null;
                         return (
                             <section className="keymap-group" key={category}>
@@ -872,7 +911,7 @@ function KeybindingsPage({ overrides }: { overrides: KeybindingOverrides }) {
                                                                 cmd.resetKeybinding(id);
                                                                 setMessage(`${action.label} restored to ${keybindingLabel(action.defaultBinding)}.`);
                                                             }}>
-                                                            <IconRefresh size={10} />
+                                                            <IconRefresh size={11} />
                                                         </button>
                                                     )}
                                                     <button
@@ -895,15 +934,12 @@ function KeybindingsPage({ overrides }: { overrides: KeybindingOverrides }) {
                             </section>
                         );
                     })}
-                    {normalizedQuery &&
-                        !KEYBINDING_ACTIONS.some((action) =>
-                            `${action.label} ${action.detail} ${keybindingLabel(resolvedKeybinding(overrides, action.id as KeybindingActionId))}`
-                                .toLowerCase()
-                                .includes(normalizedQuery),
-                        ) && <div className="settings-empty">no commands match “{query.trim()}”</div>}
+                    {normalizedQuery && !KEYBINDING_ACTIONS.some(matches) && (
+                        <div className="settings-empty">No commands match “{query.trim()}”.</div>
+                    )}
                 </div>
 
-                <p className="keymap-foot">
+                <p className="settings-hint">
                     {IS_MACOS
                         ? "macOS may keep system-reserved combinations before Sikemux can receive them."
                         : "Windows may keep system-reserved combinations before Sikemux can receive them."}
@@ -1030,69 +1066,17 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         </button>
                     )}
                 </div>
-                {custom && <span className="settings-theme-badge">custom</span>}
+                {custom && !active && <span className="settings-theme-badge">custom</span>}
             </div>
         );
     };
 
     return (
-        <SettingsPage
-            name="appearance"
-            deck={
-                IS_MACOS
-                    ? "Theme, window opacity and background blur. Changes apply instantly."
-                    : "Theme and editor appearance. Changes apply instantly."
-            }>
-            <SettingsSection title="Interface text" sub="Increase labels, controls and navigation text while keeping the workspace compact.">
-                <Dropdown
-                    label="Interface text size"
-                    value={String(uiTextScale)}
-                    options={[
-                        { value: "1", label: "100% · Default" },
-                        { value: "1.1", label: "110% · Larger" },
-                        { value: "1.25", label: "125% · Largest" },
-                    ]}
-                    onChange={(value) => cmd.setUiTextScale(Number(value))}
-                />
-            </SettingsSection>
-
-            <SettingsSection
-                title="Host appearance"
-                meta={themeMode}
-                sub="Follow the operating system with Aura Day and your chosen dark cockpit, or keep one theme fixed.">
-                <ToggleSetting
-                    label="Follow system light/dark"
-                    detail="Switches immediately when the host appearance changes."
-                    checked={themeMode === "system"}
-                    onChange={(enabled) => cmd.setThemeMode(enabled ? "system" : "manual")}
-                />
-                <div className="system-theme-grid">
-                    <label>
-                        <span>Light appearance</span>
-                        <Dropdown
-                            className="settings-dd"
-                            label="Light appearance"
-                            value={systemLightThemeId}
-                            options={themeOptions(false, systemLightThemeId)}
-                            onChange={cmd.setSystemLightThemeId}
-                        />
-                    </label>
-                    <label>
-                        <span>Dark appearance</span>
-                        <Dropdown
-                            className="settings-dd"
-                            label="Dark appearance"
-                            value={systemDarkThemeId}
-                            options={themeOptions(true, systemDarkThemeId)}
-                            onChange={cmd.setSystemDarkThemeId}
-                        />
-                    </label>
-                </div>
-            </SettingsSection>
+        <SettingsPage>
             <SettingsSection
                 title="Theme"
                 meta={`${THEMES.length} built-in · ${customThemes.length} custom`}
-                sub="Applies instantly to chrome, editor and terminal — no reload. Hover a swatch to customize or delete.">
+                sub="Applies instantly to chrome, editor and terminal. Hover a card to fork or delete it.">
                 <div className="settings-theme-grid">{THEMES.map((th) => renderCard(th, false))}</div>
 
                 {customThemes.length > 0 && (
@@ -1102,9 +1086,9 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     </>
                 )}
 
-                <div className="settings-theme-newrow">
+                <div className="settings-actions start">
                     <button className="settings-btn" onClick={newFromActive} type="button" title="Fork the active theme into a new editable copy">
-                        <IconPlus size={11} /> new from current
+                        <IconPlus size={12} /> New from current
                     </button>
                 </div>
             </SettingsSection>
@@ -1132,25 +1116,70 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                 </div>
             )}
 
+            <SettingsSection title="System appearance">
+                <SettingsRows>
+                    <SettingsRow
+                        label="Follow system light/dark"
+                        desc="Switches the moment the host appearance changes."
+                        asLabel
+                        control={
+                            <Switch
+                                checked={themeMode === "system"}
+                                onChange={(enabled) => cmd.setThemeMode(enabled ? "system" : "manual")}
+                                label="Follow system light/dark"
+                            />
+                        }
+                    />
+                    <SettingsRow label="Light appearance" wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="Light appearance"
+                            value={systemLightThemeId}
+                            options={themeOptions(false, systemLightThemeId)}
+                            onChange={cmd.setSystemLightThemeId}
+                        />
+                    </SettingsRow>
+                    <SettingsRow label="Dark appearance" wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="Dark appearance"
+                            value={systemDarkThemeId}
+                            options={themeOptions(true, systemDarkThemeId)}
+                            onChange={cmd.setSystemDarkThemeId}
+                        />
+                    </SettingsRow>
+                </SettingsRows>
+            </SettingsSection>
+
+            <SettingsSection title="Interface">
+                <SettingsRows>
+                    <SettingsRow label="Text size" desc="Scales labels and controls without loosening the layout." wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="Interface text size"
+                            value={String(uiTextScale)}
+                            options={[
+                                { value: "1", label: "100% · Default" },
+                                { value: "1.1", label: "110% · Larger" },
+                                { value: "1.25", label: "125% · Largest" },
+                            ]}
+                            onChange={(value) => cmd.setUiTextScale(Number(value))}
+                        />
+                    </SettingsRow>
+                </SettingsRows>
+            </SettingsSection>
+
             {IS_MACOS && (
-                <SettingsSection title="Window feel" sub="Tune the amount of glass without leaving this page.">
-                    <div className="settings-control-stack">
-                        <div className="settings-control">
-                            <div className="settings-control-copy">
-                                <h3>Opacity</h3>
-                                <p>Solid at 1.00, translucent below it.</p>
-                            </div>
-                            <div className="settings-knob-row">
+                <SettingsSection title="Window">
+                    <SettingsRows>
+                        <SettingsRow label="Opacity" desc="Solid at 1.00, translucent below it.">
+                            <div className="settings-knob">
                                 <Slider label="Window opacity" min={0} max={1} step={0.01} value={windowOpacity} onChange={cmd.setWindowOpacity} />
                                 <NumberField value={windowOpacity} onCommit={cmd.setWindowOpacity} format={(v) => v.toFixed(2)} suffix="opacity" />
                             </div>
-                        </div>
-                        <div className="settings-control">
-                            <div className="settings-control-copy">
-                                <h3>Background blur</h3>
-                                <p>0 is crisp; 20–40px gives a soft frosted effect.</p>
-                            </div>
-                            <div className="settings-knob-row">
+                        </SettingsRow>
+                        <SettingsRow label="Background blur" desc="0 is crisp; 20–40px gives a soft frosted effect.">
+                            <div className="settings-knob">
                                 <Slider
                                     label="Background blur"
                                     min={0}
@@ -1166,8 +1195,8 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                                     suffix="px"
                                 />
                             </div>
-                        </div>
-                    </div>
+                        </SettingsRow>
+                    </SettingsRows>
                 </SettingsSection>
             )}
         </SettingsPage>
@@ -1186,16 +1215,18 @@ interface ThemeEditorProps {
 
 function ThemeEditor({ edit, onColor, onName, onDark, onReset, onSave, onCancel }: ThemeEditorProps) {
     const { theme, isNew, baseName } = edit;
+    const [groupKey, setGroupKey] = useState<ThemeGroupKey>(THEME_GROUPS[0].key);
+    const group = THEME_GROUPS.find((candidate) => candidate.key === groupKey) ?? THEME_GROUPS[0];
     return (
         <section className="theme-editor">
             <header className="theme-editor-head">
                 <div className="theme-editor-title">
-                    <span className="theme-editor-kicker">{isNew ? "new theme" : "editing"}</span>
                     <input
                         className="theme-editor-name"
                         value={theme.name}
                         spellCheck={false}
                         placeholder="theme name"
+                        aria-label="Theme name"
                         onChange={(e) => onName(e.target.value)}
                         autoFocus
                     />
@@ -1203,48 +1234,54 @@ function ThemeEditor({ edit, onColor, onName, onDark, onReset, onSave, onCancel 
                 </div>
                 <div className="theme-editor-tools">
                     <button
-                        className={`theme-mode-toggle${theme.dark ? " dark" : " light"}`}
+                        className="settings-btn"
                         onClick={() => onDark(!theme.dark)}
                         type="button"
                         title="Editor light/dark hint — affects CodeMirror defaults">
-                        {theme.dark ? "dark" : "light"}
+                        {theme.dark ? "Dark" : "Light"}
                     </button>
                     <button className="settings-btn" onClick={onReset} type="button" title="Revert all colours to the source theme">
-                        reset
+                        Reset
                     </button>
                     <button className="settings-btn" onClick={onCancel} type="button">
-                        <IconClose size={11} /> cancel
+                        <IconClose size={12} /> Cancel
                     </button>
                     <button className="settings-btn primary" onClick={onSave} type="button">
-                        {isNew ? <IconSave size={11} /> : <IconCheck size={11} />} {isNew ? "save theme" : "update"}
+                        {isNew ? <IconSave size={12} /> : <IconCheck size={12} />} {isNew ? "Save theme" : "Update"}
                     </button>
                 </div>
             </header>
 
             <ThemePreview theme={theme} />
 
-            <div className="theme-editor-groups">
-                {THEME_GROUPS.map((group) => (
-                    <div className="theme-group" key={group.key}>
-                        <div className="theme-group-head">
-                            <h3 className="theme-group-title">{group.label}</h3>
-                            <span className="theme-group-hint">{group.hint}</span>
-                        </div>
-                        <div className="theme-group-grid">
-                            {group.fields.map((field) => (
-                                <ColorField
-                                    key={field.key}
-                                    label={field.label}
-                                    value={(theme[group.key] as unknown as Record<string, string>)[field.key]}
-                                    onChange={(v) => onColor(group.key, field.key, v)}
-                                />
-                            ))}
-                        </div>
-                    </div>
+            <div className="theme-editor-tabs" role="tablist" aria-label="Colour groups">
+                {THEME_GROUPS.map((candidate) => (
+                    <button
+                        key={candidate.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={candidate.key === groupKey}
+                        className={`theme-editor-tab${candidate.key === groupKey ? " active" : ""}`}
+                        onClick={() => setGroupKey(candidate.key)}>
+                        {candidate.label}
+                    </button>
                 ))}
             </div>
-            <p className="theme-editor-foot">
-                Hex or any CSS colour works in the text box — use <em>rgba(…)</em> for translucent washes. The picker only sets hex.
+            <p className="settings-hint">{group.hint}</p>
+
+            <div className="theme-group-grid">
+                {group.fields.map((field) => (
+                    <ColorField
+                        key={field.key}
+                        label={field.label}
+                        value={(theme[group.key] as unknown as Record<string, string>)[field.key]}
+                        onChange={(v) => onColor(group.key, field.key, v)}
+                    />
+                ))}
+            </div>
+
+            <p className="settings-hint">
+                Any CSS colour works in the text box — use <em>rgba(…)</em> for a translucent wash. The picker only sets hex.
             </p>
         </section>
     );
@@ -1279,11 +1316,17 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
     return (
         <div className="theme-field">
             <label className="theme-field-swatch" style={{ background: value }} title={`${label}: ${value}`}>
-                <input type="color" value={toHex(value)} onChange={(e) => onChange(e.target.value)} />
+                <input type="color" value={toHex(value)} onChange={(e) => onChange(e.target.value)} aria-label={label} />
             </label>
             <div className="theme-field-body">
                 <span className="theme-field-label">{label}</span>
-                <input className="theme-field-hex" value={value} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+                <input
+                    className="theme-field-hex"
+                    value={value}
+                    spellCheck={false}
+                    aria-label={`${label} value`}
+                    onChange={(e) => onChange(e.target.value)}
+                />
             </div>
         </div>
     );
@@ -1339,61 +1382,89 @@ interface CloudPageProps {
 
 function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
     return (
-        <SettingsPage name="cloud" deck="Where AWS / GCP single sign-on URLs open, and which workspace to bounce to.">
-            <SettingsSection title="Sign-in browser" meta="aws · gcp · sso" sub="Where the SSO URL lands. Pick the app you actually log in with.">
-                <label className="settings-field-label">browser app</label>
-                <input
-                    className="settings-input wide"
-                    placeholder="e.g. Zen, Arc, Safari · empty = system default"
-                    value={cloudBrowser}
-                    onChange={(e) => cmd.setCloudBrowser(e.target.value)}
-                    spellCheck={false}
-                />
-                <div className="settings-field-help">must match a running app's name · trailing .app is fine</div>
-            </SettingsSection>
-
-            <SettingsSection
-                title="Workspace switch"
-                meta="optional"
-                sub="Fired right after the link opens — point it at the desktop where the browser lives.">
-                <label className="settings-field-label">workspace shortcut</label>
-                <input
-                    className="settings-input wide"
-                    placeholder="e.g. ctrl+3 · empty = no switch"
-                    value={cloudBrowserShortcut}
-                    onChange={(e) => cmd.setCloudBrowserShortcut(e.target.value)}
-                    spellCheck={false}
-                />
-                <div className="settings-field-help">
-                    format: <em>mod+key</em> · use system shortcuts from Mission Control
-                </div>
+        <SettingsPage>
+            <SettingsSection title="Single sign-on" sub="Where an AWS or GCP sign-in URL opens, and where to go once it does.">
+                <SettingsRows>
+                    <SettingsRow label="Browser app" desc="Must match a running app’s name. A trailing .app is fine." wide>
+                        <input
+                            className="settings-input wide"
+                            aria-label="Browser app"
+                            placeholder="Zen, Arc, Safari · empty = system default"
+                            value={cloudBrowser}
+                            onChange={(e) => cmd.setCloudBrowser(e.target.value)}
+                            spellCheck={false}
+                        />
+                    </SettingsRow>
+                    <SettingsRow label="Workspace shortcut" desc="Fired right after the link opens, to reach the desktop the browser lives on." wide>
+                        <input
+                            className="settings-input mono wide"
+                            aria-label="Workspace shortcut"
+                            placeholder="ctrl+3 · empty = no switch"
+                            value={cloudBrowserShortcut}
+                            onChange={(e) => cmd.setCloudBrowserShortcut(e.target.value)}
+                            spellCheck={false}
+                        />
+                    </SettingsRow>
+                </SettingsRows>
             </SettingsSection>
         </SettingsPage>
     );
 }
 
-function SettingsPage({ name, deck, children }: { name: string; deck: ReactNode; children: ReactNode }) {
-    return (
-        <div className="settings-page">
-            <header className="settings-page-head">
-                <h1 className="settings-page-hd">{name}</h1>
-                <p className="settings-page-deck">{deck}</p>
-            </header>
-            {children}
-        </div>
-    );
+function SettingsPage({ children }: { children: ReactNode }) {
+    return <div className="settings-page">{children}</div>;
 }
 
 function SettingsSection({ title, meta, sub, children }: { title: ReactNode; meta?: ReactNode; sub?: ReactNode; children: ReactNode }) {
     return (
         <section className="settings-section">
-            <div className="settings-section-head">
-                <h2 className="settings-section-title">{title}</h2>
-                {meta && <span className="settings-section-meta">{meta}</span>}
-            </div>
-            {sub && <p className="settings-section-sub">{sub}</p>}
-            {children}
+            <header className="settings-section-head">
+                <div className="settings-section-topline">
+                    <h2 className="settings-section-title">{title}</h2>
+                    {meta && <span className="settings-section-meta">{meta}</span>}
+                </div>
+                {sub && <p className="settings-section-sub">{sub}</p>}
+            </header>
+            <div className="settings-section-body">{children}</div>
         </section>
+    );
+}
+
+function SettingsRows({ children }: { children: ReactNode }) {
+    return <div className="settings-rows">{children}</div>;
+}
+
+/**
+ * The shape every labelled setting takes: a name, an optional line of help, and
+ * one control. Pass `asLabel` when the control is a switch or checkbox, so the
+ * whole row is clickable; `wide` when the control should fill the right column.
+ */
+function SettingsRow({
+    label,
+    desc,
+    wide = false,
+    stack = false,
+    asLabel = false,
+    control,
+    children,
+}: {
+    label: ReactNode;
+    desc?: ReactNode;
+    wide?: boolean;
+    stack?: boolean;
+    asLabel?: boolean;
+    control?: ReactNode;
+    children?: ReactNode;
+}) {
+    const Tag = asLabel ? "label" : "div";
+    return (
+        <Tag className={`settings-row${wide ? " wide" : ""}${stack ? " stack" : ""}`}>
+            <span className="settings-row-copy">
+                <span className="settings-row-label">{label}</span>
+                {desc && <span className="settings-row-desc">{desc}</span>}
+            </span>
+            <span className="settings-row-control">{control ?? children}</span>
+        </Tag>
     );
 }
 
@@ -1430,6 +1501,7 @@ function NumberField({ value, onCommit, format, suffix }: NumberFieldProps) {
                 className="settings-knob-val"
                 value={draft}
                 spellCheck={false}
+                aria-label={suffix}
                 onFocus={() => {
                     focusedRef.current = true;
                 }}
@@ -1481,7 +1553,7 @@ function DepthStepper({ value, onChange, title }: { value: number; onChange: (v:
     return (
         <div className="settings-depth" title={title}>
             <span className="settings-depth-label">depth</span>
-            <button className="settings-depth-btn" onClick={() => bump(-1)} disabled={value <= 0} type="button">
+            <button className="settings-depth-btn" onClick={() => bump(-1)} disabled={value <= 0} type="button" aria-label="Scan one level less">
                 −
             </button>
             <input
@@ -1490,6 +1562,7 @@ function DepthStepper({ value, onChange, title }: { value: number; onChange: (v:
                 className="settings-depth-input"
                 value={draft}
                 spellCheck={false}
+                aria-label="Levels to scan"
                 onFocus={() => {
                     focusedRef.current = true;
                 }}
@@ -1514,7 +1587,7 @@ function DepthStepper({ value, onChange, title }: { value: number; onChange: (v:
                     }
                 }}
             />
-            <button className="settings-depth-btn" onClick={() => bump(1)} type="button">
+            <button className="settings-depth-btn" onClick={() => bump(1)} type="button" aria-label="Scan one level more">
                 +
             </button>
         </div>

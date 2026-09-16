@@ -96,19 +96,42 @@ html.is-transparent .crumb,
 html.is-transparent .acc-header,
 html.is-transparent .env-dd-btn,
 html.is-transparent .pane,
-html.is-transparent .settings-pane,
-html.is-transparent .settings-rail,
-html.is-transparent .settings-main,
-html.is-transparent .settings-crumb,
-html.is-transparent .settings-input,
-html.is-transparent .settings-btn:not(.primary),
-html.is-transparent .settings-list,
-html.is-transparent .settings-list-row,
-html.is-transparent .settings-empty,
-html.is-transparent .settings-theme,
-html.is-transparent .settings-depth,
-html.is-transparent .settings-knob-num,
 html.is-transparent .rnd-tree {
+    background: transparent;
+}
+
+/* The settings pane paints every one of its surfaces, so every one of them
+   has to let go together — a single opaque box inside a transparent window
+   reads as a bug rather than a choice. */
+html.is-transparent
+    :where(
+        .settings-pane,
+        .settings-rail,
+        .settings-main,
+        .settings-input,
+        .settings-btn:not(.primary),
+        .settings-list,
+        .settings-empty,
+        .settings-depth,
+        .settings-knob-num,
+        .settings-theme,
+        .settings-theme-act,
+        .keymap-search,
+        .keymap-status,
+        .keymap-list,
+        .keymap-recorder,
+        .custom-command-list,
+        .cli-paths,
+        .cli-usage,
+        .provider-profile-layout,
+        .provider-profile-editor,
+        .theme-editor,
+        .theme-editor-name,
+        .theme-editor-tabs,
+        .theme-preview,
+        .theme-field,
+        .agent-mode-settings button
+    ) {
     background: transparent;
 }
 button {

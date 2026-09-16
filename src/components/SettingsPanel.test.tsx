@@ -18,7 +18,7 @@ describe("SettingsPanel keybindings", () => {
     it("records, blocks conflicts, clears, and resets shortcuts", async () => {
         const user = userEvent.setup();
         render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "KeybindingsCommands and navigation" }));
+        await user.click(screen.getByRole("button", { name: "Keybindings" }));
 
         const projectDefault = keybindingLabel(resolvedKeybinding({}, "project.open"));
         const project = screen.getByRole("button", { name: `Open project: ${projectDefault}. Activate to change.` });
@@ -44,7 +44,7 @@ describe("SettingsPanel keybindings", () => {
         expect(getState().keybindingOverrides["aws.open"]).toBeNull();
         expect(screen.getByRole("button", { name: "Open AWS: Unassigned. Activate to change." })).toBeInTheDocument();
 
-        await user.click(screen.getByRole("button", { name: "reset all" }));
+        await user.click(screen.getByRole("button", { name: "Reset all" }));
         expect(getState().keybindingOverrides).toEqual({});
     });
 
@@ -52,7 +52,7 @@ describe("SettingsPanel keybindings", () => {
         const user = userEvent.setup();
         setState({ restoreAgentTabs: true });
         render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "AgentsProfiles and launch safety" }));
+        await user.click(screen.getByRole("button", { name: "Agents" }));
 
         const restore = screen.getByRole("switch", { name: /Restore agent tabs/ });
         expect(restore).toBeChecked();
@@ -65,7 +65,7 @@ describe("SettingsPanel keybindings", () => {
     it("persists an explicit launch boundary and non-secret provider path", async () => {
         const user = userEvent.setup();
         render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "AgentsProfiles and launch safety" }));
+        await user.click(screen.getByRole("button", { name: "Agents" }));
 
         expect(screen.getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
             expect.stringContaining("Normal"),
@@ -76,7 +76,7 @@ describe("SettingsPanel keybindings", () => {
 
         await user.click(screen.getByRole("button", { name: /Codexcodex.*system PATH/ }));
         await user.type(screen.getByRole("textbox", { name: "executable path" }), "/opt/codex/bin/codex");
-        await user.click(screen.getByRole("button", { name: "save profile" }));
+        await user.click(screen.getByRole("button", { name: "Save profile" }));
 
         expect(getState().providerProfiles.find((profile) => profile.id === "builtin-codex")?.executablePath).toBe("/opt/codex/bin/codex");
     });
@@ -84,7 +84,7 @@ describe("SettingsPanel keybindings", () => {
     it("configures separate themes for system light and dark appearances", async () => {
         const user = userEvent.setup();
         render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "AppearanceTheme and window" }));
+        await user.click(screen.getByRole("button", { name: "Appearance" }));
 
         // The app dropdown is a button + listbox, not a native <select>.
         await user.click(screen.getByRole("button", { name: "Light appearance" }));
