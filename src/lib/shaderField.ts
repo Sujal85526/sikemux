@@ -6,8 +6,8 @@
  * capped at roughly sixteen contexts before the browser starts evicting the
  * oldest without warning. Losing a decoration costs nothing; losing a
  * terminal's renderer costs the product. So the budget below is deliberately
- * small, the runtime is fetched on first use, and a surface stops counting
- * against the budget the moment its host leaves the document.
+ * small, the runtime is fetched on first use, and a surface is released the
+ * moment its host leaves the document.
  *
  * Every mount is best effort. No WebGL, a failed texture decode, a reader who
  * asked for less motion — the plain interface underneath is always the
@@ -256,12 +256,6 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
     }),
 };
 
-/** After the browser has nothing more pressing, or soon, wherever that is missing. */
-function whenIdle(run: () => void): void {
-    if (typeof requestIdleCallback === "function") requestIdleCallback(() => run(), { timeout: 1000 });
-    else setTimeout(run, 0);
-}
-
 /*
  * A live surface whose host has been torn out of the tree takes its context
  * with it and nothing tells us, so orphans are released whenever another mount
@@ -342,21 +336,13 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset): 
     })();
 }
 
-/**
- * Release a surface and its WebGL context. Safe to call for a host that never got one.
- *
- * The surface stops counting against the budget now and gives its context back
- * on the next idle moment. A screen stops painting the frame a pan lands on,
- * and handing a GL context back is the kind of work that shows if it happens
- * there — the card it happens under is the one being looked at.
- */
+/** Release a surface and its WebGL context. Safe to call for a host that never got one. */
 export function unmountShaderField(host: HTMLElement): void {
     const surface = surfaces.get(host);
     if (!surface) return;
     surfaces.delete(host);
     delete host.dataset.shaderField;
-    const mount = surface.mount;
-    if (mount) whenIdle(() => mount.dispose());
+    surface.mount?.dispose();
 }
 
 /** Live surface count. Exported for tests and for reasoning about the context budget. */

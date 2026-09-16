@@ -124,23 +124,13 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         if (!pan || !running) return;
         const track = trackRef.current;
         const span = performanceTelemetry.startTrace("tab-pan", { distance: pan.distance, teleported: pan.distance > 1 });
-        /*
-         * Landing is the one frame of a pan with nothing to spare: the travel is
-         * finishing on it. Taking the track back drops a screen from the pan,
-         * which unpaints a card and gives its texture up, so that waits for the
-         * frame after rather than joining the one being watched.
-         */
-        let frame = 0;
-        const settle = () => {
-            frame ||= requestAnimationFrame(() => setPan(null));
-        };
+        const settle = () => setPan(null);
         const guard = window.setTimeout(settle, SETTLE_GUARD_MS);
         const onEnd = (event: TransitionEvent) => {
             if (event.target === track && event.propertyName === "transform") settle();
         };
         track?.addEventListener("transitionend", onEnd);
         return () => {
-            if (frame) cancelAnimationFrame(frame);
             window.clearTimeout(guard);
             track?.removeEventListener("transitionend", onEnd);
             const recorded = performanceTelemetry.endSpan(span);
