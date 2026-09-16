@@ -5,3 +5,13 @@ import "@testing-library/jest-dom/vitest";
 if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = () => {};
 }
+
+// jsdom lays nothing out, so nothing here ever reports a resize — but panes
+// that watch their content for one still need the constructor to exist.
+if (!("ResizeObserver" in globalThis)) {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}

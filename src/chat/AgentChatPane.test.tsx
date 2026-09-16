@@ -59,9 +59,66 @@ function emit(kind: AcpEvent["kind"], payload: Record<string, unknown>): void {
     act(() => mocks.eventListener?.({ agentId: agent.id, kind, payload }));
 }
 
+// jsdom reports no sizes and never fires a resize, so a scroller and the
+// observer watching it both have to be played by hand. Callbacks are kept per
+// target: the transcript virtualizer watches its own rows and must not be
+// handed a resize meant for the scroll content.
+const resizeCallbacks = new Map<Element, Set<ResizeObserverCallback>>();
+
+class TestResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+        const watchers = resizeCallbacks.get(target) ?? new Set<ResizeObserverCallback>();
+        watchers.add(this.callback);
+        resizeCallbacks.set(target, watchers);
+    }
+    unobserve(target: Element) {
+        resizeCallbacks.get(target)?.delete(this.callback);
+    }
+    disconnect() {
+        resizeCallbacks.forEach((watchers) => watchers.delete(this.callback));
+    }
+}
+
+const nextFrame = () => act(async () => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
+
+function reportResize(target: Element) {
+    const entries = [{ target } as ResizeObserverEntry];
+    const observer = {} as ResizeObserver;
+    act(() => resizeCallbacks.get(target)?.forEach((callback) => callback(entries, observer)));
+}
+
+function fakeScroller(element: HTMLElement, clientHeight: number) {
+    let scrollTop = 0;
+    let scrollHeight = clientHeight;
+    Object.defineProperty(element, "clientHeight", { configurable: true, get: () => clientHeight });
+    Object.defineProperty(element, "scrollHeight", { configurable: true, get: () => scrollHeight });
+    Object.defineProperty(element, "scrollTop", {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+            scrollTop = value;
+        },
+    });
+    return {
+        scrollTo(top: number) {
+            scrollTop = top;
+            fireEvent.scroll(element);
+        },
+        grow(height: number) {
+            scrollHeight = height;
+            const content = element.querySelector(".chat-scroll-content");
+            if (content) reportResize(content);
+            fireEvent.scroll(element);
+        },
+    };
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.eventListener = null;
+    resizeCallbacks.clear();
+    globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver;
 });
 
 afterEach(cleanup);
@@ -264,6 +321,58 @@ describe("AgentChatPane", () => {
         expect(await screen.findByRole("option", { name: /compact/i })).toBeInTheDocument();
         fireEvent.keyDown(editor, { key: "Enter" });
         expect(editor).toHaveValue("/compact ");
+    });
+
+    it("stays pinned while a restored transcript settles, and lets go when the reader scrolls up", async () => {
+        render(<AgentChatPane agent={{ ...agent, resumeId: "old-session" }} cwd="/repo" active visible onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("session_update", { update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Earlier question" } } });
+        emit("ready", { capabilities: {}, setup: {} });
+
+        const scroller = document.querySelector(".chat-scroll") as HTMLElement;
+        const view = fakeScroller(scroller, 400);
+        view.scrollTo(600);
+        expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
+
+        // Rows measuring taller than their estimate push the bottom away. The
+        // reader has not moved, so the transcript must not come unstuck.
+        view.grow(3000);
+        expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
+        expect(scroller.scrollTop).toBe(2600);
+
+        view.scrollTo(200);
+        expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeInTheDocument();
+    });
+
+    it("focuses the composer once a chat connects, and again when a hidden one is reopened", async () => {
+        const props = { agent, cwd: "/repo", active: true, onBusyChange: () => {} };
+        const { rerender } = render(<AgentChatPane {...props} visible />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        expect(editor).toBeDisabled();
+
+        emit("ready", { capabilities: {}, setup: {} });
+        await nextFrame();
+        expect(editor).toHaveFocus();
+
+        rerender(<AgentChatPane {...props} visible={false} />);
+        act(() => editor.blur());
+        rerender(<AgentChatPane {...props} visible />);
+        await nextFrame();
+        expect(editor).toHaveFocus();
+    });
+
+    it("leaves a field being typed in alone when a chat connects behind it", async () => {
+        const elsewhere = document.createElement("input");
+        document.body.append(elsewhere);
+        elsewhere.focus();
+        render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+
+        emit("ready", { capabilities: {}, setup: {} });
+        await nextFrame();
+        expect(elsewhere).toHaveFocus();
+        elsewhere.remove();
     });
 
     it("routes native path drops into prompt attachments", async () => {
