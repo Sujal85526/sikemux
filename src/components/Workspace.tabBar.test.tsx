@@ -73,18 +73,18 @@ describe("workspace tab bars", () => {
         expect(container.querySelector(".window-area")).toHaveClass("window-area--strip");
     });
 
-    it("keeps the agent tab bar and new-agent action visible with one agent", () => {
+    it("keeps the agent tab bar and new-tab action visible with one agent", () => {
         projectWithAgent();
 
         const { container } = render(<Workspace />);
 
         expect(screen.getByRole("tablist")).toBeInTheDocument();
-        const addAgent = screen.getByRole("button", { name: "New agent" });
-        expect(addAgent).toBeInTheDocument();
+        const addTab = screen.getByRole("button", { name: "New tab" });
+        expect(addTab).toBeInTheDocument();
         expect(container.querySelector(".window-area")).toHaveClass("window-area--strip");
 
-        fireEvent.click(addAgent);
-        expect(getState().agentPaletteOpen).toBe(true);
+        fireEvent.click(addTab);
+        expect(getState().newTabPaletteOpen).toBe(true);
     });
 
     it("updates permission mode from the session composer", async () => {

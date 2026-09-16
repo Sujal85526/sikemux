@@ -372,9 +372,9 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
                 }
                 return windowMenu(win);
             }}
-            onAdd={() => cmd.openAgentPalette()}
+            onAdd={() => cmd.openNewTabPalette()}
             addIcon={<IconPlus size={13} />}
-            addTitle="New agent"
+            addTitle="New tab"
             trailing={
                 <>
                     <button
