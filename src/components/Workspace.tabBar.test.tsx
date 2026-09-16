@@ -65,11 +65,11 @@ function projectWithAgent(resumable = true): string {
 }
 
 describe("workspace tab bars", () => {
-    it("keeps the terminal tab bar and new-terminal action visible with one terminal", () => {
+    it("keeps the terminal tab bar and new-tab action visible with one terminal", () => {
         const { container } = render(<Workspace />);
 
         expect(screen.getByRole("tablist")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "New terminal" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "New tab" })).toBeInTheDocument();
         expect(container.querySelector(".window-area")).toHaveClass("window-area--strip");
     });
 

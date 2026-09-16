@@ -2295,8 +2295,8 @@ function activeBrowserAgentId(): string | null {
     return activeAgentId(st, session);
 }
 
-export function newBrowserTab(): boolean {
-    const agentId = activeBrowserAgentId();
+export function newBrowserTab(forAgentId?: string): boolean {
+    const agentId = forAgentId ?? activeBrowserAgentId();
     if (!agentId) return false;
     void browserApi.newTab(agentId).catch(reportError("open browser tab"));
     return true;

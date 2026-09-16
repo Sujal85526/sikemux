@@ -1,4 +1,3 @@
-import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { memo, useMemo, useRef } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, WindowRole } from "../state/types";
@@ -10,7 +9,7 @@ import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ShaderField } from "./ShaderField";
 import { TabBar, type TabDescriptor } from "./TabBar";
-import { AgentIcon, IconCommand, IconGlobe, IconPlus, WindowIcon } from "./Icons";
+import { AgentIcon, IconPlus, WindowIcon } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { FileIcon } from "./FileIcon";
@@ -158,9 +157,6 @@ const ROLE_LABEL: Record<WindowRole, string> = {
 };
 
 function WorkspaceTabsBar({ session }: { session: Session }) {
-    const overrides = useStore((state) => state.keybindingOverrides);
-    const browserBinding = resolvedKeybinding(overrides, "browser.tabNew");
-    const browserLabel = `New browser tab${browserBinding ? ` — ${keybindingLabel(browserBinding)}` : ""}`;
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
     const terminalTitles = useStore((s) => s.terminalTitles);
@@ -376,23 +372,6 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
             onAdd={() => cmd.openNewTabPalette()}
             addIcon={<IconPlus size={13} />}
             addTitle="New tab"
-            trailing={
-                <>
-                    <button
-                        type="button"
-                        className="agent-browser-open"
-                        aria-label="New terminal"
-                        title="New terminal"
-                        onClick={() => cmd.newWindow()}>
-                        <IconCommand size={13} />
-                        <span>term</span>
-                    </button>
-                    <button type="button" className="agent-browser-open" aria-label={browserLabel} title={browserLabel} onClick={cmd.newBrowserTab}>
-                        <IconGlobe size={13} />
-                        <span>browser</span>
-                    </button>
-                </>
-            }
         />
     );
 }

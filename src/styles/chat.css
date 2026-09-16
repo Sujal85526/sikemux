@@ -78,6 +78,28 @@
     opacity: 0.42;
 }
 
+.agent-browser-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 25px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--void) 46%, transparent);
+    color: var(--ink-faint);
+    font-family: var(--ui);
+    font-size: 10.5px;
+    transition:
+        color 100ms,
+        border-color 100ms;
+}
+
+.agent-browser-open:hover {
+    border-color: var(--acc-line);
+    color: var(--ink);
+}
+
 .yolo-toggle {
     position: relative;
     display: inline-flex;

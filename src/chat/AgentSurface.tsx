@@ -2,12 +2,26 @@ import { useCallback, useEffect, useState } from "react";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { IconAgent, IconCommand, IconShield, IconShieldBolt } from "../components/Icons";
+import { IconAgent, IconCommand, IconGlobe, IconShield, IconShieldBolt } from "../components/Icons";
+import { keybindingLabel, resolvedKeybinding } from "../keybindings";
+import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { AgentChatPane } from "./AgentChatPane";
 import "../styles/chat.css";
 
 type AgentView = "session" | "tui";
+
+function BrowserButton({ agent }: { agent: Agent }) {
+    const overrides = useStore((state) => state.keybindingOverrides);
+    const binding = resolvedKeybinding(overrides, "browser.tabNew");
+    const label = `New browser tab${binding ? ` — ${keybindingLabel(binding)}` : ""}`;
+    return (
+        <button type="button" className="agent-browser-open" aria-label={label} title={label} onClick={() => cmd.newBrowserTab(agent.id)}>
+            <IconGlobe size={13} />
+            <span>Browser</span>
+        </button>
+    );
+}
 
 function YoloToggle({ agent }: { agent: Agent }) {
     const on = agent.permissionMode === "bypass";
@@ -80,6 +94,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                         <span>TUI</span>
                     </button>
                 </div>
+                <BrowserButton agent={agent} />
             </header>
 
             <div className="agent-surface-body">
