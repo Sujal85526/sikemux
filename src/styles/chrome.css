@@ -813,7 +813,7 @@
 }
 .pane-terminal,
 .pane-agent {
-    padding: 6px;
+    padding: var(--space-1h);
 }
 
 .terminal-host {
