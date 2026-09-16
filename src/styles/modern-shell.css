@@ -522,11 +522,6 @@ textarea:focus,
     border-radius: var(--radius-md);
 }
 
-/* Keep menus and modal cards in the same visual family as the shell. */
-:where(.env-dd-menu, .picker, .command-palette, .session-switcher, .settings-theme, [role="dialog"], [role="listbox"]) {
-    border-radius: var(--radius-md);
-}
-
 /*
  * Anything that floats: one surface, one hairline, one shadow.
  *
@@ -537,7 +532,11 @@ textarea:focus,
 .env-dd-menu,
 .picker,
 .command-palette,
-.session-switcher {
+.session-switcher,
+.tree-ctx-menu,
+.terminal-menu,
+.chat-slash-menu,
+.chat-picker-menu {
     border: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface-overlay) calc(var(--window-opacity, 1) * 96%), transparent);
     box-shadow: var(--shadow-4);
@@ -856,35 +855,82 @@ textarea,
     border-radius: var(--radius-2) !important;
 }
 
+/* Rows that are not buttons. A settings row or a keymap row is a div, so the
+ * bare `button` rule above never reaches it and it sat square beside rows that
+ * happened to be clickable. */
+.shell :where(.settings-list-row, .keymap-row, .git-dd-item, .git-modal-suggestion, .git-modal-suggestions) {
+    border-radius: var(--radius-2) !important;
+}
+
 /* Panels: the frame's own surfaces, which stay put. `.stage` is not one of
- * them any more — it is the gutter the strip and the screen sit in. */
-.shell :where(.side-rail, .workspace-rail, .agent-usage, .agent-empty) {
+ * them any more — it is the gutter the strip and the screen sit in. The cards
+ * are the same surface at a smaller size: a bordered block the pane puts in
+ * the middle of itself to say it is empty, busy, or asking to sign in. */
+.shell :where(.side-rail, .workspace-rail, .agent-usage, .agent-empty, .aws-empty-card, .git-busy-card, .rnd-login-card) {
     border-radius: var(--radius-3) !important;
 }
 
 /* Floating: anything that leaves the frame and casts a shadow. A softer
- * corner than the panels, because height reads as distance. */
-.shell
-    :where(
-        .picker,
-        .command-palette,
-        .session-switcher,
-        .env-dd-menu,
-        .git-dd-menu,
-        .settings-theme,
-        .theme-editor,
-        .bruno-secrets-pop,
-        .dlg,
-        [role="dialog"],
-        [role="listbox"]
-    ) {
+ * corner than the panels, because height reads as distance.
+ *
+ * Deliberately not scoped to `.shell`. Menus portal into `document.body`, so
+ * an ancestor-scoped rule never reaches them — that is how a right-click menu
+ * kept square corners while the buttons inside it, matched by the bare
+ * `button` rule above, rounded. A float is known by what it is, not by where
+ * it happens to be mounted, so `[role="menu"]` catches the ones that move. */
+:where(
+    .picker,
+    .command-palette,
+    .command-popup,
+    .session-switcher,
+    .env-dd-menu,
+    .git-dd-menu,
+    .dd-menu,
+    .tree-ctx-menu,
+    .terminal-menu,
+    .chat-slash-menu,
+    .chat-picker-menu,
+    .aws-auth-modal,
+    .settings-theme,
+    .theme-editor,
+    .bruno-secrets-pop,
+    .dlg,
+    [role="menu"],
+    [role="dialog"],
+    [role="listbox"]
+) {
     border-radius: var(--radius-4) !important;
+}
+
+/* Inline marks by role, so a sheet does not have to be listed below to stop
+ * being square. A `kbd` or an inline `code` chip is the smallest surface in
+ * the app and takes the smallest corner; a `pre` is a block, so it takes the
+ * control corner. Either only shows a corner if the sheet gave it a surface. */
+.shell :where(kbd, code) {
+    border-radius: var(--radius-1) !important;
+}
+
+.shell :where(pre) {
+    border-radius: var(--radius-2) !important;
 }
 
 /* Chips: the smallest marks, where the control radius reads as a pill.
  * The top bar's status chips live here — they are buttons, not badges, so
  * they take a rounded rectangle rather than the capsule they used to. */
-.shell :where(.rnd-btn-sm, .git-kbd, .panel-akbd, .tb-git-chip, .tb-deploy-chip, .tb-aws-chip, .zoom-pill) {
+.shell
+    :where(
+        .rnd-btn-sm,
+        .git-kbd,
+        .git-menu-key,
+        .panel-akbd,
+        .picker-tag,
+        .bruno-tab-count,
+        .command-palette-shortcut,
+        .tb-git-chip,
+        .tb-deploy-chip,
+        .tb-aws-chip,
+        .zoom-pill
+    ) {
     border-radius: var(--radius-1) !important;
 }
 

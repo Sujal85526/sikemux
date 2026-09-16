@@ -292,6 +292,14 @@ winning by specificity would mean a longer selector for every rule and a new one
 each time a sheet grew a nested case. **The order is the mechanism** — the last
 block mentioning a selector wins. Add to the block that matches the role.
 
+Most blocks are scoped to `.shell`. The floating block is not, and that is
+deliberate: menus, tooltips and palettes portal into `document.body`, so an
+ancestor-scoped rule never reaches them. That is how a right-click menu kept
+square corners while the buttons inside it — matched by the bare `button`
+selector — rounded. A float is known by what it is, not by where it is mounted,
+so `[role="menu"]` catches the ones that move. Anything new that portals out of
+the shell belongs on a selector that does not name an ancestor.
+
 ---
 
 ## 10. Elevation

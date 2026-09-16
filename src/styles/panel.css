@@ -278,7 +278,7 @@
     flex: none;
     padding: var(--space-0) var(--space-1h);
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     font-family: var(--mono);
     font-size: var(--text-3xs);
     font-variant-numeric: tabular-nums;

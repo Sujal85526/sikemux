@@ -164,14 +164,14 @@
     inset: 0;
     z-index: 60;
 }
+/* Surface, hairline, corner and shadow come from the float grammar in
+   modern-shell.css, so every menu in the app agrees on them. */
 .tree-ctx-menu {
     position: fixed;
     z-index: 61;
     min-width: 196px;
     max-height: 80vh;
     overflow-y: auto;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
     padding: 4px;
     display: flex;
     flex-direction: column;
