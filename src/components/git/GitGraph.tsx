@@ -163,7 +163,7 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, se
     ctx.lineCap = "round";
 
     const palette = readPalette(canvas);
-    const voidColor = readVar(canvas, "--void") || "#0c0b10";
+    const voidColor = readVar(canvas, "--void") || "#1a1624";
     const unpushedColor = readVar(canvas, "--warn") || "#ffca85";
     const col = (i: number) => palette[i % palette.length];
     const edgeColor = (e: { color: number; unpushed: boolean }) => (e.unpushed ? unpushedColor : col(e.color));

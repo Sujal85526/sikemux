@@ -34,15 +34,15 @@
     font-display: swap;
 }
 :root {
-    --void: #0c0b10;
-    --rail: #121119;
-    --rail-2: #17161f;
-    --pane: #15141b;
-    --line: #242130;
+    --void: #1a1624;
+    --rail: #221e2e;
+    --rail-2: #2d283b;
+    --pane: #221e2e;
+    --line: #322e3e;
     --line-soft: #1c1a26;
     --ink: #e7e5ef;
     --ink-dim: #8b8898;
-    --ink-faint: #565461;
+    --ink-faint: #736f80;
     --acc: #a277ff;
     --acc-soft: rgba(162, 119, 255, 0.13);
     --acc-line: rgba(162, 119, 255, 0.32);
