@@ -213,19 +213,19 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
          * told from a surface that was there all along.
          */
         fragmentShader: runtime.ditheringFragmentShader,
-        // Slower than it was as a pane field. Across the full window the same
-        // speed reads as drifting weather rather than as a still texture.
-        speed: 0.22,
+        // Over one card rather than the whole window the drift covers less ground,
+        // so it has to move quicker to read as weather instead of as a still.
+        speed: 0.5,
         continuous: true,
         uniforms: {
             u_colorBack: runtime.getShaderColorFromString(theme.chrome.bgDim),
             u_colorFront: runtime.getShaderColorFromString(theme.chrome.inkMuted),
             u_shape: runtime.DitheringShapes.simplex,
             u_type: runtime.DitheringTypes["8x8"],
-            // The dots are the texture. At 2px over a whole window they built
-            // into visible bands; 1px stays grain at any window size.
-            u_pxSize: 1,
-            ...sizing(runtime, "none", 0.4),
+            // The dots are the texture. 1px disappeared into haze at this strength;
+            // 2px is grain you can actually see across a card-sized field.
+            u_pxSize: 2,
+            ...sizing(runtime, "none", 1.1),
         },
     }),
 
