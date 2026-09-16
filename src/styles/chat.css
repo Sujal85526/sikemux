@@ -357,7 +357,7 @@
 
 .chat-resource,
 .chat-message-attachments,
-.chat-message-attachments span {
+.chat-message-attachments > span {
     display: flex;
     align-items: center;
 }
@@ -377,13 +377,35 @@
     object-fit: contain;
 }
 
+.chat-image-button {
+    display: block;
+    max-width: 100%;
+    border-radius: var(--radius-panel);
+    cursor: zoom-in;
+}
+
+.chat-image-button:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.chat-attachment-thumb {
+    display: block;
+    max-width: 260px;
+    max-height: 180px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-control);
+    object-fit: contain;
+}
+
 .chat-message-attachments {
     flex-wrap: wrap;
+    align-items: flex-end;
     gap: 5px;
     margin-bottom: 8px;
 }
 
-.chat-message-attachments span {
+.chat-message-attachments > span {
     gap: 5px;
     max-width: 260px;
     padding: 3px 7px;
@@ -583,6 +605,27 @@
     font-size: 10.5px;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.chat-attachments > span.image {
+    display: block;
+    position: relative;
+    width: 76px;
+    height: 58px;
+    padding: 0;
+    overflow: hidden;
+}
+
+.chat-attachments > span.image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.chat-attachments > span.image button {
+    position: absolute;
+    top: 3px;
+    right: 3px;
 }
 
 .chat-attachments button {

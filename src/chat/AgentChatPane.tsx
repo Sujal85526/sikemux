@@ -1,9 +1,10 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { open } from "@tauri-apps/plugin-dialog";
 import { acpApi, type AcpEvent } from "../api/acp";
+import { fsapi } from "../api/fs";
 import { invokeCommand as invoke } from "../api/invoke";
 import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { permissionCopyForType } from "../agentLaunch";
@@ -14,6 +15,7 @@ import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
 import { IconArrowDown, IconArrowUp, IconCheck, IconClose, IconCommand, IconFile, IconPlus, IconShieldBolt, IconWarning } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
+import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import type { AcpAvailableCommand, AcpPermissionRequest, AcpToolCall, ChatMessage, ChatPart } from "./types";
 
 const MAX_ATTACHMENTS = 32;
@@ -104,16 +106,56 @@ function ToolPart({ tool }: { tool: AcpToolCall }) {
     );
 }
 
+function openLink(href: string) {
+    const path = localPath(href);
+    if (path) void fsapi.revealInFinder(path).catch(swallow("reveal chat file"));
+    else void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
+}
+
+function ChatImage({ src, path, className = "chat-image" }: { src: string; path: string; className?: string }) {
+    return (
+        <button type="button" className="chat-image-button" title={path} onClick={() => openLink(path)}>
+            <img className={className} alt={basename(path)} src={src} />
+        </button>
+    );
+}
+
+/* An agent writes an attached file back as a link to it. A picture beats its
+   percent-encoded name, so show the picture whenever we can read it. */
+function ChatLink({ href, children }: { href?: string; children?: ReactNode }) {
+    const imagePath = localImagePath(href);
+    const preview = useImagePreview(imagePath);
+    if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
+    return (
+        <a
+            href={href}
+            onClick={(event) => {
+                event.preventDefault();
+                if (href) openLink(href);
+            }}>
+            {children}
+        </a>
+    );
+}
+
+const markdownComponents = { a: ChatLink };
+
+function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
+    const uri = typeof content.uri === "string" ? content.uri : undefined;
+    const imagePath = localImagePath(uri);
+    const preview = useImagePreview(imagePath);
+    if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
+    return (
+        <div className="chat-resource">
+            <IconFile size={13} />
+            <span>{content.title || content.name || uri || "Resource"}</span>
+        </div>
+    );
+}
+
 function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> }) {
     const content = part.content;
-    if (content.type === "resource_link") {
-        return (
-            <div className="chat-resource">
-                <IconFile size={13} />
-                <span>{content.title || content.name || content.uri || "Resource"}</span>
-            </div>
-        );
-    }
+    if (content.type === "resource_link") return <ResourceLinkPart content={content} />;
     if (content.type === "image" && typeof content.data === "string" && typeof content.mimeType === "string") {
         return <img className="chat-image" alt="Agent attachment" src={`data:${content.mimeType};base64,${content.data}`} />;
     }
@@ -124,21 +166,7 @@ function MessagePart({ part }: { part: ChatPart }) {
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    skipHtml
-                    components={{
-                        a: ({ href, children }) => (
-                            <a
-                                href={href}
-                                onClick={(event) => {
-                                    event.preventDefault();
-                                    if (href) void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
-                                }}>
-                                {children}
-                            </a>
-                        ),
-                    }}>
+                <Markdown remarkPlugins={[remarkGfm]} skipHtml components={markdownComponents}>
                     {part.text}
                 </Markdown>
             </div>
@@ -149,21 +177,7 @@ function MessagePart({ part }: { part: ChatPart }) {
             <details className="chat-thought">
                 <summary>Reasoning</summary>
                 <div className="chat-markdown">
-                    <Markdown
-                        remarkPlugins={[remarkGfm]}
-                        skipHtml
-                        components={{
-                            a: ({ href, children }) => (
-                                <a
-                                    href={href}
-                                    onClick={(event) => {
-                                        event.preventDefault();
-                                        if (href) void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
-                                    }}>
-                                    {children}
-                                </a>
-                            ),
-                        }}>
+                    <Markdown remarkPlugins={[remarkGfm]} skipHtml components={markdownComponents}>
                         {part.text}
                     </Markdown>
                 </div>
@@ -172,6 +186,40 @@ function MessagePart({ part }: { part: ChatPart }) {
     }
     if (part.kind === "tool") return <ToolPart tool={part.tool} />;
     return <ContentPart part={part} />;
+}
+
+function SentAttachment({ path }: { path: string }) {
+    const preview = useImagePreview(path);
+    if (preview) return <ChatImage src={preview} path={path} className="chat-attachment-thumb" />;
+    return (
+        <span title={path}>
+            <IconFile size={12} />
+            {basename(path)}
+        </span>
+    );
+}
+
+function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
+    const preview = useImagePreview(path);
+    const remove = (
+        <button type="button" aria-label={`Remove ${basename(path)}`} onClick={onRemove}>
+            <IconClose size={11} />
+        </button>
+    );
+    if (preview)
+        return (
+            <span className="image" title={path}>
+                <img alt={basename(path)} src={preview} />
+                {remove}
+            </span>
+        );
+    return (
+        <span title={path}>
+            <IconFile size={14} />
+            <span>{basename(path)}</span>
+            {remove}
+        </span>
+    );
 }
 
 type PartGroup = { id: string; tools: Extract<ChatPart, { kind: "tool" }>[] } | { id: string; part: ChatPart };
@@ -194,10 +242,7 @@ const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: Chat
                 {message.attachments && message.attachments.length > 0 && (
                     <div className="chat-message-attachments">
                         {message.attachments.map((path) => (
-                            <span key={path} title={path}>
-                                <IconFile size={12} />
-                                {basename(path)}
-                            </span>
+                            <SentAttachment key={path} path={path} />
                         ))}
                     </div>
                 )}
@@ -763,16 +808,11 @@ export function AgentChatPane({
                     {attachments.length > 0 && (
                         <div className="chat-attachments">
                             {attachments.map((path) => (
-                                <span key={path} title={path}>
-                                    <IconFile size={14} />
-                                    <span>{basename(path)}</span>
-                                    <button
-                                        type="button"
-                                        aria-label={`Remove ${basename(path)}`}
-                                        onClick={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}>
-                                        <IconClose size={11} />
-                                    </button>
-                                </span>
+                                <ComposerAttachment
+                                    key={path}
+                                    path={path}
+                                    onRemove={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}
+                                />
                             ))}
                         </div>
                     )}
