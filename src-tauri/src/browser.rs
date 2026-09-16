@@ -30,6 +30,7 @@ pub struct BrowserManager {
     generation: AtomicU64,
     streams: Mutex<HashMap<String, BrowserStream>>,
     stream_sequence: AtomicU64,
+    prewarm: AtomicBool,
 }
 
 struct BrowserStream {
@@ -398,6 +399,7 @@ impl BrowserManager {
         if let Ok(mut runtime) = self.runtime.try_lock() {
             runtime.cdp = None;
         }
+        self.prewarm.store(false, Ordering::Release);
     }
 
     async fn ensure_broker(&self, app: &AppHandle) -> AppResult<(String, String)> {
@@ -495,6 +497,13 @@ impl BrowserManager {
                 "--disable-component-update",
                 "--disable-default-apps",
                 "--disable-sync",
+                "--disable-extensions",
+                "--disable-client-side-phishing-detection",
+                "--disable-features=Translate,MediaRouter,OptimizationHints,AcceptCHFrame",
+                "--metrics-recording-only",
+                "--no-service-autorun",
+                "--password-store=basic",
+                "--use-mock-keychain",
                 &format!("--window-size={VIEWPORT_WIDTH},{VIEWPORT_HEIGHT}"),
                 &format!("--user-data-dir={}", profile_dir.display()),
                 "about:blank",
@@ -538,6 +547,24 @@ impl BrowserManager {
         runtime.active_targets.clear();
         runtime.target_sessions.clear();
         Ok(())
+    }
+
+    /// Chromium's cold start is the bulk of the first browser open, so pay it
+    /// in the background as soon as an agent that can drive a browser exists.
+    /// Best effort: a failure leaves the on-demand path untouched and is not
+    /// retried on every spawn.
+    pub fn prewarm(app: &AppHandle) {
+        let app = app.clone();
+        tokio::spawn(async move {
+            let manager = app.state::<BrowserManager>();
+            if manager.prewarm.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            if manager.is_started().await {
+                return;
+            }
+            let _ = manager.ensure_started(&app).await;
+        });
     }
 
     pub async fn environment(
@@ -1268,7 +1295,14 @@ fn clear_agent_registry(state_dir: &Path, agent_id: &str) -> AppResult<()> {
 }
 
 async fn wait_for_debug_endpoint(path: &Path) -> AppResult<(String, String)> {
-    for _ in 0..150 {
+    // Chromium writes DevToolsActivePort the moment the debugger is up, so the
+    // first poll interval is the floor on how fast the browser can open. Start
+    // tight and widen: a warm profile answers in a few milliseconds, and a cold
+    // one still gets the same ~15s budget.
+    let mut waited = Duration::ZERO;
+    let budget = Duration::from_secs(15);
+    let mut interval = Duration::from_millis(4);
+    loop {
         if let Ok(contents) = tokio::fs::read_to_string(path).await {
             let mut lines = contents.lines();
             if let (Some(port), Some(websocket_path)) = (lines.next(), lines.next()) {
@@ -1279,11 +1313,15 @@ async fn wait_for_debug_endpoint(path: &Path) -> AppResult<(String, String)> {
                 ));
             }
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        if waited >= budget {
+            return Err(AppError::Other(
+                "bundled browser did not expose a CDP endpoint".into(),
+            ));
+        }
+        tokio::time::sleep(interval).await;
+        waited += interval;
+        interval = (interval * 2).min(Duration::from_millis(100));
     }
-    Err(AppError::Other(
-        "bundled browser did not expose a CDP endpoint".into(),
-    ))
 }
 
 fn browser_executable(app: &AppHandle) -> AppResult<PathBuf> {
