@@ -19,7 +19,7 @@ function pressKey(key: string) {
 }
 
 function labels(): string[] {
-    return screen.getAllByRole("button").map((row) => row.querySelector(".picker-name")?.textContent ?? "");
+    return screen.getAllByRole("button").map((row) => row.querySelector(".new-tab-label")?.textContent ?? "");
 }
 
 describe("new tab palette", () => {

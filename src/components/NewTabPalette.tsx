@@ -142,10 +142,9 @@ export function NewTabPalette() {
                                 setSelected(index);
                             }}
                             onClick={() => choose(choice)}>
-                            <span className="picker-icon">{choice.icon}</span>
-                            <span className="picker-text">
-                                <span className="picker-name">{choice.label}</span> <span className="picker-sub">{choice.detail}</span>
-                            </span>
+                            <span className="new-tab-icon">{choice.icon}</span>
+                            <span className="new-tab-label">{choice.label}</span>
+                            <span className="new-tab-detail">{choice.detail}</span>
                             <kbd className="new-tab-key">{index + 1}</kbd>
                         </button>
                     ))}
