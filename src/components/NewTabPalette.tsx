@@ -3,7 +3,7 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { agentIdsOf } from "../state/selectors";
 import { useModalFocus } from "../hooks/useModalFocus";
-import { IconAgent, IconCommit, IconEditor, IconGlobe, IconRun, IconSearch } from "./Icons";
+import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconSearch } from "./Icons";
 
 interface TabChoice {
     id: string;
@@ -30,7 +30,7 @@ export function NewTabPalette() {
             id: "terminal",
             label: "Terminal",
             detail: "A new shell in this project",
-            icon: <IconRun size={14} />,
+            icon: <IconCommand size={14} />,
             open: cmd.newWindow,
             disabled: !session,
         },

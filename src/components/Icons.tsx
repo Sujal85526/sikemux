@@ -317,7 +317,7 @@ export function AgentIcon({ type, size, className }: { type: AgentType; size?: n
 import type { WindowRole } from "../state/types";
 export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) {
     if (role === "files") return <IconEditor size={size} />;
-    if (role === "term") return <IconRun size={size} />;
+    if (role === "term") return <IconCommand size={size} />;
     if (role === "git") return <IconGit size={size} />;
     if (role === "diff") return <IconCommit size={size} />;
     if (role === "search") return <IconSearch size={size} />;
