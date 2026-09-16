@@ -187,7 +187,7 @@
 }
 
 .agent-surface-body,
-.agent-session-layer,
+.agent-gui-layer,
 .agent-tui-layer {
     position: relative;
     min-width: 0;
@@ -195,14 +195,14 @@
     overflow: hidden;
 }
 
-.agent-session-layer {
+.agent-gui-layer {
     position: absolute;
     inset: 0;
 }
 
 /* Hides by absence of `.visible`, never by declaring `visibility: visible`:
    that would also un-hide this layer when the whole tab is hidden. */
-.agent-session-layer:not(.visible) {
+.agent-gui-layer:not(.visible) {
     visibility: hidden;
     pointer-events: none;
 }

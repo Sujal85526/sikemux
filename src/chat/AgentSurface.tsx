@@ -9,7 +9,7 @@ import * as cmd from "../state/commands";
 import { AgentChatPane } from "./AgentChatPane";
 import "../styles/chat.css";
 
-type AgentView = "session" | "tui";
+type AgentView = "gui" | "tui";
 
 function BrowserButton({ agent }: { agent: Agent }) {
     const overrides = useStore((state) => state.keybindingOverrides);
@@ -46,27 +46,27 @@ function YoloToggle({ agent }: { agent: Agent }) {
 }
 
 export function AgentSurface({ agent, session, profile, visible }: { agent: Agent; session: Session; profile?: ProviderProfile; visible: boolean }) {
-    const supportsSession = agent.type === "claude" || agent.type === "codex";
+    const supportsGui = agent.type === "claude" || agent.type === "codex";
     const [opened, setOpened] = useState(visible);
     useEffect(() => {
         if (visible) setOpened(true);
     }, [visible]);
-    const [view, setView] = useState<AgentView>(supportsSession ? "session" : "tui");
+    const [view, setView] = useState<AgentView>(supportsGui ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
 
     const switchView = useCallback(
         async (next: AgentView) => {
-            if (next === view || switching || (view === "session" && chatBusy)) return;
+            if (next === view || switching || (view === "gui" && chatBusy)) return;
             setSwitching(true);
-            if (view === "session") await acpApi.stop(agent.id).catch(() => {});
+            if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
             setView(next);
             window.requestAnimationFrame(() => setSwitching(false));
         },
         [agent.id, chatBusy, switching, view],
     );
 
-    const sessionActive = supportsSession && view === "session" && !switching;
+    const guiActive = supportsGui && view === "gui" && !switching;
 
     return (
         <section className="agent-surface">
@@ -78,16 +78,17 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 <div className="agent-view-switch" role="group" aria-label="Agent view">
                     <button
                         type="button"
-                        aria-pressed={view === "session"}
-                        disabled={!supportsSession || switching}
-                        onClick={() => void switchView("session")}>
+                        aria-pressed={view === "gui"}
+                        disabled={!supportsGui || switching}
+                        title="Open the built-in agent chat"
+                        onClick={() => void switchView("gui")}>
                         <IconAgent size={13} />
-                        <span>Session</span>
+                        <span>GUI</span>
                     </button>
                     <button
                         type="button"
                         aria-pressed={view === "tui"}
-                        disabled={switching || (view === "session" && chatBusy)}
+                        disabled={switching || (view === "gui" && chatBusy)}
                         title={chatBusy ? "Stop the current turn before opening TUI" : "Open native agent TUI"}
                         onClick={() => void switchView("tui")}>
                         <IconCommand size={13} />
@@ -98,14 +99,14 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
             </header>
 
             <div className="agent-surface-body">
-                {supportsSession && (
-                    <div className={`agent-session-layer${view === "session" ? " visible" : ""}`}>
+                {supportsGui && (
+                    <div className={`agent-gui-layer${view === "gui" ? " visible" : ""}`}>
                         <AgentChatPane
                             agent={agent}
                             profile={profile}
                             cwd={agent.cwd || session.cwd}
-                            active={opened && sessionActive}
-                            visible={visible && sessionActive}
+                            active={opened && guiActive}
+                            visible={visible && guiActive}
                             onBusyChange={setChatBusy}
                         />
                     </div>

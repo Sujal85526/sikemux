@@ -72,7 +72,7 @@ describe("restored agent lifecycle", () => {
         expect(screen.queryByTestId("terminal-agent-hidden")).not.toBeInTheDocument();
     });
 
-    it("resumes a sleeping agent into Session and starts TUI only after switching", async () => {
+    it("resumes a sleeping agent into GUI and starts TUI only after switching", async () => {
         arrangeRestoredAgents("hidden-session");
         setState((state) => ({
             agents: {
