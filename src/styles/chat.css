@@ -568,6 +568,43 @@
     color: var(--danger);
 }
 
+.chat-notice {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 4px 0;
+    padding: 4px 10px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--rail-2) 45%, transparent);
+    color: var(--ink-faint);
+    font-size: var(--text-2xs);
+}
+
+.chat-notice-name {
+    flex: none;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 10.5px;
+}
+
+.chat-notice-state {
+    flex: none;
+    font-size: 10.5px;
+}
+
+.chat-notice.state-failed .chat-notice-state {
+    color: var(--danger);
+}
+
+.chat-notice-summary {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .chat-resource,
 .chat-message-attachments,
 .chat-message-attachments > span {

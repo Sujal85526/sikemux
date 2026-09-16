@@ -70,12 +70,21 @@ export interface AcpSubagent {
     nextId: number;
 }
 
+/* What a background task left behind once it ended, kept in the transcript
+   because the live task above the composer goes away with it. */
+export interface AcpTaskNotice {
+    name: string;
+    state: "completed" | "failed" | "stopped";
+    summary?: string;
+}
+
 export type ChatPart =
     | { id: string; kind: "text"; text: string }
     | { id: string; kind: "thought"; text: string }
     | { id: string; kind: "content"; content: AcpContentBlock }
     | { id: string; kind: "tool"; tool: AcpToolCall }
-    | { id: string; kind: "subagent"; subagent: AcpSubagent };
+    | { id: string; kind: "subagent"; subagent: AcpSubagent }
+    | { id: string; kind: "notice"; notice: AcpTaskNotice };
 
 export interface ChatMessage {
     id: string;

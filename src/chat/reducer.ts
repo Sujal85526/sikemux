@@ -4,6 +4,7 @@ import type {
     AcpContentBlock,
     AcpContentChunk,
     AcpSubagent,
+    AcpTaskNotice,
     AcpToolCall,
     ChatAction,
     ChatMessage,
@@ -37,6 +38,17 @@ type Transcript = { messages: ChatMessage[]; nextId: number };
 const textOf = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 const recordOf = (value: unknown): Record<string, unknown> | undefined =>
     typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+
+/* The agent echoes the notifications its harness writes to itself, and those
+   are one block of tags with no prose around them. Markdown drops such a block
+   whole, so echoing it would leave a bubble with nothing in it — the task it
+   reports on already says its piece in the transcript. */
+function isMarkupOnly(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed) return true;
+    if (!trimmed.startsWith("<") || /\n\s*\n/.test(trimmed)) return false;
+    return /^<([a-z][\w-]*)\b[^>]*>[\s\S]*<\/\1>$/i.test(trimmed);
+}
 
 function contentChunk(update: Record<string, unknown>): AcpContentChunk | null {
     const content = recordOf(update.content);
@@ -122,6 +134,7 @@ function transcriptUpdate(transcript: Transcript, update: Record<string, unknown
             const chunk = contentChunk(update);
             if (!chunk) return null;
             const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
+            if (role === "user" && typeof chunk.content.text === "string" && isMarkupOnly(chunk.content.text)) return null;
             const partKind = update.sessionUpdate === "agent_thought_chunk" ? "thought" : "text";
             return appendChunk(transcript, role, partKind, chunk);
         }
@@ -203,10 +216,18 @@ function patchTask(state: ChatState, update: Record<string, unknown>): ChatState
     if (index < 0) return state;
     const taskState = TASK_STATES.find((candidate) => candidate === update.state);
 
-    /* A task that reached its end has nothing left to watch or stop, and the
-       tool call it came from keeps the record in the transcript. */
+    /* A task that reached its end has nothing left to watch or stop, so it
+       leaves the composer and says how it went in the transcript instead. */
     if (taskState === "completed" || taskState === "failed" || taskState === "stopped") {
-        return { ...state, tasks: state.tasks.filter((_, position) => position !== index), revision: state.revision + 1 };
+        const ended = state.tasks[index];
+        const summary = textOf(update.summary) ?? ended.summary;
+        const notice: AcpTaskNotice = { name: ended.name, state: taskState, ...(summary ? { summary } : {}) };
+        return {
+            ...state,
+            ...appendPart(state, { id: `notice-${ended.asyncTaskId}`, kind: "notice", notice }),
+            tasks: state.tasks.filter((_, position) => position !== index),
+            revision: state.revision + 1,
+        };
     }
 
     const current = state.tasks[index];

@@ -144,6 +144,32 @@ describe("chat reducer", () => {
         ]);
         expect(progressed.tasks[0].summary).toBe("12 files passed");
         expect(finished.tasks).toEqual([]);
+        expect(finished.messages.at(-1)?.parts.at(-1)).toEqual({
+            id: "notice-task-1",
+            kind: "notice",
+            notice: { name: "pnpm test", state: "completed", summary: "12 files passed" },
+        });
+    });
+
+    it("keeps a harness notification out of the transcript", () => {
+        const notified = update(initialChatState, {
+            sessionUpdate: "user_message_chunk",
+            content: {
+                type: "text",
+                text: "<task-notification>\n<task-id>b9u0</task-id>\n<event>audit</event>\n</task-notification>",
+            },
+        });
+
+        expect(notified.messages).toEqual([]);
+    });
+
+    it("keeps a message that only mentions a tag", () => {
+        const asked = update(initialChatState, {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "why does <b>bold</b> render oddly" },
+        });
+
+        expect(asked.messages.at(-1)?.parts).toEqual([{ id: "user-fallback-1-text-0", kind: "text", text: "why does <b>bold</b> render oddly" }]);
     });
 
     it("drops background tasks when the session stops", () => {
