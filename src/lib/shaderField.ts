@@ -225,7 +225,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
             // The dots are the texture. 1px disappeared into haze at this strength;
             // 2px is grain you can actually see across a card-sized field.
             u_pxSize: 2,
-            ...sizing(runtime, "none", 1.1),
+            ...sizing(runtime, "none", 2.4),
         },
     }),
 

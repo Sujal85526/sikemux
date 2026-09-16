@@ -255,6 +255,12 @@ textarea:focus,
     gap: var(--space-2);
 }
 
+/* The rail's other headers are one row, so they share a tight padding. This
+   one ends in the provider tiles, which need clearance from the rule below. */
+.workspace-rail .agent-header {
+    padding-bottom: var(--space-3);
+}
+
 /* The provider switch spans the rail instead of competing with the title. */
 .agent-header-types {
     display: flex;
