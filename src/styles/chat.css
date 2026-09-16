@@ -78,6 +78,88 @@
     opacity: 0.42;
 }
 
+.yolo-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 25px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--void) 46%, transparent);
+    color: var(--ink-faint);
+    font-family: var(--ui);
+    font-size: 10.5px;
+    font-weight: 560;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition:
+        color 100ms,
+        border-color 100ms;
+}
+
+.yolo-toggle:hover {
+    color: var(--ink);
+}
+
+.yolo-glyph {
+    display: flex;
+}
+
+.yolo-hint {
+    padding-left: 6px;
+    border-left: 1px solid var(--line);
+    color: var(--ink-faint);
+    font-family: var(--kbd);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.yolo-toggle.on {
+    border-color: transparent;
+}
+
+.yolo-toggle.on::before {
+    content: "";
+    position: absolute;
+    /* The ring sits on the border, so it needs the inset and a radius one px
+       wider than the button's own. */
+    inset: -1px;
+    padding: 1px;
+    border-radius: calc(var(--radius-control) + 1px);
+    background: var(--yolo-rainbow);
+    background-size: 200% 100%;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: yolo-flow 5s linear infinite;
+    pointer-events: none;
+}
+
+.yolo-toggle.on .yolo-label {
+    color: transparent;
+    background: var(--yolo-rainbow);
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: yolo-flow 5s linear infinite;
+}
+
+.yolo-toggle.on .yolo-glyph {
+    animation: yolo-hue 5s linear infinite;
+}
+
+.yolo-toggle.on .yolo-hint {
+    color: var(--ink-dim);
+    border-left-color: color-mix(in srgb, var(--ink-faint) 70%, transparent);
+}
+
 .agent-surface-body,
 .agent-session-layer,
 .agent-tui-layer {
@@ -353,6 +435,137 @@
 .chat-tool pre {
     max-height: 260px;
     margin: 0 9px 8px;
+}
+
+.chat-subagent {
+    margin: 8px 0;
+    border: 1px solid var(--line-soft);
+    border-left: 2px solid color-mix(in srgb, var(--acc) 42%, var(--line));
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--rail-2) 30%, transparent);
+}
+
+.chat-subagent summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 26px;
+    padding: 4px 9px;
+    color: var(--ink-dim);
+    font-size: var(--text-2xs);
+    list-style: none;
+    cursor: pointer;
+}
+
+.chat-subagent summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-subagent summary:hover {
+    background: color-mix(in srgb, var(--rail-2) 54%, transparent);
+}
+
+.chat-subagent-mark {
+    display: grid;
+    flex: none;
+    place-items: center;
+    color: color-mix(in srgb, var(--acc) 70%, var(--ink-faint));
+}
+
+.chat-subagent.state-failed .chat-subagent-mark {
+    color: var(--danger);
+}
+
+.chat-subagent.state-completed .chat-subagent-mark {
+    color: color-mix(in srgb, var(--live) 58%, var(--ink-faint));
+}
+
+.chat-subagent-name {
+    flex: none;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 10.5px;
+}
+
+.chat-subagent-task {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-faint);
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-subagent-state {
+    flex: none;
+    margin-left: auto;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 9.5px;
+}
+
+.chat-subagent-body {
+    padding: 2px 10px 8px;
+}
+
+.chat-subagent-empty {
+    color: var(--ink-faint);
+    font-size: 10.5px;
+}
+
+.chat-tasks {
+    display: grid;
+    gap: 4px;
+    width: min(100%, 820px);
+    margin: 0 auto 8px;
+}
+
+.chat-task {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--rail-2) 62%, var(--pane));
+    color: color-mix(in srgb, var(--live) 58%, var(--ink-faint));
+    font-size: var(--text-2xs);
+}
+
+.chat-task.state-paused {
+    color: var(--ink-faint);
+}
+
+.chat-task-name {
+    flex: none;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 10.5px;
+}
+
+.chat-task-detail {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-faint);
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-task button {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    margin-left: auto;
+    border-radius: var(--radius-xs);
+    color: var(--ink-faint);
+}
+
+.chat-task button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    color: var(--danger);
 }
 
 .chat-resource,
@@ -738,10 +951,6 @@
     left: 8px;
     z-index: 2;
     overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-panel);
-    background: var(--rail-2);
-    box-shadow: 0 16px 38px color-mix(in srgb, var(--void) 68%, transparent);
 }
 
 .chat-slash-heading {
@@ -842,8 +1051,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .agent-view-switch button {
+    .agent-view-switch button,
+    .yolo-toggle {
         transition: none;
+    }
+
+    .yolo-toggle.on::before,
+    .yolo-toggle.on .yolo-label,
+    .yolo-toggle.on .yolo-glyph {
+        animation: none;
     }
 }
 
@@ -912,10 +1128,6 @@
     right: 0;
     width: min(350px, calc(100vw - 64px));
     overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--rail-2);
-    box-shadow: 0 16px 48px color-mix(in srgb, var(--void) 65%, transparent);
 }
 
 .chat-picker:first-child .chat-picker-menu {

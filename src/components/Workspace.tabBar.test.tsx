@@ -104,6 +104,30 @@ describe("workspace tab bars", () => {
         expect(screen.queryByTestId("terminal-agent-only")).not.toBeInTheDocument();
     });
 
+    it("flips YOLO from the TUI view and relaunches the CLI", async () => {
+        projectWithAgent(false);
+        render(<Workspace />);
+
+        await act(async () => {
+            fireEvent.click(await screen.findByRole("button", { name: "TUI" }));
+        });
+
+        const original = await screen.findByTestId("terminal-agent-only");
+        const toggle = screen.getByRole("button", { name: /safe/i });
+        expect(toggle).toHaveAttribute("aria-pressed", "false");
+        await act(async () => {
+            fireEvent.click(toggle);
+        });
+
+        expect(getState().agents["agent-only"]).toMatchObject({
+            permissionMode: "bypass",
+            directCommand: { program: "codex", args: ["--dangerously-bypass-approvals-and-sandbox"] },
+        });
+        expect(toggle).toHaveTextContent("yolo");
+        expect(toggle).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByTestId("terminal-agent-only")).not.toBe(original);
+    });
+
     it("keeps the ACP session alive while its tab is hidden", async () => {
         const sessionId = projectWithAgent(false);
         render(<Workspace />);
