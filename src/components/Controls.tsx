@@ -44,20 +44,29 @@ export function Checkbox({
     checked,
     onChange,
     disabled = false,
+    label,
     children,
 }: {
     checked: boolean;
     onChange: (value: boolean) => void;
     disabled?: boolean;
-    children: ReactNode;
+    /** Accessible name when the box sits in a labelled column and shows no text. */
+    label?: string;
+    children?: ReactNode;
 }) {
     return (
         <label className={`cbx${checked ? " on" : ""}${disabled ? " disabled" : ""}`}>
-            <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+            <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                aria-label={children === undefined ? label : undefined}
+                onChange={(event) => onChange(event.target.checked)}
+            />
             <span className="cbx-box" aria-hidden="true">
                 <IconCheck size={10} />
             </span>
-            <span className="cbx-label">{children}</span>
+            {children !== undefined && <span className="cbx-label">{children}</span>}
         </label>
     );
 }

@@ -41,7 +41,6 @@ import {
 } from "./Icons";
 import { Dropdown, type DropdownOption } from "./Dropdown";
 import { Checkbox, Slider, Switch } from "./Controls";
-import { EmptyState } from "./Panel";
 import { Tooltip } from "./Tooltip";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
@@ -209,35 +208,38 @@ function CommandsPage() {
             </SettingsSection>
 
             <SettingsSection title={editing ? "Edit action" : "New action"}>
-                <div className="command-editor-grid">
-                    <div className="command-editor-row">
+                <SettingsRows>
+                    <SettingsRow label="Name" wide>
                         <input
-                            className="settings-input"
+                            className="settings-input wide"
+                            aria-label="Display name"
                             placeholder="Display name"
                             value={draft.title}
                             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
                         />
+                    </SettingsRow>
+                    <SettingsRow label="Description" desc="Shown under the name in the deck." wide>
                         <input
-                            className="settings-input"
+                            className="settings-input wide"
+                            aria-label="What it does"
                             placeholder="What it does"
                             value={draft.detail}
                             onChange={(e) => setDraft({ ...draft, detail: e.target.value })}
                         />
-                    </div>
-                    <textarea
-                        className="settings-input mono command-editor-source"
-                        placeholder="shell command"
-                        value={draft.command}
-                        onChange={(e) => setDraft({ ...draft, command: e.target.value })}
-                        spellCheck={false}
-                    />
-                    <p className="settings-hint">
-                        Runs unsandboxed with the active session as its working directory, and gets the <em>SIKEMUX_SESSION_*</em> and{" "}
-                        <em>SIKEMUX_PROJECT</em> variables.
-                    </p>
-                </div>
-
-                <SettingsRows>
+                    </SettingsRow>
+                    <SettingsRow
+                        label="Command"
+                        desc="Runs unsandboxed in the active session's directory, with SIKEMUX_SESSION_* and SIKEMUX_PROJECT set."
+                        stack>
+                        <textarea
+                            className="settings-input mono command-editor-source"
+                            aria-label="Shell command"
+                            placeholder="shell command"
+                            value={draft.command}
+                            onChange={(e) => setDraft({ ...draft, command: e.target.value })}
+                            spellCheck={false}
+                        />
+                    </SettingsRow>
                     <SettingsRow label="Where output lands" desc="A terminal tab, a split, a popup, a background toast, or this pane." wide>
                         <Dropdown
                             className="settings-dd"
@@ -707,73 +709,81 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
                 title="Project folders"
                 meta={`${projectRoots.length} ${projectRoots.length === 1 ? "folder" : "folders"}`}
                 sub="Each folder is scanned for git repos, as deep as its depth allows.">
-                <div className="settings-add">
-                    <input
-                        ref={inputRef}
-                        className="settings-input mono"
-                        aria-label="Folder to add"
-                        placeholder="~/proj    or    /Users/me/work"
-                        value={draftPath}
-                        onChange={(e) => setDraftPath(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                                e.preventDefault();
-                                void commitDraft();
-                            } else if (e.key === "Escape") {
-                                cmd.closeSettings();
-                            }
-                        }}
-                        spellCheck={false}
-                    />
-                    <DepthStepper value={draftDepth} onChange={setDraftDepth} title="Levels to scan" />
-                    <Tooltip label="Browse…">
-                        <button className="settings-btn" onClick={onPick} type="button" aria-label="Browse for a folder">
-                            <IconFolder size={12} />
-                        </button>
-                    </Tooltip>
-                    <button className="settings-btn primary" onClick={() => void commitDraft()} disabled={!draftPath.trim()} type="button">
-                        <IconPlus size={12} /> Add
-                    </button>
+                <div className="settings-list">
+                    {projectRoots.length > 0 && (
+                        <>
+                            <div className="settings-list-head">
+                                <span>Folder</span>
+                                <span>Index itself</span>
+                                <span>Depth</span>
+                                <span />
+                            </div>
+                            {projectRoots.map((root) => (
+                                <div className="settings-list-row" key={root.path}>
+                                    <span className="settings-list-path">{pretty(root.path)}</span>
+                                    <Checkbox
+                                        label={`Index ${pretty(root.path)} itself`}
+                                        checked={root.selfIndex === true}
+                                        onChange={(on) => cmd.setProjectRootSelfIndex(root.path, on)}
+                                    />
+                                    <DepthStepper
+                                        compact
+                                        value={root.depth}
+                                        onChange={(depth) => cmd.setProjectRootDepth(root.path, depth)}
+                                        title={`Levels scanned under ${pretty(root.path)}`}
+                                    />
+                                    <Tooltip label="Remove">
+                                        <button
+                                            className="settings-row-x"
+                                            onClick={() => cmd.removeProjectRoot(root.path)}
+                                            aria-label={`Remove ${pretty(root.path)}`}
+                                            type="button">
+                                            <IconClose size={11} />
+                                        </button>
+                                    </Tooltip>
+                                </div>
+                            ))}
+                        </>
+                    )}
+
+                    <div className="settings-list-add">
+                        <div className="settings-add">
+                            <input
+                                ref={inputRef}
+                                className="settings-input mono"
+                                aria-label="Folder to add"
+                                placeholder="~/proj    or    /Users/me/work"
+                                value={draftPath}
+                                onChange={(e) => setDraftPath(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void commitDraft();
+                                    } else if (e.key === "Escape") {
+                                        cmd.closeSettings();
+                                    }
+                                }}
+                                spellCheck={false}
+                            />
+                            <DepthStepper value={draftDepth} onChange={setDraftDepth} title="Levels to scan" />
+                            <Tooltip label="Browse…">
+                                <button className="settings-btn" onClick={onPick} type="button" aria-label="Browse for a folder">
+                                    <IconFolder size={12} />
+                                </button>
+                            </Tooltip>
+                            <button className="settings-btn primary" onClick={() => void commitDraft()} disabled={!draftPath.trim()} type="button">
+                                <IconPlus size={12} /> Add
+                            </button>
+                        </div>
+                        <Checkbox checked={draftSelfIndex} onChange={setDraftSelfIndex}>
+                            Index the folder itself as a project
+                        </Checkbox>
+                    </div>
                 </div>
-                <Checkbox checked={draftSelfIndex} onChange={setDraftSelfIndex}>
-                    Index the folder itself as a project
-                </Checkbox>
+
                 <p className="settings-hint">
                     Indexing a folder itself offers it in the picker even when it is not a repo — useful for a scratch directory.
                 </p>
-
-                {projectRoots.length === 0 ? (
-                    <EmptyState
-                        icon={<IconFolder size={14} />}
-                        title="No project folders"
-                        message="Add the folder your repositories live in, or open one from the session picker."
-                    />
-                ) : (
-                    <div className="settings-list">
-                        {projectRoots.map((root) => (
-                            <div className="settings-list-row" key={root.path}>
-                                <span className="settings-list-path">{pretty(root.path)}</span>
-                                <Checkbox checked={root.selfIndex === true} onChange={(on) => cmd.setProjectRootSelfIndex(root.path, on)}>
-                                    index itself
-                                </Checkbox>
-                                <DepthStepper
-                                    value={root.depth}
-                                    onChange={(depth) => cmd.setProjectRootDepth(root.path, depth)}
-                                    title={`Levels scanned under ${pretty(root.path)}`}
-                                />
-                                <Tooltip label="Remove">
-                                    <button
-                                        className="settings-row-x"
-                                        onClick={() => cmd.removeProjectRoot(root.path)}
-                                        aria-label={`Remove ${pretty(root.path)}`}
-                                        type="button">
-                                        <IconClose size={11} />
-                                    </button>
-                                </Tooltip>
-                            </div>
-                        ))}
-                    </div>
-                )}
             </SettingsSection>
         </SettingsPage>
     );
@@ -1022,19 +1032,25 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
         return (
             <div key={th.id} className={`settings-theme${active ? " active" : ""}${editing ? " editing" : ""}`}>
                 <button className="settings-theme-hit" onClick={() => cmd.setThemeId(th.id)} title={`Apply ${th.name}`} type="button">
-                    <div className="settings-theme-preview" style={{ background: th.editor.bg, color: th.editor.fg }}>
+                    {/* The theme's own ground. `editor.bg` is "transparent" in every theme —
+                        the editor sits on the chrome — so using it painted nothing and left
+                        all ten swatches showing the theme already applied. */}
+                    <div className="settings-theme-preview" style={{ background: th.chrome.bg, color: th.chrome.ink }}>
                         <span className="settings-theme-preview-mark" style={{ color: th.chrome.acc }}>
                             Aa
                         </span>
                         <span className="settings-theme-preview-code" style={{ color: th.highlight.comment }}>
                             // make it yours
                         </span>
-                        <span className="settings-theme-preview-accent" style={{ background: th.chrome.acc }} />
                     </div>
                     <div className="settings-theme-body">
                         <div className="settings-theme-name-row">
                             <span className="settings-theme-name">{th.name}</span>
-                            {active && <span className="settings-theme-current">Current</span>}
+                            {active ? (
+                                <span className="settings-theme-current">Current</span>
+                            ) : (
+                                custom && <span className="settings-theme-badge">Custom</span>
+                            )}
                         </div>
                         <div className="settings-swatches">
                             <span style={{ background: th.terminal.red }} />
@@ -1066,7 +1082,6 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         </button>
                     )}
                 </div>
-                {custom && !active && <span className="settings-theme-badge">custom</span>}
             </div>
         );
     };
@@ -1525,7 +1540,17 @@ function NumberField({ value, onCommit, format, suffix }: NumberFieldProps) {
     );
 }
 
-function DepthStepper({ value, onChange, title }: { value: number; onChange: (v: number) => void; title?: string }) {
+function DepthStepper({
+    value,
+    onChange,
+    title,
+    compact = false,
+}: {
+    value: number;
+    onChange: (v: number) => void;
+    title?: string;
+    compact?: boolean;
+}) {
     const [draft, setDraft] = useState<string>(() => String(value));
     const focusedRef = useRef(false);
 
@@ -1552,7 +1577,7 @@ function DepthStepper({ value, onChange, title }: { value: number; onChange: (v:
 
     return (
         <div className="settings-depth" title={title}>
-            <span className="settings-depth-label">depth</span>
+            {!compact && <span className="settings-depth-label">depth</span>}
             <button className="settings-depth-btn" onClick={() => bump(-1)} disabled={value <= 0} type="button" aria-label="Scan one level less">
                 −
             </button>

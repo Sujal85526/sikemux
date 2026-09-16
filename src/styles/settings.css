@@ -207,11 +207,16 @@
 }
 
 /* ── page and section ───────────────────────────────── */
+/* Centred, not left-hugging: at a real window width a column pinned to the
+   left leaves a third of the pane as dead black, which reads as broken
+   rather than as restraint. */
 .settings-page {
     display: flex;
     flex-direction: column;
     gap: var(--space-6);
-    max-width: 780px;
+    width: 100%;
+    max-width: 880px;
+    margin-inline: auto;
     padding: var(--space-5) var(--space-5) var(--space-6);
 }
 .settings-section {
@@ -261,17 +266,23 @@
 }
 
 /* ── the setting row ────────────────────────────────── */
+/* A section's rows sit in one card. Loose rows on the page ground gave a
+   heading nothing to own, so every page read as a single flat list. */
 .settings-rows {
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: var(--s-raised);
 }
 .settings-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, auto);
     align-items: center;
     gap: var(--space-2) var(--space-4);
-    min-height: 34px;
-    padding: var(--space-2) 0;
+    min-height: 40px;
+    padding: var(--space-2) var(--space-3);
 }
 .settings-rows > .settings-row + .settings-row {
     border-top: 1px solid var(--border);
@@ -320,6 +331,10 @@ label.settings-row {
 }
 .settings-row.stack .settings-row-control {
     justify-self: stretch;
+}
+.settings-row.stack .settings-row-control > * {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 /* ── controls ───────────────────────────────────────── */
@@ -477,14 +492,28 @@ label.settings-row {
 .settings-list:empty {
     display: none;
 }
+/* The list is a small table: name it once at the top instead of repeating
+   "index itself" and "depth" on every row. */
+.settings-list-head,
 .settings-list-row {
     display: grid;
     /* path | index-itself | depth | remove */
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-columns: minmax(0, 1fr) 80px 76px 22px;
     align-items: center;
     gap: var(--space-3);
+    padding: var(--space-1) var(--space-3);
+}
+.settings-list-head {
+    min-height: 26px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+}
+.settings-list-row {
     min-height: 36px;
-    padding: var(--space-1) var(--space-1h) var(--space-1) var(--space-3);
     transition: background var(--dur-1);
 }
 .settings-list-row + .settings-list-row {
@@ -492,6 +521,26 @@ label.settings-row {
 }
 .settings-list-row:hover {
     background: var(--surface-hover);
+}
+.settings-list-row .settings-depth {
+    justify-self: start;
+}
+/* The box sits under its column heading, not off to one side of it. */
+.settings-list-head > span:nth-child(2),
+.settings-list-row > .cbx {
+    justify-self: center;
+}
+
+/* The add area closes the card, so a folder is entered where the folders are. */
+.settings-list-add {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+}
+.settings-list-head ~ .settings-list-add {
+    border-top: 1px solid var(--border);
+    background: color-mix(in oklab, var(--ink) 3%, transparent);
 }
 .settings-list-path {
     overflow: hidden;
@@ -638,7 +687,7 @@ label.settings-row {
 /* ── theme cards ────────────────────────────────────── */
 .settings-theme-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(192px, 1fr));
     gap: var(--space-2);
 }
 .settings-theme {
@@ -687,9 +736,8 @@ label.settings-row {
     align-items: flex-end;
     justify-content: space-between;
     gap: var(--space-2);
-    /* The right inset clears the accent mark, which is drawn over this box. */
-    min-height: 48px;
-    padding: var(--space-3) var(--space-5) var(--space-2) var(--space-3);
+    min-height: 52px;
+    padding: var(--space-3);
     overflow: hidden;
     border-bottom: 1px solid var(--border);
 }
@@ -707,16 +755,6 @@ label.settings-row {
     font-style: italic;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-/* Inset, so the card's corner stays a corner. Flush against the edge it read
-   as a clipping mistake rather than the theme's accent. */
-.settings-theme-preview-accent {
-    position: absolute;
-    top: var(--space-2);
-    right: var(--space-2);
-    bottom: var(--space-2);
-    width: 3px;
-    border-radius: var(--radius-full);
 }
 .settings-theme-body {
     display: flex;
@@ -800,15 +838,10 @@ label.settings-row {
     box-shadow: var(--focus-ring);
 }
 .settings-theme-badge {
-    position: absolute;
-    right: var(--space-3);
-    bottom: var(--space-3);
+    flex: 0 0 auto;
     color: var(--text-tertiary);
-    font-size: var(--text-3xs);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-    pointer-events: none;
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
 }
 .settings-theme-divider {
     color: var(--text-tertiary);
@@ -1361,10 +1394,18 @@ label.settings-row {
 .provider-profile-editor .settings-actions {
     margin-top: auto;
 }
+.provider-profile-editor .settings-rows {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+.provider-profile-editor .settings-row {
+    padding-inline: 0;
+}
 /* The editor is a narrow column inside a card, so its rows keep the grammar
    but give the copy back the width the page-wide control column takes. */
 .provider-profile-editor .settings-row.wide {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 190px);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
 }
 
 /* ── command deck ───────────────────────────────────── */
