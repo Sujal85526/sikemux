@@ -418,9 +418,10 @@ const WindowLayer = memo(function WindowLayer({
             aria-hidden={!live}
             inert={!live}
             style={{ "--slot": slot } as CSSProperties}>
-            {/* Only the screen on stage carries it: one texture, on the surface
-                being read, rather than one per screen waiting off stage. */}
-            {live && <ShaderField preset="ambient" className="screen-field" />}
+            {/* Every screen that paints carries it, so a card sliding in arrives
+                with its texture rather than growing one after it lands. Only the
+                two either side of a pan ever paint, which is the surface budget. */}
+            {painted && <ShaderField preset="ambient" className="screen-field" />}
             {leaves.map((p) => {
                 const isZoomed = zoomedPaneId === p.id;
                 // A pane a stack is covering keeps its cell, and its size, so it
@@ -429,8 +430,13 @@ const WindowLayer = memo(function WindowLayer({
                 const shown = (!zoomActive || isZoomed) && !behind;
                 const rect = isZoomed ? FULL : (panes.get(p.id) ?? stacked.get(p.id))!;
                 const isActive = p.id === win.activePaneId;
-                const paneVisible = live && shown;
-                const paneActive = paneVisible && isActive;
+                // Painting is what being on screen means: a card sliding in is
+                // being looked at, so its panes are already showing what they
+                // hold instead of catching up on the frame the slide lands.
+                const paneVisible = (live || painted) && shown;
+                // Being looked at is not being worked in: only the screen the
+                // session is on hands a pane focus, a poll or a process.
+                const paneActive = live && shown && isActive;
                 return (
                     <div
                         key={p.id}

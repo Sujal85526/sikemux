@@ -12,7 +12,9 @@ import { PAN_MS } from "./useWindowPan";
 import type { Agent } from "../state/types";
 
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div>Terminal output</div> }));
-vi.mock("../chat/AgentSurface", () => ({ AgentSurface: () => <div>Agent output</div> }));
+vi.mock("../chat/AgentSurface", () => ({
+    AgentSurface: ({ visible }: { visible: boolean }) => <div data-visible={String(visible)}>Agent output</div>,
+}));
 vi.mock("./BrowserPane", () => ({ AgentBrowserShell: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock("./EditorPane", () => ({ EditorPane: () => <div>Editor document</div> }));
 
@@ -89,7 +91,7 @@ describe("workspace pan", () => {
         expect(slotOf(container.querySelector(".window-layer.painted")!)).toBe(homeSlot);
     });
 
-    it("gives the texture to the screen on stage and to no other", async () => {
+    it("gives the texture to every screen that paints and to no other", async () => {
         sessionOfScreens();
         const { container } = render(<Workspace />);
         await act(async () => {});
@@ -99,11 +101,33 @@ describe("workspace pan", () => {
         expect(container.querySelector(".window-layer.live")!.contains(fields[0])).toBe(true);
 
         act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-9")!));
+
+        // The screen arriving carries its own texture for the whole travel, so
+        // there is nothing left to grow once it lands.
+        const sliding = container.querySelectorAll(".window-layer.painted");
+        expect(sliding).toHaveLength(2);
+        for (const layer of sliding) expect(layer.querySelectorAll(".screen-field")).toHaveLength(1);
+
         await waitFor(() => expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(1));
 
         const moved = container.querySelectorAll(".screen-field");
         expect(moved).toHaveLength(1);
         expect(container.querySelector(".window-layer.live")!.contains(moved[0])).toBe(true);
+    });
+
+    it("shows what a screen holds for the whole travel, not from the frame it lands", async () => {
+        sessionOfScreens();
+        const { container } = render(<Workspace />);
+        await act(async () => {});
+
+        act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-9")!));
+
+        const sliding = container.querySelectorAll(".window-layer.painted");
+        expect(sliding).toHaveLength(2);
+        for (const layer of sliding) expect(layer.querySelector("[data-visible]")).toHaveAttribute("data-visible", "true");
+
+        await waitFor(() => expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(1));
+        expect(container.querySelectorAll('[data-visible="true"]')).toHaveLength(1);
     });
 
     /*
