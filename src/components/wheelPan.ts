@@ -17,6 +17,35 @@ export const UNWATCHED_END_MS = 600;
 
 /** How long to let the quiet run before a swipe counts as finished. */
 export const endDelay = (fingersDown: boolean | null) => (fingersDown === null ? UNWATCHED_END_MS : fingersDown ? HELD_END_MS : SPENT_END_MS);
+/** Only the last moments of a swipe say anything about how it ended. */
+const FLICK_WINDOW_MS = 90;
+/**
+ * How far a swipe has to have moved in those moments to count as thrown rather
+ * than placed. A hand setting a screen down is barely moving by the time it
+ * leaves; a hand throwing one is still going at full speed.
+ */
+const FLICK_TRAVEL = 0.13;
+
+/** How far one wheel event pushed the track, and when. */
+export interface Push {
+    readonly at: number;
+    readonly screens: number;
+}
+
+/** The pushes from the last moments of a swipe, with anything older dropped. */
+export function pushed(pushes: readonly Push[], at: number, screens: number): Push[] {
+    const recent = pushes.filter((push) => at - push.at <= FLICK_WINDOW_MS);
+    recent.push({ at, screens });
+    return recent;
+}
+
+/** How many screens of follow-through a swipe had left in it: -1, 0 or 1. */
+export function flicked(pushes: readonly Push[], until: number): number {
+    let moved = 0;
+    for (const push of pushes) if (until - push.at <= FLICK_WINDOW_MS) moved += push.screens;
+    return Math.abs(moved) < FLICK_TRAVEL ? 0 : Math.sign(moved);
+}
+
 /** Below this the gesture is diagonal enough to belong to whatever is under it. */
 const HORIZONTAL_RATIO = 1.5;
 /** How far a gesture can pull past the first or last screen of the session. */

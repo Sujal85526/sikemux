@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsWheel, dragOffset, endDelay, HELD_END_MS, panned, SPENT_END_MS, UNWATCHED_END_MS } from "./wheelPan";
+import { claimsWheel, dragOffset, endDelay, flicked, HELD_END_MS, panned, pushed, SPENT_END_MS, UNWATCHED_END_MS } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 const plain: PaneScroller = { overflowX: "visible", scrollWidth: 100, clientWidth: 100, scrollLeft: 0 };
@@ -176,5 +176,45 @@ describe("endDelay", () => {
         expect(endDelay(null)).toBe(UNWATCHED_END_MS);
         expect(UNWATCHED_END_MS).toBeGreaterThan(SPENT_END_MS);
         expect(UNWATCHED_END_MS).toBeLessThan(HELD_END_MS);
+    });
+});
+
+describe("flicked", () => {
+    /** A run of pushes ending at `until`, one every 10ms, each of `screens`. */
+    const thrownAt = (screens: number, count: number, until: number) => {
+        let pushes: ReturnType<typeof pushed> = [];
+        for (let step = count; step > 0; step -= 1) pushes = pushed(pushes, until - step * 10, screens);
+        return pushes;
+    };
+
+    /*
+     * A swipe still going at full speed when it ends was thrown at the screen
+     * rather than put there, and carries on the way it was going. Nothing else
+     * can carry it: the hand has gone and its glide is not part of the swipe.
+     */
+    it("carries a swipe that was still moving when it ended", () => {
+        expect(flicked(thrownAt(0.05, 4, 1000), 1000)).toBe(1);
+        expect(flicked(thrownAt(-0.05, 4, 1000), 1000)).toBe(-1);
+    });
+
+    /* A hand setting a screen down has slowed almost to nothing by the time it leaves. */
+    it("leaves a swipe that was being set down where it is", () => {
+        expect(flicked(thrownAt(0.01, 4, 1000), 1000)).toBe(0);
+        expect(flicked([], 1000)).toBe(0);
+    });
+
+    /*
+     * Only the last moments count, so a swipe held still before the hand left is
+     * being set down however fast it was going to start with.
+     */
+    it("forgets a swipe that stopped before the hand left", () => {
+        const pushes = thrownAt(0.05, 4, 1000);
+        expect(flicked(pushes, 1000)).toBe(1);
+        expect(flicked(pushes, 1400)).toBe(0);
+    });
+
+    it("keeps only the pushes still worth counting", () => {
+        const kept = pushed(thrownAt(0.05, 4, 1000), 1400, 0.05);
+        expect(kept).toEqual([{ at: 1400, screens: 0.05 }]);
     });
 });

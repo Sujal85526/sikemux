@@ -333,25 +333,92 @@ describe("workspace wheel pan", () => {
     });
 
     /*
-     * The hand leaving is the end of the swipe whether or not anything follows
-     * it, so a swipe that was paused when the hand lifted closes on the lift
-     * rather than waiting out the hold.
+     * The hand leaving is the end of the swipe, so the track closes there and
+     * then. Waiting for the glide the hand left to run out would hold it still
+     * for the second or two that takes.
      */
-    it("closes as soon as the hand leaves", () => {
+    it("closes the moment the hand leaves, with nothing left to wait for", () => {
         const { track, live, index } = stageOfScreens();
         const neighbour = order()[index + 1];
         setFingersDown(true);
 
         swipe(live, 600);
-        act(() => void vi.advanceTimersByTime(HELD_END_MS - 100));
+        act(() => void vi.advanceTimersByTime(400));
         expect(track).not.toHaveClass("sliding");
 
         act(() => setFingersDown(false));
-        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).toHaveClass("sliding");
         expect(panOf(track)).toBe(slidLeft(index + 1));
+    });
+
+    /*
+     * Nothing carries a swipe once the hand has gone, so a swipe still moving
+     * when it ended has to carry itself: it goes on to the next screen even
+     * though the hand never pulled it halfway on.
+     */
+    it("carries a thrown swipe on to the next screen", () => {
+        const { track, live, index } = stageOfScreens();
+        const neighbour = order()[index + 1];
+        setFingersDown(true);
+
+        swipe(live, 200);
+        expect(activeWindow()).not.toBe(neighbour);
+
+        act(() => setFingersDown(false));
+
+        expect(activeWindow()).toBe(neighbour);
+        expect(track).toHaveClass("sliding");
+        expect(panOf(track)).toBe(slidLeft(index + 1));
+    });
+
+    /* The same distance, set down rather than thrown, was never going anywhere. */
+    it("puts back a swipe the hand had stopped before it left", () => {
+        const { track, live, index } = stageOfScreens();
+        const before = activeWindow();
+        setFingersDown(true);
+
+        swipe(live, 200);
+        act(() => void vi.advanceTimersByTime(400));
+        act(() => setFingersDown(false));
+
+        expect(activeWindow()).toBe(before);
+        expect(panOf(track)).toBe(slidLeft(index));
+    });
+
+    /*
+     * A trackpad keeps sending the swipe's glide for a second or more after the
+     * hand has gone. The swipe has already landed by then, so the glide may not
+     * start dragging the screen it landed on off again.
+     */
+    it("ignores the glide a swipe leaves behind", () => {
+        const { track, live } = stageOfScreens();
+        setFingersDown(true);
+        swipe(live, 600);
+        act(() => setFingersDown(false));
+
+        const landed = activeWindow();
+        const at = panOf(track);
+        expect(swipe(live, 600)).toBe(true);
+        swipe(live, 600);
+
+        expect(activeWindow()).toBe(landed);
+        expect(panOf(track)).toBe(at);
+    });
+
+    /* And a hand coming back down mid-glide is a new swipe, not more of the old one. */
+    it("takes a hand coming back down as a new swipe", () => {
+        const { track, live, index } = stageOfScreens();
+        setFingersDown(true);
+        swipe(live, 600);
+        act(() => setFingersDown(false));
+        swipe(live, 400);
+
+        act(() => setFingersDown(true));
+        swipe(live, 300);
+
+        expect(panOf(track)).toBe(slidLeft(index + 2.3));
     });
 
     /*

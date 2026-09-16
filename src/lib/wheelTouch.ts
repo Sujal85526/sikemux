@@ -5,21 +5,21 @@ const TOUCH_EVENT = "wheel-touch";
 
 /** Neither, until something reports a hand. Nowhere but macOS ever does. */
 let down: boolean | null = null;
-const lifts = new Set<() => void>();
+const watchers = new Set<(down: boolean) => void>();
 
 /** Whether a hand is on the trackpad, or nothing if nobody is watching for one. */
 export const fingersDown = (): boolean | null => down;
 
-/** Runs the moment a hand leaves, which is the only thing that truly ends a swipe. */
-export function onFingersLift(listener: () => void): () => void {
-    lifts.add(listener);
-    return () => void lifts.delete(listener);
+/** Runs the moment a hand lands or leaves, which is what starts and ends a swipe. */
+export function onFingers(listener: (down: boolean) => void): () => void {
+    watchers.add(listener);
+    return () => void watchers.delete(listener);
 }
 
 export function setFingersDown(next: boolean | null): void {
     if (down === next) return;
     down = next;
-    if (down === false) for (const listener of [...lifts]) listener();
+    if (down !== null) for (const listener of [...watchers]) listener(down);
 }
 
 export function watchFingers(signal: AbortSignal): void {

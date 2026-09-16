@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fingersDown, onFingersLift, setFingersDown } from "./wheelTouch";
+import { fingersDown, onFingers, setFingersDown } from "./wheelTouch";
 
 beforeEach(() => setFingersDown(null));
 
@@ -13,29 +13,41 @@ describe("wheel touch", () => {
     });
 
     /*
-     * The lift is what ends a swipe, and it is reported once however many scroll
-     * events carry it, so a swipe can never be ended twice by the same hand.
+     * A landing starts a swipe and a lift ends one, and each is reported once
+     * however many scroll events carry it.
      */
-    it("reports a lift once, and not the landing", () => {
-        const lifted = vi.fn();
-        onFingersLift(lifted);
+    it("reports each landing and lift once", () => {
+        const moves: boolean[] = [];
+        onFingers((down) => moves.push(down));
 
         setFingersDown(true);
         setFingersDown(true);
-        expect(lifted).not.toHaveBeenCalled();
+        setFingersDown(false);
+        setFingersDown(false);
+        setFingersDown(true);
 
-        setFingersDown(false);
-        setFingersDown(false);
-        expect(lifted).toHaveBeenCalledTimes(1);
+        expect(moves).toEqual([true, false, true]);
+    });
+
+    /* Nobody watching is not the same as a hand having lifted, and says nothing. */
+    it("says nothing when it stops knowing", () => {
+        const moved = vi.fn();
+        setFingersDown(true);
+        onFingers(moved);
+
+        setFingersDown(null);
+
+        expect(moved).not.toHaveBeenCalled();
+        expect(fingersDown()).toBe(null);
     });
 
     it("stops reporting once a listener has gone", () => {
-        const lifted = vi.fn();
-        onFingersLift(lifted)();
+        const moved = vi.fn();
+        onFingers(moved)();
 
         setFingersDown(true);
         setFingersDown(false);
 
-        expect(lifted).not.toHaveBeenCalled();
+        expect(moved).not.toHaveBeenCalled();
     });
 });

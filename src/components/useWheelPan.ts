@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import * as cmd from "../state/commands";
-import { fingersDown, onFingersLift, watchFingers } from "../lib/wheelTouch";
+import { fingersDown, onFingers, watchFingers } from "../lib/wheelTouch";
 import { getState } from "../state/store";
 import { panOffset, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
-import { claimsWheel, endDelay, SPENT_END_MS, panned } from "./wheelPan";
-import type { PaneScroller } from "./wheelPan";
+import { claimsWheel, endDelay, flicked, panned, pushed } from "./wheelPan";
+import type { PaneScroller, Push } from "./wheelPan";
 
 interface Gesture {
     /** Whether the stage took this gesture, decided once on its first event. */
@@ -23,6 +23,10 @@ interface Gesture {
     toward: string | null;
     /** Whether React has been handed the pair of screens the gesture is between. */
     held: boolean;
+    /** The last moments of the swipe, which say whether it was thrown or placed. */
+    pushes: readonly Push[];
+    /** Whether the swipe has already landed, so what still arrives is only its tail. */
+    spent: boolean;
     frame: number | null;
 }
 
@@ -95,14 +99,35 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             latest.current.trackRef.current?.style.setProperty("--pan", panOffset(moving.slot + moving.offset));
         };
 
-        // Whatever screen the gesture left the session on is the one the track
-        // closes onto, which is at most half a screen away.
-        const settle = () => {
+        /**
+         * Closes the swipe onto a screen. The finger leaves the track at most half
+         * a screen from the one the session is on, unless the swipe was thrown
+         * rather than placed, which carries it one screen further the way it went.
+         */
+        const land = (until: number) => {
             const done = gesture;
-            forget();
-            if (!done?.claimed || !done.held) return;
+            if (!done || done.spent) return;
+            done.spent = true;
+            if (done.frame != null) cancelAnimationFrame(done.frame);
+            done.frame = null;
+            if (!done.claimed || !done.held) return;
             const { order, on } = session();
-            if (on !== null && order[done.slot] === on) latest.current.snap(on, done.toward, settleMs(Math.abs(done.offset)));
+            if (on === null || order[done.slot] !== on) return;
+            const thrown = flicked(done.pushes, until);
+            const onto = (thrown === 0 ? null : (order[done.slot + thrown] ?? null)) ?? on;
+            const left = onto === on ? Math.abs(done.offset) : Math.abs(thrown - done.offset);
+            if (onto !== on) {
+                // The glide still to come has to find the swipe where it landed,
+                // or it reads as a switch from elsewhere and starts a swipe of its own.
+                done.slot += thrown;
+                cmd.selectWindowId(onto);
+            }
+            latest.current.snap(onto, onto === on ? done.toward : on, settleMs(left));
+        };
+
+        const settle = () => {
+            land(performance.now());
+            forget();
         };
 
         const onWheel = (event: WheelEvent) => {
@@ -124,6 +149,8 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
                     offset: 0,
                     toward: null,
                     held: false,
+                    pushes: [],
+                    spent: false,
                     frame: null,
                 };
             }
@@ -134,7 +161,12 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             // Whatever is underneath must not scroll as well, including a terminal
             // that turns wheel gestures into cursor keys.
             event.preventDefault();
+            // Everything arriving after the hand left is the tail of a swipe that
+            // has already landed, not more of it.
+            if (moving.spent) return;
 
+            const at = performance.now();
+            moving.pushes = pushed(moving.pushes, at, event.deltaX / moving.stride);
             const was = moving.slot;
             const now = panned(moving.raw + event.deltaX / moving.stride, moving.slot, order.length);
             moving.slot = now.slot;
@@ -151,12 +183,12 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             if (moving.frame == null) moving.frame = requestAnimationFrame(paint);
         };
 
-        // A hand leaving the trackpad is the end of the swipe, whether or not any
-        // more events follow it, so it closes the wait the events were holding open.
-        const lifted = onFingersLift(() => {
-            if (!gesture || quiet == null) return;
-            window.clearTimeout(quiet);
-            quiet = window.setTimeout(settle, SPENT_END_MS);
+        const watched = onFingers((down) => {
+            // The hand leaving is the end of the swipe. Waiting for the glide it
+            // left to run out would hold the track still for as long as that took.
+            if (!down) return land(performance.now());
+            // And a hand coming back down is a new swipe, whatever the last one left.
+            if (gesture?.spent) forget();
         });
         const watching = new AbortController();
         watchFingers(watching.signal);
@@ -164,7 +196,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
         return () => {
             area.removeEventListener("wheel", onWheel, { capture: true });
             watching.abort();
-            lifted();
+            watched();
             forget();
         };
     }, [areaRef]);

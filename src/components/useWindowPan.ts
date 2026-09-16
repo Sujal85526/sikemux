@@ -162,6 +162,9 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
     const snap = (onto: string, beside: string | null, ms: number) => {
         const home = slots.get(onto);
         if (home === undefined) return;
+        // A swipe thrown at the last moment moves the session one more screen on
+        // its way out, and this is the travel for it, so nothing else plans one.
+        previous.current = { sessionId, activeWindowId: onto };
         if (prefersReducedMotion()) {
             // Nothing transitions, so the track goes by hand: React's `--pan` has
             // not moved since the gesture took the track over.
