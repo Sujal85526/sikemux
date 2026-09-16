@@ -27,7 +27,6 @@ import { DialogHost } from "./components/DialogHost";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./components/HarnessBridge";
 import { CliOpenBridge } from "./components/CliOpenBridge";
-import { ShaderField } from "./components/ShaderField";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
 import { filesApi } from "./api/files";
@@ -791,12 +790,6 @@ export default function App() {
 
     return (
         <div className="shell">
-            {/*
-             * The window's one backdrop. Mounted on the shell rather than on the
-             * content area so it runs under the rails and the gutters too, and
-             * so it survives everything inside the shell being replaced.
-             */}
-            <ShaderField preset="ambient" className="shell-field" />
             <div className="shell-image" aria-hidden="true" />
             <CliOpenBridge />
             <HarnessBridge />

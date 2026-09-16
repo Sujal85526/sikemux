@@ -724,6 +724,10 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     overflow: hidden;
+    /* The card is already a stacking context while it slides, because a pan
+       transforms it. Stated outright so the field inside it sits under the
+       panes the same way standing still as it does mid-swipe. */
+    isolation: isolate;
 }
 .window-track.panning .window-layer {
     transform: translate(calc(var(--slot) * (100% + var(--window-card-gap))), 0);

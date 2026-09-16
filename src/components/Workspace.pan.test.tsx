@@ -89,6 +89,23 @@ describe("workspace pan", () => {
         expect(slotOf(container.querySelector(".window-layer.painted")!)).toBe(homeSlot);
     });
 
+    it("gives the texture to the screen on stage and to no other", async () => {
+        sessionOfScreens();
+        const { container } = render(<Workspace />);
+        await act(async () => {});
+
+        const fields = container.querySelectorAll(".screen-field");
+        expect(fields).toHaveLength(1);
+        expect(container.querySelector(".window-layer.live")!.contains(fields[0])).toBe(true);
+
+        act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-9")!));
+        await waitFor(() => expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(1));
+
+        const moved = container.querySelectorAll(".screen-field");
+        expect(moved).toHaveLength(1);
+        expect(container.querySelector(".window-layer.live")!.contains(moved[0])).toBe(true);
+    });
+
     /*
      * Holding the switch shortcut down starts the next slide while the last one is
      * still travelling. The window it leaves behind is the one that slide parked

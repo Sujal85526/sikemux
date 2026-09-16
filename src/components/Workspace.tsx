@@ -8,6 +8,7 @@ import { getState, useStore } from "../state/store";
 import { activeTabRef, brunoPaneId, documentsOf, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { ShaderField } from "./ShaderField";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentIcon, IconCommand, IconGlobe, IconPlus, WindowIcon } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
@@ -438,6 +439,9 @@ const WindowLayer = memo(function WindowLayer({
             aria-hidden={!live}
             inert={!live}
             style={{ "--slot": slot } as CSSProperties}>
+            {/* Only the screen on stage carries it: one texture, on the surface
+                being read, rather than one per screen waiting off stage. */}
+            {live && <ShaderField preset="ambient" className="screen-field" />}
             {leaves.map((p) => {
                 const isZoomed = zoomedPaneId === p.id;
                 // A pane a stack is covering keeps its cell, and its size, so it

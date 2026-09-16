@@ -77,23 +77,20 @@
     }
 }
 
-/* ── The window's backdrop ───────────────────────────────────────────────── */
+/* ── The screen's surface ──────────────────────────────────── */
 
 /*
- * One field, behind the entire app.
+ * One field, on the screen being read.
  *
- * Earlier shapes each owned too little. A field in each pane drew a different
- * pattern in every split and was rebuilt on every tab switch. Promoting it to
- * the content area fixed that but drew a hard line where the rails stopped and
- * the texture started, which made the rails look like they belonged to a
- * different app. This one is mounted on `.shell`, so rails, stage and the
- * gutters between them all sit on the same continuous ground.
+ * Behind the whole shell it only ever reached the gutter: every panel above it
+ * is near-opaque, so the texture showed in the channels between them and
+ * nowhere a surface actually was. Six points of glass is not a backdrop.
  *
- * What you mostly see is the gutter. The panels above are near-opaque by
- * design — dense type needs a settled surface — so the backdrop reads at the
- * frame's edges, between the panels, and softly through the glass at the top
- * of the content area. That restraint is the point: it is the room's light,
- * not the furniture.
+ * So it sits inside the screen card instead, above the ground the card paints
+ * and under the panes, which paint nothing. It travels and clips with the card
+ * on a swipe because it belongs to it, and only the screen on stage carries one
+ * — a screen waiting off stage would spend a WebGL context on a texture nobody
+ * is looking at.
  */
 .shell {
     position: relative;
@@ -102,24 +99,34 @@
     isolation: isolate;
 }
 
-.shell-field {
+.screen-field {
     position: absolute;
     inset: 0;
-    z-index: -1;
+    /* Panes sit at 1, the card's ground below at 0: between the two. */
+    z-index: 0;
     pointer-events: none;
     /*
-     * Low, because it is behind everything rather than behind one panel. The
-     * old pane field could afford 0.2 over a single surface; across the whole
-     * window the same value reads as dirt on the screen.
+     * Back to what a field over a single surface can carry. The shell-wide
+     * value had to stay near invisible because it ran under the whole window;
+     * one surface can take the texture the pane field used to.
      */
-    --shader-field-strength: 0.14;
+    --shader-field-strength: 0.2;
     /*
-     * Weighted to the top edge and never quite gone. The window fills downward
-     * — scrollback, a document, a diff — so the top is the one band reliably
-     * free of anything being read, and the floor keeps the bottom corners from
-     * looking like the texture failed to load.
+     * Weighted to the top and gone by the middle. A screen fills downward —
+     * scrollback, a document, a diff — so the top is the one band reliably
+     * free of anything being read.
      */
-    mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.55) 32%, rgba(0, 0, 0, 0.22) 68%, rgba(0, 0, 0, 0.12) 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0.08) 38%, transparent 50%);
+    /*
+     * Clips itself rather than trusting the card to do it. The card is
+     * `overflow: hidden` with a radius, which normally suffices — but the mask
+     * above forces this into its own composited layer, and a rounded overflow
+     * clip on an ancestor is what WebKit stops applying to a composited
+     * descendant. The dither bled square into all four corners.
+     *
+     * The radius is the card's inner edge: its border sits outside this box.
+     */
+    clip-path: inset(0 round calc(var(--radius-panel) - 1px));
 }
 
 /*
