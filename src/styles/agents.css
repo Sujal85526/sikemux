@@ -677,23 +677,32 @@
 .yolo-switch-option.armed.active {
     box-shadow: none;
 }
-.yolo-switch-option.armed.active::before {
-    content: "";
+/* The masked gradient ring needs its own radius, or it paints a sharp rectangle
+   over the rounded segment. The colours move by sliding a wide strip behind the
+   window this cuts, which the compositor can do without repainting. */
+.yolo-switch-option.armed.active .yolo-ring {
     position: absolute;
     inset: 0;
-    /* The masked gradient ring needs its own radius, or it paints a sharp
-       rectangle over the rounded segment. */
     border-radius: inherit;
     padding: 1px;
-    background: var(--yolo-rainbow);
-    background-size: 200% 100%;
+    overflow: hidden;
     -webkit-mask:
         linear-gradient(#000 0 0) content-box,
         linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
-    animation: yolo-flow 5s linear infinite;
     pointer-events: none;
+}
+.yolo-switch-option.armed.active .yolo-ring::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 400%;
+    background-image: var(--yolo-rainbow);
+    background-size: 50% 100%;
+    animation: yolo-slide 5s linear infinite;
 }
 .yolo-switch-option.armed.active .yolo-switch-label {
     color: transparent;
@@ -702,18 +711,19 @@
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: yolo-flow 5s linear infinite;
 }
 .yolo-switch-option.armed.active .yolo-switch-glyph {
     animation: yolo-hue 5s linear infinite;
 }
 
-@keyframes yolo-flow {
+/* One full turn of the rainbow: the strip is four windows wide and carries two
+   turns of it, so half of it is exactly one. */
+@keyframes yolo-slide {
     from {
-        background-position: 0% 0;
+        transform: translateX(0);
     }
     to {
-        background-position: 200% 0;
+        transform: translateX(-50%);
     }
 }
 @keyframes yolo-hue {

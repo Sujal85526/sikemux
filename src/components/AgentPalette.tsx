@@ -241,6 +241,7 @@ export function AgentPalette() {
                                 className={`yolo-switch-option${choice.mode === YOLO ? " armed" : ""}${mode === choice.mode ? " active" : ""}`}
                                 title={choice.title}
                                 onClick={() => chooseMode(choice.mode)}>
+                                {choice.mode === YOLO && mode === YOLO && <span className="yolo-ring" aria-hidden="true" />}
                                 <span className="yolo-switch-glyph" aria-hidden="true">
                                     {choice.mode === YOLO ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
                                 </span>

@@ -147,23 +147,33 @@
     border-color: transparent;
 }
 
-.yolo-toggle.on::before {
-    content: "";
+/* The ring sits on the border, so it needs the inset and a radius one px wider
+   than the button's own. The colours move by sliding a wide strip behind the
+   window this cuts, which the compositor can do without repainting. */
+.yolo-toggle.on .yolo-ring {
     position: absolute;
-    /* The ring sits on the border, so it needs the inset and a radius one px
-       wider than the button's own. */
     inset: -1px;
     padding: 1px;
     border-radius: calc(var(--radius-control) + 1px);
-    background: var(--yolo-rainbow);
-    background-size: 200% 100%;
+    overflow: hidden;
     -webkit-mask:
         linear-gradient(#000 0 0) content-box,
         linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
-    animation: yolo-flow 5s linear infinite;
     pointer-events: none;
+}
+
+.yolo-toggle.on .yolo-ring::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 400%;
+    background-image: var(--yolo-rainbow);
+    background-size: 50% 100%;
+    animation: yolo-slide 5s linear infinite;
 }
 
 .yolo-toggle.on .yolo-label {
@@ -173,7 +183,6 @@
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: yolo-flow 5s linear infinite;
 }
 
 .yolo-toggle.on .yolo-glyph {

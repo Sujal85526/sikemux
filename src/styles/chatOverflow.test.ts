@@ -10,6 +10,22 @@ function block(selector: string): string {
     return match?.[2] ?? "";
 }
 
+const agents = readFileSync(join(process.cwd(), "src", "styles", "agents.css"), "utf8");
+
+describe("the yolo ring", () => {
+    /* A gradient that moves by its own background position repaints the ring
+       on every frame, and the ring is on screen for as long as the mode is. A
+       strip that slides behind a fixed window is the compositor's work. */
+    it("moves a strip rather than repainting the border", () => {
+        for (const sheet of [chat, agents]) {
+            expect(sheet).not.toMatch(/animation:\s*yolo-flow/);
+            expect(sheet).toMatch(/\.yolo-ring::before\s*\{[^}]*animation:\s*yolo-slide/);
+            expect(sheet).toMatch(/\.yolo-ring\s*\{[^}]*overflow:\s*hidden/);
+        }
+        expect(agents).toMatch(/@keyframes yolo-slide\s*\{[^@]*transform:\s*translateX\(-50%\)/);
+    });
+});
+
 describe("chat overflow", () => {
     /* A user bubble is sized to its own content, and a box sized that way grows
        to fit the longest word in it. A pasted URL is one word, so the bubble

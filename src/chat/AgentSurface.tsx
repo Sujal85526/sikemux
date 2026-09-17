@@ -36,6 +36,7 @@ function YoloToggle({ agent }: { agent: Agent }) {
                     : `Safe mode — ${agent.type} asks before it acts. ⌥Y goes YOLO, which restarts the CLI.`
             }
             onClick={() => cmd.toggleAgentSkipPermissions(agent.id)}>
+            {on && <span className="yolo-ring" aria-hidden="true" />}
             <span className="yolo-glyph" aria-hidden="true">
                 {on ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
             </span>
