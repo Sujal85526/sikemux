@@ -1206,6 +1206,29 @@
 .diagnostics-signals small {
     color: var(--acc);
 }
+.diagnostics-activity {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.diagnostics-activity b,
+.diagnostics-activity small {
+    overflow: hidden;
+    font-family: var(--mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.diagnostics-activity small {
+    color: var(--text-tertiary);
+}
+.diagnostics-activity .is-stalled,
+.diagnostics-activity .is-stalled b,
+.diagnostics-activity .is-stalled small {
+    color: var(--warn);
+}
+.diagnostics-activity .is-failed,
+.diagnostics-activity .is-failed b,
+.diagnostics-activity .is-failed small {
+    color: var(--danger);
+}
 .diagnostics-explain {
     max-height: 220px;
     border-bottom: 1px solid var(--border);

@@ -20,7 +20,8 @@ import { keybindingLabel } from "../keybindings";
 import * as cmd from "../state/commands";
 import { flushPersist, resetPersistenceForTests } from "../state/persist";
 import { getState, setState } from "../state/store";
-import { Onboarding, WhatsNewOverlay } from "./ExperienceOverlays";
+import { uiActivity } from "../lib/activity";
+import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./ExperienceOverlays";
 
 const initial = getState();
 const health = { shell: "/bin/zsh", git: true, aws: false, rnd: true };
@@ -233,5 +234,49 @@ describe("WhatsNewOverlay", () => {
         expect(screen.getByRole("list")).toBeInTheDocument();
         expect(screen.getAllByRole("listitem")).toHaveLength(2);
         expect(await screen.findByText(/You are on Sikemux vtest\./)).toBeInTheDocument();
+    });
+});
+
+describe("DiagnosticsOverlay", () => {
+    it("shows what the interface was doing beside the raw snapshot", async () => {
+        const now = vi.spyOn(performance, "now").mockReturnValue(0);
+        uiActivity.reset();
+        uiActivity.setSources({ focusPane: () => "editor", rejections: () => [{ message: "undefined is not an object", count: 7 }] });
+        uiActivity.beginCommand("git_status");
+        const settled = uiActivity.beginCommand("bruno_collection");
+        now.mockReturnValue(2_500);
+        uiActivity.endCommand(settled, false);
+        setState({ diagnosticsOpen: true });
+
+        const { container } = render(<DiagnosticsOverlay />);
+        try {
+            const stalled = await screen.findByText("git_status");
+            expect(stalled.closest("span.is-stalled")).not.toBeNull();
+            expect(screen.getByText("editor pane focused", { exact: false })).toBeInTheDocument();
+
+            const failed = screen.getByText("bruno_collection").closest("span");
+            expect(failed).toHaveClass("is-failed");
+            expect(failed).toHaveTextContent("2500ms · failed");
+
+            const rejection = screen.getByText("undefined is not an object").closest("span");
+            expect(rejection).toHaveTextContent("×7");
+            expect(container.querySelectorAll(".diagnostics-activity")).toHaveLength(1);
+        } finally {
+            now.mockRestore();
+            uiActivity.setSources({ focusPane: () => null, rejections: () => [] });
+            uiActivity.reset();
+        }
+    });
+
+    it("names the commands the overlay itself is waiting on", async () => {
+        uiActivity.reset();
+        setState({ diagnosticsOpen: true });
+        render(<DiagnosticsOverlay />);
+
+        expect(await screen.findByText("in flight")).toBeInTheDocument();
+        expect(screen.getByText("slowest recent commands")).toBeInTheDocument();
+        expect(screen.getByText("top rejection messages")).toBeInTheDocument();
+        expect(screen.getByText("none")).toBeInTheDocument();
+        expect(screen.getByText("runtime_diagnostics")).toBeInTheDocument();
     });
 });

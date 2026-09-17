@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { getVersion } from "@tauri-apps/api/app";
 import { invokeCommand as invoke } from "../api/invoke";
+import { uiActivity, type UiActivityReport } from "../lib/activity";
 import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
 import { useResourceEnabled } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
@@ -500,6 +501,67 @@ export function Onboarding() {
     );
 }
 
+const STALLED_COMMAND_MS = 1_000;
+const UI_ACTIVITY_REFRESH_MS = 1_000;
+const SLOWEST_COMMANDS_SHOWN = 5;
+const REJECTION_MESSAGES_SHOWN = 5;
+
+/** What the interface was doing, so a stall can be read before it becomes a freeze. */
+function UiActivityBreadcrumbs({ report }: { report: UiActivityReport | null }) {
+    const slowest = useMemo(
+        () => (report ? [...report.recent].sort((left, right) => right.ms - left.ms).slice(0, SLOWEST_COMMANDS_SHOWN) : []),
+        [report],
+    );
+    if (!report) return null;
+    return (
+        <div className="diagnostics-signals diagnostics-activity">
+            <span className="experience-kicker">in flight{report.focusPane ? ` · ${report.focusPane} pane focused` : ""}</span>
+            {report.inflight.length ? (
+                report.inflight.map((entry, index) => (
+                    <span key={`${entry.command}-${index}`} className={entry.ageMs >= STALLED_COMMAND_MS ? "is-stalled" : ""}>
+                        <b>{entry.command}</b>
+                        <small>{Math.round(entry.ageMs)}ms</small>
+                    </span>
+                ))
+            ) : (
+                <span>
+                    <b>nothing outstanding</b>
+                </span>
+            )}
+
+            <span className="experience-kicker">slowest recent commands</span>
+            {slowest.length ? (
+                slowest.map((entry, index) => (
+                    <span key={`${entry.command}-${index}`} className={entry.ok ? "" : "is-failed"}>
+                        <b>{entry.command}</b>
+                        <small>
+                            {Math.round(entry.ms)}ms {entry.ok ? "" : "· failed"}
+                        </small>
+                    </span>
+                ))
+            ) : (
+                <span>
+                    <b>no commands yet</b>
+                </span>
+            )}
+
+            <span className="experience-kicker">top rejection messages</span>
+            {report.rejections.length ? (
+                report.rejections.slice(0, REJECTION_MESSAGES_SHOWN).map((entry) => (
+                    <span key={entry.message} className="is-failed" title={entry.message}>
+                        <b>{entry.message}</b>
+                        <small>×{entry.count}</small>
+                    </span>
+                ))
+            ) : (
+                <span>
+                    <b>none</b>
+                </span>
+            )}
+        </div>
+    );
+}
+
 export function DiagnosticsOverlay() {
     const open = useStore((s) => s.diagnosticsOpen);
     useOccludeNativeViews(open);
@@ -507,6 +569,7 @@ export function DiagnosticsOverlay() {
     const [error, setError] = useState("");
     const [manifests, setManifests] = useState<ManifestReport | null>(null);
     const [explain, setExplain] = useState<unknown>(null);
+    const [uiReport, setUiReport] = useState<UiActivityReport | null>(null);
     const agents = useStore((s) => s.agents);
     const activity = useStore((s) => s.agentActivity);
     const refresh = async () => {
@@ -522,6 +585,12 @@ export function DiagnosticsOverlay() {
     useEffect(() => {
         if (open) void refresh();
     }, [open]);
+    useEffect(() => {
+        if (!open) return;
+        setUiReport(uiActivity.snapshot());
+        const timer = window.setInterval(() => setUiReport(uiActivity.snapshot()), UI_ACTIVITY_REFRESH_MS);
+        return () => window.clearInterval(timer);
+    }, [open]);
     if (!open) return null;
     const text = JSON.stringify(snapshot, null, 2);
     return (
@@ -529,6 +598,7 @@ export function DiagnosticsOverlay() {
             <p className="experience-deck">
                 A redacted operational snapshot. Terminal text, environment values, credentials, and API secrets are never included.
             </p>
+            <UiActivityBreadcrumbs report={uiReport} />
             <div className="diagnostics-signals">
                 <span className="experience-kicker">agent detection manifests</span>
                 {manifests?.manifests.map((item) => (
