@@ -66,9 +66,14 @@ describe("project sorting", () => {
         expect(ghost).toHaveStyle({ width: "210px", height: "26px" });
         expect(ghost?.querySelector(".project-drag-ghost-row")).toHaveTextContent("gamma");
         expect(ghost?.querySelector(".project-drag-ghost-card")).not.toBeInTheDocument();
+        /*
+         * The ghost is styled by class — `.project-drag-ghost *` takes the
+         * pointer events away. It used to arrive with every computed style of
+         * every element written back as an inline property, which is hundreds
+         * of reads at the moment a drag starts.
+         */
         for (const element of ghost?.querySelectorAll<HTMLElement>("*") ?? []) {
-            expect(element.style.getPropertyValue("pointer-events")).toBe("none");
-            expect(element.style.getPropertyPriority("pointer-events")).toBe("important");
+            expect(element.getAttribute("style")).toBeNull();
         }
         expect(ghostWasHiddenDuringHitTest).toBe(true);
         expect(ghost?.style.visibility).toBe("");

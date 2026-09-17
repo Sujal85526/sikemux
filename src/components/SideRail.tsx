@@ -1,7 +1,18 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+    createContext,
+    memo,
+    useCallback,
+    useContext,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type PointerEvent as ReactPointerEvent,
+    type ReactNode,
+} from "react";
 import { createPortal, flushSync } from "react-dom";
 import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
-import type { Session, SessionKind, Window, WindowRole } from "../state/types";
+import type { Agent, AgentRuntimeState, Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
@@ -58,18 +69,17 @@ interface ProjectDragVisual {
     row: HTMLElement;
 }
 
+/*
+ * The row under the pointer, lifted out of the rail into the ghost.
+ *
+ * It used to arrive carrying a copy of every computed style of every element
+ * inside it — hundreds of inline properties read one at a time, at the moment
+ * the drag starts. It does not need any of them: everything a project row
+ * paints is styled by class and nothing is scoped to the rail, so the clone
+ * looks the same wherever it lands.
+ */
 function cloneProjectRow(source: HTMLElement): HTMLElement {
     const clone = source.cloneNode(true) as HTMLElement;
-    const sourceElements = [source, ...source.querySelectorAll<HTMLElement>("*")];
-    const cloneElements = [clone, ...clone.querySelectorAll<HTMLElement>("*")];
-    sourceElements.forEach((element, index) => {
-        const styles = window.getComputedStyle(element);
-        for (let styleIndex = 0; styleIndex < styles.length; styleIndex += 1) {
-            const property = styles.item(styleIndex);
-            cloneElements[index].style.setProperty(property, styles.getPropertyValue(property), styles.getPropertyPriority(property));
-        }
-        cloneElements[index].style.setProperty("pointer-events", "none", "important");
-    });
     clone.classList.add("project-drag-ghost-row");
     clone.removeAttribute("data-project-drop-row");
     clone.removeAttribute("aria-grabbed");
@@ -90,7 +100,296 @@ function projectRects(): Map<string, DOMRect> {
     );
 }
 
-export function SideRail() {
+/*
+ * What the rows below need from the rail they are in.
+ *
+ * These four used to be declared inside the rail's own render body, which made
+ * them a different component type on every render: React tore the whole rail
+ * out of the tree and rebuilt it whenever anything changed. Tooltips
+ * disappeared mid-hover, focus was lost, and a drag in progress was holding
+ * refs to rows that no longer existed.
+ */
+interface RailContextValue {
+    activeSessionId: string;
+    windowsById: Record<string, Window>;
+    windowsBySession: Record<string, string[]>;
+    agentsById: Record<string, Agent>;
+    activityById: Record<string, AgentRuntimeState>;
+    draggingProjectId: string | null;
+    projectDragClass: (id: string) => string;
+    onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
+    selectProject: (id: string) => void;
+    jumpToWindow: (sessionId: string, winId: string) => void;
+    jumpToAgents: (sessionId: string) => void;
+    kb: (id: KeybindingActionId) => string;
+}
+
+const RailContext = createContext<RailContextValue | null>(null);
+
+function useRail(): RailContextValue {
+    const value = useContext(RailContext);
+    if (!value) throw new Error("side rail rows must render inside the rail");
+    return value;
+}
+
+function SessionCloseButton({ session }: { session: Session }) {
+    return (
+        <Tooltip label={`Close ${session.name}`}>
+            <button type="button" className="sess-close" aria-label={`Close ${session.name}`} onClick={() => cmd.closeSession(session.id)}>
+                <IconClose size={11} />
+            </button>
+        </Tooltip>
+    );
+}
+
+function SimpleRow({ s }: { s: Session }) {
+    const { activeSessionId } = useRail();
+    const active = s.id === activeSessionId;
+    return (
+        <div className="session-row-shell">
+            <button className={`sess-row${active ? " active" : ""}`} onClick={() => cmd.selectSession(s.id)}>
+                <span className={`sess-icon ${s.kind}`}>
+                    <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
+                </span>
+                <span className="sess-name">{s.name}</span>
+            </button>
+            <SessionCloseButton session={s} />
+        </div>
+    );
+}
+
+function ProjectBlock({ s }: { s: Session }) {
+    const rail = useRail();
+    const { activeSessionId, agentsById, activityById, windowsById, windowsBySession, draggingProjectId, kb } = rail;
+    const active = s.id === activeSessionId;
+    const winIds = windowsBySession[s.id] ?? [];
+    const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
+    const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
+        .map((id) => agentsById[id])
+        .filter(Boolean);
+    const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
+    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
+
+    if (!active) {
+        const visible = agents.slice(0, MAX_BADGE_ICONS);
+        const overflow = agents.length - visible.length;
+        return (
+            <div className={`session-row-shell project-row-shell${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
+                <Tooltip label={s.cwd || s.name} side="right">
+                    <button
+                        className="proj-row collapsed"
+                        data-project-drop-row
+                        aria-grabbed={draggingProjectId === s.id}
+                        onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
+                        onClick={() => rail.selectProject(s.id)}>
+                        <span className="proj-folder">
+                            <IconFolder size={12} />
+                        </span>
+                        <span className="proj-name">{s.name}</span>
+                        {visible.length > 0 && (
+                            <span className="proj-child-icons">
+                                {visible.map((a) => (
+                                    <span
+                                        key={a.id}
+                                        className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
+                                        <AgentIcon type={a.type} size={20} />
+                                    </span>
+                                ))}
+                                {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                            </span>
+                        )}
+                        {rollup && <AgentStateIndicator state={rollup} />}
+                    </button>
+                </Tooltip>
+                <SessionCloseButton session={s} />
+            </div>
+        );
+    }
+
+    const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
+    const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
+    const isSubActive = (role: WindowRole | "agents"): boolean => activeRole === (role === "agents" ? "agent" : role);
+
+    const onSubClick = (role: WindowRole | "agents") => {
+        if (role === "agents") {
+            rail.jumpToAgents(s.id);
+            return;
+        }
+        if (role === "files") {
+            cmd.openEditorPane();
+            return;
+        }
+        if (role === "git") {
+            cmd.openGitWorkbench();
+            return;
+        }
+        if (role === "search") {
+            cmd.focusGlobalSearch();
+            return;
+        }
+        const w = winByRole(role);
+        if (w) {
+            rail.jumpToWindow(s.id, w.id);
+        } else if (role === "term") {
+            if (s.id !== activeSessionId) cmd.selectSession(s.id);
+            cmd.newWindow();
+        }
+    };
+
+    const termIcons: ReactNode[] =
+        tabCount > 1
+            ? Array.from({ length: tabCount }, (_, i) => (
+                  <span key={i} className="proj-pip proj-pip-term">
+                      <IconCommand size={14} />
+                  </span>
+              ))
+            : [];
+    const agentIcons: ReactNode[] = agents.map((a) => (
+        <span key={a.id} className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
+            <AgentIcon type={a.type} size={20} />
+        </span>
+    ));
+
+    const children: SubRow[] = [
+        { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}`, icons: [] },
+        {
+            role: "term",
+            label: "Term",
+            kbd: kb("window.terminal"),
+            title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
+            icons: termIcons,
+        },
+        { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}`, icons: [] },
+        {
+            role: "agents",
+            label: "Agents",
+            kbd: kb("window.agents"),
+            title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
+            icons: agentIcons,
+        },
+        { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
+    ];
+    return (
+        <div className={`proj-tree active${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
+            <div className="session-row-shell project-row-shell">
+                <Tooltip label={s.cwd || s.name} side="right">
+                    <button
+                        className="proj-row expanded"
+                        data-project-drop-row
+                        aria-grabbed={draggingProjectId === s.id}
+                        onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
+                        onClick={() => rail.selectProject(s.id)}>
+                        <span className="proj-folder">
+                            <IconFolder size={12} />
+                        </span>
+                        <span className="proj-name">{s.name}</span>
+                    </button>
+                </Tooltip>
+                <SessionCloseButton session={s} />
+            </div>
+            <div className="proj-children">
+                {children.map((c) => {
+                    const subActive = isSubActive(c.role);
+                    const node = c.role === "agents" ? <IconAgent size={13} /> : <WindowIcon role={c.role} size={13} />;
+                    const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
+                    const overflow = c.icons.length - visibleIcons.length;
+                    return (
+                        <Tooltip key={c.role} label={c.title} side="right">
+                            <button
+                                type="button"
+                                className={`proj-child${subActive ? " active" : ""}`}
+                                aria-label={c.label}
+                                aria-current={subActive ? "page" : undefined}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSubClick(c.role);
+                                }}>
+                                <span className="proj-child-tick" />
+                                <span className="proj-child-ic">{node}</span>
+                                <span className="proj-child-label">{c.label}</span>
+                                {visibleIcons.length > 0 && (
+                                    <span className="proj-child-icons">
+                                        {visibleIcons}
+                                        {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                                    </span>
+                                )}
+                                {c.role === "agents" && rollup && <AgentStateIndicator state={rollup} />}
+                                {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
+                            </button>
+                        </Tooltip>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+interface SubRow {
+    role: WindowRole | "agents";
+    label: string;
+    kbd?: string;
+    title: string;
+    icons: ReactNode[];
+}
+
+function renderSession(s: Session) {
+    return s.kind === "project" ? <ProjectBlock key={s.id} s={s} /> : <SimpleRow key={s.id} s={s} />;
+}
+
+function Group({
+    label,
+    list,
+    add,
+    addTitle,
+    addKbd,
+    action,
+    actionTitle,
+    emptyText,
+}: {
+    label: string;
+    list: Session[];
+    add?: () => void;
+    addTitle?: string;
+    addKbd?: string;
+    action?: () => void;
+    actionTitle?: string;
+    emptyText: string;
+}) {
+    return (
+        <Panel variant="group">
+            <PanelHeader
+                label={label}
+                rule
+                extra={
+                    add && (
+                        <span className="rail-group-actions">
+                            {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
+                            {action && (
+                                <Tooltip label={actionTitle}>
+                                    <button className="rail-group-add" onClick={action} aria-label={actionTitle} type="button">
+                                        <IconPencil size={11} />
+                                    </button>
+                                </Tooltip>
+                            )}
+                            <Tooltip label={addTitle}>
+                                <button className="rail-group-add" onClick={add} aria-label={addTitle} type="button">
+                                    <IconPlus size={11} />
+                                </button>
+                            </Tooltip>
+                        </span>
+                    )
+                }
+            />
+            {list.length === 0 ? (
+                <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
+            ) : (
+                list.map(renderSession)
+            )}
+        </Panel>
+    );
+}
+
+export const SideRail = memo(function SideRail() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const windowsById = useStore((s) => s.windows);
@@ -303,261 +602,29 @@ export function SideRail() {
         cmd.focusAgents();
     };
 
-    const SessionCloseButton = ({ session }: { session: Session }) => (
-        <Tooltip label={`Close ${session.name}`}>
-            <button type="button" className="sess-close" aria-label={`Close ${session.name}`} onClick={() => cmd.closeSession(session.id)}>
-                <IconClose size={11} />
-            </button>
-        </Tooltip>
-    );
-
-    const ProjectBlock = ({ s }: { s: Session }) => {
-        const active = s.id === activeSessionId;
-        const winIds = windowsBySession[s.id] ?? [];
-        const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
-        const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
-            .map((id) => agentsById[id])
-            .filter(Boolean);
-        const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
-        const tabCount = sessionWindows.filter((w) => w.role === "term").length;
-
-        if (!active) {
-            const visible = agents.slice(0, MAX_BADGE_ICONS);
-            const overflow = agents.length - visible.length;
-            return (
-                <div className={`session-row-shell project-row-shell${projectDragClass(s.id)}`} data-project-id={s.id}>
-                    <Tooltip label={s.cwd || s.name} side="right">
-                        <button
-                            className="proj-row collapsed"
-                            data-project-drop-row
-                            aria-grabbed={draggingProjectId === s.id}
-                            onPointerDown={(event) => onProjectPointerDown(event, s.id)}
-                            onClick={() => selectProject(s.id)}>
-                            <span className="proj-folder">
-                                <IconFolder size={12} />
-                            </span>
-                            <span className="proj-name">{s.name}</span>
-                            {visible.length > 0 && (
-                                <span className="proj-child-icons">
-                                    {visible.map((a) => (
-                                        <span
-                                            key={a.id}
-                                            className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-                                            <AgentIcon type={a.type} size={20} />
-                                        </span>
-                                    ))}
-                                    {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                </span>
-                            )}
-                            {rollup && <AgentStateIndicator state={rollup} />}
-                        </button>
-                    </Tooltip>
-                    <SessionCloseButton session={s} />
-                </div>
-            );
-        }
-
-        const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
-        const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
-        const isSubActive = (role: WindowRole | "agents"): boolean => activeRole === (role === "agents" ? "agent" : role);
-
-        const onSubClick = (role: WindowRole | "agents") => {
-            if (role === "agents") {
-                jumpToAgents(s.id);
-                return;
-            }
-            if (role === "files") {
-                cmd.openEditorPane();
-                return;
-            }
-            if (role === "git") {
-                cmd.openGitWorkbench();
-                return;
-            }
-            if (role === "search") {
-                cmd.focusGlobalSearch();
-                return;
-            }
-            const w = winByRole(role);
-            if (w) {
-                jumpToWindow(s.id, w.id);
-            } else if (role === "term") {
-                if (s.id !== activeSessionId) cmd.selectSession(s.id);
-                cmd.newWindow();
-            }
-        };
-
-        const termIcons: React.ReactNode[] =
-            tabCount > 1
-                ? Array.from({ length: tabCount }, (_, i) => (
-                      <span key={i} className="proj-pip proj-pip-term">
-                          <IconCommand size={14} />
-                      </span>
-                  ))
-                : [];
-        const agentIcons: React.ReactNode[] = agents.map((a) => (
-            <span key={a.id} className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-                <AgentIcon type={a.type} size={20} />
-            </span>
-        ));
-
-        type SubRow = {
-            role: WindowRole | "agents";
-            label: string;
-            kbd?: string;
-            title: string;
-            icons: React.ReactNode[];
-        };
-        const children: SubRow[] = [
-            { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}`, icons: [] },
-            {
-                role: "term",
-                label: "Term",
-                kbd: kb("window.terminal"),
-                title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
-                icons: termIcons,
-            },
-            { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}`, icons: [] },
-            {
-                role: "agents",
-                label: "Agents",
-                kbd: kb("window.agents"),
-                title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
-                icons: agentIcons,
-            },
-            { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
-        ];
-        return (
-            <div className={`proj-tree active${projectDragClass(s.id)}`} data-project-id={s.id}>
-                <div className="session-row-shell project-row-shell">
-                    <Tooltip label={s.cwd || s.name} side="right">
-                        <button
-                            className="proj-row expanded"
-                            data-project-drop-row
-                            aria-grabbed={draggingProjectId === s.id}
-                            onPointerDown={(event) => onProjectPointerDown(event, s.id)}
-                            onClick={() => selectProject(s.id)}>
-                            <span className="proj-folder">
-                                <IconFolder size={12} />
-                            </span>
-                            <span className="proj-name">{s.name}</span>
-                        </button>
-                    </Tooltip>
-                    <SessionCloseButton session={s} />
-                </div>
-                <div className="proj-children">
-                    {children.map((c) => {
-                        const subActive = isSubActive(c.role);
-                        const node = c.role === "agents" ? <IconAgent size={13} /> : <WindowIcon role={c.role} size={13} />;
-                        const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
-                        const overflow = c.icons.length - visibleIcons.length;
-                        return (
-                            <Tooltip key={c.role} label={c.title} side="right">
-                                <button
-                                    type="button"
-                                    className={`proj-child${subActive ? " active" : ""}`}
-                                    aria-label={c.label}
-                                    aria-current={subActive ? "page" : undefined}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSubClick(c.role);
-                                    }}>
-                                    <span className="proj-child-tick" />
-                                    <span className="proj-child-ic">{node}</span>
-                                    <span className="proj-child-label">{c.label}</span>
-                                    {visibleIcons.length > 0 && (
-                                        <span className="proj-child-icons">
-                                            {visibleIcons}
-                                            {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                        </span>
-                                    )}
-                                    {c.role === "agents" && rollup && <AgentStateIndicator state={rollup} />}
-                                    {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
-                                </button>
-                            </Tooltip>
-                        );
-                    })}
-                </div>
-            </div>
-        );
-    };
-
-    const SimpleRow = ({ s }: { s: Session }) => {
-        const active = s.id === activeSessionId;
-        return (
-            <div className="session-row-shell">
-                <button className={`sess-row${active ? " active" : ""}`} onClick={() => cmd.selectSession(s.id)}>
-                    <span className={`sess-icon ${s.kind}`}>
-                        <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
-                    </span>
-                    <span className="sess-name">{s.name}</span>
-                </button>
-                <SessionCloseButton session={s} />
-            </div>
-        );
-    };
-
-    const renderSession = (s: Session) => (s.kind === "project" ? <ProjectBlock key={s.id} s={s} /> : <SimpleRow key={s.id} s={s} />);
-
-    const Group = ({
-        label,
-        list,
-        add,
-        addTitle,
-        addKbd,
-        action,
-        actionTitle,
-        emptyText,
-    }: {
-        label: string;
-        list: Session[];
-        add?: () => void;
-        addTitle?: string;
-        addKbd?: string;
-        action?: () => void;
-        actionTitle?: string;
-        emptyText: string;
-    }) => (
-        <Panel variant="group">
-            <PanelHeader
-                label={label}
-                rule
-                extra={
-                    add && (
-                        <span className="rail-group-actions">
-                            {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
-                            {action && (
-                                <Tooltip label={actionTitle}>
-                                    <button className="rail-group-add" onClick={action} aria-label={actionTitle} type="button">
-                                        <IconPencil size={11} />
-                                    </button>
-                                </Tooltip>
-                            )}
-                            <Tooltip label={addTitle}>
-                                <button className="rail-group-add" onClick={add} aria-label={addTitle} type="button">
-                                    <IconPlus size={11} />
-                                </button>
-                            </Tooltip>
-                        </span>
-                    )
-                }
-            />
-            {list.length === 0 ? (
-                <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
-            ) : (
-                list.map(renderSession)
-            )}
-        </Panel>
-    );
-
     const ghostPoint = projectGhostPointRef.current;
     const ghostTransform =
         projectDragVisual && ghostPoint
             ? `translate3d(${ghostPoint.x - projectDragVisual.grabX}px, ${ghostPoint.y - projectDragVisual.grabY}px, 0)`
             : "translate3d(-100vw, -100vh, 0)";
 
+    const rail: RailContextValue = {
+        activeSessionId,
+        windowsById,
+        windowsBySession,
+        agentsById,
+        activityById,
+        draggingProjectId,
+        projectDragClass,
+        onProjectPointerDown,
+        selectProject,
+        jumpToWindow,
+        jumpToAgents,
+        kb,
+    };
+
     return (
-        <>
+        <RailContext.Provider value={rail}>
             <aside className="side-rail">
                 <div className="rail-scroll">
                     <Group
@@ -625,6 +692,6 @@ export function SideRail() {
                     />,
                     document.body,
                 )}
-        </>
+        </RailContext.Provider>
     );
-}
+});
