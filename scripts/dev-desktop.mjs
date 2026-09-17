@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,6 +52,34 @@ export async function stopRecordedBrowser(pidFile) {
   signalProcessTree(pid, "SIGTERM");
   await delay(250);
   signalProcessTree(pid, "SIGKILL");
+  await rm(pidFile, { force: true });
+  return true;
+}
+
+export function processCommand(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) return null;
+  if (process.platform === "win32") return null;
+  const result = spawnSync("ps", ["-o", "command=", "-p", String(pid)], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) return null;
+  const command = result.stdout.trim();
+  return command.length > 0 ? command : null;
+}
+
+// A dev run killed hard leaves its browser behind holding the profile lock, and
+// the next launch cannot open the profile until it is gone. The recorded pid may
+// have been reused since, so only a process still named after our profile is
+// reaped; anything else just clears the stale file.
+export async function reapLeftoverBrowser(pidFile, marker) {
+  const pid = await readRecordedPid(pidFile);
+  if (pid === null) return false;
+  const command = processCommand(pid);
+  if (command && command.includes(marker)) {
+    signalProcessTree(pid, "SIGTERM");
+    await delay(250);
+    signalProcessTree(pid, "SIGKILL");
+  }
   await rm(pidFile, { force: true });
   return true;
 }
@@ -107,8 +136,9 @@ export async function runDevDesktop() {
     return 1;
   }
   const startedAt = Date.now();
-  const temporaryRoot = await mkdtemp(join(tmpdir(), "sikemux-dev-"));
-  const browserPidFile = join(temporaryRoot, "browser.pid");
+  const checkout = createHash("sha1").update(root).digest("hex").slice(0, 12);
+  const browserPidFile = join(tmpdir(), `sikemux-dev-browser-${checkout}.pid`);
+  await reapLeftoverBrowser(browserPidFile, "com.nodelike.sikemux");
   const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const child = spawn(
     command,
@@ -150,7 +180,6 @@ export async function runDevDesktop() {
     for (const [signal, handler] of handlers) process.off(signal, handler);
     await stopProcessTree(child.pid);
     await stopRecordedBrowser(browserPidFile);
-    await rm(temporaryRoot, { force: true, recursive: true });
   }
 
   if (requestedExitCode !== null) return requestedExitCode;
