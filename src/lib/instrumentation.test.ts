@@ -66,6 +66,42 @@ describe("startEventLoopMonitor", () => {
         expect(() => startEventLoopMonitor({ intervalMs: 0 })).toThrow(RangeError);
         expect(() => startEventLoopMonitor({ thresholdMs: Number.NaN })).toThrow(RangeError);
     });
+
+    it("stops waking the machine while the page is hidden and picks up again when it returns", () => {
+        let visible = true;
+        let scheduled: (() => void) | undefined;
+        let lifecycle: (() => void) | undefined;
+        const cancel = vi.fn();
+        const schedule = vi.fn((callback: () => void) => {
+            scheduled = callback;
+            return 1;
+        });
+
+        const stop = startEventLoopMonitor({
+            now: () => 0,
+            visible: () => visible,
+            schedule,
+            cancel,
+            addLifecycleListener: (_event, listener) => {
+                lifecycle = listener;
+                return () => {};
+            },
+        });
+        expect(schedule).toHaveBeenCalledTimes(1);
+
+        visible = false;
+        lifecycle?.();
+        expect(cancel).toHaveBeenCalledTimes(1);
+
+        // A tick that slips through while hidden must not re-arm either.
+        scheduled?.();
+        expect(schedule).toHaveBeenCalledTimes(1);
+
+        visible = true;
+        lifecycle?.();
+        expect(schedule).toHaveBeenCalledTimes(2);
+        stop();
+    });
 });
 
 describe("startNativeUiHeartbeat", () => {
@@ -115,6 +151,44 @@ describe("startNativeUiHeartbeat", () => {
         stop();
         expect(cancel).not.toHaveBeenCalled();
         expect(listeners.size).toBe(0);
+    });
+
+    it("slows to the hidden interval once nobody is looking at the window", async () => {
+        const delays: number[] = [];
+        let visible = true;
+        const stop = startNativeUiHeartbeat({
+            send: () => Promise.resolve(),
+            visible: () => visible,
+            intervalMs: 500,
+            hiddenIntervalMs: 5_000,
+            schedule: (_callback, delayMs) => {
+                delays.push(delayMs);
+                return delays.length;
+            },
+            addLifecycleListener: () => () => {},
+        });
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(delays).toEqual([500]);
+
+        visible = false;
+        stop();
+        const hidden = startNativeUiHeartbeat({
+            send: () => Promise.resolve(),
+            visible: () => visible,
+            intervalMs: 500,
+            hiddenIntervalMs: 5_000,
+            schedule: (_callback, delayMs) => {
+                delays.push(delayMs);
+                return delays.length;
+            },
+            addLifecycleListener: () => () => {},
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(delays).toEqual([500, 5_000]);
+        hidden();
     });
 
     it("contains synchronous and asynchronous send failures before continuing", async () => {

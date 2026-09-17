@@ -165,6 +165,26 @@ function storeSnapshot() {
     };
 }
 
+export const REACT_PROFILER_FLAG = "sikemux.react-profiler";
+
+/**
+ * Whether to wrap the tree in React's `<Profiler>`.
+ *
+ * It is not free: React times every commit of every component below it and
+ * calls back on each one, in a shell that commits on keystrokes. That is worth
+ * paying for while working on render cost and not the rest of the time, so a
+ * build only does it when someone has asked, then reloaded:
+ *
+ *     localStorage.setItem("sikemux.react-profiler", "on")
+ */
+export function reactProfilingEnabled(): boolean {
+    try {
+        return localStorage.getItem(REACT_PROFILER_FLAG) === "on";
+    } catch {
+        return false;
+    }
+}
+
 export function browserDiagnostics(): Record<string, unknown> {
     return {
         at: new Date().toISOString(),

@@ -44,12 +44,14 @@ export interface EventLoopMonitorOptions {
     visible?: () => boolean;
     schedule?: (callback: () => void, delayMs: number) => TimerHandle;
     cancel?: (handle: TimerHandle) => void;
+    addLifecycleListener?: (event: "visibilitychange", listener: () => void) => () => void;
     telemetry?: PerformanceTelemetry;
 }
 
 export interface NativeUiHeartbeatOptions {
     readonly send: (visible: boolean, heartbeat: number) => void | PromiseLike<void>;
     readonly intervalMs?: number;
+    readonly hiddenIntervalMs?: number;
     readonly visible?: () => boolean;
     readonly schedule?: (callback: () => void, delayMs: number) => TimerHandle;
     readonly cancel?: (handle: TimerHandle) => void;
@@ -58,6 +60,12 @@ export interface NativeUiHeartbeatOptions {
 }
 
 export const NATIVE_UI_HEARTBEAT_INTERVAL_MS = 500;
+/*
+ * A hidden page disarms the native watchdog, so the pulse behind it is only
+ * keeping the channel warm for the moment the window comes back. Twice a second
+ * for that is a wakeup and an IPC round trip for nothing.
+ */
+export const NATIVE_UI_HEARTBEAT_HIDDEN_INTERVAL_MS = 5_000;
 const MAX_NATIVE_UI_HEARTBEAT = 0xffff_ffff;
 
 function defaultLifecycleListener(event: "visibilitychange" | "pageshow" | "pagehide", listener: () => void): () => void {
@@ -75,7 +83,9 @@ function defaultLifecycleListener(event: "visibilitychange" | "pageshow" | "page
 export function startNativeUiHeartbeat(options: NativeUiHeartbeatOptions): () => void {
     if (typeof options.send !== "function") throw new TypeError("native heartbeat send must be a function");
     const intervalMs = options.intervalMs ?? NATIVE_UI_HEARTBEAT_INTERVAL_MS;
+    const hiddenIntervalMs = options.hiddenIntervalMs ?? NATIVE_UI_HEARTBEAT_HIDDEN_INTERVAL_MS;
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new RangeError("native heartbeat intervalMs must be positive");
+    if (!Number.isFinite(hiddenIntervalMs) || hiddenIntervalMs <= 0) throw new RangeError("native heartbeat hiddenIntervalMs must be positive");
 
     const visible = options.visible ?? (() => typeof document === "undefined" || document.visibilityState === "visible");
     const schedule = options.schedule ?? ((callback, delayMs) => setTimeout(callback, delayMs));
@@ -96,7 +106,7 @@ export function startNativeUiHeartbeat(options: NativeUiHeartbeatOptions): () =>
     };
 
     const scheduleNext = () => {
-        if (!stopped && handle === null) handle = schedule(tick, intervalMs);
+        if (!stopped && handle === null) handle = schedule(tick, visible() ? intervalMs : hiddenIntervalMs);
     };
     const send = (nextVisible: boolean) => {
         if (stopped) return;
@@ -157,12 +167,27 @@ export function startNativeUiHeartbeat(options: NativeUiHeartbeatOptions): () =>
     };
 }
 
+/*
+ * How often the monitor asks whether the main thread answered on time.
+ *
+ * A stall is measured by how late the answer is, not by how often the question
+ * is asked, so this only has to be short enough that a hang lands inside a
+ * window rather than between two of them. It used to be 50ms: twenty wakeups a
+ * second, forever, to notice something that is still there a fifth of a second
+ * later.
+ */
+const EVENT_LOOP_MONITOR_INTERVAL_MS = 250;
+
 /**
  * A self-scheduling heartbeat detects main-thread stalls even where WebKit does
- * not expose the Long Tasks API. Background/suspended windows are ignored.
+ * not expose the Long Tasks API.
+ *
+ * A hidden page stops it rather than sampling and discarding: a suspended
+ * window's delays mean nothing, and a window nobody is looking at should not be
+ * waking the machine up to find that out.
  */
 export function startEventLoopMonitor(options: EventLoopMonitorOptions = {}): () => void {
-    const intervalMs = options.intervalMs ?? 50;
+    const intervalMs = options.intervalMs ?? EVENT_LOOP_MONITOR_INTERVAL_MS;
     const thresholdMs = options.thresholdMs ?? 100;
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new RangeError("intervalMs must be positive");
     if (!Number.isFinite(thresholdMs) || thresholdMs <= 0) throw new RangeError("thresholdMs must be positive");
@@ -171,12 +196,25 @@ export function startEventLoopMonitor(options: EventLoopMonitorOptions = {}): ()
     const visible = options.visible ?? (() => typeof document === "undefined" || document.visibilityState === "visible");
     const schedule = options.schedule ?? ((callback, delayMs) => setTimeout(callback, delayMs));
     const cancel = options.cancel ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+    const addLifecycleListener = options.addLifecycleListener ?? defaultLifecycleListener;
     const telemetry = options.telemetry ?? performanceTelemetry;
     let stopped = false;
     let expectedAt = now() + intervalMs;
-    let handle: TimerHandle;
+    let handle: TimerHandle | null = null;
 
-    const tick = () => {
+    const arm = () => {
+        if (stopped || handle !== null || !visible()) return;
+        expectedAt = now() + intervalMs;
+        handle = schedule(tick, intervalMs);
+    };
+    const disarm = () => {
+        if (handle === null) return;
+        cancel(handle);
+        handle = null;
+    };
+
+    function tick() {
+        handle = null;
         if (stopped) return;
         const current = now();
         const delay = Math.max(0, current - expectedAt);
@@ -185,14 +223,15 @@ export function startEventLoopMonitor(options: EventLoopMonitorOptions = {}): ()
             telemetry.incrementCounter("event-loop.hangs");
             telemetry.recordLatency(EVENT_LOOP_HANG_METRIC, delay);
         }
-        expectedAt = current + intervalMs;
-        handle = schedule(tick, intervalMs);
-    };
+        arm();
+    }
 
+    const removeVisibility = addLifecycleListener("visibilitychange", () => (visible() ? arm() : disarm()));
     handle = schedule(tick, intervalMs);
     return () => {
         stopped = true;
-        cancel(handle);
+        disarm();
+        removeVisibility();
     };
 }
 
