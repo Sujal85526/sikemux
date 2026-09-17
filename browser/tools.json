@@ -1,5 +1,5 @@
 {
-  "comment": "Single source of truth for the agent tool surface. Python serves these over MCP, scripts/generate-agent-tools.mjs emits the Rust method lists, and pnpm agent-tools:check proves every method still has a handler. Edit here, then run pnpm agent-tools:generate.",
+  "comment": "Single source of truth for the agent tool surface. The sidecar compiles these in and serves them over MCP, scripts/generate-agent-tools.mjs emits the Rust method lists, and pnpm agent-tools:check proves every method still has a handler. Edit here, then run pnpm agent-tools:generate.",
   "guide": {
     "file": "SIKEMUX_GUIDE.md",
     "name": "sikemux_guide",

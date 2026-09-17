@@ -1,6 +1,7 @@
 // Emits the native method lists from browser/tools.json and proves every declared
-// method still has a handler. Agent tools span Python, Rust and TypeScript; without
-// this check a method can exist on one side and be unreachable from another.
+// method still has a handler. Agent tools span the Rust backend and the TypeScript
+// harness; without this check a method can exist on one side and be unreachable
+// from the other.
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
