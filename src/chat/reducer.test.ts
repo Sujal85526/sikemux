@@ -78,12 +78,62 @@ describe("chat reducer", () => {
 
         expect(part.kind).toBe("tool");
         if (part.kind !== "tool") throw new Error("expected tool part");
-        expect(part.tool).toMatchObject({
+        expect(part.tool).toMatchObject({ toolCallId: "tool-1", title: "Read file", status: "completed" });
+        expect(part.tool).not.toHaveProperty("rawOutput");
+    });
+
+    it("reads a finished call once and keeps only what the transcript shows", () => {
+        const created = update(initialChatState, {
+            sessionUpdate: "tool_call",
             toolCallId: "tool-1",
-            title: "Read file",
-            status: "completed",
-            rawOutput: { bytes: 42 },
+            title: "Edit file",
+            kind: "edit",
+            status: "in_progress",
+            rawInput: { file_path: "/repo/notes.md", old_string: "one\n", new_string: "two\n" },
         });
+        const completed = update(created, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" });
+        const part = completed.messages[0].parts[0];
+
+        expect(part.kind).toBe("tool");
+        if (part.kind !== "tool") throw new Error("expected tool part");
+        expect(part.diff).toMatchObject({ path: "/repo/notes.md", adds: 1, dels: 1 });
+        expect(part.tool).not.toHaveProperty("rawInput");
+    });
+
+    it("keeps a failed call's message and drops the output it came from", () => {
+        const created = update(initialChatState, {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-2",
+            title: "Run tests",
+            kind: "execute",
+            status: "in_progress",
+        });
+        const failed = update(created, {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-2",
+            status: "failed",
+            rawOutput: { stderr: "  2 tests failed  " },
+        });
+        const part = failed.messages[0].parts[0];
+
+        expect(part.kind).toBe("tool");
+        if (part.kind !== "tool") throw new Error("expected tool part");
+        expect(part.failure).toBe("2 tests failed");
+        expect(part.tool).not.toHaveProperty("rawOutput");
+    });
+
+    it("keeps a picture too big to hold by name rather than by its bytes", () => {
+        const streamed = update(initialChatState, {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "remote-1",
+            content: { type: "image", mimeType: "image/png", data: "A".repeat(3 * 1024 * 1024), uri: "file:///tmp/shot.png" },
+        });
+        const part = streamed.messages[0].parts[0];
+
+        expect(part.kind).toBe("content");
+        if (part.kind !== "content") throw new Error("expected content part");
+        expect(part.content).not.toHaveProperty("data");
+        expect(part.content.uri).toBe("file:///tmp/shot.png");
     });
 
     it("streams a subagent session into its own thread", () => {

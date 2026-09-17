@@ -24,7 +24,7 @@ import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
-import type { Agent, ProviderProfile } from "../state/types";
+import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
 import {
@@ -46,7 +46,7 @@ import {
     IconWarning,
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
-import { collapseDiff, fencedDiff, toolDiff, type ToolDiff } from "./diff";
+import { collapseDiff, fencedDiff, type ToolDiff } from "./diff";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import type {
     AcpAsyncTask,
@@ -217,28 +217,6 @@ function durationLabel(ms: number): string {
     return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
 
-/* What a failed call left behind, short enough to sit under it. Anything
-   longer belongs in the terminal the call came from. */
-function failureText(tool: AcpToolCall): string | null {
-    if (tool.status !== "failed") return null;
-    const output = tool.rawOutput;
-    const record = recordOf(output);
-    const raw =
-        typeof output === "string"
-            ? output
-            : typeof record?.output === "string"
-              ? record.output
-              : typeof record?.stderr === "string"
-                ? record.stderr
-                : typeof record?.error === "string"
-                  ? record.error
-                  : null;
-    if (!raw) return null;
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-    return trimmed.length > 400 ? `${trimmed.slice(0, 400)}…` : trimmed;
-}
-
 function DiffBody({ diff }: { diff: ToolDiff }) {
     const [expanded, setExpanded] = useState(false);
     const view = useMemo(() => collapseDiff(diff.lines, expanded ? Number.MAX_SAFE_INTEGER : 3), [diff.lines, expanded]);
@@ -286,8 +264,8 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const tool = part.tool;
     // An MCP call is named for the server it went to, whatever kind it claims.
     const rowKind = toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind;
-    const diff = useMemo(() => (tool.status === "completed" || tool.status === "failed" ? toolDiff(tool) : null), [tool]);
-    const failure = failureText(tool);
+    const diff = part.diff;
+    const failure = part.failure;
     const detail = diff ?? failure;
     const status = tool.status ?? "pending";
     /* A call the turn cut off has a duration, but printing it would read as a
@@ -478,8 +456,13 @@ function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "con
 function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> }) {
     const content = part.content;
     if (content.type === "resource_link") return <ResourceLinkPart content={content} />;
-    if (content.type === "image" && typeof content.data === "string" && typeof content.mimeType === "string") {
-        return <img className="chat-image" alt="Agent attachment" src={`data:${content.mimeType};base64,${content.data}`} />;
+    /* A picture too big to keep was kept by name, so the row says what it was. */
+    if (content.type === "image") {
+        return typeof content.data === "string" && typeof content.mimeType === "string" ? (
+            <img className="chat-image" alt="Agent attachment" src={`data:${content.mimeType};base64,${content.data}`} />
+        ) : (
+            <ResourceLinkPart content={content} />
+        );
     }
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
@@ -939,7 +922,7 @@ function ChatComposer({
     changingConfig: boolean;
     changingPermissions: boolean;
     permissionApplied: boolean;
-    permissionMode: string;
+    permissionMode: AgentPermissionMode;
     placeholder: string;
     error: string | null;
     onError: (message: string | null) => void;

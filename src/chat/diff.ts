@@ -176,6 +176,20 @@ function fromRawInput(tool: AcpToolCall): { path: string; oldText: string; newTe
     return { path, oldText: oldText ?? "", newText };
 }
 
+/* What a failed call left behind, short enough to sit under it. Anything
+   longer belongs in the terminal the call came from. */
+const MAX_FAILURE_CHARS = 400;
+
+export function toolFailure(tool: AcpToolCall): string | null {
+    if (tool.status !== "failed") return null;
+    const output = tool.rawOutput;
+    const record = recordOf(output);
+    const raw = typeof output === "string" ? output : (textOf(record?.output) ?? textOf(record?.stderr) ?? textOf(record?.error) ?? null);
+    const trimmed = raw?.trim();
+    if (!trimmed) return null;
+    return trimmed.length > MAX_FAILURE_CHARS ? `${trimmed.slice(0, MAX_FAILURE_CHARS)}…` : trimmed;
+}
+
 export function toolDiff(tool: AcpToolCall): ToolDiff | null {
     const source = fromContent(tool) ?? fromRawInput(tool);
     if (!source) return null;

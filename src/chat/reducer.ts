@@ -1,3 +1,4 @@
+import { toolDiff, toolFailure } from "./diff";
 import type {
     AcpAsyncTask,
     AcpAvailableCommand,
@@ -60,13 +61,24 @@ function contentChunk(update: Record<string, unknown>): AcpContentChunk | null {
     };
 }
 
+/* A picture bigger than the transcript can reasonably hold onto is kept by name
+   instead of by its bytes: the row still says what it was. */
+const MAX_IMAGE_DATA_CHARS = 2 * 1024 * 1024;
+
+function boundContent(content: AcpContentBlock): AcpContentBlock {
+    const data = textOf(content.data);
+    if (content.type !== "image" || data === undefined || data.length <= MAX_IMAGE_DATA_CHARS) return content;
+    const { data: _oversized, ...rest } = content;
+    return rest;
+}
+
 function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind: "text" | "thought", chunk: AcpContentChunk): Transcript {
     const contentText = textOf(chunk.content.text);
     const lastMessage = transcript.messages.at(-1);
     const messageId =
         chunk.messageId ??
         (lastMessage?.role === role && !lastMessage.id.startsWith("local-") ? lastMessage.id : `${role}-fallback-${transcript.nextId}`);
-    const existingIndex = transcript.messages.findIndex((message) => message.id === messageId);
+    const existingIndex = transcript.messages.findLastIndex((message) => message.id === messageId);
     const messages = [...transcript.messages];
     let nextId = transcript.nextId;
 
@@ -74,7 +86,7 @@ function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind
         const part: ChatPart =
             contentText !== undefined
                 ? { id: `${messageId}-${partKind}-0`, kind: partKind, text: contentText }
-                : { id: `${messageId}-content-0`, kind: "content", content: chunk.content };
+                : { id: `${messageId}-content-0`, kind: "content", content: boundContent(chunk.content) };
         messages.push({ id: messageId, role, parts: [part] });
         nextId += 1;
     } else {
@@ -86,7 +98,7 @@ function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind
         } else if (contentText !== undefined) {
             parts.push({ id: `${messageId}-${partKind}-${parts.length}`, kind: partKind, text: contentText });
         } else {
-            parts.push({ id: `${messageId}-content-${parts.length}`, kind: "content", content: chunk.content });
+            parts.push({ id: `${messageId}-content-${parts.length}`, kind: "content", content: boundContent(chunk.content) });
         }
         messages[existingIndex] = { ...message, parts };
     }
@@ -105,6 +117,33 @@ function appendPart(transcript: Transcript, part: ChatPart): Transcript {
     return { messages, nextId: transcript.nextId + 1 };
 }
 
+type ToolPart = Extract<ChatPart, { kind: "tool" }>;
+
+/* Everything a running call was handed and handed back, which the transcript
+   reads once and then has no further use for. */
+const TOOL_PAYLOAD_KEYS = ["content", "rawInput", "rawOutput"] as const;
+
+function withoutPayload(tool: AcpToolCall): AcpToolCall {
+    const kept: AcpToolCall = { ...tool };
+    for (const key of TOOL_PAYLOAD_KEYS) delete kept[key];
+    return kept;
+}
+
+/* A call that has ended has said everything it is going to say. The change it
+   made and the message it failed with are worked out here, once, and what they
+   were worked out from is let go of rather than carried for the rest of the
+   session and read again on every redraw. */
+function settleTool(part: ToolPart): ToolPart {
+    const diff = toolDiff(part.tool);
+    const failure = toolFailure(part.tool);
+    return {
+        ...part,
+        tool: withoutPayload(part.tool),
+        ...(diff ? { diff } : {}),
+        ...(failure ? { failure } : {}),
+    };
+}
+
 function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean): Transcript | null {
     const messages = [...transcript.messages];
     for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
@@ -117,11 +156,12 @@ function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean)
         const patch = Object.fromEntries(Object.entries(update).filter(([key, value]) => value !== undefined && !(key === "title" && value === "")));
         const tool = merge ? { ...current.tool, ...patch } : update;
         const ended = tool.status === "completed" || tool.status === "failed";
-        parts[partIndex] = {
-            ...current,
-            tool,
-            ...(ended && current.endedAt === undefined ? { endedAt: Date.now() } : {}),
-        };
+        parts[partIndex] =
+            current.endedAt !== undefined
+                ? { ...current, tool: withoutPayload(tool) }
+                : ended
+                  ? settleTool({ ...current, tool, endedAt: Date.now() })
+                  : { ...current, tool };
         messages[messageIndex] = { ...message, parts };
         return { messages, nextId: transcript.nextId };
     }
@@ -131,7 +171,9 @@ function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean)
        With nothing to merge into and no title to show, a new row would be a
        blank line that spins forever, so let it pass. */
     if (!update.title) return null;
-    return appendPart(transcript, { id: `tool-${update.toolCallId}`, kind: "tool", tool: update, startedAt: Date.now() });
+    const opened: ToolPart = { id: `tool-${update.toolCallId}`, kind: "tool", tool: update, startedAt: Date.now() };
+    const ended = update.status === "completed" || update.status === "failed";
+    return appendPart(transcript, ended ? settleTool({ ...opened, endedAt: Date.now() }) : opened);
 }
 
 /** Applies the updates a session streams regardless of whose session it is. */
@@ -173,7 +215,7 @@ function settleParts(parts: ChatPart[], at: number): ChatPart[] | null {
         if (part.kind === "tool") {
             if (TOOL_ENDED.includes(part.tool.status ?? "pending")) return part;
             changed = true;
-            return { ...part, tool: { ...part.tool, status: "cancelled" }, endedAt: part.endedAt ?? at };
+            return settleTool({ ...part, tool: { ...part.tool, status: "cancelled" }, endedAt: part.endedAt ?? at });
         }
         if (part.kind !== "subagent") return part;
         const messages = settleMessages(part.subagent.messages, at);
