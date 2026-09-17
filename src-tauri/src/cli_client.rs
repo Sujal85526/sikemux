@@ -67,6 +67,9 @@ fn run_inner() -> Result<i32, String> {
     if args[0] == "status" {
         return status();
     }
+    if args[0] == "doctor" {
+        return doctor();
+    }
 
     if args[0] == "open" {
         args.remove(0);
@@ -79,7 +82,7 @@ fn run_inner() -> Result<i32, String> {
 
 fn print_help() {
     println!(
-        "Sikemux CLI {}\n\nUSAGE:\n  sikemux open [--wait] [--project DIR] <PATH[:LINE[:COLUMN]]>...\n  sikemux <PATH[:LINE[:COLUMN]]>...\n  sikemux status\n  sikemux tool METHOD [JSON_PARAMS]\n  sikemux --version\n\nOPTIONS:\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Route unowned files into this project\n  -h, --help         Print help\n  -V, --version      Print version\n\nLINE and COLUMN are one-based. Existing directories open as projects.",
+        "Sikemux CLI {}\n\nUSAGE:\n  sikemux open [--wait] [--project DIR] <PATH[:LINE[:COLUMN]]>...\n  sikemux <PATH[:LINE[:COLUMN]]>...\n  sikemux status\n  sikemux doctor\n  sikemux tool METHOD [JSON_PARAMS]\n  sikemux --version\n\nOPTIONS:\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Route unowned files into this project\n  -h, --help         Print help\n  -V, --version      Print version\n\nLINE and COLUMN are one-based. Existing directories open as projects.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -231,6 +234,45 @@ fn status() -> Result<i32, String> {
         CliServerResponse::Error { message } => Err(message),
         _ => Err("unexpected response from Sikemux".into()),
     }
+}
+
+/// Prints the most recent hang autopsy and where to read the rest of it.
+///
+/// This reads the bundles straight off disk rather than asking the app, so it
+/// still answers while the app is the thing that is stuck.
+fn doctor() -> Result<i32, String> {
+    let directory = crate::autopsy::autopsy_dir().ok_or("home directory is unavailable")?;
+    print!(
+        "{}",
+        doctor_report(&directory, &crate::autopsy::list_reports(&directory))
+    );
+    Ok(0)
+}
+
+fn doctor_report(directory: &Path, reports: &[crate::autopsy::HangReportSummary]) -> String {
+    let mut out = format!(
+        "Sikemux {}\nAutopsies {}\n",
+        env!("CARGO_PKG_VERSION"),
+        directory.display()
+    );
+    let Some((latest, earlier)) = reports.split_first() else {
+        out.push_str("\nNo hang has been recorded yet.\n");
+        return out;
+    };
+
+    out.push_str(&format!("\nLatest hang {}\n", latest.captured_at));
+    out.push_str(&format!("  {}\n", latest.summary));
+    out.push_str(&format!("  report {}\n", latest.report));
+    for stack in &latest.stacks {
+        out.push_str(&format!("  stack  {stack}\n"));
+    }
+    if !earlier.is_empty() {
+        out.push_str("\nEarlier hangs\n");
+        for report in earlier {
+            out.push_str(&format!("  {} {}\n", report.captured_at, report.summary));
+        }
+    }
+    out
 }
 
 fn resolve_target(
@@ -620,5 +662,44 @@ mod tests {
             Path::new(&target.project_root),
             fs::canonicalize(dir.path()).unwrap()
         );
+    }
+
+    #[test]
+    fn doctor_names_the_latest_hang_and_where_its_stacks_are() {
+        let reports = [
+            crate::autopsy::HangReportSummary {
+                directory: "/autopsy/hang-20260918-142233-471".to_owned(),
+                report: "/autopsy/hang-20260918-142233-471/report.json".to_owned(),
+                captured_at: "2026-09-18T14:22:33.471Z".to_owned(),
+                captured_at_ms: 1_789_000_000_000,
+                delay_ms: 4_200,
+                summary: "ui froze for 4.2s · focus editor".to_owned(),
+                stacks: vec!["/autopsy/hang-20260918-142233-471/webcontent.sample.txt".to_owned()],
+            },
+            crate::autopsy::HangReportSummary {
+                directory: "/autopsy/hang-20260918-140000-000".to_owned(),
+                report: "/autopsy/hang-20260918-140000-000/report.json".to_owned(),
+                captured_at: "2026-09-18T14:00:00.000Z".to_owned(),
+                captured_at_ms: 1_788_000_000_000,
+                delay_ms: 2_500,
+                summary: "ui froze for 2.5s".to_owned(),
+                stacks: Vec::new(),
+            },
+        ];
+
+        let rendered = doctor_report(Path::new("/autopsy"), &reports);
+        assert!(rendered.contains("Latest hang 2026-09-18T14:22:33.471Z"));
+        assert!(rendered.contains("ui froze for 4.2s · focus editor"));
+        assert!(rendered.contains("report /autopsy/hang-20260918-142233-471/report.json"));
+        assert!(rendered.contains("stack  /autopsy/hang-20260918-142233-471/webcontent.sample.txt"));
+        assert!(rendered.contains("Earlier hangs"));
+        assert!(rendered.contains("2026-09-18T14:00:00.000Z ui froze for 2.5s"));
+    }
+
+    #[test]
+    fn doctor_says_so_when_nothing_has_hung_yet() {
+        let rendered = doctor_report(Path::new("/autopsy"), &[]);
+        assert!(rendered.contains("No hang has been recorded yet."));
+        assert!(!rendered.contains("Latest hang"));
     }
 }
