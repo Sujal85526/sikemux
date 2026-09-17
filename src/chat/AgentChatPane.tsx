@@ -1308,7 +1308,10 @@ export function AgentChatPane({
                                     ref={virtualizer.measureElement}
                                     className="chat-virtual-row"
                                     style={{ transform: `translateY(${item.start}px)` }}>
-                                    <ChatMessageRow message={message} live={displayState.running && item.index === displayState.messages.length - 1} />
+                                    <ChatMessageRow
+                                        message={message}
+                                        live={displayState.running && item.index === displayState.messages.length - 1}
+                                    />
                                 </div>
                             );
                         })}
