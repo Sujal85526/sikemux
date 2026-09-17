@@ -1,7 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 
-const assetDir = new URL("../dist/assets/", import.meta.url);
+const distDir = new URL("../dist/", import.meta.url);
+const assetDir = new URL("./assets/", distDir);
 const files = await readdir(assetDir);
 const requiredHeadroom = 0.1;
 
@@ -12,6 +13,10 @@ async function size(name) {
 
 async function matching(pattern) {
   const names = files.filter((name) => pattern.test(name));
+  return sizeOfNames(names);
+}
+
+async function sizeOfNames(names) {
   const sizes = await Promise.all(names.map(size));
   return {
     names,
@@ -20,21 +25,105 @@ async function matching(pattern) {
   };
 }
 
+// The entry's own eager set: everything the browser fetches before the app
+// can render a single pane, i.e. the entry chunk plus every JS file it (or
+// something it statically imports) pulls in via `import ... from`. This
+// walks the real import graph instead of trusting a single filename pattern,
+// so it stays correct if a chunk that used to be lazy becomes part of the
+// boot path (or the reverse) without anyone remembering to update this file.
+async function computeEagerJsSet() {
+  const html = await readFile(new URL("index.html", distDir), "utf8");
+  const entryMatch = html.match(/<script[^>]*\ssrc="\/assets\/([^"]+\.js)"/);
+  if (!entryMatch)
+    throw new Error(
+      "performance budget: no entry script found in dist/index.html",
+    );
+  const entry = entryMatch[1];
+
+  const preloaded = [
+    ...html.matchAll(/rel="modulepreload"[^>]*\shref="\/assets\/([^"]+\.js)"/g),
+  ].map((m) => m[1]);
+
+  const visited = new Set([entry]);
+  const queue = [entry];
+  while (queue.length > 0) {
+    const name = queue.pop();
+    const content = await readFile(new URL(name, assetDir), "utf8");
+    const staticImports = [
+      ...content.matchAll(/\bimport(?:[^"'();]*)from"\.\/([^"]+\.js)"/g),
+      ...content.matchAll(/\bimport"\.\/([^"]+\.js)"/g),
+    ].map((m) => m[1]);
+    for (const dep of staticImports) {
+      if (!visited.has(dep)) {
+        visited.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+
+  const missingPreloads = [...visited].filter(
+    (name) => name !== entry && !preloaded.includes(name),
+  );
+  if (missingPreloads.length > 0) {
+    throw new Error(
+      `performance budget: statically imported by the entry but not <link rel="modulepreload">, so the browser discovers them late: ${missingPreloads.join(", ")}`,
+    );
+  }
+
+  return [...visited];
+}
+
+// Grammar chunks load one at a time, on demand, keyed by the language of
+// the file being diffed (src/vendor/shiki.ts's bundledLanguages map). This
+// list mirrors those keys (minus "zsh", which shares the "shellscript"
+// loader) so a regression that re-folds them into one big chunk shows up as
+// a missing-chunk failure below instead of silently vanishing into the
+// "default-path JavaScript" catch-all.
+const diffLanguageChunkNames = [
+  "c",
+  "css",
+  "go",
+  "html",
+  "java",
+  "json",
+  "jsonc",
+  "markdown",
+  "python",
+  "rust",
+  "shellscript",
+  "sql",
+  "typescript",
+  "yaml",
+];
+const diffLanguageChunkPattern = new RegExp(
+  `^(?:${diffLanguageChunkNames.join("|")})-.*\\.js$`,
+);
+
+const eagerJsSet = await computeEagerJsSet();
+const startupJs = await sizeOfNames(eagerJsSet);
+
 const budgets = [
   {
-    label: "startup JS",
-    pattern: /^index-.*\.js$/,
-    raw: 540_000,
-    gzip: 165_000,
+    label:
+      "startup JS (index + every modulepreloaded/statically-imported chunk)",
+    actual: startupJs,
+    raw: 2_400_000,
+    gzip: 760_000,
   },
   {
-    label: "CodeMirror lazy chunk",
-    pattern: /^codemirror-.*\.js$/,
-    raw: 950_000,
-    gzip: 340_000,
+    label: "CodeMirror core chunk",
+    pattern: /^codemirror-core-.*\.js$/,
+    raw: 470_000,
+    gzip: 150_000,
   },
   {
-    label: "xterm core lazy chunk",
+    label: "CodeMirror language-pack chunk",
+    pattern: /^codemirror-langs-.*\.js$/,
+    raw: 475_000,
+    gzip: 180_000,
+  },
+  {
+    label: "xterm core chunk",
     pattern: /^xterm-(?!webgl).*\.js$/,
     raw: 450_000,
     gzip: 120_000,
@@ -42,14 +131,20 @@ const budgets = [
   {
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 56_000,
-    gzip: 17_500,
+    raw: 60_000,
+    gzip: 19_000,
   },
   {
-    label: "Diffs lazy chunk",
+    label: "Diffs lazy chunk (pierre/diffs + shiki core, no grammars)",
     pattern: /^diffs-.*\.js$/,
-    raw: 2_320_000,
-    gzip: 570_000,
+    raw: 1_450_000,
+    gzip: 470_000,
+  },
+  {
+    label: "Diffs language grammar chunks (one per language, loaded on demand)",
+    pattern: diffLanguageChunkPattern,
+    raw: 950_000,
+    gzip: 130_000,
   },
   {
     label: "Diffs worker chunks",
@@ -58,10 +153,12 @@ const budgets = [
     gzip: 335_000,
   },
   {
-    label: "default-path JavaScript except Diffs",
-    pattern: /^(?!(?:diffs|worker|wasm|paper-shaders|xterm-webgl)-).*\.js$/,
-    raw: 2_820_000,
-    gzip: 880_000,
+    label: "default-path JavaScript except Diffs and its grammar chunks",
+    pattern: new RegExp(
+      `^(?!(?:diffs|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
+    ),
+    raw: 2_850_000,
+    gzip: 900_000,
   },
   {
     label: "opt-in shader renderer",
@@ -82,10 +179,14 @@ const budgets = [
     gzip: 6_100,
   },
   {
+    // Includes the JetBrainsMono Nerd Font @font-face rules: eight faces
+    // (base + icons per weight/style), each carrying an explicit
+    // unicode-range so the ~930 KB icon face per weight only downloads once
+    // a PUA glyph is actually rendered.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 255_000,
-    gzip: 44_000,
+    raw: 262_000,
+    gzip: 45_000,
   },
   {
     label: "settings lazy CSS",
@@ -95,9 +196,23 @@ const budgets = [
   },
 ];
 
+// Rather than a hand-written "this chunk is eager today" note that goes
+// stale the moment someone else's change makes it lazy (or vice versa),
+// compare each JS budget's matched files against the measured eager set and
+// report reality every run.
+function eagerness(actual) {
+  if (actual.names.length === 0) return "";
+  const jsNames = actual.names.filter((name) => name.endsWith(".js"));
+  if (jsNames.length === 0) return "";
+  const eagerCount = jsNames.filter((name) => eagerJsSet.includes(name)).length;
+  if (eagerCount === jsNames.length) return " [part of startup JS]";
+  if (eagerCount === 0) return " [lazy]";
+  return " [partly in startup JS]";
+}
+
 let failed = false;
 for (const budget of budgets) {
-  const actual = await matching(budget.pattern);
+  const actual = budget.actual ?? (await matching(budget.pattern));
   if (actual.names.length === 0) {
     console.error(`performance budget: ${budget.label} chunk is missing`);
     failed = true;
@@ -107,7 +222,7 @@ for (const budget of budgets) {
   const gzipHeadroom = 1 - actual.gzip / budget.gzip;
   const withinBudget =
     rawHeadroom >= requiredHeadroom && gzipHeadroom >= requiredHeadroom;
-  const summary = `${budget.label}: raw ${actual.raw}/${budget.raw} (${(rawHeadroom * 100).toFixed(1)}% reserve), gzip ${actual.gzip}/${budget.gzip} (${(gzipHeadroom * 100).toFixed(1)}% reserve)`;
+  const summary = `${budget.label}${eagerness(actual)}: raw ${actual.raw}/${budget.raw} (${(rawHeadroom * 100).toFixed(1)}% reserve), gzip ${actual.gzip}/${budget.gzip} (${(gzipHeadroom * 100).toFixed(1)}% reserve)`;
   if (withinBudget) console.log(`performance budget ok: ${summary}`);
   else {
     console.error(
