@@ -24,6 +24,7 @@ import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./components/ExperienceOverlays";
 import { DialogHost } from "./components/DialogHost";
+import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./components/HarnessBridge";
 import { CliOpenBridge } from "./components/CliOpenBridge";
@@ -259,6 +260,22 @@ export default function App() {
     });
     const awsAuthModal = useStore((s) => s.awsAuthModal);
     const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
+    const onboardingOpen = useStore((s) => s.onboardingOpen);
+    useOccludeNativeViews(
+        pickerOpen ||
+            agentPaletteOpen ||
+            filePaletteOpen ||
+            newTabPaletteOpen ||
+            rundeckJobPaletteOpen ||
+            brunoReqPaletteOpen ||
+            brunoEnvPaletteOpen ||
+            settingsOpen ||
+            commandPaletteOpen ||
+            sessionSwitcherOpen ||
+            onboardingOpen ||
+            Boolean(awsAuthModal) ||
+            Boolean(commandPopup),
+    );
     const projectRepoKey = useStore((s) =>
         s.sessionOrder
             .map((id) => {

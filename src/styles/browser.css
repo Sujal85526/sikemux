@@ -208,6 +208,7 @@
 }
 
 .browser-toolbar {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 3px;
@@ -254,72 +255,45 @@
     cursor: default;
 }
 
-.browser-viewport:focus-visible {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--browser-agent) 56%, transparent);
+.browser-toolbar.loading::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--browser-agent), transparent);
+    animation: browser-progress 900ms ease-in-out infinite;
 }
 
-.browser-viewport > img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: fill;
-    user-select: none;
-    pointer-events: none;
+.browser-tab-status.loading {
+    animation: browser-pulse 900ms ease-in-out infinite;
 }
 
-.browser-viewport > img[hidden] {
-    display: none;
+@keyframes browser-progress {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(100%);
+    }
+}
+
+@keyframes browser-pulse {
+    50% {
+        opacity: 0.3;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .browser-toolbar.loading::after,
+    .browser-tab-status.loading {
+        animation: none;
+    }
 }
 
 .browser-blank {
     position: absolute;
     inset: 0;
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
-}
-
-/* The page's dialog sits over the frame, not over the whole app: the terminal
-   beside it stays usable while the page waits. */
-.browser-viewport > .browser-dialog-scrim {
-    position: absolute;
-    z-index: 2;
-    padding: var(--space-4);
-}
-
-.browser-viewport .dlg {
-    width: min(380px, 100%);
-}
-
-.browser-loading {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: 10px;
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.browser-loading-mark {
-    width: 18px;
-    height: 18px;
-    border: 1px solid var(--line-strong);
-    border-top-color: var(--browser-agent);
-    border-radius: 50%;
-    animation: browser-spin 760ms linear infinite;
-}
-
-@keyframes browser-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .browser-loading-mark {
-        animation: none;
-    }
 }

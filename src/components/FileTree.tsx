@@ -2,6 +2,7 @@ import { renameEditorPath } from "../state/editorPaths";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useOccludeNativeViews } from "../state/nativeViews";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
@@ -816,6 +817,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
 
 export function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number; items: CtxItem[]; onClose: () => void }) {
     const ref = useRef<HTMLDivElement>(null);
+    useOccludeNativeViews(true);
     const [pos, setPos] = useState({ left: x, top: y });
 
     useLayoutEffect(() => {

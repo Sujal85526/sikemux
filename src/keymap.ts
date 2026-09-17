@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { browserApi } from "./api/browser";
 import { actionForEvent, type KeybindingActionId } from "./keybindings";
 import * as cmd from "./state/commands";
 import { activeAgentId } from "./state/selectors";
@@ -326,10 +327,32 @@ export function useKeymap(): void {
             if (getState().sessionSwitcher) cmd.commitSessionSwitch();
         };
 
+        /* A chord pressed inside a browser page never reaches this window, so
+           the native side hands it over and it replays as a keydown on the
+           page's pane, where the same rules apply as for any other pane. */
+        const pageChords = new AbortController();
+        void browserApi
+            .subscribeShortcuts((shortcut) => {
+                const pane = document.querySelector<HTMLElement>(`.browser-pane[data-agent-id="${CSS.escape(shortcut.agentId)}"] .browser-viewport`);
+                (pane ?? document.body).dispatchEvent(
+                    new KeyboardEvent("keydown", {
+                        key: shortcut.key,
+                        code: shortcut.code,
+                        metaKey: true,
+                        shiftKey: shortcut.shift,
+                        altKey: shortcut.alt,
+                        bubbles: true,
+                        cancelable: true,
+                    }),
+                );
+            }, pageChords.signal)
+            .catch(() => {});
+
         window.addEventListener("keydown", keydown, { capture: true });
         window.addEventListener("keyup", keyup, { capture: true });
         window.addEventListener("blur", commitOnBlur);
         return () => {
+            pageChords.abort();
             window.removeEventListener("keydown", keydown, { capture: true });
             window.removeEventListener("keyup", keyup, { capture: true });
             window.removeEventListener("blur", commitOnBlur);

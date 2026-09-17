@@ -17,7 +17,7 @@ ipc-command-tests = ["tauri/test"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry"] }
+tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -60,7 +60,9 @@ libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSEvent"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAlert", "NSApplication", "NSBitmapImageRep", "NSControl", "NSEvent", "NSImage", "NSImageRep", "NSResponder", "NSTextField", "NSView", "NSWindow", "block2"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSData", "NSDictionary", "NSError", "NSGeometry", "NSObject", "NSString", "NSThread", "NSURL", "NSValue"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["WKFrameInfo", "WKNavigationAction", "WKOpenPanelParameters", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKUIDelegate", "WKWebView", "WKWebViewConfiguration", "WKWindowFeatures", "block2", "objc2-app-kit"] }
 block2 = "0.6"
 
 [profile.release]

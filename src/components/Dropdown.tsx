@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconCheck, IconChevron } from "./Icons";
+import { useOccludeNativeViews } from "../state/nativeViews";
 import { Tooltip } from "./Tooltip";
 import "../styles/dropdown.css";
 
@@ -45,6 +46,7 @@ export function Dropdown({
     const id = useId();
     const active = options.find((option) => option.value === value);
     const [owner, setOwner] = useState<string>();
+    useOccludeNativeViews(open);
     const close = () => {
         setOpen(false);
         buttonRef.current?.focus();

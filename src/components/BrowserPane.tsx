@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { browserApi, type BrowserDialog, type BrowserKeyInput, type BrowserSnapshot, type BrowserViewport } from "../api/browser";
+import { browserApi, type BrowserBounds, type BrowserSnapshot } from "../api/browser";
+import { useNativeViewsOccluded } from "../state/nativeViews";
 import type { AgentType } from "../state/types";
-import { reportError, swallow } from "../state/toast";
-import { IconChevron, IconInfo, IconPlus, IconRefresh } from "./Icons";
-import { Kbd } from "./Kbd";
+import { reportError } from "../state/toast";
+import { IconChevron, IconPlus, IconRefresh } from "./Icons";
 import { TabBar } from "./TabBar";
 
 const EMPTY_SNAPSHOT: BrowserSnapshot = {
@@ -13,14 +13,10 @@ const EMPTY_SNAPSHOT: BrowserSnapshot = {
 
 const MIN_SIDE = 320;
 const DEFAULT_RATIO = 0.52;
+const BLANK_URL = "about:blank";
 
-/* Chromium takes the held modifiers as a bitmask, not as flags. */
-function cdpModifiers(event: React.KeyboardEvent): number {
-    return (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
-}
-
-function typesText(event: React.KeyboardEvent): boolean {
-    return event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+function sameBounds(a: BrowserBounds | null, b: BrowserBounds): boolean {
+    return !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
 export function AgentBrowserShell({
@@ -55,8 +51,8 @@ export function AgentBrowserShell({
         let reading = false;
         let again = false;
 
-        /* Chromium reports a tab several times over while its page loads, so a
-           burst collapses into the read already in flight plus one after it. */
+        /* A loading page reports itself several times over, so a burst
+           collapses into the read already in flight plus one after it. */
         const sync = async () => {
             again = true;
             if (reading) return;
@@ -73,8 +69,8 @@ export function AgentBrowserShell({
             }
         };
 
-        /* Chromium announces its own tabs, so this is only here to notice a
-           browser that went away without getting to say so. */
+        /* Tabs announce their own changes; the poll only notices a report
+           that was lost while this pane was not listening. */
         const poll = () => {
             void sync();
             timer = window.setTimeout(poll, 1500);
@@ -121,6 +117,8 @@ export function AgentBrowserShell({
     );
 }
 
+/* The page itself is a native view the window draws over this pane, so the
+   pane's only job for it is to say where the page area is. */
 function BrowserPane({
     agentId,
     agentType,
@@ -135,130 +133,62 @@ function BrowserPane({
     refresh: (signal?: AbortSignal) => Promise<void>;
 }) {
     const viewportRef = useRef<HTMLDivElement>(null);
-    const addressRef = useRef<HTMLInputElement>(null);
-    const imageRef = useRef<HTMLImageElement>(null);
-    const frameSize = useRef<BrowserViewport>({ width: 960, height: 640 });
-    const streamLifecycle = useRef(Promise.resolve());
-    const keystrokes = useRef(Promise.resolve());
-    const [frameReady, setFrameReady] = useState(false);
     const [address, setAddress] = useState("");
-    const [viewport, setViewport] = useState<BrowserViewport | null>(null);
-    const streamed = useRef(false);
-    const lastPointerMove = useRef(0);
-    const pointerPressed = useRef(false);
-    const lastPointerPoint = useRef({ x: 0, y: 0 });
+    const [placement, setPlacement] = useState<BrowserBounds | null>(null);
+    const occluded = useNativeViewsOccluded();
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
-    const targetId = activeTab?.id;
-    const dialog = activeTab?.dialog ?? null;
-    const blank = activeTab?.url === "about:blank" || activeTab?.url === "chrome://newtab/";
+    const blank = activeTab?.url === BLANK_URL;
+    const shown = visible && !occluded && !blank && !!activeTab;
 
-    useEffect(() => setAddress(activeTab?.url === "about:blank" ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);
+    useEffect(() => setAddress(activeTab?.url === BLANK_URL ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);
+
     useLayoutEffect(() => {
         const host = viewportRef.current;
         if (!host) return;
-        const resize = () => {
+        let frame = 0;
+        const measure = () => {
+            frame = 0;
             const rect = host.getBoundingClientRect();
-            const width = Math.min(3840, Math.max(320, Math.round(rect.width)));
-            const height = Math.min(2160, Math.max(240, Math.round(rect.height)));
-            setViewport((previous) => (previous && previous.width === width && previous.height === height ? previous : { width, height }));
+            const next = {
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                width: Math.max(1, Math.round(rect.width)),
+                height: Math.max(1, Math.round(rect.height)),
+            };
+            setPlacement((previous) => (sameBounds(previous, next) ? previous : next));
         };
-        resize();
-        const observer = new ResizeObserver(resize);
+        /* Layout settles once per frame; a divider drag fires far more often. */
+        const schedule = () => {
+            if (!frame) frame = window.requestAnimationFrame(measure);
+        };
+        measure();
+        const observer = new ResizeObserver(schedule);
         observer.observe(host);
-        return () => observer.disconnect();
+        window.addEventListener("resize", schedule);
+        window.addEventListener("scroll", schedule, true);
+        window.addEventListener("transitionend", schedule, true);
+        return () => {
+            observer.disconnect();
+            if (frame) window.cancelAnimationFrame(frame);
+            window.removeEventListener("resize", schedule);
+            window.removeEventListener("scroll", schedule, true);
+            window.removeEventListener("transitionend", schedule, true);
+        };
     }, []);
 
     useEffect(() => {
-        setFrameReady(false);
-        imageRef.current?.removeAttribute("src");
-        if (!visible || blank || !targetId || !viewport) return;
-        let disposed = false;
-        let stop: (() => Promise<void>) | undefined;
-        /* The first attach already knows the measured viewport, so it goes out
-           immediately; later ones debounce so dragging the divider does not
-           restart the stream on every frame. */
-        const timer = window.setTimeout(
-            () => {
-                streamed.current = true;
-                streamLifecycle.current = streamLifecycle.current.then(async () => {
-                    if (disposed) return;
-                    try {
-                        const stopFrames = await browserApi.startFrames(agentId, targetId, viewport, (frame) => {
-                            if (disposed || !imageRef.current) return;
-                            imageRef.current.src = `data:image/jpeg;base64,${frame.data}`;
-                            frameSize.current = { width: frame.width, height: frame.height };
-                            setFrameReady(true);
-                        });
-                        if (disposed) await stopFrames();
-                        else stop = stopFrames;
-                    } catch (error) {
-                        if (!disposed) reportError("stream browser frames")(error);
-                    }
-                });
-            },
-            streamed.current ? 80 : 0,
-        );
-        return () => {
-            disposed = true;
-            window.clearTimeout(timer);
-            if (stop) void stop().catch(reportError("stop browser frames"));
-        };
-    }, [agentId, targetId, blank, viewport, visible]);
+        void browserApi.setBounds(agentId, shown && placement ? placement : null).catch(reportError("place browser page"));
+    }, [agentId, placement, shown]);
 
     useEffect(
         () => () => {
-            if (!pointerPressed.current) return;
-            pointerPressed.current = false;
-            void browserApi.pointer(agentId, { kind: "up", ...lastPointerPoint.current, button: "left" }).catch(() => {});
+            void browserApi.setBounds(agentId, null).catch(() => {});
         },
         [agentId],
     );
 
     const run = (operation: Promise<unknown>, label: string) => {
         void operation.then(() => refresh()).catch(reportError(label));
-    };
-
-    const point = (event: React.PointerEvent<HTMLDivElement>) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        return {
-            x: ((event.clientX - rect.left) / Math.max(rect.width, 1)) * frameSize.current.width,
-            y: ((event.clientY - rect.top) / Math.max(rect.height, 1)) * frameSize.current.height,
-        };
-    };
-
-    /* A page that is busy or waiting on its own dialog answers late or never,
-       and the frames already show that; a toast per click only piled up. */
-    const sendKey = (input: BrowserKeyInput) => {
-        keystrokes.current = keystrokes.current.then(() => browserApi.key(agentId, input)).catch(swallow("send browser key"));
-    };
-
-    const pointer = (event: React.PointerEvent<HTMLDivElement>, kind: "move" | "down" | "up") => {
-        if ((blank || !frameReady || dialog) && kind !== "up") return;
-        if (kind === "move" && performance.now() - lastPointerMove.current < 24) return;
-        if (kind === "move") lastPointerMove.current = performance.now();
-        const next = point(event);
-        lastPointerPoint.current = next;
-        if (kind === "down") {
-            pointerPressed.current = true;
-            event.currentTarget.focus();
-            event.currentTarget.setPointerCapture?.(event.pointerId);
-        }
-        if (kind === "up") {
-            if (!pointerPressed.current) return;
-            pointerPressed.current = false;
-            if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-                event.currentTarget.releasePointerCapture?.(event.pointerId);
-            }
-        }
-        const held = kind === "move" && pointerPressed.current;
-        const request = browserApi.pointer(agentId, { kind, ...next, button: kind === "move" && !held ? "none" : "left" });
-        if (kind === "move") void request.catch(() => {});
-        else void request.catch(swallow("browser pointer"));
-    };
-
-    const answerDialog = (accept: boolean, promptText?: string) => {
-        if (!targetId) return;
-        run(browserApi.respondDialog(agentId, targetId, accept, promptText), "answer browser dialog");
     };
 
     return (
@@ -268,10 +198,10 @@ function BrowserPane({
                 ariaLabel="Browser tabs"
                 tabs={snapshot.tabs.map((tab) => ({
                     id: tab.id,
-                    label: tab.title || (tab.url === "about:blank" ? "New tab" : tab.url),
+                    label: tab.title || (tab.url === BLANK_URL ? "New tab" : tab.url),
                     title: tab.url,
                     active: tab.id === snapshot.activeTabId,
-                    icon: <span className="browser-tab-status" aria-hidden="true" />,
+                    icon: <span className={`browser-tab-status${tab.loading ? " loading" : ""}`} aria-hidden="true" />,
                 }))}
                 onSelect={(id) => run(browserApi.switchTab(agentId, id), "switch browser tab")}
                 onClose={(id) => run(browserApi.closeTab(agentId, id), "close browser tab")}
@@ -282,22 +212,31 @@ function BrowserPane({
                 trailing={<span className="browser-controller">{agentType}</span>}
             />
             <form
-                className="browser-toolbar"
+                className={`browser-toolbar${activeTab?.loading ? " loading" : ""}`}
                 onSubmit={(event) => {
                     event.preventDefault();
                     run(browserApi.navigate(agentId, address), "navigate browser");
                 }}>
-                <button type="button" aria-label="Back" title="Back — ⌘[" onClick={() => run(browserApi.back(agentId), "browser back")}>
+                <button
+                    type="button"
+                    aria-label="Back"
+                    title="Back — ⌘["
+                    disabled={!activeTab?.canGoBack}
+                    onClick={() => run(browserApi.back(agentId), "browser back")}>
                     <IconChevron size={13} className="browser-back-icon" />
                 </button>
-                <button type="button" aria-label="Forward" title="Forward — ⌘]" onClick={() => run(browserApi.forward(agentId), "browser forward")}>
+                <button
+                    type="button"
+                    aria-label="Forward"
+                    title="Forward — ⌘]"
+                    disabled={!activeTab?.canGoForward}
+                    onClick={() => run(browserApi.forward(agentId), "browser forward")}>
                     <IconChevron size={13} />
                 </button>
                 <button type="button" aria-label="Reload" title="Reload — ⌘R" onClick={() => run(browserApi.reload(agentId), "reload browser")}>
                     <IconRefresh size={13} />
                 </button>
                 <input
-                    ref={addressRef}
                     className="browser-address"
                     aria-label="Address and search"
                     value={address}
@@ -307,139 +246,9 @@ function BrowserPane({
                     onChange={(event) => setAddress(event.target.value)}
                 />
             </form>
-            <div
-                ref={viewportRef}
-                className="browser-viewport"
-                tabIndex={0}
-                onPointerMove={(event) => pointer(event, "move")}
-                onPointerDown={(event) => pointer(event, "down")}
-                onPointerUp={(event) => pointer(event, "up")}
-                onPointerCancel={(event) => pointer(event, "up")}
-                onWheel={(event) => {
-                    if (blank || !frameReady || dialog) return;
-                    const next = point(event as unknown as React.PointerEvent<HTMLDivElement>);
-                    void browserApi
-                        .pointer(agentId, { kind: "wheel", ...next, button: "none", deltaX: event.deltaX, deltaY: event.deltaY })
-                        .catch(reportError("scroll browser"));
-                }}
-                onKeyDown={(event) => {
-                    if (dialog) return;
-                    event.preventDefault();
-                    sendKey(
-                        typesText(event)
-                            ? { kind: "text", key: event.key, code: event.code, text: event.key }
-                            : { kind: "down", key: event.key, code: event.code, modifiers: cdpModifiers(event) },
-                    );
-                }}
-                onKeyUp={(event) => {
-                    if (dialog || typesText(event)) return;
-                    event.preventDefault();
-                    sendKey({ kind: "up", key: event.key, code: event.code, modifiers: cdpModifiers(event) });
-                }}>
-                {blank ? (
-                    <div className="browser-blank" aria-label="Blank browser page" />
-                ) : (
-                    <>
-                        <img ref={imageRef} hidden={!frameReady} draggable={false} alt="" />
-                        {!frameReady && (
-                            <div className="browser-loading">
-                                <span className="browser-loading-mark" />
-                                <span>Opening browser</span>
-                            </div>
-                        )}
-                    </>
-                )}
-                {dialog && <BrowserDialogSheet key={`${targetId}:${dialog.kind}:${dialog.message}`} dialog={dialog} onAnswer={answerDialog} />}
+            <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
+                {blank && <div className="browser-blank" aria-label="Blank browser page" />}
             </div>
         </section>
-    );
-}
-
-function dialogHost(url: string): string {
-    try {
-        return new URL(url).host;
-    } catch {
-        return "";
-    }
-}
-
-/* The page's own alert/confirm/prompt, drawn in the pane. Headless Chromium
-   shows nothing for these and freezes the page until somebody answers. */
-function BrowserDialogSheet({ dialog, onAnswer }: { dialog: BrowserDialog; onAnswer: (accept: boolean, promptText?: string) => void }) {
-    const [value, setValue] = useState(dialog.defaultPrompt);
-    const inputRef = useRef<HTMLInputElement>(null);
-    const okRef = useRef<HTMLButtonElement>(null);
-    const leaving = dialog.kind === "beforeunload";
-    const host = dialogHost(dialog.url);
-    const title = leaving ? "Leave this page?" : host ? `${host} says` : "This page says";
-    const paragraphs = (leaving && !dialog.message ? "Changes you made may not be saved." : dialog.message)
-        .split("\n")
-        .filter((line) => line.trim().length > 0);
-
-    useEffect(() => {
-        if (dialog.kind === "prompt") {
-            inputRef.current?.focus();
-            inputRef.current?.select();
-        } else okRef.current?.focus();
-    }, [dialog.kind]);
-
-    return (
-        <div
-            className="dlg-scrim browser-dialog-scrim"
-            onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                event.preventDefault();
-                onAnswer(false);
-            }}>
-            <form
-                className="dlg"
-                role="dialog"
-                aria-modal="true"
-                aria-label={title}
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    onAnswer(true, dialog.kind === "prompt" ? value : undefined);
-                }}>
-                <div className="dlg-head">
-                    <span className="dlg-glyph" aria-hidden="true">
-                        <IconInfo size={15} />
-                    </span>
-                    <h2 className="dlg-title">{title}</h2>
-                </div>
-                {paragraphs.length > 0 && (
-                    <div className="dlg-body">
-                        {paragraphs.map((line, index) => (
-                            <p key={index}>{line}</p>
-                        ))}
-                    </div>
-                )}
-                {dialog.kind === "prompt" && (
-                    <div className="dlg-field">
-                        <input
-                            ref={inputRef}
-                            className="dlg-input"
-                            aria-label="Prompt answer"
-                            value={value}
-                            spellCheck={false}
-                            autoComplete="off"
-                            onChange={(event) => setValue(event.target.value)}
-                        />
-                    </div>
-                )}
-                <div className="dlg-foot">
-                    <span className="dlg-hint">
-                        <Kbd>esc</Kbd> {leaving ? "stay" : dialog.kind === "alert" ? "close" : "cancel"}
-                    </span>
-                    {dialog.kind !== "alert" && (
-                        <button type="button" className="dlg-btn" onClick={() => onAnswer(false)}>
-                            {leaving ? "Stay" : "Cancel"}
-                        </button>
-                    )}
-                    <button ref={okRef} type="submit" className="dlg-btn primary">
-                        {leaving ? "Leave" : "OK"}
-                    </button>
-                </div>
-            </form>
-        </div>
     );
 }

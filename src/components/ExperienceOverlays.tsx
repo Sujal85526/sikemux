@@ -22,6 +22,7 @@ import { OnboardingStage, type OnboardingOverlay, type OnboardingRegion } from "
 import { useShaderField } from "../hooks/useShaderField";
 import { Logo } from "./Icons";
 import type { AgentPresentationState } from "../state/types";
+import { useOccludeNativeViews } from "../state/nativeViews";
 
 interface IntegrationHealth {
     shell: string;
@@ -501,6 +502,7 @@ export function Onboarding() {
 
 export function DiagnosticsOverlay() {
     const open = useStore((s) => s.diagnosticsOpen);
+    useOccludeNativeViews(open);
     const [snapshot, setSnapshot] = useState<unknown>(null);
     const [error, setError] = useState("");
     const [manifests, setManifests] = useState<ManifestReport | null>(null);
@@ -580,6 +582,7 @@ export function DiagnosticsOverlay() {
 
 export function WhatsNewOverlay() {
     const open = useStore((s) => s.whatsNewOpen);
+    useOccludeNativeViews(open);
     const pending = useStore((s) => s.pendingUpdate);
     const installedNotes = useStore((s) => s.lastReleaseNotes);
     const [version, setVersion] = useState("");

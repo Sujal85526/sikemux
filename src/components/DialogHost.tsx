@@ -1,6 +1,7 @@
 import { useModalFocus } from "../hooks/useModalFocus";
 import { useEffect, useRef, useState } from "react";
 import { acceptDialog, dismissDialog, useDialogs, type PendingDialog } from "../state/dialog";
+import { useOccludeNativeViews } from "../state/nativeViews";
 import { IconInfo, IconWarning } from "./Icons";
 import { Kbd } from "./Kbd";
 
@@ -10,6 +11,7 @@ import { Kbd } from "./Kbd";
  */
 export function DialogHost() {
     const dialog = useDialogs((s) => s.dialog);
+    useOccludeNativeViews(Boolean(dialog));
     if (!dialog) return null;
     // Key on id so the prompt input resets between queued dialogs.
     return <DialogSheet key={dialog.id} dialog={dialog} />;

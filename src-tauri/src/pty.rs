@@ -2415,11 +2415,7 @@ pub async fn pty_spawn(
         .as_ref()
         .and_then(|context| context.agent_id.as_deref())
     {
-        let environment = browser.environment(&app, agent_id).await.ok();
-        if environment.is_some() {
-            crate::browser::BrowserManager::prewarm(&app);
-        }
-        environment
+        browser.environment(&app, agent_id).await.ok()
     } else {
         None
     };

@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IS_MACOS } from "../lib/platform";
+import { useOccludeNativeViews } from "../state/nativeViews";
 import type { TerminalController } from "./useXterm";
 
 interface MenuItem {
@@ -24,6 +25,7 @@ export function TerminalContextMenu({
     onFind: (seed: string) => void;
     onClose: () => void;
 }) {
+    useOccludeNativeViews(true);
     const ref = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState({ left: x, top: y });
     const selection = controller.getSelection();
