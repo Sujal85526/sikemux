@@ -320,7 +320,7 @@ pub struct GitCommit {
     unpushed: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct GitOverview {
     status: GitStatus,
     branches: Vec<GitBranch>,
@@ -748,10 +748,67 @@ fn read_status(repo: &Repository) -> Result<GitStatus, String> {
     Ok(status)
 }
 
+/// A walk of a repo stays good until its watcher says the tree moved. Saving a
+/// file used to cost four of them: the editor invalidates eagerly, the file
+/// tree asks for status on its own, and the watcher fires again 200 ms later.
+///
+/// A repo with no watcher running is never cached — nothing would tell us when
+/// the answer stopped being true.
+const REPO_WALK_CACHE_REPOS: usize = 32;
+
+type WalkCache<T> = Mutex<std::collections::HashMap<String, (u64, T)>>;
+
+fn status_cache() -> &'static WalkCache<GitStatus> {
+    static C: std::sync::OnceLock<WalkCache<GitStatus>> = std::sync::OnceLock::new();
+    C.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+fn overview_cache() -> &'static WalkCache<GitOverview> {
+    static C: std::sync::OnceLock<WalkCache<GitOverview>> = std::sync::OnceLock::new();
+    C.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+fn watched_generation(repo: &str) -> Option<(String, u64)> {
+    let key = crate::files::canonical_repo_key(repo).ok()?;
+    let generation = crate::fs_watch::scan_generation(&key)?;
+    Some((key, generation))
+}
+
+fn cached_walk<T: Clone>(cache: &WalkCache<T>, key: &str, generation: u64) -> Option<T> {
+    let cache = cache.lock().ok()?;
+    cache
+        .get(key)
+        .filter(|(stored, _)| *stored == generation)
+        .map(|(_, value)| value.clone())
+}
+
+fn store_walk<T>(cache: &WalkCache<T>, key: String, generation: u64, value: T) {
+    let Ok(mut cache) = cache.lock() else {
+        return;
+    };
+    if cache.len() >= REPO_WALK_CACHE_REPOS && !cache.contains_key(&key) {
+        cache.clear();
+    }
+    cache.insert(key, (generation, value));
+}
+
 #[tauri::command]
 pub async fn git_status(repo: String) -> Result<GitStatus, String> {
+    let watched = watched_generation(&repo);
+    if let Some((key, generation)) = &watched {
+        if let Some(hit) = cached_walk(status_cache(), key, *generation) {
+            return Ok(hit);
+        }
+    }
     let _permit = git_walk_permit().await?;
-    run_blocking(move || read_status(&open_repo(&repo)?)).await
+    run_blocking(move || -> Result<GitStatus, String> {
+        let status = read_status(&open_repo(&repo)?)?;
+        if let Some((key, generation)) = watched {
+            store_walk(status_cache(), key, generation, status.clone());
+        }
+        Ok(status)
+    })
+    .await
 }
 
 // ---- branches & log -------------------------------------------------------
@@ -838,21 +895,33 @@ fn relative_time(secs: i64) -> String {
     format!("{}y ago", d / (86400 * 365))
 }
 
-/// Map commit oid (full hex) → ref decorations (`HEAD`, local branches,
-/// remote branches, tags). Built once per log read so the graph timeline
-/// can render lazygit-style ref badges without N extra git calls.
-fn build_ref_map(repo: &Repository) -> std::collections::HashMap<String, Vec<String>> {
-    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+/// Map commit oid → ref decorations (`HEAD`, local branches, remote branches,
+/// tags) for the commits the log is about to return, so the graph timeline can
+/// render lazygit-style ref badges without N extra git calls.
+///
+/// Only refs pointing straight at one of those commits are read. Resolving the
+/// rest means loading an object per ref — every remote branch and every tag in
+/// the repo — to decorate commits nobody is looking at.
+fn build_ref_map(
+    repo: &Repository,
+    commits: &std::collections::HashSet<git2::Oid>,
+) -> std::collections::HashMap<git2::Oid, Vec<String>> {
+    let mut map: std::collections::HashMap<git2::Oid, Vec<String>> =
+        std::collections::HashMap::new();
     // HEAD first so it renders leftmost on its commit.
     if let Ok(head) = repo.head() {
-        if let Some(oid) = head.target() {
-            map.entry(oid.to_string())
-                .or_default()
-                .push("HEAD".to_string());
+        if let Some(oid) = head.target().filter(|oid| commits.contains(oid)) {
+            map.entry(oid).or_default().push("HEAD".to_string());
         }
     }
-    if let Ok(refs) = repo.references() {
+    for glob in ["refs/heads/*", "refs/remotes/*", "refs/tags/*"] {
+        let Ok(refs) = repo.references_glob(glob) else {
+            continue;
+        };
         for r in refs.flatten() {
+            let Some(oid) = r.target().filter(|oid| commits.contains(oid)) else {
+                continue;
+            };
             let name = match r.shorthand() {
                 Ok(n) => n.to_string(),
                 Err(_) => continue,
@@ -862,17 +931,12 @@ fn build_ref_map(repo: &Repository) -> std::collections::HashMap<String, Vec<Str
             if name == "HEAD" || name.ends_with("/HEAD") {
                 continue;
             }
-            // peel_to_commit resolves annotated tags down to their commit.
-            let oid = match r.peel_to_commit() {
-                Ok(c) => c.id(),
-                Err(_) => continue,
-            };
             let label = if r.is_tag() {
                 format!("tag: {name}")
             } else {
                 name
             };
-            map.entry(oid.to_string()).or_default().push(label);
+            map.entry(oid).or_default().push(label);
         }
     }
     map
@@ -881,7 +945,7 @@ fn build_ref_map(repo: &Repository) -> std::collections::HashMap<String, Vec<Str
 /// Set of commit oids that are ahead of the current branch's upstream —
 /// reachable from HEAD but not from `@{u}`. Empty when HEAD is detached or
 /// the branch has no upstream (nothing to compare against → all "pushed").
-fn unpushed_set(repo: &Repository) -> std::collections::HashSet<String> {
+fn unpushed_set(repo: &Repository) -> std::collections::HashSet<git2::Oid> {
     let mut set = std::collections::HashSet::new();
     let head = match repo.head() {
         Ok(h) => h,
@@ -909,7 +973,7 @@ fn unpushed_set(repo: &Repository) -> std::collections::HashSet<String> {
         return set;
     }
     for oid in revwalk.flatten() {
-        set.insert(oid.to_string());
+        set.insert(oid);
     }
     set
 }
@@ -919,45 +983,42 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
     if revwalk.push_head().is_err() {
         return Ok(Vec::new());
     }
-    // Topological + time keeps first-parent chains contiguous so the graph
-    // lanes read cleanly, while still showing newest commits first.
+    // Newest first by commit time. Adding TOPOLOGICAL makes libgit2 enumerate
+    // every reachable commit before it can hand back even the first one.
     revwalk
-        .set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
+        .set_sorting(git2::Sort::TIME)
         .map_err(|e| e.message().to_string())?;
-    let ref_map = build_ref_map(repo);
-    let unpushed = unpushed_set(repo);
-    let mut out = Vec::with_capacity(limit);
-    for (i, oid) in revwalk.enumerate() {
-        if i >= limit {
+    let mut commits = Vec::with_capacity(limit);
+    for oid in revwalk.flatten() {
+        if commits.len() >= limit {
             break;
         }
-        let oid = match oid {
-            Ok(o) => o,
-            Err(_) => continue,
-        };
-        let commit = match repo.find_commit(oid) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
+        if let Ok(commit) = repo.find_commit(oid) {
+            commits.push(commit);
+        }
+    }
+    let oids: std::collections::HashSet<git2::Oid> = commits.iter().map(|c| c.id()).collect();
+    let ref_map = build_ref_map(repo, &oids);
+    let unpushed = unpushed_set(repo);
+    let mut out = Vec::with_capacity(commits.len());
+    for commit in commits {
+        let oid = commit.id();
         let short = commit
             .as_object()
             .short_id()
             .ok()
             .and_then(|b| b.as_str().ok().map(String::from))
             .unwrap_or_else(|| oid.to_string()[..7].to_string());
-        let full = oid.to_string();
-        let refs = ref_map.get(&full).cloned().unwrap_or_default();
-        let is_unpushed = unpushed.contains(&full);
         out.push(GitCommit {
             hash: short,
-            full_hash: full,
+            full_hash: oid.to_string(),
             parents: commit.parent_ids().map(|p| p.to_string()).collect(),
             author: commit.author().name().unwrap_or("").to_string(),
             author_email: commit.author().email().unwrap_or("").to_string(),
             date: relative_time(commit.time().seconds()),
             subject: commit.summary().ok().flatten().unwrap_or("").to_string(),
-            unpushed: is_unpushed,
-            refs,
+            unpushed: unpushed.contains(&oid),
+            refs: ref_map.get(&oid).cloned().unwrap_or_default(),
         });
     }
     Ok(out)
@@ -971,14 +1032,30 @@ pub async fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
 
 #[tauri::command]
 pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
+    let watched = watched_generation(&repo);
+    if let Some((key, generation)) = &watched {
+        if let Some(hit) = cached_walk(overview_cache(), key, *generation) {
+            return Ok(hit);
+        }
+    }
     let _permit = git_walk_permit().await?;
     run_blocking(move || -> Result<GitOverview, String> {
         let r = open_repo(&repo)?;
-        Ok(GitOverview {
+        let overview = GitOverview {
             status: read_status(&r)?,
             branches: read_branches(&r)?,
             log: read_log(&r, 60)?,
-        })
+        };
+        if let Some((key, generation)) = watched {
+            store_walk(
+                status_cache(),
+                key.clone(),
+                generation,
+                overview.status.clone(),
+            );
+            store_walk(overview_cache(), key, generation, overview.clone());
+        }
+        Ok(overview)
     })
     .await
 }
@@ -1355,16 +1432,48 @@ pub async fn git_show(repo: String, rev: String) -> Result<String, String> {
 // Content-addressed cache for immutable revs.
 //
 // LRU by insertion+touch order — entries fall off the front as new ones land
-// at the back, capped at `FILE_AT_CACHE_CAP`. `LinkedHashMap` gives us O(1)
-// move-to-back on each hit so the ordering stays meaningful.
-const FILE_AT_CACHE_CAP: usize = 500;
+// at the back. `LinkedHashMap` gives us O(1) move-to-back on each hit so the
+// ordering stays meaningful.
+//
+// The budget is bytes, not entries: a count of 500 file revisions is anywhere
+// between a few hundred KB and half a gigabyte depending on what the user
+// opened.
+const FILE_AT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
 type FileAtKey = (String, String, String);
 
-fn file_at_cache() -> &'static Mutex<linked_hash_map::LinkedHashMap<FileAtKey, String>> {
-    static C: std::sync::OnceLock<Mutex<linked_hash_map::LinkedHashMap<FileAtKey, String>>> =
-        std::sync::OnceLock::new();
-    C.get_or_init(|| Mutex::new(linked_hash_map::LinkedHashMap::new()))
+#[derive(Default)]
+struct FileAtCache {
+    entries: linked_hash_map::LinkedHashMap<FileAtKey, String>,
+    bytes: usize,
+}
+
+impl FileAtCache {
+    fn get(&mut self, key: &FileAtKey) -> Option<String> {
+        self.entries.get_refresh(key).cloned()
+    }
+
+    fn insert(&mut self, key: FileAtKey, content: String) {
+        if content.len() > FILE_AT_CACHE_BYTES {
+            return;
+        }
+        if let Some(previous) = self.entries.remove(&key) {
+            self.bytes -= previous.len();
+        }
+        self.bytes += content.len();
+        self.entries.insert(key, content);
+        while self.bytes > FILE_AT_CACHE_BYTES {
+            match self.entries.pop_front() {
+                Some((_, evicted)) => self.bytes -= evicted.len(),
+                None => break,
+            }
+        }
+    }
+}
+
+fn file_at_cache() -> &'static Mutex<FileAtCache> {
+    static C: std::sync::OnceLock<Mutex<FileAtCache>> = std::sync::OnceLock::new();
+    C.get_or_init(|| Mutex::new(FileAtCache::default()))
 }
 
 fn is_immutable_rev(rev: &str) -> bool {
@@ -1412,7 +1521,7 @@ pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<Stri
     let key = (repo.clone(), rev.clone(), path.clone());
     if cacheable {
         if let Ok(mut cache) = file_at_cache().lock() {
-            if let Some(hit) = cache.get_refresh(&key).cloned() {
+            if let Some(hit) = cache.get(&key) {
                 return Ok(hit);
             }
         }
@@ -1450,9 +1559,6 @@ pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<Stri
         if cacheable {
             if let Ok(mut cache) = file_at_cache().lock() {
                 cache.insert(cache_key, content.clone());
-                while cache.len() > FILE_AT_CACHE_CAP {
-                    cache.pop_front();
-                }
             }
         }
         Ok(content)
@@ -3782,6 +3888,60 @@ mod tests {
         fs::write(repo.join("f.txt"), "base\n").expect("write base");
         git(repo, &["add", "f.txt"]);
         git(repo, &["commit", "-m", "base"]);
+    }
+
+    /// A branch or tag that decorates a commit outside the window must not cost
+    /// anything, and the ones inside it must still be labelled.
+    #[test]
+    fn ref_badges_cover_the_returned_commits_and_nothing_else() {
+        let td = init_repo();
+        commit_base(td.path());
+        git(td.path(), &["tag", "on-base"]);
+        git(td.path(), &["branch", "side"]);
+        fs::write(td.path().join("f.txt"), "second\n").expect("write second");
+        git(td.path(), &["commit", "-am", "second"]);
+        git(td.path(), &["tag", "on-tip"]);
+
+        let repo = open_repo(&repo_arg(td.path())).expect("open repo");
+        let log = read_log(&repo, 1).expect("read log");
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].subject, "second");
+
+        let refs = &log[0].refs;
+        assert!(refs.contains(&"HEAD".to_string()), "{refs:?}");
+        assert!(refs.contains(&"tag: on-tip".to_string()), "{refs:?}");
+        assert!(!refs.contains(&"side".to_string()), "{refs:?}");
+        assert!(!refs.contains(&"tag: on-base".to_string()), "{refs:?}");
+    }
+
+    #[test]
+    fn file_revision_cache_evicts_by_bytes_not_by_entry_count() {
+        let mut cache = FileAtCache::default();
+        let key = |n: usize| (format!("/repo{n}"), "rev".to_string(), "f.txt".to_string());
+        let half = "x".repeat(FILE_AT_CACHE_BYTES / 2 + 1);
+
+        cache.insert(key(1), half.clone());
+        cache.insert(key(2), half.clone());
+        assert!(cache.bytes <= FILE_AT_CACHE_BYTES);
+        assert!(cache.get(&key(1)).is_none());
+        assert_eq!(cache.get(&key(2)).as_deref(), Some(half.as_str()));
+
+        // A single revision larger than the whole budget is served, never stored.
+        cache.insert(key(3), "y".repeat(FILE_AT_CACHE_BYTES + 1));
+        assert!(cache.get(&key(3)).is_none());
+        assert_eq!(cache.get(&key(2)).as_deref(), Some(half.as_str()));
+    }
+
+    /// A walk is reused only while the watcher's count stands still; the next
+    /// change moves it on and the stale answer is skipped.
+    #[test]
+    fn a_cached_walk_is_only_reused_for_the_generation_it_was_read_at() {
+        let cache: WalkCache<String> = Mutex::new(std::collections::HashMap::new());
+        store_walk(&cache, "/repo".into(), 7, "walked".to_string());
+
+        assert_eq!(cached_walk(&cache, "/repo", 7).as_deref(), Some("walked"));
+        assert!(cached_walk(&cache, "/repo", 8).is_none());
+        assert!(cached_walk(&cache, "/other", 7).is_none());
     }
 
     #[test]

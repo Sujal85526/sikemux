@@ -297,7 +297,38 @@ fn active_routes(repo_key: &str) -> Vec<String> {
     lock_registry().routes(repo_key)
 }
 
+/// How many times this repo's watcher has reported a change. A repo with no
+/// live watcher is absent: nothing would tell us its tree moved, so nothing
+/// may cache a walk of it.
+fn scan_generations() -> &'static Mutex<HashMap<String, u64>> {
+    static G: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    G.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn lock_scan_generations() -> MutexGuard<'static, HashMap<String, u64>> {
+    scan_generations()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+pub fn scan_generation(repo_key: &str) -> Option<u64> {
+    lock_scan_generations().get(repo_key).copied()
+}
+
+fn bump_scan_generation(repo_key: &str) {
+    *lock_scan_generations()
+        .entry(repo_key.to_string())
+        .or_insert(0) += 1;
+}
+
+fn forget_scan_generation(repo_key: &str) {
+    lock_scan_generations().remove(repo_key);
+}
+
 fn emit_changed_to_active_routes(app: &AppHandle, repo_key: &str, paths: Option<Vec<String>>) {
+    // Bump before emitting: the refresh this event triggers must not be able
+    // to read a cached walk from before the change.
+    bump_scan_generation(repo_key);
     for repo in active_routes(repo_key) {
         let _ = app.emit_to(
             "main",
@@ -678,6 +709,7 @@ fn start_repo_watch(app: AppHandle, repo: String, token: String) -> AppResult<()
     // after subscribing. Keep it scoped; an empty repo means "invalidate all"
     // on the JS side and causes an O(open projects) refetch storm.
     crate::files::invalidate(&repo_key);
+    bump_scan_generation(&repo_key);
     let _ = app.emit_to("main", "git_changed", ChangePayload { repo, paths: None });
     Ok(())
 }
@@ -695,6 +727,10 @@ fn stop_repo_watch(token: String) -> AppResult<()> {
         return Err(AppError::Watch(WATCH_TOKEN_ERROR.to_owned()));
     }
     let mut registry = lock_registry();
+    let repo_key = registry
+        .lease_tokens
+        .get(&token)
+        .map(|identity| identity.repo_key.clone());
     let release = registry.release(&token);
     let counts = registry.counts();
     drop(registry);
@@ -713,6 +749,9 @@ fn stop_repo_watch(token: String) -> AppResult<()> {
             increment_watch_counter("fs_watch.lease_releases");
             increment_watch_counter("fs_watch.watcher_stops");
             record_registry_gauges(counts.0, counts.1, counts.2);
+            if let Some(repo_key) = repo_key {
+                forget_scan_generation(&repo_key);
+            }
         }
     }
     Ok(())
