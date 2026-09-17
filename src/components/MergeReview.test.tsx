@@ -59,6 +59,25 @@ describe("MergeReview", () => {
         expect(onOpenFile).toHaveBeenCalledWith("/repo/staged.ts");
     });
 
+    it("only scrolls when the focused file changes, not on every status refresh", () => {
+        vi.useFakeTimers();
+        const scrollIntoView = vi.fn();
+        vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(scrollIntoView);
+
+        const { rerender } = render(<MergeReview repo="/repo" files={files} focusPath="both.ts" onOpenFile={() => {}} onSaved={() => {}} />);
+        act(() => void vi.advanceTimersByTime(32));
+        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+        rerender(<MergeReview repo="/repo" files={files.map((f) => ({ ...f }))} focusPath="both.ts" onOpenFile={() => {}} onSaved={() => {}} />);
+        act(() => void vi.advanceTimersByTime(32));
+        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+        rerender(<MergeReview repo="/repo" files={files} focusPath="working.ts" onOpenFile={() => {}} onSaved={() => {}} />);
+        act(() => void vi.advanceTimersByTime(32));
+        expect(scrollIntoView).toHaveBeenCalledTimes(2);
+        vi.useRealTimers();
+    });
+
     it("bounds mounted files and diffs in a 1,000-file review", () => {
         vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
         vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1_000);

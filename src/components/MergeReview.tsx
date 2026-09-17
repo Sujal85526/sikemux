@@ -13,9 +13,26 @@ const REVIEW_ROW_ESTIMATE = 250;
 const REVIEW_DOUBLE_ROW_ESTIMATE = 470;
 const REVIEW_HEADER_HEIGHT = 31;
 
+function sameFileList(a: readonly GitFile[], b: readonly GitFile[]): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i].path !== b[i].path || a[i].index !== b[i].index || a[i].worktree !== b[i].worktree) return false;
+    }
+    return true;
+}
+
+/** A git refresh hands us a brand new array even when nothing changed; reuse
+ *  the previous one so the diffs below don't remount. */
+function useStableFileList(next: GitFile[]): GitFile[] {
+    const held = useRef(next);
+    if (!sameFileList(held.current, next)) held.current = next;
+    return held.current;
+}
+
 export function MergeReview({
     repo,
-    files,
+    files: incomingFiles,
     focusPath,
     onOpenFile,
     onSaved,
@@ -26,6 +43,7 @@ export function MergeReview({
     onOpenFile: (abs: string) => void;
     onSaved: () => void;
 }) {
+    const files = useStableFileList(incomingFiles);
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const itemRefs = useRef(new Map<string, HTMLDivElement>());
     const listRef = useRef<HTMLDivElement>(null);
@@ -57,20 +75,27 @@ export function MergeReview({
         if (virtual) virtualizer.measure();
     }, [collapsed, files, virtual, virtualizer]);
 
+    const scrollTargets = useRef({ pathIndex, virtual, virtualizer });
+    scrollTargets.current = { pathIndex, virtual, virtualizer };
+    const focusListed = !!focusPath && pathSet.has(focusPath);
+
+    // Only a new focus (or one that has just appeared in the list) scrolls. A
+    // status refresh must leave the reader where they were.
     useEffect(() => {
-        if (!focusPath || !pathSet.has(focusPath)) return;
+        if (!focusPath || !focusListed) return;
         setCollapsed((current) => {
             if (!current.has(focusPath)) return current;
             const next = new Set(current);
             next.delete(focusPath);
             return next;
         });
-        const index = pathIndex.get(focusPath) ?? -1;
+        const { pathIndex: index, virtual: isVirtual, virtualizer: list } = scrollTargets.current;
+        const row = index.get(focusPath) ?? -1;
         window.requestAnimationFrame(() => {
-            if (virtual && index >= 0) virtualizer.scrollToIndex(index, { align: "start" });
+            if (isVirtual && row >= 0) list.scrollToIndex(row, { align: "start" });
             else itemRefs.current.get(focusPath)?.scrollIntoView?.({ block: "start" });
         });
-    }, [focusPath, pathIndex, pathSet, virtual, virtualizer]);
+    }, [focusPath, focusListed]);
 
     const toggle = (path: string) => {
         setCollapsed((current) => {
