@@ -544,7 +544,12 @@ textarea:focus,
 .chat-slash-menu,
 .chat-picker-menu {
     border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface-overlay) calc(var(--window-opacity, 1) * 96%), transparent);
+    /* Not scaled by --window-opacity. A translucent window is a choice about
+       chrome; a menu is a thing you have to read, and at half opacity the
+       transcript behind it came through the model names. It blurs what is
+       under it instead, which §6 allows a float to do. */
+    background: color-mix(in srgb, var(--surface-overlay) 94%, transparent);
+    backdrop-filter: blur(20px) saturate(1.3);
     box-shadow: var(--shadow-4);
 }
 

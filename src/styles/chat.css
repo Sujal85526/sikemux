@@ -1203,8 +1203,8 @@ button.chat-tool:hover {
     margin: 0 auto;
     border: 1px solid var(--line);
     border-radius: 17px;
-    background: color-mix(in srgb, var(--rail-2) 82%, var(--pane));
-    box-shadow: 0 13px 34px color-mix(in srgb, var(--void) 42%, transparent);
+    background: color-mix(in srgb, color-mix(in srgb, var(--rail-2) 82%, var(--pane)) calc(var(--window-opacity, 1) * 100%), transparent);
+    box-shadow: 0 13px 34px color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 42%), transparent);
 }
 
 .chat-composer:focus-within {
