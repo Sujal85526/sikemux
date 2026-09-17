@@ -337,10 +337,11 @@ export function installDiagnostics(): void {
         // Every second pulse, so activity lands about once a second without a
         // second timer of its own.
         send: (visible, heartbeat) => {
+            const pulse = sendNativeUiHeartbeat(visible, heartbeat);
             if (heartbeat % 2 === 0) {
                 void sendUiActivity().catch(() => performanceTelemetry.incrementCounter("ui-activity.send_errors"));
             }
-            return sendNativeUiHeartbeat(visible, heartbeat);
+            return pulse;
         },
         onError: () => performanceTelemetry.incrementCounter("watchdog.heartbeat.send_errors"),
     });
