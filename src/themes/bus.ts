@@ -1,17 +1,35 @@
 import { readableColor } from "../lib/themeContrast";
-import { Compartment } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import type { EditorView } from "@codemirror/view";
 import type { ITheme, Terminal } from "@xterm/xterm";
 import { DEFAULT_THEME_ID, themeById, type Theme } from ".";
-import { buildEditorThemeExtensions, buildIndentMarkerExtensions } from "../editor/themeExtensions";
 
 let current: Theme = themeById(DEFAULT_THEME_ID);
 let currentOpacity = 1;
 
-const themeCompartment = new Compartment();
-const indentCompartment = new Compartment();
 const views = new Set<EditorView>();
 const terms = new Set<Terminal>();
+
+/** What an editor view needs from a theme change. Supplied by `editor/themeBridge`
+ *  the first time a view registers, so nothing here pulls CodeMirror into the boot bundle. */
+export interface EditorThemeBridge {
+    rebuild(theme: Theme): void;
+    push(view: EditorView): void;
+}
+
+let editorBridge: EditorThemeBridge | null = null;
+let bridgeRequested = false;
+
+export function setEditorThemeBridge(bridge: EditorThemeBridge): void {
+    editorBridge = bridge;
+    bridge.rebuild(current);
+    views.forEach((view) => bridge.push(view));
+}
+
+function loadEditorBridge(): void {
+    if (editorBridge || bridgeRequested) return;
+    bridgeRequested = true;
+    void import("../editor/themeBridge");
+}
 
 const customRegistry = new Map<string, Theme>();
 const themeListeners = new Set<(theme: Theme) => void>();
@@ -69,29 +87,15 @@ export function subscribeTheme(listener: (theme: Theme) => void): () => void {
     return () => themeListeners.delete(listener);
 }
 
-let editorTheme = buildEditorThemeExtensions(current);
-let indentTheme = buildIndentMarkerExtensions(current);
-
-export function themeCompartmentExtension(opts: { indentMarkers?: boolean } = {}) {
-    return [themeCompartment.of(editorTheme), ...(opts.indentMarkers === false ? [] : [indentCompartment.of(indentTheme)])];
-}
-
-function pushThemeOnto(view: EditorView): void {
-    const effects = [];
-    if (themeCompartment.get(view.state) !== editorTheme) effects.push(themeCompartment.reconfigure(editorTheme));
-    const indent = indentCompartment.get(view.state);
-    if (indent !== undefined && indent !== indentTheme) effects.push(indentCompartment.reconfigure(indentTheme));
-    if (effects.length) view.dispatch({ effects });
-}
-
 export function registerView(view: EditorView): () => void {
-    pushThemeOnto(view);
+    loadEditorBridge();
+    editorBridge?.push(view);
     views.add(view);
     return () => views.delete(view);
 }
 
 export function refreshViewTheme(view: EditorView): void {
-    pushThemeOnto(view);
+    editorBridge?.push(view);
 }
 
 export function registerTerminal(term: Terminal): () => void {
@@ -148,9 +152,8 @@ function applyThemeObject(next: Theme): void {
     void root.offsetWidth;
     current = next;
     applyChrome(next);
-    editorTheme = buildEditorThemeExtensions(next);
-    indentTheme = buildIndentMarkerExtensions(next);
-    views.forEach(pushThemeOnto);
+    editorBridge?.rebuild(next);
+    if (editorBridge) views.forEach(editorBridge.push);
     applyTerminalThemes();
     themeListeners.forEach((listener) => listener(next));
     void root.offsetWidth;

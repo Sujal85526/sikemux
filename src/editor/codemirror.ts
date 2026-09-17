@@ -1,6 +1,6 @@
 import { StreamLanguage, type StreamParser } from "@codemirror/language";
 import { Compartment, type Extension } from "@codemirror/state";
-import { themeCompartmentExtension } from "../themes/bus";
+import { themeCompartmentExtension } from "./themeBridge";
 import { hcl, makefile, sshConfig } from "./langs";
 import { tags as t } from "@lezer/highlight";
 
