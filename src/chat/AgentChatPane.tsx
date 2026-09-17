@@ -29,7 +29,6 @@ import {
     IconSearch,
     IconShieldBolt,
     IconTimer,
-    IconUser,
     IconWarning,
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
@@ -198,10 +197,6 @@ function durationLabel(ms: number): string {
     if (ms < 950) return `${(ms / 1000).toFixed(1)}s`;
     const seconds = Math.round(ms / 1000);
     return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
-}
-
-function timeLabel(at: number): string {
-    return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 /* What a failed call left behind, short enough to sit under it. Anything
@@ -607,15 +602,10 @@ function ChatActivity({ label }: { label: string }) {
     );
 }
 
-const ChatMessageRow = memo(function ChatMessageRow({ message, speaker }: { message: ChatMessage; speaker: string }) {
+const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: ChatMessage }) {
     return (
         <article className={`chat-message ${message.role}`}>
             <div className="chat-message-content">
-                <div className="chat-turn-head">
-                    {message.role === "user" ? <IconUser size={11} /> : <IconAgent size={11} />}
-                    <span className="chat-turn-who">{message.role === "user" ? "you" : speaker}</span>
-                    <span className="chat-turn-time">{timeLabel(message.at)}</span>
-                </div>
                 {message.attachments && message.attachments.length > 0 && (
                     <div className="chat-message-attachments">
                         {message.attachments.map((path) => (
@@ -1097,7 +1087,6 @@ export function AgentChatPane({
         }
         return null;
     }, [displayState.messages]);
-    const speaker = agent.model || profile?.name || agent.type;
     const connecting = connectingLabel(displayState.connection);
     /* A permission card already says what the turn is waiting on, so a spinner
        beside it would only compete with it. */
@@ -1191,7 +1180,7 @@ export function AgentChatPane({
                                     ref={virtualizer.measureElement}
                                     className="chat-virtual-row"
                                     style={{ transform: `translateY(${item.start}px)` }}>
-                                    <ChatMessageRow message={message} speaker={speaker} />
+                                    <ChatMessageRow message={message} />
                                 </div>
                             );
                         })}

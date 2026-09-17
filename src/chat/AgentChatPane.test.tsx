@@ -522,18 +522,6 @@ describe("AgentChatPane", () => {
         expect(cell.closest(".chat-table")).not.toBeNull();
     });
 
-    it("says who is speaking and when, above the turn", async () => {
-        await openTranscript();
-        emit("session_update", {
-            sessionId: "session-1",
-            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done." } },
-        });
-
-        const heads = await screen.findAllByText(/^(you|gpt-6-astra|codex)$/);
-        expect(heads[0]).toHaveTextContent("you");
-        expect(heads.at(-1)).toHaveTextContent("gpt-6-astra");
-    });
-
     it("shows adapter progress and retries failed startup", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());

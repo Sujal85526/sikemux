@@ -91,8 +91,6 @@ export interface ChatMessage {
     role: "user" | "assistant";
     parts: ChatPart[];
     attachments?: string[];
-    /** When the turn started, for the line that says who is speaking. */
-    at: number;
 }
 
 export interface ChatState {

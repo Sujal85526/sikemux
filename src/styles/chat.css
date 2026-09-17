@@ -286,34 +286,6 @@
     font-size: 13px;
 }
 
-.chat-turn-head {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin-bottom: 6px;
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-}
-
-.chat-turn-who {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--ink-dim);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.chat-turn-time {
-    margin-left: auto;
-}
-
-.chat-message.user .chat-message-attachments {
-    justify-content: flex-end;
-}
-
 .chat-message-content {
     flex: 1 1 auto;
     min-width: 0;

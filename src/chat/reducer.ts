@@ -74,7 +74,7 @@ function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind
             contentText !== undefined
                 ? { id: `${messageId}-${partKind}-0`, kind: partKind, text: contentText }
                 : { id: `${messageId}-content-0`, kind: "content", content: chunk.content };
-        messages.push({ id: messageId, role, parts: [part], at: Date.now() });
+        messages.push({ id: messageId, role, parts: [part] });
         nextId += 1;
     } else {
         const message = messages[existingIndex];
@@ -100,7 +100,7 @@ function appendPart(transcript: Transcript, part: ChatPart): Transcript {
         messages[messages.length - 1] = { ...last, parts: [...last.parts, part] };
         return { messages, nextId: transcript.nextId };
     }
-    messages.push({ id: `agent-part-${transcript.nextId}`, role: "assistant", parts: [part], at: Date.now() });
+    messages.push({ id: `agent-part-${transcript.nextId}`, role: "assistant", parts: [part] });
     return { messages, nextId: transcript.nextId + 1 };
 }
 
@@ -327,7 +327,6 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                     {
                         id,
                         role: "user",
-                        at: Date.now(),
                         parts: action.text.trim() ? [{ id: `${id}-text`, kind: "text", text: action.text }] : [],
                         ...(action.paths.length ? { attachments: action.paths } : {}),
                     },
