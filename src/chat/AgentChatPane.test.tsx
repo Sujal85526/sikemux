@@ -491,6 +491,29 @@ describe("AgentChatPane", () => {
         expect(document.querySelectorAll(".chat-tool")).toHaveLength(2);
     });
 
+    it("builds a subagent's transcript only once it is opened", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "subagent_spawned", subagentSessionId: "subagent-1", name: "Explorer", task: "Read the styles" },
+        });
+        emit("session_update", {
+            sessionId: "subagent-1",
+            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Found the pane" } },
+        });
+
+        await waitFor(() => expect(document.querySelector("details.chat-subagent")).not.toBeNull());
+        const folded = document.querySelector("details.chat-subagent") as HTMLDetailsElement;
+        expect(folded.querySelector(".chat-subagent-body")).toBeNull();
+        expect(folded.textContent).toContain("Explorer");
+
+        act(() => {
+            folded.open = true;
+            fireEvent(folded, new Event("toggle"));
+        });
+        expect(await screen.findByText("Found the pane")).toBeInTheDocument();
+    });
+
     it("folds a finished run away when the agent moves on to something else in the same turn", async () => {
         await openTranscript();
         emit("session_update", {
@@ -651,6 +674,41 @@ describe("AgentChatPane", () => {
         expect(document.querySelector(".chat-code-diff .chat-diff-line.add mark")).toHaveTextContent("transparent");
         // The block of measurements beside it is not a patch and keeps its own shape.
         expect(document.querySelectorAll(".chat-code-diff")).toHaveLength(1);
+    });
+
+    it("watches a working subagent over the composer and settles its card when the turn ends", async () => {
+        await openTranscript();
+        emit("turn_started", {});
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "subagent_spawned",
+                subagentSessionId: "subagent-1",
+                name: "Explore",
+                task: "You are implementing performance fixes\nin the sikemux desktop app repo",
+            },
+        });
+        emit("session_update", {
+            sessionId: "subagent-1",
+            update: { sessionUpdate: "tool_call", toolCallId: "tool-1", kind: "search", title: "usePty", status: "in_progress" },
+        });
+
+        const strip = await screen.findByLabelText("Running subagents");
+        expect(strip).toHaveTextContent("Explore");
+        expect(strip).toHaveTextContent("search usePty");
+
+        const card = document.querySelector(".chat-subagent") as HTMLElement;
+        expect(card).toHaveTextContent("working");
+        expect(card).toHaveTextContent("1 call");
+        // The task is a whole prompt, so the row shows its first line only.
+        expect(card).toHaveTextContent("You are implementing performance fixes");
+        expect(card).not.toHaveTextContent("in the sikemux desktop app repo");
+
+        emit("turn_completed", { stopReason: "cancelled" });
+
+        await waitFor(() => expect(screen.queryByLabelText("Running subagents")).not.toBeInTheDocument());
+        expect(document.querySelector(".chat-subagent")).toHaveTextContent("stopped");
+        expect(document.querySelector(".chat-tool-spinner")).toBeNull();
     });
 
     it("shows adapter progress and starts a failed adapter again on its own", async () => {

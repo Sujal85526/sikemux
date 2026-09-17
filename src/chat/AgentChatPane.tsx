@@ -277,8 +277,10 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const diff = useMemo(() => (tool.status === "completed" || tool.status === "failed" ? toolDiff(tool) : null), [tool]);
     const failure = failureText(tool);
     const detail = diff ?? failure;
-    const elapsed = part.endedAt !== undefined ? durationLabel(part.endedAt - part.startedAt) : null;
     const status = tool.status ?? "pending";
+    /* A call the turn cut off has a duration, but printing it would read as a
+       call that ran that long and then finished. It says why it stopped. */
+    const elapsed = status === "cancelled" ? "stopped" : part.endedAt !== undefined ? durationLabel(part.endedAt - part.startedAt) : null;
     const body = (
         <>
             <span className="chat-tool-tick" aria-hidden="true" />
@@ -409,6 +411,44 @@ function ChatTable({ children }: { children?: ReactNode }) {
 }
 
 const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
+const remarkPlugins = [remarkGfm];
+
+const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
+    return (
+        <Markdown remarkPlugins={remarkPlugins} skipHtml components={markdownComponents}>
+            {text}
+        </Markdown>
+    );
+});
+
+/* A message still being written grows by a few characters a frame, and reading
+   all of it again costs more the longer it gets. Ten times a second looks the
+   same to a reader and leaves the frames between it free; the finished message
+   is read once more in full. */
+const LIVE_PARSE_MS = 100;
+
+function LiveMarkdown({ text, live }: { text: string; live: boolean }) {
+    const [shown, setShown] = useState(text);
+    const parsedAt = useRef(0);
+    useEffect(() => {
+        if (!live) {
+            setShown(text);
+            return;
+        }
+        const wait = LIVE_PARSE_MS - (Date.now() - parsedAt.current);
+        if (wait <= 0) {
+            parsedAt.current = Date.now();
+            setShown(text);
+            return;
+        }
+        const timer = window.setTimeout(() => {
+            parsedAt.current = Date.now();
+            setShown(text);
+        }, wait);
+        return () => window.clearTimeout(timer);
+    }, [live, text]);
+    return <MarkdownBody text={shown} />;
+}
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
@@ -432,13 +472,11 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
 
-function MessagePart({ part }: { part: ChatPart }) {
+const MessagePart = memo(function MessagePart({ part, live }: { part: ChatPart; live: boolean }) {
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <Markdown remarkPlugins={[remarkGfm]} skipHtml components={markdownComponents}>
-                    {part.text}
-                </Markdown>
+                <LiveMarkdown text={part.text} live={live} />
             </div>
         );
     }
@@ -446,9 +484,7 @@ function MessagePart({ part }: { part: ChatPart }) {
         return (
             <div className="chat-thought">
                 <div className="chat-markdown">
-                    <Markdown remarkPlugins={[remarkGfm]} skipHtml components={markdownComponents}>
-                        {part.text}
-                    </Markdown>
+                    <LiveMarkdown text={part.text} live={live} />
                 </div>
             </div>
         );
@@ -457,7 +493,7 @@ function MessagePart({ part }: { part: ChatPart }) {
     if (part.kind === "subagent") return <SubagentPart subagent={part.subagent} />;
     if (part.kind === "notice") return <NoticePart notice={part.notice} />;
     return <ContentPart part={part} />;
-}
+});
 
 function SentAttachment({ path }: { path: string }) {
     const preview = useImagePreview(path);
@@ -508,7 +544,7 @@ function groupParts(parts: ChatPart[]): PartGroup[] {
 
 function toolRunning(tool: AcpToolCall): boolean {
     const status = tool.status ?? "pending";
-    return status !== "completed" && status !== "failed";
+    return status !== "completed" && status !== "failed" && status !== "cancelled";
 }
 
 /* A run of tool calls is worth watching while the agent is still adding to it
@@ -556,7 +592,7 @@ function PartGroups({ parts, live }: { parts: ChatPart[]; live: boolean }) {
         "tools" in group ? (
             <ToolGroup key={group.id} tools={group.tools} live={live && index === groups.length - 1} />
         ) : (
-            <MessagePart key={group.id} part={group.part} />
+            <MessagePart key={group.id} part={group.part} live={live && index === groups.length - 1} />
         ),
     );
 }
@@ -572,25 +608,69 @@ function NoticePart({ notice }: { notice: AcpTaskNotice }) {
     );
 }
 
+const SUBAGENT_WORDS: Record<AcpSubagent["state"], string> = {
+    running: "working",
+    completed: "done",
+    failed: "failed",
+    cancelled: "stopped",
+    disconnected: "lost",
+};
+
+/* A subagent is handed a whole prompt as its task, and a prompt is paragraphs.
+   The row is one line, so it opens with the first line and the tooltip keeps
+   the rest. */
+function subagentTask(task: string): string {
+    return task.split("\n")[0].trim();
+}
+
+/* What a subagent is up to, taken from the last thing it sent. A tool it is
+   part-way through says more than the prose it wrote before starting. */
+function subagentActivity(subagent: AcpSubagent): string {
+    for (let index = subagent.messages.length - 1; index >= 0; index -= 1) {
+        const parts = subagent.messages[index].parts;
+        for (let position = parts.length - 1; position >= 0; position -= 1) {
+            const part = parts[position];
+            if (part.kind === "tool") return `${toolKind(part.tool)} ${toolTarget(part.tool)}`.trim();
+        }
+    }
+    return subagentTask(subagent.task);
+}
+
+/* A folded subagent keeps streaming into a transcript nobody is reading, so its
+   body is only built once the reader opens it. */
 function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
+    const [open, setOpen] = useState(false);
     const parts = subagent.messages.flatMap((message) => message.parts);
+    const calls = parts.filter((part) => part.kind === "tool").length;
     return (
-        <details className={`chat-subagent state-${subagent.state}`}>
+        <details className={`chat-subagent state-${subagent.state}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
             <summary>
+                <IconChevron size={9} className="chat-subagent-chevron" />
                 <span className="chat-subagent-mark">
                     <IconAgent size={11} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
-                <span className="chat-subagent-task">{subagent.task}</span>
-                <span className="chat-subagent-state">{subagent.state}</span>
+                <span className="chat-subagent-task" title={subagent.task || undefined}>
+                    {subagentTask(subagent.task)}
+                </span>
+                <span className="chat-subagent-end">
+                    {calls > 0 && (
+                        <span className="chat-subagent-calls">
+                            {calls} {calls === 1 ? "call" : "calls"}
+                        </span>
+                    )}
+                    <span className="chat-subagent-state">{SUBAGENT_WORDS[subagent.state]}</span>
+                </span>
             </summary>
-            <div className="chat-subagent-body">
-                {parts.length > 0 ? (
-                    <PartGroups parts={parts} live={subagent.state === "running"} />
-                ) : (
-                    <span className="chat-subagent-empty">No output yet.</span>
-                )}
-            </div>
+            {open && (
+                <div className="chat-subagent-body">
+                    {parts.length > 0 ? (
+                        <PartGroups parts={parts} live={subagent.state === "running"} />
+                    ) : (
+                        <span className="chat-subagent-empty">No output yet.</span>
+                    )}
+                </div>
+            )}
         </details>
     );
 }
@@ -619,6 +699,33 @@ function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; s
                             <IconClose size={10} />
                         </button>
                     )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function runningSubagents(messages: ChatMessage[]): AcpSubagent[] {
+    const running: AcpSubagent[] = [];
+    for (const message of messages)
+        for (const part of message.parts) if (part.kind === "subagent" && part.subagent.state === "running") running.push(part.subagent);
+    return running;
+}
+
+/* A subagent at work belongs where the reader already watches for live things
+   — the strip over the composer that the background tasks use. Its card in the
+   transcript is where its output went, which is not where you look to find out
+   whether it is still going. */
+function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
+    if (subagents.length === 0) return null;
+    return (
+        <div className="chat-tasks" aria-label="Running subagents">
+            {subagents.map((subagent) => (
+                <div className="chat-task chat-task-agent" key={subagent.sessionId}>
+                    <IconAgent size={12} />
+                    <span className="chat-task-name">{subagent.name}</span>
+                    <span className="chat-task-detail">{subagentActivity(subagent)}</span>
+                    <span className="chat-task-spinner" aria-hidden="true" />
                 </div>
             ))}
         </div>
@@ -1266,6 +1373,7 @@ export function AgentChatPane({
         }
         return null;
     }, [displayState.messages]);
+    const subagents = useMemo(() => runningSubagents(displayState.messages), [displayState.messages]);
     const connecting = connectingLabel(displayState.connection);
     /* A permission card already says what the turn is waiting on, so a spinner
        beside it would only compete with it. */
@@ -1429,6 +1537,7 @@ export function AgentChatPane({
                         <IconArrowDown size={14} />
                     </button>
                 )}
+                <RunningSubagents subagents={subagents} />
                 <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
                 <QueuedMessages
                     messages={queued}
