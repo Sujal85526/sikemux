@@ -5,21 +5,22 @@
 //
 //   * Every PTY in Rust owns a `vt100::Parser` — a headless terminal
 //     emulator that maintains the current screen grid + scrollback as
-//     bytes arrive. ~80-160 KB per PTY total. No rendering, no DOM, no
-//     GPU. Always up to date regardless of whether anyone is looking.
+//     bytes arrive. A cell is 32 bytes, so the cost is the grid: a few
+//     MB per PTY, and less once it drops to the idle scrollback. No
+//     rendering, no DOM, no GPU, always up to date whether or not
+//     anyone is looking.
 //
 //   * The PTY can have ZERO, ONE, or MANY subscribers. A subscriber is a
 //     Tauri raw-bytes `Channel` registered by the frontend when a
 //     TerminalPane mounts an xterm. When the pane unmounts (user
 //     switched away) the subscriber is dropped — the PTY keeps running
 //     in the background, parser keeps grid up to date, nothing is lost.
-//     On re-focus the pane calls `pty_snapshot` to fetch a fresh ANSI
-//     dump of the current grid + scrollback, writes it to a freshly
-//     spawned xterm, then subscribes for live output.
+//     On re-focus the pane calls `pty_attach`, which hands back an ANSI
+//     dump of the current grid + scrollback and subscribes for live
+//     output in one atomic step.
 //
 //   * Result: the only live xterm + WebGL contexts in the app are the
-//     ones the user is actually looking at. Hidden PTYs cost ~150 KB of
-//     Rust heap and zero rendering work.
+//     ones the user is actually looking at.
 //
 // Commands surfaced to the frontend:
 //
@@ -98,6 +99,9 @@ struct Pty {
     /// Tracks the current screen grid + scrollback. Always up to date,
     /// even when no one's subscribed — that's the whole point.
     parser: Mutex<SemanticParser>,
+    /// True when this shell opted into OSC 7/133 reporting. The sweeper uses
+    /// it to skip taking the parser lock on every other PTY four times a second.
+    shell_protocol: bool,
     /// Live xterm subscribers. Empty = PTY runs invisibly.
     /// Each chunk crosses the IPC as raw bytes, so JS receives an
     /// ArrayBuffer instead of a JSON array of numbers.
@@ -126,6 +130,9 @@ struct Pty {
     /// settled detection edge-triggered instead of a perpetual 4 Hz rescan.
     activity_revision: AtomicU64,
     last_detection_fingerprint: AtomicU64,
+    /// `activity_revision` as of the last completed detection scan. Unchanged
+    /// means the screen is unchanged, so there is nothing new to read.
+    last_detection_revision: AtomicU64,
     /// Present only for a durable task PTY. The atomic gate makes natural
     /// exit, explicit kill, and app drain race to one channel delivery.
     task_exit: Option<TaskExitReporter>,
@@ -730,6 +737,10 @@ pub async fn agent_detection_reload(
             .value()
             .last_detection_fingerprint
             .store(0, Ordering::Release);
+        entry
+            .value()
+            .last_detection_revision
+            .store(0, Ordering::Release);
     }
     Ok(report)
 }
@@ -779,14 +790,14 @@ pub async fn agent_detection_explain(
         .map_err(|_| AppError::Other("agent detection registry lock poisoned".into()))
 }
 
-// Scrollback held in the headless vt100 parser. Must match (or exceed)
-// the frontend's xterm scrollback (`TerminalPane.tsx`'s SCROLLBACK) so a
-// reattach can repaint the full visible history. At 80 cols of mostly-
-// cleared cells, 10k rows ≈ 1.6 MB per PTY. 100 PTYs → ~160 MB worst-case.
-// The sweeper below reclaims this back to IDLE_SCROLLBACK for any PTY
-// that's been silent for IDLE_TRIM and has no subscribers attached.
-pub const PARSER_SCROLLBACK: usize = 10_000;
-const IDLE_SCROLLBACK: usize = 2_000;
+// Scrollback held in the headless vt100 parser. This only has to cover what
+// a reattaching xterm replays; anything the user scrolled past before the
+// pane was hidden is not worth paying for. A vt100 cell is 32 bytes, so at
+// 200 columns 3k rows is roughly 19 MB per PTY — at 10k rows it was 64 MB.
+// The parser drops to IDLE_SCROLLBACK when the last subscriber detaches, and
+// the sweeper below catches anything silent for IDLE_TRIM.
+pub const PARSER_SCROLLBACK: usize = 3_000;
+const IDLE_SCROLLBACK: usize = 1_000;
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const ACTIVITY_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -800,6 +811,9 @@ const ACTIVITY_STOPPED: u8 = 4;
 const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
 #[cfg(unix)]
 const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+const SLOW_BROADCAST: Duration = Duration::from_millis(8);
+/// One in this many output chunks carries full timing instrumentation.
+const OBSERVED_BROADCASTS: u64 = 64;
 
 /// Stable frontend event for opt-in local shell metadata. The terminal byte
 /// stream remains untouched; this is a second, typed signal derived from it.
@@ -1547,15 +1561,17 @@ fn ensure_sweeper(app: AppHandle) {
                 // A quiet prompt may leave one coalesced update after its last
                 // output chunk. Flush it from the existing bounded sweeper so
                 // rate limiting never means "latest state is never emitted".
-                let shell_update = pty.parser.lock().ok().and_then(|mut parser| {
-                    parser
-                        .callbacks_mut()
-                        .shell
-                        .as_mut()
-                        .and_then(|shell| shell.take_due_event(now))
-                });
-                if let Some(update) = shell_update {
-                    publish_shell_metadata(pty, update);
+                if pty.shell_protocol {
+                    let shell_update = pty.parser.lock().ok().and_then(|mut parser| {
+                        parser
+                            .callbacks_mut()
+                            .shell
+                            .as_mut()
+                            .and_then(|shell| shell.take_due_event(now))
+                    });
+                    if let Some(update) = shell_update {
+                        publish_shell_metadata(pty, update);
+                    }
                 }
                 if !pty.activity_armed.load(Ordering::Acquire)
                     || now.saturating_sub(pty.last_activity_ms.load(Ordering::Relaxed))
@@ -1566,6 +1582,12 @@ fn ensure_sweeper(app: AppHandle) {
                 let Some(agent) = pty.agent_kind else {
                     continue;
                 };
+                // Nothing has reached the parser since the last scan, so the
+                // screen still says exactly what it said then.
+                let revision = pty.activity_revision.load(Ordering::Acquire);
+                if pty.last_detection_revision.load(Ordering::Acquire) == revision {
+                    continue;
+                }
                 let (recent, title) = match pty.parser.lock() {
                     Ok(parser) => (
                         parser.screen().contents(),
@@ -1573,11 +1595,7 @@ fn ensure_sweeper(app: AppHandle) {
                     ),
                     Err(_) => continue,
                 };
-                let fingerprint = semantic_fingerprint(
-                    pty.activity_revision.load(Ordering::Acquire),
-                    &recent,
-                    &title,
-                );
+                let fingerprint = semantic_fingerprint(revision, &recent, &title);
                 if pty.last_detection_fingerprint.load(Ordering::Acquire) == fingerprint {
                     continue;
                 }
@@ -1599,6 +1617,8 @@ fn ensure_sweeper(app: AppHandle) {
                 if detection.skip_state_update {
                     pty.last_detection_fingerprint
                         .store(fingerprint, Ordering::Release);
+                    pty.last_detection_revision
+                        .store(revision, Ordering::Release);
                     continue;
                 }
                 let (next, label) = match detection.state {
@@ -1636,6 +1656,8 @@ fn ensure_sweeper(app: AppHandle) {
                 );
                 pty.last_detection_fingerprint
                     .store(fingerprint, Ordering::Release);
+                pty.last_detection_revision
+                    .store(revision, Ordering::Release);
             }
         }
     });
@@ -1741,11 +1763,35 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
         }
     }
     let observer = global_observability();
-    let mut metadata = Metadata::new();
-    metadata.insert("bytes".to_owned(), ScalarValue::from(bytes.len()));
-    let operation =
-        observer.slow_operation("pty.broadcast", Duration::from_millis(8), None, metadata);
-    OUTPUT_BROADCASTS.fetch_add(1, Ordering::Relaxed);
+    // Every observability call allocates a name and takes one global lock, and
+    // this runs for every chunk of every PTY. Instrument a sample, plus
+    // anything that turns out to be slow.
+    let sampled = OUTPUT_BROADCASTS
+        .fetch_add(1, Ordering::Relaxed)
+        .is_multiple_of(OBSERVED_BROADCASTS);
+    let operation = sampled.then(|| {
+        let mut metadata = Metadata::new();
+        metadata.insert("bytes".to_owned(), ScalarValue::from(bytes.len()));
+        observer.slow_operation("pty.broadcast", SLOW_BROADCAST, None, metadata)
+    });
+    let broadcast_started = Instant::now();
+    let outcome = fan_out_output(pty, bytes, sampled);
+    match operation {
+        Some(operation) => {
+            operation.finish(outcome);
+        }
+        None => {
+            let elapsed = broadcast_started.elapsed();
+            if elapsed >= SLOW_BROADCAST {
+                observer.observe_latency("pty.broadcast", elapsed);
+            }
+        }
+    }
+}
+
+/// Feeds one chunk to the headless parser and then to every live subscriber.
+fn fan_out_output(pty: &Pty, bytes: &[u8], sampled: bool) -> SpanOutcome {
+    let observer = global_observability();
     OUTPUT_BYTES.fetch_add(bytes.len() as u64, Ordering::Relaxed);
     let output_now_ms = now_ms();
     pty.last_activity_ms.store(output_now_ms, Ordering::Relaxed);
@@ -1754,8 +1800,7 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
         let parser_started = Instant::now();
         let Ok(mut parser) = pty.parser.lock() else {
             let _ = observer.increment_counter("pty.parser.lock_errors", 1);
-            operation.finish(SpanOutcome::Error);
-            return;
+            return SpanOutcome::Error;
         };
         if pty.trimmed.swap(false, Ordering::AcqRel) {
             reseed_parser(&mut parser, PARSER_SCROLLBACK);
@@ -1770,7 +1815,9 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
             .map(|shell| shell.process_for_events(bytes, output_now_ms))
             .unwrap_or_default();
         parser.process(bytes);
-        observer.observe_latency("pty.parser", parser_started.elapsed());
+        if sampled {
+            observer.observe_latency("pty.parser", parser_started.elapsed());
+        }
         pty.activity_revision.fetch_add(1, Ordering::AcqRel);
         let subscribers = match pty.subscribers.lock() {
             Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
@@ -1792,10 +1839,11 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
         publish_shell_metadata(pty, update);
     }
     if snapshot.is_empty() {
-        operation.finish(SpanOutcome::Success);
-        return;
+        return SpanOutcome::Success;
     }
-    observer.set_gauge("pty.last_subscriber_fanout", snapshot.len() as f64);
+    if sampled {
+        observer.set_gauge("pty.last_subscriber_fanout", snapshot.len() as f64);
+    }
     let send_started = Instant::now();
     let dead: Vec<u32> = snapshot
         .iter()
@@ -1806,7 +1854,9 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
                 .map(|_| *sub_id)
         })
         .collect();
-    observer.observe_latency("pty.channel_send", send_started.elapsed());
+    if sampled {
+        observer.observe_latency("pty.channel_send", send_started.elapsed());
+    }
     if !dead.is_empty() {
         let _ = observer.increment_counter("pty.channel_send_errors", dead.len() as u64);
     }
@@ -1815,7 +1865,7 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
             subscribers.remove(&sub_id);
         }
     }
-    operation.finish(SpanOutcome::Success);
+    SpanOutcome::Success
 }
 
 fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
@@ -2731,6 +2781,7 @@ async fn spawn_prepared_pty(
             PARSER_SCROLLBACK,
             shell_metadata_enabled,
         )),
+        shell_protocol: shell_metadata_enabled,
         subscribers: Mutex::new(HashMap::new()),
         last_activity_ms: AtomicU64::new(now_ms()),
         trimmed: AtomicBool::new(false),
@@ -2743,6 +2794,7 @@ async fn spawn_prepared_pty(
         idle_confirmations: AtomicU8::new(0),
         activity_revision: AtomicU64::new(0),
         last_detection_fingerprint: AtomicU64::new(0),
+        last_detection_revision: AtomicU64::new(0),
         task_exit,
         task_exited_at_ms: AtomicU64::new(0),
         harness_output: Mutex::new(crate::harness::OutputLog::default()),
@@ -2796,9 +2848,9 @@ async fn spawn_prepared_pty(
     // Both locks are then dropped BEFORE the channel sends — so one slow
     // subscriber can't stall the parser or block another PTY's reattach.
     //
-    // Dead subscribers (channel closed because the JS xterm unmounted
-    // without explicit unsub) are GC'd on send error so the map stays
-    // bounded.
+    // A Tauri channel send only fails when the webview itself is gone, so
+    // the frontend's explicit unsubscribe is what keeps the map small. The
+    // per-PTY subscriber cap bounds it either way.
     #[cfg(unix)]
     let pty_reader = pty.clone();
     #[cfg(unix)]
@@ -2806,8 +2858,9 @@ async fn spawn_prepared_pty(
     #[cfg(unix)]
     tokio::spawn(async move {
         let mut buf = [0u8; OUTPUT_BATCH_BYTES];
+        let mut batch = Vec::with_capacity(OUTPUT_BATCH_BYTES);
         'reader: loop {
-            let mut batch = Vec::with_capacity(OUTPUT_BATCH_BYTES);
+            batch.clear();
             let mut eof = false;
             // The first byte arrives without an artificial delay. Once output
             // starts, collect the tiny writes produced by line-buffered tools
@@ -2981,12 +3034,39 @@ pub async fn pty_unsubscribe(
     id: u32,
     sub_id: u32,
 ) -> AppResult<()> {
-    if let Some(pty) = manager.ptys.get(&id) {
-        if let Ok(mut subs) = pty.subscribers.lock() {
-            subs.remove(&sub_id);
-        }
-    }
+    let Some(pty) = manager.ptys.get(&id).map(|entry| entry.value().clone()) else {
+        return Ok(());
+    };
+    tauri::async_runtime::spawn_blocking(move || unsubscribe_locked(&pty, sub_id))
+        .await
+        .map_err(|e| AppError::Pty(format!("pty_unsubscribe join: {e}")))?;
     Ok(())
+}
+
+fn unsubscribe_locked(pty: &Pty, sub_id: u32) {
+    let emptied = match pty.subscribers.lock() {
+        Ok(mut subs) => {
+            subs.remove(&sub_id);
+            subs.is_empty()
+        }
+        Err(_) => return,
+    };
+    if !emptied || pty.trimmed.load(Ordering::Acquire) {
+        return;
+    }
+    // Nobody is looking any more, so hold only what a reattach replays. Take
+    // the locks in the reader's parser -> subscribers order, and re-check
+    // under the parser lock so an attach that raced us keeps its history.
+    let Ok(mut parser) = pty.parser.lock() else {
+        return;
+    };
+    let still_empty = match pty.subscribers.lock() {
+        Ok(subs) => subs.is_empty(),
+        Err(_) => false,
+    };
+    if still_empty && compact_parser_for_idle(&mut parser) {
+        pty.trimmed.store(true, Ordering::Release);
+    }
 }
 
 /// Everything about an attach except the replay bytes, which follow the
@@ -4827,7 +4907,9 @@ mod tests {
         let screen = parser.screen_mut();
         screen.set_scrollback(usize::MAX);
         assert!(screen.scrollback() <= IDLE_SCROLLBACK);
-        assert!(screen.contents().contains("line 0100"));
+        assert!(!screen.contents().contains("line 0000"));
+        screen.set_scrollback(0);
+        assert!(screen.contents().contains("line 2099"));
     }
 
     #[test]
@@ -4848,7 +4930,7 @@ mod tests {
             parser.process(format!("old {i:04}\r\n").as_bytes());
         }
         reseed_parser(&mut parser, PARSER_SCROLLBACK);
-        for i in 0..3_000 {
+        for i in 0..1_500 {
             parser.process(format!("new {i:04}\r\n").as_bytes());
         }
 
@@ -4915,10 +4997,11 @@ mod tests {
     }
 
     #[test]
-    fn scrollback_matches_frontend() {
-        // If this number changes, update SCROLLBACK in TerminalPane.tsx
-        // so reattach doesn't repaint a truncated history.
-        assert_eq!(PARSER_SCROLLBACK, 10_000);
+    fn parser_scrollback_is_reattach_sized() {
+        // The parser only has to cover what a reattaching xterm replays, and
+        // a detached PTY drops to the smaller idle size.
+        assert_eq!(PARSER_SCROLLBACK, 3_000);
+        assert!(IDLE_SCROLLBACK < PARSER_SCROLLBACK);
     }
 
     #[cfg(unix)]
