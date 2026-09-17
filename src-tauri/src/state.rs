@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use rusqlite::{ffi::ErrorCode, params, Connection, OpenFlags, OptionalExtension, Transaction};
@@ -210,6 +211,7 @@ fn mark_legacy_if_present(database: &Path, legacy: &Path) -> AppResult<()> {
 }
 
 fn quarantine_authoritative_database(database: &Path, legacy: &Path) -> AppResult<PathBuf> {
+    close_database();
     // Establish the tombstone before moving an authoritative database. If the
     // marker cannot be persisted, leave the database in place so stale JSON
     // can never silently become authoritative on the next launch.
@@ -299,6 +301,62 @@ fn secure_database_files(path: &Path) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+fn database_cache() -> &'static Mutex<Option<CachedDatabase>> {
+    static CACHE: OnceLock<Mutex<Option<CachedDatabase>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn lock_database_cache() -> std::sync::MutexGuard<'static, Option<CachedDatabase>> {
+    database_cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Drop the open handle. Anything that moves or replaces the database file has
+/// to call this first: a handle kept across a rename goes on writing to a file
+/// nobody will read again.
+fn close_database() {
+    *lock_database_cache() = None;
+}
+
+struct CachedDatabase {
+    path: PathBuf,
+    connection: Connection,
+    /// SQLite creates `-wal` and `-shm` on the first write, so their
+    /// permissions are set once after that rather than on every save.
+    sidecars_secured: bool,
+}
+
+/// Run `work` against the process's one open state database.
+///
+/// Reopening it per save re-ran the whole schema and reset permissions on
+/// every file, and a save lands every 600 ms while the user types. Any failure
+/// drops the handle so the next attempt starts from a fresh open.
+fn with_database<T>(
+    path: &Path,
+    work: impl FnOnce(&mut Connection) -> AppResult<T>,
+) -> AppResult<T> {
+    let mut cache = lock_database_cache();
+    if cache.as_ref().is_none_or(|cached| cached.path != path) {
+        *cache = Some(CachedDatabase {
+            path: path.to_path_buf(),
+            connection: open_database(path)?,
+            sidecars_secured: false,
+        });
+    }
+    let cached = cache.as_mut().expect("the database was just opened");
+    let result = work(&mut cached.connection);
+    match &result {
+        Ok(_) => {
+            if !cached.sidecars_secured && secure_database_files(path).is_ok() {
+                cached.sidecars_secured = true;
+            }
+        }
+        Err(_) => *cache = None,
+    }
+    result
 }
 
 fn open_database(path: &Path) -> AppResult<Connection> {
@@ -452,7 +510,16 @@ fn decompose_snapshot(data: &str) -> AppResult<DecomposedSnapshot> {
             "state snapshot exceeds 32 MiB limit".into(),
         ));
     }
-    let mut root = serde_json::from_str::<Value>(data)?;
+    decompose_value(serde_json::from_str::<Value>(data)?)
+}
+
+/// Split a snapshot into the row shapes the database stores.
+///
+/// Item order is the order the keys appear in `itemStates`, which is the order
+/// the user arranged them in. That is why `serde_json` is built with
+/// `preserve_order`: a plain map would sort them by id and shuffle the
+/// workspace on every reload.
+fn decompose_value(mut root: Value) -> AppResult<DecomposedSnapshot> {
     let object = root
         .as_object_mut()
         .ok_or_else(|| AppError::State("state snapshot root must be an object".into()))?;
@@ -547,11 +614,12 @@ fn save_database(path: &Path, data: &str) -> AppResult<()> {
         None,
         Default::default(),
     );
-    let mut connection = open_database(path)?;
-    let transaction = connection.transaction().map_err(state_error)?;
-    let delta = write_transaction(&transaction, &snapshot)?;
-    transaction.commit().map_err(state_error)?;
-    secure_database_files(path)?;
+    let delta = with_database(path, |connection| {
+        let transaction = connection.transaction().map_err(state_error)?;
+        let delta = write_transaction(&transaction, &snapshot)?;
+        transaction.commit().map_err(state_error)?;
+        Ok(delta)
+    })?;
     let _ = observer.increment_counter("state.sqlite_saves", 1);
     let _ = observer.increment_counter(
         "state.sqlite.changed_items",
@@ -790,8 +858,11 @@ fn store_pending_generation(
 }
 
 fn load_database(path: &Path) -> AppResult<DatabaseLoad> {
-    let mut connection = open_database(path)?;
-    let current = load_slot(&connection, CURRENT_SLOT)?;
+    with_database(path, load_from_connection)
+}
+
+fn load_from_connection(connection: &mut Connection) -> AppResult<DatabaseLoad> {
+    let current = load_slot(connection, CURRENT_SLOT)?;
     if let SlotLoad::Snapshot(snapshot) = &current {
         return Ok(DatabaseLoad::Snapshot(snapshot.clone()));
     }
@@ -799,7 +870,7 @@ fn load_database(path: &Path) -> AppResult<DatabaseLoad> {
     // The pending delta was validated before its original commit. Reapply it
     // to the previous generation inside a transaction, validate the assembled
     // result, and only then promote it over an invalid live snapshot.
-    let pending_valid = pending_generation_is_valid(&connection)?;
+    let pending_valid = pending_generation_is_valid(connection)?;
     if pending_valid {
         let transaction = connection.transaction().map_err(state_error)?;
         advance_recovery_generation(&transaction)?;
@@ -811,7 +882,7 @@ fn load_database(path: &Path) -> AppResult<DatabaseLoad> {
         }
     }
 
-    let recovery = load_slot(&connection, BACKUP_SLOT)?;
+    let recovery = load_slot(connection, BACKUP_SLOT)?;
     if let SlotLoad::Snapshot(snapshot) = &recovery {
         let decomposed = decompose_snapshot(snapshot)?;
         let transaction = connection.transaction().map_err(state_error)?;
@@ -1093,8 +1164,12 @@ fn load_slot(connection: &Connection, slot: i64) -> AppResult<SlotLoad> {
         );
     }
     root.insert("itemStates".to_owned(), Value::Object(item_states));
-    let snapshot = serde_json::to_string(&Value::Object(root))?;
-    if snapshot.len() > MAX_STATE_BYTES || decompose_snapshot(&snapshot).is_err() {
+    let root = Value::Object(root);
+    let snapshot = serde_json::to_string(&root)?;
+    // Validate the assembled value directly. Handing the serialized form back
+    // to `decompose_snapshot` parsed the whole state a second time, and this
+    // runs on the boot path.
+    if snapshot.len() > MAX_STATE_BYTES || decompose_value(root).is_err() {
         return Ok(SlotLoad::Invalid);
     }
     Ok(SlotLoad::Snapshot(snapshot))
@@ -1350,6 +1425,7 @@ mod tests {
         );
 
         fs::write(&legacy, snapshot("stale", "{}")).unwrap();
+        close_database();
         fs::write(&database, b"not a database").unwrap();
         assert!(state_load_from_paths(&database, &legacy).is_empty());
         assert!(!database.exists());
@@ -1608,12 +1684,37 @@ mod tests {
         );
     }
 
+    /// The order of the keys in `itemStates` is the order the user arranged
+    /// their panes in, and it survives a save and a load. This is what the
+    /// `preserve_order` feature on `serde_json` buys: a sorted map would
+    /// renumber them by id and shuffle the workspace on every launch.
+    #[test]
+    fn item_order_survives_a_round_trip_in_the_order_the_user_left_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("state.sqlite3");
+        let items = r#"{"zebra":{"itemId":"zebra","kind":"pane","version":1,"state":{}},"alpha":{"itemId":"alpha","kind":"pane","version":1,"state":{}}}"#;
+
+        save_database(&database, &snapshot("current", items)).unwrap();
+        let loaded = expect_snapshot(load_database(&database).unwrap());
+
+        let root = serde_json::from_str::<Value>(&loaded).unwrap();
+        let order = root["itemStates"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(order, vec!["zebra".to_string(), "alpha".to_string()]);
+    }
+
     #[test]
     fn busy_database_is_preserved_instead_of_quarantined() {
         let directory = tempfile::tempdir().unwrap();
         let database = directory.path().join("state.sqlite3");
         let legacy = directory.path().join("state.json");
         save_database(&database, &snapshot("current", "{}")).unwrap();
+        // Stand in for another process owning the file.
+        close_database();
         let lock = Connection::open(&database).unwrap();
         lock.execute_batch("PRAGMA journal_mode = DELETE; BEGIN EXCLUSIVE;")
             .unwrap();
