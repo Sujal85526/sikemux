@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { commitGitDraft, generateGitDraft, runRepositoryGit, setGitDraft, useGitWorkbench } from "./gitWorkbench";
 import { git } from "../api/git";
 vi.mock("../api/git", () => ({ git: { status: vi.fn(), commit: vi.fn(), aiMessage: vi.fn() } }));
@@ -83,5 +83,33 @@ describe("repository Git work", () => {
         expect(action).toHaveBeenCalledTimes(1);
         finish();
         await first;
+    });
+});
+
+describe("draft persistence", () => {
+    beforeEach(() => {
+        // Earlier tests may have left a write waiting on a real timer.
+        window.dispatchEvent(new Event("pagehide"));
+        localStorage.clear();
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("writes once for a burst of typing rather than once per character", () => {
+        const write = vi.spyOn(Storage.prototype, "setItem");
+        for (const draft of ["f", "fi", "fix", "fix:"]) setGitDraft("/a", draft);
+        expect(write).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(600);
+        expect(write).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(write.mock.calls[0][1] as string).state.drafts["/a"]).toBe("fix:");
+    });
+
+    it("flushes the draft when the window goes away", () => {
+        setGitDraft("/a", "unflushed");
+        window.dispatchEvent(new Event("pagehide"));
+        expect(JSON.parse(localStorage.getItem("sikemux.git.workbench")!).state.drafts["/a"]).toBe("unflushed");
     });
 });

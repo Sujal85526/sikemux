@@ -412,14 +412,41 @@ export function matchesKeybinding(event: Pick<KeyboardEvent, "code" | "metaKey" 
     return event.code === "NumpadEnter" && binding.endsWith("+Enter") && eventBinding === binding.replace(/\+Enter$/, "+NumpadEnter");
 }
 
+/*
+ * Every binding in force, keyed by the string a key press turns into.
+ *
+ * Rebuilt whenever the overrides change, which is when someone edits a
+ * shortcut. Without it, answering "what does this key do?" walked all hundred
+ * or so actions and built a binding string for each — on every single keydown,
+ * including every character typed into a terminal.
+ */
+let bindingIndex: { overrides: KeybindingOverrides; byBinding: Map<string, KeybindingActionId> } | null = null;
+
+function keybindingIndex(overrides: KeybindingOverrides): Map<string, KeybindingActionId> {
+    if (bindingIndex?.overrides !== overrides) {
+        const byBinding = new Map<string, KeybindingActionId>();
+        for (const action of KEYBINDING_ACTIONS) {
+            const binding = resolvedKeybinding(overrides, action.id as KeybindingActionId);
+            // Declaration order decides a clash, which is what the scan this
+            // replaces did by returning the first match.
+            if (binding && !byBinding.has(binding)) byBinding.set(binding, action.id as KeybindingActionId);
+        }
+        bindingIndex = { overrides, byBinding };
+    }
+    return bindingIndex.byBinding;
+}
+
 export function actionForEvent(
     event: Pick<KeyboardEvent, "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
     overrides: KeybindingOverrides,
 ): KeybindingActionId | null {
-    for (const action of KEYBINDING_ACTIONS) {
-        const binding = resolvedKeybinding(overrides, action.id as KeybindingActionId);
-        if (binding && matchesKeybinding(event, binding)) return action.id as KeybindingActionId;
-    }
+    const pressed = eventToKeybinding(event);
+    if (!pressed) return null;
+    const index = keybindingIndex(overrides);
+    const direct = index.get(pressed);
+    if (direct) return direct;
+    // The main and numpad Enter keys are interchangeable for command shortcuts.
+    if (event.code === "NumpadEnter") return index.get(pressed.replace(/\+NumpadEnter$/, "+Enter")) ?? null;
     return null;
 }
 

@@ -250,6 +250,22 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
     }
 }
 
+/*
+ * Whether the press landed somewhere that types.
+ *
+ * Asked before an action context is built, because building one walks the
+ * session, the window tree and the agent — and a plain letter typed into a
+ * terminal is by far the most common keydown there is.
+ */
+function typingTarget(target: Element | null): boolean {
+    if (!target) return false;
+    return (
+        !!target.closest(".xterm") ||
+        target.matches("input, textarea, select") ||
+        !!target.closest('[contenteditable="true"], [contenteditable=""], [role="textbox"], .cm-content')
+    );
+}
+
 export function useKeymap(): void {
     useEffect(() => {
         const consume = (event: KeyboardEvent): void => {
@@ -298,8 +314,8 @@ export function useKeymap(): void {
             if (st.onboardingOpen) return;
             if (!action) {
                 if (hasOpenModal(st)) return;
+                if (typingTarget(target) && !event.metaKey && !event.ctrlKey && !event.altKey) return;
                 const context = applicationActionContext(st, event.target);
-                if (context.focus?.editable && !event.metaKey && !event.ctrlKey && !event.altKey) return;
                 const contributed = matchApplicationActionKeybinding(event, context);
                 if (!contributed) return;
                 runMeasuredAction(contributed.commandId, "keymap", () => {

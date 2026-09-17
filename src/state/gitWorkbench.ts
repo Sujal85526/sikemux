@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { git } from "../api/git";
 import { runGitCmd } from "./git";
 import { errMessage } from "./toast";
@@ -20,10 +20,54 @@ interface GitWorkbenchState {
     model: string;
 }
 
+/*
+ * A commit message is typed one character at a time, and every character used
+ * to serialise this whole slice and write it to localStorage synchronously, on
+ * the thread painting the editor next to it. The draft is worth keeping across
+ * a reload; it is not worth a write per keystroke.
+ *
+ * Losing up to half a second of typing to a crash is the trade. Leaving the
+ * window flushes immediately, which covers every way of closing it.
+ */
+const DRAFT_WRITE_DELAY_MS = 500;
+
+function coalescedStorage(): StateStorage {
+    let pending: { name: string; value: string } | null = null;
+    let timer: number | null = null;
+
+    const flush = () => {
+        if (timer !== null) {
+            window.clearTimeout(timer);
+            timer = null;
+        }
+        const write = pending;
+        pending = null;
+        if (write) localStorage.setItem(write.name, write.value);
+    };
+
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("blur", flush);
+
+    return {
+        getItem: (name) => (pending?.name === name ? pending.value : localStorage.getItem(name)),
+        setItem: (name, value) => {
+            pending = { name, value };
+            if (timer === null) timer = window.setTimeout(flush, DRAFT_WRITE_DELAY_MS);
+        },
+        removeItem: (name) => {
+            if (pending?.name === name) pending = null;
+            localStorage.removeItem(name);
+        },
+    };
+}
+
+const draftStorage = coalescedStorage();
+
 export const useGitWorkbench = create<GitWorkbenchState>()(
     persist(() => ({ drafts: {}, operations: {}, provider: DEFAULT_AI_PROVIDER, model: defaultAiModel(DEFAULT_AI_PROVIDER) }), {
         name: "sikemux.git.workbench",
         partialize: ({ drafts, provider, model }) => ({ drafts, provider, model }),
+        storage: createJSONStorage(() => draftStorage),
     }),
 );
 
