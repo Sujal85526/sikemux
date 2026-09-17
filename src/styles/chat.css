@@ -1065,6 +1065,12 @@ button.chat-tool:hover {
     margin-bottom: 8px;
 }
 
+/* The row spans the full width, so attachments have to be pushed over to land
+   under the same right edge the user's bubble hugs. */
+.chat-message.user .chat-message-attachments {
+    justify-content: flex-end;
+}
+
 .chat-message-attachments > span {
     gap: 5px;
     max-width: 260px;
