@@ -1,42 +1,11 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
-import { readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// A dev build's resources do not include the bundled browser, so without this
-// the app falls back to whatever Chrome is installed — the user's daily
-// browser, which is unreliable to drive. Point it at the same Chrome for
-// Testing that ships in a release, taken straight from the checkout.
-const browserNames = new Set([
-  "Google Chrome for Testing",
-  "Chromium",
-  "chrome",
-  "chrome.exe",
-]);
-export function findBundledBrowser(runtimeDir) {
-  const pending = [runtimeDir];
-  while (pending.length > 0) {
-    let entries;
-    try {
-      entries = readdirSync(pending.pop(), { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const full = join(entry.parentPath ?? entry.path, entry.name);
-      if (entry.isDirectory()) pending.push(full);
-      else if (browserNames.has(entry.name)) return full;
-    }
-  }
-  return null;
-}
 const signalExitCodes = {
   SIGHUP: 129,
   SIGINT: 130,
@@ -46,13 +15,6 @@ const signalExitCodes = {
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
-}
-
-export async function readRecordedPid(path) {
-  const value = await readFile(path, "utf8").catch(() => "");
-  if (!/^\d+\s*$/.test(value)) return null;
-  const pid = Number.parseInt(value, 10);
-  return Number.isSafeInteger(pid) && pid > 1 ? pid : null;
 }
 
 export function signalProcessTree(pid, signal) {
@@ -73,44 +35,6 @@ export function signalProcessTree(pid, signal) {
     if (error?.code === "ESRCH") return false;
     throw error;
   }
-}
-
-export async function stopRecordedBrowser(pidFile) {
-  const pid = await readRecordedPid(pidFile);
-  if (pid === null) return false;
-  signalProcessTree(pid, "SIGTERM");
-  await delay(250);
-  signalProcessTree(pid, "SIGKILL");
-  await rm(pidFile, { force: true });
-  return true;
-}
-
-export function processCommand(pid) {
-  if (!Number.isSafeInteger(pid) || pid <= 1) return null;
-  if (process.platform === "win32") return null;
-  const result = spawnSync("ps", ["-o", "command=", "-p", String(pid)], {
-    encoding: "utf8",
-  });
-  if (result.status !== 0) return null;
-  const command = result.stdout.trim();
-  return command.length > 0 ? command : null;
-}
-
-// A dev run killed hard leaves its browser behind holding the profile lock, and
-// the next launch cannot open the profile until it is gone. The recorded pid may
-// have been reused since, so only a process still named after our profile is
-// reaped; anything else just clears the stale file.
-export async function reapLeftoverBrowser(pidFile, marker) {
-  const pid = await readRecordedPid(pidFile);
-  if (pid === null) return false;
-  const command = processCommand(pid);
-  if (command && command.includes(marker)) {
-    signalProcessTree(pid, "SIGTERM");
-    await delay(250);
-    signalProcessTree(pid, "SIGKILL");
-  }
-  await rm(pidFile, { force: true });
-  return true;
 }
 
 export async function stopProcessTree(pid) {
@@ -165,12 +89,6 @@ export async function runDevDesktop() {
     return 1;
   }
   const startedAt = Date.now();
-  const checkout = createHash("sha1").update(root).digest("hex").slice(0, 12);
-  const browserPidFile = join(tmpdir(), `sikemux-dev-browser-${checkout}.pid`);
-  await reapLeftoverBrowser(browserPidFile, "com.nodelike.sikemux");
-  const bundledBrowser =
-    process.env.SIKEMUX_BROWSER_EXECUTABLE ??
-    findBundledBrowser(join(root, "src-tauri", "browser-runtime"));
   const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const child = spawn(
     command,
@@ -178,13 +96,7 @@ export async function runDevDesktop() {
     {
       cwd: root,
       detached: process.platform !== "win32",
-      env: {
-        ...process.env,
-        SIKEMUX_BROWSER_PID_FILE: browserPidFile,
-        ...(bundledBrowser
-          ? { SIKEMUX_BROWSER_EXECUTABLE: bundledBrowser }
-          : {}),
-      },
+      env: process.env,
       stdio: "inherit",
       windowsHide: false,
     },
@@ -217,7 +129,6 @@ export async function runDevDesktop() {
     if (forceTimer) clearTimeout(forceTimer);
     for (const [signal, handler] of handlers) process.off(signal, handler);
     await stopProcessTree(child.pid);
-    await stopRecordedBrowser(browserPidFile);
   }
 
   if (requestedExitCode !== null) return requestedExitCode;

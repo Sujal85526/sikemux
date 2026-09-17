@@ -91,7 +91,7 @@ Sikemux detects Claude, Codex, Hermes, Pi, and OpenCode on your `PATH`. It reads
 
 ### Agent harness tools
 
-The bundled browser MCP also exposes six Sikemux tools. They operate on the agent's open project and do not require starting Chromium. The native CLI exposes the same operations with JSON input and output:
+The bundled browser MCP also exposes six Sikemux tools. They operate on the agent's open project rather than on a browser tab. The native CLI exposes the same operations with JSON input and output:
 
 ```bash
 sikemux tool workspace.inspect

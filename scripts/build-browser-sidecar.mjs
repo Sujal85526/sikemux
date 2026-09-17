@@ -5,14 +5,9 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  readFileSync,
-  readdirSync,
   rmSync,
   statSync,
-  unlinkSync,
-  writeFileSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -22,7 +17,6 @@ const root = resolve(dirname(scriptPath), "..");
 const browserDir = join(root, "browser");
 const tauriDir = join(root, "src-tauri");
 const binariesDir = join(tauriDir, "binaries");
-const runtimeDir = join(tauriDir, "browser-runtime");
 const args = process.argv.slice(2);
 
 function fail(message) {
@@ -62,28 +56,6 @@ function hostTriple() {
     details.match(/^host:\s*(\S+)$/m)?.[1] ??
     fail("could not determine Rust host target")
   );
-}
-
-function findBrowserRuntime(directory) {
-  if (!existsSync(directory)) return null;
-  const pending = [directory];
-  while (pending.length) {
-    const current = pending.pop();
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const path = join(current, entry.name);
-      if (entry.isDirectory()) pending.push(path);
-      else if (
-        [
-          "Chromium",
-          "chrome",
-          "chrome.exe",
-          "Google Chrome for Testing",
-        ].includes(entry.name)
-      )
-        return path;
-    }
-  }
-  return null;
 }
 
 const target = option("--target") || hostTriple();
@@ -138,10 +110,6 @@ if (needsSidecarBuild) {
       join(workDir, "build"),
       "--specpath",
       workDir,
-      "--collect-all",
-      "browser_use",
-      "--collect-all",
-      "cdp_use",
       "--hidden-import",
       "mcp.server.stdio",
       "--hidden-import",
@@ -156,66 +124,6 @@ if (needsSidecarBuild) {
 }
 if (!target.includes("windows")) chmodSync(destination, 0o755);
 
-const runtimeMarker = join(runtimeDir, ".sikemux-browser-runtime");
-const runtimeFingerprint = createHash("sha256")
-  .update(readFileSync(join(browserDir, "uv.lock")))
-  .update("chromium-full")
-  .digest("hex");
-const runtimeIsCurrent =
-  findBrowserRuntime(runtimeDir) &&
-  existsSync(runtimeMarker) &&
-  readFileSync(runtimeMarker, "utf8").trim() === runtimeFingerprint;
-if (!runtimeIsCurrent) {
-  rmSync(runtimeDir, { recursive: true, force: true });
-  mkdirSync(runtimeDir, { recursive: true });
-  run(
-    "uv",
-    [
-      "run",
-      "--project",
-      browserDir,
-      "python",
-      "-m",
-      "playwright",
-      "install",
-      "chromium",
-      "--no-shell",
-    ],
-    {
-      cwd: browserDir,
-      env: { PLAYWRIGHT_BROWSERS_PATH: runtimeDir },
-    },
-  );
-  writeFileSync(runtimeMarker, `${runtimeFingerprint}\n`);
-}
-
-// Tauri follows symlinks when it copies bundle resources, so a framework's
-// top-level alias lands in the app as a second full copy of the payload it
-// points at. Chrome reaches the framework through Versions/<version>/ instead.
-function pruneFrameworkAliases(directory) {
-  let removed = 0;
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
-    const path = join(directory, entry.name);
-    if (entry.name.endsWith(".framework")) {
-      for (const alias of readdirSync(path, { withFileTypes: true })) {
-        if (!alias.isSymbolicLink()) continue;
-        unlinkSync(join(path, alias.name));
-        removed += 1;
-      }
-    }
-    removed += pruneFrameworkAliases(path);
-  }
-  return removed;
-}
-
-const prunedAliases = pruneFrameworkAliases(runtimeDir);
-if (prunedAliases > 0)
-  console.log(`  pruned ${prunedAliases} framework alias(es) from the runtime`);
-
-const browserExecutable = findBrowserRuntime(runtimeDir);
-if (!browserExecutable)
-  fail("Chromium runtime installation produced no executable");
 if (!args.includes("--skip-smoke")) {
   run(
     "uv",
@@ -227,12 +135,9 @@ if (!args.includes("--skip-smoke")) {
       join(browserDir, "smoke_sikemux_browser_mcp.py"),
       "--sidecar",
       destination,
-      "--browser",
-      browserExecutable,
     ],
     { cwd: browserDir, removeOnFailure: [destination] },
   );
 }
 
 console.log(`✓ Browser sidecar ready: ${destination.slice(root.length + 1)}`);
-console.log(`✓ Chromium runtime ready: ${runtimeDir.slice(root.length + 1)}`);

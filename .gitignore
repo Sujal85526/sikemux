@@ -2,7 +2,6 @@ node_modules
 browser/.venv/
 browser/.pyinstaller/
 browser/__pycache__/
-src-tauri/browser-runtime/
 dist
 dist-ssr
 coverage
