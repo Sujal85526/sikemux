@@ -224,6 +224,17 @@ impl ValidatedTransport {
         !self.private_http_addresses.is_empty()
     }
 
+    /// Identifies exactly what a client built from this transport is pinned to.
+    pub fn pin_key(&self) -> String {
+        let mut addresses: Vec<String> = self
+            .private_http_addresses
+            .iter()
+            .map(std::net::SocketAddr::to_string)
+            .collect();
+        addresses.sort();
+        format!("{}|{}", self.host, addresses.join(","))
+    }
+
     pub fn pin_dns(&self, builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
         if self.private_http_addresses.is_empty() {
             builder

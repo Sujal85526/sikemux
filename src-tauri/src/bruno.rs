@@ -2,9 +2,11 @@
 // client, but risky local-network and filesystem access must be explicitly
 // trusted by the frontend and every request is bounded in time and size.
 
+use std::collections::HashMap;
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
@@ -247,6 +249,21 @@ fn read_upload(path: &str, trust: &BruTrust) -> AppResult<(PathBuf, Vec<u8>)> {
     Ok((path, bytes))
 }
 
+/// How many distinct targets keep a warm client. A collection run hits a
+/// handful of hosts; past that the oldest set is simply dropped.
+const MAX_CACHED_CLIENTS: usize = 16;
+
+fn client_cache() -> &'static Mutex<HashMap<String, Client>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Client>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// A client per target rather than per request. Building one each time meant a
+/// fresh connection pool and a fresh TLS handshake for every call, so running a
+/// folder of requests reused nothing.
+///
+/// The key carries everything the builder is configured from, including the
+/// pinned addresses, so a different DNS answer never reuses the old client.
 fn client(
     trust: &BruTrust,
     skip_tls_verify: bool,
@@ -261,7 +278,18 @@ fn client(
     let host = url
         .host_str()
         .ok_or(AppError::BadArg("URL host is required"))?;
-    Ok(Client::builder()
+
+    let mut pinned: Vec<String> = addrs.iter().map(SocketAddr::to_string).collect();
+    pinned.sort();
+    let key = format!("{skip_tls_verify}|{host}|{}", pinned.join(","));
+    let mut cache = client_cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(client) = cache.get(&key) {
+        return Ok(client.clone());
+    }
+
+    let client = Client::builder()
         .danger_accept_invalid_certs(skip_tls_verify)
         // Return redirects to the collection instead of following them. This
         // prevents cross-origin credential forwarding and DNS-rebinding SSRF.
@@ -272,7 +300,12 @@ fn client(
         // Deliberately no process-wide cookie jar: collections must send explicit
         // Cookie headers, preventing cross-collection ambient credential leaks.
         .user_agent("sikemux-bruno/0.1")
-        .build()?)
+        .build()?;
+    if cache.len() >= MAX_CACHED_CLIENTS {
+        cache.clear();
+    }
+    cache.insert(key, client.clone());
+    Ok(client)
 }
 
 #[tauri::command]

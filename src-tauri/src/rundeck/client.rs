@@ -2,7 +2,8 @@
 // warm across the matrix dashboard's parallel fan-out; auto-refresh kicks in
 // transparently on a 401/403 the same way the bash CLI's `rd_api` does.
 
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -32,14 +33,35 @@ pub fn http() -> &'static Client {
     })
 }
 
+/// A warm client per pinned target. Building one per request threw away the
+/// connection pool, so a private-HTTP install paid a fresh handshake on every
+/// call of the dashboard's fan-out. The key is the pinned address set, so a
+/// different DNS answer never reuses the old client.
 fn pinned_http(transport: &config::ValidatedTransport) -> AppResult<Client> {
-    Ok(transport
+    const MAX_CACHED_CLIENTS: usize = 8;
+    static CACHE: OnceLock<Mutex<HashMap<String, Client>>> = OnceLock::new();
+
+    let key = transport.pin_key();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(client) = cache.get(&key) {
+        return Ok(client.clone());
+    }
+
+    let client = transport
         .pin_dns(Client::builder())
         .pool_idle_timeout(Duration::from_secs(25))
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
         .user_agent("sikemux-rundeck/0.1")
-        .build()?)
+        .build()?;
+    if cache.len() >= MAX_CACHED_CLIENTS {
+        cache.clear();
+    }
+    cache.insert(key, client.clone());
+    Ok(client)
 }
 
 fn api_url(base: &str, endpoint: &str) -> String {
