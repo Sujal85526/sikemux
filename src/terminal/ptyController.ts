@@ -239,8 +239,11 @@ function containRejection<T>(promise: Promise<T>): Promise<T> {
     return promise;
 }
 
-function isOutputChunk(value: unknown): value is PtyOutputChunk {
-    return Array.isArray(value) || value instanceof Uint8Array;
+/** Raw IPC bytes arrive as an ArrayBuffer; the view shares the same memory. */
+function asOutputChunk(value: unknown): PtyOutputChunk | null {
+    if (Array.isArray(value) || value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    return null;
 }
 
 function containsControlCharacter(value: string): boolean {
@@ -908,9 +911,10 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.drainOutput(state);
     }
 
-    private receiveOutput(state: AttachmentState<ChannelTransport>, chunk: PtyOutputChunk): void {
+    private receiveOutput(state: AttachmentState<ChannelTransport>, received: PtyOutputChunk): void {
         if (state.detached) return;
-        if (!isOutputChunk(chunk)) {
+        const chunk = asOutputChunk(received);
+        if (!chunk) {
             this.reportError("attach", new TypeError("PTY channel emitted an invalid output chunk"));
             void this.detachAttachment(state).catch(() => {});
             return;

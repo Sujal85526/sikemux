@@ -9,7 +9,7 @@
 //     GPU. Always up to date regardless of whether anyone is looking.
 //
 //   * The PTY can have ZERO, ONE, or MANY subscribers. A subscriber is a
-//     Tauri `Channel<Vec<u8>>` registered by the frontend when a
+//     Tauri raw-bytes `Channel` registered by the frontend when a
 //     TerminalPane mounts an xterm. When the pane unmounts (user
 //     switched away) the subscriber is dropped — the PTY keeps running
 //     in the background, parser keeps grid up to date, nothing is lost.
@@ -50,7 +50,7 @@ use dashmap::DashMap;
 #[cfg(windows)]
 use portable_pty::MasterPty;
 use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Manager, State};
 #[cfg(unix)]
 use tokio::io::unix::AsyncFd;
@@ -99,7 +99,9 @@ struct Pty {
     /// even when no one's subscribed — that's the whole point.
     parser: Mutex<SemanticParser>,
     /// Live xterm subscribers. Empty = PTY runs invisibly.
-    subscribers: Mutex<HashMap<u32, Channel<Vec<u8>>>>,
+    /// Each chunk crosses the IPC as raw bytes, so JS receives an
+    /// ArrayBuffer instead of a JSON array of numbers.
+    subscribers: Mutex<HashMap<u32, Channel<Response>>>,
     /// Millis-since-process-start of the last chunk processed. The idle
     /// sweeper reads this without contending with the reader because it's
     /// an atomic, not a Mutex.
@@ -1165,7 +1167,7 @@ impl vt100::Callbacks for SemanticCallbacks {
 }
 
 type SemanticParser = vt100::Parser<SemanticCallbacks>;
-type SubscriberSnapshot = Vec<(u32, Channel<Vec<u8>>)>;
+type SubscriberSnapshot = Vec<(u32, Channel<Response>)>;
 
 #[cfg(test)]
 fn semantic_parser(rows: u16, cols: u16, scrollback: usize) -> SemanticParser {
@@ -1787,20 +1789,15 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
     }
     observer.set_gauge("pty.last_subscriber_fanout", snapshot.len() as f64);
     let send_started = Instant::now();
-    let dead: Vec<u32> = if snapshot.len() == 1 {
-        let (sub_id, channel) = &snapshot[0];
-        channel
-            .send(bytes.to_vec())
-            .err()
-            .map(|_| vec![*sub_id])
-            .unwrap_or_default()
-    } else {
-        let chunk = bytes.to_vec();
-        snapshot
-            .iter()
-            .filter_map(|(sub_id, channel)| channel.send(chunk.clone()).err().map(|_| *sub_id))
-            .collect()
-    };
+    let dead: Vec<u32> = snapshot
+        .iter()
+        .filter_map(|(sub_id, channel)| {
+            channel
+                .send(Response::new(bytes.to_vec()))
+                .err()
+                .map(|_| *sub_id)
+        })
+        .collect();
     observer.observe_latency("pty.channel_send", send_started.elapsed());
     if !dead.is_empty() {
         let _ = observer.increment_counter("pty.channel_send_errors", dead.len() as u64);
@@ -1817,7 +1814,7 @@ fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
     notify_task_process_exited(pty, status);
     if let Ok(subscribers) = pty.subscribers.lock() {
         for channel in subscribers.values() {
-            let _ = channel.send(Vec::new());
+            let _ = channel.send(Response::new(Vec::new()));
         }
     }
     if pty.agent_kind.is_some() && pty.report_exit.load(Ordering::Acquire) {
@@ -2932,9 +2929,9 @@ async fn spawn_prepared_pty(
 }
 
 fn insert_subscriber(
-    subscribers: &mut HashMap<u32, Channel<Vec<u8>>>,
+    subscribers: &mut HashMap<u32, Channel<Response>>,
     next_id: &AtomicU32,
-    on_event: Channel<Vec<u8>>,
+    on_event: Channel<Response>,
 ) -> AppResult<u32> {
     if subscribers.len() >= MAX_PTY_SUBSCRIBERS_PER_PTY {
         return Err(AppError::Pty("PTY subscriber capacity reached".into()));
@@ -2959,7 +2956,7 @@ fn insert_subscriber(
 pub fn pty_subscribe(
     manager: State<'_, PtyManager>,
     id: u32,
-    on_event: Channel<Vec<u8>>,
+    on_event: Channel<Response>,
 ) -> AppResult<u32> {
     let pty = manager
         .ptys
@@ -3208,7 +3205,7 @@ fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
 pub fn pty_attach(
     manager: State<'_, PtyManager>,
     id: u32,
-    on_event: Channel<Vec<u8>>,
+    on_event: Channel<Response>,
 ) -> AppResult<AttachResult> {
     let observer = global_observability();
     let operation = observer.slow_operation(
@@ -3274,7 +3271,7 @@ pub fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()>
     {
         let subscribers = pty.subscribers.lock().map_err(pty_err)?;
         for (sub_id, channel) in subscribers.iter() {
-            if channel.send(RESET_MODES.to_vec()).is_err() {
+            if channel.send(Response::new(RESET_MODES.to_vec())).is_err() {
                 dead.push(*sub_id);
             }
         }
@@ -3411,7 +3408,7 @@ mod tests {
             .map(|value| value.to_string_lossy().into_owned())
     }
 
-    fn output_channel() -> tauri::ipc::Channel<Vec<u8>> {
+    fn output_channel() -> tauri::ipc::Channel<tauri::ipc::Response> {
         tauri::ipc::Channel::new(|_| Ok(()))
     }
 
@@ -4981,7 +4978,7 @@ pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> 
         // "[process exited]" before the unmount tears them down.
         if let Ok(subs) = pty.subscribers.lock() {
             for ch in subs.values() {
-                let _ = ch.send(Vec::new());
+                let _ = ch.send(Response::new(Vec::new()));
             }
         }
         // Killing without wait() leaves zombies. Do the potentially-slow

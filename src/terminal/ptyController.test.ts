@@ -463,6 +463,23 @@ describe("PtyLifecycleController renderer subscriptions", () => {
         expect(controller.getSnapshot()).toMatchObject({ status: "running", attachmentCount: 0 });
     });
 
+    it("delivers raw IPC bytes as a view over the same buffer", async () => {
+        const { fakes, channels, options } = controllerOptions();
+        const controller = new PtyLifecycleController(options);
+        const received: PtyOutputChunk[] = [];
+        const attachment = await controller.attach((chunk) => received.push(chunk));
+        attachment.activate();
+        expect(fakes.attach).toHaveBeenCalledOnce();
+
+        const buffer = new Uint8Array([27, 91, 75]).buffer;
+        channels.bindings[0].emit(buffer as unknown as PtyOutputChunk);
+        expect(received).toHaveLength(1);
+        const chunk = received[0] as Uint8Array;
+        expect(chunk).toBeInstanceOf(Uint8Array);
+        expect(chunk.buffer).toBe(buffer);
+        expect(Array.from(chunk)).toEqual([27, 91, 75]);
+    });
+
     it("validates and freezes the opt-in shell snapshot returned by attach", async () => {
         const { fakes, options } = controllerOptions();
         fakes.attach.mockResolvedValue({

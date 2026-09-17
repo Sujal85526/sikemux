@@ -11,7 +11,7 @@ import { performanceTelemetry } from "../lib/performance";
 import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/ptyShell";
 import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
 
-type NativeChannel = Channel<number[]>;
+type NativeChannel = Channel<ArrayBuffer>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
 export type TerminalShellSemantics = "posix" | "powershell";
 
@@ -51,8 +51,9 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
 
 const nativeChannels: PtyChannelAdapter<NativeChannel> = {
     create: (onMessage) => {
-        const channel = new Channel<number[]>();
-        channel.onmessage = onMessage;
+        const channel = new Channel<ArrayBuffer>();
+        // Native output arrives as raw IPC bytes; the view shares the buffer.
+        channel.onmessage = (buffer) => onMessage(new Uint8Array(buffer));
         return {
             transport: channel,
             close: () => {
