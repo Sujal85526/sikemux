@@ -360,7 +360,10 @@ export function EditorPane({
                     return next;
                 });
                 if (cwd) {
-                    invalidate((kind, args) => (kind.startsWith("git.") || kind === "files.list") && args[0] === cwd);
+                    // The repo watcher invalidates the git resources on its own
+                    // shortly after the write; doing it here as well makes the
+                    // backend walk the repository twice for one save.
+                    invalidate((kind, args) => kind === "files.list" && args[0] === cwd);
                     void saveDoc(path, text);
                 }
                 if (isSshConfigPath(path)) invalidate((kind) => kind === "ssh.hosts");

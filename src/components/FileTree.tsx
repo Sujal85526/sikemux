@@ -8,7 +8,7 @@ import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
 import { subscribe } from "../state/bus";
 import { useResourceEnabled } from "../state/resources";
-import { gitStatusR } from "../state/resources.defs";
+import { gitOverviewR } from "../state/resources.defs";
 import { notify, reportError, swallow } from "../state/toast";
 import { confirmDialog } from "../state/dialog";
 import { registerFolderDrop } from "../state/dropRegistry";
@@ -86,14 +86,17 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
     const expandedRef = useRef(expanded);
     expandedRef.current = expanded;
 
-    const status = useResourceEnabled(active && !!cwd, gitStatusR, cwd || "");
+    // The overview already carries the status walk; asking for git_status too
+    // would make the backend walk the working tree twice per change.
+    const overview = useResourceEnabled(active && !!cwd, gitOverviewR, cwd || "");
+    const statusFiles = overview.data?.status.files;
     const gitMap = useMemo(() => {
         const m = new Map<string, GitFile>();
-        if (cwd && status.data) {
-            status.data.files.forEach((f) => m.set(joinPath(cwd, f.path), f));
+        if (cwd && statusFiles) {
+            statusFiles.forEach((f) => m.set(joinPath(cwd, f.path), f));
         }
         return m;
-    }, [cwd, status.data]);
+    }, [cwd, statusFiles]);
 
     const visibleRows = useMemo(() => {
         const rows: VisibleTreeRow[] = [];
