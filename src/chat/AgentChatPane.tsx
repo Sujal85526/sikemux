@@ -1,4 +1,16 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+    memo,
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useReducer,
+    useRef,
+    useState,
+    type CSSProperties,
+    type ReactNode,
+    type RefObject,
+} from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -889,6 +901,242 @@ function PermissionRequest({ request, busy, onReply }: { request: AcpPermissionR
     );
 }
 
+/* The composer keeps the draft to itself: a keystroke redraws these few rows
+   rather than the transcript above them. */
+function ChatComposer({
+    agent,
+    profile,
+    paneRef,
+    visible,
+    connection,
+    running,
+    steerable,
+    commands,
+    setup,
+    awaitingPermission,
+    agentLocked,
+    changingConfig,
+    changingPermissions,
+    permissionApplied,
+    permissionMode,
+    placeholder,
+    error,
+    onError,
+    onSend,
+    onConfig,
+}: {
+    agent: Agent;
+    profile?: ProviderProfile;
+    paneRef: RefObject<HTMLDivElement | null>;
+    visible: boolean;
+    connection: ChatState["connection"];
+    running: boolean;
+    steerable: boolean;
+    commands: AcpAvailableCommand[];
+    setup: Record<string, unknown>;
+    awaitingPermission: boolean;
+    agentLocked: boolean;
+    changingConfig: boolean;
+    changingPermissions: boolean;
+    permissionApplied: boolean;
+    permissionMode: string;
+    placeholder: string;
+    error: string | null;
+    onError: (message: string | null) => void;
+    onSend: (text: string, paths: string[], steerNow: boolean) => boolean;
+    onConfig: (config: SessionConfig, value: string) => void;
+}) {
+    const [draft, setDraft] = useState("");
+    const [caret, setCaret] = useState(0);
+    const [attachments, setAttachments] = useState<string[]>([]);
+    const [slashSelection, setSlashSelection] = useState(0);
+    const [slashDismissed, setSlashDismissed] = useState(false);
+    const editorRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        const element = paneRef.current;
+        if (!element) return;
+        return registerPathDrop(element, (paths) => {
+            setAttachments((current) => mergePaths(current, paths));
+            onError(null);
+            window.requestAnimationFrame(() => editorRef.current?.focus());
+        });
+    }, [onError, paneRef]);
+
+    /* A chat is focused again once its session is ready, not only when its pane
+       appears: a pane opened while the agent was still starting would otherwise
+       keep the caret wherever it was. */
+    useEffect(() => {
+        if (!visible) return;
+        const held = document.activeElement;
+        if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
+        const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
+        return () => window.cancelAnimationFrame(frame);
+    }, [connection, paneRef, visible]);
+
+    const slashToken = slashDismissed ? null : slashTokenAt(draft, caret);
+    const slashCommands = useMemo(() => {
+        if (!slashToken) return [];
+        const needle = slashToken.needle.toLowerCase();
+        return commands.filter((command) => command.name.toLowerCase().includes(needle)).slice(0, 8);
+    }, [commands, slashToken]);
+    const selected = Math.min(slashSelection, Math.max(0, slashCommands.length - 1));
+
+    const selectCommand = (command: AcpAvailableCommand) => {
+        if (!slashToken) return;
+        const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
+        const written = `/${command.name}${spaced ? " " : ""}`;
+        const position = slashToken.start + written.length;
+        setDraft(`${draft.slice(0, slashToken.start)}${written}${draft.slice(caret)}`);
+        setCaret(position);
+        setSlashDismissed(true);
+        window.requestAnimationFrame(() => {
+            const editor = editorRef.current;
+            if (!editor) return;
+            editor.focus();
+            editor.setSelectionRange(position, position);
+        });
+    };
+
+    const blocked = changingConfig || changingPermissions || !permissionApplied;
+    const drafted = Boolean(draft.trim()) || attachments.length > 0;
+
+    const send = (steerNow = false) => {
+        const text = draft.trim();
+        if ((!text && attachments.length === 0) || blocked) return;
+        if (!onSend(text, attachments, steerNow)) return;
+        setDraft("");
+        setCaret(0);
+        setSlashSelection(0);
+        setAttachments([]);
+        setSlashDismissed(false);
+    };
+
+    const chooseFiles = async () => {
+        try {
+            const selection = await open({ multiple: true, directory: false });
+            if (!selection) return;
+            setAttachments((current) => mergePaths(current, Array.isArray(selection) ? selection : [selection]));
+            window.requestAnimationFrame(() => editorRef.current?.focus());
+        } catch (failure) {
+            onError(failure instanceof Error ? failure.message : String(failure));
+        }
+    };
+
+    const permission = permissionCopyForType(agent.type, permissionMode);
+
+    return (
+        <div className="chat-composer">
+            {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={selected} onSelect={selectCommand} />}
+            {attachments.length > 0 && (
+                <div className="chat-attachments">
+                    {attachments.map((path) => (
+                        <ComposerAttachment
+                            key={path}
+                            path={path}
+                            onRemove={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}
+                        />
+                    ))}
+                </div>
+            )}
+            <textarea
+                ref={editorRef}
+                value={draft}
+                aria-label="Message agent"
+                placeholder={placeholder}
+                rows={3}
+                onChange={(event) => {
+                    setDraft(event.target.value);
+                    setCaret(event.target.selectionStart);
+                    setSlashSelection(0);
+                    setSlashDismissed(false);
+                    onError(null);
+                }}
+                onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                onKeyDown={(event) => {
+                    if (slashCommands.length > 0) {
+                        if (event.key === "ArrowDown") {
+                            event.preventDefault();
+                            setSlashSelection((current) => (current + 1) % slashCommands.length);
+                            return;
+                        }
+                        if (event.key === "ArrowUp") {
+                            event.preventDefault();
+                            setSlashSelection((current) => (current - 1 + slashCommands.length) % slashCommands.length);
+                            return;
+                        }
+                        if (event.key === "Tab" || event.key === "Enter") {
+                            event.preventDefault();
+                            selectCommand(slashCommands[selected]);
+                            return;
+                        }
+                        if (event.key === "Escape") {
+                            event.preventDefault();
+                            setSlashDismissed(true);
+                            return;
+                        }
+                    }
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        send(hasPrimaryModifier(event.nativeEvent));
+                    }
+                }}
+            />
+            {error && <div className="chat-composer-error">{error}</div>}
+            <div className="chat-composer-bar">
+                <button type="button" className="chat-composer-icon" aria-label="Add files" onClick={() => void chooseFiles()}>
+                    <IconPlus size={17} />
+                </button>
+                <button
+                    type="button"
+                    className={`chat-permission-mode tone-${permission.tone}`}
+                    disabled={connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied}
+                    title={permission.detail}
+                    onClick={() => cmd.toggleAgentSkipPermissions(agent.id)}>
+                    <IconShieldBolt size={14} />
+                    <span>{permission.label}</span>
+                </button>
+                <ComposerPickers
+                    agent={agent}
+                    profile={profile}
+                    setup={setup}
+                    agentLocked={agentLocked}
+                    disabled={connection !== "ready" || running || changingPermissions || changingConfig || awaitingPermission}
+                    onAgent={(type, profileId) => {
+                        if (agentLocked || running || awaitingPermission) return;
+                        cmd.configureEmptyAgent(agent.id, type, profileId);
+                    }}
+                    onConfig={onConfig}
+                />
+                <span className="chat-composer-spacer" />
+                {running && !drafted ? (
+                    <button
+                        type="button"
+                        className="chat-send stop"
+                        aria-label="Stop agent"
+                        onClick={() =>
+                            void acpApi
+                                .cancel(agent.id)
+                                .catch((failure: unknown) => onError(failure instanceof Error ? failure.message : String(failure)))
+                        }>
+                        <span />
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        className="chat-send"
+                        aria-label="Send message"
+                        title={running && steerable ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it` : undefined}
+                        disabled={blocked || !drafted}
+                        onClick={() => send()}>
+                        <IconArrowUp size={18} />
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export function AgentChatPane({
     agent,
     profile,
@@ -908,13 +1156,8 @@ export function AgentChatPane({
     const displayStateRef = useRef(state);
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
-    const [draft, setDraft] = useState("");
-    const [caret, setCaret] = useState(0);
-    const [attachments, setAttachments] = useState<string[]>([]);
     const [queued, setQueued] = useState<QueuedMessage[]>([]);
     const queuedCount = useRef(0);
-    const [slashSelection, setSlashSelection] = useState(0);
-    const [slashDismissed, setSlashDismissed] = useState(false);
     const [composerError, setComposerError] = useState<string | null>(null);
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
     const [stoppingTasks, setStoppingTasks] = useState<string[]>([]);
@@ -927,7 +1170,6 @@ export function AgentChatPane({
     const stickToBottomRef = useRef(true);
     const lastScrollTopRef = useRef(0);
     const lastGestureRef = useRef(0);
-    const editorRef = useRef<HTMLTextAreaElement>(null);
     const queuedUpdatesRef = useRef<[string, Record<string, unknown>][]>([]);
     const updateFrameRef = useRef<number | null>(null);
     const updateTimerRef = useRef<number | null>(null);
@@ -997,27 +1239,6 @@ export function AgentChatPane({
         setReconnectAttempt(0);
         setRestartKey((value) => value + 1);
     }, []);
-
-    useEffect(() => {
-        const element = paneRef.current;
-        if (!element) return;
-        return registerPathDrop(element, (paths) => {
-            setAttachments((current) => mergePaths(current, paths));
-            setComposerError(null);
-            window.requestAnimationFrame(() => editorRef.current?.focus());
-        });
-    }, []);
-
-    /* A chat is focused again once its session is ready, not only when its pane
-       appears: a pane opened while the agent was still starting would otherwise
-       keep the caret wherever it was. */
-    useEffect(() => {
-        if (!visible) return;
-        const held = document.activeElement;
-        if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
-        const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
-        return () => window.cancelAnimationFrame(frame);
-    }, [state.connection, visible]);
 
     useEffect(() => {
         if (!active) return;
@@ -1226,33 +1447,6 @@ export function AgentChatPane({
     }, [displayState.messages.length, displayState.revision, pinToBottom, visible]);
 
     const steerable = state.capabilities.steering === true;
-    const drafted = Boolean(draft.trim()) || attachments.length > 0;
-
-    const slashToken = useMemo(() => (slashDismissed ? null : slashTokenAt(draft, caret)), [caret, draft, slashDismissed]);
-
-    const slashCommands = useMemo(() => {
-        if (!slashToken) return [];
-        const needle = slashToken.needle.toLowerCase();
-        return state.commands.filter((command) => command.name.toLowerCase().includes(needle)).slice(0, 8);
-    }, [slashToken, state.commands]);
-
-    useEffect(() => setSlashSelection(0), [draft]);
-
-    const selectCommand = (command: AcpAvailableCommand) => {
-        if (!slashToken) return;
-        const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
-        const written = `/${command.name}${spaced ? " " : ""}`;
-        const position = slashToken.start + written.length;
-        setDraft(`${draft.slice(0, slashToken.start)}${written}${draft.slice(caret)}`);
-        setCaret(position);
-        setSlashDismissed(true);
-        window.requestAnimationFrame(() => {
-            const editor = editorRef.current;
-            if (!editor) return;
-            editor.focus();
-            editor.setSelectionRange(position, position);
-        });
-    };
 
     /* Steering stops whatever the agent has in flight so it reads this message
        now, so a message only goes this way when it is asked to. */
@@ -1267,30 +1461,17 @@ export function AgentChatPane({
         }
     };
 
-    const send = async (steerNow = false) => {
-        const text = draft.trim();
-        const ready = state.connection === "ready";
-        if (
-            (!text && attachments.length === 0) ||
-            configPending.current ||
-            changingPermissions ||
-            (ready && permissionMode !== appliedPermissionMode)
-        )
-            return;
+    /** Says whether the composer may clear what it just handed over. */
+    const send = (text: string, paths: string[], steerNow: boolean): boolean => {
         const commandName = text.match(/^\/([^\s]+)/)?.[1];
         if (commandName && state.commands.length > 0 && !state.commands.some((command) => command.name === commandName)) {
             setComposerError(`/${commandName} is not available in this session`);
-            return;
+            return false;
         }
-        const paths = [...attachments];
-        setDraft("");
-        setCaret(0);
-        setAttachments([]);
         setComposerError(null);
-        setSlashDismissed(false);
-        if (ready && !state.running) {
-            await promptNow(text, paths);
-            return;
+        if (state.connection === "ready" && !state.running) {
+            void promptNow(text, paths);
+            return true;
         }
 
         /* Written mid-turn, or while the session is still coming up: it waits
@@ -1298,21 +1479,11 @@ export function AgentChatPane({
         queuedCount.current += 1;
         const message: QueuedMessage = { id: `queued-${queuedCount.current}`, text, paths };
         if (steerNow && steerable && state.running) {
-            await steer(message);
-            return;
+            void steer(message);
+            return true;
         }
         setQueued((current) => [...current, message]);
-    };
-
-    const chooseFiles = async () => {
-        try {
-            const selected = await open({ multiple: true, directory: false });
-            if (!selected) return;
-            setAttachments((current) => mergePaths(current, Array.isArray(selected) ? selected : [selected]));
-            window.requestAnimationFrame(() => editorRef.current?.focus());
-        } catch (error) {
-            setComposerError(error instanceof Error ? error.message : String(error));
-        }
+        return true;
     };
 
     const stopTask = async (taskId: string) => {
@@ -1338,7 +1509,6 @@ export function AgentChatPane({
         }
     };
 
-    const permission = permissionCopyForType(agent.type, permissionMode);
     const changeConfig = async (config: SessionConfig, value: string) => {
         if (configPending.current || state.running || changingPermissions) return;
         configPending.current = true;
@@ -1374,6 +1544,7 @@ export function AgentChatPane({
         return null;
     }, [displayState.messages]);
     const subagents = useMemo(() => runningSubagents(displayState.messages), [displayState.messages]);
+    const plan = useMemo(() => (displayState.plan === null ? null : formatDetail(displayState.plan)), [displayState.plan]);
     const connecting = connectingLabel(displayState.connection);
     /* A permission card already says what the turn is waiting on, so a spinner
        beside it would only compete with it. */
@@ -1482,10 +1653,10 @@ export function AgentChatPane({
                         })}
                     </div>
                     {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} />}
-                    {displayState.plan !== null && (
+                    {plan !== null && (
                         <details className="chat-plan">
                             <summary>Plan</summary>
-                            <pre>{formatDetail(displayState.plan)}</pre>
+                            <pre>{plan}</pre>
                         </details>
                     )}
                     {displayState.permissions.map((request) => (
@@ -1545,127 +1716,28 @@ export function AgentChatPane({
                     onSteer={(message) => void steer(message)}
                     onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
                 />
-                <div className="chat-composer">
-                    {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={slashSelection} onSelect={selectCommand} />}
-                    {attachments.length > 0 && (
-                        <div className="chat-attachments">
-                            {attachments.map((path) => (
-                                <ComposerAttachment
-                                    key={path}
-                                    path={path}
-                                    onRemove={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}
-                                />
-                            ))}
-                        </div>
-                    )}
-                    <textarea
-                        ref={editorRef}
-                        value={draft}
-                        aria-label="Message agent"
-                        placeholder={composerPlaceholder}
-                        rows={3}
-                        onChange={(event) => {
-                            setDraft(event.target.value);
-                            setCaret(event.target.selectionStart);
-                            setComposerError(null);
-                            setSlashDismissed(false);
-                        }}
-                        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-                        onKeyDown={(event) => {
-                            if (slashCommands.length > 0) {
-                                if (event.key === "ArrowDown") {
-                                    event.preventDefault();
-                                    setSlashSelection((current) => (current + 1) % slashCommands.length);
-                                    return;
-                                }
-                                if (event.key === "ArrowUp") {
-                                    event.preventDefault();
-                                    setSlashSelection((current) => (current - 1 + slashCommands.length) % slashCommands.length);
-                                    return;
-                                }
-                                if (event.key === "Tab" || event.key === "Enter") {
-                                    event.preventDefault();
-                                    selectCommand(slashCommands[slashSelection]);
-                                    return;
-                                }
-                                if (event.key === "Escape") {
-                                    event.preventDefault();
-                                    setSlashDismissed(true);
-                                    return;
-                                }
-                            }
-                            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                                event.preventDefault();
-                                void send(hasPrimaryModifier(event.nativeEvent));
-                            }
-                        }}
-                    />
-                    {composerError && <div className="chat-composer-error">{composerError}</div>}
-                    <div className="chat-composer-bar">
-                        <button type="button" className="chat-composer-icon" aria-label="Add files" onClick={() => void chooseFiles()}>
-                            <IconPlus size={17} />
-                        </button>
-                        <button
-                            type="button"
-                            className={`chat-permission-mode tone-${permission.tone}`}
-                            disabled={
-                                state.connection !== "ready" ||
-                                changingConfig ||
-                                state.running ||
-                                state.permissions.length > 0 ||
-                                changingPermissions ||
-                                permissionMode !== appliedPermissionMode
-                            }
-                            title={permission.detail}
-                            onClick={() => cmd.toggleAgentSkipPermissions(agent.id)}>
-                            <IconShieldBolt size={14} />
-                            <span>{permission.label}</span>
-                        </button>
-                        <ComposerPickers
-                            agent={agent}
-                            profile={profile}
-                            setup={state.setup}
-                            agentLocked={agentLockedRef.current}
-                            disabled={
-                                state.connection !== "ready" || state.running || changingPermissions || changingConfig || state.permissions.length > 0
-                            }
-                            onAgent={(type, profileId) => {
-                                if (agentLockedRef.current || state.running || state.permissions.length > 0) return;
-                                cmd.configureEmptyAgent(agent.id, type, profileId);
-                            }}
-                            onConfig={(config, value) => void changeConfig(config, value)}
-                        />
-                        <span className="chat-composer-spacer" />
-                        {state.running && !drafted ? (
-                            <button
-                                type="button"
-                                className="chat-send stop"
-                                aria-label="Stop agent"
-                                onClick={() =>
-                                    void acpApi
-                                        .cancel(agent.id)
-                                        .catch((error: unknown) => setComposerError(error instanceof Error ? error.message : String(error)))
-                                }>
-                                <span />
-                            </button>
-                        ) : (
-                            <button
-                                type="button"
-                                className="chat-send"
-                                aria-label="Send message"
-                                title={state.running && steerable ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it` : undefined}
-                                disabled={
-                                    changingConfig ||
-                                    changingPermissions ||
-                                    (state.connection === "ready" && permissionMode !== appliedPermissionMode) ||
-                                    (!draft.trim() && attachments.length === 0)
-                                }
-                                onClick={() => void send()}>
-                                <IconArrowUp size={18} />
-                            </button>
-                        )}
-                    </div>
-                </div>
+                <ChatComposer
+                    agent={agent}
+                    profile={profile}
+                    paneRef={paneRef}
+                    visible={visible}
+                    connection={state.connection}
+                    running={state.running}
+                    steerable={steerable}
+                    commands={state.commands}
+                    setup={state.setup}
+                    awaitingPermission={state.permissions.length > 0}
+                    agentLocked={agentLockedRef.current}
+                    changingConfig={changingConfig}
+                    changingPermissions={changingPermissions}
+                    permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
+                    permissionMode={permissionMode}
+                    placeholder={composerPlaceholder}
+                    error={composerError}
+                    onError={setComposerError}
+                    onSend={send}
+                    onConfig={changeConfig}
+                />
             </div>
             <div className="chat-drop-target" aria-hidden="true">
                 <IconFile size={22} />
