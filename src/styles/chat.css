@@ -45,8 +45,13 @@
 .agent-view-switch {
     display: flex;
     align-items: center;
-    gap: 2px;
     height: var(--control-h);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--void) 46%, transparent);
+    /* The halves fill the capsule edge to edge, so the clip is what rounds
+       their outer corners. */
+    overflow: hidden;
 }
 
 .agent-view-switch button {
@@ -56,17 +61,12 @@
     gap: 5px;
     height: 100%;
     padding: 0 10px;
-    /* Transparent until pressed, so the button keeps the same box as the
-       pills beside it whether or not its border shows. */
-    border: 1px solid transparent;
-    border-radius: var(--radius-control);
     color: var(--ink-faint);
     font-family: var(--ui);
     font-size: 10.5px;
     transition:
         color 100ms,
-        background 100ms,
-        border-color 100ms;
+        background 100ms;
 }
 
 .agent-view-switch button:hover:not(:disabled) {
@@ -74,7 +74,6 @@
 }
 
 .agent-view-switch button[aria-pressed="true"] {
-    border-color: var(--line);
     color: var(--ink);
     background: var(--rail-2);
 }
