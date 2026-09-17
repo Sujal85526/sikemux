@@ -122,7 +122,7 @@ fi
 # proves the two agree: the copy built beside it is signed without the hardened
 # runtime and starts whether or not the bundle would. An empty agent id is the
 # earliest thing it checks, so reaching that message means Python itself loaded.
-BROWSER_START="$(SIKEMUX_BROWSER_AGENT_ID= "$BROWSER_EXECUTABLE" 2>&1 || true)"
+BROWSER_START="$(SIKEMUX_BROWSER_AGENT_ID='' "$BROWSER_EXECUTABLE" 2>&1 || true)"
 if ! grep -Fq "Missing SIKEMUX_BROWSER_AGENT_ID" <<<"$BROWSER_START"; then
   echo "$BROWSER_START" >&2
   fail "bundled browser sidecar does not start"
