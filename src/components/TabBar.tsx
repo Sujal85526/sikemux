@@ -32,6 +32,20 @@ export interface TabDescriptor {
 
 export type TabVariant = "editor" | "agent" | "browser" | "stack";
 
+/**
+ * Brings a tab into view by scrolling the strip and only the strip.
+ * `scrollIntoView` scrolls every scrollable ancestor as well, and whatever room
+ * the strip runs out of it takes out of the stage the strip sits on, which
+ * leaves the tabs and the window under them parked to one side for good.
+ */
+function reveal(strip: HTMLElement | null, tab: HTMLElement | undefined): void {
+    if (!strip || !tab || !strip.scrollBy) return;
+    const edge = strip.getBoundingClientRect();
+    const box = tab.getBoundingClientRect();
+    const off = box.left < edge.left ? box.left - edge.left : box.right > edge.right ? box.right - edge.right : 0;
+    if (off !== 0) strip.scrollBy({ left: off, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+}
+
 interface TabBarProps {
     variant: TabVariant;
     tabs: TabDescriptor[];
@@ -74,13 +88,9 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
 
     useLayoutEffect(() => {
         if (activeId === undefined) return;
-        // jsdom has no `scrollIntoView`, and a virtualized strip may not have
-        // mounted the pill yet — the virtualizer above has it roughly in view.
-        tabRefs.current.get(activeId)?.scrollIntoView?.({
-            behavior: prefersReducedMotion() ? "auto" : "smooth",
-            block: "nearest",
-            inline: "nearest",
-        });
+        // A virtualized strip may not have mounted the pill yet — the
+        // virtualizer above has it roughly in view.
+        reveal(scrollRef.current, tabRefs.current.get(activeId));
     }, [activeId]);
 
     const focusTabAt = (index: number) => {
@@ -88,9 +98,11 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
         if (!tab) return;
         onSelect(tab.id);
         if (virtualized) tabVirtualizer.scrollToIndex(index, { align: "auto" });
+        // Focusing brings the tab into view the same way `scrollIntoView` does,
+        // ancestors and all, so the strip is left to reveal it on its own.
         const element = tabRefs.current.get(tab.id);
-        if (element) element.focus();
-        else requestAnimationFrame(() => tabRefs.current.get(tab.id)?.focus());
+        if (element) element.focus({ preventScroll: true });
+        else requestAnimationFrame(() => tabRefs.current.get(tab.id)?.focus({ preventScroll: true }));
     };
 
     const virtualItems = virtualized ? tabVirtualizer.getVirtualItems() : [];
@@ -140,7 +152,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                                         const next = tabs[index + 1] ?? tabs[index - 1];
                                         if (virtualized && next) tabVirtualizer.scrollToIndex(tabs.indexOf(next), { align: "auto" });
                                         onClose(t.id);
-                                        if (next) requestAnimationFrame(() => tabRefs.current.get(next.id)?.focus());
+                                        if (next) requestAnimationFrame(() => tabRefs.current.get(next.id)?.focus({ preventScroll: true }));
                                     }
                                     if (event.shiftKey && event.key === "F10" && buildMenu) {
                                         event.preventDefault();
@@ -151,7 +163,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                                 aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
                                 className={`tab${t.active ? " active" : ""}`}
                                 onClick={(event) => {
-                                    event.currentTarget.focus();
+                                    event.currentTarget.focus({ preventScroll: true });
                                     onSelect(t.id);
                                 }}
                                 onContextMenu={

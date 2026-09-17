@@ -682,8 +682,11 @@
     --window-card-gap: var(--space-3);
     /* The track slides its neighbouring screens in from off stage, so the stage
        has to clip them. The clip cannot live on the track itself: a transformed
-       box carries its own overflow, and the visible window would slide with it. */
-    overflow: hidden;
+       box carries its own overflow, and the visible window would slide with it.
+       Clipped rather than hidden, because a hidden box still scrolls: bringing
+       the last tab of the strip into view would drag the whole stage sideways,
+       and nothing would ever put it back. */
+    overflow: clip;
 }
 /* A session whose surfaces all come from the rails shows no strip, and then the
    screens have nothing to start below. */
@@ -723,7 +726,9 @@
        content behind a frame that stays put. */
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
-    overflow: hidden;
+    /* Clipped for the same reason the stage is: a card is not a thing that
+       scrolls, so nothing focused inside it may push its contents sideways. */
+    overflow: clip;
     /* The card is already a stacking context while it slides, because a pan
        transforms it. Stated outright so the field inside it sits under the
        panes the same way standing still as it does mid-swipe. */
