@@ -26,6 +26,10 @@ vi.mock("@xterm/xterm", () => ({
             mocks.terminals.push(this);
         }
 
+        write(_data: unknown, done?: () => void) {
+            done?.();
+        }
+
         loadAddon() {}
         open(host: HTMLElement) {
             host.append(this.element);
@@ -39,7 +43,6 @@ vi.mock("@xterm/xterm", () => ({
         attachCustomWheelEventHandler() {}
         attachCustomKeyEventHandler() {}
         refresh() {}
-        write() {}
         scrollToBottom() {}
         focus() {}
         getSelection() {
@@ -166,5 +169,37 @@ describe("useXterm renderer boot", () => {
         await act(async () => vi.advanceTimersByTimeAsync(0));
 
         expect((view.container.firstElementChild as HTMLElement).dataset.terminalRenderer).toBe("webgl");
+    });
+
+    it("acks the bytes the native channel delivered, not the replayed snapshot", async () => {
+        const ack = vi.fn();
+        let deliver: (chunk: Uint8Array) => void = () => {};
+        const controller = {
+            start: vi.fn().mockResolvedValue(7),
+            resize: vi.fn().mockResolvedValue(undefined),
+            attach: vi.fn().mockImplementation((listener: (chunk: Uint8Array) => void) => {
+                deliver = listener;
+                return Promise.resolve({
+                    snapshot: new Uint8Array([1, 2, 3, 4]),
+                    alternateScreen: false,
+                    shell: null,
+                    activate: vi.fn(),
+                    ack,
+                    detach: vi.fn().mockResolvedValue(undefined),
+                });
+            }),
+            write: vi.fn().mockResolvedValue(undefined),
+        } as unknown as NativePtyController;
+
+        render(<Harness controller={controller} onExit={vi.fn()} />);
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+
+        // The snapshot came back from the attach call, so it owes nothing.
+        expect(ack).toHaveBeenCalledWith(0);
+
+        ack.mockClear();
+        act(() => deliver(new Uint8Array(64)));
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(ack).toHaveBeenCalledWith(64);
     });
 });

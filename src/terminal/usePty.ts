@@ -63,6 +63,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
     kill: (id) => invoke<void>("pty_kill", { id }),
     attach: async (id, channel) => decodeAttachResponse(await invoke<ArrayBuffer>("pty_attach", { id, onEvent: channel })),
     detach: (id, subId) => invoke<void>("pty_unsubscribe", { id, subId }),
+    ack: (id, subId, bytes) => invoke<void>("pty_ack", { id, subId, bytes }),
 };
 
 const nativeChannels: PtyChannelAdapter<NativeChannel> = {

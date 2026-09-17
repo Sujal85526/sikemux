@@ -33,6 +33,8 @@ export interface PtyApi<ChannelTransport, Context = unknown> {
     kill(id: number): Promise<void>;
     attach(id: number, channel: ChannelTransport): Promise<PtyAttachResult>;
     detach(id: number, subId: number): Promise<void>;
+    /** Reports bytes this subscription has finished writing to its renderer. */
+    ack(id: number, subId: number, bytes: number): Promise<void>;
 }
 
 export interface PtyChannelBinding<ChannelTransport> {
@@ -59,6 +61,7 @@ export type PtyOperation =
     | "write"
     | "resize"
     | "attach"
+    | "ack"
     | "detach"
     | "kill"
     | "exit"
@@ -91,6 +94,12 @@ export interface PtyAttachment {
     readonly shell: PtyShellMetadataSnapshot | null;
     /** Release buffered post-snapshot deltas to the renderer in exact order. */
     activate(): void;
+    /**
+     * Report bytes the renderer has finished writing. The native reader pauses
+     * once too many delivered bytes are outstanding, which pushes back on the
+     * child process instead of growing an unbounded queue.
+     */
+    ack(bytes: number): void;
     /** Drop only this renderer subscription; the headless PTY keeps running. */
     detach(): Promise<void>;
     toJSON(): never;
@@ -685,6 +694,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             alternateScreen: attached.alternateScreen,
             shell,
             activate: () => this.activateAttachment(state),
+            ack: (bytes: number) => this.ackAttachment(state, bytes),
             detach: () => this.detachAttachment(state),
             toJSON: (): never => {
                 throw new TypeError("PTY attachments contain runtime output and cannot be serialized");
@@ -909,6 +919,14 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         if (state.detached) return;
         state.active = true;
         this.drainOutput(state);
+    }
+
+    private ackAttachment(state: AttachmentState<ChannelTransport>, bytes: number): void {
+        const subId = state.subId;
+        if (state.detached || subId === null || !Number.isSafeInteger(bytes) || bytes <= 0) return;
+        void callAsPromise(() => this.api.ack(state.ptyId, subId, bytes)).catch((error: unknown) => {
+            this.reportError("ack", error);
+        });
     }
 
     private receiveOutput(state: AttachmentState<ChannelTransport>, received: PtyOutputChunk): void {

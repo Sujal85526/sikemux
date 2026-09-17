@@ -26,6 +26,7 @@
     "allow-task-spawn",
     "allow-pty-subscribe",
     "allow-pty-unsubscribe",
+    "allow-pty-ack",
     "allow-pty-attach",
     "allow-pty-write",
     "allow-pty-resize",

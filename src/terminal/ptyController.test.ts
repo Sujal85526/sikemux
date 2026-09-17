@@ -73,8 +73,9 @@ function fakeApi() {
         return { subId: 7, snapshot: new Uint8Array([1, 2]), alternateScreen: false };
     });
     const detach = vi.fn(async (_id: number, _subId: number) => {});
-    const api = { spawn, write, resize, kill, attach, detach } satisfies PtyApi<FakeChannel, TestContext>;
-    return { api, spawn, write, resize, kill, attach, detach };
+    const ack = vi.fn(async (_id: number, _subId: number, _bytes: number) => {});
+    const api = { spawn, write, resize, kill, attach, detach, ack } satisfies PtyApi<FakeChannel, TestContext>;
+    return { api, spawn, write, resize, kill, attach, detach, ack };
 }
 
 function controllerOptions(overrides: Partial<ConstructorParameters<typeof PtyLifecycleController<FakeChannel, TestContext>>[0]> = {}) {
@@ -482,6 +483,23 @@ describe("PtyLifecycleController renderer subscriptions", () => {
         expect(chunk).toBeInstanceOf(Uint8Array);
         expect(chunk.buffer).toBe(buffer);
         expect(Array.from(chunk)).toEqual([27, 91, 75]);
+    });
+
+    it("acks written bytes against the subscription and stops once detached", async () => {
+        const { fakes, options } = controllerOptions();
+        const controller = new PtyLifecycleController(options);
+        const attachment = await controller.attach(vi.fn());
+
+        attachment.ack(4_096);
+        await vi.waitFor(() => expect(fakes.ack).toHaveBeenCalledWith(42, 7, 4_096));
+
+        attachment.ack(0);
+        attachment.ack(-1);
+        expect(fakes.ack).toHaveBeenCalledOnce();
+
+        await attachment.detach();
+        attachment.ack(4_096);
+        expect(fakes.ack).toHaveBeenCalledOnce();
     });
 
     it("validates and freezes the opt-in shell snapshot returned by attach", async () => {

@@ -353,6 +353,9 @@ export function useXterm(opts: {
                 let initialReplayOutputPending = false;
                 const outputPending: Uint8Array[] = [];
                 let outputPendingBytes = 0;
+                // Only bytes the native reader charged against this
+                // subscription are worth acking back to it.
+                let pendingChannelBytes = 0;
                 let outputQueuedAt: number | null = null;
                 let resyncing = false;
                 let attached: PtyAttachment | null = null;
@@ -432,6 +435,8 @@ export function useXterm(opts: {
                     if (outputQueuedAt !== null) performanceTelemetry.recordLatency("terminal.output.queue", flushStarted - outputQueuedAt);
                     outputQueuedAt = null;
                     const flushing = outputPending.splice(0);
+                    const ackBytes = pendingChannelBytes;
+                    pendingChannelBytes = 0;
                     const chunkCount = flushing.length;
                     let total = 0;
                     for (const chunk of flushing) total += chunk.length;
@@ -456,6 +461,7 @@ export function useXterm(opts: {
                     const writeStarted = performance.now();
                     term.write(merged, () => {
                         outputBusy = false;
+                        attached?.ack(ackBytes);
                         performanceTelemetry.recordLatency("terminal.xterm.write", performance.now() - writeStarted);
                         const frameStarted = performance.now();
                         scheduleNextFrame(() => {
@@ -496,6 +502,7 @@ export function useXterm(opts: {
                     resyncing = true;
                     outputPending.length = 0;
                     outputPendingBytes = 0;
+                    pendingChannelBytes = 0;
                     outputQueuedAt = null;
                     performanceTelemetry.setGauge("terminal.last-queue-bytes", 0);
                     performanceTelemetry.incrementCounter("terminal.renderer-resyncs");
@@ -507,7 +514,7 @@ export function useXterm(opts: {
                     // attachment is released before another animation frame queues.
                     queueMicrotask(() => cleanup());
                 };
-                const writeBytes = (bytes: Uint8Array) => {
+                const writeBytes = (bytes: Uint8Array, fromChannel = false) => {
                     if (bytes.length === 0 || resyncing) return;
                     if (outputPending.length >= MAX_RENDERER_BACKLOG_CHUNKS || outputPendingBytes + bytes.length > MAX_RENDERER_BACKLOG_BYTES) {
                         requestRendererResync();
@@ -516,6 +523,7 @@ export function useXterm(opts: {
                     if (outputPending.length === 0) outputQueuedAt = performance.now();
                     outputPending.push(bytes);
                     outputPendingBytes += bytes.length;
+                    if (fromChannel) pendingChannelBytes += bytes.length;
                     performanceTelemetry.setGauge("terminal.last-queue-bytes", outputPendingBytes);
                     scheduleOutput();
                 };
@@ -527,7 +535,7 @@ export function useXterm(opts: {
                         if (!disposed && !closing) onExitRef.current?.();
                         return;
                     }
-                    writeBytes(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk));
+                    writeBytes(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk), true);
                 };
 
                 try {
@@ -557,7 +565,7 @@ export function useXterm(opts: {
                 serializedNormalRef.current = null;
                 const serializedNormal = replaySerializedNormalBuffer(savedNormal, pid, alternateScreen);
                 if (serializedNormal !== null) writeBytes(encoder.encode(serializedNormal));
-                if (snapshot.length > 0) writeChunk(snapshot);
+                if (snapshot.length > 0) writeBytes(snapshot);
                 attached.activate();
                 initialReplayOutputPending = outputPending.length > 0;
                 if (!initialReplayOutputPending) replayScrollState = completeInitialReplay(replayScrollState).state;
@@ -656,6 +664,7 @@ export function useXterm(opts: {
                     outputFrame = null;
                     if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);
                     outputPendingBytes = 0;
+                    pendingChannelBytes = 0;
                     outputQueuedAt = null;
                     performanceTelemetry.setGauge("terminal.last-queue-bytes", 0);
                     detachAttachment();

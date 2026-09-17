@@ -13,6 +13,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "task_spawn",
     "pty_subscribe",
     "pty_unsubscribe",
+    "pty_ack",
     "pty_attach",
     "pty_write",
     "pty_resize",

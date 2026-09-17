@@ -105,7 +105,10 @@ struct Pty {
     /// Live xterm subscribers. Empty = PTY runs invisibly.
     /// Each chunk crosses the IPC as raw bytes, so JS receives an
     /// ArrayBuffer instead of a JSON array of numbers.
-    subscribers: Mutex<HashMap<u32, Channel<Response>>>,
+    subscribers: Mutex<HashMap<u32, Subscriber>>,
+    /// Signalled by `pty_ack` whenever a renderer reports progress. The reader
+    /// waits on this while a subscriber is too far behind.
+    flow_control: tokio::sync::Notify,
     /// Millis-since-process-start of the last chunk processed. The idle
     /// sweeper reads this without contending with the reader because it's
     /// an atomic, not a Mutex.
@@ -812,6 +815,12 @@ const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
 #[cfg(unix)]
 const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
 const SLOW_BROADCAST: Duration = Duration::from_millis(8);
+/// How many bytes one renderer may owe before the reader stops pulling from
+/// the child. The kernel PTY buffer then applies the backpressure for us.
+const MAX_UNACKED_BYTES: usize = 512 * 1024;
+/// A renderer answers within a frame, so reaching this means it stopped
+/// answering at all. Write its debt off rather than stalling the child.
+const FLOW_CONTROL_WAIT: Duration = Duration::from_secs(1);
 /// One in this many output chunks carries full timing instrumentation.
 const OBSERVED_BROADCASTS: u64 = 64;
 
@@ -1193,7 +1202,80 @@ impl vt100::Callbacks for SemanticCallbacks {
 }
 
 type SemanticParser = vt100::Parser<SemanticCallbacks>;
-type SubscriberSnapshot = Vec<(u32, Channel<Response>)>;
+type SubscriberSnapshot = Vec<(u32, Subscriber)>;
+
+/// One attached xterm, plus how many bytes it has been sent but has not yet
+/// reported writing. The renderer reports progress through `pty_ack`.
+#[derive(Clone)]
+struct Subscriber {
+    channel: Channel<Response>,
+    unacked: Arc<AtomicUsize>,
+}
+
+impl Subscriber {
+    fn new(channel: Channel<Response>) -> Self {
+        Self {
+            channel,
+            unacked: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Sends one chunk and charges it against this subscriber's credit.
+    /// Returns false when the channel is gone.
+    fn send(&self, bytes: &[u8]) -> bool {
+        if self.channel.send(Response::new(bytes.to_vec())).is_err() {
+            return false;
+        }
+        self.unacked.fetch_add(bytes.len(), Ordering::AcqRel);
+        true
+    }
+
+    fn release(&self, bytes: usize) {
+        let _ = self
+            .unacked
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |outstanding| {
+                Some(outstanding.saturating_sub(bytes))
+            });
+    }
+
+    fn unacked(&self) -> usize {
+        self.unacked.load(Ordering::Acquire)
+    }
+}
+
+fn subscribers_over_budget(subscribers: &HashMap<u32, Subscriber>) -> bool {
+    subscribers
+        .values()
+        .any(|subscriber| subscriber.unacked() >= MAX_UNACKED_BYTES)
+}
+
+/// Holds the reader while a renderer is behind. Returns false when the wait
+/// ran out, which means nobody is acking any more and the child must not be
+/// held hostage to a renderer that will never answer.
+async fn await_subscriber_credit<F: Fn() -> bool>(
+    flow_control: &tokio::sync::Notify,
+    over_budget: F,
+) -> bool {
+    if !over_budget() {
+        return true;
+    }
+    loop {
+        // Register before re-reading the budget so an ack that lands in
+        // between still wakes this wait.
+        let notified = flow_control.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if !over_budget() {
+            return true;
+        }
+        if tokio::time::timeout(FLOW_CONTROL_WAIT, notified)
+            .await
+            .is_err()
+        {
+            return false;
+        }
+    }
+}
 
 #[cfg(test)]
 fn semantic_parser(rows: u16, cols: u16, scrollback: usize) -> SemanticParser {
@@ -1826,7 +1908,10 @@ fn fan_out_output(pty: &Pty, bytes: &[u8], sampled: bool) -> SpanOutcome {
         }
         pty.activity_revision.fetch_add(1, Ordering::AcqRel);
         let subscribers = match pty.subscribers.lock() {
-            Ok(subs) => subs.iter().map(|(id, ch)| (*id, ch.clone())).collect(),
+            Ok(subs) => subs
+                .iter()
+                .map(|(id, subscriber)| (*id, subscriber.clone()))
+                .collect(),
             Err(_) => Vec::new(),
         };
         (subscribers, shell_batch)
@@ -1853,12 +1938,7 @@ fn fan_out_output(pty: &Pty, bytes: &[u8], sampled: bool) -> SpanOutcome {
     let send_started = Instant::now();
     let dead: Vec<u32> = snapshot
         .iter()
-        .filter_map(|(sub_id, channel)| {
-            channel
-                .send(Response::new(bytes.to_vec()))
-                .err()
-                .map(|_| *sub_id)
-        })
+        .filter_map(|(sub_id, subscriber)| (!subscriber.send(bytes)).then_some(*sub_id))
         .collect();
     if sampled {
         observer.observe_latency("pty.channel_send", send_started.elapsed());
@@ -1877,8 +1957,8 @@ fn fan_out_output(pty: &Pty, bytes: &[u8], sampled: bool) -> SpanOutcome {
 fn notify_process_exited(pty: &Pty, status: Option<&portable_pty::ExitStatus>) {
     notify_task_process_exited(pty, status);
     if let Ok(subscribers) = pty.subscribers.lock() {
-        for channel in subscribers.values() {
-            let _ = channel.send(Response::new(Vec::new()));
+        for subscriber in subscribers.values() {
+            subscriber.send(&[]);
         }
     }
     if pty.agent_kind.is_some() && pty.report_exit.load(Ordering::Acquire) {
@@ -2789,6 +2869,7 @@ async fn spawn_prepared_pty(
         )),
         shell_protocol: shell_metadata_enabled,
         subscribers: Mutex::new(HashMap::new()),
+        flow_control: tokio::sync::Notify::new(),
         last_activity_ms: AtomicU64::new(now_ms()),
         trimmed: AtomicBool::new(false),
         activity_key,
@@ -2866,6 +2947,19 @@ async fn spawn_prepared_pty(
         let mut buf = [0u8; OUTPUT_BATCH_BYTES];
         let mut batch = Vec::with_capacity(OUTPUT_BATCH_BYTES);
         'reader: loop {
+            // Stop pulling from the child while an attached renderer is too
+            // far behind. The kernel PTY buffer fills and the child's own
+            // write blocks, which is the backpressure we want.
+            if !await_subscriber_credit(&pty_reader.flow_control, || {
+                pty_reader
+                    .subscribers
+                    .lock()
+                    .is_ok_and(|subscribers| subscribers_over_budget(&subscribers))
+            })
+            .await
+            {
+                forgive_unacked(&pty_reader);
+            }
             batch.clear();
             let mut eof = false;
             // The first byte arrives without an artificial delay. Once output
@@ -2996,7 +3090,7 @@ async fn spawn_prepared_pty(
 }
 
 fn insert_subscriber(
-    subscribers: &mut HashMap<u32, Channel<Response>>,
+    subscribers: &mut HashMap<u32, Subscriber>,
     next_id: &AtomicU32,
     on_event: Channel<Response>,
 ) -> AppResult<u32> {
@@ -3012,7 +3106,7 @@ fn insert_subscriber(
             continue;
         }
         if let Entry::Vacant(entry) = subscribers.entry(sub_id) {
-            entry.insert(on_event);
+            entry.insert(Subscriber::new(on_event));
             return Ok(sub_id);
         }
     }
@@ -3032,6 +3126,40 @@ pub async fn pty_subscribe(
         .ok_or(AppError::BadArg("pty not found"))?;
     let mut subscribers = pty.subscribers.lock().map_err(pty_err)?;
     insert_subscriber(&mut subscribers, &NEXT_SUB_ID, on_event)
+}
+
+/// A renderer that stopped answering keeps no credit. The frontend's own
+/// backlog cap remains the last resort if it is merely slow.
+fn forgive_unacked(pty: &Pty) {
+    let Ok(subscribers) = pty.subscribers.lock() else {
+        return;
+    };
+    for subscriber in subscribers.values() {
+        subscriber.release(usize::MAX);
+    }
+    let _ = global_observability().increment_counter("pty.flow_control.abandoned", 1);
+}
+
+/// Reports how many delivered bytes a renderer has finished writing, which
+/// releases the reader to pull more from the child.
+#[tauri::command]
+pub async fn pty_ack(
+    manager: State<'_, PtyManager>,
+    id: u32,
+    sub_id: u32,
+    bytes: usize,
+) -> AppResult<()> {
+    let Some(pty) = manager.ptys.get(&id).map(|entry| entry.value().clone()) else {
+        return Ok(());
+    };
+    if let Ok(subscribers) = pty.subscribers.lock() {
+        let Some(subscriber) = subscribers.get(&sub_id) else {
+            return Ok(());
+        };
+        subscriber.release(bytes);
+    }
+    pty.flow_control.notify_waiters();
+    Ok(())
 }
 
 #[tauri::command]
@@ -3057,6 +3185,8 @@ fn unsubscribe_locked(pty: &Pty, sub_id: u32) {
         }
         Err(_) => return,
     };
+    // Whatever this renderer still owed left with it.
+    pty.flow_control.notify_waiters();
     if !emptied || pty.trimmed.load(Ordering::Acquire) {
         return;
     }
@@ -3411,8 +3541,8 @@ fn reset_modes_locked(pty: &Pty) -> AppResult<()> {
     let mut dead = Vec::new();
     {
         let subscribers = pty.subscribers.lock().map_err(pty_err)?;
-        for (sub_id, channel) in subscribers.iter() {
-            if channel.send(Response::new(RESET_MODES.to_vec())).is_err() {
+        for (sub_id, subscriber) in subscribers.iter() {
+            if !subscriber.send(RESET_MODES) {
                 dead.push(*sub_id);
             }
         }
@@ -3534,27 +3664,28 @@ mod tests {
     use super::startup_bootstrap;
     use super::{
         apply_agent_profile, attach_snapshot, attach_snapshot_with_compaction,
-        compact_parser_for_idle, configure_pty_environment, configure_shell_integration,
-        configure_task_command, detect_shell_kind, encode_attach_response, event_fingerprint,
-        insert_subscriber, parse_shell_cwd, reseed_parser, screen_scrollback_len,
-        semantic_fingerprint, semantic_parser, semantic_parser_with_shell,
-        shell_integration_requested, should_signal_process_on_drain, submits_line,
-        task_process_needs_force_backstop, task_reclamation_plan, task_retention_elapsed,
-        task_shell_arguments, validate_pty_dimensions, validate_task_environment,
-        validate_task_request, AttachResult, PtyAgentProfile, PtyCapacity, PtyContext,
-        PtyShellMetadataEvent, ShellBoundary, ShellKind, ShellPhase, ShellProtocolParser,
-        TaskExitReporter, TaskProcessExit, TaskRetentionCandidate, TaskShellPlatform, TaskSource,
-        TaskSpawnRequest, TaskSpawnResult, IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES,
-        MAX_PTY_DIMENSION, MAX_PTY_SUBSCRIBERS_PER_PTY, MAX_RETAINED_EXITED_TASK_PTYS,
-        MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES, MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES,
-        MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL,
-        TASK_EXIT_RETENTION,
+        await_subscriber_credit, compact_parser_for_idle, configure_pty_environment,
+        configure_shell_integration, configure_task_command, detect_shell_kind,
+        encode_attach_response, event_fingerprint, insert_subscriber, parse_shell_cwd,
+        reseed_parser, screen_scrollback_len, semantic_fingerprint, semantic_parser,
+        semantic_parser_with_shell, shell_integration_requested, should_signal_process_on_drain,
+        submits_line, subscribers_over_budget, task_process_needs_force_backstop,
+        task_reclamation_plan, task_retention_elapsed, task_shell_arguments,
+        validate_pty_dimensions, validate_task_environment, validate_task_request, AttachResult,
+        PtyAgentProfile, PtyCapacity, PtyContext, PtyShellMetadataEvent, ShellBoundary, ShellKind,
+        ShellPhase, ShellProtocolParser, Subscriber, TaskExitReporter, TaskProcessExit,
+        TaskRetentionCandidate, TaskShellPlatform, TaskSource, TaskSpawnRequest, TaskSpawnResult,
+        IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES, MAX_PTY_DIMENSION, MAX_PTY_SUBSCRIBERS_PER_PTY,
+        MAX_RETAINED_EXITED_TASK_PTYS, MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES,
+        MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES, MAX_TASK_ENV_TOTAL_BYTES, MAX_UNACKED_BYTES,
+        PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL, TASK_EXIT_RETENTION,
     };
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, Barrier, Mutex};
+    use std::time::Duration;
 
     fn env(command: &CommandBuilder, key: &str) -> Option<String> {
         command
@@ -3741,12 +3872,73 @@ mod tests {
         assert_eq!(subscribers.len(), MAX_PTY_SUBSCRIBERS_PER_PTY);
 
         let wrapped_next = AtomicU32::new(u32::MAX);
-        let mut wrapped = HashMap::from([(u32::MAX, output_channel())]);
+        let mut wrapped = HashMap::from([(u32::MAX, Subscriber::new(output_channel()))]);
         let wrapped_id = insert_subscriber(&mut wrapped, &wrapped_next, output_channel())
             .expect("wrap skips zero and live id");
         assert_eq!(wrapped_id, 1);
         assert!(wrapped.contains_key(&u32::MAX));
         assert!(wrapped.contains_key(&wrapped_id));
+    }
+
+    fn backlogged_subscribers() -> (Arc<Mutex<HashMap<u32, Subscriber>>>, u32) {
+        let subscribers = Arc::new(Mutex::new(HashMap::new()));
+        let next_id = AtomicU32::new(1);
+        let mut guard = subscribers.lock().expect("subscribers");
+        let sub_id =
+            insert_subscriber(&mut guard, &next_id, output_channel()).expect("first subscriber");
+        guard
+            .get(&sub_id)
+            .expect("subscriber")
+            .unacked
+            .store(MAX_UNACKED_BYTES, Ordering::Release);
+        drop(guard);
+        (subscribers, sub_id)
+    }
+
+    #[tokio::test]
+    async fn a_backlogged_subscriber_holds_the_reader_until_it_acks() {
+        let (subscribers, sub_id) = backlogged_subscribers();
+        let flow_control = Arc::new(tokio::sync::Notify::new());
+        let waiting = tokio::spawn({
+            let subscribers = subscribers.clone();
+            let flow_control = flow_control.clone();
+            async move {
+                await_subscriber_credit(&flow_control, || {
+                    subscribers_over_budget(&subscribers.lock().expect("subscribers"))
+                })
+                .await
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            !waiting.is_finished(),
+            "the reader ran while a renderer was behind"
+        );
+
+        subscribers
+            .lock()
+            .expect("subscribers")
+            .get(&sub_id)
+            .expect("subscriber")
+            .release(MAX_UNACKED_BYTES);
+        flow_control.notify_waiters();
+
+        assert!(
+            waiting.await.expect("wait task"),
+            "the ack did not resume the reader"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_renderer_that_stops_acking_does_not_hold_the_reader_forever() {
+        let (subscribers, _) = backlogged_subscribers();
+        let flow_control = tokio::sync::Notify::new();
+        let resumed = await_subscriber_credit(&flow_control, || {
+            subscribers_over_budget(&subscribers.lock().expect("subscribers"))
+        })
+        .await;
+        assert!(!resumed, "a silent renderer must not stall the child");
     }
 
     #[test]
@@ -5149,8 +5341,8 @@ pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> 
         // Notify any remaining subscribers so their xterms render
         // "[process exited]" before the unmount tears them down.
         if let Ok(subs) = pty.subscribers.lock() {
-            for ch in subs.values() {
-                let _ = ch.send(Response::new(Vec::new()));
+            for subscriber in subs.values() {
+                subscriber.send(&[]);
             }
         }
         // Killing without wait() leaves zombies. Do the potentially-slow

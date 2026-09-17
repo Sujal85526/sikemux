@@ -175,6 +175,7 @@ pub fn run() {
             pty::task_spawn,
             pty::pty_subscribe,
             pty::pty_unsubscribe,
+            pty::pty_ack,
             pty::pty_attach,
             pty::pty_write,
             pty::pty_resize,
