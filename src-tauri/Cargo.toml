@@ -65,6 +65,13 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["NSD
 objc2-web-kit = { version = "0.3", default-features = false, features = ["WKFrameInfo", "WKNavigationAction", "WKOpenPanelParameters", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKUIDelegate", "WKWebView", "WKWebViewConfiguration", "WKWindowFeatures", "block2", "objc2-app-kit"] }
 block2 = "0.6"
 
+# `make dev` runs an unoptimized build, and the crates that read git objects,
+# diff them and parse terminal output are all third party. Leaving them at the
+# debug default makes a diff take seconds to appear. Our own code stays
+# unoptimized so it still compiles quickly and reads straight in a debugger.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 # Sikemux is latency-sensitive (PTY parsing, Git walks, serialization). The
 # complete app is already small enough that runtime speed wins over a few MB.
