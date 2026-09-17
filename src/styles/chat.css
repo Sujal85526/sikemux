@@ -373,6 +373,21 @@
     padding: 9px 12px;
 }
 
+/* A patch in a fence reads like the one an edit shows: tinted rows, a sign
+   column, and the words that actually changed marked. */
+.chat-code-diff {
+    padding: 5px 0 !important;
+}
+
+.chat-markdown pre:has(.chat-code-diff) {
+    padding: 0;
+}
+
+.chat-code-diff .chat-diff-line {
+    grid-template-columns: 12px minmax(0, 1fr);
+    padding-left: 10px;
+}
+
 /* ── a table the agent wrote ──────────────────────────────────────────
  * A bordered card, like the diff and the code block beside it, with a ruled
  * grid inside. It scrolls in its own box so a wide one cannot stretch the turn.
@@ -1178,22 +1193,31 @@ button.chat-tool:hover {
     filter: brightness(1.12);
 }
 
+/* Anchored to the composer rather than to a guess at its height, so it sits
+   the same distance above it whether the draft is one line or six. */
 .chat-jump-bottom {
     position: absolute;
-    right: 20px;
-    bottom: 132px;
+    bottom: calc(100% - 6px);
+    left: 50%;
     display: grid;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     place-items: center;
     border: 1px solid var(--line);
-    border-radius: 50%;
-    background: var(--rail);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 92%), transparent);
     color: var(--ink-dim);
-    box-shadow: 0 8px 22px color-mix(in srgb, var(--void) 52%, transparent);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 52%), transparent);
+    transform: translateX(-50%);
+}
+
+.chat-jump-bottom:hover {
+    border-color: var(--acc-line);
+    color: var(--ink);
 }
 
 .chat-composer-wrap {
+    position: relative;
     padding: 0 16px 16px;
 }
 

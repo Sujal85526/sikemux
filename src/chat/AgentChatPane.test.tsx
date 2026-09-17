@@ -522,6 +522,26 @@ describe("AgentChatPane", () => {
         expect(cell.closest(".chat-table")).not.toBeNull();
     });
 
+    it("colours a patch the agent wrote in a fence, and leaves ordinary output alone", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "agent_message_chunk",
+                content: {
+                    type: "text",
+                    text: "```\n .stage {\n-    background: var(--pane);\n+    background: transparent;\n }\n```\n\n```\n900x600 ok\n1024x600 FLOOD\n```\n",
+                },
+            },
+        });
+
+        await waitFor(() => expect(document.querySelector(".chat-code-diff")).not.toBeNull());
+        expect(document.querySelector(".chat-code-diff .chat-diff-line.del")).toHaveTextContent("background: var(--pane);");
+        expect(document.querySelector(".chat-code-diff .chat-diff-line.add mark")).toHaveTextContent("transparent");
+        // The block of measurements beside it is not a patch and keeps its own shape.
+        expect(document.querySelectorAll(".chat-code-diff")).toHaveLength(1);
+    });
+
     it("shows adapter progress and retries failed startup", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());

@@ -124,6 +124,31 @@ export function diffLines(oldText: string, newText: string): DiffLine[] | null {
     return lines;
 }
 
+/* A fenced block the agent wrote is sometimes a patch. It has no line numbers
+   to speak of, but the signs alone are worth colouring, and a reader should not
+   have to compare two near-identical lines by eye. */
+export function fencedDiff(text: string, language?: string): DiffLine[] | null {
+    const raw = splitLines(text);
+    if (raw.length < 2 || raw.length > 400) return null;
+
+    const signed = raw.filter((line) => line.startsWith("+") || line.startsWith("-"));
+    const named = language === "diff" || language === "patch";
+    if (!named) {
+        const shaped = raw.filter((line) => /^[-+@ ]/.test(line) || line === "");
+        const adds = raw.some((line) => line.startsWith("+"));
+        const dels = raw.some((line) => line.startsWith("-"));
+        if (!adds || !dels || signed.length < 2 || shaped.length < raw.length * 0.8) return null;
+    }
+    if (signed.length === 0) return null;
+
+    const lines: DiffLine[] = raw.map((line) => ({
+        sign: line.startsWith("+") ? "+" : line.startsWith("-") ? "-" : " ",
+        text: /^[-+ ]/.test(line) ? line.slice(1) : line,
+    }));
+    markPairs(lines);
+    return lines;
+}
+
 /* An adapter that follows the ACP spec hands us the change itself. */
 function fromContent(tool: AcpToolCall): { path: string; oldText: string; newText: string } | null {
     if (!Array.isArray(tool.content)) return null;

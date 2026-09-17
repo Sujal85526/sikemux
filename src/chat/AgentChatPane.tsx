@@ -31,7 +31,7 @@ import {
     IconWarning,
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
-import { collapseDiff, toolDiff, type ToolDiff } from "./diff";
+import { collapseDiff, fencedDiff, toolDiff, type ToolDiff } from "./diff";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import type {
     AcpAsyncTask,
@@ -348,16 +348,47 @@ function ChatLink({ href, children }: { href?: string; children?: ReactNode }) {
     );
 }
 
+function codeText(children: ReactNode): string {
+    if (typeof children === "string") return children;
+    if (Array.isArray(children)) return children.map((child) => (typeof child === "string" ? child : "")).join("");
+    return "";
+}
+
 function ChatCode({ className, children }: { className?: string; children?: ReactNode }) {
     const info = /language-(\S+)/.exec(className ?? "")?.[1];
-    if (!info) return <code className={className}>{children}</code>;
+    const text = codeText(children);
+    const patch = useMemo(() => (text ? fencedDiff(text, info) : null), [text, info]);
+    if (!info && !patch) return <code className={className}>{children}</code>;
     return (
         <>
-            <span className="chat-code-title">
-                <IconFile size={10} />
-                {decodeURIComponent(info)}
-            </span>
-            <code className={className}>{children}</code>
+            {info && (
+                <span className="chat-code-title">
+                    <IconFile size={10} />
+                    {decodeURIComponent(info)}
+                </span>
+            )}
+            {patch ? (
+                <code className={`${className ?? ""} chat-code-diff`}>
+                    {patch.map((line, index) => (
+                        <span className={`chat-diff-line${line.sign === "+" ? " add" : line.sign === "-" ? " del" : ""}`} key={index}>
+                            <span className="chat-diff-sign">{line.sign}</span>
+                            <span>
+                                {line.mark ? (
+                                    <>
+                                        {line.text.slice(0, line.mark[0])}
+                                        <mark>{line.text.slice(line.mark[0], line.mark[1])}</mark>
+                                        {line.text.slice(line.mark[1])}
+                                    </>
+                                ) : (
+                                    line.text
+                                )}
+                            </span>
+                        </span>
+                    ))}
+                </code>
+            ) : (
+                <code className={className}>{children}</code>
+            )}
         </>
     );
 }
@@ -1215,21 +1246,20 @@ export function AgentChatPane({
                 </div>
             </div>
 
-            {!atBottom && displayState.messages.length > 0 && (
-                <button
-                    type="button"
-                    className="chat-jump-bottom"
-                    aria-label="Jump to latest message"
-                    onClick={() => {
-                        stickToBottomRef.current = true;
-                        setAtBottom(true);
-                        pinToBottom();
-                    }}>
-                    <IconArrowDown size={14} />
-                </button>
-            )}
-
             <div className="chat-composer-wrap">
+                {!atBottom && displayState.messages.length > 0 && (
+                    <button
+                        type="button"
+                        className="chat-jump-bottom"
+                        aria-label="Jump to latest message"
+                        onClick={() => {
+                            stickToBottomRef.current = true;
+                            setAtBottom(true);
+                            pinToBottom();
+                        }}>
+                        <IconArrowDown size={14} />
+                    </button>
+                )}
                 <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
                 <div className="chat-composer">
                     {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={slashSelection} onSelect={selectCommand} />}

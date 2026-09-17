@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collapseDiff, diffLines, toolDiff } from "./diff";
+import { collapseDiff, diffLines, fencedDiff, toolDiff } from "./diff";
 import type { AcpToolCall } from "./types";
 
 const tool = (patch: Partial<AcpToolCall>): AcpToolCall => ({ toolCallId: "tool-1", title: "Edit", kind: "edit", ...patch });
@@ -63,6 +63,25 @@ describe("toolDiff", () => {
     it("has nothing to show for a call that changed no file", () => {
         expect(toolDiff(tool({ rawInput: { command: "pnpm test" } }))).toBeNull();
         expect(toolDiff(tool({ rawInput: { file_path: "src/app.ts", old_string: "same\n", new_string: "same\n" } }))).toBeNull();
+    });
+});
+
+describe("fencedDiff", () => {
+    it("reads a patch the agent wrote in a fence", () => {
+        const lines = fencedDiff(" .stage {\n-    background: var(--pane);\n+    background: transparent;\n }\n");
+        expect(lines?.map((line) => line.sign)).toEqual([" ", "-", "+", " "]);
+        expect(lines?.[1].text).toBe("    background: var(--pane);");
+        expect(lines?.[2].text.slice(...(lines[2].mark ?? [0, 0]))).toBe("transparent");
+    });
+
+    it("takes the fence's word for it when it says diff", () => {
+        expect(fencedDiff("+added line\n+another\n", "diff")?.map((line) => line.sign)).toEqual(["+", "+"]);
+    });
+
+    it("leaves ordinary output alone", () => {
+        expect(fencedDiff("900x600 → 0.4 fps ok\n1024x600 → 60.4 fps FLOOD\n")).toBeNull();
+        expect(fencedDiff("const x = 1;\nconst y = x - 2;\n")).toBeNull();
+        expect(fencedDiff("rm -rf build\npnpm install\n")).toBeNull();
     });
 });
 
