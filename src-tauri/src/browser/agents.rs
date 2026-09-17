@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
@@ -94,6 +95,32 @@ impl BrowserManager {
             environment,
         })
     }
+}
+
+/// An ACP agent is handed its servers over the protocol itself, so this path
+/// has no config file and no flag. It is a separate transport from the
+/// terminal one above and needs telling too.
+pub fn acp_browser_server(app: &AppHandle, agent_id: &str) -> AppResult<McpServer> {
+    validate_agent_id(agent_id)?;
+    let launch = app.state::<BrowserManager>().mcp_launch(app)?;
+    let mut server = McpServerStdio::new("sikemux-browser", absolute_command(&launch.command)?);
+    server.args = launch.args;
+    server.env = base_environment(agent_id)?
+        .into_iter()
+        .map(|(name, value)| EnvVariable::new(name, value))
+        .collect();
+    Ok(McpServer::Stdio(server))
+}
+
+/// The protocol asks for an absolute path, and a development launch runs
+/// through a program found on PATH.
+fn absolute_command(command: &str) -> AppResult<PathBuf> {
+    let path = PathBuf::from(command);
+    if path.is_absolute() {
+        return Ok(path);
+    }
+    crate::system::find_executable(command)
+        .ok_or_else(|| AppError::Other(format!("{command} is not on PATH")))
 }
 
 /// What the MCP sidecar reads once the host spawns it. The sidecar inherits
@@ -408,6 +435,33 @@ mod tests {
         let mut args = Vec::new();
         integration.apply(&mut args);
         assert_eq!(args.len(), 2);
+    }
+
+    /// An ACP adapter tells a stdio server apart by the absence of a type
+    /// tag, so the shape matters as much as the values.
+    #[test]
+    fn an_acp_stdio_server_is_untagged_with_its_environment_spelled_out() {
+        let mut stdio = McpServerStdio::new("sikemux-browser", "/apps/sikemux-browser-mcp");
+        stdio.args = vec!["--stdio".into()];
+        stdio.env = vec![EnvVariable::new("SIKEMUX_BROWSER_AGENT_ID", "agent-one")];
+        let value = serde_json::to_value(McpServer::Stdio(stdio)).unwrap();
+        assert!(value.get("type").is_none(), "{value}");
+        assert_eq!(value["name"], "sikemux-browser");
+        assert_eq!(value["command"], "/apps/sikemux-browser-mcp");
+        assert_eq!(value["args"], json!(["--stdio"]));
+        assert_eq!(value["env"][0]["name"], "SIKEMUX_BROWSER_AGENT_ID");
+        assert_eq!(value["env"][0]["value"], "agent-one");
+    }
+
+    #[test]
+    fn an_acp_session_is_given_an_absolute_command_even_in_development() {
+        assert_eq!(
+            absolute_command("/bin/sh").unwrap(),
+            PathBuf::from("/bin/sh")
+        );
+        let found = absolute_command("sh").unwrap();
+        assert!(found.is_absolute(), "{found:?} should be absolute");
+        assert!(absolute_command("sikemux-no-such-program").is_err());
     }
 
     #[test]

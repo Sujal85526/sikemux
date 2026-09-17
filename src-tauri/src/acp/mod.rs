@@ -561,19 +561,34 @@ async fn run_connection(
                 let steering = air::steering_supported(&initialize_meta);
                 capabilities["steering"] = json!(steering);
 
+                // The tools this agent can drive its own browser tabs with.
+                // A session that cannot be told about them still runs.
+                let browser_servers =
+                    match crate::browser::agents::acp_browser_server(&app, &agent_id) {
+                        Ok(server) => vec![server],
+                        Err(error) => {
+                            eprintln!(
+                                "Sikemux browser tools are unavailable to this agent: {error}"
+                            );
+                            Vec::new()
+                        }
+                    };
                 let (session_id, mut setup) = if let Some(existing) = resume_id {
                     if !initialize.agent_capabilities.load_session {
                         return Err(agent_client_protocol::Error::invalid_params()
                             .data("This agent cannot load existing sessions"));
                     }
                     let response = connection
-                        .send_request(LoadSessionRequest::new(existing.clone(), &cwd))
+                        .send_request(
+                            LoadSessionRequest::new(existing.clone(), &cwd)
+                                .mcp_servers(browser_servers),
+                        )
                         .block_task()
                         .await?;
                     (existing, serde_json::to_value(response)?)
                 } else {
                     let response = connection
-                        .send_request(NewSessionRequest::new(&cwd))
+                        .send_request(NewSessionRequest::new(&cwd).mcp_servers(browser_servers))
                         .block_task()
                         .await?;
                     let session_id = response.session_id.to_string();
