@@ -8,7 +8,6 @@ import { hasUnstaged, isStaged, type GitFile } from "../api/git";
 import { basename, joinPath } from "../lib/paths";
 import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./git/gitFileStatus";
 
-const VIRTUAL_REVIEW_THRESHOLD = 8;
 const REVIEW_ROW_ESTIMATE = 250;
 const REVIEW_DOUBLE_ROW_ESTIMATE = 470;
 const REVIEW_HEADER_HEIGHT = 31;
@@ -50,9 +49,8 @@ export function MergeReview({
     const paths = useMemo(() => files.map((file) => file.path), [files]);
     const pathSet = useMemo(() => new Set(paths), [paths]);
     const pathIndex = useMemo(() => new Map(paths.map((path, index) => [path, index])), [paths]);
-    const virtual = files.length > VIRTUAL_REVIEW_THRESHOLD;
     const virtualizer = useVirtualizer({
-        count: virtual ? files.length : 0,
+        count: files.length,
         getScrollElement: () => listRef.current,
         estimateSize: (index) => {
             const file = files[index];
@@ -72,11 +70,11 @@ export function MergeReview({
     }, [pathSet]);
 
     useEffect(() => {
-        if (virtual) virtualizer.measure();
-    }, [collapsed, files, virtual, virtualizer]);
+        virtualizer.measure();
+    }, [collapsed, files, virtualizer]);
 
-    const scrollTargets = useRef({ pathIndex, virtual, virtualizer });
-    scrollTargets.current = { pathIndex, virtual, virtualizer };
+    const scrollTargets = useRef({ pathIndex, virtualizer });
+    scrollTargets.current = { pathIndex, virtualizer };
     const focusListed = !!focusPath && pathSet.has(focusPath);
 
     // Only a new focus (or one that has just appeared in the list) scrolls. A
@@ -89,10 +87,10 @@ export function MergeReview({
             next.delete(focusPath);
             return next;
         });
-        const { pathIndex: index, virtual: isVirtual, virtualizer: list } = scrollTargets.current;
+        const { pathIndex: index, virtualizer: list } = scrollTargets.current;
         const row = index.get(focusPath) ?? -1;
         window.requestAnimationFrame(() => {
-            if (isVirtual && row >= 0) list.scrollToIndex(row, { align: "start" });
+            if (row >= 0) list.scrollToIndex(row, { align: "start" });
             else itemRefs.current.get(focusPath)?.scrollIntoView?.({ block: "start" });
         });
     }, [focusPath, focusListed]);
@@ -125,28 +123,24 @@ export function MergeReview({
                 </button>
             </div>
             <div className="merge-review-list" ref={listRef}>
-                {virtual ? (
-                    <div className="merge-review-virtual" style={{ height: virtualizer.getTotalSize() }}>
-                        {virtualizer.getVirtualItems().map((row) => {
-                            const file = files[row.index];
-                            if (!file) return null;
-                            const style: CSSProperties = {
-                                transform: `translateY(${row.start}px)`,
-                                height: row.size,
-                                overflow: "clip",
-                            };
-                            return (
-                                <div key={row.key} className="merge-review-virtual-item" style={style}>
-                                    <div ref={virtualizer.measureElement} data-index={row.index}>
-                                        {renderFile(file)}
-                                    </div>
+                <div className="merge-review-virtual" style={{ height: virtualizer.getTotalSize() }}>
+                    {virtualizer.getVirtualItems().map((row) => {
+                        const file = files[row.index];
+                        if (!file) return null;
+                        const style: CSSProperties = {
+                            transform: `translateY(${row.start}px)`,
+                            height: row.size,
+                            overflow: "clip",
+                        };
+                        return (
+                            <div key={row.key} className="merge-review-virtual-item" style={style}>
+                                <div ref={virtualizer.measureElement} data-index={row.index}>
+                                    {renderFile(file)}
                                 </div>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    files.map((file) => renderFile(file))
-                )}
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
         </div>
     );

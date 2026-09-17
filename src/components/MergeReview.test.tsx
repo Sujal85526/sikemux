@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GitFile } from "../api/git";
 
 vi.mock("./DiffEditor", () => ({
@@ -23,6 +23,11 @@ const files: GitFile[] = [
 ];
 
 describe("MergeReview", () => {
+    beforeEach(() => {
+        vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
+        vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1_000);
+    });
+
     it("renders every changed file in one collapsible stream", () => {
         render(<MergeReview repo="/repo" files={files} onOpenFile={() => {}} onSaved={() => {}} />);
 
@@ -61,26 +66,29 @@ describe("MergeReview", () => {
 
     it("only scrolls when the focused file changes, not on every status refresh", () => {
         vi.useFakeTimers();
-        const scrollIntoView = vi.fn();
-        vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(scrollIntoView);
+        const scrollTo = vi.fn();
+        const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+        Object.defineProperty(HTMLElement.prototype, "scrollTo", { value: scrollTo, configurable: true, writable: true });
 
         const { rerender } = render(<MergeReview repo="/repo" files={files} focusPath="both.ts" onOpenFile={() => {}} onSaved={() => {}} />);
         act(() => void vi.advanceTimersByTime(32));
-        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+        const settled = scrollTo.mock.calls.length;
+        expect(settled).toBeGreaterThan(0);
 
         rerender(<MergeReview repo="/repo" files={files.map((f) => ({ ...f }))} focusPath="both.ts" onOpenFile={() => {}} onSaved={() => {}} />);
         act(() => void vi.advanceTimersByTime(32));
-        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+        expect(scrollTo.mock.calls.length).toBe(settled);
 
         rerender(<MergeReview repo="/repo" files={files} focusPath="working.ts" onOpenFile={() => {}} onSaved={() => {}} />);
         act(() => void vi.advanceTimersByTime(32));
-        expect(scrollIntoView).toHaveBeenCalledTimes(2);
+        expect(scrollTo.mock.calls.length).toBeGreaterThan(settled);
+
+        if (previous) Object.defineProperty(HTMLElement.prototype, "scrollTo", previous);
+        else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
         vi.useRealTimers();
     });
 
     it("bounds mounted files and diffs in a 1,000-file review", () => {
-        vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
-        vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1_000);
         const manyFiles = Array.from<unknown, GitFile>({ length: 1_000 }, (_, index) => ({
             path: `src/file-${index}.ts`,
             index: " ",
