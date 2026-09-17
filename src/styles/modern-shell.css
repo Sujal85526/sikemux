@@ -956,7 +956,9 @@ textarea,
 
 /* Chips: the smallest marks, where the control radius reads as a pill.
  * The top bar's status chips live here — they are buttons, not badges, so
- * they take a rounded rectangle rather than the capsule they used to. */
+ * they take a rounded rectangle rather than the capsule they used to. A
+ * view-switch half sits inset inside a rounded capsule, so it needs the
+ * smaller corner to nest inside the one around it. */
 .shell
     :where(
         .rnd-btn-sm,
@@ -969,7 +971,8 @@ textarea,
         .tb-git-chip,
         .tb-deploy-chip,
         .tb-aws-chip,
-        .zoom-pill
+        .zoom-pill,
+        .agent-view-switch button
     ) {
     border-radius: var(--radius-1) !important;
 }

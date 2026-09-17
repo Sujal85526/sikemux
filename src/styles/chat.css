@@ -46,12 +46,10 @@
     display: flex;
     align-items: center;
     height: var(--control-h);
+    padding: 2px;
     border: 1px solid var(--line);
     border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--void) 46%, transparent);
-    /* The halves fill the capsule edge to edge, so the clip is what rounds
-       their outer corners. */
-    overflow: hidden;
 }
 
 .agent-view-switch button {
@@ -1252,7 +1250,7 @@ button.chat-tool:hover {
    the same distance above it whether the draft is one line or six. */
 .chat-jump-bottom {
     position: absolute;
-    bottom: calc(100% - 6px);
+    bottom: calc(100% + 8px);
     left: 50%;
     display: grid;
     width: 26px;
@@ -1260,7 +1258,7 @@ button.chat-tool:hover {
     place-items: center;
     border: 1px solid var(--line);
     border-radius: var(--radius-full);
-    background: color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 92%), transparent);
+    background: var(--chat-composer-fill);
     color: var(--ink-dim);
     box-shadow: 0 6px 18px color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 52%), transparent);
     transform: translateX(-50%);
@@ -1272,6 +1270,9 @@ button.chat-tool:hover {
 }
 
 .chat-composer-wrap {
+    /* The composer and the jump button float over the same transcript, so they
+       share one fill and fade together with the window. */
+    --chat-composer-fill: color-mix(in srgb, color-mix(in srgb, var(--rail-2) 82%, var(--pane)) calc(var(--window-opacity, 1) * 100%), transparent);
     position: relative;
     padding: 0 16px 16px;
 }
@@ -1282,7 +1283,7 @@ button.chat-tool:hover {
     margin: 0 auto;
     border: 1px solid var(--line);
     border-radius: 17px;
-    background: color-mix(in srgb, color-mix(in srgb, var(--rail-2) 82%, var(--pane)) calc(var(--window-opacity, 1) * 100%), transparent);
+    background: var(--chat-composer-fill);
     box-shadow: 0 13px 34px color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 42%), transparent);
 }
 
