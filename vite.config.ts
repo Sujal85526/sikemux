@@ -52,6 +52,13 @@ export default defineConfig({
           }
           if (!id.includes("node_modules")) return undefined;
           const packagePath = id.slice(id.lastIndexOf("/node_modules/") + 14);
+          // Grammar packages (@shikijs/langs/*) are reached only through the
+          // per-language dynamic imports in src/vendor/shiki.ts, so leaving
+          // them unassigned lets Rollup split each grammar into its own
+          // chunk. Every other @shikijs/* package (core, the two engines,
+          // vscode-textmate) is the highlighter's static dependency graph,
+          // not a per-language import, so it stays folded into diffs.
+          if (packagePath.startsWith("@shikijs/langs/")) return undefined;
           if (
             id.includes("@pierre") ||
             id.includes("@shikijs") ||
@@ -61,12 +68,43 @@ export default defineConfig({
           ) {
             return "diffs";
           }
+          const codemirrorPackage = packagePath.startsWith("@")
+            ? packagePath.split("/").slice(0, 2).join("/")
+            : packagePath.split("/")[0];
+          // These tiny helpers are peer dependencies used only by the
+          // @codemirror/* packages above; folding them in here keeps them
+          // out of the generic vendor chunk (which would otherwise create a
+          // vendor <-> codemirror-core circular chunk).
+          const codemirrorCorePackages = new Set([
+            "@codemirror/state",
+            "@codemirror/view",
+            "@codemirror/language",
+            "@codemirror/commands",
+            "@codemirror/autocomplete",
+            "@codemirror/lint",
+            "@lezer/common",
+            "@lezer/lr",
+            "@lezer/highlight",
+            "style-mod",
+            "crelt",
+            "w3c-keyname",
+            "@marijn/find-cluster-break",
+          ]);
+          if (codemirrorCorePackages.has(codemirrorPackage)) {
+            return "codemirror-core";
+          }
+          // The bare "codemirror" meta-package (basicSetup) statically pulls
+          // in both @codemirror/search (langs) and the core packages above.
+          // Grouping it with langs keeps the edge one-directional: langs
+          // already depends on core, so this doesn't add a second direction
+          // between the two chunks.
           if (
-            id.includes("@codemirror") ||
-            id.includes("@lezer") ||
-            id.includes("codemirror")
+            codemirrorPackage.startsWith("@codemirror/") ||
+            codemirrorPackage.startsWith("@lezer/") ||
+            codemirrorPackage.startsWith("@replit/") ||
+            codemirrorPackage === "codemirror"
           ) {
-            return "codemirror";
+            return "codemirror-langs";
           }
           // Keep the opt-in renderer out of the default startup path. The
           // dynamic import in useXterm loads this chunk only when the WebGL
