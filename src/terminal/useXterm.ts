@@ -405,7 +405,10 @@ export function useXterm(opts: {
                 const finalizeCleanup = () => {
                     if (finalized || outputBusy || outputPending.length > 0) return;
                     finalized = true;
-                    if (resyncing) {
+                    // A reattach only replays this when the PTY is on the
+                    // alternate screen; otherwise the native snapshot already
+                    // carries the history, so serializing it here is waste.
+                    if (resyncing || term.buffer.active.type !== "alternate") {
                         serializedNormalRef.current = null;
                     } else {
                         try {
@@ -550,7 +553,9 @@ export function useXterm(opts: {
                     cleanup();
                     return;
                 }
-                const serializedNormal = replaySerializedNormalBuffer(serializedNormalRef.current, pid, alternateScreen);
+                const savedNormal = serializedNormalRef.current;
+                serializedNormalRef.current = null;
+                const serializedNormal = replaySerializedNormalBuffer(savedNormal, pid, alternateScreen);
                 if (serializedNormal !== null) writeBytes(encoder.encode(serializedNormal));
                 if (snapshot.length > 0) writeChunk(snapshot);
                 attached.activate();
