@@ -2,11 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The browser sidecar is one PyInstaller file that unpacks its Python
-	     library to a temporary folder and loads it from there. Signing gives the
-	     sidecar the hardened runtime, which only lets a process load libraries
-	     from its own team, and that unpacked library belongs to no team. Without
-	     this the sidecar cannot start at all. -->
+	<!-- Agent hosts start the bundled sidecars themselves, and the hardened
+	     runtime otherwise refuses a helper it did not launch. -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
 </dict>

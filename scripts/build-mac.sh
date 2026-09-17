@@ -41,10 +41,8 @@ fi
 "$ROOT/scripts/icons.sh"
 if [[ -n "$TARGET" ]]; then
   node "$ROOT/scripts/build-cli-sidecar.mjs" --target "$TARGET"
-  node "$ROOT/scripts/build-browser-sidecar.mjs" --target "$TARGET"
 else
   node "$ROOT/scripts/build-cli-sidecar.mjs"
-  node "$ROOT/scripts/build-browser-sidecar.mjs"
 fi
 printf '→ pnpm tauri build'
 if ((${#BUILD_ARGS[@]})); then
@@ -116,12 +114,10 @@ if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$BROWSER_D
   fail "browser sidecar links to a package-manager library"
 fi
 
-# The sidecar is one PyInstaller file that unpacks its Python library to a
-# temporary folder and loads it from there, and bundling is what gives it the
-# hardened runtime that can refuse such a load. Only starting the bundled copy
-# proves the two agree: the copy built beside it is signed without the hardened
-# runtime and starts whether or not the bundle would. An empty agent id is the
-# earliest thing it checks, so reaching that message means Python itself loaded.
+# Bundling is what gives the sidecar the hardened runtime, so only starting the
+# bundled copy proves it survives signing: the copy built beside it is signed
+# without the hardened runtime and starts whether or not the bundle would. An
+# empty agent id is the earliest thing it checks.
 BROWSER_START="$(SIKEMUX_BROWSER_AGENT_ID='' "$BROWSER_EXECUTABLE" 2>&1 || true)"
 if ! grep -Fq "Missing SIKEMUX_BROWSER_AGENT_ID" <<<"$BROWSER_START"; then
   echo "$BROWSER_START" >&2

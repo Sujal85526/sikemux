@@ -1,7 +1,4 @@
 node_modules
-browser/.venv/
-browser/.pyinstaller/
-browser/__pycache__/
 dist
 dist-ssr
 coverage

@@ -77,12 +77,11 @@ fi
 CHANGED="$(pushed_files | sort -u)"
 if [ "${PREPUSH_FULL:-}" = "1" ] || [ -z "$CHANGED" ]; then
   CHANGED='(full run)'
-  RUST=1 FRONTEND=1 BROWSER=1 SHELL_SCRIPTS=1 RELEASE=1
+  RUST=1 FRONTEND=1 SHELL_SCRIPTS=1 RELEASE=1
 else
-  RUST=0 FRONTEND=0 BROWSER=0 SHELL_SCRIPTS=0 RELEASE=0
+  RUST=0 FRONTEND=0 SHELL_SCRIPTS=0 RELEASE=0
   touches '^src-tauri/' && RUST=1
   touches '^(src/|public/|index\.html|package\.json|pnpm-lock\.yaml|vite\.config\.ts|eslint\.config\.js|tsconfig\.json)' && FRONTEND=1
-  touches '^browser/' && BROWSER=1
   touches '^scripts/.*\.sh$' && SHELL_SCRIPTS=1
   touches '^(scripts/|package\.json|latest\.json|src-tauri/tauri.*\.conf\.json)' && RELEASE=1
 fi
@@ -103,10 +102,6 @@ if [ "${#FAILED[@]}" -ne 0 ]; then
   exit 1
 fi
 
-[ "$BROWSER" = 1 ] && needs uv 'browser bridge' && {
-  step 'browser tests' pnpm browser:test
-  step 'browser audit' pnpm browser:audit
-}
 [ "$RUST" = 1 ] && step 'clippy' pnpm rust:clippy
 [ "$RUST" = 1 ] && step 'rust tests' pnpm rust:test
 [ "$FRONTEND" = 1 ] && step 'frontend tests' pnpm test:coverage

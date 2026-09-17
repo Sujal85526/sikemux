@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 
-import { chmodSync, copyFileSync, mkdirSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { chmodSync, copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+import { smokeBrowserSidecar } from "./smoke-browser-sidecar.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const tauriDir = join(root, "src-tauri");
 const binariesDir = join(tauriDir, "binaries");
 const args = process.argv.slice(2);
+const sidecars = ["sikemux-editor", "sikemux-browser-mcp"];
 
 function fail(message) {
-  console.error(`CLI sidecar build failed: ${message}`);
+  console.error(`Sidecar build failed: ${message}`);
   process.exit(1);
 }
 
@@ -47,25 +50,20 @@ function hostTriple() {
   return host;
 }
 
-function executableName(target) {
-  return target.includes("windows") ? "sikemux-editor.exe" : "sikemux-editor";
+function executableName(name, target) {
+  return target.includes("windows") ? `${name}.exe` : name;
 }
 
 function buildFor(target, explicitTarget) {
-  const cargoArgs = [
-    "build",
-    "--locked",
-    "--release",
-    "--bin",
-    "sikemux-editor",
-    "--manifest-path",
-    join(tauriDir, "Cargo.toml"),
-  ];
+  const cargoArgs = ["build", "--locked", "--release"];
+  for (const name of sidecars) cargoArgs.push("--bin", name);
+  cargoArgs.push("--manifest-path", join(tauriDir, "Cargo.toml"));
   if (explicitTarget) cargoArgs.push("--target", target);
   run("cargo", cargoArgs);
-  return explicitTarget
-    ? join(tauriDir, "target", target, "release", executableName(target))
-    : join(tauriDir, "target", "release", executableName(target));
+  const releaseDir = explicitTarget
+    ? join(tauriDir, "target", target, "release")
+    : join(tauriDir, "target", "release");
+  return (name) => join(releaseDir, executableName(name, target));
 }
 
 const requestedTarget = option("--target") || hostTriple();
@@ -74,25 +72,47 @@ if (requestedTarget.includes("apple-darwin")) {
 }
 mkdirSync(binariesDir, { recursive: true });
 
-let source;
+const suffix = requestedTarget.includes("windows") ? ".exe" : "";
+const shipped = new Map();
 if (requestedTarget === "universal-apple-darwin") {
   const arm = buildFor("aarch64-apple-darwin", true);
   const intel = buildFor("x86_64-apple-darwin", true);
-  source = join(binariesDir, "sikemux-editor-universal-apple-darwin");
-  run("lipo", ["-create", "-output", source, arm, intel]);
+  for (const name of sidecars) {
+    const destination = join(binariesDir, `${name}-${requestedTarget}`);
+    run("lipo", ["-create", "-output", destination, arm(name), intel(name)]);
+    shipped.set(name, destination);
+  }
 } else {
-  const explicitTarget = Boolean(option("--target"));
-  source = buildFor(requestedTarget, explicitTarget);
-  const suffix = requestedTarget.includes("windows") ? ".exe" : "";
-  const destination = join(
-    binariesDir,
-    `sikemux-editor-${requestedTarget}${suffix}`,
-  );
-  copyFileSync(source, destination);
-  source = destination;
+  const built = buildFor(requestedTarget, Boolean(option("--target")));
+  for (const name of sidecars) {
+    const destination = join(
+      binariesDir,
+      `${name}-${requestedTarget}${suffix}`,
+    );
+    copyFileSync(built(name), destination);
+    shipped.set(name, destination);
+  }
 }
 
-if (!requestedTarget.includes("windows")) chmodSync(source, 0o755);
-console.log(
-  `✓ CLI sidecar ready: ${source.slice(root.length + 1)} (${basename(source)})`,
-);
+for (const destination of shipped.values()) {
+  if (!requestedTarget.includes("windows")) chmodSync(destination, 0o755);
+}
+
+// A cross-built sidecar cannot be started here, so the smoke only runs for a
+// binary this machine can execute.
+const runnable =
+  requestedTarget === hostTriple() ||
+  requestedTarget === "universal-apple-darwin";
+if (runnable && !args.includes("--skip-smoke")) {
+  const browser = shipped.get("sikemux-browser-mcp");
+  try {
+    await smokeBrowserSidecar(browser);
+  } catch (error) {
+    rmSync(browser, { force: true });
+    fail(`browser sidecar smoke: ${error.message}`);
+  }
+}
+
+for (const [name, destination] of shipped) {
+  console.log(`✓ ${name} ready: ${destination.slice(root.length + 1)}`);
+}

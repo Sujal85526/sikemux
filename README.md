@@ -216,7 +216,7 @@ Download the latest `.dmg` from [Releases](https://github.com/nodelike/sikemux/r
 
 ### Build from source
 
-You need [Rust](https://www.rust-lang.org/tools/install), Node.js 22 or later, [pnpm](https://pnpm.io/), and [uv](https://docs.astral.sh/uv/getting-started/installation/) for the embedded Browser Use sidecar.
+You need [Rust](https://www.rust-lang.org/tools/install), Node.js 22 or later, and [pnpm](https://pnpm.io/).
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git

@@ -624,29 +624,9 @@ impl BrowserManager {
                 });
             }
         }
-        #[cfg(debug_assertions)]
-        {
-            let project = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .expect("Tauri manifest has a project parent")
-                .join("browser");
-            return Ok(BrowserMcpLaunch {
-                command: "uv".into(),
-                args: vec![
-                    "run".into(),
-                    "--project".into(),
-                    project.to_string_lossy().into_owned(),
-                    "python".into(),
-                    project
-                        .join("sikemux_browser_mcp.py")
-                        .to_string_lossy()
-                        .into_owned(),
-                ],
-            });
-        }
-        #[allow(unreachable_code)]
         Err(AppError::Other(
-            "bundled browser MCP sidecar is missing".into(),
+            "browser MCP sidecar is missing; build it with node scripts/build-cli-sidecar.mjs"
+                .into(),
         ))
     }
 

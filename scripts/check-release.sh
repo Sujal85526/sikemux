@@ -15,7 +15,7 @@ fi
 bash -n scripts/build-mac.sh scripts/release.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
 node --check scripts/build-cli-sidecar.mjs
-node --check scripts/build-browser-sidecar.mjs
+node --check scripts/smoke-browser-sidecar.mjs
 /usr/bin/plutil -lint src-tauri/Info.plist >/dev/null
 
 if RELEASE_CHANNEL=preview scripts/release.sh 0.2.0-beta.1 fixture >/dev/null 2>&1; then
@@ -39,7 +39,7 @@ const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", 
 const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
 const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
-const browserBuild = fs.readFileSync("scripts/build-browser-sidecar.mjs", "utf8");
+const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
 const fail = (message) => { throw new Error(message); };
 
 if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
@@ -59,10 +59,9 @@ if (sidecarConfig.bundle?.resources?.["resources/sikemux_pi_browser.ts"] !== "si
 if (!pkg.scripts?.["build:windows"]?.includes("build:sidecar")) fail("Windows build does not build sidecars");
 if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("Windows build does not bundle the CLI sidecar");
 if (!macBuild.includes("build-cli-sidecar.mjs")) fail("macOS build does not build the CLI sidecar");
-if (!macBuild.includes("build-browser-sidecar.mjs")) fail("macOS build does not build the browser sidecar");
 if (!macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build does not bundle the CLI sidecar");
-if (!browserBuild.includes("smoke_sikemux_browser_mcp.py")) fail("browser sidecar build does not run its frozen-binary smoke test");
-if (!pkg.scripts?.["browser:audit"]?.includes("pip-audit")) fail("browser dependency audit is missing");
+if (!sidecarBuild.includes("sikemux-browser-mcp")) fail("sidecar build does not build the browser MCP sidecar");
+if (!sidecarBuild.includes("smokeBrowserSidecar")) fail("sidecar build does not run the browser smoke test");
 const endpoints = config.plugins?.updater?.endpoints;
 if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
   fail("updater endpoint is not the expected HTTPS latest.json URL");
