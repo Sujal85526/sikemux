@@ -293,6 +293,19 @@
     user-select: text;
 }
 
+/* A URL or a long path has no space to break at, and a bubble sized to its own
+   content grows to fit one — past the turn, past the pane, off the screen.
+   `anywhere` rather than `break-word` because only `anywhere` also shrinks the
+   box's own smallest width, which is what the bubble is sized from. */
+.chat-markdown {
+    overflow-wrap: anywhere;
+}
+
+/* A code block scrolls its long lines instead, so they stay readable as code. */
+.chat-markdown pre {
+    overflow-wrap: normal;
+}
+
 .chat-markdown > :first-child,
 .chat-markdown > :first-child > :first-child {
     margin-top: 0;
@@ -892,11 +905,16 @@ button.chat-tool:hover {
     color: var(--ink-faint);
 }
 
+/* An agent names a task with the command it ran, and that runs long. The name
+   gives way before the row does, so the stop button stays on screen. */
 .chat-task-name {
-    flex: none;
+    min-width: 0;
+    overflow: hidden;
     color: var(--ink);
     font-family: var(--mono);
     font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chat-task-detail {
