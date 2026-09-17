@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { browserApi, type BrowserKeyInput, type BrowserSnapshot, type BrowserViewport } from "../api/browser";
+import { browserApi, type BrowserDialog, type BrowserKeyInput, type BrowserSnapshot, type BrowserViewport } from "../api/browser";
 import type { AgentType } from "../state/types";
-import { reportError } from "../state/toast";
-import { IconChevron, IconPlus, IconRefresh } from "./Icons";
+import { reportError, swallow } from "../state/toast";
+import { IconChevron, IconInfo, IconPlus, IconRefresh } from "./Icons";
+import { Kbd } from "./Kbd";
 import { TabBar } from "./TabBar";
 
 const EMPTY_SNAPSHOT: BrowserSnapshot = {
@@ -148,6 +149,7 @@ function BrowserPane({
     const lastPointerPoint = useRef({ x: 0, y: 0 });
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const targetId = activeTab?.id;
+    const dialog = activeTab?.dialog ?? null;
     const blank = activeTab?.url === "about:blank" || activeTab?.url === "chrome://newtab/";
 
     useEffect(() => setAddress(activeTab?.url === "about:blank" ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);
@@ -224,12 +226,14 @@ function BrowserPane({
         };
     };
 
+    /* A page that is busy or waiting on its own dialog answers late or never,
+       and the frames already show that; a toast per click only piled up. */
     const sendKey = (input: BrowserKeyInput) => {
-        keystrokes.current = keystrokes.current.then(() => browserApi.key(agentId, input)).catch(reportError("send browser key"));
+        keystrokes.current = keystrokes.current.then(() => browserApi.key(agentId, input)).catch(swallow("send browser key"));
     };
 
     const pointer = (event: React.PointerEvent<HTMLDivElement>, kind: "move" | "down" | "up") => {
-        if ((blank || !frameReady) && kind !== "up") return;
+        if ((blank || !frameReady || dialog) && kind !== "up") return;
         if (kind === "move" && performance.now() - lastPointerMove.current < 24) return;
         if (kind === "move") lastPointerMove.current = performance.now();
         const next = point(event);
@@ -246,9 +250,15 @@ function BrowserPane({
                 event.currentTarget.releasePointerCapture?.(event.pointerId);
             }
         }
-        const request = browserApi.pointer(agentId, { kind, ...next, button: kind === "move" ? "none" : "left" });
+        const held = kind === "move" && pointerPressed.current;
+        const request = browserApi.pointer(agentId, { kind, ...next, button: kind === "move" && !held ? "none" : "left" });
         if (kind === "move") void request.catch(() => {});
-        else void request.catch(reportError("browser pointer"));
+        else void request.catch(swallow("browser pointer"));
+    };
+
+    const answerDialog = (accept: boolean, promptText?: string) => {
+        if (!targetId) return;
+        run(browserApi.respondDialog(agentId, targetId, accept, promptText), "answer browser dialog");
     };
 
     return (
@@ -306,13 +316,14 @@ function BrowserPane({
                 onPointerUp={(event) => pointer(event, "up")}
                 onPointerCancel={(event) => pointer(event, "up")}
                 onWheel={(event) => {
-                    if (blank || !frameReady) return;
+                    if (blank || !frameReady || dialog) return;
                     const next = point(event as unknown as React.PointerEvent<HTMLDivElement>);
                     void browserApi
                         .pointer(agentId, { kind: "wheel", ...next, button: "none", deltaX: event.deltaX, deltaY: event.deltaY })
                         .catch(reportError("scroll browser"));
                 }}
                 onKeyDown={(event) => {
+                    if (dialog) return;
                     event.preventDefault();
                     sendKey(
                         typesText(event)
@@ -321,7 +332,7 @@ function BrowserPane({
                     );
                 }}
                 onKeyUp={(event) => {
-                    if (typesText(event)) return;
+                    if (dialog || typesText(event)) return;
                     event.preventDefault();
                     sendKey({ kind: "up", key: event.key, code: event.code, modifiers: cdpModifiers(event) });
                 }}>
@@ -338,7 +349,97 @@ function BrowserPane({
                         )}
                     </>
                 )}
+                {dialog && <BrowserDialogSheet key={`${targetId}:${dialog.kind}:${dialog.message}`} dialog={dialog} onAnswer={answerDialog} />}
             </div>
         </section>
+    );
+}
+
+function dialogHost(url: string): string {
+    try {
+        return new URL(url).host;
+    } catch {
+        return "";
+    }
+}
+
+/* The page's own alert/confirm/prompt, drawn in the pane. Headless Chromium
+   shows nothing for these and freezes the page until somebody answers. */
+function BrowserDialogSheet({ dialog, onAnswer }: { dialog: BrowserDialog; onAnswer: (accept: boolean, promptText?: string) => void }) {
+    const [value, setValue] = useState(dialog.defaultPrompt);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const okRef = useRef<HTMLButtonElement>(null);
+    const leaving = dialog.kind === "beforeunload";
+    const host = dialogHost(dialog.url);
+    const title = leaving ? "Leave this page?" : host ? `${host} says` : "This page says";
+    const paragraphs = (leaving && !dialog.message ? "Changes you made may not be saved." : dialog.message)
+        .split("\n")
+        .filter((line) => line.trim().length > 0);
+
+    useEffect(() => {
+        if (dialog.kind === "prompt") {
+            inputRef.current?.focus();
+            inputRef.current?.select();
+        } else okRef.current?.focus();
+    }, [dialog.kind]);
+
+    return (
+        <div
+            className="dlg-scrim browser-dialog-scrim"
+            onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                onAnswer(false);
+            }}>
+            <form
+                className="dlg"
+                role="dialog"
+                aria-modal="true"
+                aria-label={title}
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    onAnswer(true, dialog.kind === "prompt" ? value : undefined);
+                }}>
+                <div className="dlg-head">
+                    <span className="dlg-glyph" aria-hidden="true">
+                        <IconInfo size={15} />
+                    </span>
+                    <h2 className="dlg-title">{title}</h2>
+                </div>
+                {paragraphs.length > 0 && (
+                    <div className="dlg-body">
+                        {paragraphs.map((line, index) => (
+                            <p key={index}>{line}</p>
+                        ))}
+                    </div>
+                )}
+                {dialog.kind === "prompt" && (
+                    <div className="dlg-field">
+                        <input
+                            ref={inputRef}
+                            className="dlg-input"
+                            aria-label="Prompt answer"
+                            value={value}
+                            spellCheck={false}
+                            autoComplete="off"
+                            onChange={(event) => setValue(event.target.value)}
+                        />
+                    </div>
+                )}
+                <div className="dlg-foot">
+                    <span className="dlg-hint">
+                        <Kbd>esc</Kbd> {leaving ? "stay" : dialog.kind === "alert" ? "close" : "cancel"}
+                    </span>
+                    {dialog.kind !== "alert" && (
+                        <button type="button" className="dlg-btn" onClick={() => onAnswer(false)}>
+                            {leaving ? "Stay" : "Cancel"}
+                        </button>
+                    )}
+                    <button ref={okRef} type="submit" className="dlg-btn primary">
+                        {leaving ? "Leave" : "OK"}
+                    </button>
+                </div>
+            </form>
+        </div>
     );
 }

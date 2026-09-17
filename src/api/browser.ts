@@ -2,11 +2,19 @@ import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport } from "./transport";
 
+export interface BrowserDialog {
+    kind: "alert" | "confirm" | "prompt" | "beforeunload";
+    message: string;
+    defaultPrompt: string;
+    url: string;
+}
+
 export interface BrowserTab {
     id: string;
     title: string;
     url: string;
     active: boolean;
+    dialog?: BrowserDialog | null;
 }
 
 export interface BrowserSnapshot {
@@ -60,5 +68,7 @@ export const browserApi = {
     reload: (agentId: string) => invoke<void>("browser_reload", { agentId }),
     pointer: (agentId: string, input: BrowserPointerInput) => invoke<void>("browser_pointer", { agentId, input }),
     key: (agentId: string, input: BrowserKeyInput) => invoke<void>("browser_key", { agentId, input }),
+    respondDialog: (agentId: string, targetId: string, accept: boolean, promptText?: string) =>
+        invoke<void>("browser_dialog_respond", { agentId, targetId, accept, promptText: promptText ?? null }),
     subscribeTabs: (listener: () => void, signal: AbortSignal) => getIpcTransport().subscribe("browser-tabs-changed", listener, { signal }),
 };

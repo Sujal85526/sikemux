@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi, type BrowserFrame, type BrowserSnapshot } from "../api/browser";
+import { useToasts } from "../state/toast";
 import { AgentBrowserShell } from "./BrowserPane";
 
 vi.mock("../api/browser", async () => {
@@ -20,6 +21,7 @@ vi.mock("../api/browser", async () => {
             reload: vi.fn(),
             pointer: vi.fn(),
             key: vi.fn(),
+            respondDialog: vi.fn(),
             subscribeTabs: vi.fn(),
         },
     };
@@ -55,6 +57,7 @@ beforeEach(() => {
         browserApi.reload,
         browserApi.pointer,
         browserApi.key,
+        browserApi.respondDialog,
     ]) {
         vi.mocked(operation).mockResolvedValue(undefined as never);
     }
@@ -64,7 +67,20 @@ afterEach(() => {
     cleanup();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    useToasts.setState({ toasts: [] });
 });
+
+async function renderStreamingPane() {
+    const { container } = render(
+        <AgentBrowserShell agentId="agent-one" agentType="codex" visible>
+            <div>terminal</div>
+        </AgentBrowserShell>,
+    );
+    await waitFor(() => expect(container.querySelector(".browser-viewport > img[src]")).not.toBeNull());
+    const viewport = container.querySelector<HTMLElement>(".browser-viewport")!;
+    vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 480, height: 320 } as DOMRect);
+    return viewport;
+}
 
 describe("AgentBrowserShell", () => {
     it("opens the right-side browser when native tabs appear and routes user tab actions", async () => {
@@ -325,5 +341,84 @@ describe("AgentBrowserShell", () => {
         expect(release).toHaveBeenCalledWith(7);
         expect(browserApi.pointer).toHaveBeenCalledWith("agent-one", expect.objectContaining({ kind: "down" }));
         expect(browserApi.pointer).toHaveBeenCalledWith("agent-one", expect.objectContaining({ kind: "up" }));
+    });
+
+    /*
+     * Headless Chromium draws nothing for a page's alert/confirm/prompt and
+     * freezes the page until it is answered, so every click used to hang for
+     * 15 seconds and land as a toast. The pane now shows the dialog itself.
+     */
+    it("shows a page's dialog in the pane, keeps input off the page, and sends the answer", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({
+            tabs: [{ ...snapshot.tabs[0], dialog: { kind: "confirm", message: "Sure?", defaultPrompt: "", url: "https://example.com/ask" } }],
+            activeTabId: "tab-one",
+        });
+        const viewport = await renderStreamingPane();
+        const sheet = screen.getByRole("dialog", { name: "example.com says" });
+        expect(sheet).toHaveTextContent("Sure?");
+
+        fireEvent.pointerDown(viewport, { clientX: 12, clientY: 18 });
+        fireEvent.keyDown(viewport, { key: "a", code: "KeyA" });
+        expect(browserApi.pointer).not.toHaveBeenCalled();
+        expect(browserApi.key).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole("button", { name: "OK" }));
+        expect(browserApi.respondDialog).toHaveBeenCalledWith("agent-one", "tab-one", true, undefined);
+    });
+
+    it("answers a prompt with the typed text and a cancel with a refusal", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({
+            tabs: [{ ...snapshot.tabs[0], dialog: { kind: "prompt", message: "Name?", defaultPrompt: "anon", url: "https://example.com/" } }],
+            activeTabId: "tab-one",
+        });
+        await renderStreamingPane();
+        const input = screen.getByRole("textbox", { name: "Prompt answer" });
+        expect(input).toHaveValue("anon");
+        expect(input).toHaveFocus();
+        fireEvent.change(input, { target: { value: "kishore" } });
+        fireEvent.submit(input.closest("form")!);
+        expect(browserApi.respondDialog).toHaveBeenCalledWith("agent-one", "tab-one", true, "kishore");
+
+        fireEvent.keyDown(input, { key: "Escape" });
+        expect(browserApi.respondDialog).toHaveBeenLastCalledWith("agent-one", "tab-one", false, undefined);
+    });
+
+    it("offers leave or stay for a page holding onto its changes", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({
+            tabs: [{ ...snapshot.tabs[0], dialog: { kind: "beforeunload", message: "", defaultPrompt: "", url: "https://example.com/" } }],
+            activeTabId: "tab-one",
+        });
+        await renderStreamingPane();
+        expect(screen.getByRole("dialog", { name: "Leave this page?" })).toHaveTextContent("Changes you made may not be saved.");
+        fireEvent.click(screen.getByRole("button", { name: "Stay" }));
+        expect(browserApi.respondDialog).toHaveBeenCalledWith("agent-one", "tab-one", false, undefined);
+        fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+        expect(browserApi.respondDialog).toHaveBeenLastCalledWith("agent-one", "tab-one", true, undefined);
+    });
+
+    /* A click into a busy page comes back late or not at all; the frozen frame
+       already says so, and a toast for every one of them buried the app. */
+    it("keeps a failed click out of the toasts", async () => {
+        vi.mocked(browserApi.pointer).mockRejectedValue(new Error("browser CDP Input.dispatchMouseEvent timed out"));
+        const viewport = await renderStreamingPane();
+        fireEvent.pointerDown(viewport, { pointerId: 3, clientX: 12, clientY: 18 });
+        fireEvent.pointerUp(viewport, { pointerId: 3, clientX: 12, clientY: 18 });
+        await act(async () => {});
+        expect(browserApi.pointer).toHaveBeenCalledTimes(2);
+        expect(useToasts.getState().toasts).toEqual([]);
+    });
+
+    it("tells the page the button is still down while the pointer drags", async () => {
+        const viewport = await renderStreamingPane();
+        /* Moves closer together than a frame are dropped, so each one here
+           lands well after the last. */
+        let now = 1000;
+        vi.spyOn(performance, "now").mockImplementation(() => (now += 100));
+        fireEvent.pointerDown(viewport, { pointerId: 3, clientX: 12, clientY: 18 });
+        fireEvent.pointerMove(viewport, { pointerId: 3, clientX: 40, clientY: 18 });
+        expect(browserApi.pointer).toHaveBeenLastCalledWith("agent-one", expect.objectContaining({ kind: "move", button: "left" }));
+        fireEvent.pointerUp(viewport, { pointerId: 3, clientX: 40, clientY: 18 });
+        fireEvent.pointerMove(viewport, { pointerId: 3, clientX: 80, clientY: 18 });
+        expect(browserApi.pointer).toHaveBeenLastCalledWith("agent-one", expect.objectContaining({ kind: "move", button: "none" }));
     });
 });

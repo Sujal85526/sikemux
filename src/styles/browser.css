@@ -277,6 +277,18 @@
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
+/* The page's dialog sits over the frame, not over the whole app: the terminal
+   beside it stays usable while the page waits. */
+.browser-viewport > .browser-dialog-scrim {
+    position: absolute;
+    z-index: 2;
+    padding: var(--space-4);
+}
+
+.browser-viewport .dlg {
+    width: min(380px, 100%);
+}
+
 .browser-loading {
     position: absolute;
     inset: 0;
