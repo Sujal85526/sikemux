@@ -21,27 +21,13 @@ use crate::{
 /// user actually has tools in. `make dev` works because the dev binary is
 /// launched from a terminal that already has the right PATH.
 ///
-/// Fix: at startup, exec the user's login shell with `-l -c 'printf %s
-/// "$PATH"'` to extract the real PATH, then set it on our own process so
-/// every `Command::new(...)` (hermes, rnd, aws, claude, …) inherits it.
-/// Standard "fix-path" pattern Electron + Tauri apps have used for years.
+/// Fix: at startup, read `PATH` out of the one login-shell capture the app
+/// already makes, then set it on our own process so every `Command::new(...)`
+/// (hermes, rnd, aws, claude, …) inherits it. Standard "fix-path" pattern
+/// Electron + Tauri apps have used for years.
 #[cfg(unix)]
 pub fn fix_path_from_login_shell() {
-    let shell = configured_shell();
-
-    let mut shell_path = String::new();
-    let script =
-        "printf %s '@@SIKEMUX_PATH@@'; printf %s \"$PATH\"; printf %s '@@SIKEMUX_PATH_END@@'";
-    let mut command = Command::new(&shell);
-    command
-        .args(["-l", "-i", "-c", script])
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    if let Ok(o) = command.output() {
-        if o.status.success() {
-            shell_path = parse_login_shell_path(&o.stdout).unwrap_or_default();
-        }
-    }
+    let shell_path = login_shell_capture().path.clone().unwrap_or_default();
 
     // Always-union: even if the shell extraction succeeded, append the
     // common user-local bin dirs in case they live in ~/.zshrc (which
@@ -80,17 +66,6 @@ pub fn fix_path_from_login_shell() {
     // SAFETY: called once at startup before any threads spawn — env::set_var
     // is unsound under multi-threaded mutation but we're single-threaded.
     unsafe { std::env::set_var("PATH", new_path) };
-}
-
-#[cfg(unix)]
-fn parse_login_shell_path(stdout: &[u8]) -> Option<String> {
-    const START: &[u8] = b"@@SIKEMUX_PATH@@";
-    const END: &[u8] = b"@@SIKEMUX_PATH_END@@";
-    let start = rfind_bytes(stdout, START)? + START.len();
-    let payload = &stdout[start..];
-    let end = rfind_bytes(payload, END)?;
-    let path = std::str::from_utf8(&payload[..end]).ok()?.trim();
-    (!path.is_empty()).then(|| path.to_string())
 }
 
 #[cfg(windows)]
@@ -165,34 +140,47 @@ const LOGIN_ENV_SIKEMUX_OWNED: &[&str] = &[
 /// and that is where people put exports. `-l` alone reads `.zprofile` and
 /// misses them, which is why the `PATH` capture above cannot be reused.
 pub fn login_shell_environment() -> &'static HashMap<String, String> {
-    static CACHE: OnceLock<HashMap<String, String>> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        #[cfg(unix)]
-        {
-            capture_login_shell_environment()
-        }
-        // Windows desktop apps already inherit the user's environment.
-        #[cfg(windows)]
-        {
-            HashMap::new()
-        }
-    })
+    #[cfg(unix)]
+    {
+        &login_shell_capture().environment
+    }
+    // Windows desktop apps already inherit the user's environment.
+    #[cfg(windows)]
+    {
+        static EMPTY: OnceLock<HashMap<String, String>> = OnceLock::new();
+        EMPTY.get_or_init(HashMap::new)
+    }
+}
+
+/// What one run of the user's login shell told us: the `PATH` it resolves and
+/// everything else it exports. Both come out of the same `env -0` payload, so
+/// startup pays for one interactive shell rather than two.
+#[cfg(unix)]
+#[derive(Default)]
+struct LoginShellCapture {
+    path: Option<String>,
+    environment: HashMap<String, String>,
+}
+
+#[cfg(unix)]
+fn login_shell_capture() -> &'static LoginShellCapture {
+    static CACHE: OnceLock<LoginShellCapture> = OnceLock::new();
+    CACHE.get_or_init(capture_login_shell)
 }
 
 /// Populate the `login_shell_environment` cache from the startup thread.
 ///
-/// The capture blocks for as long as the profile takes, up to
-/// `LOGIN_ENV_TIMEOUT`. It is first *needed* inside `pty_spawn`, an async
-/// command, so initialising it lazily there would park an async runtime worker
-/// for that whole time and make concurrent spawns during session restore queue
-/// behind the same one-time initialisation. Called from `run()` it costs
-/// nothing extra: startup is already waiting on a login shell for `PATH`.
+/// `fix_path_from_login_shell` already filled it — both halves come out of one
+/// capture — so this is free once that has run. It stays as its own call
+/// because the cache is first *needed* inside `pty_spawn`, an async command,
+/// and initialising it there would park an async runtime worker for up to
+/// `LOGIN_ENV_TIMEOUT` with concurrent spawns queued behind it.
 pub fn warm_login_shell_environment() {
     let _ = login_shell_environment();
 }
 
 #[cfg(unix)]
-fn capture_login_shell_environment() -> HashMap<String, String> {
+fn capture_login_shell() -> LoginShellCapture {
     let shell = configured_shell();
     // `env -0` rather than newline records: a value may contain a newline, but
     // never a NUL.
@@ -217,40 +205,56 @@ fn capture_login_shell_environment() -> HashMap<String, String> {
     // exactly once — and the alternative is process-group teardown for a case
     // that ends the moment the user fixes their profile.
     match receiver.recv_timeout(LOGIN_ENV_TIMEOUT) {
-        Ok(Some(output)) if output.status.success() => {
-            parse_login_shell_environment(&output.stdout)
-        }
-        _ => HashMap::new(),
+        Ok(Some(output)) if output.status.success() => LoginShellCapture {
+            path: parse_login_shell_path(&output.stdout),
+            environment: parse_login_shell_environment(&output.stdout),
+        },
+        _ => LoginShellCapture::default(),
     }
+}
+
+/// The fenced `env -0` payload, split into key/value records.
+///
+/// Work on bytes, not `from_utf8_lossy`: a value that is not valid UTF-8 would
+/// otherwise have replacement characters substituted into it and be read in
+/// corrupted form, which is a silent way to break a token. Each record is
+/// converted individually so one bad value drops itself instead of the whole
+/// capture.
+#[cfg(unix)]
+fn login_shell_records(stdout: &[u8]) -> impl Iterator<Item = (&str, &str)> {
+    let payload = login_shell_payload(stdout).unwrap_or(&[]);
+    payload
+        .split(|byte| *byte == 0)
+        .filter_map(|record| std::str::from_utf8(record).ok())
+        .filter_map(|record| record.split_once('='))
+        .filter(|(key, _)| !key.is_empty() && !key.contains(char::is_whitespace))
+}
+
+#[cfg(unix)]
+fn login_shell_payload(stdout: &[u8]) -> Option<&[u8]> {
+    let start = rfind_bytes(stdout, LOGIN_ENV_SENTINEL.as_bytes())? + LOGIN_ENV_SENTINEL.len();
+    let payload = &stdout[start..];
+    // Without the closing fence we cannot tell the payload from whatever an
+    // exit hook printed after it, so refuse rather than guess.
+    let end = rfind_bytes(payload, LOGIN_ENV_SENTINEL_END.as_bytes())?;
+    Some(&payload[..end])
 }
 
 #[cfg(unix)]
 fn parse_login_shell_environment(stdout: &[u8]) -> HashMap<String, String> {
-    // Work on bytes, not `from_utf8_lossy`: a value that is not valid UTF-8
-    // would otherwise have replacement characters substituted into it and be
-    // imported in corrupted form, which is a silent way to break a token. Each
-    // record is converted individually so one bad value drops itself instead of
-    // the whole capture.
-    let Some(start) = rfind_bytes(stdout, LOGIN_ENV_SENTINEL.as_bytes()) else {
-        return HashMap::new();
-    };
-    let payload = &stdout[start + LOGIN_ENV_SENTINEL.len()..];
-    // Without the closing fence we cannot tell the payload from whatever an
-    // exit hook printed after it, so refuse rather than guess.
-    let Some(end) = rfind_bytes(payload, LOGIN_ENV_SENTINEL_END.as_bytes()) else {
-        return HashMap::new();
-    };
-    payload[..end]
-        .split(|byte| *byte == 0)
-        .filter_map(|record| std::str::from_utf8(record).ok())
-        .filter_map(|record| record.split_once('='))
-        .filter(|(key, _)| {
-            !key.is_empty()
-                && !key.contains(char::is_whitespace)
-                && !LOGIN_ENV_SIKEMUX_OWNED.contains(key)
-        })
+    login_shell_records(stdout)
+        .filter(|(key, _)| !LOGIN_ENV_SIKEMUX_OWNED.contains(key))
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect()
+}
+
+#[cfg(unix)]
+fn parse_login_shell_path(stdout: &[u8]) -> Option<String> {
+    login_shell_records(stdout)
+        .filter(|(key, _)| *key == "PATH")
+        .map(|(_, value)| value.trim().to_string())
+        .last()
+        .filter(|path| !path.is_empty())
 }
 
 #[cfg(unix)]
@@ -754,14 +758,32 @@ mod executable_tests {
         );
     }
 
+    /// `PATH` and the profile environment come out of the same capture, and
+    /// only what the fenced payload holds counts — an rc banner that mentions
+    /// a PATH before the sentinel is chatter, not the shell's answer.
     #[cfg(unix)]
     #[test]
-    fn login_shell_path_ignores_interactive_profile_output() {
-        let output = b"welcome\n\x1b]7;file://host/tmp\x07@@SIKEMUX_PATH@@/Users/test/.mise/shims:/usr/bin@@SIKEMUX_PATH_END@@prompt noise";
+    fn login_shell_path_comes_from_the_fenced_payload() {
+        let stdout = format!(
+            "welcome\n\u{1b}]7;file://host/tmp\u{7}PATH=/decoy\n{}HOME=/Users/x\0PATH=/Users/test/.mise/shims:/usr/bin\0{}prompt noise",
+            super::LOGIN_ENV_SENTINEL,
+            super::LOGIN_ENV_SENTINEL_END
+        );
+
         assert_eq!(
-            parse_login_shell_path(output).as_deref(),
+            parse_login_shell_path(stdout.as_bytes()).as_deref(),
             Some("/Users/test/.mise/shims:/usr/bin")
         );
+        // The same payload still keeps PATH out of the imported environment.
+        assert!(!parse_login_shell_environment(stdout.as_bytes()).contains_key("PATH"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn login_shell_path_is_absent_without_a_fenced_payload() {
+        assert!(parse_login_shell_path(b"PATH=/decoy\0").is_none());
+        let truncated = format!("{}PATH=/decoy\0", super::LOGIN_ENV_SENTINEL);
+        assert!(parse_login_shell_path(truncated.as_bytes()).is_none());
     }
 
     #[test]
