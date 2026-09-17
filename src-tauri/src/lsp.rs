@@ -645,16 +645,19 @@ fn restore_last_change(last_change: &mut HashMap<String, u64>, path: &str, value
     }
 }
 
+/// Takes the document text by value: the buffer is handed straight to the
+/// outbound frame instead of being copied into it, and an editor document can
+/// be megabytes.
 fn open_document(
     server: &ServerHandle,
     path: &str,
-    content: &str,
+    content: String,
     language_id: &str,
 ) -> AppResult<()> {
     if server.shutdown.load(Ordering::Acquire) {
         return Err(AppError::Lsp("server shut down".into()));
     }
-    let hash = content_hash(content);
+    let hash = content_hash(&content);
     let mut documents = server.open_docs.lock().map_err(lsp)?;
 
     if documents.contains_key(path) {
@@ -689,7 +692,7 @@ fn open_document(
             "textDocument/didChange",
             json!({
                 "textDocument": { "uri": path_to_uri(path), "version": next_version },
-                "contentChanges": [{ "text": content }]
+                "contentChanges": [{ "text": Value::String(content) }]
             }),
         );
         if result.is_err() {
@@ -723,7 +726,7 @@ fn open_document(
                 "uri": path_to_uri(path),
                 "languageId": language_id,
                 "version": 1,
-                "text": content
+                "text": Value::String(content)
             }
         }),
     );
@@ -738,13 +741,13 @@ fn open_document(
 fn change_document(
     server: &ServerHandle,
     path: &str,
-    content: &str,
+    content: String,
     requested_version: u32,
 ) -> AppResult<()> {
     if server.shutdown.load(Ordering::Acquire) {
         return Err(AppError::Lsp("server shut down".into()));
     }
-    let hash = content_hash(content);
+    let hash = content_hash(&content);
     let mut documents = server.open_docs.lock().map_err(lsp)?;
     let previous = *documents
         .get(path)
@@ -765,7 +768,7 @@ fn change_document(
         "textDocument/didChange",
         json!({
             "textDocument": { "uri": path_to_uri(path), "version": version },
-            "contentChanges": [{ "text": content }]
+            "contentChanges": [{ "text": Value::String(content) }]
         }),
     );
     if result.is_err() {
@@ -795,6 +798,17 @@ fn change_document_incremental(
         .get_mut(path)
         .expect("document disappeared while its map is locked")
         .version = version;
+    let changes = changes
+        .into_iter()
+        .map(|change| {
+            json!({
+                "range": change.range,
+                "rangeLength": change.range_length,
+                // Moved, not copied: a paste arrives here as one edit.
+                "text": Value::String(change.text),
+            })
+        })
+        .collect::<Vec<_>>();
     let result = notify(
         server,
         "textDocument/didChange",
@@ -1611,7 +1625,7 @@ pub async fn lsp_open(
         .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     task::spawn_blocking(move || {
         let language_id = language_id.unwrap_or(language);
-        open_document(&server, &path, &content, &language_id)
+        open_document(&server, &path, content, &language_id)
     })
     .await
     .map_err(|e| AppError::Lsp(format!("join: {e}")))?
@@ -1629,7 +1643,7 @@ pub async fn lsp_change(
     validate_document_path(&path)?;
     let server =
         server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
-    task::spawn_blocking(move || change_document(&server, &path, &content, version))
+    task::spawn_blocking(move || change_document(&server, &path, content, version))
         .await
         .map_err(|e| AppError::Lsp(format!("join: {e}")))?
 }
