@@ -5001,7 +5001,7 @@ mod tests {
         // The parser only has to cover what a reattaching xterm replays, and
         // a detached PTY drops to the smaller idle size.
         assert_eq!(PARSER_SCROLLBACK, 3_000);
-        assert!(IDLE_SCROLLBACK < PARSER_SCROLLBACK);
+        assert_eq!(IDLE_SCROLLBACK, 1_000);
     }
 
     #[cfg(unix)]
