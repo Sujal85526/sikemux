@@ -15,6 +15,30 @@ const MIN_SIDE = 320;
 const DEFAULT_RATIO = 0.52;
 const BLANK_URL = "about:blank";
 
+/*
+ * How long a lost tab report can go unnoticed.
+ *
+ * Tabs push their own changes, so this is only a net under the subscription —
+ * it used to run every 1.5 seconds, which is an IPC round trip and a React
+ * render forty times a minute for a pane that is already being told.
+ */
+const TAB_POLL_MS = 15_000;
+
+/*
+ * Which scrollers can move this pane on screen: its own scrolling ancestors,
+ * and the window. Listening on the window in the capture phase instead meant
+ * every scroll anywhere in the app — a chat transcript, a terminal, a file tree
+ * — asked the browser pane to re-measure itself.
+ */
+function scrollParents(element: HTMLElement): (HTMLElement | Window)[] {
+    const parents: (HTMLElement | Window)[] = [window];
+    for (let node = element.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (/auto|scroll|overlay/.test(`${style.overflowX} ${style.overflowY}`)) parents.push(node);
+    }
+    return parents;
+}
+
 function sameBounds(a: BrowserBounds | null, b: BrowserBounds): boolean {
     return !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
@@ -70,10 +94,11 @@ export function AgentBrowserShell({
         };
 
         /* Tabs announce their own changes; the poll only notices a report
-           that was lost while this pane was not listening. */
+           that was lost while this pane was not listening, which is why it
+           reads once on becoming visible and then rarely. */
         const poll = () => {
             void sync();
-            timer = window.setTimeout(poll, 1500);
+            timer = window.setTimeout(poll, TAB_POLL_MS);
         };
 
         void browserApi.subscribeTabs(() => void sync(), controller.signal).catch(() => {});
@@ -164,14 +189,15 @@ function BrowserPane({
         measure();
         const observer = new ResizeObserver(schedule);
         observer.observe(host);
+        const scrollers = scrollParents(host);
+        for (const scroller of scrollers) scroller.addEventListener("scroll", schedule, { passive: true });
         window.addEventListener("resize", schedule);
-        window.addEventListener("scroll", schedule, true);
         window.addEventListener("transitionend", schedule, true);
         return () => {
             observer.disconnect();
             if (frame) window.cancelAnimationFrame(frame);
+            for (const scroller of scrollers) scroller.removeEventListener("scroll", schedule);
             window.removeEventListener("resize", schedule);
-            window.removeEventListener("scroll", schedule, true);
             window.removeEventListener("transitionend", schedule, true);
         };
     }, []);
