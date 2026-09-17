@@ -31,6 +31,7 @@ import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
 import { useGitBlame } from "../hooks/useGitBlame";
+import { refreshBlame } from "../editor/gitBlame";
 import type { CliPendingEditorOpen } from "../state/types";
 import { IconClose, IconEditor, IconEye, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
@@ -361,6 +362,7 @@ export function EditorPane({
                     next.delete(path);
                     return next;
                 });
+                if (currentRef.current === path) refreshBlame(viewRef.current);
                 if (cwd) {
                     // The repo watcher invalidates the git resources on its own
                     // shortly after the write; doing it here as well makes the

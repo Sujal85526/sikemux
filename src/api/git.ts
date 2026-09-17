@@ -122,6 +122,7 @@ function revisionOf(key: string): string {
 }
 
 function rememberFileAt(key: string, content: string): void {
+    if (typeof content !== "string") return;
     const previous = fileAtCache.get(key);
     if (previous !== undefined) fileAtChars -= previous.length;
     fileAtCache.delete(key);

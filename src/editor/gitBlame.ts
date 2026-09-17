@@ -91,15 +91,19 @@ const blameRender = ViewPlugin.fromClass(
     { decorations: (v) => v.deco },
 );
 
+/** How long typing has to stop before the whole buffer is shipped off to be blamed again. */
+const BLAME_IDLE_MS = 1_200;
+
 // Owns the (debounced) backend fetch. Cursor moves never reach here — only doc
 // edits and explicit refreshes do — so the common interaction is pure lookup.
 const blameFetch = ViewPlugin.fromClass(
     class {
         timer: number | undefined;
         token = 0;
+        lastSent: { repo: string; path: string; contents: string } | null = null;
         constructor(readonly view: EditorView) {}
         update(u: ViewUpdate) {
-            if (u.docChanged) this.schedule(450);
+            if (u.docChanged) this.schedule(BLAME_IDLE_MS);
         }
         schedule(delay: number) {
             if (this.timer) window.clearTimeout(this.timer);
@@ -110,17 +114,24 @@ const blameFetch = ViewPlugin.fromClass(
             if (!ctx) return;
             const my = ++this.token;
             if (this.view.state.doc.length > LARGE_DOC_BYTES) {
+                this.lastSent = null;
                 this.view.dispatch({ effects: setBlame.of(null) });
                 return;
             }
             // Blame the live buffer so unsaved edits map to the right lines.
             const contents = this.view.state.doc.toString();
+            const sent = this.lastSent;
+            if (sent && sent.repo === ctx.repo && sent.path === ctx.path && sent.contents === contents) return;
+            this.lastSent = { repo: ctx.repo, path: ctx.path, contents };
             git.blame(ctx.repo, ctx.path, contents)
                 .then((data) => {
                     if (my !== this.token || contexts.get(this.view) !== ctx) return;
                     this.view.dispatch({ effects: setBlame.of(data) });
                 })
-                .catch(swallow("git blame"));
+                .catch((error: unknown) => {
+                    this.lastSent = null;
+                    swallow("git blame")(error);
+                });
         }
         destroy() {
             if (this.timer) window.clearTimeout(this.timer);
@@ -148,8 +159,13 @@ export function setBlameContext(view: EditorView | null, ctx: { repo: string; pa
     view.plugin(blameFetch)?.schedule(0);
 }
 
-/** Re-fetch blame for the current file (e.g. after a commit / external change). */
+/** Re-fetch blame for the current file (e.g. after a save / commit / external change). */
 export function refreshBlame(view: EditorView | null) {
     if (!view) return;
-    view.plugin(blameFetch)?.schedule(0);
+    const fetcher = view.plugin(blameFetch);
+    if (!fetcher) return;
+    // The buffer may be byte-identical while the answer is not, so drop the
+    // "already asked this" guard before rescheduling.
+    fetcher.lastSent = null;
+    fetcher.schedule(0);
 }

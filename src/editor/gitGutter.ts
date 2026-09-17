@@ -63,6 +63,23 @@ function markersFromHunks(view: EditorView, hunks: DiffHunk[]): RangeSet<GitMark
     return builder.finish();
 }
 
+/** Identical head and tail lines cannot hold a change, so only the middle has to cross IPC. */
+function trimUnchangedEnds(baseline: string, current: string): { baseline: string; current: string; offset: number } {
+    const base = baseline.split("\n");
+    const live = current.split("\n");
+    const limit = Math.min(base.length, live.length) - 1;
+    let head = 0;
+    while (head < limit && base[head] === live[head]) head += 1;
+    let tail = 0;
+    while (head + tail < limit && base[base.length - 1 - tail] === live[live.length - 1 - tail]) tail += 1;
+    if (head === 0 && tail === 0) return { baseline, current, offset: 0 };
+    return {
+        baseline: base.slice(head, base.length - tail).join("\n"),
+        current: live.slice(head, live.length - tail).join("\n"),
+        offset: head,
+    };
+}
+
 function scheduleHunks(view: EditorView) {
     let timer: number | undefined;
     let token = 0;
@@ -78,11 +95,15 @@ function scheduleHunks(view: EditorView) {
             return;
         }
         const my = ++token;
+        const trimmed = trimUnchangedEnds(baseline, current);
         diffApi
-            .hunks(baseline, current)
+            .hunks(trimmed.baseline, trimmed.current)
             .then((hunks) => {
                 if (my !== token) return;
-                view.dispatch({ effects: setHunks.of(hunks) });
+                const shifted = trimmed.offset
+                    ? hunks.map((hunk) => ({ ...hunk, start: hunk.start + trimmed.offset, end: hunk.end + trimmed.offset }))
+                    : hunks;
+                view.dispatch({ effects: setHunks.of(shifted) });
             })
             .catch(swallow("diff hunks"));
     };
@@ -184,5 +205,6 @@ export function gitDiffGutter(): Extension {
 }
 
 export function setGitBaseline(view: EditorView, baseline: string) {
+    if (view.state.field(baselineField, false) === baseline) return;
     view.dispatch({ effects: setBaseline.of(baseline) });
 }
