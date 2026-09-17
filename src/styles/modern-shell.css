@@ -286,12 +286,12 @@ textarea:focus,
     margin-left: var(--space-1);
 }
 
-/* Revealed by the pointer, by selection and by the keyboard. A close you can
-   only reach with a mouse is a close half the app cannot use. */
+/* Revealed by the pointer, and by the keyboard when it lands there — a close
+   you can only reach with a mouse is a close half the app cannot use. Selection
+   does not reveal it: a row you are looking at is not a row you are closing. */
 .session-row-shell:hover > .row-x,
 .agent-row-wrap:hover > .row-x,
 .tab-wrap:hover .tab-x,
-.tab-wrap.active .tab-x,
 .row-x:focus-visible,
 .tab-x:focus-visible {
     opacity: 1;

@@ -220,11 +220,13 @@ is the one exception: it is already an object, so a tile behind it is a chip in
 a chip.
 
 The close is a 20px button in the same corner of every row and tab, quiet
-(`--text-tertiary`) until the pointer is on it and `--danger` once it is. Hover,
-selection and `:focus-visible` all reveal it — a close you can only reach with a
-mouse is a close half the app cannot use — and the row keeps its room free at
-all times, because a label that reflows when the pointer arrives is a label you
-cannot read.
+(`--text-tertiary`) until the pointer is on it and `--danger` once it is. The
+pointer reveals it, and so does `:focus-visible` — a close you can only reach
+with a mouse is a close half the app cannot use. Selection does not: a row you
+are looking at is not a row you are closing, and a strip of tabs with a standing
+× on the one you are using is a strip inviting you to shut it. The row keeps the
+room free at all times either way, because a label that reflows when the pointer
+arrives is a label you cannot read.
 
 **Selection is the fill and the hairline, and nothing else.** Agent rows also
 carried a 2.5px accent bar down their leading edge — a third statement of what
