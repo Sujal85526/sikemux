@@ -33,6 +33,7 @@ interface AgentStateChanged {
 
 interface AgentWatchRecord {
     group: AgentSyncGroup;
+    signature: string;
     watchId: number | null;
     cancelled: boolean;
     titleRetries: number;
@@ -45,9 +46,16 @@ function groupKey(type: AgentType, cwd: string, configPath?: string): string {
     return `${type}\0${cwd}\0${configPath ?? ""}`;
 }
 
-function collectAgentSyncGroups(): AgentSyncGroup[] {
+/* One group's own membership, so an agent appearing in one project does not
+   make every other project re-read its sessions from disk. */
+interface DesiredGroup {
+    group: AgentSyncGroup;
+    signature: string;
+}
+
+function collectAgentSyncGroups(): Map<string, DesiredGroup> {
     const st = getState();
-    const groups = new Map<string, AgentSyncGroup>();
+    const groups = new Map<string, DesiredGroup>();
 
     for (const sessionId of st.sessionOrder) {
         const session = st.sessions[sessionId];
@@ -59,11 +67,15 @@ function collectAgentSyncGroups(): AgentSyncGroup[] {
             const configPath = agent.profileId
                 ? st.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
                 : undefined;
-            groups.set(groupKey(agent.type, cwd, configPath), { type: agent.type, cwd, configPath });
+            const key = groupKey(agent.type, cwd, configPath);
+            const existing = groups.get(key);
+            const member = `${agent.id}:${agent.resumeId ?? ""}:${agent.createdAt ?? 0}`;
+            if (existing) existing.signature = `${existing.signature}|${member}`;
+            else groups.set(key, { group: { type: agent.type, cwd, configPath }, signature: member });
         }
     }
 
-    return [...groups.values()];
+    return groups;
 }
 
 function syncGroup({ type, cwd, configPath }: AgentSyncGroup): void {
@@ -82,9 +94,11 @@ function groupNeedsMetadata({ type, cwd, configPath }: AgentSyncGroup): boolean 
             const agentConfigPath = agent?.profileId
                 ? state.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
                 : undefined;
-            return (
-                agent?.type === type && (agent.cwd || session.cwd) === cwd && agentConfigPath === configPath && cmd.agentSessionMetadataPending(agent)
-            );
+            /* Once a turn starts, ACP says which conversation the agent
+               adopted, and the watcher brings the title over when the CLI
+               writes it. Only an agent that has not said yet is worth asking
+               about on a timer. */
+            return agent?.type === type && (agent.cwd || session.cwd) === cwd && agentConfigPath === configPath && !agent.resumeId;
         });
     });
 }
@@ -172,7 +186,7 @@ export function AgentSessionSync() {
     }, []);
 
     useEffect(() => {
-        const desired = new Map(collectAgentSyncGroups().map((group) => [groupKey(group.type, group.cwd, group.configPath), group]));
+        const desired = collectAgentSyncGroups();
 
         for (const [key, record] of watchesRef.current) {
             if (desired.has(key)) continue;
@@ -181,13 +195,16 @@ export function AgentSessionSync() {
             if (record.watchId !== null) void agentApi.watchStop(record.watchId).catch(swallow("agent sessions watch stop"));
         }
 
-        for (const [key, group] of desired) {
+        for (const [key, { group, signature }] of desired) {
             const existing = watchesRef.current.get(key);
             if (existing) {
+                if (existing.signature === signature) continue;
+                existing.signature = signature;
+                existing.titleRetries = 0;
                 syncGroup(existing.group);
                 continue;
             }
-            const record: AgentWatchRecord = { group, watchId: null, cancelled: false, titleRetries: 0 };
+            const record: AgentWatchRecord = { group, signature, watchId: null, cancelled: false, titleRetries: 0 };
             watchesRef.current.set(key, record);
             syncGroup(group);
             void agentApi

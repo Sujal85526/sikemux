@@ -100,6 +100,41 @@ describe("AgentSessionSync IPC events", () => {
         expect(agentApi.watchStop).not.toHaveBeenCalledWith(18);
     });
 
+    it("leaves an unchanged group alone when another project gains an agent", async () => {
+        render(<AgentSessionSync />);
+        await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledTimes(1));
+
+        const sessionId = getState().activeSessionId;
+        act(() =>
+            setState((state) => withAgents(state, sessionId, [{ id: "agent-2", type: "codex", title: "Other", startup: "codex", cwd: "/other" }])),
+        );
+
+        await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledWith(expect.anything(), "codex", "/other", undefined));
+        expect(resources.fetchResource).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops asking on a timer once the session says which conversation it adopted", async () => {
+        vi.useFakeTimers();
+        try {
+            render(<AgentSessionSync />);
+            await vi.waitFor(() => expect(resources.fetchResource).toHaveBeenCalledTimes(1));
+
+            act(() => void vi.advanceTimersByTime(1_600));
+            expect(resources.fetchResource).toHaveBeenCalledTimes(2);
+
+            act(() =>
+                setState((state) => ({
+                    agents: { ...state.agents, "agent-1": { ...state.agents["agent-1"], resumeId: "session-1" } },
+                })),
+            );
+            const settled = vi.mocked(resources.fetchResource).mock.calls.length;
+            act(() => void vi.advanceTimersByTime(10_000));
+            expect(resources.fetchResource).toHaveBeenCalledTimes(settled);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("keeps session discovery inside the selected provider profile", async () => {
         setState((state) => ({
             providerProfiles: [{ id: "codex-work", name: "Codex Work", provider: "codex", accent: "#10a37f", configPath: "~/.codex-work" }],
