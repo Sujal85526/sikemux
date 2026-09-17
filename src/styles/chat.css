@@ -1104,7 +1104,8 @@ button.chat-tool:hover {
 .chat-activity,
 .chat-error,
 .chat-permission,
-.chat-plan {
+.chat-plan,
+.chat-reconnect {
     width: min(calc(100% - 44px), 756px);
     margin-inline: auto;
 }
@@ -1170,7 +1171,13 @@ button.chat-tool:hover {
     }
 }
 
-.chat-connection-state button {
+.chat-connection-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.chat-connection-state button,
+.chat-reconnect button {
     height: 28px;
     padding: 0 11px;
     border: 1px solid var(--line);
@@ -1180,9 +1187,24 @@ button.chat-tool:hover {
     font-size: 10.5px;
 }
 
-.chat-connection-state button:hover {
+.chat-connection-state button:hover,
+.chat-reconnect button:hover {
     border-color: var(--acc-line);
     color: var(--ink);
+}
+
+.chat-reconnect {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    color: var(--ink-faint);
+    font-size: var(--text-2xs);
 }
 
 .chat-error {

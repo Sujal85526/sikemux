@@ -52,6 +52,9 @@ const MAX_ATTACHMENTS = 32;
 const MAX_DETAIL_CHARS = 120_000;
 // How far above the last line still counts as reading the latest message.
 const BOTTOM_SLACK = 72;
+/* A session that drops comes back on its own. The waits grow so an agent that
+   cannot come back stops trying and hands the decision over. */
+const RECONNECT_DELAYS = [700, 2_000, 5_000, 12_000];
 
 function recordOf(value: unknown): Record<string, unknown> | null {
     return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -809,6 +812,7 @@ export function AgentChatPane({
     const [stoppingTasks, setStoppingTasks] = useState<string[]>([]);
     const [atBottom, setAtBottom] = useState(true);
     const [restartKey, setRestartKey] = useState(0);
+    const [reconnectAttempt, setReconnectAttempt] = useState(0);
     const paneRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -861,6 +865,30 @@ export function AgentChatPane({
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 
+    useEffect(() => setQueued([]), [agent.id, cwd]);
+
+    /* A session drops when its adapter exits — a rate limit, a crash, a laptop
+       waking up. It resumes itself so the conversation is there to carry on
+       with, and only asks once the waits have run out. */
+    useEffect(() => {
+        if (state.connection === "ready") setReconnectAttempt(0);
+    }, [state.connection]);
+
+    useEffect(() => {
+        const dropped = state.connection === "error" || state.connection === "stopped";
+        if (!active || !dropped || reconnectAttempt >= RECONNECT_DELAYS.length) return;
+        const timer = window.setTimeout(() => {
+            setReconnectAttempt((value) => value + 1);
+            setRestartKey((value) => value + 1);
+        }, RECONNECT_DELAYS[reconnectAttempt]);
+        return () => window.clearTimeout(timer);
+    }, [active, reconnectAttempt, state.connection]);
+
+    const reconnect = useCallback(() => {
+        setReconnectAttempt(0);
+        setRestartKey((value) => value + 1);
+    }, []);
+
     useEffect(() => {
         const element = paneRef.current;
         if (!element) return;
@@ -871,11 +899,11 @@ export function AgentChatPane({
         });
     }, []);
 
-    /* The composer is disabled until the session connects, and focus put on a
-       disabled field goes nowhere — so a chat has to be focused again once it
-       is ready, not only when its pane appears. */
+    /* A chat is focused again once its session is ready, not only when its pane
+       appears: a pane opened while the agent was still starting would otherwise
+       keep the caret wherever it was. */
     useEffect(() => {
-        if (!visible || state.connection !== "ready") return;
+        if (!visible) return;
         const held = document.activeElement;
         if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
         const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
@@ -886,10 +914,9 @@ export function AgentChatPane({
         if (!active) return;
         const controller = new AbortController();
         let mounted = true;
-        dispatch({ type: "reset" });
+        dispatch({ type: "reset", hold: Boolean(agentRef.current.resumeId) });
         setAppliedPermissionMode(null);
         setChangingPermissions(false);
-        setQueued([]);
         sessionIdRef.current = null;
 
         const flushUpdates = () => {
@@ -1115,12 +1142,12 @@ export function AgentChatPane({
 
     const send = async (steerNow = false) => {
         const text = draft.trim();
+        const ready = state.connection === "ready";
         if (
             (!text && attachments.length === 0) ||
             configPending.current ||
-            state.connection !== "ready" ||
             changingPermissions ||
-            permissionMode !== appliedPermissionMode
+            (ready && permissionMode !== appliedPermissionMode)
         )
             return;
         const commandName = text.match(/^\/([^\s]+)/)?.[1];
@@ -1134,13 +1161,16 @@ export function AgentChatPane({
         setAttachments([]);
         setComposerError(null);
         setSlashDismissed(false);
-        if (!state.running) {
+        if (ready && !state.running) {
             await promptNow(text, paths);
             return;
         }
+
+        /* Written mid-turn, or while the session is still coming up: it waits
+           in the queue and goes out as its own prompt once the session is free. */
         queuedCount.current += 1;
         const message: QueuedMessage = { id: `queued-${queuedCount.current}`, text, paths };
-        if (steerNow && steerable) {
+        if (steerNow && steerable && state.running) {
             await steer(message);
             return;
         }
@@ -1227,18 +1257,29 @@ export function AgentChatPane({
               : displayState.messages.length > 0
                 ? connecting
                 : null;
+    const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
+    const reconnecting = disconnected && reconnectAttempt < RECONNECT_DELAYS.length;
+    const startNewChat = () =>
+        cmd.addAgent(agent.type, undefined, undefined, {
+            permissionMode: agent.permissionMode,
+            profileId: agent.profileId,
+            detectedExecutablePath: profile?.executablePath || agent.executablePath,
+            cwd,
+        });
     const composerPlaceholder =
         state.connection === "ready"
             ? state.running
                 ? "Send to queue behind the running turn"
                 : "Ask about this project, or type / for commands"
-            : state.connection === "error" || state.connection === "stopped"
-              ? "Reconnect to continue this conversation"
-              : state.connection === "installing"
-                ? "Installing structured-session adapter…"
-                : state.connection === "starting"
-                  ? "Starting agent adapter…"
-                  : "Connecting to agent session…";
+            : reconnecting
+              ? "Reconnecting — this message sends as soon as the session is back"
+              : disconnected
+                ? "Reconnect to continue this conversation"
+                : state.connection === "installing"
+                  ? "Installing structured-session adapter…"
+                  : state.connection === "starting"
+                    ? "Starting agent adapter…"
+                    : "Connecting to agent session…";
 
     return (
         <div className="agent-chat-pane" ref={paneRef}>
@@ -1269,35 +1310,30 @@ export function AgentChatPane({
                 <div className="chat-scroll-content" ref={scrollContentRef}>
                     {displayState.messages.length === 0 && (
                         <div className={`chat-connection-state ${displayState.connection}`} role="status">
-                            {connecting && <span className="chat-activity-loader" aria-hidden="true" />}
+                            {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
                             <span>
-                                {connecting ??
-                                    (displayState.connection === "ready"
-                                        ? "Start a session with this project."
-                                        : displayState.connection === "error"
-                                          ? "Structured session unavailable."
-                                          : "Agent session stopped.")}
+                                {reconnecting
+                                    ? "Reconnecting…"
+                                    : (connecting ??
+                                      (displayState.connection === "ready"
+                                          ? "Start a session with this project."
+                                          : displayState.connection === "error"
+                                            ? "Structured session unavailable."
+                                            : "Agent session stopped."))}
                             </span>
-                            {(displayState.connection === "error" || displayState.connection === "stopped") && (
-                                <button type="button" onClick={() => setRestartKey((value) => value + 1)}>
-                                    Retry
-                                </button>
+                            {disconnected && !reconnecting && (
+                                <div className="chat-connection-actions">
+                                    <button type="button" onClick={reconnect}>
+                                        Reconnect
+                                    </button>
+                                    {agent.resumeId && (
+                                        <button type="button" onClick={startNewChat}>
+                                            Start new chat
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
-                    )}
-                    {displayState.connection === "error" && agent.resumeId && (
-                        <button
-                            type="button"
-                            onClick={() =>
-                                cmd.addAgent(agent.type, undefined, undefined, {
-                                    permissionMode: agent.permissionMode,
-                                    profileId: agent.profileId,
-                                    detectedExecutablePath: profile?.executablePath || agent.executablePath,
-                                    cwd,
-                                })
-                            }>
-                            Start new chat
-                        </button>
                     )}
                     <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
                         {virtualizer.getVirtualItems().map((item) => {
@@ -1338,10 +1374,23 @@ export function AgentChatPane({
                             <span>{displayState.error}</span>
                         </div>
                     )}
-                    {displayState.messages.length > 0 && (displayState.connection === "error" || displayState.connection === "stopped") && (
-                        <button type="button" onClick={() => setRestartKey((value) => value + 1)}>
-                            Reconnect
-                        </button>
+                    {displayState.messages.length > 0 && disconnected && (
+                        <div className="chat-reconnect" role="status">
+                            {reconnecting ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
+                            <span>{reconnecting ? "Reconnecting…" : "This session dropped."}</span>
+                            {!reconnecting && (
+                                <div className="chat-connection-actions">
+                                    <button type="button" onClick={reconnect}>
+                                        Reconnect
+                                    </button>
+                                    {agent.resumeId && (
+                                        <button type="button" onClick={startNewChat}>
+                                            Start new chat
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
@@ -1383,7 +1432,6 @@ export function AgentChatPane({
                     <textarea
                         ref={editorRef}
                         value={draft}
-                        disabled={state.connection !== "ready"}
                         aria-label="Message agent"
                         placeholder={composerPlaceholder}
                         rows={3}
@@ -1478,10 +1526,9 @@ export function AgentChatPane({
                                 aria-label="Send message"
                                 title={state.running && steerable ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it` : undefined}
                                 disabled={
-                                    state.connection !== "ready" ||
                                     changingConfig ||
                                     changingPermissions ||
-                                    permissionMode !== appliedPermissionMode ||
+                                    (state.connection === "ready" && permissionMode !== appliedPermissionMode) ||
                                     (!draft.trim() && attachments.length === 0)
                                 }
                                 onClick={() => void send()}>

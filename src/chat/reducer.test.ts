@@ -195,6 +195,26 @@ describe("chat reducer", () => {
         ]);
     });
 
+    it("holds the transcript through a reconnect until the resumed session replays it", () => {
+        const before = update(initialChatState, {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "message-1",
+            content: { type: "text", text: "Earlier answer" },
+        });
+        const reconnecting = chatReducer(before, { type: "reset", hold: true });
+        expect(reconnecting.messages).toEqual(before.messages);
+
+        const replayed = update(reconnecting, {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "message-1",
+            content: { type: "text", text: "Earlier answer" },
+        });
+
+        expect(replayed.messages).toHaveLength(1);
+        expect(replayed.messages[0].parts).toEqual([{ id: "message-1-text-0", kind: "text", text: "Earlier answer" }]);
+        expect(chatReducer(before, { type: "reset" }).messages).toEqual([]);
+    });
+
     it("keeps independent permission requests until each reply completes", () => {
         const request = {
             requestId: "permission-1",

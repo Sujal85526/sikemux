@@ -110,10 +110,11 @@ export interface ChatState {
     stopReason: string | null;
     nextId: number;
     revision: number;
+    awaitingReplay: boolean;
 }
 
 export type ChatAction =
-    | { type: "reset" }
+    | { type: "reset"; hold?: boolean }
     | { type: "config"; options: unknown }
     | { type: "status"; state: ChatState["connection"] }
     | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }

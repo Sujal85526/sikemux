@@ -140,8 +140,8 @@ afterEach(cleanup);
    and jsdom measures everything as nothing. */
 async function openTranscript(): Promise<void> {
     render(<AgentChatPane agent={{ ...agent, model: "gpt-6-astra" }} cwd="/repo" active visible onBusyChange={() => {}} />);
-    const editor = screen.getByRole("textbox", { name: "Message agent" });
-    await waitFor(() => expect(editor).toBeEnabled());
+    const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    await waitFor(() => expect(editor.placeholder).toContain("Ask about this project"));
     fireEvent.change(editor, { target: { value: "Look at the styles" } });
     fireEvent.keyDown(editor, { key: "Enter" });
     const scroller = document.querySelector(".chat-scroll") as HTMLElement;
@@ -638,7 +638,7 @@ describe("AgentChatPane", () => {
         expect(document.querySelectorAll(".chat-code-diff")).toHaveLength(1);
     });
 
-    it("shows adapter progress and retries failed startup", async () => {
+    it("shows adapter progress and starts a failed adapter again on its own", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());
 
@@ -646,9 +646,37 @@ describe("AgentChatPane", () => {
         expect(screen.getAllByText("Installing structured-session adapter…")[0]).toBeInTheDocument();
         emit("error", { message: "adapter failed" });
         const callsBeforeRetry = mocks.start.mock.calls.length;
-        fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+        expect(screen.getAllByText("Reconnecting…")[0]).toBeInTheDocument();
 
-        await waitFor(() => expect(mocks.start.mock.calls.length).toBeGreaterThan(callsBeforeRetry));
+        await waitFor(() => expect(mocks.start.mock.calls.length).toBeGreaterThan(callsBeforeRetry), { timeout: 3_000 });
+    });
+
+    it("offers reconnecting a dropped transcript in the transcript column", async () => {
+        await openTranscript();
+        emit("status", { state: "stopped" });
+
+        const notice = await waitFor(() => {
+            const element = document.querySelector(".chat-reconnect");
+            expect(element).not.toBeNull();
+            return element as HTMLElement;
+        });
+        expect(notice).toHaveTextContent("Reconnecting…");
+        // Every control in the transcript belongs to a styled row, never loose in the scroller.
+        expect(document.querySelector(".chat-scroll-content > button")).toBeNull();
+    });
+
+    it("sends a message written while the session is down once it is back", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active visible profile={undefined} onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        emit("status", { state: "stopped" });
+
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        fireEvent.change(editor, { target: { value: "carry on" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(mocks.prompt).not.toHaveBeenCalled();
+
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "carry on", []), { timeout: 3_000 });
     });
 
     it("shows permission requests even when the adapter omits the optional tool title", async () => {
@@ -824,10 +852,10 @@ describe("AgentChatPane", () => {
     it("focuses the composer once a chat connects, and again when a hidden one is reopened", async () => {
         const props = { agent, cwd: "/repo", active: true, onBusyChange: () => {} };
         const { rerender } = render(<AgentChatPane {...props} visible />);
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        expect(editor).toBeDisabled();
+        const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+        expect(editor.placeholder).toBe("Connecting to agent session…");
 
-        await waitFor(() => expect(editor).toBeEnabled());
+        await waitFor(() => expect(editor.placeholder).toContain("Ask about this project"));
         await nextFrame();
         expect(editor).toHaveFocus();
 

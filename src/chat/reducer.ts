@@ -29,6 +29,7 @@ export const initialChatState: ChatState = {
     stopReason: null,
     nextId: 1,
     revision: 0,
+    awaitingReplay: false,
 };
 
 /* The parent session and each subagent session own a transcript of the same
@@ -306,7 +307,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         case "config":
             return { ...state, setup: { ...state.setup, configOptions: action.options }, revision: state.revision + 1 };
         case "reset":
-            return initialChatState;
+            /* A reconnect keeps the transcript on screen so the pane does not
+               blank out while the session loads: the resumed session replays
+               its own history, and the first update it sends takes over. */
+            return action.hold && state.messages.length > 0
+                ? { ...initialChatState, messages: state.messages, nextId: state.nextId, awaitingReplay: true }
+                : initialChatState;
         case "status":
             return {
                 ...state,
@@ -339,7 +345,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             };
         }
         case "session_update":
-            return sessionUpdate(state, action.sessionId, action.update);
+            return sessionUpdate(
+                state.awaitingReplay ? { ...state, messages: [], nextId: 1, plan: null, awaitingReplay: false } : state,
+                action.sessionId,
+                action.update,
+            );
         case "turn_started":
             return { ...state, running: true, stopReason: null, error: null, revision: state.revision + 1 };
         case "turn_completed":
