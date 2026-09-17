@@ -24,6 +24,7 @@ import {
     IconFile,
     IconGlobe,
     IconPencil,
+    IconPlug,
     IconPlus,
     IconSearch,
     IconShieldBolt,
@@ -163,9 +164,11 @@ function toolKind(tool: AcpToolCall): string {
     return scope ?? name.split(/[\s(]/)[0].slice(0, 12).toLowerCase();
 }
 
-function ToolKindIcon({ tool }: { tool: AcpToolCall }) {
+function ToolKindIcon({ tool, kind }: { tool: AcpToolCall; kind?: string }) {
     if (tool.status === "failed") return <IconWarning size={11} />;
-    switch (tool.kind) {
+    switch (kind) {
+        case "mcp":
+            return <IconPlug size={11} />;
         case "read":
             return <IconFile size={11} />;
         case "search":
@@ -279,7 +282,7 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
         <>
             <span className="chat-tool-tick" aria-hidden="true" />
             <span className="chat-tool-icon">
-                <ToolKindIcon tool={tool} />
+                <ToolKindIcon tool={tool} kind={rowKind} />
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
             <span className="chat-tool-target">{toolTarget(tool)}</span>

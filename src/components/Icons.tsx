@@ -128,6 +128,13 @@ export const IconAgent = makeSvgIcon(<path d="M8 1.8c.5 3.3 2.9 5.7 6.2 6.2-3.3.
 export const IconWindow = makeSvgIcon(<rect x="2.2" y="2.8" width="11.6" height="10.4" rx="0" />);
 export const IconCommand = makeSvgIcon(<path d="M3 4.6 6 8l-3 3.4M7.6 11.4H13" />);
 export const IconFolder = makeSvgIcon(<path d="M2 4.4h4l1.6 2H14v7.2H2z" />);
+export const IconPlug = makeSvgIcon(
+    <>
+        <path d="M6.2 2.2v2.6M9.8 2.2v2.6" />
+        <path d="M4.4 4.8h7.2v2.6a3.6 3.6 0 0 1-7.2 0z" />
+        <path d="M8 11v2.8" />
+    </>,
+);
 export const IconGlobe = makeSvgIcon(
     <>
         <circle cx="8" cy="8" r="5.6" />
