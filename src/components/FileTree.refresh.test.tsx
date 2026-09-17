@@ -16,7 +16,7 @@ const entriesFor = (path: string) =>
         ? ["one", "two"].map((name) => ({ name, path: `/repo/${name}`, is_dir: true }))
         : [{ name: "file.ts", path: `${path}/file.ts`, is_dir: false }];
 
-const requestedPaths = () => readDirs.mock.calls.map(([paths]: [string[]]) => paths);
+const requestedPaths = () => readDirs.mock.calls.map((call) => call[0] as string[]);
 
 it("refreshes only affected expanded directories and retains a full-refresh fallback", async () => {
     readDirs.mockImplementation(async (paths: string[]) => paths.map((path) => ({ path, entries: entriesFor(path), error: null })));
