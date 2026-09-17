@@ -38,11 +38,11 @@ import { AgentStateIndicator } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 
 function kindIcon(kind: SessionKind): ReactNode {
-    if (kind === "project") return <IconFolder size={18} />;
-    if (kind === "aws") return <IconAws size={18} />;
-    if (kind === "rundeck") return <IconRundeck size={18} />;
-    if (kind === "bruno") return <IconBruno size={18} />;
-    return <IconCommand size={18} />;
+    if (kind === "project") return <IconFolder size={13} />;
+    if (kind === "aws") return <IconAws size={26} />;
+    if (kind === "rundeck") return <IconRundeck size={14} />;
+    if (kind === "bruno") return <IconBruno size={14} />;
+    return <IconCommand size={13} />;
 }
 
 const MAX_BADGE_ICONS = 3;
@@ -183,7 +183,7 @@ function ProjectBlock({ s }: { s: Session }) {
                         onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                         onClick={() => rail.selectProject(s.id)}>
                         <span className="proj-folder">
-                            <IconFolder size={18} />
+                            <IconFolder size={12} />
                         </span>
                         <span className="proj-name">{s.name}</span>
                         {visible.length > 0 && (
@@ -280,7 +280,7 @@ function ProjectBlock({ s }: { s: Session }) {
                         onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                         onClick={() => rail.selectProject(s.id)}>
                         <span className="proj-folder">
-                            <IconFolder size={18} />
+                            <IconFolder size={12} />
                         </span>
                         <span className="proj-name">{s.name}</span>
                     </button>

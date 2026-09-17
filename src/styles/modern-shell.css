@@ -226,15 +226,29 @@ textarea:focus,
  * rows whose glyphs differ by a pixel or two still start their labels on one
  * edge. It paints nothing — a filled tile behind an icon that already carries
  * its provider colour is a second background for the row to argue with.
+ *
+ * Its size is `--mark`, set by the list rather than by the rule, because
+ * alignment only has to hold down one column. A rail of folders does not need
+ * the box a provider logo needs, and sizing every slot for the largest glyph in
+ * the app pushed a 12px folder 5px off its own left edge.
  */
+.shell {
+    --mark: 16px;
+}
+
+.agent-row,
+.tabbar.v-agent {
+    --mark: 22px;
+}
+
 .agent-row .agent-glyph,
 .proj-row .proj-folder,
 .sess-row .sess-icon,
 .tab-mark {
     display: grid;
     place-items: center;
-    min-width: 22px;
-    height: 22px;
+    min-width: var(--mark, 16px);
+    height: var(--mark, 16px);
     flex: 0 0 auto;
 }
 

@@ -214,10 +214,15 @@ not in a second definition of what a row is.
 row rule: a mark on the leading edge saying what the row holds, and a close on
 the trailing edge.
 
-The mark is a 22px slot the glyph is centred in, and it paints nothing. The slot
-is there so rows whose glyphs differ by a pixel or two still start their labels
-on one edge — every row using the rule puts its label at `--space-2` + 22px +
-`--space-2` from the leading edge. A filled tile behind an icon that already
+The mark is a slot the glyph is centred in, and it paints nothing. The slot is
+there so rows whose glyphs differ by a pixel or two still start their labels on
+one edge: a row puts its label at `--space-2` + `--mark` + `--space-2`.
+
+`--mark` is 16px, and the two lists that carry provider logos — the agent rail
+and the workspace strip — set it to 22px. The size belongs to the list, not to
+the rule, because alignment only has to hold down one column: sizing every slot
+for the largest glyph in the app pushed a 12px folder 5px off its own left
+edge. A filled tile behind an icon that already
 carries its provider colour is a second background for the row to argue with,
 and it makes the glyph inside it look smaller than it is.
 
