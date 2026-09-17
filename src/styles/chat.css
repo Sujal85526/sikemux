@@ -339,9 +339,7 @@
 }
 
 .chat-markdown code,
-.chat-model-label,
-.chat-slash-menu code,
-.chat-tool-status {
+.chat-slash-menu code {
     font-family: var(--mono);
 }
 
@@ -1542,15 +1540,6 @@ button.chat-tool:hover {
     flex: 1;
 }
 
-.chat-model-label {
-    max-width: 280px;
-    overflow: hidden;
-    color: var(--ink-dim);
-    font-size: 10.5px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .chat-send {
     width: 37px;
     height: 37px;
@@ -1672,10 +1661,6 @@ button.chat-tool:hover {
 
     .chat-message.user .chat-message-content {
         max-width: 86%;
-    }
-
-    .chat-model-label {
-        display: none;
     }
 
     .chat-slash-menu button {
