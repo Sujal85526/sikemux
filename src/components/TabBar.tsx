@@ -135,7 +135,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                                 id={t.tabId}
                                 aria-controls={t.panelId}
                                 aria-selected={t.active ?? false}
-                                tabIndex={t.active || (!tabs.some((tab) => tab.active) && tabs[0] === t) ? 0 : -1}
+                                tabIndex={t.active || (activeIndex < 0 && index === 0) ? 0 : -1}
                                 onKeyDown={(event) => {
                                     if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
                                         event.preventDefault();

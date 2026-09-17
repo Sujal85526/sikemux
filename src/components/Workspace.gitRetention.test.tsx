@@ -1,7 +1,7 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect } from "react";
-import { Workspace } from "./Workspace";
+import { retainWorkbenchWindows, Workspace } from "./Workspace";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 
@@ -101,4 +101,27 @@ it("retains the editor and its local buffer across Git switches, then releases i
     expect(lifecycle.editorUnmounted).not.toHaveBeenCalled();
     act(() => cmd.closeWindowById(editorWindow));
     expect(lifecycle.editorUnmounted).toHaveBeenCalledTimes(1);
+});
+
+describe("retainWorkbenchWindows", () => {
+    const alive = () => true;
+
+    it("keeps the most recently visited screens and drops the oldest", () => {
+        const retained = new Set<string>();
+        for (const id of ["a", "b", "c", "d"]) retainWorkbenchWindows(retained, id, alive, 3);
+        expect([...retained]).toEqual(["b", "c", "d"]);
+    });
+
+    it("moves a revisited screen back to the front of the queue", () => {
+        const retained = new Set(["a", "b", "c"]);
+        retainWorkbenchWindows(retained, "a", alive, 3);
+        retainWorkbenchWindows(retained, "d", alive, 3);
+        expect([...retained]).toEqual(["c", "a", "d"]);
+    });
+
+    it("releases a screen whose window is gone", () => {
+        const retained = new Set(["a", "b"]);
+        retainWorkbenchWindows(retained, null, (id) => id !== "a");
+        expect([...retained]).toEqual(["b"]);
+    });
 });

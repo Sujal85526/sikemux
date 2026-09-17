@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, Divider, PaneKind, Rect, Session, Window as WindowT, WindowRole } from "../state/types";
+import type { Agent, Divider, PaneKind, Rect, Session, TabRef, Window as WindowT, WindowRole } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
@@ -41,6 +42,43 @@ const PANE_ROLE: Record<PaneKind, WindowRole> = {
     agent: "agent",
 };
 const pct = (n: number) => `${n * 100}%`;
+
+/*
+ * How many off-screen workbench screens stay mounted.
+ *
+ * A terminal, editor or git screen is kept alive after you leave it so coming
+ * back is instant and a shell is not re-attached. That retention used to be
+ * unbounded and only ever released when the window was deleted, so a long
+ * session accumulated every screen it had ever shown — each one holding store
+ * subscriptions, CodeMirror views and xterm buffers. Eight is more than a
+ * working set and small enough to have an end.
+ */
+const RETAINED_WORKBENCH_WINDOWS = 8;
+
+/**
+ * Note that `liveId` is on screen and drop whatever fell out of the working set.
+ *
+ * Insertion order is the recency order: re-adding an id moves it to the back,
+ * so the one dropped is always the one visited longest ago.
+ */
+export function retainWorkbenchWindows(
+    retained: Set<string>,
+    liveId: string | null,
+    exists: (id: string) => boolean,
+    limit = RETAINED_WORKBENCH_WINDOWS,
+): Set<string> {
+    for (const id of retained) if (!exists(id)) retained.delete(id);
+    if (liveId) {
+        retained.delete(liveId);
+        retained.add(liveId);
+    }
+    for (const id of retained) {
+        if (retained.size <= limit) break;
+        retained.delete(id);
+    }
+    return retained;
+}
+
 export const Workspace = memo(function Workspace() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
@@ -52,12 +90,13 @@ export const Workspace = memo(function Workspace() {
     const brunoViews = useStore((s) => s.brunoViews);
     const areaRef = useRef<HTMLDivElement>(null);
     const mountedWorkbenchWindows = useRef(new Set<string>());
-    for (const id of mountedWorkbenchWindows.current) {
-        if (!windowsById[id]) mountedWorkbenchWindows.current.delete(id);
-    }
 
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const activeSession = sessionsById[activeSessionId];
+    const liveWindow = activeSession ? windowsById[activeTabRef(activeSession, windowsById, editorViews, brunoViews)?.id ?? ""] : undefined;
+    const liveWorkbenchId =
+        liveWindow && (liveWindow.role === "git" || liveWindow.role === "files" || liveWindow.role === "term") ? liveWindow.id : null;
+    const retained = retainWorkbenchWindows(mountedWorkbenchWindows.current, liveWorkbenchId, (id) => id in windowsById);
     const activeOrder = windowsBySession[activeSessionId] ?? EMPTY_IDS;
     const activeSlots = useMemo(() => new Map(activeOrder.map((wid, slot) => [wid, slot])), [activeOrder]);
     const pan = useWindowPan(activeSessionId, activeSession?.activeWindowId ?? null, activeSlots);
@@ -95,13 +134,9 @@ export const Workspace = memo(function Workspace() {
                             if (!win) return null;
                             const live = isActive && activeWindowId === wid;
                             const painted = isActive && pan.paints(wid);
-                            if (live && (win.role === "git" || win.role === "files" || win.role === "term")) mountedWorkbenchWindows.current.add(wid);
                             // A live agent keeps its process whether or not it is on screen;
                             // a sleeping one has nothing to keep.
-                            const keepsProcess =
-                                win.role === "agent"
-                                    ? agentsById[win.activePaneId]?.launchState !== "dormant"
-                                    : mountedWorkbenchWindows.current.has(wid);
+                            const keepsProcess = win.role === "agent" ? agentsById[win.activePaneId]?.launchState !== "dormant" : retained.has(wid);
                             // A layer sliding out has to stay mounted for as long as it paints.
                             if (!live && !painted && wid !== session.activeWindowId && !keepsProcess) return null;
                             return (
@@ -156,10 +191,12 @@ const ROLE_LABEL: Record<WindowRole, string> = {
     agent: "Agent",
 };
 
-function WorkspaceTabsBar({ session }: { session: Session }) {
+/** A workspace tab, already carrying the ids the strip and the live layer pair up with. */
+type WorkspaceTab = TabDescriptor & { tabId: string; panelId: string };
+
+const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: Session }) {
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
-    const terminalTitles = useStore((s) => s.terminalTitles);
     const activity = useStore((s) => s.agentActivity);
     const windowIds = useStore((s) => s.windowsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
@@ -179,6 +216,18 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
     );
     const active = activeTabRef(session, windowsById, editorViews, brunoViews);
     const activeKey = active ? tabRefKey(active) : null;
+
+    /*
+     * A terminal tab shows the shell's own title, so only the terminals in this
+     * strip are subscribed to rather than the whole record — one `cd` used to
+     * re-render every strip and every layer in the app.
+     */
+    const termPaneIds = useMemo(
+        () => refs.flatMap((ref) => (ref.doc === undefined && windowsById[ref.id]?.role === "term" ? [windowsById[ref.id]!.activePaneId] : [])),
+        [refs, windowsById],
+    );
+    const termTitleList = useStore(useShallow((s) => termPaneIds.map((id) => s.terminalTitles[id] ?? "")));
+    const termTitles = useMemo(() => new Map(termPaneIds.map((id, index) => [id, termTitleList[index]])), [termPaneIds, termTitleList]);
 
     const windowMenu = (win: WindowT): CtxItem[] => {
         const siblings = refs.flatMap((ref) => (ref.doc === undefined ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
@@ -272,83 +321,88 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
         return items;
     };
 
-    const tabs: TabDescriptor[] = refs.flatMap((ref): TabDescriptor[] => {
-        const key = tabRefKey(ref);
-        const win = windowsById[ref.id];
-        if (!win) return [];
-        if (ref.doc !== undefined && win.role === "bruno") {
-            const located = collection ? findRequest(collection.tree, ref.doc) : null;
-            const method = located?.request.method ?? "get";
+    const tabs = useMemo<WorkspaceTab[]>(() => {
+        const build = (ref: TabRef): TabDescriptor[] => {
+            const key = tabRefKey(ref);
+            const win = windowsById[ref.id];
+            if (!win) return [];
+            if (ref.doc !== undefined && win.role === "bruno") {
+                const located = collection ? findRequest(collection.tree, ref.doc) : null;
+                const method = located?.request.method ?? "get";
+                return [
+                    {
+                        id: key,
+                        label: located?.request.meta.name || basename(ref.doc).replace(/\.bru$/, ""),
+                        title: ref.doc,
+                        active: key === activeKey,
+                        dirty: drafts?.[ref.doc] != null,
+                        icon: <span className={`bruno-method m-${method}`}>{method.toUpperCase()}</span>,
+                    },
+                ];
+            }
+            if (ref.doc !== undefined) {
+                const name = basename(ref.doc);
+                return [
+                    {
+                        id: key,
+                        label: name,
+                        title: ref.doc,
+                        active: key === activeKey,
+                        dirty: (dirtyEditorPaths[win.activePaneId] ?? []).includes(ref.doc),
+                        icon: <FileIcon name={name} size={16} />,
+                    },
+                ];
+            }
+            if (win.role === "agent") {
+                const agent = agentsById[win.activePaneId];
+                if (!agent) return [];
+                const state = activity[agent.id];
+                return [
+                    {
+                        id: key,
+                        label: agent.title,
+                        title: agent.title,
+                        active: key === activeKey,
+                        icon: (
+                            <span className={`agent-glyph ${agent.type}`}>
+                                <AgentIcon type={agent.type} size={14} />
+                            </span>
+                        ),
+                        accessory: state ? <AgentStateIndicator state={state.state} /> : undefined,
+                    },
+                ];
+            }
+            const label = win.role === "term" ? termTitles.get(win.activePaneId) || win.name : ROLE_LABEL[win.role];
             return [
                 {
                     id: key,
-                    label: located?.request.meta.name || basename(ref.doc).replace(/\.bru$/, ""),
-                    title: ref.doc,
+                    label,
+                    title: label,
                     active: key === activeKey,
-                    dirty: drafts?.[ref.doc] != null,
-                    icon: <span className={`bruno-method m-${method}`}>{method.toUpperCase()}</span>,
-                },
-            ];
-        }
-        if (ref.doc !== undefined) {
-            const name = basename(ref.doc);
-            return [
-                {
-                    id: key,
-                    label: name,
-                    title: ref.doc,
-                    active: key === activeKey,
-                    dirty: (dirtyEditorPaths[win.activePaneId] ?? []).includes(ref.doc),
-                    icon: <FileIcon name={name} size={16} />,
-                },
-            ];
-        }
-        if (win.role === "agent") {
-            const agent = agentsById[win.activePaneId];
-            if (!agent) return [];
-            const state = activity[agent.id];
-            return [
-                {
-                    id: key,
-                    label: agent.title,
-                    title: agent.title,
-                    active: key === activeKey,
+                    closable: !win.fixed,
                     icon: (
-                        <span className={`agent-glyph ${agent.type}`}>
-                            <AgentIcon type={agent.type} size={14} />
+                        <span className="agent-glyph">
+                            <WindowIcon role={win.role} size={13} />
                         </span>
                     ),
-                    accessory: state ? <AgentStateIndicator state={state.state} /> : undefined,
                 },
             ];
-        }
-        const label = win.role === "term" ? terminalTitles[win.activePaneId] || win.name : ROLE_LABEL[win.role];
-        return [
-            {
-                id: key,
-                label,
-                title: label,
-                active: key === activeKey,
-                closable: !win.fixed,
-                icon: (
-                    <span className="agent-glyph">
-                        <WindowIcon role={win.role} size={13} />
-                    </span>
-                ),
-            },
-        ];
-    });
+        };
+        return refs.flatMap((ref) =>
+            build(ref).map((tab) => ({
+                ...tab,
+                tabId: `workspace-tab-${session.id}-${encodeURIComponent(tab.id)}`,
+                panelId: `workspace-content-${session.id}`,
+            })),
+        );
+    }, [refs, windowsById, agentsById, activity, termTitles, dirtyEditorPaths, collection, drafts, activeKey, session.id]);
 
     const refByKey = new Map(refs.map((ref) => [tabRefKey(ref), ref]));
 
     return (
         <TabBar
             variant="agent"
-            tabs={tabs.map((tab) => ({
-                ...tab,
-                tabId: `workspace-tab-${session.id}-${encodeURIComponent(tab.id)}`,
-                panelId: `workspace-content-${session.id}`,
-            }))}
+            tabs={tabs}
             onSelect={(key) => {
                 const ref = refByKey.get(key);
                 if (ref) cmd.selectTab(ref);
@@ -374,7 +428,7 @@ function WorkspaceTabsBar({ session }: { session: Session }) {
             addTitle="New tab"
         />
     );
-}
+});
 
 const WindowLayer = memo(function WindowLayer({
     session,
@@ -404,7 +458,15 @@ const WindowLayer = memo(function WindowLayer({
     useDocumentSlide(layerRef, live ? win.activePaneId : null, documents?.activeId ?? null, documents?.ids ?? EMPTY_IDS);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
     const { panes, dividers, stacked, stacks, inStack } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
-    const terminalTitles = useStore((s) => s.terminalTitles);
+    /*
+     * Only the panes stacked behind a strip show a shell's own title, so only
+     * those are subscribed to. Reading the whole title record here meant one
+     * prompt or `cd` anywhere re-rendered every retained layer in the app, and
+     * every pane inside them.
+     */
+    const stackPaneIds = useMemo(() => stacks.flatMap((stack) => stack.tabs.map((pane) => pane.id)), [stacks]);
+    const stackTitleList = useStore(useShallow((s) => stackPaneIds.map((id) => s.terminalTitles[id] ?? "")));
+    const stackTitles = useMemo(() => new Map(stackPaneIds.map((id, index) => [id, stackTitleList[index]])), [stackPaneIds, stackTitleList]);
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);
     const zoomActive = live && zoomedPaneId != null;
 
@@ -462,8 +524,8 @@ const WindowLayer = memo(function WindowLayer({
                             ariaLabel="Panes in this stack"
                             tabs={stack.tabs.map((pane) => ({
                                 id: pane.id,
-                                label: terminalTitles[pane.id] || pane.title,
-                                title: terminalTitles[pane.id] || pane.title,
+                                label: stackTitles.get(pane.id) || pane.title,
+                                title: stackTitles.get(pane.id) || pane.title,
                                 active: pane.id === stack.activePaneId,
                                 icon: (
                                     <span className="agent-glyph">
