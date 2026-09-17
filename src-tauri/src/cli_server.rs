@@ -613,7 +613,11 @@ fn remove_owned_endpoint(path: &Path, token: &str) {
 }
 
 pub fn cli_endpoint_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("SIKEMUX_CLI_ENDPOINT") {
+    // Deliberately not SIKEMUX_CLI_ENDPOINT: that one is handed to everything
+    // this app spawns so it can find us. Reading it here would mean a second
+    // Sikemux started from one of our own terminals publishes itself over our
+    // endpoint file, and every agent we launched would then be talking to it.
+    if let Some(path) = std::env::var_os("SIKEMUX_CLI_ENDPOINT_PUBLISH") {
         return Some(PathBuf::from(path));
     }
     let parent = crate::state::state_path()?.parent()?.to_path_buf();
@@ -795,5 +799,47 @@ mod tests {
         BufReader::new(stream).read_line(&mut frame).unwrap();
         assert_eq!(frame, "{\"command\":\"ping\"}\n");
         writer.join().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod endpoint_publish_tests {
+    use super::cli_endpoint_path;
+    use std::sync::Mutex;
+
+    static ENV_GUARD: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn a_second_app_started_from_our_terminal_keeps_its_own_endpoint() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|error| error.into_inner());
+        // What a terminal we spawned carries, so a Sikemux launched there
+        // inherits it. Publishing to it would steal our agents' broker.
+        std::env::set_var("SIKEMUX_CLI_ENDPOINT", "/tmp/sikemux-other-instance.json");
+        std::env::remove_var("SIKEMUX_CLI_ENDPOINT_PUBLISH");
+
+        let published = cli_endpoint_path().expect("an endpoint path");
+
+        assert_ne!(
+            published,
+            std::path::Path::new("/tmp/sikemux-other-instance.json")
+        );
+        std::env::remove_var("SIKEMUX_CLI_ENDPOINT");
+    }
+
+    #[test]
+    fn the_publish_override_is_honoured() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|error| error.into_inner());
+        std::env::set_var(
+            "SIKEMUX_CLI_ENDPOINT_PUBLISH",
+            "/tmp/sikemux-published-here.json",
+        );
+
+        let published = cli_endpoint_path().expect("an endpoint path");
+
+        assert_eq!(
+            published,
+            std::path::Path::new("/tmp/sikemux-published-here.json")
+        );
+        std::env::remove_var("SIKEMUX_CLI_ENDPOINT_PUBLISH");
     }
 }

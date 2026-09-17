@@ -183,6 +183,7 @@ const isolatedEnvironment = {
   HOME: isolatedHome,
   USERPROFILE: isolatedHome,
   SIKEMUX_CLI_ENDPOINT: endpoint,
+  SIKEMUX_CLI_ENDPOINT_PUBLISH: endpoint,
   SIKEMUX_BIN_PATH: cliExecutable,
 };
 delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
