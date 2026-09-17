@@ -15,6 +15,7 @@ mod external;
 mod files;
 mod fs;
 mod fs_watch;
+mod generated_agent_tools;
 mod git;
 mod harness;
 mod lsp;

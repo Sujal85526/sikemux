@@ -1,0 +1,288 @@
+{
+  "comment": "Single source of truth for the agent tool surface. Python serves these over MCP, scripts/generate-agent-tools.mjs emits the Rust method lists, and pnpm agent-tools:check proves every method still has a handler. Edit here, then run pnpm agent-tools:generate.",
+  "guide": "SIKEMUX_GUIDE.md",
+  "tools": [
+    {
+      "name": "browser_navigate",
+      "method": "browser.navigate",
+      "description": "Open a URL in the current tab, or a new one with newTab, and wait for it to load. Returns page state.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "newTab": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    {
+      "name": "browser_state",
+      "method": "browser.state",
+      "description": "Read the current tab without changing it: url, title, numbered interactive elements, visible text, and open tabs. Numbers expire on the next read.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "browser_click",
+      "method": "browser.click",
+      "description": "Click a numbered element from the latest state. Returns page state.",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "index"
+      ]
+    },
+    {
+      "name": "browser_type",
+      "method": "browser.type",
+      "description": "Type into a numbered element, or the focused one, replacing its value. submit=true presses Enter. Returns page state.",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "submit": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    {
+      "name": "browser_press",
+      "method": "browser.press",
+      "description": "Press one key on the focused element, such as Enter, Tab, Escape, or a single character. Returns page state.",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        }
+      },
+      "required": [
+        "key"
+      ]
+    },
+    {
+      "name": "browser_scroll",
+      "method": "browser.scroll",
+      "description": "Scroll the page, or a numbered scrollable element, by deltaY pixels; negative scrolls up.",
+      "properties": {
+        "deltaY": {
+          "type": "number"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "browser_extract",
+      "method": "browser.extract",
+      "description": "Read the page's visible text, or only the parts matching a CSS selector.",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "browser_screenshot",
+      "method": "browser.screenshot",
+      "description": "Capture the visible part of the current tab as a PNG image.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "browser_wait",
+      "method": "browser.wait",
+      "description": "Wait ms milliseconds, then for any load to finish. Returns page state.",
+      "properties": {
+        "ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30000
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "browser_back",
+      "method": "browser.back",
+      "description": "Go back in the current tab's history. Returns page state.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "browser_forward",
+      "method": "browser.forward",
+      "description": "Go forward in the current tab's history. Returns page state.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "browser_list_tabs",
+      "method": "browser.tabs",
+      "description": "List this agent's browser tabs with their ids.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "browser_switch_tab",
+      "method": "browser.tab.switch",
+      "description": "Make one of this agent's tabs the current one. Returns page state.",
+      "properties": {
+        "tabId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "tabId"
+      ]
+    },
+    {
+      "name": "browser_close_tab",
+      "method": "browser.tab.close",
+      "description": "Close one of this agent's tabs.",
+      "properties": {
+        "tabId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "tabId"
+      ]
+    },
+    {
+      "name": "sikemux_workspace_inspect",
+      "method": "workspace.inspect",
+      "description": "Inspect this agent's open project, panes, configured tasks, runs, and event cursor.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "sikemux_task_start",
+      "method": "task.start",
+      "description": "Start a configured project task in a managed terminal.",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "taskId",
+        "idempotencyKey"
+      ]
+    },
+    {
+      "name": "sikemux_task_read",
+      "method": "task.read",
+      "description": "Read task status and new terminal output by byte cursor.",
+      "properties": {
+        "executionId": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 8192
+        }
+      },
+      "required": [
+        "executionId"
+      ]
+    },
+    {
+      "name": "sikemux_task_stop",
+      "method": "task.stop",
+      "description": "Stop the exact managed task execution and its process tree.",
+      "properties": {
+        "executionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "executionId"
+      ]
+    },
+    {
+      "name": "sikemux_ui_open",
+      "method": "ui.open",
+      "description": "Open a project file, diff, task terminal, or the configured preview.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "file",
+            "diff",
+            "terminal",
+            "preview"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "executionId": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "name": "sikemux_events_wait",
+      "method": "events.wait",
+      "description": "Wait for project task or UI events after an event cursor.",
+      "properties": {
+        "cursor": {
+          "type": "string"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30000
+        },
+        "executionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cursor"
+      ]
+    }
+  ]
+}

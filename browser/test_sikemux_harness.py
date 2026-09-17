@@ -18,7 +18,6 @@ from sikemux_harness import GUIDE_TOOL_NAME, SERVER_INSTRUCTIONS, call_harness, 
 class HarnessTests(unittest.TestCase):
     def test_tools_have_bounded_wait_and_required_idempotency(self):
         tools = {tool.name: tool for tool in tool_definitions()}
-        self.assertEqual(len(tools), 6)
         self.assertIn("idempotencyKey", tools["sikemux_task_start"].inputSchema["required"])
         self.assertEqual(tools["sikemux_events_wait"].inputSchema["properties"]["timeoutMs"]["maximum"], 30000)
 

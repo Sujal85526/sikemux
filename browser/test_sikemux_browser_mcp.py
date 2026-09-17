@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 
-from sikemux_browser_mcp import BROWSER_METHODS, build_server, content_for, tool_definitions
+import sikemux_harness
+from sikemux_browser_mcp import build_server, content_for, tool_definitions
 
 
 class FakeSikemux:
@@ -61,11 +62,14 @@ def run_tool(server, name, arguments):
 
 
 class SikemuxBrowserServerTests(unittest.TestCase):
-    def test_tool_list_pairs_every_browser_tool_with_a_harness_method(self):
-        names = {tool.name for tool in tool_definitions()}
-        self.assertTrue(set(BROWSER_METHODS) <= names)
-        self.assertIn("sikemux_workspace_inspect", names)
-        self.assertTrue(all(method.startswith("browser.") for method, *_ in BROWSER_METHODS.values()))
+    def test_every_served_tool_comes_from_the_manifest(self):
+        names = [tool.name for tool in tool_definitions()]
+        self.assertEqual(len(names), len(set(names)), "a tool is declared twice in tools.json")
+        for expected in ("browser_navigate", "sikemux_workspace_inspect", "sikemux_guide"):
+            self.assertIn(expected, names)
+        for name in names:
+            if name != sikemux_harness.GUIDE_TOOL_NAME:
+                self.assertIn(name, sikemux_harness.METHOD_BY_NAME, f"{name} has no harness method")
         for tool in tool_definitions():
             self.assertFalse(tool.inputSchema["additionalProperties"])
 

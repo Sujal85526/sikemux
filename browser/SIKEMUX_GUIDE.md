@@ -106,6 +106,9 @@ acting, so you rarely need a separate read.
 state, act on a number from that read, and treat the numbers in the result as
 the new set. Never reuse a number across two reads.
 
+`browser_click` takes a number from the latest state. `browser_back` and
+`browser_forward` move through the current tab's history.
+
 `browser_type` replaces an element's value rather than appending. With `index`
 omitted it types into whatever is focused. `submit: true` presses Enter
 afterwards.

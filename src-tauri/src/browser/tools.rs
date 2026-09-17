@@ -15,23 +15,7 @@ const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
 const MAX_WAIT_MS: u64 = 30_000;
 
-pub const METHODS: &[&str] = &[
-    "browser.state",
-    "browser.navigate",
-    "browser.click",
-    "browser.type",
-    "browser.press",
-    "browser.scroll",
-    "browser.extract",
-    "browser.screenshot",
-    "browser.wait",
-    "browser.back",
-    "browser.forward",
-    "browser.tabs",
-    "browser.tab.open",
-    "browser.tab.switch",
-    "browser.tab.close",
-];
+use crate::generated_agent_tools::BROWSER_METHODS as METHODS;
 
 pub fn is_browser_method(method: &str) -> bool {
     METHODS.contains(&method)
@@ -63,14 +47,6 @@ async fn run(
     };
     match method {
         "browser.tabs" => Ok(tabs(&manager, agent_id)),
-        "browser.tab.open" => {
-            let id = manager
-                .open_tab(app, agent_id, text("url").as_deref())
-                .await
-                .map_err(|error| error.to_string())?;
-            let _ = manager.wait_until_loaded(agent_id, &id, LOAD_TIMEOUT).await;
-            state(&manager, agent_id).await
-        }
         "browser.tab.switch" => {
             let id = text("tabId").ok_or("tabId is required")?;
             manager

@@ -36,15 +36,8 @@ impl HarnessRequest {
         {
             return Err("invalid agent ID".into());
         }
-        if !matches!(
-            self.method.as_str(),
-            "workspace.inspect"
-                | "task.start"
-                | "task.read"
-                | "task.stop"
-                | "ui.open"
-                | "events.wait"
-        ) && !crate::browser::tools::is_browser_method(&self.method)
+        if !crate::generated_agent_tools::HARNESS_METHODS.contains(&self.method.as_str())
+            && !crate::browser::tools::is_browser_method(&self.method)
         {
             return Err("unknown harness method".into());
         }
