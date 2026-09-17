@@ -46,7 +46,7 @@
     };
     const mouse = (element, type, point) =>
         element.dispatchEvent(
-            new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: point.x, clientY: point.y, button: 0, buttons: type === "mouseup" ? 0 : 1 }),
+            new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: point.x, clientY: point.y, button: 0, buttons: type === "mouseup" || type === "click" ? 0 : 1 }),
         );
     const pointer = (element, type, point) =>
         element.dispatchEvent(
@@ -103,7 +103,11 @@
             if (typeof element.focus === "function") element.focus({ preventScroll: true });
             pointer(actual, "pointerup", point);
             mouse(actual, "mouseup", point);
-            actual.click();
+            // Dispatched, not called as a method: the topmost thing under an
+            // icon button is its <svg>, and only an HTML element has that
+            // method. A dispatched click still activates the button or link
+            // around it.
+            mouse(actual, "click", point);
             return { clicked: label(element), url: location.href };
         },
         type(index, text, submit) {

@@ -401,6 +401,14 @@ mod tests {
         assert_eq!(merged["title"], "Next");
     }
 
+    /// The topmost element under an icon button is its `<svg>`, and only an
+    /// HTML element has a `click()` method.
+    #[test]
+    fn a_click_is_dispatched_so_it_reaches_an_element_that_is_not_html() {
+        assert!(!PAGE_SCRIPT.contains("actual.click()"));
+        assert!(PAGE_SCRIPT.contains(r#"mouse(actual, "click", point)"#));
+    }
+
     #[test]
     fn the_page_script_is_wrapped_as_a_single_json_string_expression() {
         assert!(PAGE_SCRIPT.contains("window.__sikemux = {"));
