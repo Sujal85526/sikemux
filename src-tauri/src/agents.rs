@@ -179,7 +179,15 @@ pub fn watch_count() -> usize {
 
 static NEXT_WATCH_ID: AtomicU32 = AtomicU32::new(1);
 
+/* Two seconds is what a person waits for an agent binary to name its version
+before the probe gives up. A test spawns the same real process while hundreds
+of its siblings run beside it, so the shipped budget fails there for being
+busy rather than for being broken. A test that means to catch a hanging probe
+says its own timeout. */
+#[cfg(not(test))]
 const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+#[cfg(test)]
+const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const AGENT_UPDATE_RETRY_TIMEOUT: Duration = Duration::from_secs(8);
 const AGENT_UPDATE_SETTLE_DELAY: Duration = Duration::from_millis(350);
 
@@ -2875,17 +2883,8 @@ mod executable_tests {
         .unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
 
-        // Generous beside a `--help` that answers at once, and far short of the
-        // 30s a `--version` would sleep for: a busy machine still passes, a
-        // probe that went back to asking for the version still fails.
         assert_eq!(
-            probe_agent_executable_with_timeout(
-                "hermes",
-                &executable,
-                std::time::Duration::from_secs(10)
-            )
-            .await
-            .unwrap(),
+            probe_agent_executable("hermes", &executable).await.unwrap(),
             "usage: hermes"
         );
         assert!(
