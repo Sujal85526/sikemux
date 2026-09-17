@@ -79,6 +79,7 @@ function Picker({
     disabled: boolean;
     onSelect: (value: string) => void;
     icon?: ReactNode;
+    /** Shown on the trigger when the picker is disabled and cannot explain itself. */
     hint?: string;
     /** Descriptions stay searchable but go unrendered, so the rows read as one line. */
     compact?: boolean;
@@ -137,7 +138,7 @@ function Picker({
             </button>
             {open && !disabled && (
                 <div
-                    className="chat-picker-menu"
+                    className={`chat-picker-menu${compact ? " compact" : ""}`}
                     style={{
                         bottom: window.innerWidth <= 650 ? window.innerHeight - (trigger.current?.getBoundingClientRect().top ?? 0) + 12 : undefined,
                     }}>
@@ -174,8 +175,7 @@ function Picker({
                             }
                         }}
                     />
-                    {hint && <div className="chat-picker-hint">{hint}</div>}
-                    <div id={listId} role="listbox" aria-label={`${name} options`} className={`chat-picker-options${compact ? " compact" : ""}`}>
+                    <div id={listId} role="listbox" aria-label={`${name} options`} className="chat-picker-options">
                         {filtered.map((option, index) => (
                             <button
                                 type="button"
@@ -248,7 +248,7 @@ export function ComposerPickers({
                 compact
                 disabled={disabled || agentLocked}
                 icon={<AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />}
-                hint={agentLocked ? "The agent is fixed after the first message." : "Choose the harness for this chat."}
+                hint={agentLocked ? "The agent is fixed after the first message." : undefined}
                 onSelect={(value) => {
                     if (agentLocked || value === agentValue) return;
                     const next = profiles.find((item) => item.id === value);

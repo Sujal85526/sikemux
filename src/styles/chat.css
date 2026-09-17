@@ -1650,7 +1650,11 @@ button.chat-tool:hover {
     color: var(--ink);
 }
 
-.chat-picker-options.compact > button {
+.chat-picker-menu.compact > input {
+    padding: 10px 12px;
+}
+
+.chat-picker-menu.compact .chat-picker-options > button {
     gap: 9px;
     padding: 7px 10px;
 }
