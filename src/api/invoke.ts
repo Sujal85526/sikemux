@@ -1,4 +1,5 @@
 import type { InvokeArgs, InvokeOptions } from "@tauri-apps/api/core";
+import { uiActivity } from "../lib/activity";
 import { performanceTelemetry } from "../lib/performance";
 import { getIpcTransport, type IpcInvokeOptions } from "./transport";
 
@@ -93,12 +94,14 @@ function settleInvocation<T>(command: string, args: InvokeArgs | undefined, opti
 export async function invokeCommand<T>(command: string, args?: InvokeArgs, options?: InvokeCommandOptions): Promise<T> {
     const requestId = nextRequestId();
     const span = performanceTelemetry.startTrace(IPC_INVOKE_METRIC, { command, requestId });
+    const ticket = uiActivity.beginCommand(command);
     activeInvocations += 1;
     performanceTelemetry.setGauge(IPC_INVOKE_ACTIVE_GAUGE, activeInvocations);
 
     const outcome = await settleInvocation<T>(command, args, options);
     activeInvocations -= 1;
     performanceTelemetry.setGauge(IPC_INVOKE_ACTIVE_GAUGE, activeInvocations);
+    uiActivity.endCommand(ticket, outcome.kind === "success");
 
     if (outcome.kind === "success") {
         performanceTelemetry.incrementCounter(IPC_INVOKE_SUCCESS_COUNTER);

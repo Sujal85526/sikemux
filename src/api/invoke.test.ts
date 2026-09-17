@@ -1,5 +1,6 @@
 import type { InvokeArgs, InvokeOptions } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { uiActivity } from "../lib/activity";
 import { performanceTelemetry } from "../lib/performance";
 import {
     IPC_INVOKE_ACTIVE_GAUGE,
@@ -174,5 +175,38 @@ describe("invokeCommand", () => {
             outcome: "success",
         });
         expect(JSON.stringify(snapshot)).not.toContain("private failure detail");
+    });
+
+    it("leaves no activity breadcrumb outstanding once a command settles", async () => {
+        uiActivity.reset();
+        const success = deferred<null>();
+        const failure = deferred<never>();
+        const cancelled = deferred<never>();
+        const controller = new AbortController();
+        transport.register("home_dir", () => success.promise);
+        transport.register("git_status", () => failure.promise);
+        transport.register("logs_tail", () => cancelled.promise);
+
+        const resolving = invokeCommand<null>("home_dir");
+        const rejecting = invokeCommand<never>("git_status", { repo: "/project" });
+        const aborting = invokeCommand<never>("logs_tail", undefined, { signal: controller.signal });
+        expect(uiActivity.snapshot().inflight.map((entry) => entry.command)).toEqual(["home_dir", "git_status", "logs_tail"]);
+
+        success.resolve(null);
+        await resolving;
+        failure.reject(new Error("native failure detail"));
+        await expect(rejecting).rejects.toThrow("native failure detail");
+        controller.abort(new Error("cancelled"));
+        await expect(aborting).rejects.toThrow("cancelled");
+
+        const report = uiActivity.snapshot();
+        expect(report.inflight).toEqual([]);
+        expect(report.recent.map((entry) => ({ command: entry.command, ok: entry.ok }))).toEqual([
+            { command: "logs_tail", ok: false },
+            { command: "git_status", ok: false },
+            { command: "home_dir", ok: true },
+        ]);
+        expect(JSON.stringify(report)).not.toContain("native failure detail");
+        uiActivity.reset();
     });
 });

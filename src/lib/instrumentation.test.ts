@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { uiActivity } from "./activity";
 import { PerformanceTelemetry, performanceTelemetry } from "./performance";
-import { ACTION_METRIC, EVENT_LOOP_HANG_METRIC, runMeasuredAction, startEventLoopMonitor, startNativeUiHeartbeat } from "./instrumentation";
+import {
+    ACTION_METRIC,
+    EVENT_LOOP_HANG_METRIC,
+    installInteractionTiming,
+    runMeasuredAction,
+    startEventLoopMonitor,
+    startNativeUiHeartbeat,
+} from "./instrumentation";
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -219,6 +227,20 @@ describe("startNativeUiHeartbeat", () => {
         expect(onError).toHaveBeenCalledTimes(2);
         expect(scheduled).toHaveLength(1);
         stop();
+    });
+});
+
+describe("installInteractionTiming", () => {
+    it("leaves an activity breadcrumb for each input and stops when removed", () => {
+        uiActivity.reset();
+        const stop = installInteractionTiming();
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+        window.dispatchEvent(new PointerEvent("pointerdown"));
+        stop();
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "b" }));
+
+        expect(uiActivity.snapshot().interactions.map((entry) => entry.kind)).toEqual(["pointer", "keyboard"]);
+        uiActivity.reset();
     });
 });
 

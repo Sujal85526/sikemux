@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryIpcTransport, installIpcTransportForTests } from "../api/transport";
-import { MAX_RUNTIME_ERROR_MESSAGE_CHARACTERS, NATIVE_UI_HEARTBEAT_COMMAND, sanitizeRuntimeErrorMessage, sendNativeUiHeartbeat } from "./diagnostics";
+import { getState, setState } from "../state/store";
+import { uiActivity } from "./activity";
+import {
+    MAX_RUNTIME_ERROR_MESSAGE_CHARACTERS,
+    NATIVE_UI_HEARTBEAT_COMMAND,
+    UI_ACTIVITY_COMMAND,
+    focusedPaneKind,
+    sanitizeRuntimeErrorMessage,
+    sendNativeUiHeartbeat,
+    sendUiActivity,
+} from "./diagnostics";
 
 describe("runtime diagnostics error capture", () => {
     it("bounds and sanitizes strings before retaining them", () => {
@@ -43,5 +53,46 @@ describe("native UI heartbeat transport", () => {
         } finally {
             restore();
         }
+    });
+});
+
+describe("UI activity transport", () => {
+    it("sends one report per call and skips a hidden window", async () => {
+        uiActivity.reset();
+        const transport = new MemoryIpcTransport();
+        const received: unknown[] = [];
+        transport.register(UI_ACTIVITY_COMMAND, (args) => {
+            received.push(args);
+        });
+        const restore = installIpcTransportForTests(transport);
+        const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+        try {
+            uiActivity.recordInteraction("pointer");
+            await sendUiActivity();
+            expect(received).toEqual([]);
+
+            hidden.mockReturnValue(false);
+            await sendUiActivity();
+            expect(received).toHaveLength(1);
+            expect(Object.keys(received[0] as object)).toEqual(["atMs", "inflight", "recent", "focusPane", "interactions", "rejections"]);
+            expect(received[0]).toMatchObject({ interactions: [{ kind: "pointer" }] });
+        } finally {
+            hidden.mockRestore();
+            restore();
+            uiActivity.reset();
+        }
+    });
+});
+
+describe("focused pane kind", () => {
+    it("names the kind of the pane the active window has focused", () => {
+        const state = getState();
+        const session = state.sessions[state.activeSessionId];
+        const window = state.windows[session.activeWindowId];
+        expect(focusedPaneKind()).toBe("terminal");
+
+        setState({ windows: { ...state.windows, [window.id]: { ...window, activePaneId: "no-such-pane" } } });
+        expect(focusedPaneKind()).toBeNull();
+        setState({ windows: state.windows });
     });
 });

@@ -1,5 +1,6 @@
 import { bench, describe } from "vitest";
 import { parseDiffFromFile, type FileContents } from "@pierre/diffs";
+import { UiActivityTracker } from "./lib/activity";
 import { PerformanceTelemetry } from "./lib/performance";
 import { rankBy } from "./lib/fuzzy";
 import { computeLayout, splitPane } from "./state/layout";
@@ -28,6 +29,9 @@ function pierreInputs(fileCount: number, lineCount: number, changeEvery: number)
         ] as const;
     });
 }
+
+const activityTracker = new UiActivityTracker();
+for (let index = 0; index < 24; index += 1) activityTracker.beginCommand(`inflight_${index}`);
 
 const manyPierreDiffs = pierreInputs(1_000, 250, 25);
 const tallPierreDiffs = pierreInputs(25, 2_000, 100);
@@ -61,6 +65,16 @@ describe("interactive hot paths", () => {
             if (recorded) telemetry.recordLatency("bench", recorded.durationMs);
         }
         telemetry.snapshot();
+    });
+
+    bench("record 1,000 IPC calls in the activity tracker", () => {
+        for (let index = 0; index < 1_000; index += 1) {
+            activityTracker.endCommand(activityTracker.beginCommand("pty_write"), true);
+        }
+    });
+
+    bench("build one activity report", () => {
+        activityTracker.snapshot();
     });
 
     bench("parse 1,000 Pierre diffs with 10 changes each", () => {

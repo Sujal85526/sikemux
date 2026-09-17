@@ -1,3 +1,4 @@
+import { uiActivity } from "./activity";
 import { INPUT_TO_NEXT_FRAME_METRIC, performanceTelemetry, type PerformanceMetadata, type PerformanceTelemetry } from "./performance";
 
 export const ACTION_METRIC = "action.execute";
@@ -238,8 +239,14 @@ export function startEventLoopMonitor(options: EventLoopMonitorOptions = {}): ()
 /** Install payload-free input timing. Event key values and DOM contents are never retained. */
 export function installInteractionTiming(): () => void {
     if (typeof window === "undefined") return () => {};
-    const recordKeyboard = () => recordNextFrameProxy(INPUT_TO_NEXT_FRAME_METRIC, { source: "keyboard" });
-    const recordPointer = () => recordNextFrameProxy(INPUT_TO_NEXT_FRAME_METRIC, { source: "pointer" });
+    const recordKeyboard = () => {
+        uiActivity.recordInteraction("keyboard");
+        recordNextFrameProxy(INPUT_TO_NEXT_FRAME_METRIC, { source: "keyboard" });
+    };
+    const recordPointer = () => {
+        uiActivity.recordInteraction("pointer");
+        recordNextFrameProxy(INPUT_TO_NEXT_FRAME_METRIC, { source: "pointer" });
+    };
     window.addEventListener("keydown", recordKeyboard, { capture: true });
     window.addEventListener("pointerdown", recordPointer, { capture: true });
     return () => {

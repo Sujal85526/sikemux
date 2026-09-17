@@ -5,7 +5,9 @@ import { fsapi } from "../api/fs";
 import { busStats } from "../state/bus";
 import { resourceStats } from "../state/resources";
 import { getState } from "../state/store";
+import type { LayoutNode } from "../state/types";
 import { workbenchRuntime } from "../workbench/runtime";
+import { uiActivity, UI_ACTIVITY_LIMITS, type UiActivityRejection } from "./activity";
 import { installInteractionTiming, startEventLoopMonitor, startNativeUiHeartbeat } from "./instrumentation";
 import { performanceTelemetry } from "./performance";
 import { shaderFieldDiagnostics } from "./shaderField";
@@ -123,19 +125,22 @@ function recordRuntimeError(kind: "error" | "unhandledrejection", value: unknown
 // every time a later promise is settled, so a burst of them stalls the window
 // long after the burst. Counting them by message says which call is the source.
 const runtimeErrorCounts = new Map<string, { count: number; kind: string; firstStack: string }>();
+const MAX_RUNTIME_ERROR_MESSAGES = 64;
 let runtimeErrorTotal = 0;
 let runtimeErrorReportAt = 0;
 let runtimeErrorReportPending = false;
 
 function countRuntimeError(kind: string, message: string, value: unknown): void {
-    if (!import.meta.env.DEV) return;
     runtimeErrorTotal += 1;
     const seen = runtimeErrorCounts.get(message);
     if (seen) seen.count += 1;
-    else if (runtimeErrorCounts.size < 64) {
+    else if (runtimeErrorCounts.size < MAX_RUNTIME_ERROR_MESSAGES) {
         const stack = value instanceof Error && typeof value.stack === "string" ? value.stack.slice(0, 1500) : "";
         runtimeErrorCounts.set(message, { count: 1, kind, firstStack: stack });
     }
+    // The counts ride along with every activity report; only the file written
+    // beside them is a development convenience.
+    if (!import.meta.env.DEV) return;
     if (runtimeErrorReportPending) return;
     const now = Date.now();
     const wait = Math.max(0, 2000 - (now - runtimeErrorReportAt));
@@ -164,6 +169,47 @@ async function reportRuntimeErrorCounts(): Promise<void> {
 }
 
 const RUNTIME_ERROR_REPORT_PATH = "/tmp/sikemux-runtime-errors.json";
+
+/** The loudest rejection messages seen so far, worst first. */
+export function topRuntimeErrorCounts(limit = UI_ACTIVITY_LIMITS.maxEntries): UiActivityRejection[] {
+    const entries: UiActivityRejection[] = [];
+    for (const [message, seen] of runtimeErrorCounts) entries.push({ message, count: seen.count });
+    entries.sort((left, right) => right.count - left.count);
+    return entries.length > limit ? entries.slice(0, limit) : entries;
+}
+
+function paneKindAt(node: LayoutNode, paneId: string): string | null {
+    if (node.type === "pane") return node.id === paneId ? node.kind : null;
+    for (const child of node.children) {
+        const found = paneKindAt(child, paneId);
+        if (found) return found;
+    }
+    return null;
+}
+
+export function focusedPaneKind(): string | null {
+    const state = getState();
+    const session = state.sessions[state.activeSessionId];
+    const window = session ? state.windows[session.activeWindowId] : undefined;
+    return window ? paneKindAt(window.root, window.activePaneId) : null;
+}
+
+export const UI_ACTIVITY_COMMAND = "observability_ui_activity";
+
+let uiActivitySendInFlight = false;
+
+/** Ship one activity report, unless the window is hidden or one is still going. */
+export function sendUiActivity(): Promise<void> {
+    if (uiActivitySendInFlight) return Promise.resolve();
+    const report = uiActivity.report();
+    if (!report) return Promise.resolve();
+    uiActivitySendInFlight = true;
+    return getIpcTransport()
+        .invoke<void>(UI_ACTIVITY_COMMAND, report)
+        .finally(() => {
+            uiActivitySendInFlight = false;
+        });
+}
 
 function memorySnapshot(): MemoryInfo | null {
     const perf = performance as Performance & { memory?: MemoryInfo };
@@ -245,6 +291,7 @@ export function browserDiagnostics(): Record<string, unknown> {
         longTaskCount: longTasks.length,
         lastLongTasks: longTasks.slice(-10),
         runtimeErrors: runtimeErrors.slice(),
+        uiActivity: uiActivity.snapshot(),
         performance: performanceTelemetry.snapshot(),
         performanceSemantics: {
             inputLatency: "input to next animation-frame callback; compositor presentation is not observable in WKWebView",
@@ -282,10 +329,19 @@ export function installDiagnostics(): void {
         resetPerformance: () => performanceTelemetry.reset(),
     };
 
+    uiActivity.setSources({ focusPane: focusedPaneKind, rejections: topRuntimeErrorCounts });
+
     installInteractionTiming();
     startEventLoopMonitor();
     startNativeUiHeartbeat({
-        send: sendNativeUiHeartbeat,
+        // Every second pulse, so activity lands about once a second without a
+        // second timer of its own.
+        send: (visible, heartbeat) => {
+            if (heartbeat % 2 === 0) {
+                void sendUiActivity().catch(() => performanceTelemetry.incrementCounter("ui-activity.send_errors"));
+            }
+            return sendNativeUiHeartbeat(visible, heartbeat);
+        },
         onError: () => performanceTelemetry.incrementCounter("watchdog.heartbeat.send_errors"),
     });
 
