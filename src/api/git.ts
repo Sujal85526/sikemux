@@ -1,5 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "./invoke";
+import { subscribe } from "../state/bus";
 
 export interface GitFile {
     path: string;
@@ -104,12 +105,49 @@ export interface GitBlame {
 }
 
 const fileAtCache = new Map<string, string>();
-const FILE_AT_LIMIT = 200;
+const fileAtInflight = new Map<string, Promise<string>>();
+const FILE_AT_MAX_ENTRIES = 200;
+const FILE_AT_MAX_CHARS = 16 * 1024 * 1024;
+let fileAtChars = 0;
+let fileAtGeneration = 0;
+/** A revision that names a commit by hash always reads back the same bytes; HEAD, a branch and the index do not. */
 const SHA_RE = /^[0-9a-f]{7,}([~^][0-9]*)*$/i;
 
 function cacheKey(repo: string, rev: string, path: string) {
     return `${repo}\0${rev}\0${path}`;
 }
+
+function revisionOf(key: string): string {
+    return key.split("\0")[1] ?? "";
+}
+
+function rememberFileAt(key: string, content: string): void {
+    const previous = fileAtCache.get(key);
+    if (previous !== undefined) fileAtChars -= previous.length;
+    fileAtCache.delete(key);
+    fileAtCache.set(key, content);
+    fileAtChars += content.length;
+    for (const oldest of fileAtCache.keys()) {
+        if (fileAtCache.size <= FILE_AT_MAX_ENTRIES && fileAtChars <= FILE_AT_MAX_CHARS) break;
+        fileAtChars -= fileAtCache.get(oldest)!.length;
+        fileAtCache.delete(oldest);
+    }
+}
+
+export function forgetMovingRevisions(repo?: string): void {
+    fileAtGeneration += 1;
+    const prefix = repo ? `${repo}\0` : null;
+    const matches = (key: string) => (!prefix || key.startsWith(prefix)) && !SHA_RE.test(revisionOf(key));
+    for (const [key, content] of fileAtCache) {
+        if (!matches(key)) continue;
+        fileAtCache.delete(key);
+        fileAtChars -= content.length;
+    }
+    for (const key of [...fileAtInflight.keys()]) if (matches(key)) fileAtInflight.delete(key);
+}
+
+subscribe("fs-changed", (event) => forgetMovingRevisions(event.repo || undefined));
+subscribe("git-refresh", (event) => forgetMovingRevisions(event.repo || undefined));
 
 export const git = {
     status: (repo: string) => invoke<GitStatus>("git_status", { repo }),
@@ -146,19 +184,32 @@ export const git = {
     revert: (repo: string, rev: string) => invoke<void>("git_revert", { repo, rev }),
     log: (repo: string) => invoke<GitCommit[]>("git_log", { repo }),
     show: (repo: string, rev: string) => invoke<string>("git_show", { repo, rev }),
-    fileAt: async (repo: string, rev: string, path: string): Promise<string> => {
-        const cacheable = SHA_RE.test(rev);
+    fileAt: (repo: string, rev: string, path: string): Promise<string> => {
         const key = cacheKey(repo, rev, path);
-        if (cacheable) {
-            const hit = fileAtCache.get(key);
-            if (hit !== undefined) return hit;
+        const hit = fileAtCache.get(key);
+        if (hit !== undefined) {
+            fileAtCache.delete(key);
+            fileAtCache.set(key, hit);
+            return Promise.resolve(hit);
         }
-        const content = await invoke<string>("git_file_at", { repo, rev, path });
-        if (cacheable) {
-            if (fileAtCache.size > FILE_AT_LIMIT) fileAtCache.clear();
-            fileAtCache.set(key, content);
-        }
-        return content;
+        const pending = fileAtInflight.get(key);
+        if (pending) return pending;
+
+        const immutable = SHA_RE.test(rev);
+        const generation = fileAtGeneration;
+        const request = invoke<string>("git_file_at", { repo, rev, path }).then(
+            (content) => {
+                if (fileAtInflight.get(key) === request) fileAtInflight.delete(key);
+                if (immutable || generation === fileAtGeneration) rememberFileAt(key, content);
+                return content;
+            },
+            (error: unknown) => {
+                if (fileAtInflight.get(key) === request) fileAtInflight.delete(key);
+                throw error;
+            },
+        );
+        fileAtInflight.set(key, request);
+        return request;
     },
     commitFiles: (repo: string, rev: string) => invoke<string[]>("git_commit_files", { repo, rev }),
     blame: (repo: string, path: string, contents?: string | null) => invoke<GitBlame>("git_blame", { repo, path, contents: contents ?? null }),
