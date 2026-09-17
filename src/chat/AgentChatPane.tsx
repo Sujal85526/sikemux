@@ -368,7 +368,15 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     );
 }
 
-const markdownComponents = { a: ChatLink, code: ChatCode };
+function ChatTable({ children }: { children?: ReactNode }) {
+    return (
+        <div className="chat-table">
+            <table>{children}</table>
+        </div>
+    );
+}
+
+const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable };
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;

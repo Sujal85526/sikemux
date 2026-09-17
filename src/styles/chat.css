@@ -401,6 +401,60 @@
     padding: 9px 12px;
 }
 
+/* ── a table the agent wrote ──────────────────────────────────────────
+ * A bordered card, like the diff and the code block beside it, with a ruled
+ * grid inside. It scrolls in its own box so a wide one cannot stretch the turn.
+ */
+.chat-table {
+    overflow-x: auto;
+    margin: 10px 0;
+    border: 1px solid var(--border, var(--line));
+    border-radius: var(--radius-2);
+}
+
+.chat-table table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.chat-table th,
+.chat-table td {
+    padding: 5px 10px;
+    border-right: 1px solid var(--border, var(--line));
+    border-bottom: 1px solid var(--border, var(--line));
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.chat-table th:last-child,
+.chat-table td:last-child {
+    border-right: 0;
+}
+
+.chat-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.chat-table th {
+    background: color-mix(in srgb, var(--void) 55%, transparent);
+    color: var(--ink-dim);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-medium, 500);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+}
+
+.chat-table td {
+    color: var(--text-secondary, var(--ink));
+}
+
+.chat-table td:first-child {
+    color: var(--text-primary, var(--ink));
+}
+
 .chat-markdown a {
     color: var(--acc);
     text-decoration: none;

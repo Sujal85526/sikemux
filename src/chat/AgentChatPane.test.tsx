@@ -506,6 +506,22 @@ describe("AgentChatPane", () => {
         expect((document.querySelector(".chat-tools-body") as HTMLElement).style.getPropertyValue("--chat-kind")).toBe("9ch");
     });
 
+    it("rules a table the agent wrote, and lets a wide one scroll on its own", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "| approach | cpu |\n| --- | --- |\n| ack every frame | 90.6% |\n" },
+            },
+        });
+
+        const cell = await screen.findByText("ack every frame");
+        expect(cell.tagName).toBe("TD");
+        expect(screen.getByText("approach").tagName).toBe("TH");
+        expect(cell.closest(".chat-table")).not.toBeNull();
+    });
+
     it("says who is speaking and when, above the turn", async () => {
         await openTranscript();
         emit("session_update", {
