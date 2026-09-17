@@ -30,6 +30,7 @@ import { HarnessBridge } from "./components/HarnessBridge";
 import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
+import { useBrowserDownloads } from "./state/browserDownloads";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
@@ -211,6 +212,7 @@ function resolveTreeDropTarget(at: HTMLElement | null): TreeDropTarget | null {
 
 export default function App() {
     useKeymap();
+    useBrowserDownloads();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
     const zen = useStore((s) => s.zenMode);

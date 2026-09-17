@@ -15,8 +15,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
-use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
+use tauri::webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Rect, Size, State, Url,
     Webview, WebviewUrl,
@@ -26,6 +28,7 @@ use crate::error::{AppError, AppResult};
 
 pub const BROWSER_TABS_EVENT: &str = "browser-tabs-changed";
 pub const BROWSER_SHORTCUT_EVENT: &str = "browser-shortcut";
+pub const BROWSER_DOWNLOAD_EVENT: &str = "browser-download";
 pub const BLANK_URL: &str = "about:blank";
 const MAX_URL_LEN: usize = 8192;
 const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
@@ -80,6 +83,27 @@ pub struct BrowserShortcut {
     pub code: String,
     pub shift: bool,
     pub alt: bool,
+}
+
+/// A file a page handed to the download folder, announced when it starts and
+/// again when it ends. macOS never reports the saved path back, so the path
+/// chosen at the start is the one carried through.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserDownload {
+    pub agent_id: String,
+    pub tab_id: String,
+    pub url: String,
+    pub path: String,
+    pub state: DownloadState,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadState {
+    Started,
+    Finished,
+    Failed,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -168,6 +192,7 @@ pub struct BrowserManager {
     agents: Mutex<HashMap<String, AgentBrowser>>,
     next_tab: AtomicU64,
     shortcuts_installed: AtomicBool,
+    downloads: Mutex<HashMap<(String, String), PathBuf>>,
 }
 
 impl BrowserManager {
@@ -263,7 +288,14 @@ impl BrowserManager {
         let (title_app, title_agent, title_tab) =
             (app.clone(), agent_id.to_owned(), tab_id.to_owned());
         let (popup_app, popup_agent) = (app.clone(), agent_id.to_owned());
+        let (download_app, download_agent, download_tab) =
+            (app.clone(), agent_id.to_owned(), tab_id.to_owned());
         builder
+            .on_download(move |_, event| {
+                let manager = download_app.state::<BrowserManager>();
+                manager.note_download(&download_app, &download_agent, &download_tab, event);
+                true
+            })
             .on_page_load(move |webview, payload| {
                 let loading = payload.event() == PageLoadEvent::Started;
                 let url = payload.url().to_string();
@@ -292,6 +324,58 @@ impl BrowserManager {
                 });
                 NewWindowResponse::Deny
             })
+    }
+
+    fn note_download(
+        &self,
+        app: &AppHandle,
+        agent_id: &str,
+        tab_id: &str,
+        event: DownloadEvent<'_>,
+    ) {
+        let key = |url: &Url| (tab_id.to_owned(), url.to_string());
+        let (url, path, state) = match event {
+            DownloadEvent::Requested { url, destination } => {
+                let folder = app
+                    .path()
+                    .download_dir()
+                    .unwrap_or_else(|_| std::env::temp_dir());
+                let path = unique_download_path(&folder, &download_file_name(&url, destination));
+                *destination = path.clone();
+                self.downloads_lock().insert(key(&url), path.clone());
+                (url, path, DownloadState::Started)
+            }
+            DownloadEvent::Finished { url, path, success } => {
+                let chosen = self.downloads_lock().remove(&key(&url));
+                let path = path.or(chosen).unwrap_or_default();
+                (
+                    url,
+                    path,
+                    if success {
+                        DownloadState::Finished
+                    } else {
+                        DownloadState::Failed
+                    },
+                )
+            }
+            _ => return,
+        };
+        let _ = app.emit(
+            BROWSER_DOWNLOAD_EVENT,
+            BrowserDownload {
+                agent_id: agent_id.to_owned(),
+                tab_id: tab_id.to_owned(),
+                url: url.to_string(),
+                path: path.to_string_lossy().into_owned(),
+                state,
+            },
+        );
+    }
+
+    fn downloads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), PathBuf>> {
+        self.downloads
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub fn note_page(
@@ -675,6 +759,54 @@ fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
     Ok(())
 }
 
+/// The name the page suggested, else the last path segment of the URL, with
+/// anything that could leave the download folder stripped out.
+fn download_file_name(url: &Url, suggested: &Path) -> String {
+    let candidate = suggested
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next_back().map(str::to_owned))
+                .filter(|name| !name.is_empty())
+        })
+        .unwrap_or_default();
+    let cleaned: String = candidate
+        .chars()
+        .map(|char| {
+            if matches!(char, '/' | '\\' | ':') {
+                '_'
+            } else {
+                char
+            }
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').to_owned();
+    if cleaned.is_empty() {
+        "download".into()
+    } else {
+        cleaned.chars().take(200).collect()
+    }
+}
+
+/// `name`, `name (2)`, `name (3)`... whichever does not exist yet, keeping
+/// the extension at the end.
+fn unique_download_path(folder: &Path, name: &str) -> PathBuf {
+    let first = folder.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, extension) = match name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => (stem, format!(".{extension}")),
+        _ => (name, String::new()),
+    };
+    (2..)
+        .map(|n| folder.join(format!("{stem} ({n}){extension}")))
+        .find(|path| !path.exists())
+        .expect("some numbered name is free")
+}
+
 fn label_safe(agent_id: &str) -> String {
     agent_id
         .chars()
@@ -879,6 +1011,43 @@ mod tests {
         assert!(validate_url("tauri://localhost").is_err());
         assert!(validate_url("https://example.com").is_ok());
         assert!(validate_url(&"x".repeat(MAX_URL_LEN + 1)).is_err());
+    }
+
+    #[test]
+    fn download_names_come_from_the_page_then_the_url_and_stay_in_the_folder() {
+        let url = Url::parse("https://a.test/files/report.pdf?x=1").unwrap();
+        assert_eq!(
+            download_file_name(&url, Path::new("Quarterly.pdf")),
+            "Quarterly.pdf"
+        );
+        assert_eq!(download_file_name(&url, Path::new("")), "report.pdf");
+        assert_eq!(
+            download_file_name(&url, Path::new("../../etc/passwd")),
+            "passwd"
+        );
+        assert_eq!(download_file_name(&url, Path::new(".hidden")), "hidden");
+        let bare = Url::parse("https://a.test/").unwrap();
+        assert_eq!(download_file_name(&bare, Path::new("")), "download");
+    }
+
+    #[test]
+    fn a_taken_download_name_gets_a_number_before_its_extension() {
+        let folder = tempfile::tempdir().unwrap();
+        assert_eq!(
+            unique_download_path(folder.path(), "a.pdf"),
+            folder.path().join("a.pdf")
+        );
+        std::fs::write(folder.path().join("a.pdf"), b"x").unwrap();
+        std::fs::write(folder.path().join("a (2).pdf"), b"x").unwrap();
+        assert_eq!(
+            unique_download_path(folder.path(), "a.pdf"),
+            folder.path().join("a (3).pdf")
+        );
+        std::fs::write(folder.path().join("notes"), b"x").unwrap();
+        assert_eq!(
+            unique_download_path(folder.path(), "notes"),
+            folder.path().join("notes (2)")
+        );
     }
 
     #[test]

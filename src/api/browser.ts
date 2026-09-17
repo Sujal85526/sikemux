@@ -34,6 +34,15 @@ export interface BrowserShortcut {
     alt: boolean;
 }
 
+/** A file a tab handed to the download folder; announced at start and end. */
+export interface BrowserDownload {
+    agentId: string;
+    tabId: string;
+    url: string;
+    path: string;
+    state: "started" | "finished" | "failed";
+}
+
 export const browserApi = {
     snapshot: (agentId: string, signal?: AbortSignal) => invoke<BrowserSnapshot>("browser_snapshot", { agentId }, signal ? { signal } : undefined),
     newTab: (agentId: string, url?: string) => invoke<string>("browser_new_tab", { agentId, url: url ?? null }),
@@ -49,4 +58,6 @@ export const browserApi = {
     subscribeTabs: (listener: () => void, signal: AbortSignal) => getIpcTransport().subscribe("browser-tabs-changed", listener, { signal }),
     subscribeShortcuts: (listener: (shortcut: BrowserShortcut) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<BrowserShortcut>("browser-shortcut", (event) => listener(event.payload), { signal }),
+    subscribeDownloads: (listener: (download: BrowserDownload) => void, signal: AbortSignal) =>
+        getIpcTransport().subscribe<BrowserDownload>("browser-download", (event) => listener(event.payload), { signal }),
 };
