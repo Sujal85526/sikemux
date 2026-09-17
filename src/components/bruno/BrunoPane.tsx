@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import * as cmd from "../../state/commands";
 import { subscribe } from "../../state/bus";
+import { useBrunoDrafts, useBrunoSecretVars } from "../../state/brunoRuntime";
 import { useResourceEnabled } from "../../state/resources";
 import { brunoCollectionR } from "../../state/resources.defs";
 import { useStore } from "../../state/store";
@@ -38,8 +39,8 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
     const bruno = session?.bruno ?? null;
     const collectionPath = bruno?.collectionPath ?? "";
     const view = useStore((s) => s.brunoViews[paneId] ?? DEFAULT_BRUNO_VIEW);
-    const drafts = useMemo(() => bruno?.drafts ?? {}, [bruno?.drafts]);
-    const secretVars = useMemo(() => bruno?.secretVars ?? {}, [bruno?.secretVars]);
+    const drafts = useBrunoDrafts(sessionId);
+    const secretVars = useBrunoSecretVars(sessionId);
     const selectedEnvs = bruno?.selectedEnvs ?? {};
 
     const coll = useResourceEnabled(active && !!collectionPath, brunoCollectionR, collectionPath);
@@ -80,15 +81,18 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
     }, [collection, env, secretVars, located]);
     const scope = useMemo(() => mergeScope(runtime, requestVars(effectiveRequest), inheritedScope), [runtime, effectiveRequest, inheritedScope]);
 
+    // Serialising the file's own version once per request, rather than once per
+    // keystroke, to answer the only question asked of it: is this edited yet.
+    const diskSerialized = useMemo(() => (diskRequest ? serializeRequest(diskRequest) : ""), [diskRequest]);
+
     const onChange = useCallback(
         (next: BruRequest) => {
             if (!path) return;
             setEditing({ path, req: next });
             const serialized = serializeRequest(next);
-            const diskSer = diskRequest ? serializeRequest(diskRequest) : "";
-            cmd.brunoSetDraft(sessionId, path, serialized === diskSer ? null : serialized);
+            cmd.brunoSetDraft(sessionId, path, serialized === diskSerialized ? null : serialized);
         },
-        [path, diskRequest, sessionId],
+        [path, diskSerialized, sessionId],
     );
 
     const onSend = useCallback(async () => {

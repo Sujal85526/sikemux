@@ -5,6 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { applyHydrate, flushPersist, hydrationAllowsPersistence, resetPersistenceForTests, subscribePersist } from "./persist";
 import * as cmd from "./commands";
+import { flushBrunoDrafts, setBrunoDraft, setBrunoSecret } from "./brunoRuntime";
 import { getState, setState } from "./store";
 import { activeAgentId, agentIdsOf, agentWindowId } from "./selectors";
 import { agentWindow } from "./agentWindow";
@@ -113,13 +114,16 @@ describe("frontend persistence", () => {
                     bruno: {
                         collectionPath: "/collections/demo",
                         selectedEnvs: { "/collections/demo": "staging" },
-                        secretVars: { token: "do-not-persist" },
-                        drafts: { "/collections/demo/login.bru": "Authorization: Bearer do-not-persist" },
                     },
                 },
             },
             rundeck: { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] },
         }));
+        // These live outside the persisted store entirely now; the snapshot must
+        // still come back without them.
+        setBrunoSecret(sid, "token", "do-not-persist");
+        setBrunoDraft(sid, "/collections/demo/login.bru", "Authorization: Bearer do-not-persist");
+        flushBrunoDrafts();
         invoke.mockResolvedValue(undefined);
 
         expect(await flushPersist()).toBe(true);
@@ -551,8 +555,6 @@ describe("frontend persistence", () => {
         expect(getState().sessions[sid].bruno).toEqual({
             collectionPath: "/legacy",
             selectedEnvs: { "/legacy": "dev" },
-            secretVars: {},
-            drafts: {},
         });
         expect(getState().sessionOrder).toEqual([sid]);
         expect(getState().recent).toEqual([]);

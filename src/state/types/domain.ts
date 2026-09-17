@@ -176,15 +176,13 @@ export interface DeployRef {
 /**
  * Durable per-session state for a Bruno (API) workspace. Lives on the Session so
  * it persists with the existing `sessions` slice — no persist version bump.
- * Secret var values are entered in-app (not stored in .bru files); `drafts` holds
- * edited-but-unsaved request text keyed by file path.
+ * Unsaved request text and typed secret values are not durable and live in
+ * `state/brunoRuntime` instead.
  */
 export interface BrunoSessionState {
     collectionPath: string;
     /** selected environment id per collection root (workspaces hold many collections) */
     selectedEnvs: Record<string, string>;
-    secretVars: Record<string, string>;
-    drafts: Record<string, string>;
 }
 
 export interface Session {

@@ -17,6 +17,7 @@ import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../theme
 import { sshStartup } from "../terminal/sshStartup";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
 import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
+import { brunoDrafts, forgetBrunoSession, setBrunoDraft, setBrunoSecret } from "./brunoRuntime";
 import { emit } from "./bus";
 import { reduceAgentState } from "./agentStatus";
 import { fetchResource, invalidate, peekResource } from "./resources";
@@ -484,7 +485,7 @@ export function openBrunoSession(collectionPath: string): void {
         const name = basename(collectionPath);
         const win = makeWindow(collectionPath, name, { kind: "bruno", role: "bruno", fixed: true });
         const session = makeSession("bruno", name, collectionPath, win.id);
-        session.bruno = { collectionPath, selectedEnvs: {}, secretVars: {}, drafts: {} };
+        session.bruno = { collectionPath, selectedEnvs: {} };
         attachSession(d as unknown as StoreState, session, [win]);
     });
 }
@@ -544,26 +545,18 @@ export function brunoSelectEnv(sessionId: string, collectionPath: string, envId:
     });
 }
 export function brunoSetSecret(sessionId: string, name: string, value: string): void {
-    mutate((d) => {
-        const s = d.sessions[sessionId];
-        if (s?.kind === "bruno" && s.bruno) s.bruno.secretVars[name] = value;
-    });
+    if (getState().sessions[sessionId]?.kind === "bruno") setBrunoSecret(sessionId, name, value);
 }
 /** Stash edited (unsaved) request text by file path; pass null to clear the draft. */
 export function brunoSetDraft(sessionId: string, path: string, text: string | null): void {
-    mutate((d) => {
-        const s = d.sessions[sessionId];
-        if (s?.kind !== "bruno" || !s.bruno) return;
-        if (text == null) delete s.bruno.drafts[path];
-        else s.bruno.drafts[path] = text;
-    });
+    if (getState().sessions[sessionId]?.kind === "bruno") setBrunoDraft(sessionId, path, text);
 }
 
 /** Write the draft for a request back to its .bru file, then clear the draft. */
 export async function brunoSaveRequest(sessionId: string, path: string): Promise<void> {
     const s = getState().sessions[sessionId];
     if (s?.kind !== "bruno" || !s.bruno) return;
-    const draft = s.bruno.drafts[path];
+    const draft = brunoDrafts(sessionId)[path];
     if (draft == null) return;
     const collectionPath = s.bruno.collectionPath;
     try {
@@ -624,7 +617,7 @@ export async function brunoRenameRequest(sessionId: string, path: string, name: 
     if (s?.kind !== "bruno" || !s.bruno || !name.trim()) return;
     const newPath = joinPath(dirname(path), `${safeFileName(name)}.bru`);
     try {
-        const text = s.bruno.drafts[path] ?? (await fsapi.readFile(path));
+        const text = brunoDrafts(sessionId)[path] ?? (await fsapi.readFile(path));
         const req = parseRequest(text);
         req.meta.name = name.trim();
         if (newPath === path) await fsapi.writeFile(path, serializeRequest(req));
@@ -852,6 +845,7 @@ function closeSessionNow(id: string): void {
         d.zoomedPaneId = null;
     });
     if (!getState().sessions[id]) {
+        forgetBrunoSession(id);
         for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
         for (const agentId of closingAgentIds) {
             void browserApi.closeAgent(agentId).catch(reportError("close agent browser"));
@@ -1185,7 +1179,7 @@ export async function importSessionFromClipboard(): Promise<void> {
             deploy: null,
             activeWindowId: importedWindows[0].id,
         };
-        if (sourceKind === "bruno") session.bruno = { collectionPath: sourceCwd, selectedEnvs: {}, secretVars: {}, drafts: {} };
+        if (sourceKind === "bruno") session.bruno = { collectionPath: sourceCwd, selectedEnvs: {} };
         attachSession(d as unknown as StoreState, session, importedWindows);
         for (const row of bundle.agents) {
             const id = newId("agent");

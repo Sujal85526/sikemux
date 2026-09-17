@@ -10,7 +10,7 @@
 
 import { fsapi, type DirEntry } from "../api/fs";
 import { parseEnv, parseRequest, parseScope } from "./parse";
-import type { BruCollection, BruEnv, BruScope, BruTreeNode } from "./types";
+import type { BruCollection, BruEnv, BruTreeNode } from "./types";
 
 const BRU = ".bru";
 const ENV_DIR = "environments";
@@ -36,41 +36,45 @@ function isCollectionRoot(entries: DirEntry[]): boolean {
  * request can be scoped to its collection's environments.
  */
 async function buildTree(entries: DirEntry[], collPath: string): Promise<BruTreeNode[]> {
-    const nodes: BruTreeNode[] = [];
-    for (const e of entries) {
-        if (e.is_dir) {
-            if (IGNORE_DIRS.has(e.name)) continue;
-            const children = await fsapi.readDir(e.path);
-            // A folder's scope comes from folder.bru, or a nested collection.bru.
-            const scopeFile = children.find((c) => !c.is_dir && (c.name === "folder.bru" || c.name === "collection.bru"));
-            const scope: BruScope | null = scopeFile ? parseScope(await fsapi.readFile(scopeFile.path), e.name) : null;
-            const childColl = isCollectionRoot(children) ? e.path : collPath;
-            const childNodes = await buildTree(children, childColl);
-            // Skip empty structural dirs (e.g. a bare `collections/` wrapper with nothing useful).
-            if (childNodes.length === 0 && !scope) continue;
-            nodes.push({
-                type: "folder",
-                name: scope?.meta.name || e.name,
-                path: e.path,
-                seq: scope?.meta.seq ?? SEQ_LAST,
-                scope,
-                children: childNodes,
-            });
-        } else if (e.name.endsWith(BRU) && e.name !== "collection.bru" && e.name !== "folder.bru") {
-            const request = parseRequest(await fsapi.readFile(e.path));
-            nodes.push({
-                type: "request",
-                name: request.meta.name || stem(e.name),
-                path: e.path,
-                seq: request.meta.seq ?? SEQ_LAST,
-                method: request.method,
-                collectionPath: collPath,
-                request,
-            });
-        }
+    // One directory listing or file read at a time meant a collection of a few
+    // hundred requests was that many round trips end to end. Siblings do not
+    // depend on each other, so they are read together.
+    const nodes = await Promise.all(entries.map((entry) => buildNode(entry, collPath)));
+    return nodes.filter((node): node is BruTreeNode => node !== null).sort((a, b) => a.seq - b.seq || a.name.localeCompare(b.name));
+}
+
+async function buildNode(entry: DirEntry, collPath: string): Promise<BruTreeNode | null> {
+    if (entry.is_dir) {
+        if (IGNORE_DIRS.has(entry.name)) return null;
+        const children = await fsapi.readDir(entry.path);
+        // A folder's scope comes from folder.bru, or a nested collection.bru.
+        const scopeFile = children.find((c) => !c.is_dir && (c.name === "folder.bru" || c.name === "collection.bru"));
+        const [scope, childNodes] = await Promise.all([
+            scopeFile ? fsapi.readFile(scopeFile.path).then((text) => parseScope(text, entry.name)) : Promise.resolve(null),
+            buildTree(children, isCollectionRoot(children) ? entry.path : collPath),
+        ]);
+        // Skip empty structural dirs (e.g. a bare `collections/` wrapper with nothing useful).
+        if (childNodes.length === 0 && !scope) return null;
+        return {
+            type: "folder",
+            name: scope?.meta.name || entry.name,
+            path: entry.path,
+            seq: scope?.meta.seq ?? SEQ_LAST,
+            scope,
+            children: childNodes,
+        };
     }
-    nodes.sort((a, b) => a.seq - b.seq || a.name.localeCompare(b.name));
-    return nodes;
+    if (!entry.name.endsWith(BRU) || entry.name === "collection.bru" || entry.name === "folder.bru") return null;
+    const request = parseRequest(await fsapi.readFile(entry.path));
+    return {
+        type: "request",
+        name: request.meta.name || stem(entry.name),
+        path: entry.path,
+        seq: request.meta.seq ?? SEQ_LAST,
+        method: request.method,
+        collectionPath: collPath,
+        request,
+    };
 }
 
 /**
@@ -79,33 +83,31 @@ async function buildTree(entries: DirEntry[], collPath: string): Promise<BruTree
  * to the open request's collection).
  */
 async function collectEnvs(dirPath: string, entries: DirEntry[], collPath: string): Promise<BruEnv[]> {
-    const out: BruEnv[] = [];
     const here = isCollectionRoot(entries) ? dirPath : collPath;
-    for (const e of entries) {
-        if (!e.is_dir) continue;
-        if (e.name === ENV_DIR) {
-            for (const f of await fsapi.readDir(e.path)) {
-                if (!f.is_dir && f.name.endsWith(BRU)) {
-                    out.push(parseEnv(await fsapi.readFile(f.path), stem(f.name), here, baseName(here || dirPath)));
-                }
+    const groups = await Promise.all(
+        entries.map(async (e): Promise<BruEnv[]> => {
+            if (!e.is_dir) return [];
+            if (e.name === ENV_DIR) {
+                const files = (await fsapi.readDir(e.path)).filter((f) => !f.is_dir && f.name.endsWith(BRU));
+                return Promise.all(files.map(async (f) => parseEnv(await fsapi.readFile(f.path), stem(f.name), here, baseName(here || dirPath))));
             }
-        } else if (!IGNORE_DIRS.has(e.name)) {
-            out.push(...(await collectEnvs(e.path, await fsapi.readDir(e.path), here)));
-        }
-    }
-    return out;
+            if (IGNORE_DIRS.has(e.name)) return [];
+            return collectEnvs(e.path, await fsapi.readDir(e.path), here);
+        }),
+    );
+    return groups.flat();
 }
 
 export async function loadCollection(rootPath: string): Promise<BruCollection> {
     const entries = await fsapi.readDir(rootPath);
 
     const collectionBru = entries.find((e) => !e.is_dir && e.name === "collection.bru");
-    const config: BruScope | null = collectionBru ? parseScope(await fsapi.readFile(collectionBru.path), baseName(rootPath)) : null;
-
     const rootColl = isCollectionRoot(entries) ? rootPath : "";
-    const envs = await collectEnvs(rootPath, entries, rootColl);
+    const [config, envs, tree] = await Promise.all([
+        collectionBru ? fsapi.readFile(collectionBru.path).then((text) => parseScope(text, baseName(rootPath))) : Promise.resolve(null),
+        collectEnvs(rootPath, entries, rootColl),
+        buildTree(entries, rootColl),
+    ]);
     envs.sort((a, b) => a.collectionName.localeCompare(b.collectionName) || a.name.localeCompare(b.name));
-
-    const tree = await buildTree(entries, rootColl);
     return { rootPath, name: config?.meta.name || baseName(rootPath), config, envs, tree };
 }

@@ -4,6 +4,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from
 import type { Agent, Divider, PaneKind, Rect, Session, TabRef, Window as WindowT, WindowRole } from "../state/types";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
+import { useBrunoDrafts } from "../state/brunoRuntime";
 import { getState, useStore } from "../state/store";
 import { activeTabRef, brunoPaneId, documentsOf, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
@@ -204,7 +205,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const brunoViews = useStore((s) => s.brunoViews);
     const brunoView = brunoViews[useStore((s) => brunoPaneId(s, session.id)) ?? ""];
     const collectionPath = session.bruno?.collectionPath ?? "";
-    const drafts = session.bruno?.drafts;
+    const drafts = useBrunoDrafts(session.id);
     // A request's name and method live in the collection on disk, not the store,
     // so the strip reads the same resource the Bruno pane does.
     const collection = useResourceEnabled(!!collectionPath, brunoCollectionR, collectionPath).data;

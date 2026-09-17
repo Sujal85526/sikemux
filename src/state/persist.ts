@@ -266,9 +266,6 @@ function toSession(value: unknown): Session | null {
         session.bruno = {
             collectionPath: typeof bruno.collectionPath === "string" ? bruno.collectionPath : session.cwd,
             selectedEnvs: isStringRecord(bruno.selectedEnvs) ? bruno.selectedEnvs : {},
-            // Older snapshots may contain credentials. Never restore them into runtime state.
-            secretVars: {},
-            drafts: {},
         };
     } else {
         delete session.bruno;
@@ -463,8 +460,8 @@ function snapshot(): string {
         prefs: packPrefs(s),
         itemStates,
     };
-    // Defense in depth: these runtime-only Bruno fields must never reach disk,
-    // even if a malformed record introduced them outside the typed session shape.
+    // Defense in depth: these runtime-only fields must never reach disk, even if
+    // a malformed record introduced them outside the typed shapes above.
     return JSON.stringify(snap, (key, value) =>
         key === "secretVars" || key === "drafts" || key === "transient" || key === "externalPty" || key === "taskTerminalKey" ? undefined : value,
     );

@@ -128,11 +128,17 @@ export function BrunoCode({
         // recreate when language / read-only / placeholder identity changes
     }, [lang, readOnly, placeholder, highlightVars]);
 
-    // Re-highlight variables when the scope (env / secrets / typing) changes.
+    /*
+     * Re-highlight variables when the set of names changes. A highlight only
+     * asks whether a name is defined, and the scope object is rebuilt on every
+     * keystroke — nudging the editor on each of those made it rebuild every
+     * decoration in view for an answer that had not moved.
+     */
+    const varNames = vars ? Object.keys(vars).sort().join("\u0000") : "";
     useEffect(() => {
         const view = viewRef.current;
         if (view && highlightVars) view.dispatch({ effects: refreshVars.of(null) });
-    }, [vars, highlightVars]);
+    }, [varNames, highlightVars]);
 
     // Push external value changes (request or tab switch) into the editor.
     useEffect(() => {
