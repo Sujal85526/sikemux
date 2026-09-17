@@ -30,6 +30,7 @@ import { HarnessBridge } from "./components/HarnessBridge";
 import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
+import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
@@ -208,6 +209,15 @@ function resolveTreeDropTarget(at: HTMLElement | null): TreeDropTarget | null {
         highlightPath: null,
         dropEl: treeRoot,
     };
+}
+
+/*
+ * The photographic ground, and nothing at all without one. The element carries
+ * a blur and a mask, so leaving it mounted costs a full-window composited layer
+ * to paint a picture that is `none` in every build nobody has customised.
+ */
+function ShellBackdrop() {
+    return useBackdropImage() ? <div className="shell-image" aria-hidden="true" /> : null;
 }
 
 export default function App() {
@@ -809,7 +819,7 @@ export default function App() {
 
     return (
         <div className="shell">
-            <div className="shell-image" aria-hidden="true" />
+            <ShellBackdrop />
             <CliOpenBridge />
             <HarnessBridge />
             <AgentSessionSync />

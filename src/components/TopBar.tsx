@@ -325,9 +325,7 @@ function ClockChip() {
     const t = twelveHour(now);
     return (
         <span className="tb-clock">
-            {t.h}
-            <span className="tb-colon">:</span>
-            {time2(t.m)}
+            {t.h}:{time2(t.m)}
             <span className="tb-ampm">{t.ap}</span>
         </span>
     );

@@ -190,9 +190,6 @@
     display: inline-flex;
     align-items: baseline;
 }
-.tb-colon {
-    animation: blink 2s steps(1) infinite;
-}
 .tb-ampm {
     margin-left: 4px;
     font-size: var(--text-3xs);
