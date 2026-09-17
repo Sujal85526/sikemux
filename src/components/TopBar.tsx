@@ -344,9 +344,9 @@ export const TopBar = memo(function TopBar() {
         return id ? s.agents[id] : undefined;
     });
     const zoomed = useStore((s) => s.zoomedPaneId != null);
-    const sideRailOpen = useStore((s) => s.sideRailOpen);
-    const agentRailOpen = useStore((s) => s.agentRailOpen);
     const zen = useStore((s) => s.zenMode);
+    const sideRailVisible = useStore((s) => s.sideRailOpen && !s.zenMode);
+    const agentRailVisible = useStore((s) => s.agentRailOpen && !s.zenMode);
     const [envOpen, setEnvOpen] = useState(false);
 
     const isProject = !!session && session.kind === "project";
@@ -479,17 +479,25 @@ export const TopBar = memo(function TopBar() {
                 <ClockChip />
                 <div className="tb-toggles">
                     <Tooltip label="Focus mode — hide rails">
-                        <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} aria-label="Focus mode">
+                        <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} aria-pressed={zen} aria-label="Focus mode">
                             <IconFocus size={15} />
                         </button>
                     </Tooltip>
                     <Tooltip label="Toggle sessions rail">
-                        <button className={`tb-btn${sideRailOpen ? " on" : ""}`} onClick={cmd.toggleSideRail} aria-label="Toggle sessions rail">
+                        <button
+                            className={`tb-btn${sideRailVisible ? " on" : ""}`}
+                            onClick={cmd.toggleSideRail}
+                            aria-pressed={sideRailVisible}
+                            aria-label="Toggle sessions rail">
                             <IconPanelLeft size={15} />
                         </button>
                     </Tooltip>
                     <Tooltip label="Toggle agents rail">
-                        <button className={`tb-btn${agentRailOpen ? " on" : ""}`} onClick={cmd.toggleAgentRail} aria-label="Toggle agents rail">
+                        <button
+                            className={`tb-btn${agentRailVisible ? " on" : ""}`}
+                            onClick={cmd.toggleAgentRail}
+                            aria-pressed={agentRailVisible}
+                            aria-label="Toggle agents rail">
                             <IconAgent size={15} />
                         </button>
                     </Tooltip>

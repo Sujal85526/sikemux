@@ -2168,8 +2168,10 @@ export async function openSshConfigEditor(): Promise<void> {
         d.settingsOpen = false;
     });
 }
-export const toggleSideRail = (): void => setState((s) => ({ sideRailOpen: !s.sideRailOpen }));
-export const toggleAgentRail = (): void => setState((s) => ({ agentRailOpen: !s.agentRailOpen }));
+// Focus mode hides both rails, so asking for one back has to leave focus mode.
+export const toggleSideRail = (): void => setState((s) => (s.zenMode ? { zenMode: false, sideRailOpen: true } : { sideRailOpen: !s.sideRailOpen }));
+export const toggleAgentRail = (): void =>
+    setState((s) => (s.zenMode ? { zenMode: false, agentRailOpen: true } : { agentRailOpen: !s.agentRailOpen }));
 export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));
 
 export function requestOpenFile(path: string, line?: number, character?: number): void {
