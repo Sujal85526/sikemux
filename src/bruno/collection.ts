@@ -17,6 +17,21 @@ const ENV_DIR = "environments";
 const SEQ_LAST = Number.MAX_SAFE_INTEGER;
 const IGNORE_DIRS = new Set([".git", "node_modules", ENV_DIR]);
 
+// A collection is a directory tree, so reading every sibling at once means the
+// whole tree is in flight at once. Enough pending reads and the browser spends
+// longer tracking the promises than answering them, so only this many run.
+const READ_CONCURRENCY = 16;
+
+async function mapBounded<In, Out>(items: readonly In[], run: (item: In) => Promise<Out>): Promise<Out[]> {
+    const results = new Array<Out>(items.length);
+    let next = 0;
+    const workers = Array.from({ length: Math.min(READ_CONCURRENCY, items.length) }, async () => {
+        for (let at = next++; at < items.length; at = next++) results[at] = await run(items[at]);
+    });
+    await Promise.all(workers);
+    return results;
+}
+
 function baseName(p: string): string {
     const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
     return i < 0 ? p : p.slice(i + 1);
@@ -39,7 +54,7 @@ async function buildTree(entries: DirEntry[], collPath: string): Promise<BruTree
     // One directory listing or file read at a time meant a collection of a few
     // hundred requests was that many round trips end to end. Siblings do not
     // depend on each other, so they are read together.
-    const nodes = await Promise.all(entries.map((entry) => buildNode(entry, collPath)));
+    const nodes = await mapBounded(entries, (entry) => buildNode(entry, collPath));
     return nodes.filter((node): node is BruTreeNode => node !== null).sort((a, b) => a.seq - b.seq || a.name.localeCompare(b.name));
 }
 
@@ -84,17 +99,15 @@ async function buildNode(entry: DirEntry, collPath: string): Promise<BruTreeNode
  */
 async function collectEnvs(dirPath: string, entries: DirEntry[], collPath: string): Promise<BruEnv[]> {
     const here = isCollectionRoot(entries) ? dirPath : collPath;
-    const groups = await Promise.all(
-        entries.map(async (e): Promise<BruEnv[]> => {
-            if (!e.is_dir) return [];
-            if (e.name === ENV_DIR) {
-                const files = (await fsapi.readDir(e.path)).filter((f) => !f.is_dir && f.name.endsWith(BRU));
-                return Promise.all(files.map(async (f) => parseEnv(await fsapi.readFile(f.path), stem(f.name), here, baseName(here || dirPath))));
-            }
-            if (IGNORE_DIRS.has(e.name)) return [];
-            return collectEnvs(e.path, await fsapi.readDir(e.path), here);
-        }),
-    );
+    const groups = await mapBounded(entries, async (e): Promise<BruEnv[]> => {
+        if (!e.is_dir) return [];
+        if (e.name === ENV_DIR) {
+            const files = (await fsapi.readDir(e.path)).filter((f) => !f.is_dir && f.name.endsWith(BRU));
+            return mapBounded(files, async (f) => parseEnv(await fsapi.readFile(f.path), stem(f.name), here, baseName(here || dirPath)));
+        }
+        if (IGNORE_DIRS.has(e.name)) return [];
+        return collectEnvs(e.path, await fsapi.readDir(e.path), here);
+    });
     return groups.flat();
 }
 
