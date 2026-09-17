@@ -3070,7 +3070,15 @@ fn unsubscribe_locked(pty: &Pty, sub_id: u32) {
         Ok(subs) => subs.is_empty(),
         Err(_) => false,
     };
-    if still_empty && compact_parser_for_idle(&mut parser) {
+    if !still_empty {
+        return;
+    }
+    // Most terminals never accumulate more history than the idle size, and
+    // rebuilding the parser for nothing would just churn on every tab switch.
+    if screen_scrollback_len(parser.screen_mut()) <= IDLE_SCROLLBACK {
+        return;
+    }
+    if compact_parser_for_idle(&mut parser) {
         pty.trimmed.store(true, Ordering::Release);
     }
 }
