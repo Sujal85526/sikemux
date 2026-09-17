@@ -18,6 +18,7 @@ import {
     IconArrowDown,
     IconArrowUp,
     IconCheck,
+    IconChevron,
     IconClose,
     IconCommand,
     IconFile,
@@ -116,6 +117,28 @@ function toolLabel(title: string): { scope?: string; name: string } {
     return segments[0] === "mcp" && segments.length > 2 ? { scope: segments[1], name: segments.slice(2).join("__") } : { name: title };
 }
 
+const ACTIVITY_BY_KIND: Record<string, string> = {
+    read: "Reading…",
+    edit: "Editing…",
+    delete: "Deleting…",
+    move: "Moving…",
+    search: "Searching…",
+    execute: "Running a command…",
+    think: "Thinking…",
+    fetch: "Fetching…",
+    switch_mode: "Switching mode…",
+};
+
+/* A tool titles itself with what it was handed — often a whole shell command.
+   The running row is one line, so say what the agent is doing rather than
+   quote it back. */
+function activityLabel(tool: AcpToolCall): string {
+    const byKind = ACTIVITY_BY_KIND[tool.kind ?? ""];
+    if (byKind) return byKind;
+    const name = toolLabel(tool.title).name.split("\n")[0].trim();
+    return name.length > 0 && name.length <= 40 ? name : "Working…";
+}
+
 function ToolPart({ tool }: { tool: AcpToolCall }) {
     const status = tool.status ?? "pending";
     const complete = status === "completed";
@@ -209,14 +232,13 @@ function MessagePart({ part }: { part: ChatPart }) {
     }
     if (part.kind === "thought") {
         return (
-            <details className="chat-thought">
-                <summary>Reasoning</summary>
+            <div className="chat-thought">
                 <div className="chat-markdown">
                     <Markdown remarkPlugins={[remarkGfm]} skipHtml components={markdownComponents}>
                         {part.text}
                     </Markdown>
                 </div>
-            </details>
+            </div>
         );
     }
     if (part.kind === "tool") return <ToolPart tool={part.tool} />;
@@ -272,17 +294,49 @@ function groupParts(parts: ChatPart[]): PartGroup[] {
     return groups;
 }
 
-function PartGroups({ parts }: { parts: ChatPart[] }) {
-    return groupParts(parts).map((group) =>
-        "tools" in group ? (
-            <div className="chat-tools" key={group.id}>
-                {group.tools.map((part) => (
+function toolRunning(tool: AcpToolCall): boolean {
+    const status = tool.status ?? "pending";
+    return status !== "completed" && status !== "failed";
+}
+
+/* A run of tool calls is worth watching while it happens and worth folding
+   away once it is done, so it opens itself and closes itself again unless the
+   reader has said otherwise. */
+function ToolGroup({ tools }: { tools: Extract<ChatPart, { kind: "tool" }>[] }) {
+    const [reader, setReader] = useState<boolean | null>(null);
+    const running = tools.some((part) => toolRunning(part.tool));
+    const failed = tools.some((part) => part.tool.status === "failed");
+    const open = reader ?? running;
+    return (
+        <details
+            className="chat-tools"
+            open={open}
+            // Opening and closing it ourselves fires a toggle too; only a
+            // toggle that disagrees with us came from the reader.
+            onToggle={(event) => {
+                if (event.currentTarget.open !== open) setReader(event.currentTarget.open);
+            }}>
+            <summary>
+                <span className="chat-tool-mark">
+                    {running ? <IconCommand size={11} /> : failed ? <IconWarning size={11} /> : <IconCheck size={11} />}
+                </span>
+                <span className="chat-tools-count">
+                    {tools.length} {tools.length === 1 ? "tool call" : "tool calls"}
+                </span>
+                <IconChevron size={10} className="chat-tools-chevron" />
+            </summary>
+            <div className="chat-tools-body">
+                {tools.map((part) => (
                     <ToolPart key={part.id} tool={part.tool} />
                 ))}
             </div>
-        ) : (
-            <MessagePart key={group.id} part={group.part} />
-        ),
+        </details>
+    );
+}
+
+function PartGroups({ parts }: { parts: ChatPart[] }) {
+    return groupParts(parts).map((group) =>
+        "tools" in group ? <ToolGroup key={group.id} tools={group.tools} /> : <MessagePart key={group.id} part={group.part} />,
     );
 }
 
@@ -854,8 +908,7 @@ export function AgentChatPane({
         for (let index = parts.length - 1; index >= 0; index -= 1) {
             const part = parts[index];
             if (part.kind !== "tool") continue;
-            const status = part.tool.status ?? "pending";
-            return status === "completed" || status === "failed" ? null : toolLabel(part.tool.title).name;
+            return toolRunning(part.tool) ? activityLabel(part.tool) : null;
         }
         return null;
     }, [displayState.messages]);

@@ -361,20 +361,25 @@
     text-decoration: underline;
 }
 
-.chat-thought,
+.chat-thought {
+    margin: 9px 0;
+    padding-left: 11px;
+    border-left: 1px solid var(--line-soft);
+    color: var(--ink-faint);
+    font-size: 12.5px;
+}
+
 .chat-plan {
     margin: 8px 0;
     color: var(--ink-dim);
 }
 
-.chat-thought summary,
 .chat-plan summary {
     cursor: pointer;
     color: var(--ink-faint);
     font-size: var(--text-2xs);
 }
 
-.chat-thought[open] summary,
 .chat-plan[open] summary {
     margin-bottom: 8px;
 }
@@ -387,7 +392,46 @@
     background: color-mix(in srgb, var(--rail-2) 38%, transparent);
 }
 
-.chat-tools > * + * {
+.chat-tools > summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 26px;
+    padding: 3px 9px;
+    cursor: pointer;
+    color: var(--ink-faint);
+    font-size: var(--text-2xs);
+    list-style: none;
+}
+
+.chat-tools > summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-tools > summary:hover {
+    background: color-mix(in srgb, var(--rail-2) 60%, transparent);
+}
+
+.chat-tools-count {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-tools-chevron {
+    flex: none;
+    margin-left: auto;
+    opacity: 0.7;
+    transition: transform 0.12s;
+}
+
+.chat-tools[open] > summary .chat-tools-chevron {
+    transform: rotate(90deg);
+}
+
+.chat-tools[open] > .chat-tools-body,
+.chat-tools-body > * + * {
     border-top: 1px solid color-mix(in srgb, var(--line-soft) 66%, transparent);
 }
 
@@ -711,17 +755,30 @@
     text-align: center;
 }
 
+/* Lines up with the text in a message: the transcript is 800px wide with 22px
+   of padding either side. */
+.chat-activity,
+.chat-error,
+.chat-permission,
+.chat-plan {
+    width: min(calc(100% - 44px), 756px);
+    margin-inline: auto;
+}
+
 .chat-activity {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: min(calc(100% - 40px), 720px);
-    margin: 10px auto 0;
+    margin-top: 10px;
     color: var(--ink-faint);
     font-size: var(--text-2xs);
 }
 
 .chat-activity-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     animation: chat-activity-breathe 1.9s ease-in-out infinite;
 }
 
@@ -773,13 +830,6 @@
 .chat-connection-state button:hover {
     border-color: var(--acc-line);
     color: var(--ink);
-}
-
-.chat-error,
-.chat-permission,
-.chat-plan {
-    width: min(calc(100% - 40px), 720px);
-    margin-inline: auto;
 }
 
 .chat-error {

@@ -343,6 +343,70 @@ describe("AgentChatPane", () => {
         await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
     });
 
+    it("says what a running tool is doing instead of quoting the command it was given", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "Check the styles" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-1",
+                kind: "execute",
+                title: 'grep -n "is-transparent" -A12 src/styles/base.css | head -40',
+                status: "in_progress",
+            },
+        });
+        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Running a command…"));
+        expect(screen.getByRole("status")).not.toHaveTextContent("is-transparent");
+    });
+
+    it("folds a run of tool calls away once it finishes, and leaves reasoning in plain sight", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "Read the styles" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        const scroller = document.querySelector(".chat-scroll") as HTMLElement;
+        fakeScroller(scroller, 400);
+        // The virtualizer keeps a row out of the DOM until the scroller has a
+        // size, and jsdom measures everything as nothing.
+        Object.defineProperty(scroller, "offsetWidth", { configurable: true, get: () => 600 });
+        Object.defineProperty(scroller, "offsetHeight", { configurable: true, get: () => 400 });
+        reportResize(scroller);
+        expect(await screen.findByRole("status")).toHaveTextContent("Thinking…");
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Weighing the two options" } },
+        });
+        for (const toolCallId of ["tool-1", "tool-2"]) {
+            emit("session_update", {
+                sessionId: "session-1",
+                update: { sessionUpdate: "tool_call", toolCallId, kind: "read", title: "src/styles/chat.css", status: "in_progress" },
+            });
+        }
+
+        expect(await screen.findByText("Weighing the two options")).toBeVisible();
+        const group = document.querySelector(".chat-tools") as HTMLDetailsElement;
+        expect(group.open).toBe(true);
+        expect(group).toHaveTextContent("2 tool calls");
+
+        for (const toolCallId of ["tool-1", "tool-2"]) {
+            emit("session_update", {
+                sessionId: "session-1",
+                update: { sessionUpdate: "tool_call_update", toolCallId, status: "completed" },
+            });
+        }
+        await waitFor(() => expect(group.open).toBe(false));
+
+        fireEvent.click(group.querySelector("summary") as HTMLElement);
+        expect(group.open).toBe(true);
+    });
+
     it("shows adapter progress and retries failed startup", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());
