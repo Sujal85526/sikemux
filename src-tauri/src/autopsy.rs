@@ -420,7 +420,9 @@ fn summarize(header: &ReportHeader) -> String {
             .rejections
             .iter()
             .fold(0, |total, rejection| total.saturating_add(rejection.count));
-        if rejections > 0 {
+        if rejections == 1 {
+            parts.push("1 rejection".to_owned());
+        } else if rejections > 1 {
             parts.push(format!("{rejections} rejections"));
         }
     }
@@ -746,6 +748,21 @@ mod tests {
         assert!(!limiter.allow(start + Duration::from_secs(119)));
         assert!(limiter.allow(start + Duration::from_secs(120)));
         assert!(!limiter.allow(start + Duration::from_secs(121)));
+    }
+
+    #[test]
+    fn a_single_rejection_is_not_reported_as_plural() {
+        let root = tempfile::tempdir().unwrap();
+        let capturer = FakeCapturer {
+            body: "stack",
+            fail: false,
+        };
+        let mut only_one = request(root.path(), 1_789_000_000_000);
+        only_one.activity.as_mut().unwrap().rejections[0].count = 1;
+        write_autopsy(only_one, &capturer).unwrap();
+
+        let summary = list_reports(root.path()).remove(0);
+        assert!(summary.summary.ends_with("1 rejection"), "{summary:?}");
     }
 
     #[test]
