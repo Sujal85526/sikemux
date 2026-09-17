@@ -1,6 +1,6 @@
 .agent-surface {
     display: grid;
-    grid-template-rows: 41px minmax(0, 1fr);
+    grid-template-rows: 33px minmax(0, 1fr);
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -13,9 +13,9 @@
 }
 
 .agent-surface-header {
-    /* Every control in this row is this tall, so the switch group and the
-       single buttons beside it line up. */
-    --control-h: 31px;
+    /* Every control in this row is this tall, so the view buttons and the
+       pills beside them line up. */
+    --control-h: var(--control-hit);
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -47,10 +47,6 @@
     align-items: center;
     gap: 2px;
     height: var(--control-h);
-    padding: 2px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-control);
-    background: color-mix(in srgb, var(--void) 46%, transparent);
 }
 
 .agent-view-switch button {
@@ -59,15 +55,18 @@
     justify-content: center;
     gap: 5px;
     height: 100%;
-    padding: 0 8px;
-    border-radius: calc(var(--radius-control) - 1px);
+    padding: 0 10px;
+    /* Transparent until pressed, so the button keeps the same box as the
+       pills beside it whether or not its border shows. */
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
     color: var(--ink-faint);
     font-family: var(--ui);
     font-size: 10.5px;
     transition:
         color 100ms,
         background 100ms,
-        box-shadow 100ms;
+        border-color 100ms;
 }
 
 .agent-view-switch button:hover:not(:disabled) {
@@ -75,9 +74,9 @@
 }
 
 .agent-view-switch button[aria-pressed="true"] {
+    border-color: var(--line);
     color: var(--ink);
     background: var(--rail-2);
-    box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .agent-view-switch button:disabled {
