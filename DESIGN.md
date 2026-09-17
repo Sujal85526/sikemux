@@ -372,9 +372,11 @@ in `App.tsx`, plus an optional full-window image beneath it.
 
 The shader is a Bayer dither over simplex noise, **monochrome** — it uses the
 ramp's own grey, not the accent, because a coloured backdrop was the most
-saturated thing on screen and broke the accent budget (§4). Rails, stage and the
-gutters between them all sit on it, so the frame reads as one surface rather
-than a texture that starts where the content does.
+saturated thing on screen and broke the accent budget (§4). It paints only the
+dots: the ground between them is transparent, so on a see-through window the
+desktop shows through the grain rather than through a dark wash. Rails, stage
+and the gutters between them all sit on it, so the frame reads as one surface
+rather than a texture that starts where the content does.
 
 **Why you mostly see it in the gutter.** Panels keep `--panel-solidity` — six
 points of glass — so the field ghosts through the whole app without a diff ever

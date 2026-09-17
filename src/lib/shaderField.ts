@@ -186,18 +186,20 @@ interface Recipe {
     needsNoise?: boolean;
 }
 
+const TRANSPARENT: [number, number, number, number] = [0, 0, 0, 0];
+
 const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Recipe> = {
     /*
      * The screen's surface: a Bayer grid over simplex noise, so the card being
      * read carries grain instead of a flat fill.
      *
-     * Both tones are surface tones — the theme's recess and its raised panel,
-     * straddling the ground the card paints. A light ink lifts the whole
-     * surface toward grey however little of it you use, which is what made this
-     * look washed out; two surface tones either side of the ground read as
-     * relief and leave the mean where it was. It is also the only version that
-     * behaves on a light theme, where a grey ink darkened the surface rather
-     * than texturing it.
+     * Only the dots are painted; the ground between them is whatever the card
+     * already shows. It used to paint the theme's recess there too, and on a
+     * see-through window — where the card paints nothing — that recess was the
+     * only fill on the screen, so the mask turned it into a dark wash sliding
+     * down over the desktop. The dots are the raised panel tone, a surface tone
+     * rather than an ink, so however many of them there are the mean barely
+     * moves and a light theme is textured rather than greyed.
      */
     ambient: (runtime, theme) => ({
         /*
@@ -216,7 +218,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
         speed: 0.5,
         continuous: true,
         uniforms: {
-            u_colorBack: runtime.getShaderColorFromString(theme.chrome.bgDim),
+            u_colorBack: TRANSPARENT,
             u_colorFront: runtime.getShaderColorFromString(theme.chrome.bgRaised),
             u_shape: runtime.DitheringShapes.simplex,
             u_type: runtime.DitheringTypes["8x8"],

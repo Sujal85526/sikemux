@@ -106,8 +106,8 @@
     z-index: 0;
     pointer-events: none;
     /*
-     * High, because both tones are surface tones either side of the ground the
-     * card paints. Opacity buys texture here rather than haze — the value that
+     * High, because the field is dots of a surface tone with nothing painted
+     * between them. Opacity buys texture here rather than haze — the value that
      * had to stay low was the one painting a light ink over a dark surface.
      */
     --shader-field-strength: 0.85;
