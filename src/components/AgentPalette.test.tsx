@@ -14,7 +14,8 @@ vi.mock("../api/agents", () => ({
     },
 }));
 
-import { invalidate } from "../state/resources";
+import { fetchResource, invalidate } from "../state/resources";
+import { agentSessionsR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
 import { AgentPalette } from "./AgentPalette";
 import { agentIdsOf } from "../state/selectors";
@@ -59,7 +60,7 @@ beforeEach(() => {
         if (type === "hermes") return Promise.resolve([{ id: "hermes-global", title: "Unrelated Hermes project", mtime: 300 }]);
         return Promise.resolve([{ id: "pi-old", title: "Review picker", mtime: 100 }]);
     });
-    invalidate((kind) => kind === "agents.catalog");
+    invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
 });
 
 afterEach(() => {
@@ -91,6 +92,24 @@ describe("AgentPalette", () => {
         view.unmount();
         expect(opener).toHaveFocus();
         opener.remove();
+    });
+
+    it("opens on the listings the running agents already read", async () => {
+        await fetchResource(agentSessionsR, "codex", "/code/sikemux", undefined);
+        let release = (_rows: { id: string; title: string; mtime: number }[]) => {};
+        mocks.sessions.mockImplementation(
+            (type: string) =>
+                new Promise((resolve) => {
+                    if (type === "codex") release = resolve;
+                    else resolve([]);
+                }),
+        );
+
+        render(<AgentPalette />);
+        expect(await screen.findByRole("button", { name: "Fix terminal tabs in Normal mode" })).toBeInTheDocument();
+
+        release([{ id: "codex-new", title: "Ship the picker", mtime: 400 }]);
+        expect(await screen.findByRole("button", { name: "Ship the picker in Normal mode" })).toBeInTheDocument();
     });
 
     it("opens armed when the saved default is YOLO", async () => {
@@ -150,7 +169,7 @@ describe("AgentPalette", () => {
                 defaultEffort: null,
             },
         ]);
-        invalidate((kind) => kind === "agents.catalog");
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
         render(<AgentPalette />);
 
         await user.click(await screen.findByRole("button", { name: "+ new Codex in Normal mode" }));
@@ -179,7 +198,7 @@ describe("AgentPalette", () => {
                 defaultEffort: null,
             },
         ]);
-        invalidate((kind) => kind === "agents.catalog");
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
         render(<AgentPalette />);
 
         expect(await screen.findByText("saved OpenCodex launcher is missing")).toBeInTheDocument();
@@ -245,7 +264,7 @@ describe("AgentPalette", () => {
         mocks.available
             .mockRejectedValueOnce(new Error("missing PATH"))
             .mockResolvedValueOnce([{ type: "codex", label: "Codex", command: "codex", defaultModel: null, defaultEffort: null }]);
-        invalidate((kind) => kind === "agents.catalog");
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
         render(<AgentPalette />);
 
         expect(await screen.findByText(/missing PATH/)).toBeInTheDocument();

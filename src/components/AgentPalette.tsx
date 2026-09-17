@@ -1,12 +1,12 @@
 import { useModalFocus } from "../hooks/useModalFocus";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { agentApi, type AgentInfo, type AgentSession } from "../api/agents";
+import { type AgentInfo, type AgentSession } from "../api/agents";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agentProfiles";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { rankBy } from "../lib/fuzzy";
 import * as cmd from "../state/commands";
-import { useResource } from "../state/resources";
-import { agentCatalogR } from "../state/resources.defs";
+import { fetchResource, peekResource, useResource } from "../state/resources";
+import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { AgentPermissionMode, AgentType } from "../state/types";
 import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "./Icons";
@@ -26,6 +26,10 @@ const MODE_CHOICES: { mode: AgentPermissionMode; label: string; title: string }[
 
 function labelForType(type: AgentType, agents: readonly AgentInfo[]): string {
     return agents.find((agent) => agent.type === type)?.label ?? type;
+}
+
+function sortRows(rows: Row[]): Row[] {
+    return [...rows].sort((left, right) => right.mtime - left.mtime);
 }
 
 function typeForItem(item: AgentItem): AgentType {
@@ -76,15 +80,23 @@ export function AgentPalette() {
         // Hermes history is global rather than project-scoped, so showing it
         // here leaks unrelated projects into a picker opened for one checkout.
         const projectScopedAgents = agents.filter((agent) => agent.available !== false && agent.type !== "hermes");
+        const sessionArgs = projectScopedAgents.map((agent) => [agent.type, origin.current.cwd, agent.configPath ?? undefined] as const);
+
+        /* The open agents already keep these listings warm, so the picker opens
+           on what they last read and swaps in the fresh scan when it lands. */
+        const known = sessionArgs.flatMap(([type, cwd, configPath]) =>
+            (peekResource(agentSessionsR, type, cwd, configPath) ?? []).map((candidate): Row => ({ ...candidate, type })),
+        );
+        if (known.length > 0) setRows(sortRows(known));
+
         void Promise.all(
-            projectScopedAgents.map((agent) =>
-                agentApi
-                    .sessions(agent.type, origin.current.cwd, agent.configPath ?? undefined)
-                    .then((sessions) => sessions.map((candidate): Row => ({ ...candidate, type: agent.type })))
+            sessionArgs.map(([type, cwd, configPath]) =>
+                fetchResource(agentSessionsR, type, cwd, configPath)
+                    .then((sessions) => sessions.map((candidate): Row => ({ ...candidate, type })))
                     .catch(() => [] as Row[]),
             ),
         ).then((lists) => {
-            if (!cancelled) setRows(lists.flat().sort((left, right) => right.mtime - left.mtime));
+            if (!cancelled) setRows(sortRows(lists.flat()));
         });
 
         return () => {
