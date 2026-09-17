@@ -854,11 +854,13 @@ mod tests {
             "a.rs".to_string(),
             "src/one.rs".to_string(),
             "src/two.rs".to_string(),
+            "y.rs".to_string(),
             "z.rs".to_string(),
         ];
+        let removed = vec![1..3, 4..5];
         let merged = merge_snapshot(
             &current,
-            &[1..3],
+            &removed,
             vec![
                 "src/two.rs".to_string(),
                 "b.rs".to_string(),
@@ -867,7 +869,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(merged, vec!["a.rs", "b.rs", "src/two.rs", "z.rs"]);
+        assert_eq!(merged, vec!["a.rs", "b.rs", "src/two.rs", "y.rs", "z.rs"]);
     }
 
     #[test]
