@@ -11,10 +11,19 @@ import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
 import type { NativePtyController } from "./usePty";
 import { encodePosixShellLiteral, encodePowerShellLiteral, ptyResourceFingerprint, shellSemanticsForExecutable, usePty } from "./usePty";
 
+function attachResponse(subId: number, snapshot = new Uint8Array()): ArrayBuffer {
+    const header = new TextEncoder().encode(JSON.stringify({ subId, alternateScreen: false }));
+    const body = new Uint8Array(4 + header.length + snapshot.length);
+    new DataView(body.buffer).setUint32(0, header.length, true);
+    body.set(header, 4);
+    body.set(snapshot, 4 + header.length);
+    return body.buffer;
+}
+
 const { invoke, listen, unlisten, shellEvent, nativeChannels, attachSequence } = vi.hoisted(() => ({
     invoke: vi.fn(async (command: string) => {
         if (command === "pty_spawn") return 42;
-        if (command === "pty_attach") return { subId: ++attachSequence.current, snapshot: [], alternateScreen: false };
+        if (command === "pty_attach") return attachResponse(++attachSequence.current);
         if (command === "integration_health") return { shell: "/bin/zsh" };
         return null;
     }),
@@ -49,7 +58,7 @@ afterEach(async () => {
     invoke.mockReset();
     invoke.mockImplementation(async (command: string) => {
         if (command === "pty_spawn") return 42;
-        if (command === "pty_attach") return { subId: ++attachSequence.current, snapshot: [], alternateScreen: false };
+        if (command === "pty_attach") return attachResponse(++attachSequence.current);
         if (command === "integration_health") return { shell: "/bin/zsh" };
         return null;
     });

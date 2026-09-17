@@ -40,12 +40,28 @@ function createExternalControllerRef(binding: TaskPtyBinding | null): RefObject<
     return { current: null };
 }
 
+const ATTACH_HEADER_PREFIX_BYTES = 4;
+const attachHeaderDecoder = new TextDecoder();
+
+/** `[header length as 4 little-endian bytes][header JSON][replay bytes]`. */
+function decodeAttachResponse(body: ArrayBuffer): PtyAttachResult {
+    if (body.byteLength < ATTACH_HEADER_PREFIX_BYTES) throw new TypeError("PTY attach returned a truncated response");
+    const headerBytes = new DataView(body).getUint32(0, true);
+    if (headerBytes > body.byteLength - ATTACH_HEADER_PREFIX_BYTES) throw new TypeError("PTY attach returned a truncated response");
+    const headerEnd = ATTACH_HEADER_PREFIX_BYTES + headerBytes;
+    const header: unknown = JSON.parse(attachHeaderDecoder.decode(new Uint8Array(body, ATTACH_HEADER_PREFIX_BYTES, headerBytes)));
+    if (typeof header !== "object" || header === null) throw new TypeError("PTY attach returned an invalid header");
+    const { subId, alternateScreen, shell } = header as Partial<PtyAttachResult>;
+    // The controller validates every field; the view shares the response buffer.
+    return { subId: subId as number, alternateScreen: alternateScreen as boolean, shell, snapshot: new Uint8Array(body, headerEnd) };
+}
+
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
     spawn: (request) => invoke<number>("pty_spawn", { ...request }),
     write: (id, data) => invoke<void>("pty_write", { id, data }),
     resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
     kill: (id) => invoke<void>("pty_kill", { id }),
-    attach: (id, channel) => invoke<PtyAttachResult>("pty_attach", { id, onEvent: channel }),
+    attach: async (id, channel) => decodeAttachResponse(await invoke<ArrayBuffer>("pty_attach", { id, onEvent: channel })),
     detach: (id, subId) => invoke<void>("pty_unsubscribe", { id, subId }),
 };
 

@@ -2976,11 +2976,12 @@ pub fn pty_unsubscribe(manager: State<'_, PtyManager>, id: u32, sub_id: u32) -> 
     Ok(())
 }
 
+/// Everything about an attach except the replay bytes, which follow the
+/// header in the same raw response instead of crossing as JSON numbers.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachResult {
     pub sub_id: u32,
-    pub snapshot: Vec<u8>,
     pub alternate_screen: bool,
     /// Latest headless shell state, present only for an explicitly enabled,
     /// supported local shell. This lets a remounted frontend recover metadata
@@ -2988,10 +2989,24 @@ pub struct AttachResult {
     pub shell: Option<ShellMetadataSnapshot>,
 }
 
-fn screen_scrollback_len(screen: &vt100::Screen) -> usize {
-    let mut s = screen.clone();
-    s.set_scrollback(usize::MAX);
-    s.scrollback()
+/// `[header length as 4 little-endian bytes][header JSON][replay bytes]`.
+fn encode_attach_response(header: &AttachResult, snapshot: Vec<u8>) -> AppResult<Vec<u8>> {
+    let json = serde_json::to_vec(header)?;
+    let mut body = Vec::with_capacity(4 + json.len() + snapshot.len());
+    body.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    body.extend_from_slice(&json);
+    body.extend_from_slice(&snapshot);
+    Ok(body)
+}
+
+/// vt100 clamps the requested offset to the history it actually holds, so
+/// asking for the largest possible offset reports the number of history rows.
+/// The view is put back at the live viewport before returning.
+fn screen_scrollback_len(screen: &mut vt100::Screen) -> usize {
+    screen.set_scrollback(usize::MAX);
+    let rows = screen.scrollback();
+    screen.set_scrollback(0);
+    rows
 }
 
 #[derive(Debug)]
@@ -3006,7 +3021,7 @@ struct BoundedAttachSnapshot {
 /// selectively truncated. If that non-negotiable viewport does not fit, the
 /// caller gets an error and can leave parser/subscriber state untouched.
 fn bounded_attach_snapshot(
-    screen: &vt100::Screen,
+    screen: &mut vt100::Screen,
     max_bytes: usize,
 ) -> AppResult<BoundedAttachSnapshot> {
     const ALT_SCREEN_PREFIX: &[u8] = b"\x1b[?1049h";
@@ -3053,7 +3068,6 @@ fn bounded_attach_snapshot(
     let mut retained_bytes = 0usize;
     let mut truncated = history_budget == 0;
     let mut seen_rows = 0usize;
-    let mut scrolled = screen.clone();
 
     // Iterate in the same oldest-to-newest page order as the full replay.
     // The deque never retains more than the remaining byte budget; evicting
@@ -3061,9 +3075,9 @@ fn bounded_attach_snapshot(
     let page_rows = usize::from(rows).max(1);
     let mut start = 0usize;
     while start < history_rows {
-        scrolled.set_scrollback(history_rows - start);
+        screen.set_scrollback(history_rows - start);
         let take = (history_rows - start).min(page_rows);
-        for mut row in scrolled.rows_formatted(0, cols).take(take) {
+        for mut row in screen.rows_formatted(0, cols).take(take) {
             seen_rows += 1;
             row.extend_from_slice(HISTORY_ROW_SUFFIX);
             if row.len() > history_budget {
@@ -3084,6 +3098,7 @@ fn bounded_attach_snapshot(
         }
         start += take;
     }
+    screen.set_scrollback(0);
     truncated |= seen_rows < history_rows || retained.len() < history_rows;
 
     let include_history = !retained.is_empty();
@@ -3108,7 +3123,7 @@ fn bounded_attach_snapshot(
     Ok(BoundedAttachSnapshot { bytes, truncated })
 }
 
-fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
+fn attach_snapshot(screen: &mut vt100::Screen) -> Vec<u8> {
     let mut snapshot = Vec::new();
     if screen.alternate_screen() {
         // vt100::Screen::state_formatted() restores contents and input
@@ -3124,7 +3139,6 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
     };
     if history_rows > 0 {
         let (rows, cols) = screen.size();
-        let mut scrolled = screen.clone();
 
         // Seed xterm's scrollback cheaply from vt100's formatted semantic
         // history rows only. `state_formatted` below clears/repaints the live
@@ -3136,14 +3150,15 @@ fn attach_snapshot(screen: &vt100::Screen) -> Vec<u8> {
         let page_rows = usize::from(rows).max(1);
         let mut start = 0usize;
         while start < history_rows {
-            scrolled.set_scrollback(history_rows - start);
+            screen.set_scrollback(history_rows - start);
             let take = (history_rows - start).min(page_rows);
-            for row in scrolled.rows_formatted(0, cols).take(take) {
+            for row in screen.rows_formatted(0, cols).take(take) {
                 snapshot.extend(row);
                 snapshot.extend_from_slice(b"\x1b[0m\r\n");
             }
             start += take;
         }
+        screen.set_scrollback(0);
 
         // Move the replay cursor far enough that state_formatted's viewport
         // repaint does not overwrite the newest history rows. Without this
@@ -3166,7 +3181,7 @@ fn reseed_parser_from_snapshot(parser: &mut SemanticParser, snapshot: &[u8], scr
 }
 
 fn reseed_parser(parser: &mut SemanticParser, scrollback: usize) {
-    let snapshot = attach_snapshot(parser.screen());
+    let snapshot = attach_snapshot(parser.screen_mut());
     reseed_parser_from_snapshot(parser, &snapshot, scrollback);
 }
 
@@ -3174,7 +3189,7 @@ fn attach_snapshot_with_compaction(
     parser: &mut SemanticParser,
     max_bytes: usize,
 ) -> AppResult<Vec<u8>> {
-    let snapshot = bounded_attach_snapshot(parser.screen(), max_bytes)?;
+    let snapshot = bounded_attach_snapshot(parser.screen_mut(), max_bytes)?;
     if snapshot.truncated {
         reseed_parser_from_snapshot(parser, &snapshot.bytes, PARSER_SCROLLBACK);
     }
@@ -3201,12 +3216,42 @@ fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
 /// moment of the call. The native byte budget is authoritative: oversized
 /// history is compacted to a newest suffix under this same parser lock, while
 /// an oversized live viewport fails before a subscriber is registered.
+fn attach_locked(pty: &Pty, on_event: Channel<Response>) -> AppResult<Vec<u8>> {
+    let mut parser = pty.parser.lock().map_err(pty_err)?;
+    let alternate_screen = parser.screen().alternate_screen();
+    let mut subs = pty.subscribers.lock().map_err(pty_err)?;
+    if subs.len() >= MAX_PTY_SUBSCRIBERS_PER_PTY {
+        return Err(AppError::Pty("PTY subscriber capacity reached".into()));
+    }
+    // Make a bounded replay the authoritative parser state when history
+    // must be truncated, so repeated attaches do not repeatedly scan
+    // discarded history. Output cannot interleave because parser ->
+    // subscribers is the reader/broadcast lock order too.
+    let snapshot = attach_snapshot_with_compaction(&mut parser, MAX_ATTACH_SNAPSHOT_BYTES)?;
+    let shell = parser
+        .callbacks()
+        .shell
+        .as_ref()
+        .map(ShellProtocolParser::snapshot);
+    let sub_id = insert_subscriber(&mut subs, &NEXT_SUB_ID, on_event)?;
+    drop(subs);
+    drop(parser);
+    encode_attach_response(
+        &AttachResult {
+            sub_id,
+            alternate_screen,
+            shell,
+        },
+        snapshot,
+    )
+}
+
 #[tauri::command]
-pub fn pty_attach(
+pub async fn pty_attach(
     manager: State<'_, PtyManager>,
     id: u32,
     on_event: Channel<Response>,
-) -> AppResult<AttachResult> {
+) -> AppResult<Response> {
     let observer = global_observability();
     let operation = observer.slow_operation(
         "pty.attach",
@@ -3214,43 +3259,25 @@ pub fn pty_attach(
         None,
         Metadata::new(),
     );
-    let result = (|| {
-        let pty = manager
-            .ptys
-            .get(&id)
-            .ok_or(AppError::BadArg("pty not found"))?;
-        let mut parser = pty.parser.lock().map_err(pty_err)?;
-        let alternate_screen = parser.screen().alternate_screen();
-        let mut subs = pty.subscribers.lock().map_err(pty_err)?;
-        if subs.len() >= MAX_PTY_SUBSCRIBERS_PER_PTY {
-            return Err(AppError::Pty("PTY subscriber capacity reached".into()));
-        }
-        // Make a bounded replay the authoritative parser state when history
-        // must be truncated, so repeated attaches do not repeatedly scan
-        // discarded history. Output cannot interleave because parser ->
-        // subscribers is the reader/broadcast lock order too.
-        let snapshot = attach_snapshot_with_compaction(&mut parser, MAX_ATTACH_SNAPSHOT_BYTES)?;
-        let shell = parser
-            .callbacks()
-            .shell
-            .as_ref()
-            .map(ShellProtocolParser::snapshot);
-        let sub_id = insert_subscriber(&mut subs, &NEXT_SUB_ID, on_event)?;
-        drop(subs);
-        drop(parser);
-        Ok(AttachResult {
-            sub_id,
-            snapshot,
-            alternate_screen,
-            shell,
-        })
-    })();
+    // Clone the Arc out of DashMap so no shard is held across the await.
+    let pty = manager
+        .ptys
+        .get(&id)
+        .map(|entry| entry.value().clone())
+        .ok_or(AppError::BadArg("pty not found"));
+    let result = match pty {
+        Ok(pty) => tauri::async_runtime::spawn_blocking(move || attach_locked(&pty, on_event))
+            .await
+            .map_err(|e| AppError::Pty(format!("pty_attach join: {e}")))
+            .and_then(|body| body),
+        Err(error) => Err(error),
+    };
     operation.finish(if result.is_ok() {
         SpanOutcome::Success
     } else {
         SpanOutcome::Error
     });
-    result
+    result.map(Response::new)
 }
 
 const RESET_MODES: &[u8] = b"\x1b>\x1b[4l\x1b[?1l\x1b[?6l\x1b[?7h\x1b[?9l\x1b[?45l\x1b[?66l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?2004l\x1b[?1049l";
@@ -3382,6 +3409,7 @@ mod tests {
     use super::{
         apply_agent_profile, attach_snapshot, attach_snapshot_with_compaction,
         compact_parser_for_idle, configure_pty_environment, configure_shell_integration,
+        encode_attach_response,
         configure_task_command, detect_shell_kind, event_fingerprint, insert_subscriber,
         parse_shell_cwd, reseed_parser, screen_scrollback_len, semantic_fingerprint,
         semantic_parser, semantic_parser_with_shell, shell_integration_requested,
@@ -4576,7 +4604,7 @@ mod tests {
     fn attach_snapshot_restores_input_modes() {
         let mut a = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
         a.process(b"\x1b[?2004h\x1b[?1000h\x1b[?1006h");
-        let dump = attach_snapshot(a.screen());
+        let dump = attach_snapshot(a.screen_mut());
 
         let mut b = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
         b.process(&dump);
@@ -4598,7 +4626,7 @@ mod tests {
         for i in 0..20 {
             a.process(format!("line {i:02}\r\n").as_bytes());
         }
-        let dump = attach_snapshot(a.screen());
+        let dump = attach_snapshot(a.screen_mut());
 
         let mut b = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
         b.process(&dump);
@@ -4625,7 +4653,7 @@ mod tests {
             let color = 31 + (i % 6);
             a.process(format!("\x1b[{color}mline {i:02}\x1b[0m\r\n").as_bytes());
         }
-        let dump = attach_snapshot(a.screen());
+        let dump = attach_snapshot(a.screen_mut());
 
         let mut b = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
         b.process(&dump);
@@ -4652,7 +4680,7 @@ mod tests {
     fn attach_snapshot_restores_alternate_screen() {
         let mut a = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
         a.process(b"normal\r\n\x1b[?1049halt");
-        let dump = attach_snapshot(a.screen());
+        let dump = attach_snapshot(a.screen_mut());
 
         let mut b = vt100::Parser::new(24, 80, PARSER_SCROLLBACK);
         b.process(&dump);
@@ -4669,7 +4697,7 @@ mod tests {
         }
 
         let mut restored = vt100::Parser::new(5, 20, PARSER_SCROLLBACK);
-        restored.process(&attach_snapshot(source.screen()));
+        restored.process(&attach_snapshot(source.screen_mut()));
 
         let source_screen = source.screen_mut();
         source_screen.set_scrollback(5);
@@ -4702,8 +4730,8 @@ mod tests {
         parser.process(b"\x1b[?2004h");
 
         let visible_before = parser.screen().contents();
-        let history_before = screen_scrollback_len(parser.screen());
-        let full_before = attach_snapshot(parser.screen());
+        let history_before = screen_scrollback_len(parser.screen_mut());
+        let full_before = attach_snapshot(parser.screen_mut());
         let viewport_bytes = parser.screen().state_formatted().len();
         let budget = viewport_bytes + 512;
         assert!(full_before.len() > budget, "fixture must force compaction");
@@ -4713,7 +4741,7 @@ mod tests {
         assert!(snapshot.len() <= budget);
         assert_eq!(parser.screen().contents(), visible_before);
         assert!(parser.screen().bracketed_paste());
-        assert!(screen_scrollback_len(parser.screen()) < history_before);
+        assert!(screen_scrollback_len(parser.screen_mut()) < history_before);
 
         let mut restored = vt100::Parser::new(6, 40, PARSER_SCROLLBACK);
         restored.process(&snapshot);
@@ -4729,12 +4757,12 @@ mod tests {
             parser.process(format!("line {index:02}\r\n").as_bytes());
         }
         parser.process(b"\x1b[?1000h\x1b[?1006h");
-        let before = attach_snapshot(parser.screen());
+        let before = attach_snapshot(parser.screen_mut());
         let viewport_bytes = parser.screen().state_formatted().len();
         assert!(viewport_bytes > 0);
 
         assert!(attach_snapshot_with_compaction(&mut parser, viewport_bytes - 1).is_err());
-        assert_eq!(attach_snapshot(parser.screen()), before);
+        assert_eq!(attach_snapshot(parser.screen_mut()), before);
         assert_eq!(
             parser.screen().mouse_protocol_mode(),
             vt100::MouseProtocolMode::PressRelease
@@ -4774,10 +4802,10 @@ mod tests {
     fn idle_compaction_skips_alternate_screen() {
         let mut parser = semantic_parser(5, 20, PARSER_SCROLLBACK);
         parser.process(b"normal history\r\n\x1b[?1049halt screen");
-        let before = attach_snapshot(parser.screen());
+        let before = attach_snapshot(parser.screen_mut());
 
         assert!(!compact_parser_for_idle(&mut parser));
-        assert_eq!(attach_snapshot(parser.screen()), before);
+        assert_eq!(attach_snapshot(parser.screen_mut()), before);
         assert!(parser.screen().alternate_screen());
     }
 
@@ -4802,13 +4830,28 @@ mod tests {
     fn attach_result_serializes_alternate_screen_camel_case() {
         let value = serde_json::to_value(AttachResult {
             sub_id: 7,
-            snapshot: Vec::new(),
             alternate_screen: true,
             shell: None,
         })
         .expect("serialize attach result");
         assert_eq!(value["alternateScreen"], true);
         assert!(value.get("alternate_screen").is_none());
+    }
+
+    #[test]
+    fn attach_response_frames_the_header_before_the_replay_bytes() {
+        let header = AttachResult {
+            sub_id: 9,
+            alternate_screen: false,
+            shell: None,
+        };
+        let body = encode_attach_response(&header, b"hello".to_vec()).expect("encode attach");
+        let header_len = u32::from_le_bytes(body[..4].try_into().expect("length prefix")) as usize;
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body[4..4 + header_len]).expect("header json");
+        assert_eq!(parsed["subId"], 9);
+        assert_eq!(parsed["alternateScreen"], false);
+        assert_eq!(&body[4 + header_len..], b"hello");
     }
 
     #[test]

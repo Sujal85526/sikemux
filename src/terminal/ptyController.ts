@@ -21,7 +21,7 @@ export interface PtySpawnRequest<Context = unknown> {
 
 export interface PtyAttachResult {
     readonly subId: number;
-    readonly snapshot: readonly number[];
+    readonly snapshot: Uint8Array;
     readonly alternateScreen: boolean;
     readonly shell?: PtyShellMetadataSnapshot | null;
 }
@@ -85,7 +85,7 @@ export interface PtyControllerErrorEvent {
 
 export interface PtyAttachment {
     /** Atomic native parser snapshot. Apply this before calling activate(). */
-    readonly snapshot: readonly number[];
+    readonly snapshot: Uint8Array;
     readonly alternateScreen: boolean;
     /** Untrusted display hint parsed from opt-in shell integration. */
     readonly shell: PtyShellMetadataSnapshot | null;
@@ -303,7 +303,7 @@ export function parsePtyShellMetadataSnapshot(value: unknown): PtyShellMetadataS
 
 function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number): PtyShellMetadataSnapshot | null {
     if (!isRuntimeId(result.subId)) throw new TypeError("PTY attach returned an invalid subscription ID");
-    if (!Array.isArray(result.snapshot) || result.snapshot.length > maxSnapshotBytes) {
+    if (!(result.snapshot instanceof Uint8Array) || result.snapshot.length > maxSnapshotBytes) {
         throw new TypeError("PTY attach returned an invalid or oversized snapshot");
     }
     if (typeof result.alternateScreen !== "boolean") throw new TypeError("PTY attach returned an invalid screen mode");
