@@ -472,16 +472,17 @@ fn spawn_debouncer(
 
 fn is_git_signal(path: &Path) -> bool {
     let mut after_git = false;
-    for c in path.components() {
-        let s = c.as_os_str().to_string_lossy();
+    for component in path.components() {
+        // A name that is not UTF-8 cannot be one of the names below.
+        let name = component.as_os_str().to_str().unwrap_or_default();
         if !after_git {
-            if s == ".git" {
+            if name == ".git" {
                 after_git = true;
             }
             continue;
         }
         return matches!(
-            s.as_ref(),
+            name,
             "HEAD"
                 | "index"
                 | "packed-refs"
@@ -512,22 +513,36 @@ fn should_ignore(repo: &Path, path: &Path) -> bool {
         // its correctness-preserving full-rescan fallback.
         return false;
     };
-    let components = relative.components().collect::<Vec<_>>();
-    for (index, component) in components.iter().enumerate() {
-        let name = component.as_os_str().to_string_lossy();
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        let name = component.as_os_str().to_str().unwrap_or_default();
         if name == ".DS_Store" {
             return true;
         }
-        let is_leaf = index + 1 == components.len();
         // Keep an event for the denied directory itself: an included file
         // named `target` may just have been replaced by a denied directory,
         // and the incremental cache must remove that stale file. Descendant
         // churn remains ignored.
-        if crate::files::should_skip_dir(&name) && !is_leaf {
+        if components.peek().is_some() && crate::files::should_skip_dir(name) {
             return true;
         }
     }
     false
+}
+
+/// Build the changes a watched event stands for, dropping the paths the
+/// denylist covers as they are read rather than after a full list exists — a
+/// build in the watched tree is mostly paths nobody wants.
+fn kept_changes(
+    repo: &Path,
+    paths: Vec<PathBuf>,
+    change: fn(PathBuf) -> WatcherChange,
+) -> Vec<WatcherChange> {
+    paths
+        .into_iter()
+        .filter(|path| !should_ignore(repo, path))
+        .map(change)
+        .collect()
 }
 
 fn changes_for_event(repo: &Path, event: Event) -> Option<WatchMessage> {
@@ -537,53 +552,42 @@ fn changes_for_event(repo: &Path, event: Event) -> Option<WatchMessage> {
     if event.paths.len() > MAX_BATCH_CHANGES {
         return Some(WatchMessage::Rescan);
     }
+    if matches!(event.kind, EventKind::Access(_)) {
+        return None;
+    }
+    // An event that names nothing cannot say what moved.
+    if event.paths.is_empty() {
+        return Some(WatchMessage::Rescan);
+    }
 
-    let mut changes = match event.kind {
-        EventKind::Access(_) => return None,
-        EventKind::Create(_) => event
-            .paths
-            .into_iter()
-            .map(WatcherChange::Reconcile)
-            .collect::<Vec<_>>(),
-        EventKind::Remove(_) => event
-            .paths
-            .into_iter()
-            .map(WatcherChange::Remove)
-            .collect::<Vec<_>>(),
+    let changes = match event.kind {
+        EventKind::Create(_) => kept_changes(repo, event.paths, WatcherChange::Reconcile),
+        EventKind::Remove(_) => kept_changes(repo, event.paths, WatcherChange::Remove),
         EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
             if event.paths.len() != 2 {
                 return Some(WatchMessage::Rescan);
             }
-            vec![
-                WatcherChange::Remove(event.paths[0].clone()),
-                WatcherChange::Reconcile(event.paths[1].clone()),
-            ]
+            let mut paths = event.paths.into_iter();
+            let from = paths.next().unwrap_or_default();
+            let to = paths.next().unwrap_or_default();
+            let mut changes = Vec::with_capacity(2);
+            if !should_ignore(repo, &from) {
+                changes.push(WatcherChange::Remove(from));
+            }
+            if !should_ignore(repo, &to) {
+                changes.push(WatcherChange::Reconcile(to));
+            }
+            changes
         }
-        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => event
-            .paths
-            .into_iter()
-            .map(WatcherChange::Remove)
-            .collect::<Vec<_>>(),
-        EventKind::Modify(ModifyKind::Name(
-            RenameMode::To | RenameMode::Any | RenameMode::Other,
-        ))
-        | EventKind::Modify(_) => event
-            .paths
-            .into_iter()
-            .map(WatcherChange::Reconcile)
-            .collect::<Vec<_>>(),
-        EventKind::Any | EventKind::Other => return Some(WatchMessage::Rescan),
+        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+            kept_changes(repo, event.paths, WatcherChange::Remove)
+        }
+        EventKind::Modify(_) => kept_changes(repo, event.paths, WatcherChange::Reconcile),
+        EventKind::Access(_) | EventKind::Any | EventKind::Other => {
+            return Some(WatchMessage::Rescan)
+        }
     };
 
-    if changes.is_empty() {
-        return Some(WatchMessage::Rescan);
-    }
-    changes.retain(|change| {
-        let path: &PathBuf = match change {
-            WatcherChange::Reconcile(path) | WatcherChange::Remove(path) => path,
-        };
-        !should_ignore(repo, path)
-    });
     if changes.is_empty() {
         None
     } else {
