@@ -3,7 +3,7 @@ use std::io::{self, Read, Write};
 use std::process::{Command, Output, Stdio};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc,
+    mpsc, Arc,
 };
 use std::time::{Duration, Instant};
 
@@ -58,20 +58,37 @@ impl ProcessCancellation {
     }
 }
 
-fn kill_and_reap(child: &mut std::process::Child) {
+/// Kill the child and everything it started. The waiter thread owns the child
+/// and reaps it once this lands.
+fn kill_group(pid: u32) {
     #[cfg(unix)]
     unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
+        libc::kill(-(pid as i32), libc::SIGKILL);
+        libc::kill(pid as i32, libc::SIGKILL);
     }
     #[cfg(windows)]
     {
         let _ = Command::new("taskkill")
-            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
             .status();
     }
+}
+
+fn kill_and_reap(child: &mut std::process::Child) {
+    kill_group(child.id());
     let _ = child.kill();
     let _ = child.wait();
 }
+
+enum RunEvent {
+    Exited(io::Result<std::process::ExitStatus>),
+    ReaderFinished,
+}
+
+/// How often the wait checks a cancellation token. Nothing else needs a timer:
+/// the child's exit and each drained pipe arrive as events. A run with no
+/// token waits with no timer at all.
+const CANCEL_CHECK_INTERVAL: Duration = Duration::from_millis(250);
 
 fn read_bounded(
     mut pipe: impl Read,
@@ -125,15 +142,26 @@ pub fn run(
 
     let total = Arc::new(AtomicUsize::new(0));
     let exceeded = Arc::new(AtomicBool::new(false));
+    let (events, arrivals) = mpsc::channel();
     let stdout_reader = {
         let total = Arc::clone(&total);
         let exceeded = Arc::clone(&exceeded);
-        std::thread::spawn(move || read_bounded(stdout, total, exceeded, max_output_bytes))
+        let events = events.clone();
+        std::thread::spawn(move || {
+            let result = read_bounded(stdout, total, exceeded, max_output_bytes);
+            let _ = events.send(RunEvent::ReaderFinished);
+            result
+        })
     };
     let stderr_reader = {
         let total = Arc::clone(&total);
         let exceeded = Arc::clone(&exceeded);
-        std::thread::spawn(move || read_bounded(stderr, total, exceeded, max_output_bytes))
+        let events = events.clone();
+        std::thread::spawn(move || {
+            let result = read_bounded(stderr, total, exceeded, max_output_bytes);
+            let _ = events.send(RunEvent::ReaderFinished);
+            result
+        })
     };
     let stdin_writer = input.map(|bytes| {
         let bytes = bytes.to_vec();
@@ -144,42 +172,63 @@ pub fn run(
         })
     });
 
+    // The child moves to its own thread so the wait below is woken by its exit
+    // rather than asking fifty times a second whether it has finished yet.
+    let pid = child.id();
+    let waiter = std::thread::spawn(move || {
+        let _ = events.send(RunEvent::Exited(child.wait()));
+    });
+
     let deadline = Instant::now() + timeout;
     let mut completed_status = None;
+    let mut readers_finished = 0_u8;
     let status = loop {
         if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
-            kill_and_reap(&mut child);
+            kill_group(pid);
             break Err(ProcessRunError::Cancelled);
         }
         if exceeded.load(Ordering::Acquire) {
-            kill_and_reap(&mut child);
+            kill_group(pid);
             break Err(ProcessRunError::OutputLimit(max_output_bytes));
         }
-        if completed_status.is_none() {
-            match child.try_wait() {
-                Ok(Some(status)) => completed_status = Some(status),
-                Ok(None) => {}
-                Err(error) => {
-                    kill_and_reap(&mut child);
-                    break Err(ProcessRunError::Io(error));
-                }
-            }
-        }
         if let Some(status) = completed_status {
-            if stdout_reader.is_finished() && stderr_reader.is_finished() {
+            if readers_finished == 2 {
                 break Ok(status);
             }
         }
-        if Instant::now() >= deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
             // The direct child may already have exited while a descendant
             // retains one of its pipes. The process-group kill closes those
             // handles so reader joins remain bounded as well.
-            kill_and_reap(&mut child);
+            kill_group(pid);
             break Err(ProcessRunError::Timeout(timeout));
         }
-        std::thread::sleep(Duration::from_millis(20));
+        let wait = match cancellation {
+            Some(_) => remaining.min(CANCEL_CHECK_INTERVAL),
+            None => remaining,
+        };
+        match arrivals.recv_timeout(wait) {
+            Ok(RunEvent::ReaderFinished) => readers_finished += 1,
+            Ok(RunEvent::Exited(Ok(status))) => completed_status = Some(status),
+            Ok(RunEvent::Exited(Err(error))) => {
+                kill_group(pid);
+                break Err(ProcessRunError::Io(error));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            // Every sender is gone, so nothing further can arrive.
+            Err(mpsc::RecvTimeoutError::Disconnected) => match completed_status {
+                Some(status) => break Ok(status),
+                None => {
+                    break Err(ProcessRunError::Io(io::Error::other(
+                        "subprocess exited without reporting a status",
+                    )))
+                }
+            },
+        }
     };
 
+    let _ = waiter.join();
     let stdin_result = if let Some(writer) = stdin_writer {
         Some(
             writer
@@ -210,4 +259,71 @@ pub fn run(
         stdout,
         stderr,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A slow child must not be polled awake: the wait returns when the
+    /// process exits, not when a timer next fires.
+    #[test]
+    fn a_slow_child_is_waited_on_not_polled() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 0.3; echo done"]);
+        let started = Instant::now();
+        let out = run(
+            &mut command,
+            None,
+            Duration::from_secs(5),
+            1024 * 1024,
+            None,
+        )
+        .expect("child must run to completion");
+
+        assert!(out.status.success());
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "done");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_child_that_outlives_its_deadline_is_killed() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30"]);
+        let error = run(
+            &mut command,
+            None,
+            Duration::from_millis(100),
+            1024 * 1024,
+            None,
+        )
+        .expect_err("the deadline must be enforced");
+
+        assert!(matches!(error, ProcessRunError::Timeout(_)), "{error}");
+    }
+
+    #[test]
+    fn a_cancelled_child_stops_without_waiting_for_its_deadline() {
+        let cancellation = ProcessCancellation::new();
+        let trigger = cancellation.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            trigger.cancel();
+        });
+
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30"]);
+        let started = Instant::now();
+        let error = run(
+            &mut command,
+            None,
+            Duration::from_secs(30),
+            1024 * 1024,
+            Some(&cancellation),
+        )
+        .expect_err("cancellation must stop the run");
+
+        assert!(matches!(error, ProcessRunError::Cancelled), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
 }

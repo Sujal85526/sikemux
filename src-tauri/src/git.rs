@@ -83,107 +83,14 @@ fn read_bounded_pipe(mut pipe: impl Read, exceeded: Arc<AtomicBool>) -> io::Resu
 
 /// Capture both pipes while enforcing a deadline and an output cap. Stdin and
 /// both output pipes are handled concurrently so no pipe-ordering deadlock is
-/// possible. Every timeout/error path kills the process group and reaps the
-/// direct child.
+/// possible. Every timeout/error path kills the process group.
 fn run_command_with_timeout(
     command: &mut Command,
     input: Option<&[u8]>,
     timeout: Duration,
 ) -> Result<Output, String> {
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    if input.is_some() {
-        command.stdin(Stdio::piped());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let mut child = command.spawn().map_err(|e| e.to_string())?;
-    let stdout = match child.stdout.take() {
-        Some(stdout) => stdout,
-        None => {
-            kill_and_reap_process(&mut child);
-            return Err("subprocess stdout unavailable".into());
-        }
-    };
-    let stderr = match child.stderr.take() {
-        Some(stderr) => stderr,
-        None => {
-            kill_and_reap_process(&mut child);
-            return Err("subprocess stderr unavailable".into());
-        }
-    };
-
-    let output_exceeded = Arc::new(AtomicBool::new(false));
-    let stdout_exceeded = Arc::clone(&output_exceeded);
-    let stdout_reader = std::thread::spawn(move || read_bounded_pipe(stdout, stdout_exceeded));
-    let stderr_exceeded = Arc::clone(&output_exceeded);
-    let stderr_reader = std::thread::spawn(move || read_bounded_pipe(stderr, stderr_exceeded));
-    let stdin_writer = input.map(|bytes| {
-        let bytes = bytes.to_vec();
-        let stdin = child.stdin.take();
-        std::thread::spawn(move || {
-            stdin
-                .ok_or_else(|| "subprocess stdin unavailable".to_string())
-                .and_then(|mut stdin| stdin.write_all(&bytes).map_err(|e| e.to_string()))
-        })
-    });
-
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        if output_exceeded.load(Ordering::Acquire) {
-            kill_and_reap_process(&mut child);
-            if let Some(writer) = stdin_writer {
-                let _ = writer.join();
-            }
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
-            return Err("subprocess output exceeds 32 MiB limit".into());
-        }
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            Ok(None) => {
-                kill_and_reap_process(&mut child);
-                if let Some(writer) = stdin_writer {
-                    let _ = writer.join();
-                }
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(format!("subprocess timed out after {}s", timeout.as_secs()));
-            }
-            Err(error) => {
-                kill_and_reap_process(&mut child);
-                if let Some(writer) = stdin_writer {
-                    let _ = writer.join();
-                }
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(error.to_string());
-            }
-        }
-    };
-    if let Some(writer) = stdin_writer {
-        writer
-            .join()
-            .map_err(|_| "stdin writer panicked".to_string())??;
-    }
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| "stdout reader panicked".to_string())?
-        .map_err(|e| e.to_string())?;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| "stderr reader panicked".to_string())?
-        .map_err(|e| e.to_string())?;
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-    })
+    crate::bounded_process::run(command, input, timeout, MAX_COMMAND_OUTPUT_BYTES, None)
+        .map_err(|error| error.to_string())
 }
 
 fn run_git(repo: &str, args: &[&str]) -> Result<(bool, String, String), String> {
