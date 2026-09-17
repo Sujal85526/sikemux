@@ -1,6 +1,6 @@
 import { renameEditorPath } from "../state/editorPaths";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
@@ -63,7 +63,7 @@ function validEntryName(raw: string): string | null {
     return name;
 }
 
-export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active, revealPath }: FileTreeProps) {
+export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, width, onResize, active, revealPath }: FileTreeProps) {
     const resizable = width !== undefined && onResize !== undefined;
     const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -128,14 +128,25 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         enabled: virtualized,
     });
 
-    const loadDir = useCallback((path: string) => {
-        return fsapi
-            .readDir(path)
-            .then((e) => {
-                setDirs((d) => ({ ...d, [path]: e }));
-            })
-            .catch(swallow("readDir"));
+    const loadDirs = useCallback(async (paths: readonly string[]) => {
+        if (paths.length === 0) return;
+        const read = await Promise.all(
+            paths.map(async (path) => {
+                try {
+                    return [path, await fsapi.readDir(path)] as const;
+                } catch (error) {
+                    swallow("readDir")(error);
+                    return [path, null] as const;
+                }
+            }),
+        );
+        const loaded: Record<string, DirEntry[]> = {};
+        for (const [path, entries] of read) if (entries) loaded[path] = entries;
+        if (Object.keys(loaded).length === 0) return;
+        setDirs((d) => ({ ...d, ...loaded }));
     }, []);
+
+    const loadDir = useCallback((path: string) => loadDirs([path]), [loadDirs]);
 
     useEffect(() => {
         if (!cwd || !active) return;
@@ -147,12 +158,13 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
         const unsubscribe = subscribe("fs-changed", (e) => {
             if (e.repo && e.repo !== cwd) return;
             const changed = e.paths?.map((path) => joinPath(cwd, path));
-            for (const path of [cwd, ...expandedRef.current]) {
-                if (!changed || changed.some((entry) => dirname(entry) === path || isPathWithin(path, entry))) void loadDir(path);
-            }
+            const stale = [cwd, ...expandedRef.current].filter(
+                (path) => !changed || changed.some((entry) => dirname(entry) === path || isPathWithin(path, entry)),
+            );
+            void loadDirs(stale);
         });
         return unsubscribe;
-    }, [cwd, active, loadDir]);
+    }, [cwd, active, loadDirs]);
 
     useEffect(() => {
         const path = revealPath ?? activePath;
@@ -816,7 +828,7 @@ export function FileTree({ cwd, activePath, onOpenFile, width, onResize, active,
                 )}
         </>
     );
-}
+});
 
 export function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number; items: CtxItem[]; onClose: () => void }) {
     const ref = useRef<HTMLDivElement>(null);

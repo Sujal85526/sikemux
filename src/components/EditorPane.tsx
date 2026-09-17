@@ -277,6 +277,8 @@ export function EditorPane({
         seed: string | null;
         signal: number;
     }>({ open: false, replaceOpen: false, seed: null, signal: 0 });
+    const closeFind = useCallback(() => setFindState((prev) => ({ ...prev, open: false })), []);
+    const getEditorView = useCallback(() => viewRef.current, []);
     const openFindRef = useRef<(withReplace: boolean, seed: string | null) => void>(() => {});
     openFindRef.current = (withReplace, seed) => {
         setFindState((prev) => ({
@@ -582,6 +584,11 @@ export function EditorPane({
         view.focus();
     };
 
+    const openPathRef = useRef<(path: string) => Promise<void>>(async () => {});
+    const openTreeFile = useCallback((entry: { path: string }) => {
+        void openPathRef.current(entry.path).catch(reportError("open file"));
+    }, []);
+
     const openPath = async (path: string) => {
         const request = ++openRequestRef.current;
         const liveTabs = useStore.getState().editorViews[paneId]?.openTabs ?? [];
@@ -613,6 +620,7 @@ export function EditorPane({
         cmd.openEditorTab(paneId, path, latest);
         if (latest) switchTo(path, st);
     };
+    openPathRef.current = openPath;
 
     useEffect(() => {
         const target = pendingCliOpens[0];
@@ -1021,14 +1029,7 @@ export function EditorPane({
     return (
         <div className="editor-pane">
             {!onCloseWindow && (
-                <FileTree
-                    width={treeWidth}
-                    onResize={setTreeWidth}
-                    cwd={cwd}
-                    activePath={activePath}
-                    onOpenFile={(entry) => void openPath(entry.path).catch(reportError("open file"))}
-                    active={visible}
-                />
+                <FileTree width={treeWidth} onResize={setTreeWidth} cwd={cwd} activePath={activePath} onOpenFile={openTreeFile} active={visible} />
             )}
             <div className="ed-main">
                 {/* An ordinary editor's documents are tabs in the session
@@ -1085,12 +1086,12 @@ export function EditorPane({
                     />
                     {!activeImage && !previewingMarkdown && (
                         <EditorFindBar
-                            getView={() => viewRef.current}
+                            getView={getEditorView}
                             open={findState.open}
                             replaceOpenOnMount={findState.replaceOpen}
                             seed={findState.seed}
                             signal={findState.signal}
-                            onClose={() => setFindState((prev) => ({ ...prev, open: false }))}
+                            onClose={closeFind}
                         />
                     )}
                     {activeImage && <ImageViewer image={activeImage} onReload={reloadImage} />}
