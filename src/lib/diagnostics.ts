@@ -116,7 +116,54 @@ function recordRuntimeError(kind: "error" | "unhandledrejection", value: unknown
     const message = sanitizeRuntimeErrorMessage(value);
     runtimeErrors.push({ at: new Date().toISOString(), kind, message });
     if (runtimeErrors.length > MAX_RUNTIME_ERRORS) runtimeErrors.splice(0, runtimeErrors.length - MAX_RUNTIME_ERRORS);
+    countRuntimeError(kind, message, value);
 }
+
+// A promise that rejects with nobody listening stays on a list WebKit walks
+// every time a later promise is settled, so a burst of them stalls the window
+// long after the burst. Counting them by message says which call is the source.
+const runtimeErrorCounts = new Map<string, { count: number; kind: string; firstStack: string }>();
+let runtimeErrorTotal = 0;
+let runtimeErrorReportAt = 0;
+let runtimeErrorReportPending = false;
+
+function countRuntimeError(kind: string, message: string, value: unknown): void {
+    if (!import.meta.env.DEV) return;
+    runtimeErrorTotal += 1;
+    const seen = runtimeErrorCounts.get(message);
+    if (seen) seen.count += 1;
+    else if (runtimeErrorCounts.size < 64) {
+        const stack = value instanceof Error && typeof value.stack === "string" ? value.stack.slice(0, 1500) : "";
+        runtimeErrorCounts.set(message, { count: 1, kind, firstStack: stack });
+    }
+    if (runtimeErrorReportPending) return;
+    const now = Date.now();
+    const wait = Math.max(0, 2000 - (now - runtimeErrorReportAt));
+    runtimeErrorReportPending = true;
+    window.setTimeout(() => {
+        runtimeErrorReportPending = false;
+        runtimeErrorReportAt = Date.now();
+        void reportRuntimeErrorCounts();
+    }, wait);
+}
+
+async function reportRuntimeErrorCounts(): Promise<void> {
+    const report = {
+        at: new Date().toISOString(),
+        total: runtimeErrorTotal,
+        byMessage: [...runtimeErrorCounts.entries()]
+            .map(([message, seen]) => ({ message, ...seen }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 24),
+    };
+    try {
+        await fsapi.writeFile(RUNTIME_ERROR_REPORT_PATH, JSON.stringify(report, null, 2));
+    } catch {
+        // The report is a debugging aid; losing it must never add to the noise.
+    }
+}
+
+const RUNTIME_ERROR_REPORT_PATH = "/tmp/sikemux-runtime-errors.json";
 
 function memorySnapshot(): MemoryInfo | null {
     const perf = performance as Performance & { memory?: MemoryInfo };
