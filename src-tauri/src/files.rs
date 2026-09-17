@@ -617,24 +617,44 @@ fn removal_ranges(files: &[String], prefixes: &[PathBuf]) -> Vec<Range<usize>> {
     merged
 }
 
-fn remove_ranges(files: &mut Vec<String>, ranges: &[Range<usize>]) {
-    if ranges.is_empty() {
-        return;
-    }
-    let previous = std::mem::take(files);
-    files.reserve(previous.len());
-    let mut range_index = 0;
-    for (index, file) in previous.into_iter().enumerate() {
-        while range_index < ranges.len() && ranges[range_index].end <= index {
-            range_index += 1;
+/// The new snapshot: what survived the removals, merged with what the batch
+/// added. Both sides are already in order, so this is one pass. Re-sorting the
+/// whole project list costs a quarter of a million comparisons in a big repo,
+/// and a watcher batch arrives for every file a build or an agent writes.
+fn merge_snapshot(
+    current: &[String],
+    removed: &[Range<usize>],
+    mut additions: Vec<String>,
+) -> Vec<String> {
+    additions.sort_unstable();
+    additions.dedup();
+    let dropped: usize = removed.iter().map(|range| range.end - range.start).sum();
+    let mut out = Vec::with_capacity(current.len() - dropped + additions.len());
+    let mut additions = additions.into_iter().peekable();
+    let mut removed = removed.iter().peekable();
+    let mut index = 0;
+    while index < current.len() {
+        if removed.peek().is_some_and(|range| range.start <= index) {
+            index = removed.next().map_or(index, |range| range.end);
+            continue;
         }
-        let removed = range_index < ranges.len()
-            && ranges[range_index].start <= index
-            && index < ranges[range_index].end;
-        if !removed {
-            files.push(file);
+        let survivor = &current[index];
+        while let Some(added) = additions.next_if(|added| added <= survivor) {
+            if out.last() != Some(&added) {
+                out.push(added);
+            }
+        }
+        if out.last() != Some(survivor) {
+            out.push(survivor.clone());
+        }
+        index += 1;
+    }
+    for added in additions {
+        if out.last() != Some(&added) {
+            out.push(added);
         }
     }
+    out
 }
 
 fn fallback_full_scan(
@@ -776,11 +796,7 @@ pub(crate) fn apply_watcher_batch(
         timer.finish(SpanOutcome::Success);
         return;
     }
-    let mut files = (*current.files).clone();
-    remove_ranges(&mut files, &ranges);
-    files.append(&mut additions);
-    files.sort_unstable();
-    files.dedup();
+    let files = merge_snapshot(&current.files, &ranges, additions);
     let Some(encoded_path_bytes) = snapshot_encoded_path_bytes(&files) else {
         fallback_full_scan(repo, &mut slot, timer);
         return;
@@ -830,6 +846,28 @@ mod tests {
         let repo = canonical_repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
         let root = PathBuf::from(&repo);
         (repo, root)
+    }
+
+    #[test]
+    fn merged_snapshot_keeps_order_drops_removed_runs_and_never_repeats_a_path() {
+        let current = vec![
+            "a.rs".to_string(),
+            "src/one.rs".to_string(),
+            "src/two.rs".to_string(),
+            "z.rs".to_string(),
+        ];
+        let merged = merge_snapshot(
+            &current,
+            &[1..3],
+            vec![
+                "src/two.rs".to_string(),
+                "b.rs".to_string(),
+                "b.rs".to_string(),
+                "z.rs".to_string(),
+            ],
+        );
+
+        assert_eq!(merged, vec!["a.rs", "b.rs", "src/two.rs", "z.rs"]);
     }
 
     #[test]
