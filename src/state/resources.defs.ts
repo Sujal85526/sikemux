@@ -15,7 +15,7 @@ import {
     type SqsQueue,
 } from "../api/aws";
 import { filesApi } from "../api/files";
-import { git, type GitOverview, type GitRemote, type GitRemoteBranch, type GitStatus, type GitStash } from "../api/git";
+import { git, type GitOverview, type GitRemote, type GitRemoteBranch, type GitStash } from "../api/git";
 import {
     rundeckApi,
     type MatrixResult,
@@ -36,12 +36,6 @@ import { resource } from "./resources";
 export const gitOverviewR = resource({
     kind: "git.overview",
     fetch: (repo: string): Promise<GitOverview> => git.overview(repo),
-    staleAfterMs: 5_000,
-});
-
-export const gitStatusR = resource({
-    kind: "git.status",
-    fetch: (repo: string): Promise<GitStatus> => git.status(repo),
     staleAfterMs: 5_000,
 });
 

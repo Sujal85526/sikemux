@@ -8,7 +8,7 @@ import type { RundeckEnvSpec } from "../api/rundeck";
 import * as cmd from "../state/commands";
 import { invalidate, peekResource, useResource, useResourceEnabled } from "../state/resources";
 import { notify, reportError, swallow } from "../state/toast";
-import { awsIdentityR, gitStatusR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
+import { awsIdentityR, gitOverviewR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { envFolderOf } from "../state/rundeckShape";
 import { useStore } from "../state/store";
 import { activeAgentId } from "../state/selectors";
@@ -126,8 +126,8 @@ function envDotKind(name: string | null): string {
 
 function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
     const k = branchKind(loc.branch);
-    const repoStatus = useResourceEnabled(!!repo, gitStatusR, repo ?? "");
-    const currentBranch = repoStatus.data?.branch.trim() ?? "";
+    const repoStatus = useResourceEnabled(!!repo, gitOverviewR, repo ?? "");
+    const currentBranch = repoStatus.data?.status.branch.trim() ?? "";
     const [checkingOut, setCheckingOut] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const deployBranch = () => {
@@ -193,9 +193,14 @@ function DeployChip({ loc, repo }: { loc: DeployLoc; repo: string | null }) {
     );
 }
 
+/*
+ * The branch and its counts come off the overview the rest of the app already
+ * reads. Asking for a status of its own made the backend do the recursive
+ * untracked walk a second time on every file change, for one chip.
+ */
 function GitChip({ repo }: { repo: string }) {
-    const res = useResource(gitStatusR, repo);
-    const st = res.data;
+    const res = useResource(gitOverviewR, repo);
+    const st = res.data?.status;
     if (!st) return null;
 
     const dirty = st.files.length > 0;

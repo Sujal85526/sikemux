@@ -7,20 +7,21 @@ import { TopBar } from "./TopBar";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 
-const { gitStatus } = vi.hoisted(() => ({
-    gitStatus: {
+const { gitStatus, gitOverview } = vi.hoisted(() => {
+    const gitStatus = {
         branch: "feature/always-visible",
         upstream: "origin/feature/always-visible",
         ahead: 1,
         behind: 0,
         files: [],
-    },
-}));
+    };
+    return { gitStatus, gitOverview: { status: gitStatus, branches: [], log: [] } };
+});
 
 vi.mock("../state/resources", async (importOriginal) => {
     const actual = await importOriginal<typeof import("../state/resources")>();
     const handle = (kind: string, enabled = true) => ({
-        data: enabled && kind === "git.status" ? gitStatus : undefined,
+        data: enabled && kind === "git.overview" ? gitOverview : undefined,
         status: "ok" as const,
         error: undefined,
         refresh: async () => {},
