@@ -18,12 +18,11 @@ METHODS = {
 }
 
 
-def tool_definitions():
-    return [types.Tool(name=name, description=description, inputSchema={"type": "object", "properties": properties, "required": required, "additionalProperties": False}) for name, (_, description, properties, required) in METHODS.items()]
+def tool_definitions(methods=METHODS):
+    return [types.Tool(name=name, description=description, inputSchema={"type": "object", "properties": properties, "required": required, "additionalProperties": False}) for name, (_, description, properties, required) in methods.items()]
 
 
-def call_harness(name, arguments):
-    method = METHODS[name][0]
+def call_harness_method(method, arguments):
     endpoint_path = os.environ.get("SIKEMUX_CLI_ENDPOINT")
     if not endpoint_path:
         raise RuntimeError("Missing SIKEMUX_CLI_ENDPOINT; launch this MCP from Sikemux")
@@ -40,15 +39,19 @@ def call_harness(name, arguments):
         connection.settimeout(70)
         connection.sendall(frame)
         with connection.makefile("rb") as reader:
-            response = reader.readline(65537)
-    if len(response) > 65536 or not response.endswith(b"\n"):
+            response = reader.readline(4 * 1024 * 1024 + 1)
+    if len(response) > 4 * 1024 * 1024 or not response.endswith(b"\n"):
         raise RuntimeError("Invalid or oversized harness response")
     result = json.loads(response)
     if result.get("status") == "error":
         raise RuntimeError(result.get("message", "Harness request failed"))
     if result.get("status") != "result":
         raise RuntimeError("Unexpected harness response")
-    return json.dumps(result["value"], ensure_ascii=False)
+    return result["value"]
+
+
+def call_harness(name, arguments):
+    return json.dumps(call_harness_method(METHODS[name][0], arguments), ensure_ascii=False)
 
 
 async def execute(name, arguments):

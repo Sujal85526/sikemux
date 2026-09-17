@@ -1,300 +1,91 @@
+"""The agent's browser, as MCP tools. Every tool is answered by Sikemux itself over
+the harness socket and acts on the tabs the person sees in the agent's pane."""
+
 import asyncio
-import json
+import base64
 import os
 import re
-import sqlite3
 import sys
-from contextlib import closing
-from pathlib import Path
-from urllib.request import Request, urlopen
 
-os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
-os.environ.setdefault("BROWSER_USE_CLOUD_SYNC", "false")
-os.environ.setdefault("BROWSER_USE_LOGGING_LEVEL", "critical")
-os.environ.setdefault("BROWSER_USE_SETUP_LOGGING", "false")
+import mcp.types as types
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
 
-from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.browser.events import CloseTabEvent, NavigateToUrlEvent, SwitchTabEvent
-from browser_use.filesystem.file_system import FileSystem
-from browser_use.mcp.server import BrowserUseServer, MCP_AVAILABLE
-from browser_use.telemetry import MCPServerTelemetryEvent
-from browser_use.tools.service import Tools
-from browser_use.utils import get_browser_use_version
-import mcp.types as mcp_types
 import sikemux_harness
 
+STATE_NOTE = "Returns the page state: url, title, numbered interactive elements, visible text, and open tabs."
 
-HIDDEN_TOOLS = {
-    "retry_with_browser_use_agent",
-    "browser_list_sessions",
-    "browser_close_session",
-    "browser_close_all",
-    "browser_extract_content",
+BROWSER_METHODS = {
+    "browser_navigate": ("browser.navigate", f"Open a URL in the current tab (or a new one with newTab) and wait for it to load. {STATE_NOTE}", {"url": {"type": "string", "maxLength": 8192}, "newTab": {"type": "boolean"}}, ["url"]),
+    "browser_state": ("browser.state", f"Read the current tab without changing it. {STATE_NOTE} Element numbers are only valid until the next state read.", {}, []),
+    "browser_click": ("browser.click", f"Click a numbered element from the latest state. {STATE_NOTE}", {"index": {"type": "integer", "minimum": 0}}, ["index"]),
+    "browser_type": ("browser.type", "Type into a numbered element (or the focused one when index is omitted), replacing its value. submit=true presses Enter afterwards and returns the new page state.", {"index": {"type": "integer", "minimum": 0}, "text": {"type": "string", "maxLength": 20000}, "submit": {"type": "boolean"}}, ["text"]),
+    "browser_press": ("browser.press", f"Press one key on the focused element, such as Enter, Tab, Escape, ArrowDown, or a single character. {STATE_NOTE}", {"key": {"type": "string", "minLength": 1, "maxLength": 24}}, ["key"]),
+    "browser_scroll": ("browser.scroll", "Scroll the page (or a numbered scrollable element) by deltaY pixels; negative scrolls up. Defaults to 600.", {"deltaY": {"type": "number"}, "index": {"type": "integer", "minimum": 0}}, []),
+    "browser_extract": ("browser.extract", "Read the page's visible text, or only the parts matching a CSS selector.", {"selector": {"type": "string", "maxLength": 512}}, []),
+    "browser_screenshot": ("browser.screenshot", "Capture the visible part of the current tab as a PNG image.", {}, []),
+    "browser_wait": ("browser.wait", f"Wait up to ms milliseconds (default 1000, max 30000), then wait for any load to finish. {STATE_NOTE}", {"ms": {"type": "integer", "minimum": 0, "maximum": 30000}}, []),
+    "browser_back": ("browser.back", f"Go back in the current tab's history. {STATE_NOTE}", {}, []),
+    "browser_forward": ("browser.forward", f"Go forward in the current tab's history. {STATE_NOTE}", {}, []),
+    "browser_list_tabs": ("browser.tabs", "List this agent's browser tabs with their ids.", {}, []),
+    "browser_switch_tab": ("browser.tab.switch", f"Make one of this agent's tabs the current one. {STATE_NOTE}", {"tabId": {"type": "string", "maxLength": 128}}, ["tabId"]),
+    "browser_close_tab": ("browser.tab.close", "Close one of this agent's tabs.", {"tabId": {"type": "string", "maxLength": 128}}, ["tabId"]),
 }
 
 
-class SikemuxBrowserServer(BrowserUseServer):
-    def __init__(self):
-        self.agent_id = required_env("SIKEMUX_BROWSER_AGENT_ID")
-        if not re.fullmatch(r"[A-Za-z0-9_:-]{1,128}", self.agent_id):
-            raise SystemExit("Invalid SIKEMUX_BROWSER_AGENT_ID")
-        self.state_dir = Path(required_env("SIKEMUX_BROWSER_STATE_DIR"))
-        self.cdp_url = os.environ.get("SIKEMUX_BROWSER_CDP_URL", "").strip() or None
-        self.broker_url = os.environ.get("SIKEMUX_BROWSER_BROKER_URL", "").strip() or None
-        self.broker_token = os.environ.get("SIKEMUX_BROWSER_BROKER_TOKEN", "").strip() or None
-        if not self.cdp_url and not (self.broker_url and self.broker_token):
-            raise SystemExit("Missing Sikemux browser endpoint; launch this MCP through Sikemux.")
-        self.database = self.state_dir / "tabs.sqlite3"
-        self.active_target_id: str | None = None
-        super().__init__(session_timeout_minutes=24 * 60)
-        self._filter_tools()
+def tool_definitions():
+    return sikemux_harness.tool_definitions(BROWSER_METHODS) + sikemux_harness.tool_definitions()
 
-    def _filter_tools(self) -> None:
-        original = self.server.request_handlers[mcp_types.ListToolsRequest]
 
-        async def filtered(request):
-            result = await original(request)
-            tools = [tool for tool in result.root.tools if tool.name not in HIDDEN_TOOLS]
-            tools.extend(sikemux_harness.tool_definitions())
-            return mcp_types.ServerResult(result.root.model_copy(update={"tools": tools}))
-
-        self.server.request_handlers[mcp_types.ListToolsRequest] = filtered
-
-    async def _init_browser_session(self, allowed_domains: list[str] | None = None, **kwargs):
-        if self.browser_session:
-            return
-        cdp_url = self.cdp_url or await asyncio.to_thread(self._request_cdp_url)
-        profile = BrowserProfile(
-            cdp_url=cdp_url,
-            is_local=False,
-            keep_alive=True,
-            headless=True,
-            wait_between_actions=0.05,
-            device_scale_factor=1.0,
-            disable_security=False,
-            downloads_path=str(self.state_dir / "downloads"),
-            allowed_domains=allowed_domains,
-            **kwargs,
-        )
-        self.browser_session = BrowserSession(browser_profile=profile)
-        await self.browser_session.start()
-        self._track_session(self.browser_session)
-        self.tools = Tools()
-        self.file_system = FileSystem(base_dir=self.state_dir / "files")
-
-    def _request_cdp_url(self) -> str:
-        assert self.broker_url and self.broker_token
-        request = Request(
-            f"{self.broker_url.rstrip('/')}/cdp",
-            method="POST",
-            headers={"Authorization": f"Bearer {self.broker_token}"},
-        )
-        with urlopen(request, timeout=20) as response:
-            value = json.loads(response.read())
-        cdp_url = value.get("cdpUrl")
-        if not isinstance(cdp_url, str) or not cdp_url:
-            raise RuntimeError("Sikemux browser broker returned no CDP endpoint")
-        self.cdp_url = cdp_url
-        return cdp_url
-
-    async def _execute_tool(self, tool_name: str, arguments: dict):
-        if tool_name in sikemux_harness.METHODS:
-            return await sikemux_harness.execute(tool_name, arguments)
-        if tool_name in HIDDEN_TOOLS:
-            return "This browser tool is disabled by Sikemux."
-        if tool_name.startswith("browser_") and tool_name not in {
-            "browser_list_sessions",
-            "browser_close_session",
-            "browser_close_all",
-        }:
-            if not self.browser_session:
-                await self._init_browser_session()
-            await self._ensure_owned_tab()
-        return await super()._execute_tool(tool_name, arguments)
-
-    async def _ensure_owned_tab(self) -> str:
-        assert self.browser_session
-        tabs = await self.browser_session.get_tabs()
-        owned = self._owned_target_ids()
-        available = {tab.target_id for tab in tabs}
-        self._prune_targets(available)
-        owned &= available
-        requested = self._read_active()
-        if requested in owned:
-            self.active_target_id = requested
-        if self.active_target_id not in owned:
-            self.active_target_id = next(iter(owned), None)
-        if self.active_target_id is None:
-            for tab in tabs:
-                if tab.url in {"about:blank", "chrome://newtab/"} and self._claim_target(tab.target_id):
-                    self.active_target_id = tab.target_id
-                    break
-        if self.active_target_id is None:
-            before = {tab.target_id for tab in tabs}
-            event = self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url="about:blank", new_tab=True))
-            await event
-            tabs = await self.browser_session.get_tabs()
-            created = [tab.target_id for tab in tabs if tab.target_id not in before]
-            self.active_target_id = created[0] if created else self.browser_session.agent_focus_target_id
-            if not self.active_target_id:
-                raise RuntimeError("Browser did not create a tab")
-            self._register_target(self.active_target_id)
-        if self.browser_session.agent_focus_target_id != self.active_target_id:
-            event = self.browser_session.event_bus.dispatch(SwitchTabEvent(target_id=self.active_target_id))
-            await event
-        self._write_active(self.active_target_id)
-        return self.active_target_id
-
-    async def _navigate(self, url: str, new_tab: bool = False) -> str:
-        assert self.browser_session
-        before = {tab.target_id for tab in await self.browser_session.get_tabs()}
-        result = await super()._navigate(url, new_tab)
-        if new_tab:
-            tabs = await self.browser_session.get_tabs()
-            created = [tab.target_id for tab in tabs if tab.target_id not in before]
-            target_id = created[0] if created else self.browser_session.agent_focus_target_id
-            if target_id:
-                self._register_target(target_id)
-                self.active_target_id = target_id
-                self._write_active(target_id)
-        return result
-
-    async def _click(self, index=None, coordinate_x=None, coordinate_y=None, new_tab=False):
-        assert self.browser_session
-        before = {tab.target_id for tab in await self.browser_session.get_tabs()}
-        result = await super()._click(index=index, coordinate_x=coordinate_x, coordinate_y=coordinate_y, new_tab=new_tab)
-        tabs = await self.browser_session.get_tabs()
-        created = [tab.target_id for tab in tabs if tab.target_id not in before]
-        for target_id in created:
-            self._register_target(target_id)
-            self.active_target_id = target_id
-            self._write_active(target_id)
-        return result
-
-    async def _list_tabs(self) -> str:
-        assert self.browser_session
-        owned = self._owned_target_ids()
-        tabs = [
-            {"tab_id": tab.target_id[-4:], "url": tab.url, "title": tab.title or ""}
-            for tab in await self.browser_session.get_tabs()
-            if tab.target_id in owned
+def content_for(name, value):
+    if name == "browser_screenshot" and isinstance(value, dict) and isinstance(value.get("data"), str):
+        caption = f"{value.get('title') or ''} {value.get('url') or ''}".strip()
+        return [
+            types.ImageContent(type="image", data=value["data"], mimeType=value.get("mimeType", "image/png")),
+            types.TextContent(type="text", text=caption or "screenshot"),
         ]
-        return json.dumps(tabs, indent=2)
+    return [types.TextContent(type="text", text=sikemux_harness.json.dumps(value, ensure_ascii=False))]
 
-    async def _switch_tab(self, tab_id: str) -> str:
-        assert self.browser_session
-        target_id = self._resolve_owned_tab(tab_id)
-        event = self.browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
-        await event
-        self.active_target_id = target_id
-        self._write_active(target_id)
-        state = await self.browser_session.get_browser_state_summary()
-        return f"Switched to tab {tab_id}: {state.url}"
 
-    async def _close_tab(self, tab_id: str) -> str:
-        assert self.browser_session
-        target_id = self._resolve_owned_tab(tab_id)
-        event = self.browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))
-        await event
-        self._unregister_target(target_id)
-        self.active_target_id = None
-        owned = self._owned_target_ids()
-        if owned:
-            await self._ensure_owned_tab()
+def build_server(agent_id: str) -> Server:
+    if not re.fullmatch(r"[A-Za-z0-9_:-]{1,128}", agent_id):
+        raise SystemExit("Invalid SIKEMUX_BROWSER_AGENT_ID")
+    server = Server("sikemux-browser")
+
+    @server.list_tools()
+    async def list_tools():
+        return tool_definitions()
+
+    @server.call_tool()
+    async def call_tool(name: str, arguments: dict | None):
+        arguments = arguments or {}
+        if name in BROWSER_METHODS:
+            method = BROWSER_METHODS[name][0]
+        elif name in sikemux_harness.METHODS:
+            method = sikemux_harness.METHODS[name][0]
         else:
-            self._write_active(None)
-        return f"Closed tab {tab_id}"
+            raise ValueError(f"Unknown tool: {name}")
+        value = await asyncio.to_thread(sikemux_harness.call_harness_method, method, arguments)
+        return content_for(name, value)
 
-    def _connect_registry(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database, timeout=5)
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS browser_tabs (target_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()))"
-        )
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS browser_active_tabs (agent_id TEXT PRIMARY KEY, target_id TEXT NOT NULL)"
-        )
-        return connection
-
-    def _owned_target_ids(self) -> set[str]:
-        with closing(self._connect_registry()) as connection, connection:
-            return {row[0] for row in connection.execute("SELECT target_id FROM browser_tabs WHERE agent_id = ?", (self.agent_id,))}
-
-    def _claim_target(self, target_id: str) -> bool:
-        with closing(self._connect_registry()) as connection, connection:
-            cursor = connection.execute(
-                "INSERT OR IGNORE INTO browser_tabs (target_id, agent_id) VALUES (?, ?)",
-                (target_id, self.agent_id),
-            )
-            if cursor.rowcount == 1:
-                return True
-            owner = connection.execute("SELECT agent_id FROM browser_tabs WHERE target_id = ?", (target_id,)).fetchone()
-            return bool(owner and owner[0] == self.agent_id)
-
-    def _register_target(self, target_id: str) -> None:
-        with closing(self._connect_registry()) as connection, connection:
-            connection.execute(
-                "INSERT OR REPLACE INTO browser_tabs (target_id, agent_id) VALUES (?, ?)",
-                (target_id, self.agent_id),
-            )
-
-    def _unregister_target(self, target_id: str) -> None:
-        with closing(self._connect_registry()) as connection, connection:
-            connection.execute("DELETE FROM browser_tabs WHERE target_id = ? AND agent_id = ?", (target_id, self.agent_id))
-
-    def _prune_targets(self, available: set[str]) -> None:
-        with closing(self._connect_registry()) as connection, connection:
-            owned = [row[0] for row in connection.execute("SELECT target_id FROM browser_tabs WHERE agent_id = ?", (self.agent_id,))]
-            connection.executemany(
-                "DELETE FROM browser_tabs WHERE target_id = ? AND agent_id = ?",
-                [(target_id, self.agent_id) for target_id in owned if target_id not in available],
-            )
-
-    def _resolve_owned_tab(self, tab_id: str) -> str:
-        matches = [target_id for target_id in self._owned_target_ids() if target_id == tab_id or target_id.endswith(tab_id)]
-        if len(matches) != 1:
-            raise ValueError("Tab does not belong to this Sikemux agent session")
-        return matches[0]
-
-    def _write_active(self, target_id: str | None) -> None:
-        with closing(self._connect_registry()) as connection, connection:
-            if target_id is None:
-                connection.execute("DELETE FROM browser_active_tabs WHERE agent_id = ?", (self.agent_id,))
-            else:
-                connection.execute(
-                    "INSERT INTO browser_active_tabs (agent_id, target_id) VALUES (?, ?) "
-                    "ON CONFLICT(agent_id) DO UPDATE SET target_id = excluded.target_id",
-                    (self.agent_id, target_id),
-                )
-
-    def _read_active(self) -> str | None:
-        with closing(self._connect_registry()) as connection, connection:
-            row = connection.execute(
-                "SELECT target_id FROM browser_active_tabs WHERE agent_id = ?", (self.agent_id,)
-            ).fetchone()
-        return row[0] if row else None
+    return server
 
 
 def required_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        print(f"Missing {name}; launch this MCP through Sikemux.", file=sys.stderr)
-        raise SystemExit(2)
+        raise SystemExit(f"Missing {name}; launch this MCP through Sikemux")
     return value
 
 
 async def main() -> None:
-    if not MCP_AVAILABLE:
-        print("Browser Use MCP dependencies are missing.", file=sys.stderr)
-        raise SystemExit(1)
-    server = SikemuxBrowserServer()
-    server._telemetry.capture(
-        MCPServerTelemetryEvent(version=get_browser_use_version(), action="start", parent_process_cmdline="sikemux")
-    )
-    try:
-        await server.run()
-    finally:
-        server._telemetry.flush()
+    server = build_server(required_env("SIKEMUX_BROWSER_AGENT_ID"))
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

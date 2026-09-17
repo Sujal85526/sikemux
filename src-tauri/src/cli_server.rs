@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::cli_protocol::{
     CliClientCommand, CliCloseReason, CliEndpointDescriptor, CliFrontendRequest, CliOpenFailure,
     CliOpenRequest, CliOpenResult, CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION,
-    MAX_CLI_FRAME_BYTES, MAX_CLI_TARGETS,
+    MAX_CLI_FRAME_BYTES, MAX_CLI_RESPONSE_BYTES, MAX_CLI_TARGETS,
 };
 use crate::error::{AppError, AppResult};
 
@@ -177,7 +177,7 @@ impl CliBroker {
                     crate::harness::execute(&self.inner.app, &self.inner.harness, request)
                 });
                 if focus && result.is_ok() {
-                    if let Some(window) = self.inner.app.get_webview_window("main") {
+                    if let Some(window) = self.inner.app.get_window("main") {
                         let _ = window.show();
                         let _ = window.unminimize();
                         let _ = window.set_focus();
@@ -328,7 +328,7 @@ impl CliBroker {
         );
         drop(requests);
 
-        if let Some(window) = self.inner.app.get_webview_window("main") {
+        if let Some(window) = self.inner.app.get_window("main") {
             let _ = window.show();
             let _ = window.unminimize();
             let _ = window.set_focus();
@@ -555,11 +555,11 @@ fn validate_request(request: &CliOpenRequest) -> Result<(), String> {
 
 fn write_response(stream: &mut TcpStream, response: &CliServerResponse) -> std::io::Result<()> {
     let bytes = serde_json::to_vec(response)?;
-    if bytes.len() as u64 >= MAX_CLI_FRAME_BYTES {
+    if bytes.len() as u64 >= MAX_CLI_RESPONSE_BYTES {
         serde_json::to_writer(
             &mut *stream,
             &CliServerResponse::Error {
-                message: "Response exceeds 64 KiB; reduce the requested output".into(),
+                message: "Response exceeds 4 MiB; reduce the requested output".into(),
             },
         )?;
     } else {

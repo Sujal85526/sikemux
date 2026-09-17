@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::cli_protocol::{
     CliClientCommand, CliCloseReason, CliEndpointDescriptor, CliOpenRequest, CliOpenTarget,
-    CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, MAX_CLI_FRAME_BYTES,
+    CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, MAX_CLI_RESPONSE_BYTES,
 };
 
 const APP_START_TIMEOUT: Duration = Duration::from_secs(15);
@@ -435,13 +435,13 @@ fn read_response(reader: &mut BufReader<TcpStream>) -> Result<CliServerResponse,
     let mut frame = Vec::new();
     reader
         .by_ref()
-        .take(MAX_CLI_FRAME_BYTES + 1)
+        .take(MAX_CLI_RESPONSE_BYTES + 1)
         .read_until(b'\n', &mut frame)
         .map_err(|error| format!("CLI connection failed: {error}"))?;
     if frame.is_empty() {
         return Err("Sikemux closed the CLI connection".into());
     }
-    if frame.len() as u64 > MAX_CLI_FRAME_BYTES {
+    if frame.len() as u64 > MAX_CLI_RESPONSE_BYTES {
         return Err("Sikemux sent an oversized CLI response".into());
     }
     serde_json::from_slice(&frame).map_err(|_| "Sikemux sent an invalid CLI response".into())

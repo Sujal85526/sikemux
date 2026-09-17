@@ -1,110 +1,106 @@
 import asyncio
 import json
 import os
+import socket
 import tempfile
 import threading
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-from mcp.types import ListToolsRequest
+from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 
-from sikemux_browser_mcp import HIDDEN_TOOLS, SikemuxBrowserServer
+from sikemux_browser_mcp import BROWSER_METHODS, build_server, content_for, tool_definitions
+
+
+class FakeSikemux:
+    """Answers harness frames the way the app's CLI broker does."""
+
+    def __init__(self, reply):
+        self.reply = reply
+        self.received = []
+        self.listener = socket.socket()
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(4)
+        self.listener.settimeout(15)
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+
+    def serve(self):
+        while True:
+            try:
+                connection, _ = self.listener.accept()
+            except OSError:
+                return
+            with connection, connection.makefile("rb") as stream:
+                request = json.loads(stream.readline())
+                self.received.append(request)
+                connection.sendall(json.dumps(self.reply(request)).encode() + b"\n")
+
+    def __enter__(self):
+        self.directory = tempfile.TemporaryDirectory()
+        endpoint = Path(self.directory.name) / "endpoint.json"
+        endpoint.write_text(json.dumps({"protocol": 1, "token": "test-token", "port": self.listener.getsockname()[1]}))
+        self.thread.start()
+        self.environment = patch.dict(os.environ, {"SIKEMUX_CLI_ENDPOINT": str(endpoint), "SIKEMUX_PROJECT": "/project", "SIKEMUX_BROWSER_AGENT_ID": "agent-one"})
+        self.environment.start()
+        return self
+
+    def __exit__(self, *_):
+        self.environment.stop()
+        self.listener.close()
+        self.directory.cleanup()
+
+
+def run_tool(server, name, arguments):
+    async def call():
+        handler = server.request_handlers[CallToolRequest]
+        result = await handler(CallToolRequest(method="tools/call", params=CallToolRequestParams(name=name, arguments=arguments)))
+        return result.root
+
+    return asyncio.run(call())
 
 
 class SikemuxBrowserServerTests(unittest.TestCase):
-    def server(self, agent_id: str, state_dir: Path) -> SikemuxBrowserServer:
-        os.environ.update(
-            SIKEMUX_BROWSER_AGENT_ID=agent_id,
-            SIKEMUX_BROWSER_STATE_DIR=str(state_dir),
-            SIKEMUX_BROWSER_CDP_URL="http://127.0.0.1:1",
-        )
-        return SikemuxBrowserServer()
+    def test_tool_list_pairs_every_browser_tool_with_a_harness_method(self):
+        names = {tool.name for tool in tool_definitions()}
+        self.assertTrue(set(BROWSER_METHODS) <= names)
+        self.assertIn("sikemux_workspace_inspect", names)
+        self.assertTrue(all(method.startswith("browser.") for method, *_ in BROWSER_METHODS.values()))
+        for tool in tool_definitions():
+            self.assertFalse(tool.inputSchema["additionalProperties"])
 
-    def test_registry_isolates_agent_tabs(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state_dir = Path(directory)
-            first = self.server("agent-one", state_dir)
-            second = self.server("agent-two", state_dir)
+    def test_browser_tools_are_answered_by_sikemux_for_this_agent(self):
+        state = {"url": "https://example.com", "title": "Example", "elements": "[0] <a> Sign in", "text": "hello", "tabs": []}
+        with FakeSikemux(lambda request: {"status": "result", "value": state}) as app:
+            server = build_server("agent-one")
+            result = run_tool(server, "browser_navigate", {"url": "example.com"})
+            self.assertFalse(result.isError)
+            self.assertEqual(json.loads(result.content[0].text), state)
+            request = app.received[0]["request"]
+            self.assertEqual(request["method"], "browser.navigate")
+            self.assertEqual(request["params"], {"url": "example.com"})
+            self.assertEqual(request["agentId"], "agent-one")
+            self.assertEqual(app.received[0]["token"], "test-token")
 
-            first._register_target("target-one")
-            second._register_target("target-two")
-            first._write_active("target-one")
-            second._write_active("target-two")
+    def test_a_screenshot_comes_back_as_an_image(self):
+        content = content_for("browser_screenshot", {"data": "aGk=", "mimeType": "image/png", "title": "Example", "url": "https://example.com"})
+        self.assertEqual(content[0].type, "image")
+        self.assertEqual(content[0].data, "aGk=")
+        self.assertEqual(content[1].text, "Example https://example.com")
 
-            self.assertEqual(first._owned_target_ids(), {"target-one"})
-            self.assertEqual(second._owned_target_ids(), {"target-two"})
-            self.assertEqual(first._read_active(), "target-one")
-            self.assertEqual(second._read_active(), "target-two")
-            with self.assertRaises(ValueError):
-                first._resolve_owned_tab("two")
+    def test_an_app_error_reaches_the_agent_as_a_tool_error(self):
+        with FakeSikemux(lambda request: {"status": "error", "message": "no browser tab is open"}):
+            server = build_server("agent-one")
+            result = run_tool(server, "browser_click", {"index": 3})
+            self.assertTrue(result.isError)
+            self.assertIn("no browser tab is open", result.content[0].text)
 
-    def test_tool_list_exposes_only_scoped_direct_controls(self):
-        with tempfile.TemporaryDirectory() as directory:
-            server = self.server("agent-one", Path(directory))
-
-            async def list_tools():
-                handler = server.server.request_handlers[ListToolsRequest]
-                result = await handler(ListToolsRequest(method="tools/list"))
-                return {tool.name for tool in result.root.tools}
-
-            tools = asyncio.run(list_tools())
-            self.assertFalse(tools & HIDDEN_TOOLS)
-            self.assertIn("sikemux_workspace_inspect", tools)
-            self.assertIn("sikemux_events_wait", tools)
-            self.assertIn("browser_get_state", tools)
-            self.assertIn("browser_switch_tab", tools)
-            self.assertNotIn("browser_extract_content", tools)
-
-    def test_harness_tool_does_not_start_chromium(self):
-        with tempfile.TemporaryDirectory() as directory:
-            server = self.server("agent-one", Path(directory))
-            with patch("sikemux_browser_mcp.sikemux_harness.execute", new_callable=AsyncMock, return_value='{"ok":true}') as execute, patch.object(server, "_init_browser_session", new_callable=AsyncMock) as start:
-                result = asyncio.run(server._execute_tool("sikemux_workspace_inspect", {}))
-                self.assertEqual(result, '{"ok":true}')
-                execute.assert_awaited_once_with("sikemux_workspace_inspect", {})
-                start.assert_not_called()
-
-    def test_rejects_agent_ids_that_can_escape_state_paths(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaises(SystemExit):
-                self.server("../agent", Path(directory))
-
-    def test_requests_cdp_from_authenticated_lazy_broker(self):
-        received = []
-
-        class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):
-                received.append((self.path, self.headers.get("Authorization")))
-                body = json.dumps({"cdpUrl": "http://127.0.0.1:9222"}).encode()
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-            def log_message(self, *_args):
-                pass
-
-        broker = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        thread = threading.Thread(target=broker.serve_forever, daemon=True)
-        thread.start()
-        try:
-            with tempfile.TemporaryDirectory() as directory:
-                os.environ.pop("SIKEMUX_BROWSER_CDP_URL", None)
-                os.environ.update(
-                    SIKEMUX_BROWSER_AGENT_ID="agent-one",
-                    SIKEMUX_BROWSER_STATE_DIR=directory,
-                    SIKEMUX_BROWSER_BROKER_URL=f"http://127.0.0.1:{broker.server_port}",
-                    SIKEMUX_BROWSER_BROKER_TOKEN="secret",
-                )
-                server = SikemuxBrowserServer()
-                self.assertEqual(server._request_cdp_url(), "http://127.0.0.1:9222")
-                self.assertEqual(received, [("/cdp", "Bearer secret")])
-        finally:
-            broker.shutdown()
-            broker.server_close()
-            thread.join(timeout=5)
+    def test_unknown_tools_and_bad_agent_ids_are_refused(self):
+        with self.assertRaises(SystemExit):
+            build_server("../escape")
+        server = build_server("agent-one")
+        result = run_tool(server, "browser_evil", {})
+        self.assertTrue(result.isError)
 
 
 if __name__ == "__main__":

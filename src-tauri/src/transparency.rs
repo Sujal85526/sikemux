@@ -68,7 +68,7 @@ pub unsafe fn apply(_ns_window: *mut std::ffi::c_void, _blur_radius: i32) {}
 /// Tauri command — re-apply transparency + blur at runtime from the
 /// settings panel. Takes a clamped radius (0–80).
 #[tauri::command]
-pub fn set_window_blur(window: tauri::WebviewWindow, radius: i32) -> crate::error::AppResult<()> {
+pub fn set_window_blur(window: tauri::Window, radius: i32) -> crate::error::AppResult<()> {
     // No caps — pass through whatever the user typed. CGS clamps internally
     // anyway, and negative values just disable blur.
     #[cfg(target_os = "macos")]

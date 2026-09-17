@@ -12,14 +12,17 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, ProtocolObject};
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSEvent, NSEventMask, NSEventModifierFlags, NSModalResponse,
+    NSAlert, NSAlertFirstButtonReturn, NSBitmapImageFileType, NSBitmapImageRep, NSEvent,
+    NSEventMask, NSEventModifierFlags, NSImage, NSImageCompressionFactor, NSModalResponse,
     NSTextField, NSView,
 };
-use objc2_foundation::{NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{
+    NSDictionary, NSError, NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+};
 use objc2_web_kit::{
     WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
-    WKPermissionDecision, WKSecurityOrigin, WKUIDelegate, WKWebView, WKWebViewConfiguration,
-    WKWindowFeatures,
+    WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration, WKUIDelegate, WKWebView,
+    WKWebViewConfiguration, WKWindowFeatures,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -89,6 +92,57 @@ pub fn history_state(pointer: *mut c_void) -> (bool, bool) {
     webview_from(pointer)
         .map(|webview| unsafe { (webview.canGoBack(), webview.canGoForward()) })
         .unwrap_or((false, false))
+}
+
+/// The visible page as a JPEG at 1x: plenty for a model to read at a fraction
+/// of the bytes of a Retina PNG.
+pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send>) {
+    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+        done(Err("the tab is gone".into()));
+        return;
+    };
+    let configuration = unsafe { WKSnapshotConfiguration::new(mtm) };
+    let scale = webview
+        .window()
+        .map(|window| window.backingScaleFactor())
+        .unwrap_or(1.0)
+        .max(1.0);
+    let width = (webview.frame().size.width / scale).max(1.0);
+    unsafe {
+        configuration.setSnapshotWidth(Some(&NSNumber::numberWithDouble(width)));
+        configuration.setAfterScreenUpdates(true);
+    }
+    let done = std::sync::Mutex::new(Some(done));
+    let block = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+            return;
+        };
+        let image = unsafe { Retained::retain(image) };
+        let result = match image {
+            Some(image) => {
+                jpeg_bytes(&image).ok_or_else(|| "could not encode the page image".to_string())
+            }
+            None => Err(unsafe { Retained::retain(error) }
+                .map(|error| error.localizedDescription().to_string())
+                .unwrap_or_else(|| "the page could not be captured".into())),
+        };
+        done(result);
+    });
+    unsafe {
+        webview.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &block)
+    };
+}
+
+fn jpeg_bytes(image: &NSImage) -> Option<Vec<u8>> {
+    let tiff = image.TIFFRepresentation()?;
+    let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)?;
+    let quality = NSNumber::numberWithDouble(0.82);
+    let properties: Retained<NSDictionary<NSString, AnyObject>> =
+        NSDictionary::from_slices(&[unsafe { NSImageCompressionFactor }], &[&*quality]);
+    let jpeg = unsafe {
+        bitmap.representationUsingType_properties(NSBitmapImageFileType::JPEG, &properties)
+    }?;
+    Some(jpeg.to_vec())
 }
 
 struct TabUiDelegateIvars {

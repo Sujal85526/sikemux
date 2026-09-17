@@ -44,7 +44,8 @@ impl HarnessRequest {
                 | "task.stop"
                 | "ui.open"
                 | "events.wait"
-        ) {
+        ) && !crate::browser::tools::is_browser_method(&self.method)
+        {
             return Err("unknown harness method".into());
         }
         if !self.params.is_object() {
@@ -136,6 +137,9 @@ pub fn execute(
         .map_err(|error| error.to_string())?
         .to_string_lossy()
         .into_owned();
+    if crate::browser::tools::is_browser_method(&request.method) {
+        return crate::browser::tools::execute(app, &request);
+    }
     let id = request.id.clone();
     let receiver = broker.enqueue(request)?;
     let _ = app.emit("harness-request", ());

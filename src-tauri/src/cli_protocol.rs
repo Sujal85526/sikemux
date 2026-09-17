@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 
 pub const CLI_PROTOCOL_VERSION: u16 = 1;
 pub const MAX_CLI_FRAME_BYTES: u64 = 64 * 1024;
+/// Harness answers carry page text and screenshots, so they get more room
+/// than a request frame.
+pub const MAX_CLI_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 pub const MAX_CLI_TARGETS: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

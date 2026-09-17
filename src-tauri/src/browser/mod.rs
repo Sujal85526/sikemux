@@ -2,9 +2,14 @@
 //! the main window (WKWebView on macOS), so pages get real input, real pixels,
 //! and the system cookie jar. The React pane only draws the chrome around it
 //! and tells this module where the page area is.
+//!
+//! Once a window has a child webview, Tauri stops treating it as a "webview
+//! window": `get_webview_window("main")` returns `None` and commands taking a
+//! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
 #[cfg(target_os = "macos")]
 mod macos;
+pub mod tools;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -23,6 +28,12 @@ pub const BROWSER_TABS_EVENT: &str = "browser-tabs-changed";
 pub const BROWSER_SHORTCUT_EVENT: &str = "browser-shortcut";
 pub const BLANK_URL: &str = "about:blank";
 const MAX_URL_LEN: usize = 8192;
+const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
+    x: 0.0,
+    y: 0.0,
+    width: 1200.0,
+    height: 800.0,
+};
 
 /// WebKit's own agent string names no browser at all, and sites answer that
 /// with an "unsupported browser" page, so tabs introduce themselves as Safari.
@@ -183,25 +194,20 @@ impl BrowserManager {
         validate_url(&url)?;
         let parsed = Url::parse(&url).map_err(|_| AppError::BadArg("invalid browser url"))?;
         let window = app
-            .get_webview_window("main")
-            .ok_or_else(|| AppError::Window("main window is not open".into()))?
-            .as_ref()
-            .window();
+            .get_window("main")
+            .ok_or_else(|| AppError::Window("main window is not open".into()))?;
         let tab_id = format!(
             "browser-{}-{}",
             label_safe(agent_id),
             self.next_tab.fetch_add(1, Ordering::AcqRel)
         );
+        // A parked tab keeps this frame, so a page the agent drives before the
+        // pane shows it still lays out like a desktop window, not a 1px slit.
         let bounds = self
             .lock()
             .get(agent_id)
             .and_then(|agent| agent.bounds)
-            .unwrap_or(BrowserBounds {
-                x: 0.0,
-                y: 0.0,
-                width: 1.0,
-                height: 1.0,
-            });
+            .unwrap_or(PARKED_BOUNDS);
 
         let builder = self.tab_builder(app, agent_id, &tab_id, parsed);
         let webview = window

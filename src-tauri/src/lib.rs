@@ -69,7 +69,7 @@ pub fn run() {
         // process instead of creating a second workspace/CLI broker.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             use tauri::Manager;
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -107,7 +107,11 @@ pub fn run() {
             // Context-menu reload starts a new page without closing the
             // native window, so React cleanup is not a reliable place to
             // kill PTYs. Initial startup has no PTYs yet; reload does.
-            if payload.event() == tauri::webview::PageLoadEvent::Started {
+            // Browser tabs are webviews too, and a page loading in one of
+            // them is not the app reloading.
+            if webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Started
+            {
                 use tauri::Manager;
                 if let Some(watchdog) = webview.try_state::<UiWatchdogState>() {
                     watchdog.suspend();
@@ -143,7 +147,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 use tauri::Manager;
-                if let Some(window) = _app.get_webview_window("main") {
+                if let Some(window) = _app.get_window("main") {
                     if let Ok(handle) = window.ns_window() {
                         unsafe {
                             transparency::apply(handle, 0);
