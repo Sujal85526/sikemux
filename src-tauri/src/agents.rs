@@ -3634,11 +3634,17 @@ mod executable_tests {
         let other = PathBuf::from("/home/me/.claude/projects/-repo/session-2.jsonl");
 
         assert!(!group_is_streaming(&group));
-        assert!(!streaming_transcripts_only(&group, &[transcript.clone()]));
+        assert!(!streaming_transcripts_only(
+            &group,
+            std::slice::from_ref(&transcript)
+        ));
 
         note_streaming_session("claude", "/repo", None, "session-1", true);
         assert!(group_is_streaming(&group));
-        assert!(streaming_transcripts_only(&group, &[transcript.clone()]));
+        assert!(streaming_transcripts_only(
+            &group,
+            std::slice::from_ref(&transcript)
+        ));
         assert!(!streaming_transcripts_only(
             &group,
             &[transcript.clone(), other]
