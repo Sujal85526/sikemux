@@ -648,6 +648,26 @@ describe("AgentChatPane", () => {
         await waitFor(() => expect(screen.queryByText("pnpm test")).not.toBeInTheDocument());
     });
 
+    it("says a background task's name once when its description repeats it", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "async_task_spawned",
+                asyncTaskId: "task-1",
+                name: "push gate failures",
+                description: "push gate failures",
+                taskType: "shell",
+            },
+        });
+
+        const chip = await screen.findByLabelText("Background tasks");
+        expect(chip).toHaveTextContent("push gate failures");
+        expect(chip.querySelector(".chat-task-detail")).toHaveTextContent("shell");
+    });
+
     it("shows ACP slash commands and inserts the selected command", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());

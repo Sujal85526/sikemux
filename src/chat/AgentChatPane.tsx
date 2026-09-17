@@ -579,6 +579,12 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
     );
 }
 
+/* A task whose description repeats its name would print the same words twice,
+   once in each voice, so the detail takes the first thing that says more. */
+function taskDetail(task: AcpAsyncTask): string | undefined {
+    return [task.summary, task.description, task.lastToolName, task.taskType].find((text) => text && text !== task.name);
+}
+
 function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; stopping: string[]; onStop: (taskId: string) => void }) {
     if (tasks.length === 0) return null;
     return (
@@ -587,7 +593,7 @@ function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; s
                 <div className={`chat-task state-${task.state}`} key={task.asyncTaskId}>
                     <IconTimer size={12} />
                     <span className="chat-task-name">{task.name}</span>
-                    <span className="chat-task-detail">{task.summary || task.description || task.lastToolName || task.taskType}</span>
+                    <span className="chat-task-detail">{taskDetail(task)}</span>
                     {task.canStop && (
                         <button
                             type="button"
