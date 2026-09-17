@@ -210,6 +210,35 @@ and its rows gave no hover feedback at all.
 a new block. If it genuinely has to differ, it should differ in one property,
 not in a second definition of what a row is.
 
+**A row carries two pieces of furniture**, and both are defined once beside the
+row rule: a mark on the leading edge saying what the row holds, and a close on
+the trailing edge.
+
+The mark is a 20px tile with a neutral wash, and the glyph inside it keeps its
+provider colour — tinting the tile to match said it twice. A Bruno method badge
+is the one exception: it is already an object, so a tile behind it is a chip in
+a chip.
+
+The close is a 20px button in the same corner of every row and tab, quiet
+(`--text-tertiary`) until the pointer is on it and `--danger` once it is. Hover,
+selection and `:focus-visible` all reveal it — a close you can only reach with a
+mouse is a close half the app cannot use — and the row keeps its room free at
+all times, because a label that reflows when the pointer arrives is a label you
+cannot read.
+
+**Selection is the fill and the hairline, and nothing else.** Agent rows also
+carried a 2.5px accent bar down their leading edge, and the project tree drew a
+tick out of its spine into each child — a third and fourth statement of what the
+fill already said, on the only two row types that had them. Both are gone.
+
+This was four rules too. The rail laid its close on top of the mark and faded
+the mark out to make room, so pointing at an agent erased the icon saying which
+agent it was, and put a destructive control where a pointer merely passing
+through would land. The project rows used a grey one on a filled square, the
+tabs a round 16px one, and the browser strip a fourth, on the legacy `--rail` /
+`--ink` hexes that do not follow the theme at all. The four strips — `v-agent`,
+`v-editor`, `v-browser` and `v-stack` — now share one pill.
+
 The tree spine (`.proj-children`) is one neutral hairline. The indent is what
 says "child of"; tinting the line said it twice.
 

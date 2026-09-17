@@ -286,19 +286,6 @@
     border-radius: 50%;
     background: var(--warn);
 }
-.tab-x {
-    display: flex;
-    align-items: center;
-    flex: 0 0 auto;
-    padding: 2px;
-    color: var(--text-tertiary);
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-}
-.tab-x:hover {
-    color: var(--danger);
-}
 .tab-add {
     display: flex;
     align-items: center;
@@ -399,13 +386,6 @@
 .tabbar.v-editor .tab {
     padding: 0 10px;
 }
-.tabbar.v-editor .tab-x {
-    border-radius: 0;
-}
-.tabbar.v-editor .tab-x:hover {
-    background: var(--surface-raised);
-}
-
 /* variant: the panes stacked in one spot inside a window */
 .tabbar.v-stack {
     height: var(--stack-strip-h);
@@ -438,18 +418,6 @@
     flex: 1 1 auto;
     max-width: 160px;
     text-align: left;
-}
-.tabbar.v-agent .tab-x {
-    margin-left: auto;
-    padding: 3px;
-    opacity: 0;
-    transition:
-        opacity 0.12s,
-        color 0.12s;
-}
-.tabbar.v-agent .tab-wrap:hover .tab-x,
-.tabbar.v-agent .tab-x:focus-visible {
-    opacity: 1;
 }
 .tabbar.v-agent .tab-add {
     height: 100%;

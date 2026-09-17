@@ -15,25 +15,7 @@
     line-height: 1.6;
 }
 .agent-row {
-    display: flex;
-    align-items: center;
-    gap: 9px;
     width: 100%;
-    height: 34px;
-    padding: 0 10px;
-    color: var(--text-secondary);
-    position: relative;
-    transition:
-        background 0.12s,
-        color 0.12s;
-}
-.agent-row:hover {
-    background: var(--surface-raised);
-    color: var(--text-primary);
-}
-.agent-row.active {
-    background: var(--surface-selected);
-    color: var(--text-primary);
 }
 .agent-row-wrap {
     position: relative;
@@ -296,22 +278,6 @@
     color: var(--text-primary);
 }
 .env-dd-item.active {
-    color: var(--text-primary);
-}
-.agent-row.sel::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 8px;
-    bottom: 8px;
-    width: 2.5px;
-    border-radius: 0;
-    background: var(--acc);
-}
-.agent-row.new {
-    color: var(--text-tertiary);
-}
-.agent-row.new:hover {
     color: var(--text-primary);
 }
 .agent-glyph.dim {
@@ -579,48 +545,6 @@
 }
 .rail-search input::placeholder {
     color: var(--text-tertiary);
-}
-
-.agent-row.active::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 8px;
-    bottom: 8px;
-    width: 2.5px;
-    background: var(--acc);
-}
-
-.agent-glyph {
-    position: relative;
-}
-.agent-glyph-icon {
-    display: flex;
-    transition: opacity 0.12s;
-}
-.agent-glyph-x {
-    position: absolute;
-    z-index: 2;
-    top: 50%;
-    left: 10px;
-    transform: translateY(-50%);
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--danger);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.12s;
-}
-.agent-row-wrap:hover .agent-glyph-icon {
-    opacity: 0;
-}
-.agent-row-wrap:hover .agent-glyph-x,
-.agent-glyph-x:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
 }
 
 /* Agent safety switch — both boundaries stay on screen, in the same segmented

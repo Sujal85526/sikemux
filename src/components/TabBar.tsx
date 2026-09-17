@@ -174,7 +174,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                                           }
                                         : undefined
                                 }>
-                                {t.icon}
+                                {t.icon && <span className="tab-mark">{t.icon}</span>}
                                 <span className="tab-label">{t.label}</span>
                                 {t.dirty && <span className="tab-dot" aria-hidden="true" />}
                                 {t.accessory}

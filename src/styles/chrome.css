@@ -396,64 +396,14 @@
     flex: 1 1 auto;
     min-width: 0;
 }
-.session-row-shell > .sess-close {
-    position: absolute;
-    z-index: 3;
-    top: 50%;
-    right: 3px;
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-xs);
-    color: var(--text-tertiary);
-    background: var(--surface-raised);
-    box-shadow: none;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-50%) scale(0.88);
-    cursor: pointer;
-    transition:
-        opacity 100ms ease,
-        color 100ms ease,
-        transform 130ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.session-row-shell:hover > .sess-close,
-.session-row-shell > .sess-close:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(-50%) scale(1);
-}
-
 .sess-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     width: auto;
-    height: 30px;
-    padding: 0 8px;
-    color: var(--text-primary);
-    position: relative;
-    transition:
-        background 0.12s,
-        color 0.12s;
-}
-.sess-row:hover {
-    color: var(--live);
-}
-.sess-row.active {
-    color: var(--live);
 }
 .sess-icon-glyph {
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.sess-icon {
-    display: flex;
 }
 .sess-icon.command {
     color: var(--cmd);
@@ -478,38 +428,17 @@
 }
 
 .proj-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     width: 100%;
-    padding: 3px 0px 3px 12px;
-    background: transparent;
-    border: none;
-    border-left: 2px solid transparent;
     cursor: pointer;
-    color: var(--text-primary);
     text-align: left;
-    transition:
-        background 0.12s,
-        color 0.12s;
-}
-.proj-row:hover {
-    color: var(--text-primary);
-}
-.proj-row.expanded {
-    padding: 6px 12px;
-    border-left-color: var(--acc);
-    background: var(--surface-selected);
-    color: var(--acc);
 }
 .proj-row.expanded .proj-name {
     font-weight: 600;
 }
 
 .proj-folder {
-    display: inline-flex;
     color: var(--live);
-    flex-shrink: 0;
 }
 .proj-name {
     flex: 1 1 auto;
@@ -804,7 +733,7 @@
 /* A stack shows one pane at a time, so its strip sits along the top of the
    stack's own area and the panes under it start below the strip. */
 .window-layer {
-    --stack-strip-h: 26px;
+    --stack-strip-h: 32px;
 }
 .stack-strip {
     position: absolute;

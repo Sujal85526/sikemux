@@ -3,7 +3,7 @@ import { browserApi, type BrowserBounds, type BrowserSnapshot } from "../api/bro
 import { useNativeViewsOccluded } from "../state/nativeViews";
 import type { AgentType } from "../state/types";
 import { reportError } from "../state/toast";
-import { IconChevron, IconPlus, IconRefresh } from "./Icons";
+import { IconChevron, IconGlobe, IconPlus, IconRefresh } from "./Icons";
 import { TabBar } from "./TabBar";
 
 const EMPTY_SNAPSHOT: BrowserSnapshot = {
@@ -227,7 +227,12 @@ function BrowserPane({
                     label: tab.title || (tab.url === BLANK_URL ? "New tab" : tab.url),
                     title: tab.url,
                     active: tab.id === snapshot.activeTabId,
-                    icon: <span className={`browser-tab-status${tab.loading ? " loading" : ""}`} aria-hidden="true" />,
+                    icon: <IconGlobe size={13} />,
+                    accessory: tab.loading ? (
+                        <span className="agent-activity state-working" role="img" aria-label="Loading">
+                            <span className="agent-state-loader" aria-hidden="true" />
+                        </span>
+                    ) : undefined,
                 }))}
                 onSelect={(id) => run(browserApi.switchTab(agentId, id), "switch browser tab")}
                 onClose={(id) => run(browserApi.closeTab(agentId, id), "close browser tab")}

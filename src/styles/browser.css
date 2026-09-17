@@ -63,103 +63,34 @@
     --browser-agent: #d97757;
 }
 
+/* The pill, its three states and its close come from the shared strip rule in
+   modern-shell.css. What is left here is the two things a page tab does not
+   share with a file tab: it sits over a pane of its own, and its title is long
+   enough to need a cap on how much room it may take. */
 .tabbar.v-browser {
-    display: flex;
-    align-items: end;
     min-width: 0;
-    padding: 4px 6px 0;
-    gap: 2px;
-    border-bottom: 1px solid var(--line);
-    background: color-mix(in srgb, color-mix(in srgb, var(--rail) 96%, var(--browser-agent) 4%) calc(var(--window-opacity, 1) * 100%), transparent);
+    height: 32px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
 .tabbar.v-browser .tab-wrap {
-    display: flex;
-    align-items: center;
-    width: min(168px, 28%);
-    min-width: 74px;
-    height: 26px;
-    border: 1px solid transparent;
-    border-bottom: 0;
-    border-radius: var(--radius-control) var(--radius-control) 0 0;
-    background: transparent;
-    color: var(--ink-faint);
+    width: min(180px, 30%);
+    min-width: 120px;
 }
 
 .tabbar.v-browser .tab {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    flex: 1;
     min-width: 0;
     height: 100%;
-    flex: 1;
-    padding: 0 0 0 7px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font-family: var(--ui);
-    font-size: 10.5px;
-    text-align: left;
-    cursor: default;
-}
-
-.tabbar.v-browser .tab-wrap:hover {
-    color: var(--ink-dim);
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 80%), transparent);
-}
-
-.tabbar.v-browser .tab-wrap.active {
-    border-color: var(--line);
-    background: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
-    color: var(--ink);
-}
-
-.browser-tab-status {
-    width: 5px;
-    height: 5px;
-    flex: none;
-    border-radius: 50%;
-    background: var(--ink-faint);
-}
-
-.tabbar.v-browser .tab-wrap.active .browser-tab-status {
-    background: var(--browser-agent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--browser-agent) 14%, transparent);
+    padding: 0 var(--space-1h);
 }
 
 .tabbar.v-browser .tab-label {
+    flex: 1 1 auto;
     min-width: 0;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.tabbar.v-browser .tab-x {
-    display: grid;
-    place-items: center;
-    width: 16px;
-    height: 16px;
-    flex: none;
-    margin-right: 4px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-xs);
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    opacity: 0;
-}
-
-.tabbar.v-browser .tab-wrap:hover .tab-x,
-.tabbar.v-browser .tab-wrap.active .tab-x {
-    opacity: 0.72;
-}
-
-.tabbar.v-browser .tab-x:hover {
-    background: var(--rail-3);
-    color: var(--ink);
-    opacity: 1;
+    max-width: none;
+    text-align: left;
 }
 
 .tabbar.v-browser .tab-add,
@@ -178,7 +109,6 @@
 .tabbar.v-browser .tab-add {
     width: 24px;
     height: 24px;
-    margin-bottom: 1px;
 }
 
 .tabbar.v-browser .tab-add:hover,
@@ -195,7 +125,7 @@
 
 .browser-controller {
     align-self: center;
-    margin: 0 2px 5px auto;
+    margin: 0 2px 0 auto;
     padding: 2px 6px;
     border: 1px solid color-mix(in srgb, var(--browser-agent) 38%, var(--line));
     border-radius: var(--radius-chip);
@@ -266,10 +196,6 @@
     animation: browser-progress 900ms ease-in-out infinite;
 }
 
-.browser-tab-status.loading {
-    animation: browser-pulse 900ms ease-in-out infinite;
-}
-
 @keyframes browser-progress {
     from {
         transform: translateX(-100%);
@@ -279,15 +205,8 @@
     }
 }
 
-@keyframes browser-pulse {
-    50% {
-        opacity: 0.3;
-    }
-}
-
 @media (prefers-reduced-motion: reduce) {
-    .browser-toolbar.loading::after,
-    .browser-tab-status.loading {
+    .browser-toolbar.loading::after {
         animation: none;
     }
 }

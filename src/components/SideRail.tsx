@@ -38,11 +38,11 @@ import { AgentStateIndicator } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 
 function kindIcon(kind: SessionKind): ReactNode {
-    if (kind === "project") return <IconFolder size={13} />;
-    if (kind === "aws") return <IconAws size={26} />;
+    if (kind === "project") return <IconFolder size={14} />;
+    if (kind === "aws") return <IconAws size={14} />;
     if (kind === "rundeck") return <IconRundeck size={14} />;
     if (kind === "bruno") return <IconBruno size={14} />;
-    return <IconCommand size={13} />;
+    return <IconCommand size={14} />;
 }
 
 const MAX_BADGE_ICONS = 3;
@@ -135,7 +135,7 @@ function useRail(): RailContextValue {
 function SessionCloseButton({ session }: { session: Session }) {
     return (
         <Tooltip label={`Close ${session.name}`}>
-            <button type="button" className="sess-close" aria-label={`Close ${session.name}`} onClick={() => cmd.closeSession(session.id)}>
+            <button type="button" className="row-x" aria-label={`Close ${session.name}`} onClick={() => cmd.closeSession(session.id)}>
                 <IconClose size={11} />
             </button>
         </Tooltip>
@@ -183,7 +183,7 @@ function ProjectBlock({ s }: { s: Session }) {
                         onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                         onClick={() => rail.selectProject(s.id)}>
                         <span className="proj-folder">
-                            <IconFolder size={12} />
+                            <IconFolder size={14} />
                         </span>
                         <span className="proj-name">{s.name}</span>
                         {visible.length > 0 && (
@@ -280,7 +280,7 @@ function ProjectBlock({ s }: { s: Session }) {
                         onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                         onClick={() => rail.selectProject(s.id)}>
                         <span className="proj-folder">
-                            <IconFolder size={12} />
+                            <IconFolder size={14} />
                         </span>
                         <span className="proj-name">{s.name}</span>
                     </button>
@@ -304,7 +304,6 @@ function ProjectBlock({ s }: { s: Session }) {
                                     e.stopPropagation();
                                     onSubClick(c.role);
                                 }}>
-                                <span className="proj-child-tick" />
                                 <span className="proj-child-ic">{node}</span>
                                 <span className="proj-child-label">{c.label}</span>
                                 {visibleIcons.length > 0 && (

@@ -248,22 +248,16 @@ export function AgentRailBody() {
                             const active = activeAgentId({ windows: windowsById }, session) === a.id;
                             return (
                                 <div key={a.id} className="agent-row-wrap">
-                                    <button className={`agent-row closable${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
+                                    <button className={`agent-row${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
                                         <span className={`agent-glyph ${a.type}`}>
-                                            <span className="agent-glyph-icon">
-                                                <AgentIcon type={a.type} size={20} />
-                                            </span>
+                                            <AgentIcon type={a.type} size={14} />
                                         </span>
                                         <span className="agent-title">{a.title}</span>
                                         {activityById[a.id] && <AgentStateMark state={activityById[a.id].state} />}
                                         {a.launchState === "dormant" && <span className="agent-dormant-label">paused</span>}
                                     </button>
                                     <Tooltip label={`Close ${a.title}`}>
-                                        <button
-                                            type="button"
-                                            className="agent-glyph-x"
-                                            aria-label={`Close ${a.title}`}
-                                            onClick={() => cmd.closeAgent(a.id)}>
+                                        <button type="button" className="row-x" aria-label={`Close ${a.title}`} onClick={() => cmd.closeAgent(a.id)}>
                                             <IconClose size={11} />
                                         </button>
                                     </Tooltip>
@@ -287,7 +281,7 @@ export function AgentRailBody() {
                                     })
                                 }>
                                 <span className={`agent-glyph ${selectedType}`}>
-                                    <AgentIcon type={selectedType} size={20} />
+                                    <AgentIcon type={selectedType} size={14} />
                                 </span>
                                 <span className="agent-title">{s.title}</span>
                                 <span className="agent-ago">{ago(s.mtime)}</span>

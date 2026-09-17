@@ -1063,24 +1063,6 @@
     color: var(--acc);
 }
 
-.sess-close {
-    display: flex;
-    align-items: center;
-    padding: 3px;
-    color: var(--text-tertiary);
-    opacity: 0;
-    transition:
-        opacity 0.12s,
-        color 0.12s;
-}
-.session-row-shell:hover .sess-close,
-.session-row-shell .sess-close:focus-visible {
-    opacity: 1;
-}
-.sess-close:hover {
-    color: var(--danger);
-}
-
 /* Diff tab: the review side of the git pane, driven by the workspace rail. */
 .diff-pane {
     display: flex;
