@@ -78,10 +78,7 @@ describe("composer pickers", () => {
             />,
         );
         fireEvent.click(screen.getByRole("button", { name: "Agent" }));
-        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-            "CodexDefault configuration",
-            "ClaudeDefault configuration",
-        ]);
+        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Codex", "Claude"]);
         expect(screen.getByRole("option", { name: /Codex/ })).toHaveAttribute("aria-selected", "true");
     });
 

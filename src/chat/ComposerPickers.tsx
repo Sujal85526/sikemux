@@ -70,6 +70,7 @@ function Picker({
     onSelect,
     icon,
     hint,
+    compact = false,
 }: {
     name: string;
     label: string;
@@ -79,6 +80,8 @@ function Picker({
     onSelect: (value: string) => void;
     icon?: ReactNode;
     hint?: string;
+    /** Descriptions stay searchable but go unrendered, so the rows read as one line. */
+    compact?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
@@ -172,7 +175,7 @@ function Picker({
                         }}
                     />
                     {hint && <div className="chat-picker-hint">{hint}</div>}
-                    <div id={listId} role="listbox" aria-label={`${name} options`} className="chat-picker-options">
+                    <div id={listId} role="listbox" aria-label={`${name} options`} className={`chat-picker-options${compact ? " compact" : ""}`}>
                         {filtered.map((option, index) => (
                             <button
                                 type="button"
@@ -190,7 +193,7 @@ function Picker({
                                 {option.icon}
                                 <span>
                                     <strong>{option.label}</strong>
-                                    {option.description && <small>{option.description}</small>}
+                                    {option.description && !compact && <small>{option.description}</small>}
                                 </span>
                                 {option.value === value && <IconCheck size={14} />}
                             </button>
@@ -223,7 +226,7 @@ export function ComposerPickers({
     const profiles = useStore((state) => state.providerProfiles);
     const configs = sessionConfigs(setup);
     const agentOptions = HARNESSES.flatMap(({ type, label }) => {
-        const icon = <AgentIcon type={type} size={15} className={`agent-glyph ${type}`} />;
+        const icon = <AgentIcon type={type} size={19} className={`agent-glyph ${type}`} />;
         const owned = profiles.filter((item) => item.provider === type);
         if (owned.length === 0) return [{ value: type, label, description: "Default configuration", icon }];
         return owned.map((item) => ({
@@ -242,8 +245,9 @@ export function ComposerPickers({
                 label={profile?.name || (agent.type === "codex" ? "Codex" : "Claude")}
                 value={agentValue}
                 options={agentOptions}
+                compact
                 disabled={disabled || agentLocked}
-                icon={<AgentIcon type={agent.type} size={15} className={`agent-glyph ${agent.type}`} />}
+                icon={<AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />}
                 hint={agentLocked ? "The agent is fixed after the first message." : "Choose the harness for this chat."}
                 onSelect={(value) => {
                     if (agentLocked || value === agentValue) return;

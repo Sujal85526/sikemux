@@ -1650,6 +1650,11 @@ button.chat-tool:hover {
     color: var(--ink);
 }
 
+.chat-picker-options.compact > button {
+    gap: 9px;
+    padding: 7px 10px;
+}
+
 .chat-picker-options > button > .agent-glyph {
     flex-shrink: 0;
 }
