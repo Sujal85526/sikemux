@@ -304,6 +304,7 @@ function ProjectBlock({ s }: { s: Session }) {
                                     e.stopPropagation();
                                     onSubClick(c.role);
                                 }}>
+                                <span className="proj-child-tick" />
                                 <span className="proj-child-ic">{node}</span>
                                 <span className="proj-child-label">{c.label}</span>
                                 {visibleIcons.length > 0 && (

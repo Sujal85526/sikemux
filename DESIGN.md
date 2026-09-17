@@ -227,9 +227,15 @@ all times, because a label that reflows when the pointer arrives is a label you
 cannot read.
 
 **Selection is the fill and the hairline, and nothing else.** Agent rows also
-carried a 2.5px accent bar down their leading edge, and the project tree drew a
-tick out of its spine into each child — a third and fourth statement of what the
-fill already said, on the only two row types that had them. Both are gone.
+carried a 2.5px accent bar down their leading edge — a third statement of what
+the fill already said, on the one row type that had it. It is gone.
+
+**The project navigator is the exception, and it is deliberate.** Its children
+hang off a spine, so they opt out of the row surface: no fill, no radius, no
+tile behind the icon, and a tick joining each child to the spine. They are read
+as parts of the project above them rather than as peers of it, and a filled pill
+at that depth undoes the only thing the indent is there to say. The opt-out
+lives in one block in `restored-rails.css`, next to the spine it belongs to.
 
 This was four rules too. The rail laid its close on top of the mark and faded
 the mark out to make room, so pointing at an agent erased the icon saying which
