@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  findBundledBrowser,
   readRecordedPid,
   reapLeftoverBrowser,
   signalProcessTree,
@@ -130,3 +131,24 @@ test(
     }
   },
 );
+
+test("findBundledBrowser locates the Chrome for Testing executable", async () => {
+  const runtime = await mkdtemp(join(tmpdir(), "sikemux-dev-runtime-"));
+  const macExecutableDir = join(
+    runtime,
+    "chromium-1234",
+    "chrome-mac-arm64",
+    "Google Chrome for Testing.app",
+    "Contents",
+    "MacOS",
+  );
+  try {
+    await mkdir(macExecutableDir, { recursive: true });
+    const executable = join(macExecutableDir, "Google Chrome for Testing");
+    await writeFile(executable, "");
+    assert.equal(findBundledBrowser(runtime), executable);
+    assert.equal(findBundledBrowser(join(runtime, "absent")), null);
+  } finally {
+    await rm(runtime, { force: true, recursive: true });
+  }
+});

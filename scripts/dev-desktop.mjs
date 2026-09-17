@@ -3,11 +3,40 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
+import { readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// A dev build's resources do not include the bundled browser, so without this
+// the app falls back to whatever Chrome is installed — the user's daily
+// browser, which is unreliable to drive. Point it at the same Chrome for
+// Testing that ships in a release, taken straight from the checkout.
+const browserNames = new Set([
+  "Google Chrome for Testing",
+  "Chromium",
+  "chrome",
+  "chrome.exe",
+]);
+export function findBundledBrowser(runtimeDir) {
+  const pending = [runtimeDir];
+  while (pending.length > 0) {
+    let entries;
+    try {
+      entries = readdirSync(pending.pop(), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = join(entry.parentPath ?? entry.path, entry.name);
+      if (entry.isDirectory()) pending.push(full);
+      else if (browserNames.has(entry.name)) return full;
+    }
+  }
+  return null;
+}
 const signalExitCodes = {
   SIGHUP: 129,
   SIGINT: 130,
@@ -139,6 +168,9 @@ export async function runDevDesktop() {
   const checkout = createHash("sha1").update(root).digest("hex").slice(0, 12);
   const browserPidFile = join(tmpdir(), `sikemux-dev-browser-${checkout}.pid`);
   await reapLeftoverBrowser(browserPidFile, "com.nodelike.sikemux");
+  const bundledBrowser =
+    process.env.SIKEMUX_BROWSER_EXECUTABLE ??
+    findBundledBrowser(join(root, "src-tauri", "browser-runtime"));
   const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const child = spawn(
     command,
@@ -146,7 +178,13 @@ export async function runDevDesktop() {
     {
       cwd: root,
       detached: process.platform !== "win32",
-      env: { ...process.env, SIKEMUX_BROWSER_PID_FILE: browserPidFile },
+      env: {
+        ...process.env,
+        SIKEMUX_BROWSER_PID_FILE: browserPidFile,
+        ...(bundledBrowser
+          ? { SIKEMUX_BROWSER_EXECUTABLE: bundledBrowser }
+          : {}),
+      },
       stdio: "inherit",
       windowsHide: false,
     },
