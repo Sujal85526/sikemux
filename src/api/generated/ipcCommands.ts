@@ -34,6 +34,7 @@ export const IPC_COMMANDS = [
     "browser_reload",
     "browser_pointer",
     "browser_key",
+    "browser_dialog_respond",
     "home_dir",
     "recent_dirs",
     "boot_init",

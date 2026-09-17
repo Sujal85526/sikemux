@@ -191,6 +191,7 @@ pub fn run() {
             browser::browser_reload,
             browser::browser_pointer,
             browser::browser_key,
+            browser::browser_dialog_respond,
             system::home_dir,
             system::recent_dirs,
             system::boot_init,

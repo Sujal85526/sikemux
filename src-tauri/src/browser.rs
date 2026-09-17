@@ -64,14 +64,29 @@ struct BrowserRuntime {
     cdp_http_url: Option<String>,
     state_dir: Option<PathBuf>,
     active_targets: HashMap<String, String>,
-    target_sessions: HashMap<String, String>,
+}
+
+struct PendingCall {
+    session_id: Option<String>,
+    reply: oneshot::Sender<Value>,
+}
+
+/// Chromium hands every page a session of its own as soon as the page exists,
+/// and only a session that was already listening can answer that page's
+/// alert/confirm/prompt dialogs later.
+#[derive(Default)]
+struct PageSessions {
+    by_target: HashMap<String, String>,
+    by_session: HashMap<String, String>,
+    dialogs: HashMap<String, BrowserDialog>,
 }
 
 struct CdpClient {
     sender: mpsc::UnboundedSender<Message>,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
+    pending: Arc<Mutex<HashMap<u64, PendingCall>>>,
     sequence: Arc<AtomicU64>,
     frames: Arc<Mutex<HashMap<String, watch::Sender<Option<BrowserFrame>>>>>,
+    pages: Arc<Mutex<PageSessions>>,
     closed: Arc<AtomicBool>,
 }
 
@@ -190,6 +205,55 @@ fn tab_listing_changed(method: &str, message: &Value) -> bool {
     }
 }
 
+fn attached_page_session(message: &Value, pages: &mut PageSessions) -> Option<String> {
+    if message
+        .pointer("/params/targetInfo/type")
+        .and_then(Value::as_str)
+        != Some("page")
+    {
+        return None;
+    }
+    let session = message.pointer("/params/sessionId")?.as_str()?.to_owned();
+    let target = message
+        .pointer("/params/targetInfo/targetId")?
+        .as_str()?
+        .to_owned();
+    pages.by_target.insert(target.clone(), session.clone());
+    pages.by_session.insert(session.clone(), target);
+    Some(session)
+}
+
+fn dialog_state_changed(method: &str, message: &Value, pages: &mut PageSessions) -> bool {
+    let Some(target) = message
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .and_then(|session| pages.by_session.get(session))
+        .cloned()
+    else {
+        return false;
+    };
+    if method == "Page.javascriptDialogClosed" {
+        return pages.dialogs.remove(&target).is_some();
+    }
+    let text = |field: &str| {
+        message
+            .pointer(&format!("/params/{field}"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    pages.dialogs.insert(
+        target,
+        BrowserDialog {
+            kind: text("type"),
+            message: text("message"),
+            default_prompt: text("defaultPrompt"),
+            url: text("url"),
+        },
+    );
+    true
+}
+
 impl CdpClient {
     async fn connect(
         url: &str,
@@ -200,8 +264,10 @@ impl CdpClient {
             .map_err(|error| AppError::Other(format!("browser CDP connect failed: {error}")))?;
         let (mut writer, mut reader) = socket.split();
         let (sender, mut outbound) = mpsc::unbounded_channel::<Message>();
-        let pending = Arc::new(Mutex::new(HashMap::<u64, oneshot::Sender<Value>>::new()));
+        let pending = Arc::new(Mutex::new(HashMap::<u64, PendingCall>::new()));
         let pending_reader = pending.clone();
+        let pages = Arc::new(Mutex::new(PageSessions::default()));
+        let pages_reader = pages.clone();
         let frames = Arc::new(Mutex::new(HashMap::<
             String,
             watch::Sender<Option<BrowserFrame>>,
@@ -264,19 +330,64 @@ impl CdpClient {
                     continue;
                 }
                 if let Some(method) = value.get("method").and_then(Value::as_str) {
-                    if tab_listing_changed(method, &value) {
-                        on_tabs_changed();
+                    match method {
+                        "Target.attachedToTarget" => {
+                            if let Some(session) =
+                                attached_page_session(&value, &mut *pages_reader.lock().await)
+                            {
+                                let id = sequence_reader.fetch_add(1, Ordering::Relaxed);
+                                let _ = event_sender.send(Message::Text(
+                                    json!({
+                                        "id": id,
+                                        "method": "Page.enable",
+                                        "sessionId": session,
+                                        "params": {}
+                                    })
+                                    .to_string()
+                                    .into(),
+                                ));
+                            }
+                        }
+                        "Target.detachedFromTarget" => {
+                            if let Some(session) =
+                                value.pointer("/params/sessionId").and_then(Value::as_str)
+                            {
+                                let mut pages = pages_reader.lock().await;
+                                if let Some(target) = pages.by_session.remove(session) {
+                                    pages.by_target.remove(&target);
+                                    if pages.dialogs.remove(&target).is_some() {
+                                        on_tabs_changed();
+                                    }
+                                }
+                                pending_reader
+                                    .lock()
+                                    .await
+                                    .retain(|_, call| call.session_id.as_deref() != Some(session));
+                            }
+                        }
+                        "Page.javascriptDialogOpening" | "Page.javascriptDialogClosed" => {
+                            if dialog_state_changed(method, &value, &mut *pages_reader.lock().await)
+                            {
+                                on_tabs_changed();
+                            }
+                        }
+                        _ => {
+                            if tab_listing_changed(method, &value) {
+                                on_tabs_changed();
+                            }
+                        }
                     }
                     continue;
                 }
                 let Some(id) = value.get("id").and_then(Value::as_u64) else {
                     continue;
                 };
-                if let Some(reply) = pending_reader.lock().await.remove(&id) {
-                    let _ = reply.send(value);
+                if let Some(call) = pending_reader.lock().await.remove(&id) {
+                    let _ = call.reply.send(value);
                 }
             }
             frames_reader.lock().await.clear();
+            pages_reader.lock().await.dialogs.clear();
             closed_reader.store(true, Ordering::Release);
             let mut pending = pending_reader.lock().await;
             pending.clear();
@@ -287,8 +398,23 @@ impl CdpClient {
             pending,
             sequence,
             frames,
+            pages,
             closed,
         }))
+    }
+
+    async fn page_session(&self, target_id: &str) -> Option<String> {
+        self.pages.lock().await.by_target.get(target_id).cloned()
+    }
+
+    async fn remember_page_session(&self, target_id: &str, session_id: &str) {
+        let mut pages = self.pages.lock().await;
+        pages
+            .by_target
+            .insert(target_id.to_owned(), session_id.to_owned());
+        pages
+            .by_session
+            .insert(session_id.to_owned(), target_id.to_owned());
     }
 
     fn is_closed(&self) -> bool {
@@ -306,7 +432,13 @@ impl CdpClient {
         }
         let id = self.sequence.fetch_add(1, Ordering::Relaxed);
         let (reply, receive) = oneshot::channel();
-        self.pending.lock().await.insert(id, reply);
+        self.pending.lock().await.insert(
+            id,
+            PendingCall {
+                session_id: session_id.map(str::to_owned),
+                reply,
+            },
+        );
         let mut message = json!({ "id": id, "method": method, "params": params });
         if let Some(session_id) = session_id {
             message["sessionId"] = Value::String(session_id.to_owned());
@@ -323,9 +455,7 @@ impl CdpClient {
             Ok(Ok(response)) => response,
             Ok(Err(_)) => {
                 self.pending.lock().await.remove(&id);
-                return Err(AppError::Other(
-                    "browser CDP response channel closed".into(),
-                ));
+                return Err(AppError::Other("browser CDP session ended".into()));
             }
             Err(_) => {
                 self.pending.lock().await.remove(&id);
@@ -348,6 +478,16 @@ pub struct BrowserTab {
     title: String,
     url: String,
     active: bool,
+    dialog: Option<BrowserDialog>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserDialog {
+    kind: String,
+    message: String,
+    default_prompt: String,
+    url: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -566,6 +706,18 @@ impl BrowserManager {
                 None,
             )
             .await;
+        let _ = cdp
+            .call(
+                "Target.setAutoAttach",
+                json!({
+                    "autoAttach": true,
+                    "waitForDebuggerOnStart": false,
+                    "flatten": true,
+                    "filter": [{ "type": "page" }]
+                }),
+                None,
+            )
+            .await;
         if self.generation.load(Ordering::Acquire) != generation {
             return Err(AppError::Other("browser startup was canceled".into()));
         }
@@ -585,7 +737,6 @@ impl BrowserManager {
         runtime.cdp_http_url = Some(http_url);
         runtime.state_dir = Some(state_dir);
         runtime.active_targets.clear();
-        runtime.target_sessions.clear();
         Ok(())
     }
 
@@ -719,11 +870,8 @@ impl BrowserManager {
         target_id: &str,
     ) -> AppResult<(Arc<CdpClient>, String)> {
         let (cdp, _) = self.cdp_and_state_dir(app).await?;
-        {
-            let runtime = self.runtime.lock().await;
-            if let Some(session_id) = runtime.target_sessions.get(target_id) {
-                return Ok((cdp, session_id.clone()));
-            }
+        if let Some(session_id) = cdp.page_session(target_id).await {
+            return Ok((cdp, session_id));
         }
         let result = cdp
             .call(
@@ -737,11 +885,7 @@ impl BrowserManager {
             .and_then(Value::as_str)
             .ok_or_else(|| AppError::Other("browser target attach returned no session".into()))?
             .to_owned();
-        self.runtime
-            .lock()
-            .await
-            .target_sessions
-            .insert(target_id.to_owned(), session_id.clone());
+        cdp.remember_page_session(target_id, &session_id).await;
         cdp.call("Page.enable", json!({}), Some(&session_id))
             .await?;
         Ok((cdp, session_id))
@@ -772,6 +916,7 @@ impl BrowserManager {
                 .ok()
                 .and_then(|runtime| runtime.active_targets.get(agent_id).cloned())
         });
+        let dialogs = cdp.pages.lock().await.dialogs.clone();
         let mut tabs = targets
             .get("targetInfos")
             .and_then(Value::as_array)
@@ -782,6 +927,7 @@ impl BrowserManager {
                 let id = target.get("targetId")?.as_str()?.to_owned();
                 owned.contains(&id).then(|| BrowserTab {
                     active: active.as_deref() == Some(id.as_str()),
+                    dialog: dialogs.get(&id).cloned(),
                     id,
                     title: target
                         .get("title")
@@ -853,11 +999,7 @@ impl BrowserManager {
             }
         }
         clear_agent_registry(&state_dir, agent_id)?;
-        let mut runtime = self.runtime.lock().await;
-        runtime.active_targets.remove(agent_id);
-        for target_id in target_ids {
-            runtime.target_sessions.remove(&target_id);
-        }
+        self.runtime.lock().await.active_targets.remove(agent_id);
         if close_errors.is_empty() {
             Ok(())
         } else {
@@ -1044,7 +1186,8 @@ fn validate_url_input(url: &str) -> AppResult<()> {
 fn pointer_params(input: &BrowserPointerInput) -> AppResult<Value> {
     let button = input.button.as_deref();
     let valid_button = match input.kind.as_str() {
-        "move" | "wheel" => button.is_none() || button == Some("none"),
+        "move" => matches!(button, None | Some("none" | "left")),
+        "wheel" => button.is_none() || button == Some("none"),
         "down" | "up" => matches!(button, Some("left" | "middle" | "right")),
         _ => false,
     };
@@ -1065,8 +1208,8 @@ fn pointer_params(input: &BrowserPointerInput) -> AppResult<Value> {
             "type": "mouseMoved",
             "x": input.x,
             "y": input.y,
-            "button": "none",
-            "buttons": 0,
+            "button": button.unwrap_or("none"),
+            "buttons": u8::from(button == Some("left")),
         }),
         "down" => json!({
             "type": "mousePressed",
@@ -1508,6 +1651,14 @@ pub async fn browser_start_frames(
         stream.stop().await;
     }
     let (cdp, _) = manager.cdp_and_state_dir(&app).await?;
+    // A tab behind another one in the same headless window never paints, so
+    // its screencast would sit on one stale frame.
+    cdp.call(
+        "Target.activateTarget",
+        json!({ "targetId": target_id }),
+        None,
+    )
+    .await?;
     let id = manager.stream_sequence.fetch_add(1, Ordering::Relaxed);
     let stream = start_frame_stream(cdp, &target_id, viewport, on_frame, id).await?;
     streams.insert(agent_id, stream);
@@ -1714,7 +1865,6 @@ pub async fn browser_close_tab(
         .await?;
     unregister_target(&state_dir, &target_id)?;
     let mut runtime = manager.runtime.lock().await;
-    runtime.target_sessions.remove(&target_id);
     if runtime.active_targets.get(&agent_id) == Some(&target_id) {
         runtime.active_targets.remove(&agent_id);
     }
@@ -1841,6 +1991,39 @@ pub async fn browser_pointer(
 }
 
 #[tauri::command]
+pub async fn browser_dialog_respond(
+    app: AppHandle,
+    manager: State<'_, BrowserManager>,
+    agent_id: String,
+    target_id: String,
+    accept: bool,
+    prompt_text: Option<String>,
+) -> AppResult<()> {
+    validate_agent_id(&agent_id)?;
+    validate_target_id(&target_id)?;
+    if prompt_text
+        .as_deref()
+        .is_some_and(|text| text.len() > 16 * 1024 || text.contains('\0'))
+    {
+        return Err(AppError::BadArg("invalid browser dialog input"));
+    }
+    let (cdp, state_dir) = manager.cdp_and_state_dir(&app).await?;
+    if !owned_target_ids(&state_dir, &agent_id)?.contains(&target_id) {
+        return Err(AppError::BadArg("browser tab does not belong to agent"));
+    }
+    let Some(session_id) = cdp.page_session(&target_id).await else {
+        return Err(AppError::Other("browser tab is not attached".into()));
+    };
+    let mut params = json!({ "accept": accept });
+    if let Some(text) = prompt_text.filter(|_| accept) {
+        params["promptText"] = Value::String(text);
+    }
+    cdp.call("Page.handleJavaScriptDialog", params, Some(&session_id))
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn browser_key(
     app: AppHandle,
     manager: State<'_, BrowserManager>,
@@ -1888,13 +2071,15 @@ pub async fn browser_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        broker_request_authorized, clear_agent_registry, editing_commands, initialize_registry,
-        key_params, normalize_url, owned_target_ids, pointer_params, read_active_target,
-        register_target, validate_agent_id, validate_target_id, validate_url_input,
-        virtual_key_code, write_active_target, BrowserKeyInput, BrowserPointerInput,
+        attached_page_session, broker_request_authorized, clear_agent_registry,
+        dialog_state_changed, editing_commands, initialize_registry, key_params, normalize_url,
+        owned_target_ids, pointer_params, read_active_target, register_target, validate_agent_id,
+        validate_target_id, validate_url_input, virtual_key_code, write_active_target,
+        BrowserKeyInput, BrowserPointerInput, PageSessions,
     };
     #[cfg(unix)]
     use super::{configure_browser_process_group, terminate_and_reap_browser_child};
+    use serde_json::json;
     #[cfg(unix)]
     use std::process::{Command, Stdio};
 
@@ -2151,6 +2336,212 @@ mod tests {
         assert_eq!(wheel["type"], "mouseWheel");
         assert!(wheel.get("button").is_none());
         assert!(wheel.get("clickCount").is_none());
+    }
+
+    #[test]
+    fn a_move_with_the_button_held_reads_as_a_drag_to_the_page() {
+        let dragged = pointer_params(&BrowserPointerInput {
+            kind: "move".into(),
+            x: 12.0,
+            y: 18.0,
+            button: Some("left".into()),
+            delta_x: 0.0,
+            delta_y: 0.0,
+        })
+        .unwrap();
+        assert_eq!(dragged["button"], "left");
+        assert_eq!(dragged["buttons"], 1);
+        assert!(pointer_params(&BrowserPointerInput {
+            kind: "move".into(),
+            x: 0.0,
+            y: 0.0,
+            button: Some("right".into()),
+            delta_x: 0.0,
+            delta_y: 0.0,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn dialogs_are_tracked_per_page_through_the_session_that_saw_them_open() {
+        let mut pages = PageSessions::default();
+        assert!(attached_page_session(
+            &json!({"params": {"sessionId": "worker", "targetInfo": {"targetId": "W1", "type": "service_worker"}}}),
+            &mut pages
+        )
+        .is_none());
+        assert_eq!(
+            attached_page_session(
+                &json!({"params": {"sessionId": "S1", "targetInfo": {"targetId": "T1", "type": "page"}}}),
+                &mut pages
+            )
+            .as_deref(),
+            Some("S1")
+        );
+        let opening = json!({"sessionId": "S1", "params": {"type": "confirm", "message": "Leave?", "url": "https://example.com/", "defaultPrompt": ""}});
+        assert!(dialog_state_changed(
+            "Page.javascriptDialogOpening",
+            &opening,
+            &mut pages
+        ));
+        assert_eq!(pages.dialogs["T1"].kind, "confirm");
+        assert_eq!(pages.dialogs["T1"].message, "Leave?");
+        let stranger = json!({"sessionId": "S9", "params": {"type": "alert"}});
+        assert!(!dialog_state_changed(
+            "Page.javascriptDialogOpening",
+            &stranger,
+            &mut pages
+        ));
+        let closed = json!({"sessionId": "S1", "params": {"result": true}});
+        assert!(dialog_state_changed(
+            "Page.javascriptDialogClosed",
+            &closed,
+            &mut pages
+        ));
+        assert!(pages.dialogs.is_empty());
+        assert!(!dialog_state_changed(
+            "Page.javascriptDialogClosed",
+            &closed,
+            &mut pages
+        ));
+    }
+
+    /// A page's alert freezes its renderer, so every input sent to it hangs
+    /// until the dialog is answered, and Chromium never answers a call that was
+    /// still in flight when the tab closed. Both used to surface 15 seconds
+    /// later as a toast, long after the tab was gone.
+    #[tokio::test]
+    #[ignore = "requires SIKEMUX_BROWSER_EXECUTABLE pointing to full Chromium"]
+    async fn chromium_dialogs_are_surfaced_answered_and_do_not_outlive_their_tab() {
+        use super::*;
+        let executable = std::env::var_os("SIKEMUX_BROWSER_EXECUTABLE").unwrap();
+        let profile = tempfile::tempdir().unwrap();
+        let mut command = Command::new(executable);
+        command
+            .args([
+                "--headless=new",
+                "--remote-debugging-port=0",
+                "--no-first-run",
+                &format!("--user-data-dir={}", profile.path().display()),
+                "about:blank",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        configure_browser_process_group(&mut command);
+        let _child = SpawnedBrowserChild::new(command.spawn().unwrap());
+        let (_, endpoint) = wait_for_debug_endpoint(&profile.path().join("DevToolsActivePort"))
+            .await
+            .unwrap();
+        let tab_news = Arc::new(AtomicU64::new(0));
+        let counter = tab_news.clone();
+        let cdp = CdpClient::connect(&endpoint, move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        })
+        .await
+        .unwrap();
+        cdp.call(
+            "Target.setAutoAttach",
+            json!({"autoAttach": true, "waitForDebuggerOnStart": false, "flatten": true, "filter": [{"type": "page"}]}),
+            None,
+        )
+        .await
+        .unwrap();
+        let page = "data:text/html,<button style=\"width:200px;height:100px\" onclick=\"document.title=confirm('Sure?')?'yes':'no'\">Ask</button>";
+        let target = cdp
+            .call("Target.createTarget", json!({"url": page}), None)
+            .await
+            .unwrap();
+        let target = target["targetId"].as_str().unwrap().to_owned();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let session = cdp
+            .page_session(&target)
+            .await
+            .expect("auto-attach gave the page a session");
+        // The data: page replaces the initial blank document a little after
+        // the target exists, and only a painted button can be clicked.
+        let painted = json!({
+            "expression": "new Promise(done => { const tick = () => document.querySelector('button')?.offsetHeight ? requestAnimationFrame(() => requestAnimationFrame(done)) : requestAnimationFrame(tick); tick(); })",
+            "awaitPromise": true
+        });
+        let started = std::time::Instant::now();
+        while cdp
+            .call("Runtime.evaluate", painted.clone(), Some(&session))
+            .await
+            .is_err()
+        {
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "page never painted"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let click = |kind: &'static str| {
+            let cdp = cdp.clone();
+            let session = session.clone();
+            async move {
+                cdp.call(
+                    "Input.dispatchMouseEvent",
+                    json!({"type": kind, "x": 40, "y": 40, "button": "left", "clickCount": 1}),
+                    Some(&session),
+                )
+                .await
+            }
+        };
+        click("mousePressed").await.unwrap();
+        let news_before = tab_news.load(Ordering::Relaxed);
+        let release = tokio::spawn(click("mouseReleased"));
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(
+            !release.is_finished(),
+            "the release should hang behind the dialog"
+        );
+        let dialog = cdp
+            .pages
+            .lock()
+            .await
+            .dialogs
+            .get(&target)
+            .cloned()
+            .unwrap();
+        assert_eq!(dialog.kind, "confirm");
+        assert_eq!(dialog.message, "Sure?");
+        assert!(tab_news.load(Ordering::Relaxed) > news_before);
+        cdp.call(
+            "Page.handleJavaScriptDialog",
+            json!({"accept": true}),
+            Some(&session),
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), release)
+            .await
+            .expect("answering the dialog releases the click")
+            .unwrap()
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(cdp.pages.lock().await.dialogs.is_empty());
+        let title = cdp
+            .call(
+                "Runtime.evaluate",
+                json!({"expression": "document.title"}),
+                Some(&session),
+            )
+            .await
+            .unwrap();
+        assert_eq!(title["result"]["value"], "yes");
+
+        click("mousePressed").await.unwrap();
+        let stuck = tokio::spawn(click("mouseReleased"));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        cdp.call("Target.closeTarget", json!({"targetId": target}), None)
+            .await
+            .unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(3), stuck)
+            .await
+            .expect("closing the tab fails its stuck input right away")
+            .unwrap();
+        assert!(outcome.is_err());
+        assert!(cdp.page_session(&target).await.is_none());
     }
 
     #[test]
