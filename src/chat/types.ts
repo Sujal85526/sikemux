@@ -82,7 +82,7 @@ export type ChatPart =
     | { id: string; kind: "text"; text: string }
     | { id: string; kind: "thought"; text: string }
     | { id: string; kind: "content"; content: AcpContentBlock }
-    | { id: string; kind: "tool"; tool: AcpToolCall }
+    | { id: string; kind: "tool"; tool: AcpToolCall; startedAt: number; endedAt?: number }
     | { id: string; kind: "subagent"; subagent: AcpSubagent }
     | { id: string; kind: "notice"; notice: AcpTaskNotice };
 
@@ -91,6 +91,8 @@ export interface ChatMessage {
     role: "user" | "assistant";
     parts: ChatPart[];
     attachments?: string[];
+    /** When the turn started, for the line that says who is speaking. */
+    at: number;
 }
 
 export interface ChatState {

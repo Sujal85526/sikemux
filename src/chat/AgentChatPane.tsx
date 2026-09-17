@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -22,12 +22,17 @@ import {
     IconClose,
     IconCommand,
     IconFile,
+    IconGlobe,
+    IconPencil,
     IconPlus,
+    IconSearch,
     IconShieldBolt,
     IconTimer,
+    IconUser,
     IconWarning,
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
+import { collapseDiff, toolDiff, type ToolDiff } from "./diff";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import type {
     AcpAsyncTask,
@@ -139,28 +144,178 @@ function activityLabel(tool: AcpToolCall): string {
     return name.length > 0 && name.length <= 40 ? name : "Working…";
 }
 
-function ToolPart({ tool }: { tool: AcpToolCall }) {
-    const status = tool.status ?? "pending";
-    const complete = status === "completed";
-    const failed = status === "failed";
-    const detail = tool.rawOutput ?? tool.rawInput ?? tool.content;
+const KIND_WORDS: Record<string, string> = {
+    read: "read",
+    edit: "edit",
+    delete: "delete",
+    move: "move",
+    search: "search",
+    execute: "run",
+    think: "think",
+    fetch: "fetch",
+    switch_mode: "mode",
+};
+
+function toolKind(tool: AcpToolCall): string {
+    const byKind = KIND_WORDS[tool.kind ?? ""];
+    if (byKind) return byKind;
     const { scope, name } = toolLabel(tool.title);
-    const head = (
+    return scope ?? name.split(/[\s(]/)[0].slice(0, 12).toLowerCase();
+}
+
+function ToolKindIcon({ tool }: { tool: AcpToolCall }) {
+    if (tool.status === "failed") return <IconWarning size={11} />;
+    switch (tool.kind) {
+        case "read":
+            return <IconFile size={11} />;
+        case "search":
+            return <IconSearch size={11} />;
+        case "edit":
+        case "move":
+        case "delete":
+            return <IconPencil size={11} />;
+        case "execute":
+            return <IconCommand size={11} />;
+        case "fetch":
+            return <IconGlobe size={11} />;
+        default:
+            return <IconAgent size={11} />;
+    }
+}
+
+/* The row has one line for the target, so a path shows the name it ends in and
+   keeps the rest in the tooltip. A command is not a path and stays as typed. */
+function toolTarget(tool: AcpToolCall): string {
+    const line = toolLabel(tool.title).name.split("\n")[0].trim();
+    if (!line.includes("/") || /\s/.test(line)) return line;
+    return basename(line) || line;
+}
+
+function durationLabel(ms: number): string {
+    if (ms < 950) return `${(ms / 1000).toFixed(1)}s`;
+    const seconds = Math.round(ms / 1000);
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+function timeLabel(at: number): string {
+    return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/* What a failed call left behind, short enough to sit under it. Anything
+   longer belongs in the terminal the call came from. */
+function failureText(tool: AcpToolCall): string | null {
+    if (tool.status !== "failed") return null;
+    const output = tool.rawOutput;
+    const record = recordOf(output);
+    const raw =
+        typeof output === "string"
+            ? output
+            : typeof record?.output === "string"
+              ? record.output
+              : typeof record?.stderr === "string"
+                ? record.stderr
+                : typeof record?.error === "string"
+                  ? record.error
+                  : null;
+    if (!raw) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    return trimmed.length > 400 ? `${trimmed.slice(0, 400)}…` : trimmed;
+}
+
+function DiffBody({ diff }: { diff: ToolDiff }) {
+    const [expanded, setExpanded] = useState(false);
+    const view = useMemo(() => collapseDiff(diff.lines, expanded ? Number.MAX_SAFE_INTEGER : 3), [diff.lines, expanded]);
+    return (
+        <div className="chat-diff">
+            <div className="chat-diff-head">
+                <IconFile size={10} />
+                <span className="chat-diff-path" title={diff.path}>
+                    {diff.path}
+                </span>
+                <span className="chat-diff-adds">+{diff.adds}</span>
+                <span className="chat-diff-dels">−{diff.dels}</span>
+            </div>
+            <div className="chat-diff-body">
+                {view.rows.map((row, index) =>
+                    "gap" in row ? (
+                        <button type="button" className="chat-diff-gap" key={`gap-${index}`} onClick={() => setExpanded(true)}>
+                            {row.gap} unchanged {row.gap === 1 ? "line" : "lines"}
+                        </button>
+                    ) : (
+                        <div className={`chat-diff-line${row.sign === "+" ? " add" : row.sign === "-" ? " del" : ""}`} key={index}>
+                            <span className="chat-diff-ln">{row.sign === "+" ? row.newLine : row.oldLine}</span>
+                            <span className="chat-diff-sign">{row.sign}</span>
+                            <span>
+                                {row.mark ? (
+                                    <>
+                                        {row.text.slice(0, row.mark[0])}
+                                        <mark>{row.text.slice(row.mark[0], row.mark[1])}</mark>
+                                        {row.text.slice(row.mark[1])}
+                                    </>
+                                ) : (
+                                    row.text
+                                )}
+                            </span>
+                        </div>
+                    ),
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
+    const [open, setOpen] = useState(false);
+    const tool = part.tool;
+    // An MCP call is named for the server it went to, whatever kind it claims.
+    const rowKind = toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind;
+    const diff = useMemo(() => (tool.status === "completed" || tool.status === "failed" ? toolDiff(tool) : null), [tool]);
+    const failure = failureText(tool);
+    const detail = diff ?? failure;
+    const elapsed = part.endedAt !== undefined ? durationLabel(part.endedAt - part.startedAt) : null;
+    const status = tool.status ?? "pending";
+    const body = (
         <>
-            <span className="chat-tool-mark">
-                {complete ? <IconCheck size={11} /> : failed ? <IconWarning size={11} /> : <IconCommand size={11} />}
+            <span className="chat-tool-tick" aria-hidden="true" />
+            <span className="chat-tool-icon">
+                <ToolKindIcon tool={tool} />
             </span>
-            {scope && <span className="chat-tool-scope">{scope}</span>}
-            <span className="chat-tool-name">{name}</span>
-            {!complete && <span className="chat-tool-status">{status.replace(/_/g, " ")}</span>}
+            <span className="chat-tool-kind">{toolKind(tool)}</span>
+            <span className="chat-tool-target">{toolTarget(tool)}</span>
+            <span className="chat-tool-end">
+                {diff && (
+                    <span className="chat-tool-stat">
+                        <span className="chat-diff-adds">+{diff.adds}</span>
+                        <span className="chat-diff-dels">−{diff.dels}</span>
+                    </span>
+                )}
+                {elapsed ?? <span className="chat-tool-spinner" aria-hidden="true" />}
+                {detail && <IconChevron size={10} className="chat-tool-chevron" />}
+            </span>
         </>
     );
-    if (detail === undefined) return <div className={`chat-tool status-${status} bare`}>{head}</div>;
     return (
-        <details className={`chat-tool status-${status}`}>
-            <summary>{head}</summary>
-            <pre>{formatDetail(detail)}</pre>
-        </details>
+        <div className="chat-tool-node">
+            {detail ? (
+                <button
+                    type="button"
+                    className={`chat-tool status-${status}`}
+                    data-kind={rowKind}
+                    title={tool.title}
+                    aria-expanded={open}
+                    onClick={() => setOpen((current) => !current)}>
+                    {body}
+                </button>
+            ) : (
+                <div className={`chat-tool status-${status}`} data-kind={rowKind} title={tool.title}>
+                    {body}
+                </div>
+            )}
+            {detail && open && (
+                <div className="chat-tool-detail">{diff ? <DiffBody diff={diff} /> : <div className="chat-tool-out">{failure}</div>}</div>
+            )}
+        </div>
     );
 }
 
@@ -196,7 +351,21 @@ function ChatLink({ href, children }: { href?: string; children?: ReactNode }) {
     );
 }
 
-const markdownComponents = { a: ChatLink };
+function ChatCode({ className, children }: { className?: string; children?: ReactNode }) {
+    const info = /language-(\S+)/.exec(className ?? "")?.[1];
+    if (!info) return <code className={className}>{children}</code>;
+    return (
+        <>
+            <span className="chat-code-title">
+                <IconFile size={10} />
+                {decodeURIComponent(info)}
+            </span>
+            <code className={className}>{children}</code>
+        </>
+    );
+}
+
+const markdownComponents = { a: ChatLink, code: ChatCode };
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
@@ -241,7 +410,7 @@ function MessagePart({ part }: { part: ChatPart }) {
             </div>
         );
     }
-    if (part.kind === "tool") return <ToolPart tool={part.tool} />;
+    if (part.kind === "tool") return <ToolRow part={part} />;
     if (part.kind === "subagent") return <SubagentPart subagent={part.subagent} />;
     if (part.kind === "notice") return <NoticePart notice={part.notice} />;
     return <ContentPart part={part} />;
@@ -307,30 +476,30 @@ function ToolGroup({ tools }: { tools: Extract<ChatPart, { kind: "tool" }>[] }) 
     const running = tools.some((part) => toolRunning(part.tool));
     const failed = tools.some((part) => part.tool.status === "failed");
     const open = reader ?? running;
+    const spent = tools.reduce((total, part) => total + (part.endedAt !== undefined ? part.endedAt - part.startedAt : 0), 0);
+    /* One column for every call in the run, as wide as the longest name in it:
+       a run of reads stays tight, one that called an MCP server gets the room. */
+    const kindWidth = Math.min(16, Math.max(4, ...tools.map((part) => toolKind(part.tool).length)));
     return (
-        <details
-            className="chat-tools"
-            open={open}
-            // Opening and closing it ourselves fires a toggle too; only a
-            // toggle that disagrees with us came from the reader.
-            onToggle={(event) => {
-                if (event.currentTarget.open !== open) setReader(event.currentTarget.open);
-            }}>
-            <summary>
-                <span className="chat-tool-mark">
+        <div className="chat-tools">
+            <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={() => setReader(!open)}>
+                <span className={`chat-tools-mark${failed ? " failed" : ""}`}>
                     {running ? <IconCommand size={11} /> : failed ? <IconWarning size={11} /> : <IconCheck size={11} />}
                 </span>
                 <span className="chat-tools-count">
-                    {tools.length} {tools.length === 1 ? "tool call" : "tool calls"}
+                    {tools.length} tool {tools.length === 1 ? "call" : "calls"}
                 </span>
+                {spent > 0 && <span className="chat-tools-time">{durationLabel(spent)}</span>}
                 <IconChevron size={10} className="chat-tools-chevron" />
-            </summary>
-            <div className="chat-tools-body">
-                {tools.map((part) => (
-                    <ToolPart key={part.id} tool={part.tool} />
-                ))}
-            </div>
-        </details>
+            </button>
+            {open && (
+                <div className="chat-tools-body" style={{ "--chat-kind": `${kindWidth}ch` } as CSSProperties}>
+                    {tools.map((part) => (
+                        <ToolRow key={part.id} part={part} />
+                    ))}
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -416,7 +585,7 @@ function ChatActivity({ label }: { label: string }) {
     }, []);
     return (
         <div className="chat-activity" role="status">
-            <span className="chat-activity-loader" aria-hidden="true" />
+            <span className="chat-activity-dot" aria-hidden="true" />
             <span className="chat-activity-label">{label}</span>
             {seconds > 0 && (
                 <span className="chat-activity-elapsed" aria-hidden="true">
@@ -427,10 +596,15 @@ function ChatActivity({ label }: { label: string }) {
     );
 }
 
-const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: ChatMessage }) {
+const ChatMessageRow = memo(function ChatMessageRow({ message, speaker }: { message: ChatMessage; speaker: string }) {
     return (
         <article className={`chat-message ${message.role}`}>
             <div className="chat-message-content">
+                <div className="chat-turn-head">
+                    {message.role === "user" ? <IconUser size={11} /> : <IconAgent size={11} />}
+                    <span className="chat-turn-who">{message.role === "user" ? "you" : speaker}</span>
+                    <span className="chat-turn-time">{timeLabel(message.at)}</span>
+                </div>
                 {message.attachments && message.attachments.length > 0 && (
                     <div className="chat-message-attachments">
                         {message.attachments.map((path) => (
@@ -912,6 +1086,7 @@ export function AgentChatPane({
         }
         return null;
     }, [displayState.messages]);
+    const speaker = agent.model || profile?.name || agent.type;
     const connecting = connectingLabel(displayState.connection);
     /* A permission card already says what the turn is waiting on, so a spinner
        beside it would only compete with it. */
@@ -1005,7 +1180,7 @@ export function AgentChatPane({
                                     ref={virtualizer.measureElement}
                                     className="chat-virtual-row"
                                     style={{ transform: `translateY(${item.start}px)` }}>
-                                    <ChatMessageRow message={message} />
+                                    <ChatMessageRow message={message} speaker={speaker} />
                                 </div>
                             );
                         })}

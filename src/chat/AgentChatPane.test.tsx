@@ -133,6 +133,22 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+/* The virtualizer keeps a row out of the DOM until the scroller has a size,
+   and jsdom measures everything as nothing. */
+async function openTranscript(): Promise<void> {
+    render(<AgentChatPane agent={{ ...agent, model: "gpt-6-astra" }} cwd="/repo" active visible onBusyChange={() => {}} />);
+    const editor = screen.getByRole("textbox", { name: "Message agent" });
+    await waitFor(() => expect(editor).toBeEnabled());
+    fireEvent.change(editor, { target: { value: "Look at the styles" } });
+    fireEvent.keyDown(editor, { key: "Enter" });
+    const scroller = document.querySelector(".chat-scroll") as HTMLElement;
+    fakeScroller(scroller, 400);
+    Object.defineProperty(scroller, "offsetWidth", { configurable: true, get: () => 600 });
+    Object.defineProperty(scroller, "offsetHeight", { configurable: true, get: () => 400 });
+    reportResize(scroller);
+    await screen.findByRole("status");
+}
+
 describe("AgentChatPane", () => {
     it("keeps receiving hidden session updates while freezing transcript rendering", async () => {
         const props = { agent, cwd: "/repo", active: true, visible: true, onBusyChange: () => {} };
@@ -365,20 +381,7 @@ describe("AgentChatPane", () => {
     });
 
     it("folds a run of tool calls away once it finishes, and leaves reasoning in plain sight", async () => {
-        render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        await waitFor(() => expect(editor).toBeEnabled());
-        fireEvent.change(editor, { target: { value: "Read the styles" } });
-        fireEvent.keyDown(editor, { key: "Enter" });
-        const scroller = document.querySelector(".chat-scroll") as HTMLElement;
-        fakeScroller(scroller, 400);
-        // The virtualizer keeps a row out of the DOM until the scroller has a
-        // size, and jsdom measures everything as nothing.
-        Object.defineProperty(scroller, "offsetWidth", { configurable: true, get: () => 600 });
-        Object.defineProperty(scroller, "offsetHeight", { configurable: true, get: () => 400 });
-        reportResize(scroller);
-        expect(await screen.findByRole("status")).toHaveTextContent("Thinking…");
-
+        await openTranscript();
         emit("session_update", {
             sessionId: "session-1",
             update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Weighing the two options" } },
@@ -391,9 +394,8 @@ describe("AgentChatPane", () => {
         }
 
         expect(await screen.findByText("Weighing the two options")).toBeVisible();
-        const group = document.querySelector(".chat-tools") as HTMLDetailsElement;
-        expect(group.open).toBe(true);
-        expect(group).toHaveTextContent("2 tool calls");
+        const run = await screen.findByRole("button", { name: /2 tool calls/ });
+        expect(run).toHaveAttribute("aria-expanded", "true");
 
         for (const toolCallId of ["tool-1", "tool-2"]) {
             emit("session_update", {
@@ -401,10 +403,119 @@ describe("AgentChatPane", () => {
                 update: { sessionUpdate: "tool_call_update", toolCallId, status: "completed" },
             });
         }
-        await waitFor(() => expect(group.open).toBe(false));
+        await waitFor(() => expect(run).toHaveAttribute("aria-expanded", "false"));
+        expect(document.querySelectorAll(".chat-tool")).toHaveLength(0);
 
-        fireEvent.click(group.querySelector("summary") as HTMLElement);
-        expect(group.open).toBe(true);
+        fireEvent.click(run);
+        expect(run).toHaveAttribute("aria-expanded", "true");
+        expect(document.querySelectorAll(".chat-tool")).toHaveLength(2);
+    });
+
+    it("hangs each call off the run as a kind, a target and how long it took", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-1",
+                kind: "execute",
+                title: "pnpm vitest run src/lib/shaderField.test.ts",
+                status: "in_progress",
+            },
+        });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-2",
+                kind: "read",
+                title: "src/components/browser/BrowserPane.tsx",
+                status: "completed",
+            },
+        });
+
+        const rows = await screen.findAllByTitle(/shaderField|BrowserPane/);
+        expect(rows[0]).toHaveTextContent("run");
+        expect(rows[0]).toHaveTextContent("pnpm vitest run src/lib/shaderField.test.ts");
+        // A path shows the name it ends in; the whole path stays in the tooltip.
+        expect(rows[1]).toHaveTextContent("BrowserPane.tsx");
+        expect(rows[1]).not.toHaveTextContent("src/components");
+        expect(rows[1]).toHaveAttribute("title", "src/components/browser/BrowserPane.tsx");
+    });
+
+    it("opens an edit onto the hunk it wrote, and a failure onto why", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-1",
+                kind: "edit",
+                title: "src/styles/stage.css",
+                status: "completed",
+                content: [
+                    {
+                        type: "diff",
+                        path: "src/styles/stage.css",
+                        oldText: ".stage {\n    background: var(--pane);\n}\n",
+                        newText: ".stage {\n    background: transparent;\n}\n",
+                    },
+                ],
+            },
+        });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-2",
+                kind: "execute",
+                title: "pnpm vitest run",
+                status: "failed",
+                rawOutput: { output: "1 failed · expected rgba(26,22,36,.72)" },
+            },
+        });
+
+        fireEvent.click(await screen.findByRole("button", { name: /2 tool calls/ }));
+        const edit = await screen.findByTitle("src/styles/stage.css");
+        expect(edit).toHaveTextContent("+1");
+        expect(edit).toHaveTextContent("−1");
+        expect(screen.queryByText(/background: transparent;/)).not.toBeInTheDocument();
+
+        fireEvent.click(edit);
+        const added = await waitFor(() => document.querySelector(".chat-diff-line.add") as HTMLElement);
+        expect(added).toHaveTextContent("background: transparent;");
+        // Only the part that changed is marked, not the whole line.
+        expect(added.querySelector("mark")).toHaveTextContent("transparent");
+        expect(document.querySelector(".chat-diff-line.del")).toHaveTextContent("background: var(--pane);");
+
+        fireEvent.click(screen.getByTitle("pnpm vitest run"));
+        expect(await screen.findByText(/1 failed/)).toBeInTheDocument();
+    });
+
+    it("names an mcp call for the server it went to, and gives the column room for it", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "mcp__atlassian__addCommentToJiraIssue", status: "in_progress" },
+        });
+
+        const row = await screen.findByTitle("mcp__atlassian__addCommentToJiraIssue");
+        expect(row).toHaveTextContent("atlassian");
+        expect(row).toHaveTextContent("addCommentToJiraIssue");
+        expect(row).toHaveAttribute("data-kind", "mcp");
+        expect((document.querySelector(".chat-tools-body") as HTMLElement).style.getPropertyValue("--chat-kind")).toBe("9ch");
+    });
+
+    it("says who is speaking and when, above the turn", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done." } },
+        });
+
+        const heads = await screen.findAllByText(/^(you|gpt-6-astra|codex)$/);
+        expect(heads[0]).toHaveTextContent("you");
+        expect(heads.at(-1)).toHaveTextContent("gpt-6-astra");
     });
 
     it("shows adapter progress and retries failed startup", async () => {

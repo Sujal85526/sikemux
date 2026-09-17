@@ -74,7 +74,7 @@ function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind
             contentText !== undefined
                 ? { id: `${messageId}-${partKind}-0`, kind: partKind, text: contentText }
                 : { id: `${messageId}-content-0`, kind: "content", content: chunk.content };
-        messages.push({ id: messageId, role, parts: [part] });
+        messages.push({ id: messageId, role, parts: [part], at: Date.now() });
         nextId += 1;
     } else {
         const message = messages[existingIndex];
@@ -100,7 +100,7 @@ function appendPart(transcript: Transcript, part: ChatPart): Transcript {
         messages[messages.length - 1] = { ...last, parts: [...last.parts, part] };
         return { messages, nextId: transcript.nextId };
     }
-    messages.push({ id: `agent-part-${transcript.nextId}`, role: "assistant", parts: [part] });
+    messages.push({ id: `agent-part-${transcript.nextId}`, role: "assistant", parts: [part], at: Date.now() });
     return { messages, nextId: transcript.nextId + 1 };
 }
 
@@ -114,15 +114,18 @@ function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean)
         const current = parts[partIndex];
         if (current.kind !== "tool") continue;
         const patch = Object.fromEntries(Object.entries(update).filter(([key, value]) => value !== undefined && !(key === "title" && value === "")));
+        const tool = merge ? { ...current.tool, ...patch } : update;
+        const ended = tool.status === "completed" || tool.status === "failed";
         parts[partIndex] = {
             ...current,
-            tool: merge ? { ...current.tool, ...patch } : update,
+            tool,
+            ...(ended && current.endedAt === undefined ? { endedAt: Date.now() } : {}),
         };
         messages[messageIndex] = { ...message, parts };
         return { messages, nextId: transcript.nextId };
     }
 
-    return appendPart(transcript, { id: `tool-${update.toolCallId}`, kind: "tool", tool: update });
+    return appendPart(transcript, { id: `tool-${update.toolCallId}`, kind: "tool", tool: update, startedAt: Date.now() });
 }
 
 /** Applies the updates a session streams regardless of whose session it is. */
@@ -324,6 +327,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                     {
                         id,
                         role: "user",
+                        at: Date.now(),
                         parts: action.text.trim() ? [{ id: `${id}-text`, kind: "text", text: action.text }] : [],
                         ...(action.paths.length ? { attachments: action.paths } : {}),
                     },
