@@ -23,6 +23,7 @@ const DEFAULT_WATCHDOG_SAMPLE_INTERVAL_MS: u64 = 25;
 const DEFAULT_WATCHDOG_HANG_THRESHOLD_MS: u64 = 100;
 const UI_WATCHDOG_SAMPLE_INTERVAL_MS: u64 = 250;
 const UI_WATCHDOG_HANG_THRESHOLD_MS: u64 = 2_000;
+const IDLE_WATCHDOG_WAIT: Duration = Duration::from_secs(60);
 
 static GLOBAL_OBSERVABILITY: OnceLock<Observability> = OnceLock::new();
 
@@ -802,6 +803,9 @@ struct HeartbeatInner {
     last_beat_us: AtomicU64,
     armed: AtomicBool,
     visible: AtomicBool,
+    /// The watchdog parks here while there is nothing to watch, so arming or
+    /// showing the window has to tell it to come back.
+    waker: Mutex<Option<Arc<WatchdogSignal>>>,
 }
 
 /// A cheap, monotonic heartbeat that may be updated from any thread.
@@ -829,7 +833,25 @@ impl Heartbeat {
                 last_beat_us: AtomicU64::new(global_observability().now_us()),
                 armed: AtomicBool::new(true),
                 visible: AtomicBool::new(true),
+                waker: Mutex::new(None),
             }),
+        }
+    }
+
+    fn attach_waker(&self, signal: Arc<WatchdogSignal>) {
+        match self.inner.waker.lock() {
+            Ok(mut waker) => *waker = Some(signal),
+            Err(poisoned) => *poisoned.into_inner() = Some(signal),
+        }
+    }
+
+    fn wake_watcher(&self) {
+        let waker = match self.inner.waker.lock() {
+            Ok(waker) => waker.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        if let Some(signal) = waker {
+            signal.wake();
         }
     }
 
@@ -851,6 +873,9 @@ impl Heartbeat {
                 .fetch_max(global_observability().now_us(), Ordering::Release);
         }
         self.inner.armed.store(armed, Ordering::Release);
+        if armed {
+            self.wake_watcher();
+        }
     }
 
     pub fn set_visible(&self, visible: bool) {
@@ -861,6 +886,9 @@ impl Heartbeat {
                 .fetch_max(global_observability().now_us(), Ordering::Release);
         }
         self.inner.visible.store(visible, Ordering::Release);
+        if visible {
+            self.wake_watcher();
+        }
     }
 
     pub fn snapshot(&self) -> HeartbeatSnapshot {
@@ -1089,53 +1117,65 @@ pub fn classify_heartbeat_delay(
     }
 }
 
+#[derive(Debug, Default)]
+struct WatchdogSignalState {
+    stopped: bool,
+    /// Set between the watchdog reading "nothing to watch" and it starting to
+    /// wait. Without it that window would swallow the wakeup and the watchdog
+    /// would sleep out its whole idle timeout.
+    woken: bool,
+}
+
 #[derive(Debug)]
 struct WatchdogSignal {
-    stopped: Mutex<bool>,
+    state: Mutex<WatchdogSignalState>,
     wake: Condvar,
 }
 
 impl WatchdogSignal {
     fn new() -> Self {
         Self {
-            stopped: Mutex::new(false),
+            state: Mutex::new(WatchdogSignalState::default()),
             wake: Condvar::new(),
         }
     }
 
     fn stop(&self) {
-        {
-            let mut stopped = self.lock_stopped();
-            *stopped = true;
-        }
+        self.lock_state().stopped = true;
+        self.wake.notify_all();
+    }
+
+    fn wake(&self) {
+        self.lock_state().woken = true;
         self.wake.notify_all();
     }
 
     fn is_stopped(&self) -> bool {
-        *self.lock_stopped()
+        self.lock_state().stopped
     }
 
     /// Returns true when stopped. The predicate closes the notify-before-wait
     /// race, allowing shutdown to interrupt even a very long sample interval.
     fn wait_until_stopped(&self, timeout: Duration) -> bool {
-        let stopped = self.lock_stopped();
-        if *stopped {
-            return true;
+        let mut state = self.lock_state();
+        if state.stopped || std::mem::take(&mut state.woken) {
+            return state.stopped;
         }
 
-        let stopped = match self
+        let mut state = match self
             .wake
-            .wait_timeout_while(stopped, timeout, |stopped| !*stopped)
+            .wait_timeout_while(state, timeout, |state| !state.stopped && !state.woken)
         {
-            Ok((stopped, _)) => stopped,
+            Ok((state, _)) => state,
             Err(poisoned) => poisoned.into_inner().0,
         };
-        *stopped
+        state.woken = false;
+        state.stopped
     }
 
-    fn lock_stopped(&self) -> MutexGuard<'_, bool> {
-        match self.stopped.lock() {
-            Ok(stopped) => stopped,
+    fn lock_state(&self) -> MutexGuard<'_, WatchdogSignalState> {
+        match self.state.lock() {
+            Ok(state) => state,
             Err(poisoned) => poisoned.into_inner(),
         }
     }
@@ -1224,6 +1264,7 @@ pub fn start_hang_watchdog(
     let observer = global_observability();
     let config = config.normalized(observer);
     let signal = Arc::new(WatchdogSignal::new());
+    heartbeat.attach_waker(signal.clone());
     let thread_signal = signal.clone();
     let thread = thread::Builder::new()
         .name("sikemux-hang-watchdog".to_owned())
@@ -1268,7 +1309,15 @@ fn run_watchdog(heartbeat: Heartbeat, config: HangWatchdogConfig, signal: Arc<Wa
             HeartbeatDelayClassification::HangStarted | HeartbeatDelayClassification::HangOngoing
         );
 
-        if signal.wait_until_stopped(sample_interval) {
+        // A hidden or disarmed window has no progress to miss, so wait for it
+        // to come back rather than sampling four times a second all day. The
+        // long timeout is only a backstop for a wakeup that never arrives.
+        let wait = if monitored {
+            sample_interval
+        } else {
+            IDLE_WATCHDOG_WAIT
+        };
+        if signal.wait_until_stopped(wait) {
             break;
         }
     }
@@ -1727,6 +1776,35 @@ mod tests {
         )
         .unwrap();
         handle.stop().unwrap();
+    }
+
+    /// A hidden window leaves the watchdog parked; showing it again has to
+    /// release the wait rather than let it run out its idle backstop.
+    #[test]
+    fn a_parked_watchdog_wakes_when_the_window_comes_back() {
+        let heartbeat = inactive_ui_heartbeat();
+        let signal = Arc::new(WatchdogSignal::new());
+        heartbeat.attach_waker(signal.clone());
+
+        // Woken before the wait starts: the wakeup is not lost.
+        heartbeat.set_visible(true);
+        let started = Instant::now();
+        assert!(!signal.wait_until_stopped(IDLE_WATCHDOG_WAIT));
+        assert!(started.elapsed() < Duration::from_secs(1));
+
+        // Woken during the wait.
+        let waker = heartbeat.clone();
+        let waking = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            waker.set_armed(true);
+        });
+        let started = Instant::now();
+        assert!(!signal.wait_until_stopped(IDLE_WATCHDOG_WAIT));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        waking.join().unwrap();
+
+        signal.stop();
+        assert!(signal.wait_until_stopped(IDLE_WATCHDOG_WAIT));
     }
 
     #[test]

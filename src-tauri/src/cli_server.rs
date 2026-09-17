@@ -61,7 +61,6 @@ struct AcceptedResult {
 impl CliBroker {
     pub fn start(app: AppHandle) -> AppResult<Self> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))?;
-        listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
         let endpoint_path = cli_endpoint_path()
             .ok_or_else(|| AppError::State("no home directory for CLI endpoint".into()))?;
@@ -103,18 +102,22 @@ impl CliBroker {
         cli_executable_path()
     }
 
+    /// Blocks until someone connects. Asking the socket 25 times a second
+    /// whether anyone had arrived yet woke the process all day for nothing;
+    /// `shutdown` connects to the port once to release this.
     fn listen(&self, listener: TcpListener) {
         while !self.inner.stopping.load(Ordering::Acquire) {
             match listener.accept() {
                 Ok((stream, _)) => {
+                    if self.inner.stopping.load(Ordering::Acquire) {
+                        return;
+                    }
                     let broker = self.clone();
                     let _ = thread::Builder::new()
                         .name("sikemux-cli-client".into())
                         .spawn(move || broker.serve(stream));
                 }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(40));
-                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => thread::sleep(Duration::from_millis(100)),
             }
         }
@@ -474,6 +477,11 @@ impl CliBroker {
         if self.inner.stopping.swap(true, Ordering::AcqRel) {
             return;
         }
+        // Wake the listener thread so it sees the flag and leaves.
+        let _ = TcpStream::connect(SocketAddrV4::new(
+            Ipv4Addr::LOCALHOST,
+            self.inner.descriptor.port,
+        ));
         if let Ok(mut requests) = self.inner.requests.lock() {
             for entry in requests.values_mut() {
                 if let Some(sender) = entry.accepted.take() {
