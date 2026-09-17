@@ -11,6 +11,7 @@ import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
 import { auraExtensions, editorThemeOnlyExtensions, isLargeDoc, isSshConfigPath, languageFor, type EditorLanguageHint } from "../editor/codemirror";
 import { isImagePath } from "../editor/media";
+import { MarkdownTableHead } from "../lib/markdownTable";
 import { gitDiffGutter } from "../editor/gitGutter";
 import { gitInlineBlame } from "../editor/gitBlame";
 import { DocumentIO } from "../editor/documentIO";
@@ -189,11 +190,13 @@ function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: 
     );
 }
 
+const markdownComponents = { thead: MarkdownTableHead };
+
 function MarkdownPreview({ source }: { source: string }) {
     return (
         <div className="ed-markdown-preview">
             <article className="ed-markdown-body">
-                <Markdown remarkPlugins={[remarkGfm]} skipHtml>
+                <Markdown components={markdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
                     {source}
                 </Markdown>
             </article>

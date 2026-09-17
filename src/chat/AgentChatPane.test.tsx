@@ -602,6 +602,22 @@ describe("AgentChatPane", () => {
         expect(cell.closest(".chat-table")).not.toBeNull();
     });
 
+    it("leaves out the header band when the table has no column labels", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "|  |  |\n| --- | --- |\n| Image write path | live row |\n" },
+            },
+        });
+
+        const cell = await screen.findByText("Image write path");
+        const table = cell.closest("table") as HTMLTableElement;
+        expect(table.querySelector("thead")).toBeNull();
+        expect(table.querySelectorAll("tr")).toHaveLength(1);
+    });
+
     it("colours a patch the agent wrote in a fence, and leaves ordinary output alone", async () => {
         await openTranscript();
         emit("session_update", {

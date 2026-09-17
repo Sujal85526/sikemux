@@ -8,6 +8,7 @@ import { fsapi } from "../api/fs";
 import { invokeCommand as invoke } from "../api/invoke";
 import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { permissionCopyForType } from "../agentLaunch";
+import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
@@ -403,7 +404,7 @@ function ChatTable({ children }: { children?: ReactNode }) {
     );
 }
 
-const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable };
+const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
