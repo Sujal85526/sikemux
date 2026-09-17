@@ -12,7 +12,7 @@ from unittest.mock import patch
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from sikemux_harness import call_harness, tool_definitions
+from sikemux_harness import GUIDE_TOOL_NAME, SERVER_INSTRUCTIONS, call_harness, guide_text, tool_definitions
 
 
 class HarnessTests(unittest.TestCase):
@@ -21,6 +21,17 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(len(tools), 6)
         self.assertIn("idempotencyKey", tools["sikemux_task_start"].inputSchema["required"])
         self.assertEqual(tools["sikemux_events_wait"].inputSchema["properties"]["timeoutMs"]["maximum"], 30000)
+
+    def test_the_guide_explains_what_the_schemas_no_longer_say(self):
+        guide = guide_text()
+        for tool in tool_definitions():
+            self.assertIn(tool.name, guide, f"{tool.name} is undocumented now that its description is short")
+        for trap in ("idempotencyKey", "trust", "previewUrl", "hasMore", "truncated", "escape sequences",
+                     "focus: true", "Element numbers expire", "not output cursors", "does not schedule"):
+            self.assertIn(trap, guide, f"the guide dropped '{trap}', which no schema explains any more")
+
+    def test_agents_are_pointed_at_the_guide_before_they_start(self):
+        self.assertIn(GUIDE_TOOL_NAME, SERVER_INSTRUCTIONS)
 
     def exchange(self, response, callback):
         with tempfile.TemporaryDirectory() as directory, socket.socket() as listener:

@@ -1,5 +1,6 @@
-"""The agent's browser, as MCP tools. Every tool is answered by Sikemux itself over
-the harness socket and acts on the tabs the person sees in the agent's pane."""
+"""The agent's browser, as MCP tools. Sikemux itself answers them over the harness
+socket and they act on the tabs the person sees in the agent's pane. The one
+exception is the guide, which the sidecar serves from the file it ships with."""
 
 import asyncio
 import base64
@@ -13,18 +14,18 @@ from mcp.server.stdio import stdio_server
 
 import sikemux_harness
 
-STATE_NOTE = "Returns the page state: url, title, numbered interactive elements, visible text, and open tabs."
+STATE_NOTE = "Returns page state."
 
 BROWSER_METHODS = {
-    "browser_navigate": ("browser.navigate", f"Open a URL in the current tab (or a new one with newTab) and wait for it to load. {STATE_NOTE}", {"url": {"type": "string", "maxLength": 8192}, "newTab": {"type": "boolean"}}, ["url"]),
-    "browser_state": ("browser.state", f"Read the current tab without changing it. {STATE_NOTE} Element numbers are only valid until the next state read.", {}, []),
+    "browser_navigate": ("browser.navigate", f"Open a URL in the current tab, or a new one with newTab, and wait for it to load. {STATE_NOTE}", {"url": {"type": "string", "maxLength": 8192}, "newTab": {"type": "boolean"}}, ["url"]),
+    "browser_state": ("browser.state", "Read the current tab without changing it: url, title, numbered interactive elements, visible text, and open tabs. Numbers expire on the next read.", {}, []),
     "browser_click": ("browser.click", f"Click a numbered element from the latest state. {STATE_NOTE}", {"index": {"type": "integer", "minimum": 0}}, ["index"]),
-    "browser_type": ("browser.type", "Type into a numbered element (or the focused one when index is omitted), replacing its value. submit=true presses Enter afterwards and returns the new page state.", {"index": {"type": "integer", "minimum": 0}, "text": {"type": "string", "maxLength": 20000}, "submit": {"type": "boolean"}}, ["text"]),
-    "browser_press": ("browser.press", f"Press one key on the focused element, such as Enter, Tab, Escape, ArrowDown, or a single character. {STATE_NOTE}", {"key": {"type": "string", "minLength": 1, "maxLength": 24}}, ["key"]),
-    "browser_scroll": ("browser.scroll", "Scroll the page (or a numbered scrollable element) by deltaY pixels; negative scrolls up. Defaults to 600.", {"deltaY": {"type": "number"}, "index": {"type": "integer", "minimum": 0}}, []),
+    "browser_type": ("browser.type", f"Type into a numbered element, or the focused one, replacing its value. submit=true presses Enter. {STATE_NOTE}", {"index": {"type": "integer", "minimum": 0}, "text": {"type": "string", "maxLength": 20000}, "submit": {"type": "boolean"}}, ["text"]),
+    "browser_press": ("browser.press", f"Press one key on the focused element, such as Enter, Tab, Escape, or a single character. {STATE_NOTE}", {"key": {"type": "string", "minLength": 1, "maxLength": 24}}, ["key"]),
+    "browser_scroll": ("browser.scroll", "Scroll the page, or a numbered scrollable element, by deltaY pixels; negative scrolls up.", {"deltaY": {"type": "number"}, "index": {"type": "integer", "minimum": 0}}, []),
     "browser_extract": ("browser.extract", "Read the page's visible text, or only the parts matching a CSS selector.", {"selector": {"type": "string", "maxLength": 512}}, []),
     "browser_screenshot": ("browser.screenshot", "Capture the visible part of the current tab as a PNG image.", {}, []),
-    "browser_wait": ("browser.wait", f"Wait up to ms milliseconds (default 1000, max 30000), then wait for any load to finish. {STATE_NOTE}", {"ms": {"type": "integer", "minimum": 0, "maximum": 30000}}, []),
+    "browser_wait": ("browser.wait", f"Wait ms milliseconds, then for any load to finish. {STATE_NOTE}", {"ms": {"type": "integer", "minimum": 0, "maximum": 30000}}, []),
     "browser_back": ("browser.back", f"Go back in the current tab's history. {STATE_NOTE}", {}, []),
     "browser_forward": ("browser.forward", f"Go forward in the current tab's history. {STATE_NOTE}", {}, []),
     "browser_list_tabs": ("browser.tabs", "List this agent's browser tabs with their ids.", {}, []),
@@ -34,7 +35,7 @@ BROWSER_METHODS = {
 
 
 def tool_definitions():
-    return sikemux_harness.tool_definitions(BROWSER_METHODS) + sikemux_harness.tool_definitions()
+    return sikemux_harness.tool_definitions(BROWSER_METHODS) + sikemux_harness.tool_definitions() + [sikemux_harness.guide_tool()]
 
 
 def content_for(name, value):
@@ -50,7 +51,7 @@ def content_for(name, value):
 def build_server(agent_id: str) -> Server:
     if not re.fullmatch(r"[A-Za-z0-9_:-]{1,128}", agent_id):
         raise SystemExit("Invalid SIKEMUX_BROWSER_AGENT_ID")
-    server = Server("sikemux-browser")
+    server = Server("sikemux-browser", instructions=sikemux_harness.SERVER_INSTRUCTIONS)
 
     @server.list_tools()
     async def list_tools():
@@ -59,6 +60,8 @@ def build_server(agent_id: str) -> Server:
     @server.call_tool()
     async def call_tool(name: str, arguments: dict | None):
         arguments = arguments or {}
+        if name == sikemux_harness.GUIDE_TOOL_NAME:
+            return [types.TextContent(type="text", text=sikemux_harness.guide_text())]
         if name in BROWSER_METHODS:
             method = BROWSER_METHODS[name][0]
         elif name in sikemux_harness.METHODS:

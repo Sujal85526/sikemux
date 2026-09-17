@@ -82,6 +82,21 @@ class SikemuxBrowserServerTests(unittest.TestCase):
             self.assertEqual(request["agentId"], "agent-one")
             self.assertEqual(app.received[0]["token"], "test-token")
 
+    def test_the_guide_is_served_without_asking_the_app(self):
+        server = build_server("agent-one")
+        with patch.dict(os.environ, {}, clear=True):
+            result = run_tool(server, "sikemux_guide", {})
+        self.assertFalse(result.isError)
+        self.assertIn("Working inside Sikemux", result.content[0].text)
+        self.assertIn("Element numbers expire", result.content[0].text)
+
+    def test_schemas_stay_lean_so_prose_lives_in_the_guide(self):
+        tools = tool_definitions()
+        prose = sum(len(tool.description or "") for tool in tools)
+        self.assertLessEqual(prose, 1800, "tool descriptions are paid on every request; explain it in SIKEMUX_GUIDE.md instead")
+        for tool in tools:
+            self.assertLessEqual(len(tool.description or ""), 160, f"{tool.name} description belongs in the guide")
+
     def test_a_screenshot_comes_back_as_an_image(self):
         content = content_for("browser_screenshot", {"data": "aGk=", "mimeType": "image/png", "title": "Example", "url": "https://example.com"})
         self.assertEqual(content[0].type, "image")

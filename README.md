@@ -91,7 +91,7 @@ Sikemux detects Claude, Codex, Hermes, Pi, and OpenCode on your `PATH`. It reads
 
 ### Agent harness tools
 
-The bundled browser MCP also exposes six Sikemux tools. They operate on the agent's open project rather than on a browser tab. The native CLI exposes the same operations with JSON input and output:
+The bundled browser MCP also exposes six Sikemux tools and a guide. They operate on the agent's open project rather than on a browser tab. The native CLI exposes the same operations with JSON input and output:
 
 ```bash
 sikemux tool workspace.inspect
@@ -110,6 +110,8 @@ sikemux tool task.stop '{"executionId":"RETURNED_ID"}'
 | `task.stop`         | `sikemux_task_stop`         | Stop one exact execution and its process tree                                    |
 | `ui.open`           | `sikemux_ui_open`           | Open a file, diff, task terminal, or the configured preview                      |
 | `events.wait`       | `sikemux_events_wait`       | Wait up to 30 seconds for project task output, task lifecycle, or UI-open events |
+
+A seventh tool, `sikemux_guide`, has no CLI pair. It returns `browser/SIKEMUX_GUIDE.md`, the operating guide agents read once instead of paying for long tool descriptions on every request. Tool schemas stay one line each and the guide carries the protocol: cursors, idempotency, retention, and the browser tab model. It is the agent-facing copy of the rest of this section, so changes here belong in both.
 
 Task launches use `sikemux.json` and its existing project-trust dialog. A changed configuration is checked again before launch. Reusing an idempotency key returns the original execution, including after completion. Starting an already active harness task returns that execution. A task already running through the command deck must be stopped there before launching the same task through the harness.
 

@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import sys
 import uuid
 
 import mcp.types as types
@@ -10,12 +11,31 @@ import mcp.types as types
 
 METHODS = {
     "sikemux_workspace_inspect": ("workspace.inspect", "Inspect this agent's open project, panes, configured tasks, runs, and event cursor.", {}, []),
-    "sikemux_task_start": ("task.start", "Start a configured project task in a managed terminal. Reuse the same idempotencyKey when retrying. May require project trust in Sikemux. previewUrl is configuration, not proof of readiness.", {"taskId": {"type": "string"}, "idempotencyKey": {"type": "string", "maxLength": 128}}, ["taskId", "idempotencyKey"]),
-    "sikemux_task_read": ("task.read", "Read task status and new terminal output using its byte cursor. Start at cursor 0, then pass back the returned cursor. Read again while hasMore. Output may contain terminal escape sequences.", {"executionId": {"type": "string"}, "cursor": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 4, "maximum": 8192}}, ["executionId"]),
+    "sikemux_task_start": ("task.start", "Start a configured project task in a managed terminal.", {"taskId": {"type": "string"}, "idempotencyKey": {"type": "string", "maxLength": 128}}, ["taskId", "idempotencyKey"]),
+    "sikemux_task_read": ("task.read", "Read task status and new terminal output by byte cursor.", {"executionId": {"type": "string"}, "cursor": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 4, "maximum": 8192}}, ["executionId"]),
     "sikemux_task_stop": ("task.stop", "Stop the exact managed task execution and its process tree.", {"executionId": {"type": "string"}}, ["executionId"]),
-    "sikemux_ui_open": ("ui.open", "Open a project file, diff, task terminal, or configured preview. Background by default; focus=true reveals it. Preview belongs to this agent's browser.", {"kind": {"enum": ["file", "diff", "terminal", "preview"]}, "path": {"type": "string"}, "line": {"type": "integer", "minimum": 1}, "executionId": {"type": "string"}, "focus": {"type": "boolean"}}, ["kind"]),
-    "sikemux_events_wait": ("events.wait", "Wait for project task output/lifecycle or UI-open events after a workspace/event cursor. Returns on matching events or timeout; does not schedule future agent turns.", {"cursor": {"type": "string"}, "timeoutMs": {"type": "integer", "minimum": 0, "maximum": 30000}, "executionId": {"type": "string"}}, ["cursor"]),
+    "sikemux_ui_open": ("ui.open", "Open a project file, diff, task terminal, or the configured preview.", {"kind": {"enum": ["file", "diff", "terminal", "preview"]}, "path": {"type": "string"}, "line": {"type": "integer", "minimum": 1}, "executionId": {"type": "string"}, "focus": {"type": "boolean"}}, ["kind"]),
+    "sikemux_events_wait": ("events.wait", "Wait for project task or UI events after an event cursor.", {"cursor": {"type": "string"}, "timeoutMs": {"type": "integer", "minimum": 0, "maximum": 30000}, "executionId": {"type": "string"}}, ["cursor"]),
 }
+
+GUIDE_TOOL_NAME = "sikemux_guide"
+GUIDE_FILE_NAME = "SIKEMUX_GUIDE.md"
+GUIDE_SUMMARY = "Read this before your first task launch or browser click: cursors, idempotency, UI opens, and the tab model."
+SERVER_INSTRUCTIONS = f"Sikemux drives the person's open project and this agent's browser tabs. Call {GUIDE_TOOL_NAME} before the first task launch or browser click."
+
+
+def guide_path() -> Path:
+    """PyInstaller unpacks bundled files under a temporary root it names in sys._MEIPASS."""
+    root = getattr(sys, "_MEIPASS", None) or Path(__file__).parent
+    return Path(root) / GUIDE_FILE_NAME
+
+
+def guide_text() -> str:
+    return guide_path().read_text(encoding="utf-8")
+
+
+def guide_tool() -> types.Tool:
+    return types.Tool(name=GUIDE_TOOL_NAME, description=GUIDE_SUMMARY, inputSchema={"type": "object", "properties": {}, "required": [], "additionalProperties": False})
 
 
 def tool_definitions(methods=METHODS):

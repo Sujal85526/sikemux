@@ -73,10 +73,12 @@ const workDir = join(browserDir, ".pyinstaller");
 const distDir = join(workDir, "dist");
 const suffix = target.includes("windows") ? ".exe" : "";
 const destination = join(binariesDir, `sikemux-browser-mcp-${target}${suffix}`);
+const guideFile = join(browserDir, "SIKEMUX_GUIDE.md");
 const sidecarInputs = [
   scriptPath,
   join(browserDir, "sikemux_browser_mcp.py"),
   join(browserDir, "sikemux_harness.py"),
+  guideFile,
   join(browserDir, "pyproject.toml"),
   join(browserDir, "uv.lock"),
 ];
@@ -114,6 +116,9 @@ if (needsSidecarBuild) {
       "mcp.server.stdio",
       "--hidden-import",
       "mcp.types",
+      // PyInstaller splits source from destination on the host's path separator.
+      "--add-data",
+      `${guideFile}${target.includes("windows") ? ";" : ":"}.`,
       join(browserDir, "sikemux_browser_mcp.py"),
     ],
     { cwd: browserDir },

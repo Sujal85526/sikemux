@@ -48,9 +48,12 @@ async def exercise_sidecar(sidecar: Path, environment: dict[str, str]) -> None:
         async with ClientSession(*streams) as session:
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
-            for expected in ("browser_navigate", "browser_state", "browser_click", "browser_screenshot", "sikemux_workspace_inspect"):
+            for expected in ("browser_navigate", "browser_state", "browser_click", "browser_screenshot", "sikemux_workspace_inspect", "sikemux_guide"):
                 if expected not in names:
                     raise RuntimeError(f"sidecar does not expose {expected}")
+            guide = await session.call_tool("sikemux_guide", {})
+            if guide.isError or "Working inside Sikemux" not in guide.content[0].text:
+                raise RuntimeError(f"the frozen sidecar does not carry its guide: {guide.content}")
             result = await session.call_tool("browser_navigate", {"url": "https://example.com"})
             if result.isError or json.loads(result.content[0].text) != STATE:
                 raise RuntimeError(f"sidecar relayed the wrong answer: {result.content}")
