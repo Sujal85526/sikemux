@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { WorkerPoolContextProvider, type WorkerInitializationRenderOptions, type WorkerPoolOptions } from "@pierre/diffs/react";
 import { DIFF_WORD_MAX_LENGTH } from "./DiffEditor";
+import { diffsThemeName } from "../themes/diffs";
+import { currentTheme, subscribeTheme } from "../themes/bus";
 
 function workerCount(): number {
     const available = typeof navigator === "undefined" ? 2 : (navigator.hardwareConcurrency ?? 2);
@@ -15,16 +17,26 @@ const POOL_OPTIONS: WorkerPoolOptions = {
     totalASTLRUCacheSize: 192,
 };
 
-const HIGHLIGHTER_OPTIONS: WorkerInitializationRenderOptions = {
-    langs: ["text"],
-    lineDiffType: "none",
-    maxLineDiffLength: DIFF_WORD_MAX_LENGTH,
-};
-
 export function DiffWorkerProvider({ children }: { children: ReactNode }) {
+    const [themeName, setThemeName] = useState(() => diffsThemeName(currentTheme()));
+    useEffect(() => subscribeTheme((theme) => setThemeName(diffsThemeName(theme))), []);
+
+    // Naming the theme is not optional. Left unset, the pool resolves the
+    // bundled default, which this app replaces with an empty table, so every
+    // render rejects and the rejections pile up until the window stops drawing.
+    const highlighterOptions = useMemo<WorkerInitializationRenderOptions>(
+        () => ({
+            theme: themeName,
+            langs: ["text"],
+            lineDiffType: "none",
+            maxLineDiffLength: DIFF_WORD_MAX_LENGTH,
+        }),
+        [themeName],
+    );
+
     if (typeof Worker === "undefined") return <>{children}</>;
     return (
-        <WorkerPoolContextProvider poolOptions={POOL_OPTIONS} highlighterOptions={HIGHLIGHTER_OPTIONS}>
+        <WorkerPoolContextProvider poolOptions={POOL_OPTIONS} highlighterOptions={highlighterOptions}>
             {children}
         </WorkerPoolContextProvider>
     );
