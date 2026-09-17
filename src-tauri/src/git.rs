@@ -1100,27 +1100,33 @@ pub async fn git_branch_create(
     name: String,
     start_point: Option<String>,
 ) -> Result<(), String> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        return Err("branch name is empty".into());
-    }
-    let mut args: Vec<&str> = vec!["checkout", "-b", trimmed];
-    if let Some(sp) = start_point.as_deref() {
-        if !sp.is_empty() {
-            args.push(sp);
+    run_blocking(move || -> Result<(), String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("branch name is empty".into());
         }
-    }
-    git_ok(&repo, &args).map(|_| ())
+        let mut args: Vec<&str> = vec!["checkout", "-b", trimmed];
+        if let Some(sp) = start_point.as_deref() {
+            if !sp.is_empty() {
+                args.push(sp);
+            }
+        }
+        git_ok(&repo, &args).map(|_| ())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_branch_delete(repo: String, name: String, force: bool) -> Result<(), String> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        return Err("branch name is empty".into());
-    }
-    let flag = if force { "-D" } else { "-d" };
-    git_ok(&repo, &["branch", flag, trimmed]).map(|_| ())
+    run_blocking(move || -> Result<(), String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("branch name is empty".into());
+        }
+        let flag = if force { "-D" } else { "-d" };
+        git_ok(&repo, &["branch", flag, trimmed]).map(|_| ())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1129,12 +1135,15 @@ pub async fn git_branch_rename(
     old_name: String,
     new_name: String,
 ) -> Result<(), String> {
-    let old_trimmed = old_name.trim();
-    let new_trimmed = new_name.trim();
-    if old_trimmed.is_empty() || new_trimmed.is_empty() {
-        return Err("branch name is empty".into());
-    }
-    git_ok(&repo, &["branch", "-m", old_trimmed, new_trimmed]).map(|_| ())
+    run_blocking(move || -> Result<(), String> {
+        let old_trimmed = old_name.trim();
+        let new_trimmed = new_name.trim();
+        if old_trimmed.is_empty() || new_trimmed.is_empty() {
+            return Err("branch name is empty".into());
+        }
+        git_ok(&repo, &["branch", "-m", old_trimmed, new_trimmed]).map(|_| ())
+    })
+    .await
 }
 
 /// Merge `branch` into the current HEAD with a merge commit (--no-ff so the
@@ -1143,44 +1152,56 @@ pub async fn git_branch_rename(
 /// for the caller to surface.
 #[tauri::command]
 pub async fn git_merge(repo: String, branch: String) -> Result<String, String> {
-    let trimmed = branch.trim();
-    if trimmed.is_empty() {
-        return Err("branch name is empty".into());
-    }
-    git_ok(&repo, &["merge", "--no-ff", trimmed])
+    run_blocking(move || -> Result<String, String> {
+        let trimmed = branch.trim();
+        if trimmed.is_empty() {
+            return Err("branch name is empty".into());
+        }
+        git_ok(&repo, &["merge", "--no-ff", trimmed])
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_merge_squash(repo: String, branch: String) -> Result<String, String> {
-    let trimmed = branch.trim();
-    if trimmed.is_empty() {
-        return Err("branch name is empty".into());
-    }
-    git_ok(&repo, &["merge", "--squash", trimmed])
+    run_blocking(move || -> Result<String, String> {
+        let trimmed = branch.trim();
+        if trimmed.is_empty() {
+            return Err("branch name is empty".into());
+        }
+        git_ok(&repo, &["merge", "--squash", trimmed])
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_reset(repo: String, rev: String, mode: String) -> Result<(), String> {
-    let trimmed = rev.trim();
-    if trimmed.is_empty() {
-        return Err("revision is empty".into());
-    }
-    let flag = match mode.as_str() {
-        "soft" => "--soft",
-        "mixed" => "--mixed",
-        "hard" => "--hard",
-        other => return Err(format!("unknown reset mode: {other}")),
-    };
-    git_ok(&repo, &["reset", flag, trimmed]).map(|_| ())
+    run_blocking(move || -> Result<(), String> {
+        let trimmed = rev.trim();
+        if trimmed.is_empty() {
+            return Err("revision is empty".into());
+        }
+        let flag = match mode.as_str() {
+            "soft" => "--soft",
+            "mixed" => "--mixed",
+            "hard" => "--hard",
+            other => return Err(format!("unknown reset mode: {other}")),
+        };
+        git_ok(&repo, &["reset", flag, trimmed]).map(|_| ())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_revert(repo: String, rev: String) -> Result<(), String> {
-    let trimmed = rev.trim();
-    if trimmed.is_empty() {
-        return Err("revision is empty".into());
-    }
-    git_ok(&repo, &["revert", "--no-edit", trimmed]).map(|_| ())
+    run_blocking(move || -> Result<(), String> {
+        let trimmed = rev.trim();
+        if trimmed.is_empty() {
+            return Err("revision is empty".into());
+        }
+        git_ok(&repo, &["revert", "--no-edit", trimmed]).map(|_| ())
+    })
+    .await
 }
 
 // ---- diff -----------------------------------------------------------------
@@ -1441,30 +1462,33 @@ pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<Stri
 
 #[tauri::command]
 pub async fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, String> {
-    let r = open_repo(&repo)?;
-    let commit = revparse_commit(&r, &rev)?;
-    let new_tree = commit.tree().map_err(|e| e.message().to_string())?;
-    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-    let diff = r
-        .diff_tree_to_tree(parent_tree.as_ref(), Some(&new_tree), None)
-        .map_err(|e| e.message().to_string())?;
-    let mut paths = Vec::new();
-    diff.foreach(
-        &mut |d, _| {
-            if let Some(p) = d.new_file().path().or_else(|| d.old_file().path()) {
-                let s = p.to_string_lossy().into_owned();
-                if !paths.contains(&s) {
-                    paths.push(s);
+    run_blocking(move || -> Result<Vec<String>, String> {
+        let r = open_repo(&repo)?;
+        let commit = revparse_commit(&r, &rev)?;
+        let new_tree = commit.tree().map_err(|e| e.message().to_string())?;
+        let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+        let diff = r
+            .diff_tree_to_tree(parent_tree.as_ref(), Some(&new_tree), None)
+            .map_err(|e| e.message().to_string())?;
+        let mut paths = Vec::new();
+        diff.foreach(
+            &mut |d, _| {
+                if let Some(p) = d.new_file().path().or_else(|| d.old_file().path()) {
+                    let s = p.to_string_lossy().into_owned();
+                    if !paths.contains(&s) {
+                        paths.push(s);
+                    }
                 }
-            }
-            true
-        },
-        None,
-        None,
-        None,
-    )
-    .map_err(|e| e.message().to_string())?;
-    Ok(paths)
+                true
+            },
+            None,
+            None,
+            None,
+        )
+        .map_err(|e| e.message().to_string())?;
+        Ok(paths)
+    })
+    .await
 }
 
 // ---- blame ----------------------------------------------------------------
@@ -2952,39 +2976,42 @@ pub async fn git_ai_commit(
 
 #[tauri::command]
 pub async fn pr_open(repo: String) -> Result<String, String> {
-    let r = open_repo(&repo)?;
-    let remote_url = r
-        .find_remote("origin")
-        .map_err(|e| e.message().to_string())?
-        .url()
-        .map_err(|e| e.message().to_string())?
-        .to_string();
+    run_blocking(move || -> Result<String, String> {
+        let r = open_repo(&repo)?;
+        let remote_url = r
+            .find_remote("origin")
+            .map_err(|e| e.message().to_string())?
+            .url()
+            .map_err(|e| e.message().to_string())?
+            .to_string();
 
-    let branch = r
-        .head()
-        .ok()
-        .and_then(|h| h.shorthand().ok().map(String::from))
-        .ok_or("no current branch (detached HEAD?)")?;
+        let branch = r
+            .head()
+            .ok()
+            .and_then(|h| h.shorthand().ok().map(String::from))
+            .ok_or("no current branch (detached HEAD?)")?;
 
-    let mut url = if let Some(rest) = remote_url.strip_prefix("git@") {
-        match rest.split_once(':') {
-            Some((host, path)) => format!("https://{host}/{}", path.trim_end_matches(".git")),
-            None => remote_url.clone(),
+        let mut url = if let Some(rest) = remote_url.strip_prefix("git@") {
+            match rest.split_once(':') {
+                Some((host, path)) => format!("https://{host}/{}", path.trim_end_matches(".git")),
+                None => remote_url.clone(),
+            }
+        } else {
+            remote_url.trim_end_matches(".git").to_string()
+        };
+
+        if url.contains("github.com") {
+            url = format!("{url}/compare/{branch}?expand=1");
+        } else if url.contains("bitbucket.org") {
+            url = format!("{url}/pull-requests/new?source={branch}");
+        } else {
+            return Err(format!("unsupported remote host: {url}"));
         }
-    } else {
-        remote_url.trim_end_matches(".git").to_string()
-    };
 
-    if url.contains("github.com") {
-        url = format!("{url}/compare/{branch}?expand=1");
-    } else if url.contains("bitbucket.org") {
-        url = format!("{url}/pull-requests/new?source={branch}");
-    } else {
-        return Err(format!("unsupported remote host: {url}"));
-    }
-
-    open::that_detached(&url).map_err(|e| e.to_string())?;
-    Ok(url)
+        open::that_detached(&url).map_err(|e| e.to_string())?;
+        Ok(url)
+    })
+    .await
 }
 
 // ---- discard --------------------------------------------------------------
@@ -3003,33 +3030,38 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
 /// since there's no index or HEAD version to restore from.
 #[tauri::command]
 pub async fn git_discard_file(repo: String, path: String, mode: String) -> Result<(), String> {
-    match mode.as_str() {
-        "staged" => {
-            git_ok(&repo, &["restore", "--staged", "--", &path])
-                .or_else(|_| git_ok(&repo, &["reset", "HEAD", "--", &path]))
-                .or_else(|_| git_ok(&repo, &["rm", "--cached", "--ignore-unmatch", "--", &path]))?;
-        }
-        "unstaged" => {
-            if path_in_index(&repo, &path) {
-                // Restore the worktree from the index, preserving staged
-                // content. `checkout HEAD -- path` would also wipe staged edits.
-                git_ok(&repo, &["restore", "--worktree", "--", &path])?;
-            } else {
-                git_ok(&repo, &["clean", "-f", "--", &path])?;
+    run_blocking(move || -> Result<(), String> {
+        match mode.as_str() {
+            "staged" => {
+                git_ok(&repo, &["restore", "--staged", "--", &path])
+                    .or_else(|_| git_ok(&repo, &["reset", "HEAD", "--", &path]))
+                    .or_else(|_| {
+                        git_ok(&repo, &["rm", "--cached", "--ignore-unmatch", "--", &path])
+                    })?;
             }
-        }
-        "all" => {
-            let _ = git_ok(&repo, &["restore", "--staged", "--", &path])
-                .or_else(|_| git_ok(&repo, &["reset", "HEAD", "--", &path]));
-            if path_in_head(&repo, &path) {
-                git_ok(&repo, &["restore", "--worktree", "--", &path])?;
-            } else {
-                git_ok(&repo, &["clean", "-f", "--", &path])?;
+            "unstaged" => {
+                if path_in_index(&repo, &path) {
+                    // Restore the worktree from the index, preserving staged
+                    // content. `checkout HEAD -- path` would also wipe staged edits.
+                    git_ok(&repo, &["restore", "--worktree", "--", &path])?;
+                } else {
+                    git_ok(&repo, &["clean", "-f", "--", &path])?;
+                }
             }
+            "all" => {
+                let _ = git_ok(&repo, &["restore", "--staged", "--", &path])
+                    .or_else(|_| git_ok(&repo, &["reset", "HEAD", "--", &path]));
+                if path_in_head(&repo, &path) {
+                    git_ok(&repo, &["restore", "--worktree", "--", &path])?;
+                } else {
+                    git_ok(&repo, &["clean", "-f", "--", &path])?;
+                }
+            }
+            other => return Err(format!("unknown discard mode: {other}")),
         }
-        other => return Err(format!("unknown discard mode: {other}")),
-    }
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 // ---- stash ---------------------------------------------------------------
@@ -3053,26 +3085,29 @@ pub struct GitStash {
 
 #[tauri::command]
 pub async fn git_stash_list(repo: String) -> Result<Vec<GitStash>, String> {
-    // Format chosen so we don't depend on lazy field parsing — `%gd` is
-    // the selector (`stash@{N}`), `%gs` is the message. We compute branch
-    // from the message prefix (`WIP on <branch>:` / `On <branch>:`).
-    let out = git_ok(&repo, &["stash", "list", "--format=%H%x09%gd%x09%gs"])?;
-    let mut entries = Vec::new();
-    for (idx, line) in out.lines().enumerate() {
-        let mut parts = line.splitn(3, '\t');
-        let sha = parts.next().unwrap_or("").to_string();
-        let refname = parts.next().unwrap_or("").to_string();
-        let message = parts.next().unwrap_or("").to_string();
-        let branch = parse_stash_branch(&message);
-        entries.push(GitStash {
-            index: idx,
-            sha,
-            refname,
-            branch,
-            message,
-        });
-    }
-    Ok(entries)
+    run_blocking(move || -> Result<Vec<GitStash>, String> {
+        // Format chosen so we don't depend on lazy field parsing — `%gd` is
+        // the selector (`stash@{N}`), `%gs` is the message. We compute branch
+        // from the message prefix (`WIP on <branch>:` / `On <branch>:`).
+        let out = git_ok(&repo, &["stash", "list", "--format=%H%x09%gd%x09%gs"])?;
+        let mut entries = Vec::new();
+        for (idx, line) in out.lines().enumerate() {
+            let mut parts = line.splitn(3, '\t');
+            let sha = parts.next().unwrap_or("").to_string();
+            let refname = parts.next().unwrap_or("").to_string();
+            let message = parts.next().unwrap_or("").to_string();
+            let branch = parse_stash_branch(&message);
+            entries.push(GitStash {
+                index: idx,
+                sha,
+                refname,
+                branch,
+                message,
+            });
+        }
+        Ok(entries)
+    })
+    .await
 }
 
 fn parse_stash_branch(message: &str) -> String {
@@ -3124,49 +3159,61 @@ pub async fn git_stash_push(
     message: Option<String>,
     mode: String,
 ) -> Result<(), String> {
-    let mut args: Vec<String> = vec!["stash".into(), "push".into()];
-    match mode.as_str() {
-        "all" => {
-            args.push("-u".into());
+    run_blocking(move || -> Result<(), String> {
+        let mut args: Vec<String> = vec!["stash".into(), "push".into()];
+        match mode.as_str() {
+            "all" => {
+                args.push("-u".into());
+            }
+            "staged" => {
+                args.push("--staged".into());
+            }
+            "unstaged" => {
+                args.push("--keep-index".into());
+            }
+            other => return Err(format!("unknown stash mode: {other}")),
         }
-        "staged" => {
-            args.push("--staged".into());
+        if let Some(m) = message {
+            if !m.trim().is_empty() {
+                args.push("-m".into());
+                args.push(m);
+            }
         }
-        "unstaged" => {
-            args.push("--keep-index".into());
-        }
-        other => return Err(format!("unknown stash mode: {other}")),
-    }
-    if let Some(m) = message {
-        if !m.trim().is_empty() {
-            args.push("-m".into());
-            args.push(m);
-        }
-    }
-    let str_args: Vec<&str> = args.iter().map(String::as_str).collect();
-    git_ok(&repo, &str_args)?;
-    Ok(())
+        let str_args: Vec<&str> = args.iter().map(String::as_str).collect();
+        git_ok(&repo, &str_args)?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_stash_apply(repo: String, refname: String, sha: String) -> Result<(), String> {
-    let r = resolve_stash_ref(&repo, &refname, &sha)?;
-    git_ok(&repo, &["stash", "apply", &r])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        let r = resolve_stash_ref(&repo, &refname, &sha)?;
+        git_ok(&repo, &["stash", "apply", &r])?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_stash_pop(repo: String, refname: String, sha: String) -> Result<(), String> {
-    let r = resolve_stash_ref(&repo, &refname, &sha)?;
-    git_ok(&repo, &["stash", "pop", &r])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        let r = resolve_stash_ref(&repo, &refname, &sha)?;
+        git_ok(&repo, &["stash", "pop", &r])?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_stash_drop(repo: String, refname: String, sha: String) -> Result<(), String> {
-    let r = resolve_stash_ref(&repo, &refname, &sha)?;
-    git_ok(&repo, &["stash", "drop", &r])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        let r = resolve_stash_ref(&repo, &refname, &sha)?;
+        git_ok(&repo, &["stash", "drop", &r])?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -3176,9 +3223,12 @@ pub async fn git_stash_branch(
     sha: String,
     name: String,
 ) -> Result<(), String> {
-    let r = resolve_stash_ref(&repo, &refname, &sha)?;
-    git_ok(&repo, &["stash", "branch", &name, &r])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        let r = resolve_stash_ref(&repo, &refname, &sha)?;
+        git_ok(&repo, &["stash", "branch", &name, &r])?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -3188,37 +3238,40 @@ pub async fn git_stash_rename(
     sha: String,
     new_message: String,
 ) -> Result<(), String> {
-    // No native `git stash rename`. Store the replacement first, then remove
-    // the now-shifted original. A failure can leave a harmless duplicate but
-    // can never remove the only ordinary stash reference.
-    let r = resolve_stash_ref(&repo, &refname, &sha)?;
-    // Grab the underlying commit SHA for the stash so we can re-store.
-    let sha = git_ok(&repo, &["rev-parse", &r])?.trim().to_string();
-    if sha.is_empty() {
-        return Err(format!("could not resolve {r}"));
-    }
-    git_ok(&repo, &["stash", "store", "-m", &new_message, &sha])?;
-    let original_index = r
-        .strip_prefix("stash@{")
-        .and_then(|value| value.strip_suffix('}'))
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| {
-            format!(
-                "unexpected stash reference {r}; replacement was stored but the original was kept"
-            )
-        })?;
-    let shifted_original = format!("stash@{{{}}}", original_index + 1);
-    let shifted_sha = git_ok(&repo, &["rev-parse", &shifted_original])?
-        .trim()
-        .to_string();
-    if shifted_sha != sha {
-        return Err(
-            "stash list changed during rename; replacement was stored and the original was kept"
-                .to_string(),
-        );
-    }
-    git_ok(&repo, &["stash", "drop", &shifted_original])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        // No native `git stash rename`. Store the replacement first, then remove
+        // the now-shifted original. A failure can leave a harmless duplicate but
+        // can never remove the only ordinary stash reference.
+        let r = resolve_stash_ref(&repo, &refname, &sha)?;
+        // Grab the underlying commit SHA for the stash so we can re-store.
+        let sha = git_ok(&repo, &["rev-parse", &r])?.trim().to_string();
+        if sha.is_empty() {
+            return Err(format!("could not resolve {r}"));
+        }
+        git_ok(&repo, &["stash", "store", "-m", &new_message, &sha])?;
+        let original_index = r
+            .strip_prefix("stash@{")
+            .and_then(|value| value.strip_suffix('}'))
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| {
+                format!(
+                    "unexpected stash reference {r}; replacement was stored but the original was kept"
+                )
+            })?;
+        let shifted_original = format!("stash@{{{}}}", original_index + 1);
+        let shifted_sha = git_ok(&repo, &["rev-parse", &shifted_original])?
+            .trim()
+            .to_string();
+        if shifted_sha != sha {
+            return Err(
+                "stash list changed during rename; replacement was stored and the original was kept"
+                    .to_string(),
+            );
+        }
+        git_ok(&repo, &["stash", "drop", &shifted_original])?;
+        Ok(())
+    })
+    .await
 }
 
 // ---- remotes -------------------------------------------------------------
@@ -3234,49 +3287,58 @@ pub struct GitRemote {
 /// only the fetch URL since that's authoritative for branch listing.
 #[tauri::command]
 pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
-    let out = git_ok(&repo, &["remote", "-v"])?;
-    let mut seen: std::collections::HashMap<String, String> = Default::default();
-    for line in out.lines() {
-        // Format: "origin\tgit@github.com:foo/bar.git (fetch)"
-        let mut parts = line.split('\t');
-        let name = parts.next().unwrap_or("").trim().to_string();
-        let rest = parts.next().unwrap_or("");
-        if name.is_empty() || rest.is_empty() {
-            continue;
+    run_blocking(move || -> Result<Vec<GitRemote>, String> {
+        let out = git_ok(&repo, &["remote", "-v"])?;
+        let mut seen: std::collections::HashMap<String, String> = Default::default();
+        for line in out.lines() {
+            // Format: "origin\tgit@github.com:foo/bar.git (fetch)"
+            let mut parts = line.split('\t');
+            let name = parts.next().unwrap_or("").trim().to_string();
+            let rest = parts.next().unwrap_or("");
+            if name.is_empty() || rest.is_empty() {
+                continue;
+            }
+            // Only keep fetch URLs.
+            let is_fetch = rest.trim_end().ends_with("(fetch)");
+            if !is_fetch {
+                continue;
+            }
+            let url = rest
+                .rsplit_once(' ')
+                .map(|(url, _)| url)
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !url.is_empty() {
+                seen.insert(name, url);
+            }
         }
-        // Only keep fetch URLs.
-        let is_fetch = rest.trim_end().ends_with("(fetch)");
-        if !is_fetch {
-            continue;
-        }
-        let url = rest
-            .rsplit_once(' ')
-            .map(|(url, _)| url)
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        if !url.is_empty() {
-            seen.insert(name, url);
-        }
-    }
-    let mut list: Vec<GitRemote> = seen
-        .into_iter()
-        .map(|(name, url)| GitRemote { name, url })
-        .collect();
-    list.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(list)
+        let mut list: Vec<GitRemote> = seen
+            .into_iter()
+            .map(|(name, url)| GitRemote { name, url })
+            .collect();
+        list.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(list)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_remote_add(repo: String, name: String, url: String) -> Result<(), String> {
-    git_ok(&repo, &["remote", "add", &name, &url])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        git_ok(&repo, &["remote", "add", &name, &url])?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_remote_remove(repo: String, name: String) -> Result<(), String> {
-    git_ok(&repo, &["remote", "remove", &name])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        git_ok(&repo, &["remote", "remove", &name])?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -3285,14 +3347,20 @@ pub async fn git_remote_rename(
     old_name: String,
     new_name: String,
 ) -> Result<(), String> {
-    git_ok(&repo, &["remote", "rename", &old_name, &new_name])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        git_ok(&repo, &["remote", "rename", &old_name, &new_name])?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn git_remote_set_url(repo: String, name: String, url: String) -> Result<(), String> {
-    git_ok(&repo, &["remote", "set-url", &name, &url])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        git_ok(&repo, &["remote", "set-url", &name, &url])?;
+        Ok(())
+    })
+    .await
 }
 
 /// Fetch a single remote when `remote` is set, otherwise `--all`. Always
@@ -3337,67 +3405,70 @@ pub async fn git_remote_branches(
     repo: String,
     remote: String,
 ) -> Result<Vec<GitRemoteBranch>, String> {
-    let prefix = format!("refs/remotes/{remote}/");
-    let format = "%(refname:short)%09%(symref)%09%(subject)";
-    let out = git_ok(
-        &repo,
-        &[
-            "for-each-ref",
-            "--sort=refname",
-            &format!("--format={format}"),
-            &prefix,
-        ],
-    )?;
+    run_blocking(move || -> Result<Vec<GitRemoteBranch>, String> {
+        let prefix = format!("refs/remotes/{remote}/");
+        let format = "%(refname:short)%09%(symref)%09%(subject)";
+        let out = git_ok(
+            &repo,
+            &[
+                "for-each-ref",
+                "--sort=refname",
+                &format!("--format={format}"),
+                &prefix,
+            ],
+        )?;
 
-    // Build the local-branch → upstream map once so we can annotate each
-    // remote branch with its tracking local. The cheap form:
-    // `git for-each-ref refs/heads --format='%(refname:short)\t%(upstream:short)'`.
-    let mut upstreams: std::collections::HashMap<String, String> = Default::default();
-    if let Ok(locals) = git_ok(
-        &repo,
-        &[
-            "for-each-ref",
-            "--format=%(refname:short)\t%(upstream:short)",
-            "refs/heads/",
-        ],
-    ) {
-        for line in locals.lines() {
-            let mut p = line.splitn(2, '\t');
-            let local = p.next().unwrap_or("").to_string();
-            let upstream = p.next().unwrap_or("").trim().to_string();
-            if !upstream.is_empty() {
-                upstreams.insert(upstream, local);
+        // Build the local-branch → upstream map once so we can annotate each
+        // remote branch with its tracking local. The cheap form:
+        // `git for-each-ref refs/heads --format='%(refname:short)\t%(upstream:short)'`.
+        let mut upstreams: std::collections::HashMap<String, String> = Default::default();
+        if let Ok(locals) = git_ok(
+            &repo,
+            &[
+                "for-each-ref",
+                "--format=%(refname:short)\t%(upstream:short)",
+                "refs/heads/",
+            ],
+        ) {
+            for line in locals.lines() {
+                let mut p = line.splitn(2, '\t');
+                let local = p.next().unwrap_or("").to_string();
+                let upstream = p.next().unwrap_or("").trim().to_string();
+                if !upstream.is_empty() {
+                    upstreams.insert(upstream, local);
+                }
             }
         }
-    }
 
-    let mut list = Vec::new();
-    for line in out.lines() {
-        let mut p = line.splitn(3, '\t');
-        let full_ref = p.next().unwrap_or("").to_string();
-        let symref = p.next().unwrap_or("").trim().to_string();
-        let subject = p.next().unwrap_or("").to_string();
-        if full_ref.is_empty() {
-            continue;
+        let mut list = Vec::new();
+        for line in out.lines() {
+            let mut p = line.splitn(3, '\t');
+            let full_ref = p.next().unwrap_or("").to_string();
+            let symref = p.next().unwrap_or("").trim().to_string();
+            let subject = p.next().unwrap_or("").to_string();
+            if full_ref.is_empty() {
+                continue;
+            }
+            let name = full_ref
+                .strip_prefix(&format!("{remote}/"))
+                .unwrap_or(&full_ref)
+                .to_string();
+            let is_head_pointer = !symref.is_empty() || name == "HEAD";
+            list.push(GitRemoteBranch {
+                name,
+                full_ref: full_ref.clone(),
+                is_head_pointer,
+                tracked_by: upstreams.get(&full_ref).cloned(),
+                subject: if subject.is_empty() {
+                    None
+                } else {
+                    Some(subject)
+                },
+            });
         }
-        let name = full_ref
-            .strip_prefix(&format!("{remote}/"))
-            .unwrap_or(&full_ref)
-            .to_string();
-        let is_head_pointer = !symref.is_empty() || name == "HEAD";
-        list.push(GitRemoteBranch {
-            name,
-            full_ref: full_ref.clone(),
-            is_head_pointer,
-            tracked_by: upstreams.get(&full_ref).cloned(),
-            subject: if subject.is_empty() {
-                None
-            } else {
-                Some(subject)
-            },
-        });
-    }
-    Ok(list)
+        Ok(list)
+    })
+    .await
 }
 
 /// Check out a remote branch into a new local tracking branch. If
@@ -3410,26 +3481,29 @@ pub async fn git_checkout_remote_branch(
     branch: String,
     local_name: Option<String>,
 ) -> Result<(), String> {
-    let full_ref = format!("{remote}/{branch}");
-    let local = local_name.unwrap_or_else(|| branch.clone());
-    // If the local already exists, just `checkout <local>`; otherwise
-    // create-and-track.
-    let exists = git_ok(
-        &repo,
-        &[
-            "show-ref",
-            "--verify",
-            "--quiet",
-            &format!("refs/heads/{local}"),
-        ],
-    )
-    .is_ok();
-    if exists {
-        git_ok(&repo, &["checkout", &local])?;
-    } else {
-        git_ok(&repo, &["checkout", "-b", &local, "--track", &full_ref])?;
-    }
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        let full_ref = format!("{remote}/{branch}");
+        let local = local_name.unwrap_or_else(|| branch.clone());
+        // If the local already exists, just `checkout <local>`; otherwise
+        // create-and-track.
+        let exists = git_ok(
+            &repo,
+            &[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{local}"),
+            ],
+        )
+        .is_ok();
+        if exists {
+            git_ok(&repo, &["checkout", &local])?;
+        } else {
+            git_ok(&repo, &["checkout", "-b", &local, "--track", &full_ref])?;
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Delete a remote branch by pushing the empty ref. Strict form
@@ -3440,8 +3514,11 @@ pub async fn git_delete_remote_branch(
     remote: String,
     branch: String,
 ) -> Result<(), String> {
-    git_ok(&repo, &["push", &remote, "--delete", &branch])?;
-    Ok(())
+    run_blocking(move || -> Result<(), String> {
+        git_ok(&repo, &["push", &remote, "--delete", &branch])?;
+        Ok(())
+    })
+    .await
 }
 
 /// Point a local branch's upstream at the given remote ref. Pass `null` /
@@ -3453,18 +3530,21 @@ pub async fn git_set_upstream(
     branch: String,
     upstream: Option<String>,
 ) -> Result<(), String> {
-    match upstream {
-        Some(u) if !u.is_empty() => {
-            git_ok(
-                &repo,
-                &["branch", &format!("--set-upstream-to={u}"), &branch],
-            )?;
+    run_blocking(move || -> Result<(), String> {
+        match upstream {
+            Some(u) if !u.is_empty() => {
+                git_ok(
+                    &repo,
+                    &["branch", &format!("--set-upstream-to={u}"), &branch],
+                )?;
+            }
+            _ => {
+                git_ok(&repo, &["branch", "--unset-upstream", &branch])?;
+            }
         }
-        _ => {
-            git_ok(&repo, &["branch", "--unset-upstream", &branch])?;
-        }
-    }
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(test)]
