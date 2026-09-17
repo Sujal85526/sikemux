@@ -45,6 +45,7 @@ type VisibleTreeRow =
     { key: string; kind: "entry"; entry: DirEntry; depth: number } | { key: string; kind: "new"; depth: number; request: NewEntryRequest };
 
 const TREE_ROW_HEIGHT = 23;
+const READ_DIRS_BATCH = 512;
 const TREE_VIRTUALIZE_AFTER = 150;
 
 export interface CtxItem {
@@ -130,18 +131,21 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
 
     const loadDirs = useCallback(async (paths: readonly string[]) => {
         if (paths.length === 0) return;
-        const read = await Promise.all(
-            paths.map(async (path) => {
-                try {
-                    return [path, await fsapi.readDir(path)] as const;
-                } catch (error) {
-                    swallow("readDir")(error);
-                    return [path, null] as const;
-                }
-            }),
-        );
+        const batches: string[][] = [];
+        for (let at = 0; at < paths.length; at += READ_DIRS_BATCH) {
+            batches.push(paths.slice(at, at + READ_DIRS_BATCH) as string[]);
+        }
+        let listings;
+        try {
+            listings = (await Promise.all(batches.map((batch) => fsapi.readDirs(batch)))).flat();
+        } catch (error) {
+            swallow("readDirs")(error);
+            return;
+        }
         const loaded: Record<string, DirEntry[]> = {};
-        for (const [path, entries] of read) if (entries) loaded[path] = entries;
+        for (const listing of listings) {
+            if (listing.error === null) loaded[listing.path] = listing.entries;
+        }
         if (Object.keys(loaded).length === 0) return;
         setDirs((d) => ({ ...d, ...loaded }));
     }, []);

@@ -17,12 +17,19 @@ export interface FileSnapshot {
     version: string;
 }
 
+export interface DirListing {
+    path: string;
+    entries: DirEntry[];
+    error: string | null;
+}
+
 export interface FileWriteResult {
     version: string;
 }
 
 export const fsapi = {
     readDir: (path: string) => invoke<DirEntry[]>("read_dir", { path }),
+    readDirs: (paths: string[]) => invoke<DirListing[]>("read_dirs", { paths }),
     readFile: (path: string) => invoke<string>("read_file", { path }),
     readFileVersioned: (path: string) => invoke<FileSnapshot>("read_file_versioned", { path }),
     readTextFileLimited: (path: string) => invoke<string>("read_text_file_limited", { path }),

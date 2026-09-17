@@ -2,8 +2,8 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { FileTree } from "./FileTree";
 
-const { readDir } = vi.hoisted(() => ({ readDir: vi.fn() }));
-vi.mock("../api/fs", () => ({ fsapi: { readDir } }));
+const { readDirs } = vi.hoisted(() => ({ readDirs: vi.fn() }));
+vi.mock("../api/fs", () => ({ fsapi: { readDirs } }));
 vi.mock("../state/resources", async (importOriginal) => ({
     ...(await importOriginal<object>()),
     useResourceEnabled: () => ({ data: undefined, status: "ok", refresh: vi.fn() }),
@@ -20,8 +20,12 @@ vi.mock("@tanstack/react-virtual", () => ({
 afterEach(cleanup);
 
 it("keeps a large expanded directory to a small mounted row window", async () => {
-    readDir.mockResolvedValue(
-        Array.from({ length: 1_000 }, (_, index) => ({ name: `file-${index}.ts`, path: `/repo/file-${index}.ts`, is_dir: false })),
+    readDirs.mockImplementation(async (paths: string[]) =>
+        paths.map((path) => ({
+            path,
+            entries: Array.from({ length: 1_000 }, (_, index) => ({ name: `file-${index}.ts`, path: `/repo/file-${index}.ts`, is_dir: false })),
+            error: null,
+        })),
     );
 
     const { container } = render(<FileTree cwd="/repo" active activePath={null} onOpenFile={vi.fn()} />);

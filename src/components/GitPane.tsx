@@ -307,9 +307,8 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
         if (r) {
             const slice = filteredFiles.slice(r[0], r[1] + 1);
             void run("staging range", async () => {
-                for (const f of slice) {
-                    if (hasUnstaged(f)) await git.stage(repo, f.path);
-                }
+                const paths = slice.filter(hasUnstaged).map((f) => f.path);
+                if (paths.length) await git.stagePaths(repo, paths);
             });
             return;
         }
@@ -419,7 +418,11 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
                 confirmKey,
                 onConfirm: async () => {
                     await run(r ? `discarding ${targets.length} files (${mode})` : `discarding ${f.path}`, async () => {
-                        for (const t of targets) await git.discardFile(repo, t.path, mode);
+                        await git.discardFiles(
+                            repo,
+                            targets.map((t) => t.path),
+                            mode,
+                        );
                     });
                 },
             });
