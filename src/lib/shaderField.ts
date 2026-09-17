@@ -1,13 +1,19 @@
 /*
  * Paper Shaders, used only where the workspace has nothing to show yet.
  *
- * The scarce resource here is WebGL contexts, not frames. Every open terminal
- * loads xterm's WebGL renderer (see `src/terminal/useXterm.ts`), and a page is
- * capped at roughly sixteen contexts before the browser starts evicting the
- * oldest without warning. Losing a decoration costs nothing; losing a
- * terminal's renderer costs the product. So the budget below is deliberately
+ * Two things are scarce here: WebGL contexts and frames.
+ *
+ * Contexts, because a page is capped at roughly sixteen before the browser
+ * starts evicting the oldest without warning, and a terminal asking for its own
+ * WebGL renderer must always win that race. So the budget below is deliberately
  * small, the runtime is fetched on first use, and a surface is released the
  * moment its host leaves the document.
+ *
+ * Frames, because every one of these is a full-screen fragment shader on a
+ * see-through window, which the window server has to recomposite. So the
+ * runtime's own frame loop is off and `advance` below drives every live surface
+ * from one timer, at a rate the machine can afford, and only while there is
+ * someone looking at it.
  *
  * Every mount is best effort. No WebGL, a failed texture decode, a reader who
  * asked for less motion — the plain interface underneath is always the
@@ -20,7 +26,9 @@
 
 // Type-only, so the runtime itself stays behind the dynamic import below.
 import type { ShaderMountUniforms } from "@paper-design/shaders";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Theme } from "../themes";
+import { onBatteryPower } from "../state/battery";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { prefersReducedMotion } from "./motion";
 
@@ -54,16 +62,30 @@ export type ShaderFieldPreset = "ambient" | "onboarding";
  * The window's backdrop, and room for the tour.
  *
  * One each, because neither belongs to a pane: splitting the window no longer
- * costs a context. That matters because every terminal takes one of the page's
- * ~16 for its own renderer, and a terminal losing that to a decoration is a far
- * worse trade than a surface without a texture.
+ * costs a context. That matters because a terminal asks for one of the page's
+ * ~16 as soon as its WebGL renderer is switched on, and a terminal losing that
+ * to a decoration is a far worse trade than a surface without a texture.
  */
 const SURFACE_BUDGET = 2;
+
+/*
+ * How often a field is repainted. Nothing here is being read, so the motion
+ * only has to read as drift; below about fifteen it starts to look like a
+ * stutter instead. The slower rate is for a machine paying for every frame out
+ * of its battery.
+ */
+const FRAMES_PER_SECOND = 30;
+const BATTERY_FRAMES_PER_SECOND = 20;
 
 interface Surface {
     preset: ShaderFieldPreset;
     mount: InstanceType<Shaders["ShaderMount"]> | null;
     runtime: Runtime | null;
+    /** What `advance` multiplies elapsed time by. Zero for a still. */
+    speed: number;
+    /** The moment this surface's clock reads zero. */
+    origin: number;
+    resize: ResizeObserver | null;
 }
 
 const surfaces = new Map<HTMLElement, Surface>();
@@ -107,6 +129,114 @@ function webglAvailable(): boolean {
 // shaders render one static frame rather than disappearing.
 function shouldAnimate(): boolean {
     return !prefersReducedMotion();
+}
+
+/** The frame a still holds, for a preset whose own clock starts at zero. */
+const STILL_FRAME = 2500;
+
+/**
+ * How many pixels a field may paint: one for each CSS pixel of its host.
+ *
+ * The seventh `ShaderMount` argument looks like a cap and is not — it is
+ * `minPixelRatio`, a floor, so passing 1 leaves a Retina screen rendering at 2x
+ * and paying four times the fill. The eighth argument is the real limit: the
+ * runtime divides the canvas down until it fits. A host's own CSS area is the
+ * number that makes that division land on exactly 1x.
+ */
+export function shaderFieldPixelCap(width: number, height: number): number {
+    return Math.max(1, Math.round(width) * Math.round(height));
+}
+
+function hostPixelCap(host: HTMLElement): number {
+    const rect = host.getBoundingClientRect();
+    return shaderFieldPixelCap(rect.width, rect.height);
+}
+
+/*
+ * Whether the app is the window the user is looking at.
+ *
+ * The webview's own `blur` is not the question being asked: focus moving to a
+ * native child webview — a browser tab — blurs the page while the window is
+ * still very much in front of the reader. Tauri answers for the window itself,
+ * and the page events are only the fallback for a build running without it.
+ */
+let windowFocused = true;
+let focusWatchStarted = false;
+
+function setFocused(focused: boolean): void {
+    if (windowFocused === focused) return;
+    windowFocused = focused;
+    syncTicker();
+}
+
+function startFocusWatch(): void {
+    if (focusWatchStarted) return;
+    focusWatchStarted = true;
+    document.addEventListener("visibilitychange", syncTicker);
+    try {
+        void getCurrentWindow()
+            .onFocusChanged(({ payload }) => setFocused(payload))
+            .catch(watchPageFocusInstead);
+    } catch {
+        watchPageFocusInstead();
+    }
+}
+
+function watchPageFocusInstead(): void {
+    window.addEventListener("focus", () => setFocused(true));
+    window.addEventListener("blur", () => setFocused(false));
+}
+
+let tickerHandle: number | null = null;
+
+function frameIntervalMs(): number {
+    return Math.round(1000 / (onBatteryPower() ? BATTERY_FRAMES_PER_SECOND : FRAMES_PER_SECOND));
+}
+
+function shouldTick(): boolean {
+    if (!windowFocused || document.hidden) return false;
+    for (const surface of surfaces.values()) if (surface.mount && surface.speed !== 0) return true;
+    return false;
+}
+
+/*
+ * Every surface reads its frame off the clock rather than accumulating one, so
+ * a field that was paused, released and rebuilt is always exactly where the
+ * clock says it should be and a resume cannot be told from a surface that was
+ * running all along.
+ */
+function advance(): void {
+    const now = performance.now();
+    for (const [host, surface] of surfaces) {
+        if (!surface.mount || surface.speed === 0) continue;
+        try {
+            surface.mount.setFrame((now - surface.origin) * surface.speed);
+        } catch (error) {
+            console.warn(`Paper Shaders: ${surface.preset} frame skipped —`, error instanceof Error ? error.message : error);
+            unmountShaderField(host);
+        }
+    }
+}
+
+function tick(): void {
+    tickerHandle = null;
+    advance();
+    scheduleTick();
+}
+
+function scheduleTick(): void {
+    if (tickerHandle === null && shouldTick()) tickerHandle = window.setTimeout(tick, frameIntervalMs());
+}
+
+function syncTicker(): void {
+    if (shouldTick()) {
+        scheduleTick();
+        return;
+    }
+    if (tickerHandle !== null) {
+        window.clearTimeout(tickerHandle);
+        tickerHandle = null;
+    }
 }
 
 function loadRuntime(): Promise<Runtime | null> {
@@ -289,8 +419,9 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset): 
     }
     lastRefusal = null;
 
+    startFocusWatch();
     // Claimed before the first await so a burst of calls mounts once.
-    surfaces.set(host, { preset, mount: null, runtime: null });
+    surfaces.set(host, { preset, mount: null, runtime: null, speed: 0, origin: FIELD_EPOCH, resize: null });
     void (async () => {
         const runtime = await loadRuntime();
         if (!runtime || surfaces.get(host)?.mount !== null) {
@@ -306,29 +437,33 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset): 
                 return;
             }
             const animate = shouldAnimate();
+            const origin = recipe.continuous ? FIELD_EPOCH : performance.now();
             /*
-             * `frame` is in the same accumulated units the runtime advances by
-             * (`currentFrame += dt * speed`), so sharing a phase means scaling
-             * the elapsed time by this preset's own speed rather than passing
-             * raw milliseconds.
+             * A frame is in the units the runtime accumulates in
+             * (`currentFrame += dt * speed`), so joining a clock means scaling
+             * elapsed time by this preset's own speed rather than passing raw
+             * milliseconds.
              */
-            const phase = recipe.continuous ? (performance.now() - FIELD_EPOCH) * recipe.speed : 0;
+            const phase = (performance.now() - origin) * recipe.speed;
             const mount = new runtime.ShaderMount(
                 host,
                 recipe.fragmentShader,
                 recipe.uniforms,
                 { antialias: false },
-                animate ? recipe.speed : 0,
-                // Asked for less motion, a continuous preset holds the phase it
-                // would have had rather than snapping to an arbitrary still.
-                animate ? phase : phase || 2500,
-                // These are soft fields behind text, not artwork. Rendering at
-                // 1x rather than the default 2x halves the fill cost and is
-                // invisible through the mask.
+                // The runtime's frame loop stays off whatever happens: `advance`
+                // drives every surface, so there is one timer rather than one
+                // rAF chain per field.
+                0,
+                // Asked for less motion, a field holds the phase it would have
+                // had rather than snapping to an arbitrary still.
+                animate ? phase : phase || STILL_FRAME,
                 1,
+                hostPixelCap(host),
             );
-            surfaces.set(host, { preset, mount, runtime });
+            const resize = trackHostSize(host, mount);
+            surfaces.set(host, { preset, mount, runtime, speed: animate ? recipe.speed : 0, origin, resize });
             host.dataset.shaderField = preset;
+            syncTicker();
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             console.warn(`Paper Shaders: ${preset} field skipped —`, reason);
@@ -338,13 +473,34 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset): 
     })();
 }
 
+/*
+ * The cap is an area, so it has to be recomputed whenever the host changes
+ * shape — a pane dragged wider would otherwise keep painting at the old area
+ * spread over more pixels, which is a scale below 1x and a visibly softer
+ * texture.
+ */
+function trackHostSize(host: HTMLElement, mount: InstanceType<Shaders["ShaderMount"]>): ResizeObserver | null {
+    if (typeof ResizeObserver === "undefined") return null;
+    let cap = hostPixelCap(host);
+    const observer = new ResizeObserver(() => {
+        const next = hostPixelCap(host);
+        if (next === cap) return;
+        cap = next;
+        mount.setMaxPixelCount(next);
+    });
+    observer.observe(host);
+    return observer;
+}
+
 /** Release a surface and its WebGL context. Safe to call for a host that never got one. */
 export function unmountShaderField(host: HTMLElement): void {
     const surface = surfaces.get(host);
     if (!surface) return;
     surfaces.delete(host);
     delete host.dataset.shaderField;
+    surface.resize?.disconnect();
     surface.mount?.dispose();
+    syncTicker();
 }
 
 /** Live surface count. Exported for tests and for reasoning about the context budget. */
@@ -360,6 +516,9 @@ export function shaderFieldDiagnostics(): Record<string, unknown> {
         webgl2: webglSupported,
         presets: [...surfaces.values()].map((surface) => `${surface.preset}${surface.mount ? "" : " (pending)"}`),
         animating: shouldAnimate(),
+        ticking: tickerHandle !== null,
+        framesPerSecond: Math.round(1000 / frameIntervalMs()),
+        windowFocused,
         lastRefusal,
     };
 }
