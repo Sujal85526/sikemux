@@ -1,116 +1,164 @@
-import { StreamLanguage } from "@codemirror/language";
+import { StreamLanguage, type StreamParser } from "@codemirror/language";
+import { Compartment, type Extension } from "@codemirror/state";
 import { themeCompartmentExtension } from "../themes/bus";
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { markdown } from "@codemirror/lang-markdown";
-import { python } from "@codemirror/lang-python";
-import { rust } from "@codemirror/lang-rust";
-import { go } from "@codemirror/lang-go";
-import { yaml } from "@codemirror/lang-yaml";
-import { c, cpp, java } from "@codemirror/legacy-modes/mode/clike";
-import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
-import { lua } from "@codemirror/legacy-modes/mode/lua";
-import { nginx } from "@codemirror/legacy-modes/mode/nginx";
-import { properties } from "@codemirror/legacy-modes/mode/properties";
-import { ruby } from "@codemirror/legacy-modes/mode/ruby";
-import { shell } from "@codemirror/legacy-modes/mode/shell";
-import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { hcl, makefile, sshConfig } from "./langs";
-import type { Extension } from "@codemirror/state";
 import { tags as t } from "@lezer/highlight";
 
-const propertiesMode = {
-    ...properties,
-    languageData: { commentTokens: { line: "#" } },
-    tokenTable: { quote: t.string },
+export type EditorLanguageHint = "ssh-config";
+
+/** Every document's grammar sits here so it can be swapped in once its pack has downloaded. */
+export const languageCompartment = new Compartment();
+
+const NO_LANGUAGE: Extension[] = [];
+
+function stream(parser: StreamParser<unknown>): Extension[] {
+    return [StreamLanguage.define(parser)];
+}
+
+function legacyMode(load: () => Promise<StreamParser<unknown>>): () => Promise<Extension[]> {
+    return async () => stream(await load());
+}
+
+const LANGUAGE_LOADERS: Record<string, () => Promise<Extension[]>> = {
+    "ssh-config": async () => stream(sshConfig),
+    makefile: async () => stream(makefile),
+    hcl: async () => stream(hcl),
+    dockerfile: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/dockerfile")).dockerFile),
+    properties: async () => {
+        const { properties } = await import("@codemirror/legacy-modes/mode/properties");
+        return stream({ ...properties, languageData: { commentTokens: { line: "#" } }, tokenTable: { quote: t.string } });
+    },
+    toml: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/toml")).toml),
+    shell: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/shell")).shell),
+    ruby: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/ruby")).ruby),
+    lua: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/lua")).lua),
+    nginx: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/nginx")).nginx),
+    c: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/clike")).c),
+    cpp: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/clike")).cpp),
+    java: legacyMode(async () => (await import("@codemirror/legacy-modes/mode/clike")).java),
+    typescript: async () => [(await import("@codemirror/lang-javascript")).javascript({ typescript: true })],
+    tsx: async () => [(await import("@codemirror/lang-javascript")).javascript({ typescript: true, jsx: true })],
+    javascript: async () => [(await import("@codemirror/lang-javascript")).javascript()],
+    jsx: async () => [(await import("@codemirror/lang-javascript")).javascript({ jsx: true })],
+    rust: async () => [(await import("@codemirror/lang-rust")).rust()],
+    python: async () => [(await import("@codemirror/lang-python")).python()],
+    go: async () => [(await import("@codemirror/lang-go")).go()],
+    json: async () => [(await import("@codemirror/lang-json")).json()],
+    yaml: async () => [(await import("@codemirror/lang-yaml")).yaml()],
+    css: async () => [(await import("@codemirror/lang-css")).css()],
+    html: async () => [(await import("@codemirror/lang-html")).html()],
+    markdown: async () => [(await import("@codemirror/lang-markdown")).markdown()],
 };
 
-export type EditorLanguageHint = "ssh-config";
+const loadedLanguages = new Map<string, Extension[]>();
+const loadingLanguages = new Map<string, Promise<Extension[]>>();
 
 export function isSshConfigPath(path: string): boolean {
     const file = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
     return file === "ssh_config" || /(?:^|[\\/])\.ssh[\\/]config$/i.test(path);
 }
 
-export function languageFor(path: string, hint?: EditorLanguageHint): Extension[] {
+export function languageIdFor(path: string, hint?: EditorLanguageHint): string | null {
     const file = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
-    if (hint === "ssh-config") return [StreamLanguage.define(sshConfig)];
-    if (file === "makefile" || file === "gnumakefile" || file.endsWith(".mk")) return [StreamLanguage.define(makefile)];
-    if (file === "dockerfile" || file.startsWith("dockerfile.")) return [StreamLanguage.define(dockerFile)];
+    if (hint === "ssh-config") return "ssh-config";
+    if (file === "makefile" || file === "gnumakefile" || file.endsWith(".mk")) return "makefile";
+    if (file === "dockerfile" || file.startsWith("dockerfile.")) return "dockerfile";
     // dotenv: .env, .env.local, .env.production, .env.example, etc.
-    if (file === ".env" || file.startsWith(".env.")) return [StreamLanguage.define(propertiesMode)];
-    if (isSshConfigPath(path)) return [StreamLanguage.define(sshConfig)];
+    if (file === ".env" || file.startsWith(".env.")) return "properties";
+    if (isSshConfigPath(path)) return "ssh-config";
 
     const ext = file.includes(".") ? file.split(".").pop()! : "";
     switch (ext) {
         case "ts":
         case "mts":
         case "cts":
-            return [javascript({ typescript: true })];
+            return "typescript";
         case "tsx":
-            return [javascript({ typescript: true, jsx: true })];
+            return "tsx";
         case "js":
         case "mjs":
         case "cjs":
-            return [javascript()];
+            return "javascript";
         case "jsx":
-            return [javascript({ jsx: true })];
+            return "jsx";
         case "rs":
-            return [rust()];
+            return "rust";
         case "py":
-            return [python()];
+            return "python";
         case "go":
-            return [go()];
+            return "go";
         case "json":
-            return [json()];
+            return "json";
         case "yaml":
         case "yml":
-            return [yaml()];
+            return "yaml";
         case "toml":
-            return [StreamLanguage.define(toml)];
+            return "toml";
         case "tf":
         case "tfvars":
         case "hcl":
-            return [StreamLanguage.define(hcl)];
+            return "hcl";
         case "sh":
         case "bash":
         case "zsh":
-            return [StreamLanguage.define(shell)];
+            return "shell";
         case "rb":
-            return [StreamLanguage.define(ruby)];
+            return "ruby";
         case "lua":
-            return [StreamLanguage.define(lua)];
+            return "lua";
         case "c":
         case "h":
-            return [StreamLanguage.define(c)];
+            return "c";
         case "cc":
         case "cpp":
         case "cxx":
         case "hpp":
-            return [StreamLanguage.define(cpp)];
+            return "cpp";
         case "java":
-            return [StreamLanguage.define(java)];
+            return "java";
         case "css":
         case "scss":
         case "less":
-            return [css()];
+            return "css";
         case "html":
         case "htm":
-            return [html()];
+            return "html";
         case "md":
         case "markdown":
-            return [markdown()];
+            return "markdown";
         case "conf":
-            return [StreamLanguage.define(nginx)];
+            return "nginx";
         case "ini":
         case "env":
         case "properties":
-            return [StreamLanguage.define(propertiesMode)];
+            return "properties";
         default:
-            return [];
+            return null;
     }
+}
+
+/** The grammar for a path if its pack is already in memory; otherwise nothing, until {@link loadLanguage} settles. */
+export function languageFor(path: string, hint?: EditorLanguageHint): Extension[] {
+    const id = languageIdFor(path, hint);
+    return (id && loadedLanguages.get(id)) || NO_LANGUAGE;
+}
+
+/** Download a path's grammar once and keep it for every later document in that language. */
+export function loadLanguage(path: string, hint?: EditorLanguageHint): Promise<Extension[]> {
+    const id = languageIdFor(path, hint);
+    if (!id) return Promise.resolve(NO_LANGUAGE);
+    const ready = loadedLanguages.get(id);
+    if (ready) return Promise.resolve(ready);
+    let pending = loadingLanguages.get(id);
+    if (!pending) {
+        pending = LANGUAGE_LOADERS[id]().then((extensions) => {
+            loadedLanguages.set(id, extensions);
+            loadingLanguages.delete(id);
+            return extensions;
+        });
+        loadingLanguages.set(id, pending);
+    }
+    return pending;
 }
 
 export const auraExtensions: Extension = themeCompartmentExtension();

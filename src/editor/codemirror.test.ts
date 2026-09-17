@@ -3,13 +3,13 @@ import { ensureSyntaxTree, highlightingFor } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { classHighlighter, highlightTree, tags } from "@lezer/highlight";
 import { describe, expect, it } from "vitest";
-import { auraExtensions, languageFor } from "./codemirror";
+import { auraExtensions, languageFor, loadLanguage } from "./codemirror";
 
 describe("editor languages", () => {
-    it("highlights dotenv keys, values, and comments", () => {
+    it("highlights dotenv keys, values, and comments", async () => {
         const state = EditorState.create({
             doc: "FIRST=one\n# explanation",
-            extensions: languageFor(".env"),
+            extensions: await loadLanguage(".env"),
         });
         const tree = ensureSyntaxTree(state, state.doc.length, 100);
         const spans: Array<{ text: string; classes: string }> = [];
@@ -26,12 +26,12 @@ describe("editor languages", () => {
         );
     });
 
-    it.each([".env", ".env.local"])("toggles selected lines in %s files", (path) => {
+    it.each([".env", ".env.local"])("toggles selected lines in %s files", async (path) => {
         const doc = "FIRST=one\nSECOND=two";
         let state = EditorState.create({
             doc,
             selection: { anchor: 0, head: doc.length },
-            extensions: languageFor(path),
+            extensions: await loadLanguage(path),
         });
 
         expect(toggleComment({ state, dispatch: (transaction) => (state = transaction.state) })).toBe(true);
@@ -41,10 +41,10 @@ describe("editor languages", () => {
         expect(state.doc.toString()).toBe(doc);
     });
 
-    it("highlights OpenSSH config structure", () => {
+    it("highlights OpenSSH config structure", async () => {
         const state = EditorState.create({
             doc: "Host staging\n  HostName staging.example.com\n  Port 2222\n  CanonicalizeHostname yes\n  ProxyCommand ssh -W %h:%p jump\n# note",
-            extensions: languageFor("/Users/me/.ssh/config"),
+            extensions: await loadLanguage("/Users/me/.ssh/config"),
         });
         const tree = ensureSyntaxTree(state, state.doc.length, 100);
         const spans: Array<{ text: string; classes: string }> = [];
@@ -64,10 +64,10 @@ describe("editor languages", () => {
         );
     });
 
-    it("honours the SSH config language hint independently of path", () => {
+    it("honours the SSH config language hint independently of path", async () => {
         const state = EditorState.create({
             doc: "Host production\n  HostName prod.example.com",
-            extensions: languageFor("/tmp/config", "ssh-config"),
+            extensions: await loadLanguage("/tmp/config", "ssh-config"),
         });
         const tree = ensureSyntaxTree(state, state.doc.length, 100);
         const spans: Array<{ text: string; classes: string }> = [];
@@ -82,14 +82,32 @@ describe("editor languages", () => {
         );
     });
 
-    it("maps SSH tokens to the active editor theme", () => {
+    it("maps SSH tokens to the active editor theme", async () => {
         const state = EditorState.create({
             doc: "Host production",
-            extensions: [auraExtensions, languageFor("/tmp/config", "ssh-config")],
+            extensions: [auraExtensions, await loadLanguage("/tmp/config", "ssh-config")],
         });
 
         expect(highlightingFor(state, [tags.keyword])).toBeTruthy();
         expect(highlightingFor(state, [tags.propertyName])).toBeTruthy();
         expect(highlightingFor(state, [tags.string])).toBeTruthy();
+    });
+});
+
+describe("language loading", () => {
+    it("hands back the same grammar to every document in that language", async () => {
+        const first = await loadLanguage("/repo/a.ts");
+        const second = await loadLanguage("/repo/b.mts");
+        expect(second).toBe(first);
+        expect(languageFor("/repo/c.cts")).toBe(first);
+    });
+
+    it("reports nothing for a path with no grammar", async () => {
+        expect(await loadLanguage("/repo/notes.unknownext")).toEqual([]);
+        expect(languageFor("/repo/notes.unknownext")).toEqual([]);
+    });
+
+    it("has no grammar to offer until the pack has downloaded", () => {
+        expect(languageFor("/repo/main.lua")).toEqual([]);
     });
 });

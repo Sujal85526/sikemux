@@ -3,7 +3,7 @@ import { Compartment, EditorState, Range as CMRange, StateEffect, StateField } f
 import { Decoration, EditorView, ViewPlugin, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { auraExtensions, languageFor } from "../editor/codemirror";
+import { auraExtensions, loadLanguage } from "../editor/codemirror";
 import { registerView } from "../themes/bus";
 import { subscribe } from "../state/bus";
 import { searchApi, type SearchFile, type SearchHit, type SearchResults, type ReplaceResults } from "../api/search";
@@ -935,7 +935,6 @@ function Preview({
     useEffect(() => {
         const view = viewRef.current;
         if (!view || !active || !resolved) return;
-        const languageExts = languageFor(resolved.file.path);
         const startLine = active.entry.startLine;
         const lineNoInWindow = Math.max(1, resolved.hit.line - startLine + 1);
         view.dispatch({
@@ -945,7 +944,6 @@ function Preview({
                 insert: active.entry.doc,
             },
             effects: [
-                languageCompRef.current.reconfigure(languageExts),
                 lineNumberCompRef.current.reconfigure(
                     lineNumbers({
                         formatNumber: (n) => String(startLine + n - 1),
@@ -964,6 +962,18 @@ function Preview({
             const line = v.state.doc.line(lineNoInWindow);
             v.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
         });
+
+        const path = resolved.file.path;
+        let cancelled = false;
+        void loadLanguage(path).then((extensions) => {
+            const v = viewRef.current;
+            if (cancelled || !v || extensions.length === 0) return;
+            if (languageCompRef.current.get(v.state) === extensions) return;
+            v.dispatch({ effects: languageCompRef.current.reconfigure(extensions) });
+        });
+        return () => {
+            cancelled = true;
+        };
     }, [active, resolved]);
 
     if (!resolved) {

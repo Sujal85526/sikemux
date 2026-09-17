@@ -9,7 +9,17 @@ import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { copyLineDown, copyLineUp, indentWithTab } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
-import { auraExtensions, editorThemeOnlyExtensions, isLargeDoc, isSshConfigPath, languageFor, type EditorLanguageHint } from "../editor/codemirror";
+import {
+    auraExtensions,
+    editorThemeOnlyExtensions,
+    isLargeDoc,
+    isSshConfigPath,
+    LARGE_DOC_BYTES,
+    languageCompartment,
+    languageFor,
+    loadLanguage,
+    type EditorLanguageHint,
+} from "../editor/codemirror";
 import { isImagePath } from "../editor/media";
 import { MarkdownTableHead } from "../lib/markdownTable";
 import { gitDiffGutter } from "../editor/gitGutter";
@@ -388,7 +398,8 @@ export function EditorPane({
             // Large files: skip the per-change (git diff) and per-mousemove (hover link)
             // extensions — they're the ones whose cost scales with the document.
             const heavy = isLargeDoc(content);
-            const language = languageFor(path, languageHint);
+            const wantsLanguage = !heavy || !!languageHint;
+            if (wantsLanguage) void loadLanguage(path, languageHint).catch(swallow("editor language"));
             return EditorState.create({
                 doc: content,
                 extensions: [
@@ -396,7 +407,7 @@ export function EditorPane({
                     editableCompartment.of(EditorView.editable.of(true)),
                     search({ top: true }),
                     heavy ? editorThemeOnlyExtensions() : auraExtensions,
-                    ...(heavy && !languageHint ? [] : language),
+                    languageCompartment.of(wantsLanguage ? languageFor(path, languageHint) : []),
                     ...(heavy ? [] : [gitDiffGutter(), gitInlineBlame(), lspHoverLink()]),
                     lspNav(),
                     lspPeek(),
@@ -951,6 +962,25 @@ export function EditorPane({
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activePath, cwd]);
+
+    // The grammar packs download per language, so a freshly opened document may
+    // start plain and gain its highlighting a moment later.
+    useEffect(() => {
+        if (!activePath || isImagePath(activePath)) return;
+        let cancelled = false;
+        void loadLanguage(activePath, languageHint)
+            .then((extensions) => {
+                const view = viewRef.current;
+                if (cancelled || extensions.length === 0 || !view || currentRef.current !== activePath) return;
+                if (view.state.doc.length > LARGE_DOC_BYTES && !languageHint) return;
+                if (languageCompartment.get(view.state) === extensions) return;
+                view.dispatch({ effects: languageCompartment.reconfigure(extensions) });
+            })
+            .catch(swallow("editor language"));
+        return () => {
+            cancelled = true;
+        };
+    }, [activePath, languageHint]);
 
     useGitBaseline(() => viewRef.current, cwd, activePath);
     useGitBlame(() => viewRef.current, cwd, activePath);
