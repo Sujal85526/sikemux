@@ -10,6 +10,11 @@
 - Do not create or use Git worktrees.
 - Commit day-to-day changes directly to `main`.
 - Make small, atomic commits as work progresses.
+- Other agents are always working in the same tree at the same time. Stage only the
+  files your own session touched, by path, and commit those. Never `git add -A`,
+  `git add .`, or `git commit -a`, and never stash, revert, or amend anything you
+  did not write. Unrelated dirty files belong to someone else — leave them alone
+  and do not mention them as blockers.
 
 - Do not proactively write comments in code. We prefer code to be self explanatory. When we write comments its because there is something locally unintuitive that a future reader should know. But as we write code our goal is to make all code locally intuitive, removing the need for comments. If we ever do need to write comments, we never introduce jargon. Comments should be understandable to someone who was just dropped into the codebase for the first time. Comments should attempt to be concise, on average 1-2 lines. If you are writing a longer comment its likely there is a lot of useless information, which is bad because the information may become stale as the code changes
 - Do not leave random markdown files in the codebase that are meant to be some way to deliver information to me. If you want to write a markdown file write it in a temporary file, and give me the path and chat and I can read it
