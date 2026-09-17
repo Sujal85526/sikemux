@@ -1,12 +1,13 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconCheck, IconChevron } from "../components/Icons";
 import { useStore } from "../state/store";
-import type { Agent, ProviderProfile } from "../state/types";
+import { DEFAULT_PROVIDER_PROFILE_SELECTION, type Agent, type ProviderProfile } from "../state/types";
 
 interface Choice {
     value: string;
     label: string;
     description?: string;
+    icon?: ReactNode;
 }
 
 export interface SessionConfig {
@@ -19,6 +20,11 @@ export interface SessionConfig {
 function record(value: unknown): Record<string, unknown> | null {
     return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
+
+const HARNESSES = [
+    { type: "codex", label: "Codex" },
+    { type: "claude", label: "Claude" },
+] as const;
 
 const NAMED_VERSION = /^(\p{L}+)\s+(\d+(?:\.\d+)?)\b/u;
 
@@ -181,6 +187,7 @@ function Picker({
                                     onSelect(option.value);
                                     close();
                                 }}>
+                                {option.icon}
                                 <span>
                                     <strong>{option.label}</strong>
                                     {option.description && <small>{option.description}</small>}
@@ -215,25 +222,31 @@ export function ComposerPickers({
 }) {
     const profiles = useStore((state) => state.providerProfiles);
     const configs = sessionConfigs(setup);
-    const agentOptions = [
-        { value: "codex", label: "Codex", description: "Default configuration" },
-        { value: "claude", label: "Claude", description: "Default configuration" },
-        ...profiles
-            .filter((item) => item.provider === "codex" || item.provider === "claude")
-            .map((item) => ({ value: item.id, label: item.name, description: item.provider === "codex" ? "Codex" : "Claude" })),
-    ];
+    const agentOptions = HARNESSES.flatMap(({ type, label }) => {
+        const icon = <AgentIcon type={type} size={15} className={`agent-glyph ${type}`} />;
+        const owned = profiles.filter((item) => item.provider === type);
+        if (owned.length === 0) return [{ value: type, label, description: "Default configuration", icon }];
+        return owned.map((item) => ({
+            value: item.id,
+            label: item.name,
+            description: item.id === DEFAULT_PROVIDER_PROFILE_SELECTION[type] ? "Default configuration" : label,
+            icon,
+        }));
+    });
+    const builtin = DEFAULT_PROVIDER_PROFILE_SELECTION[agent.type];
+    const agentValue = profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : agent.type);
     return (
         <div className="chat-pickers">
             <Picker
                 name="Agent"
                 label={profile?.name || (agent.type === "codex" ? "Codex" : "Claude")}
-                value={profile?.id || agent.type}
+                value={agentValue}
                 options={agentOptions}
                 disabled={disabled || agentLocked}
-                icon={<AgentIcon type={agent.type} size={15} />}
+                icon={<AgentIcon type={agent.type} size={15} className={`agent-glyph ${agent.type}`} />}
                 hint={agentLocked ? "The agent is fixed after the first message." : "Choose the harness for this chat."}
                 onSelect={(value) => {
-                    if (agentLocked || value === (profile?.id || agent.type)) return;
+                    if (agentLocked || value === agentValue) return;
                     const next = profiles.find((item) => item.id === value);
                     const type = next?.provider ?? value;
                     if (type !== "claude" && type !== "codex") return;

@@ -1650,6 +1650,15 @@ button.chat-tool:hover {
     color: var(--ink);
 }
 
+.chat-picker-options > button > .agent-glyph {
+    flex-shrink: 0;
+}
+
+.chat-picker-options > button > span {
+    flex: 1;
+    min-width: 0;
+}
+
 .chat-picker-options > button.highlighted {
     background: color-mix(in srgb, var(--ink) 7%, transparent);
 }

@@ -37,7 +37,11 @@ describe("composer pickers", () => {
                         currentValue: "opus[1m]",
                         options: [
                             { value: "default", name: "Default (recommended)", description: "Opus (1M context)" },
-                            { value: "opus[1m]", name: "Opus (1M context)", description: "Opus 5 with 1M context · Best for everyday, complex tasks" },
+                            {
+                                value: "opus[1m]",
+                                name: "Opus (1M context)",
+                                description: "Opus 5 with 1M context · Best for everyday, complex tasks",
+                            },
                             { value: "sonnet", name: "Sonnet", description: "Sonnet 5 · Efficient for routine tasks" },
                             { value: "haiku", name: "Haiku", description: "Haiku 4.5 · Fastest for quick answers" },
                         ],
@@ -61,6 +65,24 @@ describe("composer pickers", () => {
         fireEvent.click(screen.getByRole("button", { name: "Agent" }));
         fireEvent.click(screen.getByRole("option", { name: /Work Claude/ }));
         expect(mocks.onAgent).toHaveBeenCalledWith("claude", "work");
+    });
+
+    it("lists a harness once when its built-in profile is the default", () => {
+        render(
+            <ComposerPickers
+                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                onAgent={mocks.onAgent}
+                setup={{}}
+                disabled={false}
+                onConfig={() => {}}
+            />,
+        );
+        fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+            "CodexDefault configuration",
+            "ClaudeDefault configuration",
+        ]);
+        expect(screen.getByRole("option", { name: /Codex/ })).toHaveAttribute("aria-selected", "true");
     });
 
     it("locks the agent after messages while keeping model and effort available", () => {
