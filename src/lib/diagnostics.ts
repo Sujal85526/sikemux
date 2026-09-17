@@ -205,7 +205,7 @@ export function sendUiActivity(): Promise<void> {
     if (!report) return Promise.resolve();
     uiActivitySendInFlight = true;
     return getIpcTransport()
-        .invoke<void>(UI_ACTIVITY_COMMAND, report)
+        .invoke<void>(UI_ACTIVITY_COMMAND, { activity: report })
         .finally(() => {
             uiActivitySendInFlight = false;
         });

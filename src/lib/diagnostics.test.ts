@@ -74,8 +74,9 @@ describe("UI activity transport", () => {
             hidden.mockReturnValue(false);
             await sendUiActivity();
             expect(received).toHaveLength(1);
-            expect(Object.keys(received[0] as object)).toEqual(["atMs", "inflight", "recent", "focusPane", "interactions", "rejections"]);
-            expect(received[0]).toMatchObject({ interactions: [{ kind: "pointer" }] });
+            const activity = (received[0] as { activity: Record<string, unknown> }).activity;
+            expect(Object.keys(activity)).toEqual(["atMs", "inflight", "recent", "focusPane", "interactions", "rejections"]);
+            expect(activity).toMatchObject({ interactions: [{ kind: "pointer" }] });
         } finally {
             hidden.mockRestore();
             restore();

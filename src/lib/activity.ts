@@ -80,8 +80,9 @@ function clampText(value: string): string {
     return value.length > UI_ACTIVITY_LIMITS.maxStringLength ? value.slice(0, UI_ACTIVITY_LIMITS.maxStringLength) : value;
 }
 
+/** Whole milliseconds: the native side reads these as unsigned integers. */
 function elapsed(from: number, to: number): number {
-    return to > from ? to - from : 0;
+    return to > from ? Math.round(to - from) : 0;
 }
 
 interface InflightCommand {
@@ -182,7 +183,7 @@ export class UiActivityTracker {
     snapshot(): UiActivityReport {
         const now = this.now();
         return {
-            atMs: this.wallClock(),
+            atMs: Math.round(this.wallClock()),
             inflight: this.readInflight(now),
             recent: this.readRecent(),
             focusPane: this.readFocusPane(),

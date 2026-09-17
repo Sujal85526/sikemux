@@ -152,6 +152,22 @@ describe("UiActivityTracker report", () => {
         });
     });
 
+    it("reports whole milliseconds, which is all the native side accepts", () => {
+        const clock = { now: 0.5 };
+        const tracker = trackerAt(clock);
+        const ticket = tracker.beginCommand("git_status");
+        tracker.beginCommand("home_dir");
+        tracker.recordInteraction("pointer");
+        clock.now = 12.74;
+        tracker.endCommand(ticket, true);
+
+        const report = tracker.snapshot();
+        expect(report.recent[0].ms).toBe(12);
+        expect(report.inflight[0].ageMs).toBe(12);
+        expect(report.interactions[0].ageMs).toBe(12);
+        expect(report.atMs).toBe(1_700_000_000_013);
+    });
+
     it("survives a source that throws", () => {
         const tracker = new UiActivityTracker({ now: () => 0 });
         tracker.setSources({
