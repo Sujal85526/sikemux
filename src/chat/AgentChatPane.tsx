@@ -17,7 +17,6 @@ import {
     IconAgent,
     IconArrowDown,
     IconArrowUp,
-    IconCheck,
     IconChevron,
     IconClose,
     IconCommand,
@@ -489,9 +488,11 @@ function ToolGroup({ tools }: { tools: Extract<ChatPart, { kind: "tool" }>[] }) 
     return (
         <div className="chat-tools">
             <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={() => setReader(!open)}>
-                <span className={`chat-tools-mark${failed ? " failed" : ""}`}>
-                    {running ? <IconCommand size={11} /> : failed ? <IconWarning size={11} /> : <IconCheck size={11} />}
-                </span>
+                {failed && (
+                    <span className="chat-tools-mark">
+                        <IconWarning size={11} />
+                    </span>
+                )}
                 <span className="chat-tools-count">
                     {tools.length} tool {tools.length === 1 ? "call" : "calls"}
                 </span>
