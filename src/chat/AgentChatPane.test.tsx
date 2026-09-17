@@ -63,7 +63,12 @@ const agent: Agent = {
 const shortcutKey = { key: "Enter", modifier: IS_MACOS ? { metaKey: true } : { ctrlKey: true } };
 
 function emit(kind: AcpEvent["kind"], payload: Record<string, unknown>): void {
-    act(() => mocks.eventListener?.({ agentId: agent.id, kind, payload }));
+    // Streamed updates arrive a frame's worth at a time.
+    act(() => mocks.eventListener?.({ agentId: agent.id, kind, payload: kind === "session_update" ? { updates: [payload] } : payload }));
+}
+
+function emitBatch(updates: Record<string, unknown>[]): void {
+    act(() => mocks.eventListener?.({ agentId: agent.id, kind: "session_update", payload: { updates } }));
 }
 
 // jsdom reports no sizes and never fires a resize, so a scroller and the
@@ -410,6 +415,16 @@ describe("AgentChatPane", () => {
 
         emit("turn_completed", { stopReason: "end_turn" });
         await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    });
+
+    it("reads every update in one streamed frame", async () => {
+        await openTranscript();
+        emitBatch([
+            { sessionId: "session-1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "One " } } },
+            { sessionId: "session-1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "two " } } },
+            { sessionId: "session-1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "three" } } },
+        ]);
+        expect(await screen.findByText("One two three")).toBeInTheDocument();
     });
 
     it("says what a running tool is doing instead of quoting the command it was given", async () => {

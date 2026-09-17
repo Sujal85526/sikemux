@@ -178,8 +178,20 @@ fn bounded_text(name: &str, value: &str, max: usize) -> Result<(), String> {
     Ok(())
 }
 
-fn emit(app: &AppHandle, agent_id: &str, kind: &'static str, payload: Value) {
-    let _ = app.emit(
+/// One frame's worth of streamed updates travels as a single event. Each
+/// notification on its own costs a script eval in the webview, and an adapter
+/// sends one per token.
+const SESSION_UPDATE_FLUSH: Duration = Duration::from_millis(16);
+
+fn pending_session_updates() -> &'static Mutex<HashMap<String, Vec<Value>>> {
+    static PENDING: std::sync::OnceLock<Mutex<HashMap<String, Vec<Value>>>> =
+        std::sync::OnceLock::new();
+    PENDING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn emit_now(app: &AppHandle, agent_id: &str, kind: &'static str, payload: Value) {
+    let _ = app.emit_to(
+        "main",
         "acp_event",
         AcpEvent {
             agent_id: agent_id.to_owned(),
@@ -187,6 +199,62 @@ fn emit(app: &AppHandle, agent_id: &str, kind: &'static str, payload: Value) {
             payload,
         },
     );
+}
+
+fn flush_session_updates(app: &AppHandle, agent_id: &str) {
+    let batched = pending_session_updates()
+        .lock()
+        .ok()
+        .and_then(|mut pending| pending.remove(agent_id))
+        .filter(|updates| !updates.is_empty());
+    if let Some(updates) = batched {
+        emit_now(
+            app,
+            agent_id,
+            "session_update",
+            json!({ "updates": updates }),
+        );
+    }
+}
+
+fn queue_session_update(app: &AppHandle, agent_id: &str, payload: Value) {
+    let first = match pending_session_updates().lock() {
+        Ok(mut pending) => {
+            let batch = pending.entry(agent_id.to_owned()).or_default();
+            batch.push(payload);
+            batch.len() == 1
+        }
+        Err(_) => {
+            emit_now(
+                app,
+                agent_id,
+                "session_update",
+                json!({ "updates": [payload] }),
+            );
+            return;
+        }
+    };
+    if !first {
+        return;
+    }
+    let app = app.clone();
+    let agent_id = agent_id.to_owned();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(SESSION_UPDATE_FLUSH).await;
+        flush_session_updates(&app, &agent_id);
+    });
+}
+
+/// Anything that is not a streamed update reads as a reply to what came before
+/// it, so the batch behind it goes out first and the order the adapter sent
+/// them in survives.
+fn emit(app: &AppHandle, agent_id: &str, kind: &'static str, payload: Value) {
+    if kind == "session_update" {
+        queue_session_update(app, agent_id, payload);
+        return;
+    }
+    flush_session_updates(app, agent_id);
+    emit_now(app, agent_id, kind, payload);
 }
 
 fn adapter_spec(provider: &str) -> Result<AdapterSpec, String> {

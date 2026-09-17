@@ -50,6 +50,7 @@ import type {
 
 const MAX_ATTACHMENTS = 32;
 const MAX_DETAIL_CHARS = 120_000;
+const HIDDEN_FLUSH_MS = 250;
 // How far above the last line still counts as reading the latest message.
 const BOTTOM_SLACK = 72;
 /* A session that drops comes back on its own. The waits grow so an agent that
@@ -822,6 +823,7 @@ export function AgentChatPane({
     const editorRef = useRef<HTMLTextAreaElement>(null);
     const queuedUpdatesRef = useRef<[string, Record<string, unknown>][]>([]);
     const updateFrameRef = useRef<number | null>(null);
+    const updateTimerRef = useRef<number | null>(null);
     const agentRef = useRef(agent);
     agentRef.current = agent;
     const agentLockedRef = useRef(false);
@@ -924,12 +926,23 @@ export function AgentChatPane({
                 window.cancelAnimationFrame(updateFrameRef.current);
                 updateFrameRef.current = null;
             }
+            if (updateTimerRef.current !== null) {
+                window.clearTimeout(updateTimerRef.current);
+                updateTimerRef.current = null;
+            }
             const updates = queuedUpdatesRef.current.splice(0);
             for (const [sessionId, update] of updates) dispatch({ type: "session_update", sessionId, update });
         };
 
+        /* A hidden window gets no animation frames, so a turn that runs behind
+           another tab would pile its whole transcript into one flush the moment
+           it comes back. A timer keeps it draining. */
         const queueUpdate = (sessionId: string, update: Record<string, unknown>) => {
             queuedUpdatesRef.current.push([sessionId, update]);
+            if (document.hidden) {
+                if (updateTimerRef.current === null) updateTimerRef.current = window.setTimeout(flushUpdates, HIDDEN_FLUSH_MS);
+                return;
+            }
             if (updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
         };
 
@@ -944,9 +957,14 @@ export function AgentChatPane({
                     setup: recordOf(event.payload.setup) ?? {},
                 });
             } else if (event.kind === "session_update") {
-                const update = recordOf(event.payload.update);
-                const sessionId = typeof event.payload.sessionId === "string" ? event.payload.sessionId : null;
-                if (update && sessionId) queueUpdate(sessionId, update);
+                const batch = Array.isArray(event.payload.updates) ? event.payload.updates : [];
+                for (const entry of batch) {
+                    const row = recordOf(entry);
+                    if (!row) continue;
+                    const update = recordOf(row.update);
+                    const sessionId = typeof row.sessionId === "string" ? row.sessionId : null;
+                    if (update && sessionId) queueUpdate(sessionId, update);
+                }
             } else if (event.kind === "turn_started") {
                 if (sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current) {
                     cmd.attachAgentSession(agent.id, sessionIdRef.current);
@@ -1000,6 +1018,8 @@ export function AgentChatPane({
             sessionIdRef.current = null;
             if (updateFrameRef.current !== null) window.cancelAnimationFrame(updateFrameRef.current);
             updateFrameRef.current = null;
+            if (updateTimerRef.current !== null) window.clearTimeout(updateTimerRef.current);
+            updateTimerRef.current = null;
             queuedUpdatesRef.current = [];
             controller.abort();
             lifecycleRef.current = lifecycle.finally(() => acpApi.stop(agent.id).catch(() => {}));

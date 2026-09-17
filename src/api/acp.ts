@@ -24,6 +24,7 @@ export interface AcpStartResponse {
 export interface AcpEvent {
     agentId: string;
     kind: "status" | "ready" | "session_update" | "turn_started" | "turn_completed" | "permission_request" | "error";
+    /** A `session_update` carries `updates`: a frame's worth of them at once. */
     payload: Record<string, unknown>;
 }
 
