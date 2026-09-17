@@ -1,16 +1,12 @@
-# Sikemux v0.4.0-nightly.4
+# Sikemux v0.4.0-nightly.5
 
-The fourth nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The fifth nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## Agents can see the browser again
+## The browser sidecar starts again
 
-- For nine days no agent could find a browser tool. Moving agent panes onto the interactive shell took the per-host wiring with it: the environment variables kept being exported and nothing read them, so a model asked to use the browser went looking for a command named after it.
-- Each host is told its own way again, from one place — a config file on the command line for Claude, dotted overrides for Codex, the bundled extension for Pi and omp, a private home for Hermes and Grok, and config content for OpenCode. None of it disturbs the MCP servers you configured yourself.
-- An agent pane runs on one of two transports, and both are told now. The chat pane speaks ACP, where the agent sits behind an adapter and never sees a command line, so its sessions declare the browser as an MCP server of their own on both the new-session and resume paths. A session that cannot be told still runs, without the tools.
+- The shipped sidecar could not run at all. It is one PyInstaller file that unpacks its Python library to a temporary folder and loads it from there, and bundling signs it with the hardened runtime, which only lets a process load libraries from its own team. An unpacked library belongs to no team, so it died on startup with "different Team IDs" and any agent reaching for a browser tool got nothing back.
+- The bundle now carries an entitlements file saying that load is allowed.
+- This has been broken in every nightly that bundled the sidecar. It only showed now because the previous build restored the wiring that tells an agent the browser tools exist — until then nothing ever launched it, so a sidecar that could not start looked exactly like one nobody called.
+- The build starts the bundled sidecar and fails if it cannot. The smoke test that ran before it exercised the copy built beside the bundle, which is signed without the hardened runtime and starts whether or not the shipped one would.
 
-## The session view
-
-- A run of tool calls stays open until the agent moves on, rather than folding away while it is still working.
-- An attachment sits under the message that sent it.
-
-For the complete patch history, compare [`v0.4.0-nightly.3...v0.4.0-nightly.4`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.3...v0.4.0-nightly.4).
+For the complete patch history, compare [`v0.4.0-nightly.4...v0.4.0-nightly.5`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.4...v0.4.0-nightly.5).
