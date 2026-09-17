@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     unregisterTheme: vi.fn(),
     searchDispose: vi.fn(),
     titleDispose: vi.fn(),
+    webglDispose: vi.fn(),
 }));
 
 vi.mock("@xterm/xterm", () => ({
@@ -31,6 +32,9 @@ vi.mock("@xterm/xterm", () => ({
         }
         onTitleChange() {
             return { dispose: mocks.titleDispose };
+        }
+        onData() {
+            return { dispose: vi.fn() };
         }
         attachCustomWheelEventHandler() {}
         attachCustomKeyEventHandler() {}
@@ -76,6 +80,15 @@ vi.mock("@xterm/addon-web-links", () => ({
     WebLinksAddon: class {},
 }));
 
+vi.mock("@xterm/addon-webgl", () => ({
+    WebglAddon: class {
+        onContextLoss() {
+            return { dispose: vi.fn() };
+        }
+        dispose = mocks.webglDispose;
+    },
+}));
+
 vi.mock("../themes/bus", () => ({
     currentTerminalTheme: () => ({ background: "rgba(0, 0, 0, 0)" }),
     registerTerminal: () => mocks.unregisterTheme,
@@ -94,6 +107,7 @@ beforeEach(() => {
     mocks.unregisterTheme.mockClear();
     mocks.searchDispose.mockClear();
     mocks.titleDispose.mockClear();
+    mocks.webglDispose.mockClear();
     Object.defineProperty(document, "fonts", {
         configurable: true,
         value: { load: vi.fn().mockResolvedValue([]) },
@@ -118,11 +132,7 @@ describe("useXterm renderer boot", () => {
         } as unknown as NativePtyController;
 
         const view = render(<Harness controller={controller} onExit={onExit} />);
-        await act(async () => {
-            await Promise.resolve();
-            await Promise.resolve();
-            await Promise.resolve();
-        });
+        await act(async () => vi.advanceTimersByTimeAsync(0));
 
         expect(resize).toHaveBeenCalledWith(80, 24);
         expect(attach).not.toHaveBeenCalled();
@@ -136,5 +146,25 @@ describe("useXterm renderer boot", () => {
 
         await act(async () => vi.advanceTimersByTimeAsync(100));
         expect(mocks.terminals).toHaveLength(2);
+    });
+
+    it("renders through WebGL without an explicit environment opt-in", async () => {
+        const controller = {
+            start: vi.fn().mockResolvedValue(7),
+            resize: vi.fn().mockResolvedValue(undefined),
+            attach: vi.fn().mockResolvedValue({
+                snapshot: new Uint8Array(),
+                alternateScreen: false,
+                shell: null,
+                activate: vi.fn(),
+                detach: vi.fn().mockResolvedValue(undefined),
+            }),
+            write: vi.fn().mockResolvedValue(undefined),
+        } as unknown as NativePtyController;
+
+        const view = render(<Harness controller={controller} onExit={vi.fn()} />);
+        await act(async () => vi.advanceTimersByTimeAsync(0));
+
+        expect((view.container.firstElementChild as HTMLElement).dataset.terminalRenderer).toBe("webgl");
     });
 });

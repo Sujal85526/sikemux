@@ -1,13 +1,13 @@
 export type TerminalRenderer = "dom" | "webgl";
 
 /**
- * WebGL stays opt-in until it has been exercised against WKWebView's
- * transparent-window redraw path. Vite environment values are strings, but
- * accepting booleans keeps the gate straightforward to test and reuse.
+ * WebGL is the default renderer; the DOM fallback stays reachable through the
+ * context-loss handler. Vite environment values are strings, but accepting
+ * booleans keeps the gate straightforward to test and reuse.
  */
 export function terminalWebglRequested(value: unknown): boolean {
-    if (value === true) return true;
-    if (typeof value !== "string") return false;
+    if (typeof value === "boolean") return value;
+    if (typeof value !== "string") return true;
     const normalized = value.trim().toLowerCase();
-    return normalized === "1" || normalized === "true";
+    return normalized !== "0" && normalized !== "false";
 }

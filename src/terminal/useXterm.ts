@@ -450,10 +450,12 @@ export function useXterm(opts: {
                         scheduleNextFrame(() => {
                             performanceTelemetry.recordLatency("terminal.output.next-frame-proxy", performance.now() - frameStarted);
                         });
-                        if (needsTerminalRedraw(merged)) {
+                        if (renderer === "webgl" && needsTerminalRedraw(merged)) {
                             // zsh-autosuggestions erases then redraws the input line.
                             // Force a complete canvas pass so transparent WKWebView
                             // terminals cannot retain the previous suggestion glyphs.
+                            // The DOM renderer repaints its own spans and needs none
+                            // of this.
                             term.refresh(0, term.rows - 1);
                             performanceTelemetry.incrementCounter("terminal.full-redraws");
                         }
