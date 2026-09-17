@@ -609,7 +609,13 @@ fn create_watch(app: AppHandle, repo_key: String) -> AppResult<WatchHandle> {
 }
 
 #[tauri::command]
-pub fn repo_watch_start(app: AppHandle, repo: String, token: String) -> AppResult<()> {
+pub async fn repo_watch_start(app: AppHandle, repo: String, token: String) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || start_repo_watch(app, repo, token))
+        .await
+        .map_err(|error| AppError::Watch(format!("repo_watch_start join: {error}")))?
+}
+
+fn start_repo_watch(app: AppHandle, repo: String, token: String) -> AppResult<()> {
     if !valid_watch_token(&token) {
         increment_watch_counter("fs_watch.start_invalid_token");
         return Err(AppError::Watch(WATCH_TOKEN_ERROR.to_owned()));
@@ -677,7 +683,13 @@ pub fn repo_watch_start(app: AppHandle, repo: String, token: String) -> AppResul
 }
 
 #[tauri::command]
-pub fn repo_watch_stop(token: String) -> AppResult<()> {
+pub async fn repo_watch_stop(token: String) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || stop_repo_watch(token))
+        .await
+        .map_err(|error| AppError::Watch(format!("repo_watch_stop join: {error}")))?
+}
+
+fn stop_repo_watch(token: String) -> AppResult<()> {
     if !valid_watch_token(&token) {
         increment_watch_counter("fs_watch.stop_invalid");
         return Err(AppError::Watch(WATCH_TOKEN_ERROR.to_owned()));

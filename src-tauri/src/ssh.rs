@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::Serialize;
+use tauri::async_runtime::spawn_blocking;
 
 use crate::error::{AppError, AppResult};
 #[derive(Serialize)]
@@ -49,7 +50,11 @@ fn config_path() -> AppResult<PathBuf> {
 }
 
 #[tauri::command]
-pub fn ssh_hosts() -> Vec<SshHost> {
+pub async fn ssh_hosts() -> Vec<SshHost> {
+    spawn_blocking(read_ssh_hosts).await.unwrap_or_default()
+}
+
+fn read_ssh_hosts() -> Vec<SshHost> {
     let Ok(path) = config_path() else {
         return Vec::new();
     };
@@ -107,7 +112,13 @@ pub fn ssh_hosts() -> Vec<SshHost> {
 /// existing config. Returning the canonical app path keeps the frontend's
 /// regular file editor independent of platform-specific home discovery.
 #[tauri::command]
-pub fn ssh_config_ensure() -> AppResult<String> {
+pub async fn ssh_config_ensure() -> AppResult<String> {
+    spawn_blocking(ensure_ssh_config)
+        .await
+        .map_err(|error| AppError::Fs(format!("ssh_config_ensure join: {error}")))?
+}
+
+fn ensure_ssh_config() -> AppResult<String> {
     let path = config_path()?;
     let ssh_dir = path
         .parent()

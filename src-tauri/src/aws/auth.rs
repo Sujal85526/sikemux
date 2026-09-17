@@ -109,7 +109,13 @@ fn classify(p: &HashMap<String, String>) -> AwsKind {
 }
 
 #[tauri::command]
-pub fn aws_profiles() -> Vec<AwsProfile> {
+pub async fn aws_profiles() -> Vec<AwsProfile> {
+    tauri::async_runtime::spawn_blocking(read_aws_profiles)
+        .await
+        .unwrap_or_default()
+}
+
+fn read_aws_profiles() -> Vec<AwsProfile> {
     let mut out: Vec<AwsProfile> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 

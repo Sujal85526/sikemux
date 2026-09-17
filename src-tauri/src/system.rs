@@ -7,6 +7,8 @@ use std::sync::OnceLock;
 
 use serde::Serialize;
 
+use tauri::async_runtime::spawn_blocking;
+
 use crate::{
     aws::LogsTailManager,
     error::{AppError, AppResult},
@@ -322,7 +324,18 @@ pub struct IntegrationHealth {
 }
 
 #[tauri::command]
-pub fn integration_health() -> IntegrationHealth {
+pub async fn integration_health() -> IntegrationHealth {
+    spawn_blocking(read_integration_health)
+        .await
+        .unwrap_or_else(|_| IntegrationHealth {
+            shell: configured_shell(),
+            git: false,
+            aws: false,
+            rnd: false,
+        })
+}
+
+fn read_integration_health() -> IntegrationHealth {
     IntegrationHealth {
         shell: configured_shell(),
         git: find_executable("git").is_some(),
@@ -471,8 +484,8 @@ pub fn home_dir() -> String {
 
 /// Frecency-ranked directories from zoxide, for the sesh picker.
 #[tauri::command]
-pub fn recent_dirs() -> Vec<String> {
-    zoxide_dirs()
+pub async fn recent_dirs() -> Vec<String> {
+    spawn_blocking(zoxide_dirs).await.unwrap_or_default()
 }
 
 fn zoxide_dirs() -> Vec<String> {
@@ -554,19 +567,26 @@ fn current_fd_limit() -> (Option<u64>, Option<u64>) {
 }
 
 #[tauri::command]
-pub fn runtime_diagnostics(
+pub async fn runtime_diagnostics(
     ptys: tauri::State<'_, PtyManager>,
     aws_logs: tauri::State<'_, LogsTailManager>,
     rundeck_watch: tauri::State<'_, RundeckWatchManager>,
     rundeck_logs: tauri::State<'_, RundeckLogsManager>,
-) -> RuntimeDiagnostics {
+) -> AppResult<RuntimeDiagnostics> {
+    // Counting /dev/fd is a directory read, so it goes to the blocking pool
+    // even though everything else here is in-memory bookkeeping.
+    let (fd_count, fd_limit_soft, fd_limit_hard) = spawn_blocking(|| {
+        let (soft, hard) = current_fd_limit();
+        (current_fd_count(), soft, hard)
+    })
+    .await
+    .unwrap_or((None, None, None));
     let (pty_count, pty_subscribers) = ptys.counts();
     let pty_diagnostics = ptys.diagnostics();
     let (lsp_open_documents, lsp_idle_servers) = crate::lsp::document_counts();
-    let (fd_limit_soft, fd_limit_hard) = current_fd_limit();
-    RuntimeDiagnostics {
+    Ok(RuntimeDiagnostics {
         pid: std::process::id(),
-        fd_count: current_fd_count(),
+        fd_count,
         fd_limit_soft,
         fd_limit_hard,
         ptys: pty_count,
@@ -587,7 +607,7 @@ pub fn runtime_diagnostics(
         rundeck_watchers: rundeck_watch.count(),
         rundeck_log_tails: rundeck_logs.count(),
         observability: crate::observability::global_observability().snapshot(),
-    }
+    })
 }
 
 // ---- Battery -------------------------------------------------------------
@@ -605,7 +625,17 @@ pub struct BatteryStatus {
 /// Returns percent=None on machines without a battery so the chip hides
 /// cleanly. Same approach as the user's existing `tmux-battery` script.
 #[tauri::command]
-pub fn battery_status() -> BatteryStatus {
+pub async fn battery_status() -> BatteryStatus {
+    spawn_blocking(read_battery_status)
+        .await
+        .unwrap_or(BatteryStatus {
+            percent: None,
+            charging: false,
+            time_remaining: None,
+        })
+}
+
+fn read_battery_status() -> BatteryStatus {
     #[cfg(not(target_os = "macos"))]
     {
         BatteryStatus {
@@ -688,7 +718,7 @@ fn parse_pmset(text: &str) -> BatteryStatus {
 /// blocking pool so a locked database cannot stall unrelated Tauri commands.
 #[tauri::command]
 pub async fn boot_init() -> AppResult<BootInfo> {
-    tauri::async_runtime::spawn_blocking(|| BootInfo {
+    spawn_blocking(|| BootInfo {
         home: home_dir(),
         state: state_load_sync(),
         recent: zoxide_dirs(),

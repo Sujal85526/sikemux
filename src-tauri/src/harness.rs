@@ -229,7 +229,13 @@ impl OutputLog {
 }
 
 #[tauri::command]
-pub fn harness_resolve_path(project: String, path: String) -> Result<String, String> {
+pub async fn harness_resolve_path(project: String, path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || resolve_project_path(project, path))
+        .await
+        .map_err(|error| format!("harness_resolve_path join: {error}"))?
+}
+
+fn resolve_project_path(project: String, path: String) -> Result<String, String> {
     let root = std::fs::canonicalize(project).map_err(|error| error.to_string())?;
     let target = std::fs::canonicalize(root.join(path)).map_err(|error| error.to_string())?;
     if !target.starts_with(&root) || !target.is_file() {
@@ -280,14 +286,14 @@ mod tests {
     fn file_open_rejects_paths_outside_project() {
         let project = tempfile::tempdir().unwrap();
         let outside = tempfile::NamedTempFile::new().unwrap();
-        assert!(super::harness_resolve_path(
+        assert!(super::resolve_project_path(
             project.path().to_string_lossy().into_owned(),
             outside.path().to_string_lossy().into_owned()
         )
         .is_err());
         let file = project.path().join("test.txt");
         std::fs::write(&file, "ok").unwrap();
-        assert!(super::harness_resolve_path(
+        assert!(super::resolve_project_path(
             project.path().to_string_lossy().into_owned(),
             "test.txt".into()
         )
@@ -295,7 +301,7 @@ mod tests {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(outside.path(), project.path().join("escape")).unwrap();
-            assert!(super::harness_resolve_path(
+            assert!(super::resolve_project_path(
                 project.path().to_string_lossy().into_owned(),
                 "escape".into()
             )

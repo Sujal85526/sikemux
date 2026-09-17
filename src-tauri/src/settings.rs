@@ -84,13 +84,15 @@ fn is_repo(dir: &Path) -> bool {
 }
 
 #[tauri::command]
-pub fn expand_path(path: String) -> String {
+pub async fn expand_path(path: String) -> String {
     expand(&path).to_string_lossy().into_owned()
 }
 
 #[tauri::command]
-pub fn is_directory(path: String) -> bool {
-    expand(&path).is_dir()
+pub async fn is_directory(path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || expand(&path).is_dir())
+        .await
+        .unwrap_or(false)
 }
 
 // DFS within `root` up to `remaining` levels deep. Within the walk, only

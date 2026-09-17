@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use tauri::async_runtime::spawn_blocking;
+
 use crate::error::{AppError, AppResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -39,12 +41,20 @@ enum DestinationState {
 }
 
 #[tauri::command]
-pub fn cli_install_status() -> CliInstallStatus {
-    status_for(crate::cli_server::cli_executable_path())
+pub async fn cli_install_status() -> CliInstallStatus {
+    spawn_blocking(|| status_for(crate::cli_server::cli_executable_path()))
+        .await
+        .unwrap_or_else(|_| status_for(None))
 }
 
 #[tauri::command]
-pub fn cli_install() -> AppResult<CliInstallStatus> {
+pub async fn cli_install() -> AppResult<CliInstallStatus> {
+    spawn_blocking(install_cli)
+        .await
+        .map_err(|error| AppError::State(format!("cli_install join: {error}")))?
+}
+
+fn install_cli() -> AppResult<CliInstallStatus> {
     let executable = crate::cli_server::cli_executable_path().ok_or_else(|| {
         AppError::State("the packaged Sikemux CLI is unavailable in this build".into())
     })?;
