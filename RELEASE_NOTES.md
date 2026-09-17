@@ -1,35 +1,28 @@
-# Sikemux v0.4.0-nightly.2
+# Sikemux v0.4.0-nightly.3
 
-The second nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The third nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## The stage
+## The browser
 
-- A session's screens sit side by side on one track, and a two-finger trackpad swipe moves between them. The swipe is a scroller rather than a negotiation: it follows the hand, lands from a short pull or a light flick, ends when the hand leaves, and gives further at either end of a session.
-- Each screen is a card that carries its own frame and corners, so a swipe slides a screen rather than sliding content behind a frame that stays put. A gap travels between them, and a readout shows how far along its screens a session is.
-- The tab strip is a bar of its own above the screens, and two documents of one screen slide in place.
+- A tab is a native child webview rather than a stream of Chromium screenshots, so a page scrolls, types and renders at the speed the page actually runs.
+- The agent drives the same tabs you see, instead of a second browser of its own.
+- A page's `alert`, `confirm` and `prompt` appear in the pane, and one of them no longer wedges the browser. A closed tab's clicks stop waiting for an answer that will never come, and a dead connection is noticed instead of hanging.
+- Downloads land in the Downloads folder.
+- The build no longer ships a Chromium runtime, which is most of the download gone.
 
-## Windows and tabs
+## The session view
 
-- Panes stack into a tab strip inside a window, which is now a third kind of split alongside rows and columns.
-- A tab is a window, and maybe a document. Every strip — workspace, browser and Bruno requests — cycles through one ordered list and shares the same tab bar.
-- The plus asks what kind of tab to open rather than which agent, and the active pill stays where it can be seen.
+- A turn's tool calls hang off a tree, and an edit shows the hunk it wrote, read out of the tool call itself.
+- A patch inside a fence reads like the one an edit shows, tables the agent writes are ruled and bordered and stay legible over a wallpaper, and an MCP call gets a plug rather than a sparkle.
+- A message written mid-turn waits for its own turn rather than being refused.
+- The running row names the work, a finished run of tools folds away, and only a failed run is marked in the summary.
+- The harness menu opens straight onto the harnesses, each appearing once and wearing its own colour, and the model picker names the release rather than just the family.
 
-## Agents
+## Elsewhere
 
-- A message typed while an agent is working now joins the running turn instead of waiting for it, on agents that take steering.
-- Background tasks and subagents reach the session view: a live task sits above the composer with its progress and a stop button, a subagent keeps a thread of its own, and a finished task says how it went.
-- A running turn says so, and says for how long. An attached image shows itself rather than its file name, and a slash part-way through a draft still names a command.
-- Switching to a sleeping agent wakes it, and the TUI view carries its own YOLO switch again.
+- The dither paints its dots and nothing between them.
+- A swipe whose screens move under it hands the track back, and revealing the last tab no longer shoves the stage sideways.
+- The GUI/TUI pair reads as one toggle again, and every control in the agent header is one height.
+- The composer fades with the window, and a menu never does.
 
-## Browser
-
-- The browser pane starts before an agent asks for it and says when a tab opens, so the first request no longer waits on a cold start.
-- Its Chromium stops announcing itself as headless, keeps the keys it is given, and no longer bundles its framework binary twice.
-
-## Appearance
-
-- The dither belongs to the screen being read rather than the gutter it used to show through.
-- Themes anchor their ramp on the theme's own panel rather than its recess, which had left Aura a step darker than Aura.
-- Settings carries its own frame, one row grammar and a real theme swatch, and the rail update chip shows download progress.
-
-For the complete patch history, compare [`v0.4.0-nightly.1...v0.4.0-nightly.2`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.1...v0.4.0-nightly.2).
+For the complete patch history, compare [`v0.4.0-nightly.2...v0.4.0-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.2...v0.4.0-nightly.3).
