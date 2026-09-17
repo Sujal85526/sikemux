@@ -438,12 +438,17 @@
     border-bottom: 0;
 }
 
+/* The band is an ink tint, not a dark wash: the pane is transparent, and a
+   wash only reads as a header on the nights the wallpaper is dark. The label
+   itself sits at 11px rather than 10 — the tracking costs legibility, and this
+   one has to be read, not just noticed. */
 .chat-table th {
-    background: color-mix(in srgb, var(--void) 55%, transparent);
-    color: var(--ink-dim);
-    font-size: var(--text-3xs);
+    background: color-mix(in oklab, var(--ink) 6%, transparent);
+    border-bottom-color: color-mix(in oklab, var(--ink) 18%, transparent);
+    color: var(--text-secondary, var(--ink));
+    font-size: var(--text-2xs);
     font-weight: var(--weight-medium, 500);
-    letter-spacing: var(--tracking-label);
+    letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 
