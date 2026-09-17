@@ -879,6 +879,7 @@ button.chat-tool:hover {
     display: flex;
     align-items: center;
     gap: 7px;
+    min-width: 0;
     padding: 4px 10px;
     border: 1px solid var(--line-soft);
     border-radius: var(--radius-control);
@@ -934,6 +935,7 @@ button.chat-tool:hover {
     display: flex;
     align-items: center;
     gap: 7px;
+    min-width: 0;
     padding: 4px 6px 4px 10px;
     border: 1px dashed var(--line-soft);
     border-radius: var(--radius-control);
