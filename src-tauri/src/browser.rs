@@ -85,7 +85,7 @@ struct CdpClient {
     sender: mpsc::UnboundedSender<Message>,
     pending: Arc<Mutex<HashMap<u64, PendingCall>>>,
     sequence: Arc<AtomicU64>,
-    frames: Arc<Mutex<HashMap<String, watch::Sender<Option<BrowserFrame>>>>>,
+    frames: Arc<Mutex<HashMap<String, watch::Sender<Option<CapturedFrame>>>>>,
     pages: Arc<Mutex<PageSessions>>,
     closed: Arc<AtomicBool>,
 }
@@ -274,7 +274,7 @@ impl CdpClient {
         let pages_reader = pages.clone();
         let frames = Arc::new(Mutex::new(HashMap::<
             String,
-            watch::Sender<Option<BrowserFrame>>,
+            watch::Sender<Option<CapturedFrame>>,
         >::new()));
         let frames_reader = frames.clone();
         let sequence = Arc::new(AtomicU64::new(1));
@@ -313,23 +313,15 @@ impl CdpClient {
                             .and_then(Value::as_f64),
                     ) {
                         if let Some(frames) = frames_reader.lock().await.get(session) {
-                            frames.send_replace(Some(BrowserFrame {
-                                data: data.to_owned(),
-                                width,
-                                height,
+                            frames.send_replace(Some(CapturedFrame {
+                                frame: BrowserFrame {
+                                    data: data.to_owned(),
+                                    width,
+                                    height,
+                                },
+                                ack: frame_id,
                             }));
                         }
-                        let id = sequence_reader.fetch_add(1, Ordering::Relaxed);
-                        let _ = event_sender.send(Message::Text(
-                            json!({
-                                "id": id,
-                                "method": "Page.screencastFrameAck",
-                                "sessionId": session,
-                                "params": { "sessionId": frame_id }
-                            })
-                            .to_string()
-                            .into(),
-                        ));
                     }
                     continue;
                 }
@@ -405,6 +397,15 @@ impl CdpClient {
             pages,
             closed,
         }))
+    }
+
+    fn send_without_reply(&self, method: &str, params: Value, session_id: &str) {
+        let id = self.sequence.fetch_add(1, Ordering::Relaxed);
+        let _ = self.sender.send(Message::Text(
+            json!({ "id": id, "method": method, "params": params, "sessionId": session_id })
+                .to_string()
+                .into(),
+        ));
     }
 
     async fn page_session(&self, target_id: &str) -> Option<String> {
@@ -506,6 +507,12 @@ pub struct BrowserFrame {
     data: String,
     width: f64,
     height: f64,
+}
+
+#[derive(Clone)]
+struct CapturedFrame {
+    frame: BrowserFrame,
+    ack: u64,
 }
 
 #[derive(Serialize)]
@@ -1745,9 +1752,14 @@ async fn start_frame_stream(
                         _ = &mut stopped => break,
                         _ = cadence.tick() => {}
                     }
-                    let frame = receiver.borrow_and_update().clone();
-                    if let Some(frame) = frame {
-                        if on_frame.send(frame).is_err() { break; }
+                    let captured = receiver.borrow_and_update().clone();
+                    if let Some(captured) = captured {
+                        if on_frame.send(captured.frame).is_err() { break; }
+                        cdp.send_without_reply(
+                            "Page.screencastFrameAck",
+                            json!({ "sessionId": captured.ack }),
+                            &session,
+                        );
                     }
                 }
             }
@@ -2216,10 +2228,35 @@ mod tests {
         )
         .await
         .unwrap();
+        // Counting on the channel the reader publishes to shows how fast
+        // Chromium is capturing, which is the thing the acks are meant to pace.
+        let captured = Arc::new(AtomicU64::new(0));
+        let counted = captured.clone();
+        let mut watcher = {
+            let frames = cdp.frames.lock().await;
+            let (_, sender) = frames
+                .iter()
+                .next()
+                .expect("the stream registered a channel");
+            sender.subscribe()
+        };
+        let counting = tokio::spawn(async move {
+            while watcher.changed().await.is_ok() {
+                counted.fetch_add(1, Ordering::Relaxed);
+            }
+        });
         tokio::time::sleep(Duration::from_secs(2)).await;
         let frames = delivered.load(Ordering::Relaxed);
         assert!(frames > 25, "only {frames} frames in two seconds");
         assert!(frames <= 65, "stream exceeded its delivery limit: {frames}");
+        // The page repaints every animation frame, so an unpaced capture would
+        // be about 120 of them in this window.
+        let captured = captured.load(Ordering::Relaxed);
+        assert!(
+            captured <= 80,
+            "Chromium captured {captured} frames in two seconds; the pane never asked for that many"
+        );
+        counting.abort();
         for kind in ["mousePressed", "mouseReleased"] {
             cdp.call(
                 "Input.dispatchMouseEvent",
