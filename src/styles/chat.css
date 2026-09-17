@@ -925,6 +925,61 @@ button.chat-tool:hover {
     color: var(--danger);
 }
 
+.chat-queued {
+    display: grid;
+    gap: 4px;
+    width: min(100%, 820px);
+    margin: 0 auto 8px;
+}
+
+.chat-queued-message {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 6px 4px 10px;
+    border: 1px dashed var(--line-soft);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--rail-2) 45%, transparent);
+    color: var(--ink-faint);
+}
+
+.chat-queued-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-queued-steer {
+    flex: none;
+    padding: 2px 7px;
+    border-radius: var(--radius-xs);
+    color: var(--ink-dim);
+    font-size: 10.5px;
+}
+
+.chat-queued-steer:hover {
+    background: color-mix(in srgb, var(--live) 18%, transparent);
+    color: var(--ink);
+}
+
+.chat-queued-message > button:last-child {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-xs);
+    color: var(--ink-faint);
+}
+
+.chat-queued-message > button:last-child:hover {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    color: var(--danger);
+}
+
 .chat-notice {
     display: flex;
     align-items: center;

@@ -9,6 +9,7 @@ import { invokeCommand as invoke } from "../api/invoke";
 import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { permissionCopyForType } from "../agentLaunch";
 import { basename } from "../lib/paths";
+import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
@@ -18,6 +19,7 @@ import {
     IconArrowDown,
     IconArrowUp,
     IconChevron,
+    IconClock,
     IconClose,
     IconCommand,
     IconFile,
@@ -601,6 +603,49 @@ function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; s
     );
 }
 
+type QueuedMessage = { id: string; text: string; paths: string[] };
+
+const queuedLabel = (message: QueuedMessage): string => message.text || message.paths.map(basename).join(", ");
+
+function QueuedMessages({
+    messages,
+    steerable,
+    onSteer,
+    onDrop,
+}: {
+    messages: QueuedMessage[];
+    steerable: boolean;
+    onSteer: (message: QueuedMessage) => void;
+    onDrop: (id: string) => void;
+}) {
+    if (messages.length === 0) return null;
+    return (
+        <div className="chat-queued" aria-label="Queued messages">
+            {messages.map((message) => {
+                const label = queuedLabel(message);
+                return (
+                    <div className="chat-queued-message" key={message.id}>
+                        <IconClock size={12} />
+                        <span className="chat-queued-text">{label}</span>
+                        {steerable && (
+                            <button
+                                type="button"
+                                className="chat-queued-steer"
+                                aria-label={`Steer the running turn with ${label}`}
+                                onClick={() => onSteer(message)}>
+                                Steer
+                            </button>
+                        )}
+                        <button type="button" aria-label={`Drop ${label} from the queue`} onClick={() => onDrop(message.id)}>
+                            <IconClose size={10} />
+                        </button>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 function connectingLabel(connection: ChatState["connection"]): string | null {
     if (connection === "installing") return "Installing structured-session adapter…";
     if (connection === "starting") return "Starting agent adapter…";
@@ -737,6 +782,8 @@ export function AgentChatPane({
     const [draft, setDraft] = useState("");
     const [caret, setCaret] = useState(0);
     const [attachments, setAttachments] = useState<string[]>([]);
+    const [queued, setQueued] = useState<QueuedMessage[]>([]);
+    const queuedCount = useRef(0);
     const [slashSelection, setSlashSelection] = useState(0);
     const [slashDismissed, setSlashDismissed] = useState(false);
     const [composerError, setComposerError] = useState<string | null>(null);
@@ -824,6 +871,7 @@ export function AgentChatPane({
         dispatch({ type: "reset" });
         setAppliedPermissionMode(null);
         setChangingPermissions(false);
+        setQueued([]);
         sessionIdRef.current = null;
 
         const flushUpdates = () => {
@@ -949,6 +997,24 @@ export function AgentChatPane({
         if (state.title && state.title !== agent.title) cmd.setAgentTitle(agent.id, state.title);
     }, [agent.id, agent.title, state.title]);
 
+    const promptNow = useCallback(async (text: string, paths: string[]) => {
+        dispatch({ type: "local_prompt", text, paths });
+        try {
+            await acpApi.prompt(agentRef.current.id, text, paths);
+        } catch (error) {
+            dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+        }
+    }, []);
+
+    /* A message written mid-turn waits: it goes out as a prompt of its own once
+       the running turn ends, so nothing in flight is cut short. */
+    useEffect(() => {
+        if (state.connection !== "ready" || state.running || queued.length === 0) return;
+        const next = queued[0];
+        setQueued((current) => current.filter((message) => message.id !== next.id));
+        void promptNow(next.text, next.paths);
+    }, [promptNow, queued, state.connection, state.running]);
+
     /* The scroller's own bottom, not the last message's — a permission card or
        an error sits below the list and still has to be reachable. Idempotent,
        so the observer below can call it until the heights stop moving. */
@@ -1016,11 +1082,23 @@ export function AgentChatPane({
         });
     };
 
-    const send = async () => {
+    /* Steering stops whatever the agent has in flight so it reads this message
+       now, so a message only goes this way when it is asked to. */
+    const steer = async (message: QueuedMessage) => {
+        setQueued((current) => current.filter((candidate) => candidate.id !== message.id));
+        dispatch({ type: "local_prompt", text: message.text, paths: message.paths });
+        try {
+            if ((await acpApi.steer(agent.id, message.text, message.paths)) !== "promptRequired") return;
+            await acpApi.prompt(agent.id, message.text, message.paths);
+        } catch (error) {
+            dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+        }
+    };
+
+    const send = async (steerNow = false) => {
         const text = draft.trim();
         if (
             (!text && attachments.length === 0) ||
-            (state.running && !steerable) ||
             configPending.current ||
             state.connection !== "ready" ||
             changingPermissions ||
@@ -1038,16 +1116,17 @@ export function AgentChatPane({
         setAttachments([]);
         setComposerError(null);
         setSlashDismissed(false);
-        const steering = state.running;
-        dispatch({ type: "local_prompt", text, paths });
-        try {
-            /* A turn that ended between the check and the request hands the
-               message back, and it goes out as a prompt of its own. */
-            if (steering && (await acpApi.steer(agent.id, text, paths)) !== "promptRequired") return;
-            await acpApi.prompt(agent.id, text, paths);
-        } catch (error) {
-            dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+        if (!state.running) {
+            await promptNow(text, paths);
+            return;
         }
+        queuedCount.current += 1;
+        const message: QueuedMessage = { id: `queued-${queuedCount.current}`, text, paths };
+        if (steerNow && steerable) {
+            await steer(message);
+            return;
+        }
+        setQueued((current) => [...current, message]);
     };
 
     const chooseFiles = async () => {
@@ -1132,8 +1211,8 @@ export function AgentChatPane({
                 : null;
     const composerPlaceholder =
         state.connection === "ready"
-            ? state.running && steerable
-                ? "Send to join the running turn"
+            ? state.running
+                ? "Send to queue behind the running turn"
                 : "Ask about this project, or type / for commands"
             : state.connection === "error" || state.connection === "stopped"
               ? "Reconnect to continue this conversation"
@@ -1261,6 +1340,12 @@ export function AgentChatPane({
                     </button>
                 )}
                 <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
+                <QueuedMessages
+                    messages={queued}
+                    steerable={steerable && state.running}
+                    onSteer={(message) => void steer(message)}
+                    onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
+                />
                 <div className="chat-composer">
                     {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={slashSelection} onSelect={selectCommand} />}
                     {attachments.length > 0 && (
@@ -1313,7 +1398,7 @@ export function AgentChatPane({
                             }
                             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                                 event.preventDefault();
-                                void send();
+                                void send(hasPrimaryModifier(event.nativeEvent));
                             }
                         }}
                     />
@@ -1353,7 +1438,7 @@ export function AgentChatPane({
                             onConfig={(config, value) => void changeConfig(config, value)}
                         />
                         <span className="chat-composer-spacer" />
-                        {state.running && !(steerable && drafted) ? (
+                        {state.running && !drafted ? (
                             <button
                                 type="button"
                                 className="chat-send stop"
@@ -1370,6 +1455,7 @@ export function AgentChatPane({
                                 type="button"
                                 className="chat-send"
                                 aria-label="Send message"
+                                title={state.running && steerable ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it` : undefined}
                                 disabled={
                                     state.connection !== "ready" ||
                                     changingConfig ||
