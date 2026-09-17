@@ -506,14 +506,16 @@ function toolRunning(tool: AcpToolCall): boolean {
     return status !== "completed" && status !== "failed";
 }
 
-/* A run of tool calls is worth watching while it happens and worth folding
-   away once it is done, so it opens itself and closes itself again unless the
-   reader has said otherwise. */
-function ToolGroup({ tools }: { tools: Extract<ChatPart, { kind: "tool" }>[] }) {
+/* A run of tool calls is worth watching while the agent is still adding to it
+   and worth folding away once it has moved on, so it stays open until
+   something else follows it or the turn ends, unless the reader says
+   otherwise. Watching each call instead would shut the run in the gaps
+   between calls, and open it again on the next one. */
+function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>[]; live: boolean }) {
     const [reader, setReader] = useState<boolean | null>(null);
     const running = tools.some((part) => toolRunning(part.tool));
     const failed = tools.some((part) => part.tool.status === "failed");
-    const open = reader ?? running;
+    const open = reader ?? (live || running);
     const spent = tools.reduce((total, part) => total + (part.endedAt !== undefined ? part.endedAt - part.startedAt : 0), 0);
     /* One column for every call in the run, as wide as the longest name in it:
        a run of reads stays tight, one that called an MCP server gets the room. */
@@ -543,9 +545,14 @@ function ToolGroup({ tools }: { tools: Extract<ChatPart, { kind: "tool" }>[] }) 
     );
 }
 
-function PartGroups({ parts }: { parts: ChatPart[] }) {
-    return groupParts(parts).map((group) =>
-        "tools" in group ? <ToolGroup key={group.id} tools={group.tools} /> : <MessagePart key={group.id} part={group.part} />,
+function PartGroups({ parts, live }: { parts: ChatPart[]; live: boolean }) {
+    const groups = groupParts(parts);
+    return groups.map((group, index) =>
+        "tools" in group ? (
+            <ToolGroup key={group.id} tools={group.tools} live={live && index === groups.length - 1} />
+        ) : (
+            <MessagePart key={group.id} part={group.part} />
+        ),
     );
 }
 
@@ -573,7 +580,11 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                 <span className="chat-subagent-state">{subagent.state}</span>
             </summary>
             <div className="chat-subagent-body">
-                {parts.length > 0 ? <PartGroups parts={parts} /> : <span className="chat-subagent-empty">No output yet.</span>}
+                {parts.length > 0 ? (
+                    <PartGroups parts={parts} live={subagent.state === "running"} />
+                ) : (
+                    <span className="chat-subagent-empty">No output yet.</span>
+                )}
             </div>
         </details>
     );
@@ -685,7 +696,7 @@ function ChatActivity({ label }: { label: string }) {
     );
 }
 
-const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: ChatMessage }) {
+const ChatMessageRow = memo(function ChatMessageRow({ message, live }: { message: ChatMessage; live: boolean }) {
     return (
         <article className={`chat-message ${message.role}`}>
             <div className="chat-message-content">
@@ -696,7 +707,7 @@ const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: Chat
                         ))}
                     </div>
                 )}
-                <PartGroups parts={message.parts} />
+                <PartGroups parts={message.parts} live={live} />
             </div>
         </article>
     );
@@ -1297,7 +1308,7 @@ export function AgentChatPane({
                                     ref={virtualizer.measureElement}
                                     className="chat-virtual-row"
                                     style={{ transform: `translateY(${item.start}px)` }}>
-                                    <ChatMessageRow message={message} />
+                                    <ChatMessageRow message={message} live={displayState.running && item.index === displayState.messages.length - 1} />
                                 </div>
                             );
                         })}

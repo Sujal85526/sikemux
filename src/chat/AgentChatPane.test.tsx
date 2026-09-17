@@ -433,35 +433,63 @@ describe("AgentChatPane", () => {
         expect(screen.getByRole("status")).not.toHaveTextContent("is-transparent");
     });
 
-    it("folds a run of tool calls away once it finishes, and leaves reasoning in plain sight", async () => {
+    it("holds a run of tool calls open through the gaps between them, and folds it once the turn ends", async () => {
         await openTranscript();
         emit("session_update", {
             sessionId: "session-1",
             update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Weighing the two options" } },
         });
-        for (const toolCallId of ["tool-1", "tool-2"]) {
-            emit("session_update", {
-                sessionId: "session-1",
-                update: { sessionUpdate: "tool_call", toolCallId, kind: "read", title: "src/styles/chat.css", status: "in_progress" },
-            });
-        }
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call", toolCallId: "tool-1", kind: "read", title: "src/styles/chat.css", status: "in_progress" },
+        });
 
         expect(await screen.findByText("Weighing the two options")).toBeVisible();
-        const run = await screen.findByRole("button", { name: /2 tool calls/ });
+        const run = await screen.findByRole("button", { name: /1 tool call/ });
         expect(run).toHaveAttribute("aria-expanded", "true");
 
-        for (const toolCallId of ["tool-1", "tool-2"]) {
-            emit("session_update", {
-                sessionId: "session-1",
-                update: { sessionUpdate: "tool_call_update", toolCallId, status: "completed" },
-            });
-        }
-        await waitFor(() => expect(run).toHaveAttribute("aria-expanded", "false"));
+        // The turn is still going, so the wait for the next call is not a fold.
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" },
+        });
+        expect(run).toHaveAttribute("aria-expanded", "true");
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call", toolCallId: "tool-2", kind: "read", title: "src/styles/base.css", status: "in_progress" },
+        });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call_update", toolCallId: "tool-2", status: "completed" },
+        });
+        const finished = await screen.findByRole("button", { name: /2 tool calls/ });
+        expect(finished).toHaveAttribute("aria-expanded", "true");
+        expect(document.querySelectorAll(".chat-tool")).toHaveLength(2);
+
+        emit("turn_completed", { stopReason: "end_turn" });
+        await waitFor(() => expect(finished).toHaveAttribute("aria-expanded", "false"));
         expect(document.querySelectorAll(".chat-tool")).toHaveLength(0);
 
-        fireEvent.click(run);
-        expect(run).toHaveAttribute("aria-expanded", "true");
+        fireEvent.click(finished);
+        expect(finished).toHaveAttribute("aria-expanded", "true");
         expect(document.querySelectorAll(".chat-tool")).toHaveLength(2);
+    });
+
+    it("folds a finished run away when the agent moves on to something else in the same turn", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "tool_call", toolCallId: "tool-1", kind: "read", title: "src/styles/chat.css", status: "completed" },
+        });
+        const run = await screen.findByRole("button", { name: /1 tool call/ });
+        expect(run).toHaveAttribute("aria-expanded", "true");
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "The pane paints no background" } },
+        });
+        await waitFor(() => expect(run).toHaveAttribute("aria-expanded", "false"));
     });
 
     it("hangs each call off the run as a kind, a target and how long it took", async () => {
@@ -528,7 +556,6 @@ describe("AgentChatPane", () => {
             },
         });
 
-        fireEvent.click(await screen.findByRole("button", { name: /2 tool calls/ }));
         const edit = await screen.findByTitle("src/styles/stage.css");
         expect(edit).toHaveTextContent("+1");
         expect(edit).toHaveTextContent("−1");
