@@ -1,4 +1,5 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { subscribeTheme } from "../../themes/bus";
 import type { GitCommit } from "../../api/git";
 import { EmptyState } from "../Panel";
 
@@ -141,13 +142,7 @@ function readPalette(el: HTMLElement): string[] {
     return all.length ? all : FALLBACK_PALETTE;
 }
 
-function rowColor(el: HTMLElement | null, colorIdx: number, unpushed: boolean): string {
-    if (unpushed) return (el && readVar(el, "--warn")) || FALLBACK_WARN;
-    const palette = el ? readPalette(el) : FALLBACK_PALETTE;
-    return palette[colorIdx % palette.length];
-}
-
-function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, selectedIndex: number) {
+function sizeCanvas(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number): CanvasRenderingContext2D | null {
     const dpr = window.devicePixelRatio || 1;
     const w = gutterWidth(maxLanes);
     const h = Math.max(1, rows.length * ROW_H);
@@ -157,9 +152,27 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, se
     canvas.style.height = `${h}px`;
 
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
+    return ctx;
+}
+
+/** The selection ring lives on its own layer so moving it does not repaint the graph. */
+function drawSelection(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, selectedIndex: number) {
+    const ctx = sizeCanvas(canvas, rows, maxLanes);
+    const row = rows[selectedIndex];
+    if (!ctx || !row) return;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(255,255,255,.9)";
+    ctx.beginPath();
+    ctx.arc(laneX(row.lane), selectedIndex * ROW_H + ROW_H / 2, NODE_R + 3, 0, Math.PI * 2);
+    ctx.stroke();
+}
+
+function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number) {
+    const ctx = sizeCanvas(canvas, rows, maxLanes);
+    if (!ctx) return;
     ctx.lineCap = "round";
 
     const palette = readPalette(canvas);
@@ -229,14 +242,6 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, se
             ctx.arc(nodeX, yMid, NODE_R, 0, Math.PI * 2);
             ctx.fill();
         }
-
-        if (i === selectedIndex) {
-            ctx.lineWidth = 1.5;
-            ctx.strokeStyle = "rgba(255,255,255,.9)";
-            ctx.beginPath();
-            ctx.arc(nodeX, yMid, NODE_R + 3, 0, Math.PI * 2);
-            ctx.stroke();
-        }
     });
 }
 
@@ -269,16 +274,32 @@ export function GitGraph({
     onActivate: () => void;
 }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const selectionCanvasRef = useRef<HTMLCanvasElement>(null);
     const selRef = useRef<HTMLDivElement>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
     const { rows, maxLanes } = useMemo(() => computeGraph(commits), [commits]);
     const gutter = gutterWidth(maxLanes);
-    const [, setMounted] = useState(0);
+    const [themeRevision, setThemeRevision] = useState(0);
+    // Reading a CSS variable forces a style resolve, so the row palette is read
+    // once per theme rather than five times per row per render.
+    const [colors, setColors] = useState({ palette: FALLBACK_PALETTE, unpushed: FALLBACK_WARN });
+
+    useEffect(() => subscribeTheme(() => setThemeRevision((n) => n + 1)), []);
+
+    useLayoutEffect(() => {
+        const el = wrapRef.current;
+        if (!el) return;
+        setColors({ palette: readPalette(el), unpushed: readVar(el, "--warn") || FALLBACK_WARN });
+    }, [themeRevision]);
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
-        if (canvas) draw(canvas, rows, maxLanes, selectedIndex);
-        setMounted((n) => (n === 0 ? 1 : n));
+        if (canvas) draw(canvas, rows, maxLanes);
+    }, [rows, maxLanes, themeRevision]);
+
+    useLayoutEffect(() => {
+        const canvas = selectionCanvasRef.current;
+        if (canvas) drawSelection(canvas, rows, maxLanes, selectedIndex);
     }, [rows, maxLanes, selectedIndex]);
 
     useLayoutEffect(() => {
@@ -290,11 +311,12 @@ export function GitGraph({
     return (
         <div className="git-graph" style={{ position: "relative" }} ref={wrapRef}>
             <canvas ref={canvasRef} className="git-graph-canvas" aria-hidden />
+            <canvas ref={selectionCanvasRef} className="git-graph-canvas" aria-hidden />
             {commits.map((c, i) => {
                 const sel = focused && selectedIndex === i;
                 const inRange = range !== null && i >= range[0] && i <= range[1];
                 const row = rows[i];
-                const hashColor = rowColor(wrapRef.current, row?.colorIdx ?? 0, row?.unpushed ?? false);
+                const hashColor = row?.unpushed ? colors.unpushed : colors.palette[(row?.colorIdx ?? 0) % colors.palette.length];
                 return (
                     <div
                         key={c.full_hash || c.hash}

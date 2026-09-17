@@ -898,177 +898,183 @@ export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; 
 
     const openHelpCheatsheet = () => openGitCheatsheet("Git pane keybindings", GIT_HELP);
 
-    useEffect(() => {
-        if (!active || branchInput || modalOpen) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.altKey || e.metaKey) return;
-            if (useStore.getState().pickerOpen) return;
-            const ae = document.activeElement;
-            if (!ae || !paneRootRef.current?.contains(ae) || ae.closest('[role="dialog"], [role="listbox"], [role="separator"]')) return;
-            if (e.key === "Tab") return;
-            if (ae.closest('button, [role="button"]') && !ae.closest(".git-row, .gg-row") && ["Enter", " ", "ArrowUp", "ArrowDown"].includes(e.key))
-                return;
-            if (ae.closest('input, textarea, [contenteditable="true"]') && !searchOpen) return;
-            if (ae && ae.closest(".cm-editor")) return;
-            if (ae && ae.closest(".git-commit-panel")) return;
-            // The embedded shell owns every key while it has focus, otherwise
-            // typing `git status` would trip the panel's single-letter verbs.
-            // The split handle is excluded too so its arrow keys resize.
-            if (searchOpen) {
-                if (e.key === "Escape") {
-                    setSearchOpen(false);
-                    setSearchByPanel((s) => ({ ...s, [panel]: "" }));
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
-                return;
-            }
-            const k = e.key;
-            if (e.ctrlKey) {
-                if (k === "p" || k === "P") {
-                    e.preventDefault();
-                    openPullRequest();
-                }
-                return;
-            }
-            if (busy) return;
-
-            let handled = true;
-            if (k === "?") openHelpCheatsheet();
-            else if (k === "@") toggleGitCmdLog();
-            else if (k === "/") setSearchOpen(true);
-            else if (k === "v" && panel === "commits") openCommitRevertConfirm();
-            else if (k === "v") {
-                setRangeByPanel((s) => ({
-                    ...s,
-                    [panel]: s[panel] === null ? sel[panel] : null,
-                }));
-            } else if (k === "Escape") {
-                if (rangeByPanel[panel] !== null) {
-                    setRangeByPanel((s) => ({ ...s, [panel]: null }));
-                } else if (searchByPanel[panel]) {
-                    setSearchByPanel((s) => ({ ...s, [panel]: "" }));
-                } else if (panel === "remotes" && remoteDrill) {
-                    setRemoteDrill(null);
-                } else handled = false;
-            } else if (GIT_PANEL_BY_KEY[k]) {
-                const nextPanel = GIT_PANEL_BY_KEY[k]!;
-                setPanel(nextPanel);
-            } else if (k === "j" || k === "ArrowDown") moveSel(1);
-            else if (k === "k" || k === "ArrowUp") moveSel(-1);
-            else if (k === "r") {
-                if (panel === "stashes") openStashRenamePrompt();
-                else if (panel === "commits") openCommitResetMenu();
-                else if (panel === "remotes" && !remoteDrill) openRemoteRowMenu();
-                else refreshRepoState();
-            } else if (k === "F") doFetch(null);
-            else if (k === "P") pushRepo();
-            else if (k === "p" && panel === "stashes") popSelectedStash();
-            else if (k === "p") pullRepo();
-            else if (panel === "files" && k === " ") toggleStage();
-            else if (panel === "files" && k === "a") {
-                const anyUnstaged = filteredFiles.some(hasUnstaged);
-                void run("", () => (anyUnstaged ? git.stageAll(repo) : git.unstageAll(repo)));
-            } else if (panel === "files" && k === "c") commitInputRef.current?.focus();
-            else if (panel === "files" && k === "C") doCommit(commitText);
-            else if (panel === "files" && k === "g") void generateCommitMessage();
-            else if (panel === "files" && k === "d") openFilesDiscardMenu();
-            else if (panel === "files" && k === "s") openFilesStashMenu();
-            else if (panel === "branches" && (k === "Enter" || k === " ")) {
-                const b = filteredBranches[sel.branches];
-                if (b && !b.current) void run("", () => git.checkout(repo, b.name));
-            } else if (panel === "branches" && k === "n") {
-                const b = filteredBranches[sel.branches];
-                openBranchInput(b?.name);
-            } else if (panel === "branches" && k === "N") {
-                openBranchInput();
-            } else if (panel === "branches" && k === "M") {
-                openBranchVerbsMenu("merge");
-            } else if (panel === "branches" && k === "d") {
-                openBranchVerbsMenu("delete");
-            } else if (panel === "branches" && k === "R") {
-                openBranchRenamePrompt();
-            } else if (panel === "branches" && k === "c") {
-                openGitPrompt({
-                    title: "Checkout branch",
-                    placeholder: "branch name (- for previous)",
-                    suggestions: branches.map((b) => ({
-                        value: b.name,
-                        hint: b.current ? "current" : (b.upstream ?? ""),
-                    })),
-                    onConfirm: (name) => {
-                        const target = name.trim();
-                        if (!target) return;
-                        void run(`checking out ${target}`, () => git.checkout(repo, target));
-                    },
-                });
-            } else if (panel === "remotes" && !remoteDrill && k === "Enter") {
-                const r = filteredRemotes[sel.remotes];
-                if (r) setRemoteDrill(r.name);
-            } else if (panel === "remotes" && !remoteDrill && k === "n") {
-                openAddRemotePrompt();
-            } else if (panel === "remotes" && !remoteDrill && k === "f") {
-                const r = filteredRemotes[sel.remotes];
-                if (r) doFetch(r.name);
-            } else if (panel === "remotes" && !remoteDrill && k === "e") {
-                openRemoteRowMenu();
-            } else if (panel === "remotes" && !remoteDrill && (k === "d" || k === "r")) {
-                openRemoteRowMenu();
-            } else if (panel === "remotes" && remoteDrill && k === "Enter") {
-                openRemoteBranchMenu();
-            } else if (panel === "remotes" && remoteDrill && (k === " " || k === "Space")) {
-                const rb = filteredRemoteBranches[remoteBranchSel];
-                if (rb && !rb.is_head_pointer) {
-                    void run(`checking out ${rb.full_ref}`, async () => {
-                        await git.checkoutRemoteBranch(repo, remoteDrill, rb.name, rb.tracked_by ?? null);
-                        return `✓ on ${rb.tracked_by ?? rb.name}`;
-                    });
-                }
-            } else if (panel === "remotes" && remoteDrill && k === "M") {
-                const rb = filteredRemoteBranches[remoteBranchSel];
-                if (rb && !rb.is_head_pointer) doMerge(rb.full_ref);
-            } else if (panel === "remotes" && remoteDrill && k === "u") {
-                const rb = filteredRemoteBranches[remoteBranchSel];
-                if (rb && !rb.is_head_pointer && currentBranch) {
-                    void run(`setting upstream of ${currentBranch}`, async () => {
-                        await git.setUpstream(repo, currentBranch, rb.full_ref);
-                        return `✓ ${currentBranch} now tracks ${rb.full_ref}`;
-                    });
-                }
-            } else if (panel === "remotes" && remoteDrill && k === "d") {
-                openRemoteBranchMenu();
-            } else if (panel === "remotes" && remoteDrill && k === "f") {
-                doFetch(remoteDrill);
-            } else if (panel === "commits" && (k === "Enter" || k === " ")) {
-                openCommitRowMenu();
-            } else if (panel === "commits" && k === "b") {
-                openCommitBranchPrompt();
-            } else if (panel === "commits" && k === "v") {
-                openCommitRevertConfirm();
-            } else if (panel === "stashes" && k === "Enter") {
-                openStashRowMenu();
-            } else if (panel === "stashes" && (k === " " || k === "a")) {
-                applySelectedStash();
-            } else if (panel === "stashes" && k === "p") {
-                popSelectedStash();
-            } else if (panel === "stashes" && k === "b") {
-                openStashBranchPrompt();
-            } else if (panel === "stashes" && k === "d") {
-                openStashDropConfirm();
-            } else handled = false;
-            if (handled) {
+    // Rebuilt every render because it closes over the current selection, but
+    // registered once so the window keeps a single listener.
+    const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+    onKeyRef.current = (e: KeyboardEvent) => {
+        if (e.altKey || e.metaKey) return;
+        if (useStore.getState().pickerOpen) return;
+        const ae = document.activeElement;
+        if (!ae || !paneRootRef.current?.contains(ae) || ae.closest('[role="dialog"], [role="listbox"], [role="separator"]')) return;
+        if (e.key === "Tab") return;
+        if (ae.closest('button, [role="button"]') && !ae.closest(".git-row, .gg-row") && ["Enter", " ", "ArrowUp", "ArrowDown"].includes(e.key))
+            return;
+        if (ae.closest('input, textarea, [contenteditable="true"]') && !searchOpen) return;
+        if (ae && ae.closest(".cm-editor")) return;
+        if (ae && ae.closest(".git-commit-panel")) return;
+        // The embedded shell owns every key while it has focus, otherwise
+        // typing `git status` would trip the panel's single-letter verbs.
+        // The split handle is excluded too so its arrow keys resize.
+        if (searchOpen) {
+            if (e.key === "Escape") {
+                setSearchOpen(false);
+                setSearchByPanel((s) => ({ ...s, [panel]: "" }));
                 e.preventDefault();
                 e.stopPropagation();
             }
-        };
+            return;
+        }
+        const k = e.key;
+        if (e.ctrlKey) {
+            if (k === "p" || k === "P") {
+                e.preventDefault();
+                openPullRequest();
+            }
+            return;
+        }
+        if (busy) return;
+
+        let handled = true;
+        if (k === "?") openHelpCheatsheet();
+        else if (k === "@") toggleGitCmdLog();
+        else if (k === "/") setSearchOpen(true);
+        else if (k === "v" && panel === "commits") openCommitRevertConfirm();
+        else if (k === "v") {
+            setRangeByPanel((s) => ({
+                ...s,
+                [panel]: s[panel] === null ? sel[panel] : null,
+            }));
+        } else if (k === "Escape") {
+            if (rangeByPanel[panel] !== null) {
+                setRangeByPanel((s) => ({ ...s, [panel]: null }));
+            } else if (searchByPanel[panel]) {
+                setSearchByPanel((s) => ({ ...s, [panel]: "" }));
+            } else if (panel === "remotes" && remoteDrill) {
+                setRemoteDrill(null);
+            } else handled = false;
+        } else if (GIT_PANEL_BY_KEY[k]) {
+            const nextPanel = GIT_PANEL_BY_KEY[k]!;
+            setPanel(nextPanel);
+        } else if (k === "j" || k === "ArrowDown") moveSel(1);
+        else if (k === "k" || k === "ArrowUp") moveSel(-1);
+        else if (k === "r") {
+            if (panel === "stashes") openStashRenamePrompt();
+            else if (panel === "commits") openCommitResetMenu();
+            else if (panel === "remotes" && !remoteDrill) openRemoteRowMenu();
+            else refreshRepoState();
+        } else if (k === "F") doFetch(null);
+        else if (k === "P") pushRepo();
+        else if (k === "p" && panel === "stashes") popSelectedStash();
+        else if (k === "p") pullRepo();
+        else if (panel === "files" && k === " ") toggleStage();
+        else if (panel === "files" && k === "a") {
+            const anyUnstaged = filteredFiles.some(hasUnstaged);
+            void run("", () => (anyUnstaged ? git.stageAll(repo) : git.unstageAll(repo)));
+        } else if (panel === "files" && k === "c") commitInputRef.current?.focus();
+        else if (panel === "files" && k === "C") doCommit(commitText);
+        else if (panel === "files" && k === "g") void generateCommitMessage();
+        else if (panel === "files" && k === "d") openFilesDiscardMenu();
+        else if (panel === "files" && k === "s") openFilesStashMenu();
+        else if (panel === "branches" && (k === "Enter" || k === " ")) {
+            const b = filteredBranches[sel.branches];
+            if (b && !b.current) void run("", () => git.checkout(repo, b.name));
+        } else if (panel === "branches" && k === "n") {
+            const b = filteredBranches[sel.branches];
+            openBranchInput(b?.name);
+        } else if (panel === "branches" && k === "N") {
+            openBranchInput();
+        } else if (panel === "branches" && k === "M") {
+            openBranchVerbsMenu("merge");
+        } else if (panel === "branches" && k === "d") {
+            openBranchVerbsMenu("delete");
+        } else if (panel === "branches" && k === "R") {
+            openBranchRenamePrompt();
+        } else if (panel === "branches" && k === "c") {
+            openGitPrompt({
+                title: "Checkout branch",
+                placeholder: "branch name (- for previous)",
+                suggestions: branches.map((b) => ({
+                    value: b.name,
+                    hint: b.current ? "current" : (b.upstream ?? ""),
+                })),
+                onConfirm: (name) => {
+                    const target = name.trim();
+                    if (!target) return;
+                    void run(`checking out ${target}`, () => git.checkout(repo, target));
+                },
+            });
+        } else if (panel === "remotes" && !remoteDrill && k === "Enter") {
+            const r = filteredRemotes[sel.remotes];
+            if (r) setRemoteDrill(r.name);
+        } else if (panel === "remotes" && !remoteDrill && k === "n") {
+            openAddRemotePrompt();
+        } else if (panel === "remotes" && !remoteDrill && k === "f") {
+            const r = filteredRemotes[sel.remotes];
+            if (r) doFetch(r.name);
+        } else if (panel === "remotes" && !remoteDrill && k === "e") {
+            openRemoteRowMenu();
+        } else if (panel === "remotes" && !remoteDrill && (k === "d" || k === "r")) {
+            openRemoteRowMenu();
+        } else if (panel === "remotes" && remoteDrill && k === "Enter") {
+            openRemoteBranchMenu();
+        } else if (panel === "remotes" && remoteDrill && (k === " " || k === "Space")) {
+            const rb = filteredRemoteBranches[remoteBranchSel];
+            if (rb && !rb.is_head_pointer) {
+                void run(`checking out ${rb.full_ref}`, async () => {
+                    await git.checkoutRemoteBranch(repo, remoteDrill, rb.name, rb.tracked_by ?? null);
+                    return `✓ on ${rb.tracked_by ?? rb.name}`;
+                });
+            }
+        } else if (panel === "remotes" && remoteDrill && k === "M") {
+            const rb = filteredRemoteBranches[remoteBranchSel];
+            if (rb && !rb.is_head_pointer) doMerge(rb.full_ref);
+        } else if (panel === "remotes" && remoteDrill && k === "u") {
+            const rb = filteredRemoteBranches[remoteBranchSel];
+            if (rb && !rb.is_head_pointer && currentBranch) {
+                void run(`setting upstream of ${currentBranch}`, async () => {
+                    await git.setUpstream(repo, currentBranch, rb.full_ref);
+                    return `✓ ${currentBranch} now tracks ${rb.full_ref}`;
+                });
+            }
+        } else if (panel === "remotes" && remoteDrill && k === "d") {
+            openRemoteBranchMenu();
+        } else if (panel === "remotes" && remoteDrill && k === "f") {
+            doFetch(remoteDrill);
+        } else if (panel === "commits" && (k === "Enter" || k === " ")) {
+            openCommitRowMenu();
+        } else if (panel === "commits" && k === "b") {
+            openCommitBranchPrompt();
+        } else if (panel === "commits" && k === "v") {
+            openCommitRevertConfirm();
+        } else if (panel === "stashes" && k === "Enter") {
+            openStashRowMenu();
+        } else if (panel === "stashes" && (k === " " || k === "a")) {
+            applySelectedStash();
+        } else if (panel === "stashes" && k === "p") {
+            popSelectedStash();
+        } else if (panel === "stashes" && k === "b") {
+            openStashBranchPrompt();
+        } else if (panel === "stashes" && k === "d") {
+            openStashDropConfirm();
+        } else handled = false;
+        if (handled) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    };
+
+    useEffect(() => {
+        if (!active || branchInput || modalOpen) return;
+        const onKey = (e: KeyboardEvent) => onKeyRef.current(e);
         window.addEventListener("keydown", onKey, true);
         return () => window.removeEventListener("keydown", onKey, true);
-    });
+    }, [active, branchInput, modalOpen]);
 
+    const focusKey = `${panel}:${sel[panel]}:${remoteDrill ?? ""}:${remoteBranchSel}`;
     useEffect(() => {
         if (!document.activeElement?.closest(".git-row, .gg-row")) return;
         paneRootRef.current?.querySelector<HTMLElement>(".git-panel.focused .git-row.sel, .git-panel.focused .gg-row.sel")?.focus();
-    }, [sel, remoteBranchSel]);
+    }, [focusKey]);
 
     const panelFiles = panel === "files";
     const filesRange = rangeFor("files");
