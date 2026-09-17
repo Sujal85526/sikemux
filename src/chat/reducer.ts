@@ -105,7 +105,7 @@ function appendPart(transcript: Transcript, part: ChatPart): Transcript {
     return { messages, nextId: transcript.nextId + 1 };
 }
 
-function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean): Transcript {
+function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean): Transcript | null {
     const messages = [...transcript.messages];
     for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
         const message = messages[messageIndex];
@@ -126,6 +126,11 @@ function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean)
         return { messages, nextId: transcript.nextId };
     }
 
+    /* An update can land for a call this side never saw open — the adapter
+       raises a subagent as its own session and drops the call that spawned it.
+       With nothing to merge into and no title to show, a new row would be a
+       blank line that spins forever, so let it pass. */
+    if (!update.title) return null;
     return appendPart(transcript, { id: `tool-${update.toolCallId}`, kind: "tool", tool: update, startedAt: Date.now() });
 }
 
@@ -154,6 +159,49 @@ function transcriptUpdate(transcript: Transcript, update: Record<string, unknown
         default:
             return null;
     }
+}
+
+const TOOL_ENDED = ["completed", "failed", "cancelled"];
+
+/* A turn that ends takes its unfinished work with it. The agent sends no last
+   word for a call or a subagent it was cut off in the middle of, so anything
+   still marked as working would sit there spinning for the rest of the
+   session. The turn ending is the news, so the transcript writes it down. */
+function settleParts(parts: ChatPart[], at: number): ChatPart[] | null {
+    let changed = false;
+    const settled = parts.map((part) => {
+        if (part.kind === "tool") {
+            if (TOOL_ENDED.includes(part.tool.status ?? "pending")) return part;
+            changed = true;
+            return { ...part, tool: { ...part.tool, status: "cancelled" }, endedAt: part.endedAt ?? at };
+        }
+        if (part.kind !== "subagent") return part;
+        const messages = settleMessages(part.subagent.messages, at);
+        const running = part.subagent.state === "running";
+        if (!messages && !running) return part;
+        changed = true;
+        return {
+            ...part,
+            subagent: { ...part.subagent, ...(running ? { state: "cancelled" as const } : {}), ...(messages ? { messages } : {}) },
+        };
+    });
+    return changed ? settled : null;
+}
+
+function settleMessages(messages: ChatMessage[], at: number): ChatMessage[] | null {
+    let changed = false;
+    const settled = messages.map((message) => {
+        const parts = settleParts(message.parts, at);
+        if (!parts) return message;
+        changed = true;
+        return { ...message, parts };
+    });
+    return changed ? settled : null;
+}
+
+function settleState(state: ChatState): ChatState {
+    const messages = settleMessages(state.messages, Date.now());
+    return messages ? { ...state, messages, revision: state.revision + 1 } : state;
 }
 
 function findSubagent(messages: ChatMessage[], sessionId: string): { messageIndex: number; partIndex: number } | null {
@@ -315,7 +363,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 : initialChatState;
         case "status":
             return {
-                ...state,
+                ...(action.state === "stopped" || action.state === "error" ? settleState(state) : state),
                 connection: action.state,
                 running: action.state === "stopped" || action.state === "error" ? false : state.running,
                 permissions: action.state === "stopped" || action.state === "error" ? [] : state.permissions,
@@ -354,7 +402,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             return { ...state, running: true, stopReason: null, error: null, revision: state.revision + 1 };
         case "turn_completed":
             return {
-                ...state,
+                ...settleState(state),
                 running: false,
                 suppressUserEcho: false,
                 permissions: [],

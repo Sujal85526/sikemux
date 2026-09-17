@@ -119,6 +119,41 @@ describe("chat reducer", () => {
         expect(streamed.messages[0].parts).toHaveLength(1);
     });
 
+    it("ignores a tool update for a call it never saw open", () => {
+        const orphan = update(initialChatState, { sessionUpdate: "tool_call_update", toolCallId: "tool-9", status: "in_progress" });
+
+        expect(orphan.messages).toEqual([]);
+    });
+
+    it("stops the work a finished turn left mid-flight", () => {
+        const spawned = update(initialChatState, {
+            sessionUpdate: "subagent_spawned",
+            subagentSessionId: "subagent-1",
+            name: "Explore",
+            task: "Look around",
+        });
+        const nested = update(spawned, { sessionUpdate: "tool_call", toolCallId: "tool-2", title: "Grep", status: "in_progress" }, "subagent-1");
+        const parent = update(nested, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Task", status: "pending" });
+        const ended = chatReducer(parent, { type: "turn_completed", stopReason: "cancelled" });
+
+        const [subagentPart, toolPart] = ended.messages[0].parts;
+        if (subagentPart.kind !== "subagent" || toolPart.kind !== "tool") throw new Error("expected a subagent beside a tool call");
+        expect(subagentPart.subagent.state).toBe("cancelled");
+        expect(toolPart.tool.status).toBe("cancelled");
+        expect(toolPart.endedAt).toBeDefined();
+
+        const nestedPart = subagentPart.subagent.messages[0].parts[0];
+        if (nestedPart.kind !== "tool") throw new Error("expected the subagent's own call");
+        expect(nestedPart.tool.status).toBe("cancelled");
+    });
+
+    it("leaves a call that already answered alone when the turn ends", () => {
+        const created = update(initialChatState, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Read file", status: "completed" });
+        const ended = chatReducer(created, { type: "turn_completed" });
+
+        expect(ended.messages).toBe(created.messages);
+    });
+
     it("tracks a background task until it reaches an end state", () => {
         const spawned = update(initialChatState, {
             sessionUpdate: "async_task_spawned",

@@ -639,6 +639,11 @@ button.chat-tool:hover {
     color: var(--danger);
 }
 
+/* A call the turn cut off before it answered. */
+.chat-tool.status-cancelled {
+    opacity: 0.6;
+}
+
 .chat-tool-kind {
     overflow: hidden;
     color: var(--ink-faint);
@@ -805,21 +810,38 @@ button.chat-tool:hover {
     color: var(--ink-dim);
 }
 
+/* ── a subagent's own thread ──────────────────────────────────────── */
+
+/* The card is the record of what a subagent did, so it keeps to itself until
+   it is opened: a rail in the colour of how it ended, and one line saying so.
+   What it is doing right now lives over the composer instead. */
 .chat-subagent {
-    margin: 8px 0;
-    border: 1px solid var(--line-soft);
-    border-left: 2px solid color-mix(in srgb, var(--acc) 42%, var(--line));
-    border-radius: var(--radius-control);
-    background: color-mix(in srgb, var(--rail-2) 30%, transparent);
+    --chat-agent: color-mix(in srgb, var(--acc) 62%, var(--ink-faint));
+    margin: 6px 0;
+    border-left: 2px solid color-mix(in srgb, var(--chat-agent) 55%, transparent);
+    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+}
+
+.chat-subagent.state-completed {
+    --chat-agent: color-mix(in srgb, var(--live) 58%, var(--ink-faint));
+}
+
+.chat-subagent.state-failed,
+.chat-subagent.state-disconnected {
+    --chat-agent: var(--danger);
+}
+
+.chat-subagent.state-cancelled {
+    --chat-agent: var(--ink-faint);
 }
 
 .chat-subagent summary {
     display: flex;
     align-items: center;
     gap: 7px;
-    min-height: 26px;
-    padding: 4px 9px;
-    color: var(--ink-dim);
+    min-height: 24px;
+    padding: 3px 9px 3px 8px;
+    border-radius: 0 var(--radius-2) var(--radius-2) 0;
     font-size: var(--text-2xs);
     list-style: none;
     cursor: pointer;
@@ -830,22 +852,25 @@ button.chat-tool:hover {
 }
 
 .chat-subagent summary:hover {
-    background: color-mix(in srgb, var(--rail-2) 54%, transparent);
+    background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.chat-subagent-chevron {
+    flex: none;
+    opacity: 0.5;
+    transition: transform 120ms;
+}
+
+.chat-subagent[open] .chat-subagent-chevron {
+    transform: rotate(90deg);
+    opacity: 1;
 }
 
 .chat-subagent-mark {
     display: grid;
     flex: none;
     place-items: center;
-    color: color-mix(in srgb, var(--acc) 70%, var(--ink-faint));
-}
-
-.chat-subagent.state-failed .chat-subagent-mark {
-    color: var(--danger);
-}
-
-.chat-subagent.state-completed .chat-subagent-mark {
-    color: color-mix(in srgb, var(--live) 58%, var(--ink-faint));
+    color: var(--chat-agent);
 }
 
 .chat-subagent-name {
@@ -864,16 +889,29 @@ button.chat-tool:hover {
     white-space: nowrap;
 }
 
-.chat-subagent-state {
+.chat-subagent-end {
+    display: flex;
     flex: none;
+    align-items: center;
+    gap: 7px;
     margin-left: auto;
-    color: var(--ink-faint);
     font-family: var(--mono);
     font-size: 9.5px;
 }
 
+.chat-subagent-calls {
+    color: color-mix(in oklab, var(--ink-faint) 80%, transparent);
+}
+
+.chat-subagent-state {
+    padding: 1px 5px;
+    border-radius: var(--radius-chip);
+    background: color-mix(in srgb, var(--chat-agent) 14%, transparent);
+    color: var(--chat-agent);
+}
+
 .chat-subagent-body {
-    padding: 2px 10px 8px;
+    padding: 2px 10px 8px 22px;
 }
 
 .chat-subagent-empty {
@@ -903,6 +941,25 @@ button.chat-tool:hover {
 
 .chat-task.state-paused {
     color: var(--ink-faint);
+}
+
+/* A subagent rides the same strip as a background task, in the accent that
+   marks its card in the transcript rather than the task green. */
+.chat-task-agent {
+    color: color-mix(in srgb, var(--acc) 62%, var(--ink-faint));
+}
+
+.chat-task-spinner {
+    box-sizing: border-box;
+    width: 9px;
+    height: 9px;
+    flex: none;
+    margin-left: auto;
+    border: 1.4px solid color-mix(in oklab, currentcolor 26%, transparent);
+    border-top-color: currentcolor;
+    border-right-color: currentcolor;
+    border-radius: 50%;
+    animation: chat-activity-spin 0.72s linear infinite;
 }
 
 /* An agent names a task with the command it ran, and that runs long. The name
