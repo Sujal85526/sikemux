@@ -49,6 +49,7 @@ if (JSON.stringify(macConfig.bundle?.targets) !== JSON.stringify(["app", "dmg"])
 if (macConfig.bundle?.resources?.["icons/build/Assets.car"] !== "Assets.car") fail("Assets.car resource mapping is missing");
 if (macConfig.bundle?.macOS?.infoPlist !== "Info.plist") fail("pre-signing Info.plist merge is not configured");
 if (macConfig.bundle?.macOS?.minimumSystemVersion !== "11.0") fail("unexpected minimum macOS version");
+if (macConfig.bundle?.macOS?.entitlements !== "Entitlements.plist") fail("sidecar entitlements are not configured");
 if (JSON.stringify(windowsConfig.bundle?.targets) !== JSON.stringify(["nsis"])) fail("Windows bundle target must be NSIS");
 if (windowsConfig.bundle?.createUpdaterArtifacts !== false) fail("unsigned Windows builds must not require updater credentials");
 if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon is not configured");
