@@ -17,6 +17,7 @@ import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib
 import { PRIMARY_SHORTCUT, SHIFT_SHORTCUT } from "../lib/platform";
 
 const DEBOUNCE_MS = 250;
+const RESULT_FLUSH_MS = 50;
 const PREVIEW_BEFORE_LINES = 40;
 const PREVIEW_AFTER_LINES = 80;
 const PREVIEW_LRU_CAP = 4;
@@ -71,14 +72,25 @@ export function SearchPane({
             const id = ++requestIdRef.current;
             setStatus("searching");
             setFiles([]);
+            // A thousand result files would otherwise be a thousand renders.
+            const pending: SearchFile[] = [];
+            let flushTimer: number | undefined;
+            const flush = () => {
+                flushTimer = undefined;
+                if (id !== requestIdRef.current || pending.length === 0) return;
+                const batch = pending.splice(0);
+                setFiles((prev) => prev.concat(batch));
+            };
             searchApi
                 .project(cwd, query, options, (file) => {
                     if (id !== requestIdRef.current) return;
-                    setFiles((prev) => prev.concat(file));
+                    pending.push(file);
+                    if (flushTimer === undefined) flushTimer = window.setTimeout(flush, RESULT_FLUSH_MS);
                 })
                 .then((final) => {
                     if (id !== requestIdRef.current) return;
-                    setFiles(final.files);
+                    if (flushTimer !== undefined) window.clearTimeout(flushTimer);
+                    flush();
                     setSummary(final);
                     setStatus("ok");
                     setError(null);
@@ -154,13 +166,16 @@ export function SearchPane({
         setReplacePreview(null);
     }, [view.query, view.replace, view.options]);
 
+    const hasFilesRef = useRef(false);
+    hasFilesRef.current = files.length > 0;
+
     useEffect(() => {
         if (!cwd || !visible) return;
         return subscribe("fs-changed", (e) => {
             if (!e.repo || !isPathWithin(cwd, e.repo)) return;
-            if (files.length > 0) setStale(true);
+            if (hasFilesRef.current) setStale(true);
         });
-    }, [cwd, visible, files.length]);
+    }, [cwd, visible]);
 
     const refresh = useCallback(() => {
         if (!cwd || !view.query.trim()) return;
