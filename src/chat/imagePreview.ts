@@ -2,18 +2,26 @@ import { useEffect, useState } from "react";
 import { fsapi } from "../api/fs";
 import { isImagePath } from "../editor/media";
 
-const MAX_CACHED = 32;
-const MAX_PREVIEW_BYTES = 16 * 1024 * 1024;
+const MAX_CACHED = 12;
+/* A preview is a thumbnail in a transcript, and it lives here as a base64
+   string: a screenshot's worth is generous, a whole photo library is not. */
+const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
+const MAX_CACHE_BYTES = 12 * 1024 * 1024;
 /* A null entry is a file we already tried and cannot show, so a transcript
    that scrolls past it again does not read it again. */
 const previews = new Map<string, string | null>();
 const pending = new Map<string, Promise<string | null>>();
+let cachedBytes = 0;
 
 function remember(path: string, src: string | null): string | null {
+    const held = previews.get(path);
+    if (held !== undefined) cachedBytes -= held?.length ?? 0;
     previews.delete(path);
     previews.set(path, src);
-    for (const oldest of previews.keys()) {
-        if (previews.size <= MAX_CACHED) break;
+    cachedBytes += src?.length ?? 0;
+    for (const oldest of [...previews.keys()]) {
+        if (oldest === path || (previews.size <= MAX_CACHED && cachedBytes <= MAX_CACHE_BYTES)) break;
+        cachedBytes -= previews.get(oldest)?.length ?? 0;
         previews.delete(oldest);
     }
     return src;
@@ -48,6 +56,11 @@ export function localPath(uri: string | null | undefined): string | null {
 export function localImagePath(uri: string | null | undefined): string | null {
     const path = localPath(uri);
     return path && isImagePath(path) ? path : null;
+}
+
+/** What the preview cache is holding, in characters. */
+export function previewCacheBytes(): number {
+    return cachedBytes;
 }
 
 /** Reads a local image as a data URL; null while it loads and if it cannot be shown. */

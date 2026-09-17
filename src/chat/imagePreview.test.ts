@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { localImagePath, localPath } from "./imagePreview";
+import { describe, expect, it, vi } from "vitest";
+import { fsapi } from "../api/fs";
+import { localImagePath, localPath, previewCacheBytes, useImagePreview } from "./imagePreview";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 describe("chat image previews", () => {
     it("decodes the file URL an agent writes for an attachment", () => {
@@ -19,6 +21,20 @@ describe("chat image previews", () => {
     it("has no preview for files that are not images", () => {
         expect(localImagePath("file:///Users/me/notes.md")).toBeNull();
         expect(localPath("file:///Users/me/notes.md")).toBe("/Users/me/notes.md");
+    });
+
+    it("holds only a handful of thumbnails at a time", async () => {
+        const megabyte = "A".repeat(1024 * 1024);
+        vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: megabyte, size: 1024 });
+
+        for (let index = 0; index < 20; index += 1) {
+            const { unmount } = renderHook(() => useImagePreview(`/shots/${index}.png`));
+            await waitFor(() => expect(previewCacheBytes()).toBeGreaterThan(0));
+            act(() => unmount());
+        }
+
+        expect(previewCacheBytes()).toBeLessThanOrEqual(12 * 1024 * 1024);
+        vi.restoreAllMocks();
     });
 
     it("has no local path for remote links", () => {
