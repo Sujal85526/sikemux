@@ -4,13 +4,14 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rayon::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tauri::async_runtime::spawn_blocking;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::process::Command;
@@ -56,14 +57,14 @@ pub struct AgentModelInfo {
     label: String,
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum AgentUsageResetAt {
     Unix(u64),
     Iso(String),
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentUsageWindow {
     label: String,
@@ -72,7 +73,7 @@ pub struct AgentUsageWindow {
     window_minutes: Option<u64>,
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentUsage {
     provider: &'static str,
@@ -578,6 +579,15 @@ pub async fn agent_usage(
     executable_path: Option<String>,
     config_path: Option<String>,
 ) -> Result<AgentUsage, String> {
+    let key = format!(
+        "{}\0{}\0{}",
+        agent.as_str(),
+        executable_path.as_deref().unwrap_or(""),
+        config_path.as_deref().unwrap_or("")
+    );
+    if let Some(usage) = cached_agent_usage(&key) {
+        return Ok(usage);
+    }
     let executable = executable_path
         .as_deref()
         .map(expand_user_path)
@@ -587,13 +597,40 @@ pub async fn agent_usage(
             })
         })
         .ok_or_else(|| format!("{} is not available", agent.as_str()))?;
-    match agent {
+    let usage = match agent {
         AgentKind::Claude => claude_usage(&executable, config_path.as_deref()).await,
         AgentKind::Codex => codex_usage(&executable, config_path.as_deref()).await,
         _ => Err(format!(
             "{} does not expose structured plan usage",
             agent.as_str()
         )),
+    }?;
+    remember_agent_usage(key, usage.clone());
+    Ok(usage)
+}
+
+/// Every lookup boots the provider's CLI, so a rail that polls gets the answer
+/// the last boot gave until it is old enough to be worth another.
+const AGENT_USAGE_TTL: Duration = Duration::from_secs(120);
+
+fn agent_usage_cache() -> &'static Mutex<HashMap<String, (Instant, AgentUsage)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, AgentUsage)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cached_agent_usage(key: &str) -> Option<AgentUsage> {
+    let mut cache = agent_usage_cache().lock().ok()?;
+    let (stored, usage) = cache.get(key)?;
+    if stored.elapsed() < AGENT_USAGE_TTL {
+        return Some(usage.clone());
+    }
+    cache.remove(key);
+    None
+}
+
+fn remember_agent_usage(key: String, usage: AgentUsage) {
+    if let Ok(mut cache) = agent_usage_cache().lock() {
+        cache.insert(key, (Instant::now(), usage));
     }
 }
 
@@ -1633,25 +1670,40 @@ fn yaml_scalar(raw: &str) -> Option<String> {
     clean_model(raw)
 }
 
-/// Existing on-disk conversations for an agent.
+fn read_agent_sessions(
+    agent: AgentKind,
+    cwd: &str,
+    config_path: Option<&str>,
+) -> Vec<AgentSession> {
+    match agent {
+        AgentKind::Claude => claude_sessions(cwd, config_path),
+        AgentKind::Codex => codex_sessions(cwd, config_path),
+        AgentKind::Hermes => hermes_sessions(),
+        AgentKind::Pi => pi_sessions(cwd),
+        AgentKind::Opencode => opencode_sessions(cwd),
+        AgentKind::Omp => omp_sessions(cwd),
+        AgentKind::Grok => grok_sessions(cwd),
+    }
+}
+
+/// Existing on-disk conversations for an agent. The scan reads directories and
+/// transcripts, so it runs on a blocking thread rather than the IPC thread.
 #[tauri::command]
-pub fn agent_sessions(
+pub async fn agent_sessions(
     agent: AgentKind,
     cwd: String,
     config_path: Option<String>,
 ) -> Vec<AgentSession> {
-    match agent {
-        AgentKind::Claude => claude_sessions(&cwd, config_path.as_deref()),
-        AgentKind::Codex => codex_sessions(&cwd, config_path.as_deref()),
-        AgentKind::Hermes => hermes_sessions(),
-        AgentKind::Pi => pi_sessions(&cwd),
-        AgentKind::Opencode => opencode_sessions(&cwd),
-        AgentKind::Omp => omp_sessions(&cwd),
-        AgentKind::Grok => grok_sessions(&cwd),
-    }
+    spawn_blocking(move || read_agent_sessions(agent, &cwd, config_path.as_deref()))
+        .await
+        .unwrap_or_default()
 }
 
 const AGENT_DEBOUNCE_MS: u64 = 200;
+/// While a turn is running its transcript is appended to constantly. Rescanning
+/// the whole group at every append buys nothing, so the wait gets longer until
+/// the turn ends.
+const AGENT_STREAMING_DEBOUNCE_MS: u64 = 2_000;
 
 fn home_path() -> Option<PathBuf> {
     std::env::var_os("HOME")
@@ -1746,16 +1798,88 @@ fn agent_event_interesting(event: &Event) -> bool {
     )
 }
 
+/// Session ids with a turn in flight, per watch group.
+fn streaming_sessions() -> &'static Mutex<HashMap<String, HashSet<String>>> {
+    static SESSIONS: OnceLock<Mutex<HashMap<String, HashSet<String>>>> = OnceLock::new();
+    SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn stream_group_key(agent: &str, cwd: &str, config_path: Option<&str>) -> String {
+    format!("{agent}\0{cwd}\0{}", config_path.unwrap_or(""))
+}
+
+/// Tells the session watcher which conversation is being written to right now.
+/// The chat pane already has every word of it, so the writes it makes are not
+/// worth a rescan of the whole project.
+pub fn note_streaming_session(
+    agent: &str,
+    cwd: &str,
+    config_path: Option<&str>,
+    session_id: &str,
+    streaming: bool,
+) {
+    let key = stream_group_key(agent, cwd, config_path);
+    let Ok(mut sessions) = streaming_sessions().lock() else {
+        return;
+    };
+    if streaming {
+        sessions
+            .entry(key)
+            .or_default()
+            .insert(session_id.to_string());
+        return;
+    }
+    if let Some(group) = sessions.get_mut(&key) {
+        group.remove(session_id);
+        if group.is_empty() {
+            sessions.remove(&key);
+        }
+    }
+}
+
+fn group_is_streaming(group: &str) -> bool {
+    streaming_sessions()
+        .lock()
+        .is_ok_and(|sessions| sessions.contains_key(group))
+}
+
+/// True when every changed file names a session this group is streaming. Both
+/// Claude and Codex put the session id in the transcript's file name.
+fn streaming_transcripts_only(group: &str, paths: &[PathBuf]) -> bool {
+    if paths.is_empty() {
+        return false;
+    }
+    let Ok(sessions) = streaming_sessions().lock() else {
+        return false;
+    };
+    let Some(ids) = sessions.get(group) else {
+        return false;
+    };
+    paths.iter().all(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| ids.iter().any(|id| name.contains(id.as_str())))
+    })
+}
+
 fn spawn_agent_debouncer(
     app: AppHandle,
     agent: &'static str,
     cwd: String,
     config_path: Option<String>,
+    group: String,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<()>,
 ) {
     tauri::async_runtime::spawn(async move {
         while rx.recv().await.is_some() {
-            let sleep = tokio::time::sleep(Duration::from_millis(AGENT_DEBOUNCE_MS));
+            let wait = || {
+                Duration::from_millis(if group_is_streaming(&group) {
+                    AGENT_STREAMING_DEBOUNCE_MS
+                } else {
+                    AGENT_DEBOUNCE_MS
+                })
+            };
+            let sleep = tokio::time::sleep(wait());
             tokio::pin!(sleep);
             let mut closed = false;
             loop {
@@ -1766,16 +1890,15 @@ fn spawn_agent_debouncer(
                             closed = true;
                             break;
                         }
-                        sleep
-                            .as_mut()
-                            .reset(tokio::time::Instant::now() + Duration::from_millis(AGENT_DEBOUNCE_MS));
+                        sleep.as_mut().reset(tokio::time::Instant::now() + wait());
                     }
                 }
             }
             if closed {
                 return;
             }
-            let _ = app.emit(
+            let _ = app.emit_to(
+                "main",
                 "agent_sessions_changed",
                 AgentSessionsChanged {
                     agent,
@@ -1787,8 +1910,7 @@ fn spawn_agent_debouncer(
     });
 }
 
-#[tauri::command]
-pub fn agent_sessions_watch_start(
+fn start_agent_watch(
     app: AppHandle,
     agent: AgentKind,
     cwd: String,
@@ -1796,15 +1918,18 @@ pub fn agent_sessions_watch_start(
 ) -> Result<u32, String> {
     let dirs = agent_watch_dirs(agent, &cwd, config_path.as_deref());
     let id = NEXT_WATCH_ID.fetch_add(1, Ordering::Relaxed);
+    let group = stream_group_key(agent.as_str(), &cwd, config_path.as_deref());
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    spawn_agent_debouncer(app, agent.as_str(), cwd, config_path, rx);
+    spawn_agent_debouncer(app, agent.as_str(), cwd, config_path, group.clone(), rx);
 
     let mut watchers = Vec::new();
     for target in dirs {
         let tx_events = tx.clone();
+        let group = group.clone();
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
             let Ok(event) = res else { return };
-            if !agent_event_interesting(&event) {
+            if !agent_event_interesting(&event) || streaming_transcripts_only(&group, &event.paths)
+            {
                 return;
             }
             let _ = tx_events.send(());
@@ -1825,12 +1950,28 @@ pub fn agent_sessions_watch_start(
 }
 
 #[tauri::command]
-pub fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
-    watch_registry()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&id);
-    Ok(())
+pub async fn agent_sessions_watch_start(
+    app: AppHandle,
+    agent: AgentKind,
+    cwd: String,
+    config_path: Option<String>,
+) -> Result<u32, String> {
+    spawn_blocking(move || start_agent_watch(app, agent, cwd, config_path))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn agent_sessions_watch_stop(id: u32) -> Result<(), String> {
+    spawn_blocking(move || {
+        watch_registry()
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&id);
+        Ok(())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn allowed_agent_path(_agent: &str, _path: &Path) -> bool {
@@ -1850,6 +1991,25 @@ fn mtime_of(path: &Path) -> u64 {
 struct TitleCacheStamp {
     modified_ns: u128,
     len: u64,
+}
+
+impl TitleCacheStamp {
+    fn unix_secs(self) -> u64 {
+        (self.modified_ns / 1_000_000_000) as u64
+    }
+}
+
+/// Stats each transcript once and hands back the newest first, which is all the
+/// ordering, the mtime and the cache keys need.
+fn stamped_transcripts(paths: impl Iterator<Item = PathBuf>) -> Vec<(PathBuf, TitleCacheStamp)> {
+    let mut stamped: Vec<(PathBuf, TitleCacheStamp)> = paths
+        .map(|path| {
+            let stamp = title_cache_stamp(&path);
+            (path, stamp)
+        })
+        .collect();
+    stamped.sort_unstable_by_key(|(_, stamp)| std::cmp::Reverse(stamp.modified_ns));
+    stamped
 }
 
 fn title_cache_stamp(path: &Path) -> TitleCacheStamp {
@@ -1967,25 +2127,24 @@ fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
     let Ok(entries) = fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let mut paths: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("jsonl"))
-        .collect();
-    paths.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    let mut paths = stamped_transcripts(
+        entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("jsonl")),
+    );
     paths.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
     // Titles come from reading each transcript, so fan the per-file work out
     // across rayon's pool instead of scanning sessions one at a time.
     let mut out: Vec<AgentSession> = paths
         .par_iter()
-        .filter_map(|path| {
+        .filter_map(|(path, stamp)| {
             let id = path.file_stem().and_then(|s| s.to_str())?;
-            let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || claude_title(path))?;
+            let title = cached_title(path, *stamp, || claude_title(path))?;
             Some(AgentSession {
                 id: id.to_string(),
                 title,
-                mtime,
+                mtime: stamp.unix_secs(),
             })
         })
         .collect();
@@ -2082,8 +2241,36 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
     }
 }
 
-fn codex_indexed_titles(root: &Path) -> HashMap<String, String> {
-    let Ok(file) = fs::File::open(root.join("session_index.jsonl")) else {
+/// The parsed Codex session index, kept until the file it came from is written
+/// again. It is one file for every project, so re-reading it per scan was the
+/// bulk of a Codex listing.
+fn codex_index_cache() -> &'static Mutex<CodexIndexCache> {
+    static CACHE: OnceLock<Mutex<CodexIndexCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+type CodexTitles = HashMap<String, String>;
+type CodexIndexCache = HashMap<PathBuf, (TitleCacheStamp, Arc<CodexTitles>)>;
+
+fn codex_indexed_titles(root: &Path) -> Arc<CodexTitles> {
+    let path = root.join("session_index.jsonl");
+    let stamp = title_cache_stamp(&path);
+    if let Ok(cache) = codex_index_cache().lock() {
+        if let Some((cached, titles)) = cache.get(&path) {
+            if *cached == stamp {
+                return titles.clone();
+            }
+        }
+    }
+    let titles = Arc::new(read_codex_index(&path));
+    if let Ok(mut cache) = codex_index_cache().lock() {
+        cache.insert(path, (stamp, titles.clone()));
+    }
+    titles
+}
+
+fn read_codex_index(path: &Path) -> CodexTitles {
+    let Ok(file) = fs::File::open(path) else {
         return HashMap::new();
     };
     let mut titles = HashMap::new();
@@ -2112,41 +2299,93 @@ fn codex_indexed_titles(root: &Path) -> HashMap<String, String> {
     titles
 }
 
+/// What the first line of a rollout says about the conversation in it.
+#[derive(Clone)]
+struct CodexRollout {
+    id: String,
+    cwd: String,
+}
+
+type CodexHeaderCache = HashMap<PathBuf, (TitleCacheStamp, Option<Arc<CodexRollout>>, u64)>;
+const MAX_CODEX_HEADER_ENTRIES: usize = 8_192;
+
+/// Which conversation each rollout holds, so a listing only opens the rollouts
+/// that have been written since the last one.
+fn codex_header_cache() -> &'static Mutex<CodexHeaderCache> {
+    static CACHE: OnceLock<Mutex<CodexHeaderCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn read_codex_rollout(path: &Path) -> Option<CodexRollout> {
+    let file = fs::File::open(path).ok()?;
+    let mut first = String::new();
+    BufReader::new(file).read_line(&mut first).ok()?;
+    let value = serde_json::from_str::<Value>(first.trim()).ok()?;
+    if value.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
+        return None;
+    }
+    let payload = value.get("payload")?;
+    Some(CodexRollout {
+        id: payload.get("id").and_then(|i| i.as_str())?.to_string(),
+        cwd: payload.get("cwd").and_then(|c| c.as_str())?.to_string(),
+    })
+}
+
+fn cached_codex_rollout(path: &Path, stamp: TitleCacheStamp) -> Option<Arc<CodexRollout>> {
+    if let Ok(mut cache) = codex_header_cache().lock() {
+        if let Some((cached, rollout, access)) = cache.get_mut(path) {
+            if *cached == stamp {
+                *access = next_title_cache_access();
+                return rollout.clone();
+            }
+        }
+    }
+    let rollout = read_codex_rollout(path).map(Arc::new);
+    if let Ok(mut cache) = codex_header_cache().lock() {
+        if cache.len() >= MAX_CODEX_HEADER_ENTRIES && !cache.contains_key(path) {
+            if let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, (_, _, access))| *access)
+                .map(|(path, _)| path.clone())
+            {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(
+            path.to_path_buf(),
+            (stamp, rollout.clone(), next_title_cache_access()),
+        );
+    }
+    rollout
+}
+
 fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
     let Some(root) = agent_config_root("codex", config_path) else {
         return Vec::new();
     };
     let indexed_titles = codex_indexed_titles(&root);
-    let mut files = Vec::new();
-    collect_jsonl(&root.join("sessions"), &mut files, 0);
-    files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    let mut paths = Vec::new();
+    collect_jsonl(&root.join("sessions"), &mut paths, 0);
+    let mut files = stamped_transcripts(paths.into_iter());
     files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
     let mut out: Vec<AgentSession> = files
         .par_iter()
-        .filter_map(|path| {
-            let file = fs::File::open(path).ok()?;
-            let mut first = String::new();
-            BufReader::new(file).read_line(&mut first).ok()?;
-            let v = serde_json::from_str::<Value>(first.trim()).ok()?;
-            if v.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
+        .filter_map(|(path, stamp)| {
+            let rollout = cached_codex_rollout(path, *stamp)?;
+            if rollout.cwd != cwd {
                 return None;
             }
-            let payload = v.get("payload")?;
-            if payload.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
-                return None;
-            }
-            let id = payload.get("id").and_then(|i| i.as_str())?;
-            let mtime = mtime_of(path);
+            let id = rollout.id.as_str();
             let title = indexed_titles
                 .get(id)
                 .cloned()
-                .or_else(|| cached_title(path, title_cache_stamp(path), || codex_title(path)))
+                .or_else(|| cached_title(path, *stamp, || codex_title(path)))
                 .unwrap_or_else(|| id.chars().take(8).collect());
             Some(AgentSession {
                 id: id.to_string(),
                 title,
-                mtime,
+                mtime: stamp.unix_secs(),
             })
         })
         .collect();
@@ -2731,14 +2970,16 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
 #[cfg(test)]
 mod executable_tests {
     use super::{
-        agent_config_root, agent_watch_dirs, allowed_agent_path, cached_title, claude_sessions,
-        codex_indexed_titles, codex_sessions, codex_title, grok_session, json_effort,
+        agent_config_root, agent_watch_dirs, allowed_agent_path, cached_codex_rollout,
+        cached_title, claude_sessions, codex_indexed_titles, codex_sessions, codex_title,
+        grok_session, group_is_streaming, json_effort, note_streaming_session,
         omp_sessions_from_dirs, omp_title, parse_claude_models, parse_claude_usage,
         parse_codex_models, parse_codex_usage_result, parse_grok_models, parse_hermes_models,
         parse_line_models, parse_omp_models, parse_pi_models, percent_decode, qualify_model,
-        title_cache_stamp, toml_effort, toml_model, toml_section_string,
-        yaml_agent_reasoning_effort, yaml_model_section, yaml_top_level_scalar, AgentKind,
-        AgentModelInfo, AgentUsageResetAt, CLAUDE_MODEL_CATALOG_ARGS,
+        stream_group_key, streaming_transcripts_only, title_cache_stamp, toml_effort, toml_model,
+        toml_section_string, yaml_agent_reasoning_effort, yaml_model_section,
+        yaml_top_level_scalar, AgentKind, AgentModelInfo, AgentUsageResetAt,
+        CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
     use super::{
@@ -2747,7 +2988,8 @@ mod executable_tests {
         MODEL_CATALOG_ERROR_DETAIL_LIMIT,
     };
     use std::io::Write;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
 
     #[test]
     fn opencode_installer_directory_is_a_valid_agent_location() {
@@ -3338,6 +3580,74 @@ mod executable_tests {
         let sessions = codex_sessions("/repo", root.path().to_str());
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].title, "Add draggable project sorting");
+    }
+
+    #[test]
+    fn codex_index_is_reparsed_only_after_the_file_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let index = root.path().join("session_index.jsonl");
+        std::fs::write(&index, "{\"id\":\"session-1\",\"thread_name\":\"First\"}\n").unwrap();
+        let first = codex_indexed_titles(root.path());
+        assert!(Arc::ptr_eq(&first, &codex_indexed_titles(root.path())));
+
+        std::fs::write(
+            &index,
+            concat!(
+                "{\"id\":\"session-1\",\"thread_name\":\"First\"}\n",
+                "{\"id\":\"session-2\",\"thread_name\":\"Second\"}\n"
+            ),
+        )
+        .unwrap();
+        let reparsed = codex_indexed_titles(root.path());
+        assert!(!Arc::ptr_eq(&first, &reparsed));
+        assert_eq!(
+            reparsed.get("session-2").map(String::as_str),
+            Some("Second")
+        );
+    }
+
+    #[test]
+    fn a_rollout_header_is_read_once_per_write() {
+        let root = tempfile::tempdir().unwrap();
+        let rollout = root.path().join("rollout-session-1.jsonl");
+        std::fs::write(
+            &rollout,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"session-1\",\"cwd\":\"/repo\"}}\n",
+        )
+        .unwrap();
+
+        let stamp = title_cache_stamp(&rollout);
+        let first = cached_codex_rollout(&rollout, stamp).unwrap();
+        assert_eq!(first.cwd, "/repo");
+        let again = cached_codex_rollout(&rollout, stamp).unwrap();
+        assert!(Arc::ptr_eq(&first, &again));
+
+        std::fs::remove_file(&rollout).unwrap();
+        assert!(cached_codex_rollout(&rollout, stamp).is_some());
+        assert!(cached_codex_rollout(&rollout, title_cache_stamp(&rollout)).is_none());
+    }
+
+    #[test]
+    fn the_watcher_ignores_writes_to_a_streaming_transcript() {
+        let group = stream_group_key("claude", "/repo", None);
+        let transcript = PathBuf::from("/home/me/.claude/projects/-repo/session-1.jsonl");
+        let other = PathBuf::from("/home/me/.claude/projects/-repo/session-2.jsonl");
+
+        assert!(!group_is_streaming(&group));
+        assert!(!streaming_transcripts_only(&group, &[transcript.clone()]));
+
+        note_streaming_session("claude", "/repo", None, "session-1", true);
+        assert!(group_is_streaming(&group));
+        assert!(streaming_transcripts_only(&group, &[transcript.clone()]));
+        assert!(!streaming_transcripts_only(
+            &group,
+            &[transcript.clone(), other]
+        ));
+        assert!(!streaming_transcripts_only(&group, &[]));
+
+        note_streaming_session("claude", "/repo", None, "session-1", false);
+        assert!(!group_is_streaming(&group));
+        assert!(!streaming_transcripts_only(&group, &[transcript]));
     }
 
     #[test]

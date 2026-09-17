@@ -81,6 +81,37 @@ enum AcpCommand {
     Stop,
 }
 
+/// Names the conversation on disk so the session watcher can leave it alone
+/// while a turn writes to it.
+#[derive(Clone)]
+struct StreamMark {
+    provider: String,
+    cwd: String,
+    config_path: Option<String>,
+    session_id: String,
+}
+
+impl StreamMark {
+    fn set(&self, streaming: bool) {
+        crate::agents::note_streaming_session(
+            &self.provider,
+            &self.cwd,
+            self.config_path.as_deref(),
+            &self.session_id,
+            streaming,
+        );
+    }
+}
+
+/// Clears the mark for a connection that ends part-way through a turn.
+struct TurnMark(StreamMark);
+
+impl Drop for TurnMark {
+    fn drop(&mut self) {
+        self.0.set(false);
+    }
+}
+
 struct PendingPermission {
     agent_id: String,
     option_ids: HashSet<String>,
@@ -646,6 +677,14 @@ async fn run_connection(
                     serde_json::to_value(&start).unwrap_or_else(|_| json!({})),
                 );
 
+                let stream = StreamMark {
+                    provider: provider.clone(),
+                    cwd: cwd.to_string_lossy().into_owned(),
+                    config_path: config_path.clone(),
+                    session_id: session_id.clone(),
+                };
+                let _turn_mark = TurnMark(stream.clone());
+
                 let running = Arc::new(AtomicBool::new(false));
                 while let Some(command) = commands.recv().await {
                     match command {
@@ -667,15 +706,18 @@ async fn run_connection(
                                     continue;
                                 }
                             };
+                            stream.set(true);
                             emit(&app, &agent_id, "turn_started", json!({}));
                             let response_app = app.clone();
                             let response_agent_id = agent_id.clone();
                             let response_running = running.clone();
                             let response_manager = manager.clone();
+                            let response_stream = stream.clone();
                             let sent = connection
                                 .send_request(PromptRequest::new(session_id.clone(), blocks))
                                 .on_receiving_result(async move |result| {
                                     response_running.store(false, Ordering::Release);
+                                    response_stream.set(false);
                                     response_manager.cancel_permissions(Some(&response_agent_id));
                                     match result {
                                         Ok(response) => emit(
@@ -696,6 +738,7 @@ async fn run_connection(
                                 });
                             if let Err(error) = sent {
                                 running.store(false, Ordering::Release);
+                                stream.set(false);
                                 emit(
                                     &app,
                                     &agent_id,
