@@ -59,6 +59,12 @@ export interface WindowPan {
      * it onto `onto` over `ms`. The gesture knows how much ground that leaves.
      */
     snap(onto: string, beside: string | null, ms: number): void;
+    /**
+     * Takes the track back with no travel at all, parked on the screen the
+     * session is on now. For a gesture whose screens moved out from under it,
+     * which has nowhere left to slide from.
+     */
+    park(): void;
 }
 
 function planPan(from: string | null, to: string | null, slots: ReadonlyMap<string, number>, running: Pan | null): Pan | null {
@@ -159,15 +165,26 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         setRunning(false);
     };
 
+    const park = () => {
+        // A switch made mid-gesture plans a slide of its own, and that slide is
+        // then the one thing moving the track: only a drag is still the gesture's.
+        if (pan?.kind !== "drag") return;
+        previous.current = { sessionId, activeWindowId };
+        // The track goes by hand: React's `--pan` has not moved since the
+        // gesture took the track over.
+        trackRef.current?.style.setProperty("--pan", panOffset(activeWindowId === null ? 0 : (slots.get(activeWindowId) ?? 0)));
+        setPan(null);
+        setRunning(false);
+    };
+
     const snap = (onto: string, beside: string | null, ms: number) => {
         const home = slots.get(onto);
-        if (home === undefined) return;
+        // A screen closed under the swipe has nothing left to land on.
+        if (home === undefined) return park();
         // A swipe thrown at the last moment moves the session one more screen on
         // its way out, and this is the travel for it, so nothing else plans one.
         previous.current = { sessionId, activeWindowId: onto };
         if (prefersReducedMotion()) {
-            // Nothing transitions, so the track goes by hand: React's `--pan` has
-            // not moved since the gesture took the track over.
             trackRef.current?.style.setProperty("--pan", panOffset(home));
             setPan(null);
             setRunning(false);
@@ -196,5 +213,6 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         paints: (windowId) => (pan ? windowId === pan.from || windowId === pan.to : windowId === activeWindowId),
         grab,
         snap,
+        park,
     };
 }

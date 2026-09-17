@@ -553,6 +553,30 @@ describe("workspace wheel pan", () => {
     });
 
     /*
+     * A screen closing elsewhere moves the session along the track without
+     * switching it, so the swipe is no longer counting from the screen it
+     * started on and no switch plans a slide. The track still has to come back:
+     * left where the finger had it, the whole session sits half a screen off the
+     * stage with a band of shell down the edge, and nothing ever puts it back.
+     */
+    it("gives the track back when the screens move under the swipe", () => {
+        const { container, track } = stageOfScreens();
+        act(() => cmd.selectWindowId(order()[3]));
+        act(() => void vi.advanceTimersByTime(PAN_MS * 2));
+        const on = activeWindow();
+
+        swipe(container.querySelector(".window-layer.live")!, 200);
+        expect(track).toHaveClass("panning");
+
+        act(() => cmd.closeWindowById(order()[0]));
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
+
+        expect(activeWindow()).toBe(on);
+        expect(track).not.toHaveClass("panning");
+        expect(panOf(track)).toBe(slidLeft(order().indexOf(on)));
+    });
+
+    /*
      * Dragging is direct manipulation rather than animation, so it still follows
      * the finger with motion reduced; only the close at the end stops being a slide.
      */

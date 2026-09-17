@@ -90,6 +90,13 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             quiet = null;
         };
 
+        /** Drops a gesture that has nothing left to hold, handing the track back
+         *  rather than leaving it parked where the finger was. */
+        const letGo = () => {
+            if (gesture?.held) latest.current.park();
+            forget();
+        };
+
         const paint = () => {
             const moving = gesture;
             if (!moving) return;
@@ -112,7 +119,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             done.frame = null;
             if (!done.claimed || !done.held) return;
             const { order, on } = session();
-            if (on === null || order[done.slot] !== on) return;
+            if (on === null || order[done.slot] !== on) return latest.current.park();
             const thrown = flicked(done.pushes, until);
             const onto = (thrown === 0 ? null : (order[done.slot + thrown] ?? null)) ?? on;
             const left = onto === on ? Math.abs(done.offset) : Math.abs(thrown - done.offset);
@@ -136,7 +143,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             const { order, on } = session();
             // A switch from somewhere else takes the track away, and the pan the
             // gesture was driving is that switch's slide by now.
-            if (gesture && order[gesture.slot] !== on) forget();
+            if (gesture && order[gesture.slot] !== on) letGo();
             if (!gesture) {
                 const stride = area.clientWidth + cardGap(area);
                 const slot = on === null ? -1 : order.indexOf(on);
