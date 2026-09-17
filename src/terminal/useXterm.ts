@@ -162,6 +162,7 @@ export function useXterm(opts: {
     visibleRef.current = visible;
     const bootRef = useRef<() => void>(() => {});
     const resizeRef = useRef<() => void>(() => {});
+    const scheduleOutputRef = useRef<() => void>(() => {});
     const serializedNormalRef = useRef<SerializedNormalBuffer | null>(null);
 
     useEffect(() => {
@@ -247,6 +248,7 @@ export function useXterm(opts: {
                 if (resourcesDisposed) return;
                 resourcesDisposed = true;
                 resizeRef.current = () => {};
+                scheduleOutputRef.current = () => {};
                 if (stableTimer !== null) {
                     window.clearTimeout(stableTimer);
                     stableTimer = null;
@@ -426,14 +428,20 @@ export function useXterm(opts: {
                     const flushStarted = performance.now();
                     if (outputQueuedAt !== null) performanceTelemetry.recordLatency("terminal.output.queue", flushStarted - outputQueuedAt);
                     outputQueuedAt = null;
+                    const flushing = outputPending.splice(0);
+                    const chunkCount = flushing.length;
                     let total = 0;
-                    for (const chunk of outputPending) total += chunk.length;
-                    const chunkCount = outputPending.length;
-                    const merged = new Uint8Array(total);
-                    let offset = 0;
-                    for (const chunk of outputPending.splice(0)) {
-                        merged.set(chunk, offset);
-                        offset += chunk.length;
+                    for (const chunk of flushing) total += chunk.length;
+                    let merged: Uint8Array;
+                    if (chunkCount === 1) {
+                        merged = flushing[0];
+                    } else {
+                        merged = new Uint8Array(total);
+                        let offset = 0;
+                        for (const chunk of flushing) {
+                            merged.set(chunk, offset);
+                            offset += chunk.length;
+                        }
                     }
                     outputPendingBytes = 0;
                     performanceTelemetry.setGauge("terminal.last-queue-bytes", 0);
@@ -473,8 +481,13 @@ export function useXterm(opts: {
                     });
                 };
                 const scheduleOutput = () => {
-                    if (!outputBusy && outputFrame == null) outputFrame = window.requestAnimationFrame(flushOutput);
+                    if (outputBusy || outputFrame != null) return;
+                    // A hidden pane paints nothing. Hold the backlog (still
+                    // bounded below) until it comes back into view.
+                    if (!visibleRef.current) return;
+                    outputFrame = window.requestAnimationFrame(flushOutput);
                 };
+                scheduleOutputRef.current = scheduleOutput;
                 const requestRendererResync = () => {
                     if (resyncing || closing || disposed) return;
                     resyncing = true;
@@ -629,6 +642,7 @@ export function useXterm(opts: {
                     if (closing) return;
                     closing = true;
                     resizeRef.current = () => {};
+                    scheduleOutputRef.current = () => {};
                     if (stableTimer !== null) {
                         window.clearTimeout(stableTimer);
                         stableTimer = null;
@@ -685,6 +699,7 @@ export function useXterm(opts: {
     useEffect(() => {
         if (!visible) return;
         if (termRef.current) {
+            scheduleOutputRef.current();
             window.requestAnimationFrame(resizeRef.current);
         } else if (shouldMount) {
             bootRef.current();
