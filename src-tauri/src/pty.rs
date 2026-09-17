@@ -687,7 +687,7 @@ impl PtyManager {
 }
 
 #[tauri::command]
-pub fn agent_detection_manifests(
+pub async fn agent_detection_manifests(
     manager: State<'_, PtyManager>,
 ) -> AppResult<ManifestReloadReport> {
     manager
@@ -698,7 +698,7 @@ pub fn agent_detection_manifests(
 }
 
 #[tauri::command]
-pub fn agent_detection_reload(
+pub async fn agent_detection_reload(
     app: AppHandle,
     manager: State<'_, PtyManager>,
 ) -> AppResult<ManifestReloadReport> {
@@ -707,11 +707,16 @@ pub fn agent_detection_reload(
         .app_config_dir()
         .map_err(|error| AppError::Other(format!("agent detection config path: {error}")))?
         .join("agent-detection");
-    let mut replacement = ManifestRegistry::with_override_dir(directory)
-        .map_err(|error| AppError::Other(format!("agent detection manifests: {error}")))?;
-    let report = replacement
-        .reload()
-        .map_err(|error| AppError::Other(format!("agent detection manifests: {error}")))?;
+    let (replacement, report) = tauri::async_runtime::spawn_blocking(move || {
+        let mut replacement = ManifestRegistry::with_override_dir(directory)
+            .map_err(|error| AppError::Other(format!("agent detection manifests: {error}")))?;
+        let report = replacement
+            .reload()
+            .map_err(|error| AppError::Other(format!("agent detection manifests: {error}")))?;
+        Ok::<_, AppError>((replacement, report))
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("agent detection reload join: {e}")))??;
     *manager
         .detection_registry
         .write()
@@ -730,7 +735,7 @@ pub fn agent_detection_reload(
 }
 
 #[tauri::command]
-pub fn agent_detection_explain(
+pub async fn agent_detection_explain(
     manager: State<'_, PtyManager>,
     agent_id: String,
 ) -> AppResult<DetectionExplain> {
@@ -743,16 +748,19 @@ pub fn agent_detection_explain(
     let kind = pty
         .agent_kind
         .ok_or(AppError::BadArg("terminal has no known agent type"))?;
-    let (recent, title) = pty
-        .parser
-        .lock()
-        .map(|parser| {
-            (
-                parser.screen().contents(),
-                parser.callbacks().window_title.clone(),
-            )
-        })
-        .map_err(|_| AppError::Other("agent terminal parser lock poisoned".into()))?;
+    let (recent, title) = tauri::async_runtime::spawn_blocking(move || {
+        pty.parser
+            .lock()
+            .map(|parser| {
+                (
+                    parser.screen().contents(),
+                    parser.callbacks().window_title.clone(),
+                )
+            })
+            .map_err(|_| AppError::Other("agent terminal parser lock poisoned".into()))
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("agent detection explain join: {e}")))??;
     manager
         .detection_registry
         .read()
@@ -2953,7 +2961,7 @@ fn insert_subscriber(
 }
 
 #[tauri::command]
-pub fn pty_subscribe(
+pub async fn pty_subscribe(
     manager: State<'_, PtyManager>,
     id: u32,
     on_event: Channel<Response>,
@@ -2961,13 +2969,18 @@ pub fn pty_subscribe(
     let pty = manager
         .ptys
         .get(&id)
+        .map(|entry| entry.value().clone())
         .ok_or(AppError::BadArg("pty not found"))?;
     let mut subscribers = pty.subscribers.lock().map_err(pty_err)?;
     insert_subscriber(&mut subscribers, &NEXT_SUB_ID, on_event)
 }
 
 #[tauri::command]
-pub fn pty_unsubscribe(manager: State<'_, PtyManager>, id: u32, sub_id: u32) -> AppResult<()> {
+pub async fn pty_unsubscribe(
+    manager: State<'_, PtyManager>,
+    id: u32,
+    sub_id: u32,
+) -> AppResult<()> {
     if let Some(pty) = manager.ptys.get(&id) {
         if let Ok(mut subs) = pty.subscribers.lock() {
             subs.remove(&sub_id);
@@ -3283,11 +3296,18 @@ pub async fn pty_attach(
 const RESET_MODES: &[u8] = b"\x1b>\x1b[4l\x1b[?1l\x1b[?6l\x1b[?7h\x1b[?9l\x1b[?45l\x1b[?66l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?2004l\x1b[?1049l";
 
 #[tauri::command]
-pub fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
+pub async fn pty_reset_modes(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> {
     let pty = manager
         .ptys
         .get(&id)
+        .map(|entry| entry.value().clone())
         .ok_or(AppError::BadArg("pty not found"))?;
+    tauri::async_runtime::spawn_blocking(move || reset_modes_locked(&pty))
+        .await
+        .map_err(|e| AppError::Pty(format!("pty_reset_modes join: {e}")))?
+}
+
+fn reset_modes_locked(pty: &Pty) -> AppResult<()> {
     let mut parser = pty.parser.lock().map_err(pty_err)?;
     parser.process(RESET_MODES);
     // Queue the exact same bytes to every attached xterm while the parser
@@ -3358,12 +3378,24 @@ pub async fn pty_write(manager: State<'_, PtyManager>, id: u32, data: String) ->
 }
 
 #[tauri::command]
-pub fn pty_resize(manager: State<'_, PtyManager>, id: u32, cols: u16, rows: u16) -> AppResult<()> {
+pub async fn pty_resize(
+    manager: State<'_, PtyManager>,
+    id: u32,
+    cols: u16,
+    rows: u16,
+) -> AppResult<()> {
     validate_pty_dimensions(cols, rows)?;
     let pty = manager
         .ptys
         .get(&id)
+        .map(|entry| entry.value().clone())
         .ok_or(AppError::BadArg("pty not found"))?;
+    tauri::async_runtime::spawn_blocking(move || resize_locked(&pty, cols, rows))
+        .await
+        .map_err(|e| AppError::Pty(format!("pty_resize join: {e}")))?
+}
+
+fn resize_locked(pty: &Pty, cols: u16, rows: u16) -> AppResult<()> {
     #[cfg(unix)]
     {
         // Resize via TIOCSWINSZ straight on the master fd (the kernel also
@@ -3409,20 +3441,20 @@ mod tests {
     use super::{
         apply_agent_profile, attach_snapshot, attach_snapshot_with_compaction,
         compact_parser_for_idle, configure_pty_environment, configure_shell_integration,
-        encode_attach_response,
-        configure_task_command, detect_shell_kind, event_fingerprint, insert_subscriber,
-        parse_shell_cwd, reseed_parser, screen_scrollback_len, semantic_fingerprint,
-        semantic_parser, semantic_parser_with_shell, shell_integration_requested,
-        should_signal_process_on_drain, submits_line, task_process_needs_force_backstop,
-        task_reclamation_plan, task_retention_elapsed, task_shell_arguments,
-        validate_pty_dimensions, validate_task_environment, validate_task_request, AttachResult,
-        PtyAgentProfile, PtyCapacity, PtyContext, PtyShellMetadataEvent, ShellBoundary, ShellKind,
-        ShellPhase, ShellProtocolParser, TaskExitReporter, TaskProcessExit, TaskRetentionCandidate,
-        TaskShellPlatform, TaskSource, TaskSpawnRequest, TaskSpawnResult, IDLE_SCROLLBACK,
-        MAX_ATTACH_SNAPSHOT_BYTES, MAX_PTY_DIMENSION, MAX_PTY_SUBSCRIBERS_PER_PTY,
-        MAX_RETAINED_EXITED_TASK_PTYS, MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES,
-        MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES, MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK,
-        RESET_MODES, SHELL_EVENT_MIN_INTERVAL, TASK_EXIT_RETENTION,
+        configure_task_command, detect_shell_kind, encode_attach_response, event_fingerprint,
+        insert_subscriber, parse_shell_cwd, reseed_parser, screen_scrollback_len,
+        semantic_fingerprint, semantic_parser, semantic_parser_with_shell,
+        shell_integration_requested, should_signal_process_on_drain, submits_line,
+        task_process_needs_force_backstop, task_reclamation_plan, task_retention_elapsed,
+        task_shell_arguments, validate_pty_dimensions, validate_task_environment,
+        validate_task_request, AttachResult, PtyAgentProfile, PtyCapacity, PtyContext,
+        PtyShellMetadataEvent, ShellBoundary, ShellKind, ShellPhase, ShellProtocolParser,
+        TaskExitReporter, TaskProcessExit, TaskRetentionCandidate, TaskShellPlatform, TaskSource,
+        TaskSpawnRequest, TaskSpawnResult, IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES,
+        MAX_PTY_DIMENSION, MAX_PTY_SUBSCRIBERS_PER_PTY, MAX_RETAINED_EXITED_TASK_PTYS,
+        MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES, MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES,
+        MAX_TASK_ENV_TOTAL_BYTES, PARSER_SCROLLBACK, RESET_MODES, SHELL_EVENT_MIN_INTERVAL,
+        TASK_EXIT_RETENTION,
     };
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
@@ -5049,7 +5081,7 @@ pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> 
 }
 
 #[tauri::command]
-pub fn harness_task_output(
+pub async fn harness_task_output(
     manager: State<'_, PtyManager>,
     id: u32,
     cursor: u64,
@@ -5058,14 +5090,17 @@ pub fn harness_task_output(
     let pty = manager
         .ptys
         .get(&id)
+        .map(|entry| entry.value().clone())
         .ok_or("Task output expired or task no longer exists")?;
     if pty.task_exit.is_none() {
         return Err("PTY is not a managed task".into());
     }
-    let result = pty
-        .harness_output
-        .lock()
-        .map_err(|_| "output lock poisoned")?
-        .read(cursor, limit);
-    result
+    tauri::async_runtime::spawn_blocking(move || {
+        pty.harness_output
+            .lock()
+            .map_err(|_| "output lock poisoned".to_string())?
+            .read(cursor, limit)
+    })
+    .await
+    .map_err(|e| format!("harness_task_output join: {e}"))?
 }
