@@ -333,7 +333,7 @@ impl CliBroker {
             let _ = window.unminimize();
             let _ = window.set_focus();
         }
-        let _ = self.inner.app.emit(CLI_EVENT, request.id);
+        let _ = self.inner.app.emit_to("main", CLI_EVENT, request.id);
         Ok((accepted_rx, wait.then_some(closed_rx)))
     }
 

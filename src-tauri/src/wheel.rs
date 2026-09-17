@@ -38,7 +38,7 @@ mod imp {
         let monitor = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
             let down = touching(unsafe { event.as_ref().phase() });
             if was.swap(i8::from(down), Ordering::Relaxed) != i8::from(down) {
-                let _ = app.emit(super::TOUCH_EVENT, down);
+                let _ = app.emit_to("main", super::TOUCH_EVENT, down);
             }
             // Handing the event straight back leaves the scroll itself untouched.
             event.as_ptr()

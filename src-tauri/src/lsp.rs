@@ -598,7 +598,7 @@ fn publish_diagnostics(server: &Server, params: &Value) {
     // Keep the tracking lock through emission. Shutdown flips its atomic flag
     // before taking this lock, guaranteeing that a non-empty publish racing
     // teardown is always followed by the corresponding clear event.
-    let _ = server.app.emit(LSP_DIAGNOSTICS_EVENT, payload);
+    let _ = server.app.emit_to("main", LSP_DIAGNOSTICS_EVENT, payload);
 }
 
 fn clear_server_diagnostics(server: &Server) {
@@ -610,7 +610,8 @@ fn clear_server_diagnostics(server: &Server) {
         tracked.drain().collect::<Vec<_>>()
     };
     for (path, version) in tracked {
-        let _ = server.app.emit(
+        let _ = server.app.emit_to(
+            "main",
             LSP_DIAGNOSTICS_EVENT,
             LspDiagnosticsPayload {
                 project: server.project.clone(),

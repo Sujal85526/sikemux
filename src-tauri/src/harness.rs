@@ -135,7 +135,7 @@ pub fn execute(
     }
     let id = request.id.clone();
     let receiver = broker.enqueue(request)?;
-    let _ = app.emit("harness-request", ());
+    let _ = app.emit_to("main", "harness-request", ());
     let result = receiver.recv_timeout(Duration::from_secs(65))
         .unwrap_or_else(|_| Err("Harness request timed out; task.start may still complete. Retry with the same idempotencyKey.".into()));
     broker.remove(&id);

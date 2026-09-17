@@ -299,7 +299,8 @@ fn active_routes(repo_key: &str) -> Vec<String> {
 
 fn emit_changed_to_active_routes(app: &AppHandle, repo_key: &str, paths: Option<Vec<String>>) {
     for repo in active_routes(repo_key) {
-        let _ = app.emit(
+        let _ = app.emit_to(
+            "main",
             "git_changed",
             ChangePayload {
                 repo,
@@ -671,7 +672,7 @@ pub fn repo_watch_start(app: AppHandle, repo: String, token: String) -> AppResul
     // after subscribing. Keep it scoped; an empty repo means "invalidate all"
     // on the JS side and causes an O(open projects) refetch storm.
     crate::files::invalidate(&repo_key);
-    let _ = app.emit::<ChangePayload>("git_changed", ChangePayload { repo, paths: None });
+    let _ = app.emit_to("main", "git_changed", ChangePayload { repo, paths: None });
     Ok(())
 }
 
