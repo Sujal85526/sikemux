@@ -92,7 +92,9 @@ function Picker({
             className="chat-picker"
             ref={root}
             onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+                // WebKit hands focus to nobody when a button is clicked, so a blur
+                // with no new target is a click on our own menu, not a click away.
+                if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
             }}>
             <button
                 ref={trigger}
@@ -162,6 +164,7 @@ function Picker({
                                 aria-selected={option.value === value}
                                 className={index === selected ? "highlighted" : ""}
                                 onMouseEnter={() => setSelected(index)}
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => {
                                     onSelect(option.value);
                                     close();

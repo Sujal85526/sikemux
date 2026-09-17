@@ -64,6 +64,36 @@ describe("composer pickers", () => {
         expect(screen.getByRole("button", { name: "Reasoning effort" })).toBeEnabled();
     });
 
+    it("picks a model when the click blurs the search without focusing anything", () => {
+        const onConfig = vi.fn();
+        render(
+            <ComposerPickers
+                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                onAgent={mocks.onAgent}
+                disabled={false}
+                onConfig={onConfig}
+                setup={{
+                    configOptions: [
+                        {
+                            id: "model",
+                            type: "select",
+                            currentValue: "sonnet",
+                            options: [
+                                { value: "sonnet", name: "Sonnet" },
+                                { value: "opus", name: "Opus" },
+                            ],
+                        },
+                    ],
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        const option = screen.getByRole("option", { name: /Opus/ });
+        fireEvent.focusOut(screen.getByRole("combobox", { name: "Search model" }), { relatedTarget: null });
+        fireEvent.click(option);
+        expect(onConfig).toHaveBeenCalledWith(expect.objectContaining({ id: "model" }), "opus");
+    });
+
     it("closes the model menu with Escape and returns focus to its trigger", () => {
         render(
             <ComposerPickers
