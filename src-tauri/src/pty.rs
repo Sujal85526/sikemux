@@ -2425,11 +2425,7 @@ pub async fn pty_spawn(
                         .agent_integration(&app, agent_id, agent_type, &command.program)
                         .await
                     {
-                        Ok(mut integration) => {
-                            integration.args_prefix.append(&mut command.args);
-                            command.args = integration.args_prefix;
-                            Some(integration.environment)
-                        }
+                        Ok(integration) => Some(integration.apply(&mut command.args)),
                         Err(error) => {
                             eprintln!("Sikemux browser integration is unavailable: {error}");
                             None

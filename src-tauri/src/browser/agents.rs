@@ -34,6 +34,17 @@ pub struct BrowserAgentIntegration {
     pub environment: Vec<(String, String)>,
 }
 
+impl BrowserAgentIntegration {
+    /// Fold these arguments into the launch the pane built, and hand back the
+    /// environment. Sikemux's go first: a host that takes a subcommand wants
+    /// its options before it.
+    pub fn apply(mut self, args: &mut Vec<String>) -> Vec<(String, String)> {
+        self.args_prefix.append(args);
+        *args = self.args_prefix;
+        self.environment
+    }
+}
+
 impl BrowserManager {
     pub async fn agent_integration(
         &self,
@@ -357,6 +368,46 @@ mod tests {
             command: "/Apps/Sikemux.app/sikemux-browser-mcp".into(),
             args: vec!["--stdio".into()],
         }
+    }
+
+    #[test]
+    fn sikemux_options_land_before_the_launch_the_pane_built() {
+        let integration = BrowserAgentIntegration {
+            args_prefix: vec!["--mcp-config=/state/claude-mcp.json".into()],
+            environment: vec![("SIKEMUX_BROWSER_AGENT_ID".into(), "agent-one".into())],
+        };
+        let mut args = vec![
+            "--model".to_string(),
+            "opus".into(),
+            "--resume".into(),
+            "abc".into(),
+        ];
+        let environment = integration.apply(&mut args);
+        assert_eq!(
+            args,
+            vec![
+                "--mcp-config=/state/claude-mcp.json",
+                "--model",
+                "opus",
+                "--resume",
+                "abc"
+            ]
+        );
+        assert_eq!(environment.len(), 1);
+    }
+
+    #[test]
+    fn a_host_launched_with_no_arguments_still_gets_told() {
+        let integration = BrowserAgentIntegration {
+            args_prefix: vec![
+                "-c".into(),
+                "mcp_servers.sikemux_browser.command=\"x\"".into(),
+            ],
+            environment: Vec::new(),
+        };
+        let mut args = Vec::new();
+        integration.apply(&mut args);
+        assert_eq!(args.len(), 2);
     }
 
     #[test]
