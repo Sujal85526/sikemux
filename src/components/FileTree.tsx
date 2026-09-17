@@ -143,8 +143,8 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
             return;
         }
         const loaded: Record<string, DirEntry[]> = {};
-        for (const listing of listings) {
-            if (listing.error === null) loaded[listing.path] = listing.entries;
+        for (const listing of listings ?? []) {
+            if (listing?.error === null && Array.isArray(listing.entries)) loaded[listing.path] = listing.entries;
         }
         if (Object.keys(loaded).length === 0) return;
         setDirs((d) => ({ ...d, ...loaded }));
