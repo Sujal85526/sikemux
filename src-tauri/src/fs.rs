@@ -19,6 +19,16 @@ pub struct DirEntry {
     is_dir: bool,
 }
 
+/// One directory's listing within a batch. A folder that has been deleted
+/// since the tree last saw it reports its own error instead of failing every
+/// other folder in the same request.
+#[derive(Serialize)]
+pub struct DirListing {
+    path: String,
+    entries: Vec<DirEntry>,
+    error: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct FileBlob {
     mime: String,
@@ -93,6 +103,40 @@ fn read_dir_sync(path: String) -> AppResult<Vec<DirEntry>> {
             .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(out)
+}
+
+/// How many directories one batch may list. The file tree asks about every
+/// folder the user has expanded, which is a number they choose.
+const READ_DIRS_MAX: usize = 512;
+
+/// List several directories in one round trip. A watcher rescan used to send
+/// one IPC per expanded folder.
+#[tauri::command]
+pub async fn read_dirs(paths: Vec<String>) -> AppResult<Vec<DirListing>> {
+    if paths.len() > READ_DIRS_MAX {
+        return Err(AppError::Fs(format!(
+            "a directory batch may name at most {READ_DIRS_MAX} paths"
+        )));
+    }
+    spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|path| match read_dir_sync(path.clone()) {
+                Ok(entries) => DirListing {
+                    path,
+                    entries,
+                    error: None,
+                },
+                Err(error) => DirListing {
+                    path,
+                    entries: Vec::new(),
+                    error: Some(error.to_string()),
+                },
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("read_dirs join: {e}")))
 }
 
 #[tauri::command]
