@@ -7,6 +7,7 @@
 //! window": `get_webview_window("main")` returns `None` and commands taking a
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
+pub mod agents;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod tools;
@@ -589,30 +590,6 @@ impl BrowserManager {
         }
     }
 
-    pub async fn environment(
-        &self,
-        app: &AppHandle,
-        agent_id: &str,
-    ) -> AppResult<Vec<(String, String)>> {
-        validate_agent_id(agent_id)?;
-        let launch = self.mcp_launch(app)?;
-        Ok(vec![
-            ("SIKEMUX_BROWSER_MCP_COMMAND".into(), launch.command),
-            (
-                "SIKEMUX_BROWSER_MCP_ARGS".into(),
-                serde_json::to_string(&launch.args)?,
-            ),
-            ("SIKEMUX_BROWSER_AGENT_ID".into(), agent_id.to_owned()),
-            (
-                "SIKEMUX_CLI_ENDPOINT".into(),
-                crate::cli_server::cli_endpoint_path()
-                    .ok_or_else(|| AppError::Other("CLI endpoint unavailable".into()))?
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-        ])
-    }
-
     pub fn mcp_launch(&self, app: &AppHandle) -> AppResult<BrowserMcpLaunch> {
         if let Some(command) = std::env::var_os("SIKEMUX_BROWSER_MCP_EXECUTABLE") {
             return Ok(BrowserMcpLaunch {
@@ -715,11 +692,21 @@ fn history_state(webview: &Webview) -> Option<(bool, bool)> {
     }
 }
 
+/// Where Sikemux keeps the files an agent host needs to find the browser: MCP
+/// configs and the private home copies.
+pub(crate) fn browser_state_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|error| AppError::Other(format!("browser data directory unavailable: {error}")))?
+        .join("browser"))
+}
+
 fn window_error(error: tauri::Error) -> AppError {
     AppError::Window(error.to_string())
 }
 
-fn validate_agent_id(agent_id: &str) -> AppResult<()> {
+pub(crate) fn validate_agent_id(agent_id: &str) -> AppResult<()> {
     if agent_id.is_empty()
         || agent_id.len() > 128
         || !agent_id

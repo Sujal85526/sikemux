@@ -2403,6 +2403,7 @@ pub async fn pty_spawn(
 ) -> AppResult<u32> {
     validate_pty_dimensions(cols, rows)?;
     let startup = startup.filter(|value| !value.is_empty());
+    let mut direct_command = direct_command;
     if startup.is_some() && direct_command.is_some() {
         return Err(AppError::BadArg(
             "PTY startup and direct command are mutually exclusive",
@@ -2411,13 +2412,34 @@ pub async fn pty_spawn(
     if let Some(command) = direct_command.as_ref() {
         validate_direct_command(command, context.as_ref())?;
     }
-    let browser_environment = if let Some(agent_id) = context
-        .as_ref()
-        .and_then(|context| context.agent_id.as_deref())
-    {
-        browser.environment(&app, agent_id).await.ok()
-    } else {
-        None
+    // An agent can only reach the browser tools if its own host is told they
+    // exist, and every host is told differently (see browser::agents). A host
+    // that cannot be told still launches, without them.
+    let browser_environment = match (direct_command.as_mut(), context.as_ref()) {
+        (Some(command), Some(context)) => {
+            match (context.agent_id.as_deref(), context.agent_type.as_deref()) {
+                (Some(agent_id), Some(agent_type))
+                    if crate::browser::agents::is_supported(agent_type) =>
+                {
+                    match browser
+                        .agent_integration(&app, agent_id, agent_type, &command.program)
+                        .await
+                    {
+                        Ok(mut integration) => {
+                            integration.args_prefix.append(&mut command.args);
+                            command.args = integration.args_prefix;
+                            Some(integration.environment)
+                        }
+                        Err(error) => {
+                            eprintln!("Sikemux browser integration is unavailable: {error}");
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            }
+        }
+        _ => None,
     };
     let shell = crate::system::configured_shell();
     let direct_profile = direct_command
