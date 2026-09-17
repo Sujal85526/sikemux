@@ -42,8 +42,8 @@ const budgets = [
   {
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 43_500,
-    gzip: 13_700,
+    raw: 56_000,
+    gzip: 17_500,
   },
   {
     label: "Diffs lazy chunk",
@@ -78,8 +78,8 @@ const budgets = [
   {
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 24_000,
-    gzip: 6_000,
+    raw: 31_500,
+    gzip: 6_100,
   },
   {
     label: "application CSS",

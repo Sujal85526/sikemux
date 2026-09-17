@@ -153,16 +153,16 @@ describe("workspace tab bars", () => {
         await waitFor(() => expect(editor).toBeEnabled());
         fireEvent.change(editor, { target: { value: "Keep this draft" } });
         fireEvent.click(screen.getByRole("button", { name: "Agent" }));
-        fireEvent.click(screen.getByRole("option", { name: /^Claude\s*Default configuration$/ }));
+        fireEvent.click(screen.getByRole("option", { name: "Claude" }));
         await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(2));
         expect(acpApi.start).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: "agent-only", provider: "claude", resumeId: undefined }));
         expect(acpApi.stop).toHaveBeenCalledWith("agent-only");
         expect(agentIdsOf(getState(), sessionId)).toEqual(["agent-only"]);
-        expect(getState().agents["agent-only"]).toMatchObject({ type: "claude", title: "claude" });
+        expect(getState().agents["agent-only"]).toMatchObject({ type: "claude", title: "Claude" });
         expect(editor).toHaveValue("Keep this draft");
         expect(screen.getByRole("button", { name: "Agent" })).toHaveTextContent("Claude");
         expect(screen.queryByText("only agent")).not.toBeInTheDocument();
-        expect(screen.getAllByText("claude").length).toBeGreaterThan(0);
+        expect(screen.getAllByText("Claude").length).toBeGreaterThan(0);
     });
 
     it("shows YOLO inside the session composer", async () => {
