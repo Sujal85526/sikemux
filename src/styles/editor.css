@@ -257,7 +257,8 @@
 .tab {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
+    padding-inline: var(--space-2);
     flex: 0 0 auto;
     background: transparent;
     color: var(--text-tertiary);
@@ -383,9 +384,6 @@
     min-height: 32px;
     border-bottom: 1px solid var(--border);
 }
-.tabbar.v-editor .tab {
-    padding: 0 10px;
-}
 /* variant: the panes stacked in one spot inside a window */
 .tabbar.v-stack {
     height: var(--stack-strip-h);
@@ -394,9 +392,6 @@
     padding-inline: var(--space-1);
     gap: var(--space-1);
     border-bottom: 1px solid var(--border);
-}
-.tabbar.v-stack .tab {
-    padding: 0 8px;
 }
 
 /* variant: agent + terminal tabs (a strip of its own along the top of the
@@ -411,7 +406,6 @@
 }
 .tabbar.v-agent .tab {
     height: 100%;
-    padding: 0 14px;
     min-width: 120px;
 }
 .tabbar.v-agent .tab-label {

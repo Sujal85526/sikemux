@@ -227,7 +227,7 @@ function BrowserPane({
                     label: tab.title || (tab.url === BLANK_URL ? "New tab" : tab.url),
                     title: tab.url,
                     active: tab.id === snapshot.activeTabId,
-                    icon: <IconGlobe size={13} />,
+                    icon: <IconGlobe size={17} />,
                     accessory: tab.loading ? (
                         <span className="agent-activity state-working" role="img" aria-label="Loading">
                             <span className="agent-state-loader" aria-hidden="true" />

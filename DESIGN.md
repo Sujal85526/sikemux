@@ -214,10 +214,16 @@ not in a second definition of what a row is.
 row rule: a mark on the leading edge saying what the row holds, and a close on
 the trailing edge.
 
-The mark is a 20px tile with a neutral wash, and the glyph inside it keeps its
-provider colour — tinting the tile to match said it twice. A Bruno method badge
-is the one exception: it is already an object, so a tile behind it is a chip in
-a chip.
+The mark is a 22px slot the glyph is centred in, and it paints nothing. The slot
+is there so rows whose glyphs differ by a pixel or two still start their labels
+on one edge — every row using the rule puts its label at `--space-2` + 22px +
+`--space-2` from the leading edge. A filled tile behind an icon that already
+carries its provider colour is a second background for the row to argue with,
+and it makes the glyph inside it look smaller than it is.
+
+**The inset and the gap are the same step.** A row that sets 14px before its
+glyph and 6px after it — which the workspace tabs did — reads as broken
+spacing even when nothing about it is wrong.
 
 The close is a 20px button in the same corner of every row and tab, quiet
 (`--text-tertiary`) until the pointer is on it and `--danger` once it is. The

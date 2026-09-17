@@ -350,7 +350,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                         title: ref.doc,
                         active: key === activeKey,
                         dirty: (dirtyEditorPaths[win.activePaneId] ?? []).includes(ref.doc),
-                        icon: <FileIcon name={name} size={16} />,
+                        icon: <FileIcon name={name} size={18} />,
                     },
                 ];
             }
@@ -366,7 +366,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                         active: key === activeKey,
                         icon: (
                             <span className={`agent-glyph ${agent.type}`}>
-                                <AgentIcon type={agent.type} size={14} />
+                                <AgentIcon type={agent.type} size={19} />
                             </span>
                         ),
                         accessory: state ? <AgentStateIndicator state={state.state} /> : undefined,
@@ -383,7 +383,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     closable: !win.fixed,
                     icon: (
                         <span className="agent-glyph">
-                            <WindowIcon role={win.role} size={13} />
+                            <WindowIcon role={win.role} size={17} />
                         </span>
                     ),
                 },
@@ -530,7 +530,7 @@ const WindowLayer = memo(function WindowLayer({
                                 active: pane.id === stack.activePaneId,
                                 icon: (
                                     <span className="agent-glyph">
-                                        <WindowIcon role={PANE_ROLE[pane.kind]} size={12} />
+                                        <WindowIcon role={PANE_ROLE[pane.kind]} size={17} />
                                     </span>
                                 ),
                                 closable: false,

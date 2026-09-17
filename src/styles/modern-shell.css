@@ -222,8 +222,10 @@ textarea:focus,
  * square, the tabs a round 16px one, the browser strip a fourth. Same object,
  * four answers.
  *
- * The mark is a neutral tile — the glyph inside it keeps its provider colour,
- * and tinting the tile to match said it twice.
+ * The mark is a slot, not a surface: a fixed box the glyph is centred in, so
+ * rows whose glyphs differ by a pixel or two still start their labels on one
+ * edge. It paints nothing — a filled tile behind an icon that already carries
+ * its provider colour is a second background for the row to argue with.
  */
 .agent-row .agent-glyph,
 .proj-row .proj-folder,
@@ -231,17 +233,9 @@ textarea:focus,
 .tab-mark {
     display: grid;
     place-items: center;
-    min-width: 20px;
-    height: 20px;
+    min-width: 22px;
+    height: 22px;
     flex: 0 0 auto;
-    overflow: hidden;
-    border-radius: var(--radius-2);
-    background: color-mix(in oklab, var(--ink) 7%, transparent);
-}
-
-/* A method badge is already an object; a tile behind it is a chip in a chip. */
-.tab-mark:has(.bruno-method) {
-    background: transparent;
 }
 
 .row-x,
@@ -283,7 +277,7 @@ textarea:focus,
 }
 
 .tab-x {
-    margin-left: var(--space-1);
+    margin-right: var(--space-2);
 }
 
 /* Revealed by the pointer, and by the keyboard when it lands there — a close
@@ -528,7 +522,6 @@ textarea:focus,
 .tabbar.v-browser .tab-wrap,
 .tabbar.v-stack .tab-wrap {
     height: 26px;
-    padding-right: var(--space-1h);
     border-right: 0;
     border-radius: var(--radius-2);
     background: transparent;
@@ -874,8 +867,6 @@ textarea,
         .agent-header-btn,
         .rail-search,
         .agent-row,
-        .agent-row .agent-glyph,
-        .tab-mark,
         .git-tbtn,
         .git-dd-btn,
         .git-cp-commit,

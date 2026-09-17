@@ -250,7 +250,7 @@ export function AgentRailBody() {
                                 <div key={a.id} className="agent-row-wrap">
                                     <button className={`agent-row${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
                                         <span className={`agent-glyph ${a.type}`}>
-                                            <AgentIcon type={a.type} size={14} />
+                                            <AgentIcon type={a.type} size={20} />
                                         </span>
                                         <span className="agent-title">{a.title}</span>
                                         {activityById[a.id] && <AgentStateMark state={activityById[a.id].state} />}
@@ -281,7 +281,7 @@ export function AgentRailBody() {
                                     })
                                 }>
                                 <span className={`agent-glyph ${selectedType}`}>
-                                    <AgentIcon type={selectedType} size={14} />
+                                    <AgentIcon type={selectedType} size={20} />
                                 </span>
                                 <span className="agent-title">{s.title}</span>
                                 <span className="agent-ago">{ago(s.mtime)}</span>

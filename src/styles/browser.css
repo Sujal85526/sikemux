@@ -83,7 +83,6 @@
     flex: 1;
     min-width: 0;
     height: 100%;
-    padding: 0 var(--space-1h);
 }
 
 .tabbar.v-browser .tab-label {
