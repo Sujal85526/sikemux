@@ -815,6 +815,10 @@ const SLOW_BROADCAST: Duration = Duration::from_millis(8);
 /// One in this many output chunks carries full timing instrumentation.
 const OBSERVED_BROADCASTS: u64 = 64;
 
+/// Browser tabs are child webviews of the same app. Every PTY event belongs
+/// to the workbench, so address it by label instead of broadcasting.
+const MAIN_WEBVIEW: &str = "main";
+
 /// Stable frontend event for opt-in local shell metadata. The terminal byte
 /// stream remains untouched; this is a second, typed signal derived from it.
 pub const PTY_SHELL_METADATA_EVENT: &str = "pty_shell_metadata";
@@ -1312,7 +1316,8 @@ fn publish_agent_state(
     }
     pty.activity_state.store(next, Ordering::Release);
     let sequence = NEXT_ACTIVITY_SEQUENCE.fetch_add(1, Ordering::AcqRel);
-    let _ = pty.app.emit(
+    let _ = pty.app.emit_to(
+        MAIN_WEBVIEW,
         "agent_state_changed",
         AgentStateEvent {
             agent_id,
@@ -1736,7 +1741,8 @@ fn ensure_sweeper(app: AppHandle) {
 fn publish_shell_metadata(pty: &Pty, update: ShellProtocolUpdate) {
     if pty
         .app
-        .emit(
+        .emit_to(
+            MAIN_WEBVIEW,
             PTY_SHELL_METADATA_EVENT,
             PtyShellMetadataEvent::from_update(pty.id, update),
         )
@@ -1758,7 +1764,7 @@ fn broadcast_output(pty: &Pty, bytes: &[u8]) {
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(50)).await;
                 pending.store(false, Ordering::Release);
-                let _ = app.emit("harness-task-output", id);
+                let _ = app.emit_to(MAIN_WEBVIEW, "harness-task-output", id);
             });
         }
     }
