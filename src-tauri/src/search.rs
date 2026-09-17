@@ -97,6 +97,9 @@ pub struct SearchFile {
 
 #[derive(Serialize)]
 pub struct SearchResults {
+    /// Always empty: every matching file was already sent down the `on_file`
+    /// channel as the walk found it. Returning them a second time doubled the
+    /// IPC payload of a large search.
     pub files: Vec<SearchFile>,
     pub file_count: usize,
     pub match_count: usize,
@@ -432,7 +435,6 @@ fn run_search(
     let include = build_glob(&options.include)?;
     let exclude = build_glob(&options.exclude)?;
 
-    let collected: Mutex<Vec<SearchFile>> = Mutex::new(Vec::new());
     let total_matches = AtomicU64::new(0);
     let file_count = AtomicU64::new(0);
     let truncated = std::sync::atomic::AtomicBool::new(false);
@@ -444,7 +446,6 @@ fn run_search(
         exclude: &'a Option<GlobMatcher>,
         repo: &'a str,
         on_file: &'a tauri::ipc::Channel<SearchFile>,
-        collected: &'a Mutex<Vec<SearchFile>>,
         total_matches: &'a AtomicU64,
         file_count: &'a AtomicU64,
         truncated: &'a std::sync::atomic::AtomicBool,
@@ -460,7 +461,6 @@ fn run_search(
                 exclude: self.exclude,
                 repo: self.repo,
                 on_file: self.on_file,
-                collected: self.collected,
                 total_matches: self.total_matches,
                 file_count: self.file_count,
                 truncated: self.truncated,
@@ -481,7 +481,6 @@ fn run_search(
         exclude: &'a Option<GlobMatcher>,
         repo: &'a str,
         on_file: &'a tauri::ipc::Channel<SearchFile>,
-        collected: &'a Mutex<Vec<SearchFile>>,
         total_matches: &'a AtomicU64,
         file_count: &'a AtomicU64,
         truncated: &'a std::sync::atomic::AtomicBool,
@@ -565,14 +564,7 @@ fn run_search(
                 .fetch_add(matches.len() as u64, Ordering::Relaxed);
             self.file_count.fetch_add(1, Ordering::Relaxed);
 
-            let file = SearchFile { path: rel, matches };
-            // Push to the final collected list AND emit to the streaming
-            // channel. The collected list is what the awaited future
-            // resolves with (for callers that prefer batch mode).
-            let _ = self.on_file.send(file.clone());
-            if let Ok(mut guard) = self.collected.lock() {
-                guard.push(file);
-            }
+            let _ = self.on_file.send(SearchFile { path: rel, matches });
             WalkState::Continue
         }
     }
@@ -583,7 +575,6 @@ fn run_search(
         exclude: &exclude,
         repo: &repo,
         on_file: &on_file,
-        collected: &collected,
         total_matches: &total_matches,
         file_count: &file_count,
         truncated: &truncated,
@@ -592,17 +583,13 @@ fn run_search(
     };
     build_walker(&repo).visit(&mut builder);
 
-    // Sort by path so reruns of the same query produce a stable order.
-    let mut files = collected.into_inner().unwrap_or_default();
-    files.sort_by(|a, b| a.path.cmp(&b.path));
-
     Ok(SearchResults {
-        file_count: files.len(),
+        files: Vec::new(),
+        file_count: file_count.load(Ordering::Relaxed) as usize,
         match_count: total_matches.load(Ordering::Relaxed) as usize,
         truncated: truncated.load(Ordering::Relaxed),
         cancelled: cancelled.load(Ordering::Relaxed),
         elapsed_ms: started.elapsed().as_millis() as u64,
-        files,
     })
 }
 
