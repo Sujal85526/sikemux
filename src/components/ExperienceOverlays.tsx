@@ -3,7 +3,7 @@ import Markdown from "react-markdown";
 import { getVersion } from "@tauri-apps/api/app";
 import { invokeCommand as invoke } from "../api/invoke";
 import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
-import { useResource } from "../state/resources";
+import { useResourceEnabled } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
@@ -113,7 +113,7 @@ export function Onboarding() {
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
-    const catalog = useResource(agentCatalogR, runtimeProfiles);
+    const catalog = useResourceEnabled(open, agentCatalogR, runtimeProfiles);
     const [health, setHealth] = useState<IntegrationHealth | null>(null);
     const [healthUnavailable, setHealthUnavailable] = useState(false);
     const [step, setStep] = useState(0);

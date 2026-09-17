@@ -41,7 +41,7 @@ const PANE_ROLE: Record<PaneKind, WindowRole> = {
     agent: "agent",
 };
 const pct = (n: number) => `${n * 100}%`;
-export function Workspace() {
+export const Workspace = memo(function Workspace() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const windowsById = useStore((s) => s.windows);
@@ -124,7 +124,7 @@ export function Workspace() {
             )}
         </div>
     );
-}
+});
 
 /**
  * Where the session sits along its screens, as a thumb the width of one screen.

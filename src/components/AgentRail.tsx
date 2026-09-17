@@ -1,6 +1,7 @@
 import { navigateTabs } from "../lib/tabNavigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentUsage, AgentUsageWindow } from "../api/agents";
+import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agentProfiles";
 import * as cmd from "../state/commands";
 import { type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
@@ -33,16 +34,17 @@ function ago(unixSecs: number): string {
 const persistedSessionIdOf = (a: Agent) => a.resumeId ?? a.id;
 const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 
-export function AgentRail() {
+export const AgentRail = memo(function AgentRail() {
     const density = useStore((s) => s.railDensity);
     return (
         <aside className="workspace-rail agent-rail" aria-label="Agents" data-density={density}>
             <AgentRailBody />
         </aside>
     );
-}
+});
 
 export function AgentRailBody() {
+    const pageVisible = usePageVisible();
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
     const windowsBySession = useStore((s) => s.windowsBySession);
@@ -84,14 +86,19 @@ export function AgentRailBody() {
         if (searchOpen) searchRef.current?.focus();
     }, [searchOpen]);
 
+    /*
+     * Each refresh boots the provider's CLI to ask what the plan has left, so
+     * it only runs while someone can see the answer.
+     */
     useEffect(() => {
+        if (!pageVisible) return;
         if (!claudeDetected && !codexDetected) return;
         const timer = window.setInterval(() => {
             if (claudeDetected) void usageRefreshRef.current.claude();
             if (codexDetected) void usageRefreshRef.current.codex();
         }, USAGE_REFRESH_MS);
         return () => window.clearInterval(timer);
-    }, [claudeDetected, codexDetected]);
+    }, [claudeDetected, codexDetected, pageVisible]);
 
     const isProject = session?.kind === "project";
     const cwd = session?.cwd ?? "";

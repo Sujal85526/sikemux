@@ -22,7 +22,6 @@ import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
-import { DiagnosticsOverlay, Onboarding, WhatsNewOverlay } from "./components/ExperienceOverlays";
 import { DialogHost } from "./components/DialogHost";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -72,6 +71,16 @@ import { projectControllerBridge } from "./projects/controllerBridge";
 import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
+
+/*
+ * The tour, the release notes and the diagnostics panel, none of which exist
+ * until someone opens one. They are the only reason react-markdown was in the
+ * boot bundle, and the tour alone is a shader, a keybinding trainer and a
+ * miniature of the whole shell.
+ */
+const Onboarding = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.Onboarding })));
+const DiagnosticsOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.DiagnosticsOverlay })));
+const WhatsNewOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.WhatsNewOverlay })));
 
 interface BootInfo {
     home: string;
@@ -211,48 +220,121 @@ function resolveTreeDropTarget(at: HTMLElement | null): TreeDropTarget | null {
     };
 }
 
-/*
- * The photographic ground, and nothing at all without one. The element carries
- * a blur and a mask, so leaving it mounted costs a full-window composited layer
- * to paint a picture that is `none` in every build nobody has customised.
- */
-function ShellBackdrop() {
-    return useBackdropImage() ? <div className="shell-image" aria-hidden="true" /> : null;
+function activeProjectCwdOf(s: ReturnType<typeof getState>): string {
+    const session = s.sessions[s.activeSessionId];
+    return session?.kind === "project" ? session.cwd : "";
 }
 
-export default function App() {
-    useKeymap();
-    useBrowserDownloads();
-    const [bootReady, setBootReady] = useState(false);
-    const [bootIssue, setBootIssue] = useState<string | null>(null);
-    const zen = useStore((s) => s.zenMode);
-    const sideRailOpen = useStore((s) => s.sideRailOpen);
-    const agentRailOpen = useStore((s) => s.agentRailOpen);
-    const sideRailVisible = sideRailOpen && !zen;
-    const agentRailVisible = agentRailOpen && !zen;
-    const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
-    const pickerOpen = useStore((s) => s.pickerOpen);
-    const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
-    const filePaletteOpen = useStore((s) => s.filePaletteOpen);
-    const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
-    const rundeckJobPaletteOpen = useStore((s) => s.rundeckJobPaletteOpen);
-    const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
-    const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
-    const settingsOpen = useStore((s) => s.settingsOpen);
-    const uiTextScale = useStore((s) => s.uiTextScale);
+function projectRepoKeyOf(s: ReturnType<typeof getState>): string {
+    return s.sessionOrder
+        .map((id) => {
+            const session = s.sessions[id];
+            return session?.kind === "project" ? session.cwd : "";
+        })
+        .filter(Boolean)
+        .join("\0");
+}
+
+/*
+ * The live project, kept in step with the controller, the task registry and the
+ * actions a checked-in sikemux.json contributes.
+ *
+ * All of it hangs off which project is in front and what its config says, so it
+ * sits below the shell rather than inside it: the shell no longer re-renders
+ * because a task started or a worktree list came back.
+ */
+function ProjectBridge() {
+    const activeSessionId = useStore((s) => s.activeSessionId);
+    const activeProjectCwd = useStore(activeProjectCwdOf);
+    const projectRepoKey = useStore(projectRepoKeyOf);
+    const projectControllerSnapshot = useSyncExternalStore(
+        projectControllerBridge.subscribe,
+        projectControllerBridge.getActiveSnapshot,
+        projectControllerBridge.getActiveSnapshot,
+    );
+    const projectConfig = projectControllerSnapshot?.cwd === activeProjectCwd ? (projectControllerSnapshot.config ?? null) : null;
+
     useEffect(() => {
-        document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
-    }, [uiTextScale]);
-    const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
-    const commandPopup = useStore((s) => s.commandPopup);
+        void projectControllerBridge.start();
+        return () => {
+            projectControllerBridge.stop();
+        };
+    }, []);
+
+    const taskProjectRootsRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (activeProjectCwd && projectConfig?.status === "valid") {
+            replaceActiveProjectTasks(activeProjectCwd, projectConfig.fingerprint, projectConfig.config.tasks);
+        } else {
+            clearActiveProjectTasks();
+        }
+        return clearActiveProjectTasks;
+    }, [activeProjectCwd, projectConfig]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let dispose: (() => void) | null = null;
+        if (!activeProjectCwd || projectConfig?.status !== "valid") return;
+
+        void loadApplicationActions()
+            .then((runtime) => {
+                if (cancelled) return;
+                const registration = runtime.registerProjectActions({
+                    projectId: activeSessionId,
+                    projectRoot: activeProjectCwd,
+                    configPath: projectConfig.path,
+                    actions: projectConfig.config.actions,
+                    isCurrent: () => activeProjectConfigMatches(activeProjectCwd, projectConfig),
+                    execute: (action) => {
+                        whenTrusted(activeProjectCwd, projectConfig, false, () => cmd.runCustomCommand(projectActionCommand(action)));
+                    },
+                });
+                dispose = () => registration.dispose();
+            })
+            .catch((error: unknown) => {
+                if (!cancelled) reportError("load project actions")(error);
+            });
+
+        return () => {
+            cancelled = true;
+            dispose?.();
+        };
+    }, [activeProjectCwd, activeSessionId, projectConfig]);
+
+    useEffect(() => {
+        const current = new Set(projectRepoKey.split("\0").filter(Boolean));
+        for (const project of taskProjectRootsRef.current) {
+            if (!current.has(project)) void appTaskRuntime.disposeProject(project).catch(reportError("stop closed-project task"));
+        }
+        taskProjectRootsRef.current = current;
+    }, [projectRepoKey]);
+
+    useEffect(() => {
+        const roots = projectRepoKey ? projectRepoKey.split("\0") : [];
+        void projectControllerBridge.reconcile(roots, activeProjectCwd || null);
+    }, [activeProjectCwd, projectRepoKey]);
+
+    return null;
+}
+
+/*
+ * Everything the command palette can run, assembled only while it is open.
+ *
+ * This used to live in the shell's own render body: two hundred lines of
+ * closures, rebuilt on every keystroke, every agent activity flip and every
+ * command executed, for a list nobody was looking at. Mounting it with the
+ * palette means the shell above stops subscribing to any of its inputs.
+ */
+function ApplicationCommandPalette() {
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const customCommands = useStore((s) => s.customCommands);
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
-    const activeSessionId = useStore((s) => s.activeSessionId);
-    const activeProjectCwd = useStore((s) => {
-        const session = s.sessions[s.activeSessionId];
-        return session?.kind === "project" ? session.cwd : "";
+    const activeProjectCwd = useStore(activeProjectCwdOf);
+    const activeTerminalWindowId = useStore((s) => {
+        const id = s.sessions[s.activeSessionId]?.activeWindowId;
+        return id && s.windows[id]?.role === "term" ? id : null;
     });
     const projectControllerSnapshot = useSyncExternalStore(
         projectControllerBridge.subscribe,
@@ -261,43 +343,12 @@ export default function App() {
     );
     const activeProjectSnapshot = projectControllerSnapshot?.cwd === activeProjectCwd ? projectControllerSnapshot : null;
     const projectConfig = activeProjectSnapshot?.config ?? null;
+    const activeWorktrees = activeProjectSnapshot?.worktrees ?? [];
     const taskRegistrySnapshot = useSyncExternalStore(subscribeAppTasks, getAppTaskSnapshot, getAppTaskSnapshot);
     useSyncExternalStore(subscribeApplicationActions, getApplicationActionRevision, getApplicationActionRevision);
     useStore(applicationActionContextFingerprint);
     const actionContext = applicationActionContext(getState());
-    const activeWorktrees = activeProjectSnapshot?.worktrees ?? [];
-    const activeTerminalWindowId = useStore((s) => {
-        const id = s.sessions[s.activeSessionId]?.activeWindowId;
-        return id && s.windows[id]?.role === "term" ? id : null;
-    });
-    const awsAuthModal = useStore((s) => s.awsAuthModal);
-    const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
-    const onboardingOpen = useStore((s) => s.onboardingOpen);
-    useOccludeNativeViews(
-        pickerOpen ||
-            agentPaletteOpen ||
-            filePaletteOpen ||
-            newTabPaletteOpen ||
-            rundeckJobPaletteOpen ||
-            brunoReqPaletteOpen ||
-            brunoEnvPaletteOpen ||
-            settingsOpen ||
-            commandPaletteOpen ||
-            sessionSwitcherOpen ||
-            onboardingOpen ||
-            Boolean(awsAuthModal) ||
-            Boolean(commandPopup),
-    );
-    const projectRepoKey = useStore((s) =>
-        s.sessionOrder
-            .map((id) => {
-                const sess = s.sessions[id];
-                return sess?.kind === "project" ? sess.cwd : "";
-            })
-            .filter(Boolean)
-            .join("\0"),
-    );
-    const taskProjectRootsRef = useRef<Set<string>>(new Set());
+
     const runStandalone =
         (id: string, execute: () => void): (() => void) =>
         () => {
@@ -532,65 +583,79 @@ export default function App() {
         ...projectCommands,
     ];
 
+    return (
+        <CommandPalette
+            keybindingOverrides={keybindingOverrides}
+            customCommands={customCommands}
+            recentCommandKeys={recentCommandKeys}
+            standaloneCommands={standaloneCommands}
+            context={activeKind}
+            onClose={cmd.closeCommandPalette}
+            onExecute={cmd.noteRecentCommand}
+            executeBuiltin={(id) => {
+                runKeybindingAction(id, new KeyboardEvent("keydown"), getState());
+            }}
+            executeCustom={(command) => {
+                cmd.runCustomCommand(command);
+            }}
+        />
+    );
+}
+
+/*
+ * The photographic ground, and nothing at all without one. The element carries
+ * a blur and a mask, so leaving it mounted costs a full-window composited layer
+ * to paint a picture that is `none` in every build nobody has customised.
+ */
+function ShellBackdrop() {
+    return useBackdropImage() ? <div className="shell-image" aria-hidden="true" /> : null;
+}
+
+export default function App() {
+    useKeymap();
+    useBrowserDownloads();
+    const [bootReady, setBootReady] = useState(false);
+    const [bootIssue, setBootIssue] = useState<string | null>(null);
+    const zen = useStore((s) => s.zenMode);
+    const sideRailOpen = useStore((s) => s.sideRailOpen);
+    const agentRailOpen = useStore((s) => s.agentRailOpen);
+    const sideRailVisible = sideRailOpen && !zen;
+    const agentRailVisible = agentRailOpen && !zen;
+    const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
+    const pickerOpen = useStore((s) => s.pickerOpen);
+    const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
+    const filePaletteOpen = useStore((s) => s.filePaletteOpen);
+    const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
+    const rundeckJobPaletteOpen = useStore((s) => s.rundeckJobPaletteOpen);
+    const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
+    const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
+    const settingsOpen = useStore((s) => s.settingsOpen);
+    const uiTextScale = useStore((s) => s.uiTextScale);
     useEffect(() => {
-        if (activeProjectCwd && projectConfig?.status === "valid") {
-            replaceActiveProjectTasks(activeProjectCwd, projectConfig.fingerprint, projectConfig.config.tasks);
-        } else {
-            clearActiveProjectTasks();
-        }
-        return clearActiveProjectTasks;
-    }, [activeProjectCwd, projectConfig]);
-
-    useEffect(() => {
-        let cancelled = false;
-        let dispose: (() => void) | null = null;
-        if (!activeProjectCwd || projectConfig?.status !== "valid") return;
-
-        void loadApplicationActions()
-            .then((runtime) => {
-                if (cancelled) return;
-                const registration = runtime.registerProjectActions({
-                    projectId: activeSessionId,
-                    projectRoot: activeProjectCwd,
-                    configPath: projectConfig.path,
-                    actions: projectConfig.config.actions,
-                    isCurrent: () => activeProjectConfigMatches(activeProjectCwd, projectConfig),
-                    execute: (action) => {
-                        whenTrusted(activeProjectCwd, projectConfig, false, () => cmd.runCustomCommand(projectActionCommand(action)));
-                    },
-                });
-                dispose = () => registration.dispose();
-            })
-            .catch((error: unknown) => {
-                if (!cancelled) reportError("load project actions")(error);
-            });
-
-        return () => {
-            cancelled = true;
-            dispose?.();
-        };
-    }, [activeProjectCwd, activeSessionId, projectConfig]);
-
-    useEffect(() => {
-        const current = new Set(projectRepoKey.split("\0").filter(Boolean));
-        for (const project of taskProjectRootsRef.current) {
-            if (!current.has(project)) void appTaskRuntime.disposeProject(project).catch(reportError("stop closed-project task"));
-        }
-        taskProjectRootsRef.current = current;
-    }, [projectRepoKey]);
-
-    useEffect(() => {
-        if (!bootReady) return;
-        void projectControllerBridge.start();
-        return () => {
-            projectControllerBridge.stop();
-        };
-    }, [bootReady]);
-
-    useEffect(() => {
-        const roots = projectRepoKey ? projectRepoKey.split("\0") : [];
-        void projectControllerBridge.reconcile(roots, activeProjectCwd || null);
-    }, [activeProjectCwd, projectRepoKey]);
+        document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
+    }, [uiTextScale]);
+    const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
+    const commandPopup = useStore((s) => s.commandPopup);
+    const awsAuthModal = useStore((s) => s.awsAuthModal);
+    const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
+    const onboardingOpen = useStore((s) => s.onboardingOpen);
+    const diagnosticsOpen = useStore((s) => s.diagnosticsOpen);
+    const whatsNewOpen = useStore((s) => s.whatsNewOpen);
+    useOccludeNativeViews(
+        pickerOpen ||
+            agentPaletteOpen ||
+            filePaletteOpen ||
+            newTabPaletteOpen ||
+            rundeckJobPaletteOpen ||
+            brunoReqPaletteOpen ||
+            brunoEnvPaletteOpen ||
+            settingsOpen ||
+            commandPaletteOpen ||
+            sessionSwitcherOpen ||
+            onboardingOpen ||
+            Boolean(awsAuthModal) ||
+            Boolean(commandPopup),
+    );
 
     useEffect(() => {
         let disposed = false;
@@ -822,6 +887,7 @@ export default function App() {
             <ShellBackdrop />
             <CliOpenBridge />
             <HarnessBridge />
+            <ProjectBridge />
             <AgentSessionSync />
             <AgentLifecycleManager />
             <TopBar />
@@ -856,23 +922,7 @@ export default function App() {
             {brunoEnvPaletteOpen && <BrunoEnvPalette />}
             {awsAuthModal && <AwsAuthModal />}
             {sessionSwitcherOpen && <SessionSwitcher />}
-            {commandPaletteOpen && (
-                <CommandPalette
-                    keybindingOverrides={keybindingOverrides}
-                    customCommands={customCommands}
-                    recentCommandKeys={recentCommandKeys}
-                    standaloneCommands={standaloneCommands}
-                    context={activeKind}
-                    onClose={cmd.closeCommandPalette}
-                    onExecute={cmd.noteRecentCommand}
-                    executeBuiltin={(id) => {
-                        runKeybindingAction(id, new KeyboardEvent("keydown"), getState());
-                    }}
-                    executeCustom={(command) => {
-                        cmd.runCustomCommand(command);
-                    }}
-                />
-            )}
+            {commandPaletteOpen && <ApplicationCommandPalette />}
             {commandPopup && (
                 <div className="experience-backdrop command-popup-backdrop" role="presentation" onMouseDown={cmd.closeCommandPopup}>
                     <section
@@ -896,9 +946,11 @@ export default function App() {
                     </section>
                 </div>
             )}
-            <Onboarding />
-            <DiagnosticsOverlay />
-            <WhatsNewOverlay />
+            <Suspense fallback={null}>
+                {onboardingOpen && <Onboarding />}
+                {diagnosticsOpen && <DiagnosticsOverlay />}
+                {whatsNewOpen && <WhatsNewOverlay />}
+            </Suspense>
             <DialogHost />
             <Toaster />
         </div>

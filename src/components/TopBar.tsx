@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBattery } from "../hooks/useBattery";
@@ -6,7 +6,7 @@ import { useClock } from "../hooks/useClock";
 import { git } from "../api/git";
 import type { RundeckEnvSpec } from "../api/rundeck";
 import * as cmd from "../state/commands";
-import { invalidate, useResource, useResourceEnabled } from "../state/resources";
+import { invalidate, peekResource, useResource, useResourceEnabled } from "../state/resources";
 import { notify, reportError, swallow } from "../state/toast";
 import { awsIdentityR, gitStatusR, rndMatrixR, rndProjectsR } from "../state/resources.defs";
 import { envFolderOf } from "../state/rundeckShape";
@@ -331,7 +331,7 @@ function ClockChip() {
     );
 }
 
-export function TopBar() {
+export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const win = useStore((s) => (session ? s.windows[session.activeWindowId] : undefined));
     const agent = useStore((s) => {
@@ -347,9 +347,19 @@ export function TopBar() {
     const isProject = !!session && session.kind === "project";
     const svc = isProject && session!.cwd ? (session!.cwd.replace(/\/+$/, "").split("/").pop() ?? null) : null;
 
-    // Find every Rundeck project/sub-folder where this service is deployed, so the
-    // picker can offer e.g. "channeliq/production" instead of a static env list.
-    const rndProjects = useResourceEnabled(!!svc, rndProjectsR);
+    /*
+     * Find every Rundeck project/sub-folder where this service is deployed, so
+     * the picker can offer e.g. "channeliq/production" instead of a static env
+     * list.
+     *
+     * Two HTTP round trips to a deploy server, which most projects in most
+     * windows have nothing to do with — so they wait until either something
+     * else in the app has already asked Rundeck for its projects, or the reader
+     * moves the pointer over the strip the chip would appear in.
+     */
+    const [deployHovered, setDeployHovered] = useState(false);
+    const deployWanted = deployHovered || peekResource(rndProjectsR) !== undefined;
+    const rndProjects = useResourceEnabled(!!svc && deployWanted, rndProjectsR);
     const specs = useMemo<RundeckEnvSpec[]>(
         () => (rndProjects.data ?? []).map((p) => ({ label: p.name, project: p.name, only_succeeded: true })),
         [rndProjects.data],
@@ -413,7 +423,7 @@ export function TopBar() {
                 </div>
             </div>
 
-            <div className="tb-right">
+            <div className="tb-right" onPointerEnter={() => setDeployHovered(true)}>
                 {zoomed && (
                     <span className="zoom-pill">
                         <IconZoom size={11} />
@@ -487,4 +497,4 @@ export function TopBar() {
             </div>
         </header>
     );
-}
+});

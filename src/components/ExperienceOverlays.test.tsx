@@ -7,9 +7,9 @@ const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "test") }));
 vi.mock("../state/resources", () => ({
-    useResource: () => ({
-        data: [{ label: "Codex" }, { label: "Claude" }],
-        status: "ok" as const,
+    useResourceEnabled: (enabled: boolean) => ({
+        data: enabled ? [{ label: "Codex" }, { label: "Claude" }] : undefined,
+        status: enabled ? ("ok" as const) : ("idle" as const),
         error: undefined,
         refresh: async () => {},
     }),
