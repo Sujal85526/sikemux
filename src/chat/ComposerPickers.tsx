@@ -20,15 +20,27 @@ function record(value: unknown): Record<string, unknown> | null {
     return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
+const NAMED_VERSION = /^(\p{L}+)\s+(\d+(?:\.\d+)?)\b/u;
+
+// The agent names a model without its release number ("Opus") and leaves that
+// number in the description ("Opus 5 with 1M context"), so put it back.
+function versioned(label: string, description?: string): string {
+    const named = description?.match(NAMED_VERSION);
+    if (!named) return label;
+    const [, family, version] = named;
+    const head = label.split(" ")[0];
+    return head.toLowerCase() !== family.toLowerCase() || label.includes(version) ? label : label.replace(head, `${head} ${version}`);
+}
+
 function choices(value: unknown, group?: string): Choice[] {
     if (!Array.isArray(value)) return [];
     return value.flatMap((item): Choice[] => {
         const row = record(item);
         if (!row) return [];
         if (Array.isArray(row.options)) return choices(row.options, typeof row.name === "string" ? row.name : undefined);
-        return typeof row.value === "string" && typeof row.name === "string"
-            ? [{ value: row.value, label: row.name, description: typeof row.description === "string" ? row.description : group }]
-            : [];
+        if (typeof row.value !== "string" || typeof row.name !== "string") return [];
+        const description = typeof row.description === "string" ? row.description : group;
+        return [{ value: row.value, label: versioned(row.name, description), description }];
     });
 }
 

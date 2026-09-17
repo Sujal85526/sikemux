@@ -27,6 +27,26 @@ describe("composer pickers", () => {
         ).toEqual([{ value: "custom/model", label: "My model", description: "Custom provider" }]);
     });
 
+    it("names a model with the release number its description carries", () => {
+        expect(
+            sessionConfigs({
+                configOptions: [
+                    {
+                        id: "model",
+                        type: "select",
+                        currentValue: "opus[1m]",
+                        options: [
+                            { value: "default", name: "Default (recommended)", description: "Opus (1M context)" },
+                            { value: "opus[1m]", name: "Opus (1M context)", description: "Opus 5 with 1M context · Best for everyday, complex tasks" },
+                            { value: "sonnet", name: "Sonnet", description: "Sonnet 5 · Efficient for routine tasks" },
+                            { value: "haiku", name: "Haiku", description: "Haiku 4.5 · Fastest for quick answers" },
+                        ],
+                    },
+                ],
+            })[0].options.map((option) => option.label),
+        ).toEqual(["Default (recommended)", "Opus 5 (1M context)", "Sonnet 5", "Haiku 4.5"]);
+    });
+
     it("selects the harness for the existing empty chat", () => {
         setState({ providerProfiles: [{ id: "work", name: "Work Claude", provider: "claude", accent: "#fff" }] });
         render(
