@@ -1087,6 +1087,7 @@ export function EditorPane({
                     {!activeImage && !previewingMarkdown && (
                         <EditorFindBar
                             getView={getEditorView}
+                            documentKey={activePath}
                             open={findState.open}
                             replaceOpenOnMount={findState.replaceOpen}
                             seed={findState.seed}

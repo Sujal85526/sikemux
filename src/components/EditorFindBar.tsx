@@ -7,6 +7,8 @@ import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 interface Props {
     getView: () => EditorView | null;
+    /** Changes when the pane swaps documents, so the query is re-applied to the new state. */
+    documentKey: string | null;
     open: boolean;
     replaceOpenOnMount: boolean;
     seed: string | null;
@@ -14,7 +16,11 @@ interface Props {
     onClose: () => void;
 }
 
-export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal, onClose }: Props) {
+const MAX_COUNTED_MATCHES = 1_000;
+
+export function EditorFindBar({ getView, documentKey, open, replaceOpenOnMount, seed, signal, onClose }: Props) {
+    const viewGetter = useRef(getView);
+    viewGetter.current = getView;
     const [query, setQuery] = useState("");
     const [replace, setReplace] = useState("");
     const [caseSensitive, setCaseSensitive] = useState(false);
@@ -34,7 +40,8 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
     }, [open, replaceOpenOnMount]);
 
     useEffect(() => {
-        const view = getView();
+        if (!open) return;
+        const view = viewGetter.current();
         if (!view) return;
         const q = new SearchQuery({
             search: query,
@@ -45,10 +52,11 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
         });
         view.dispatch({ effects: setSearchQuery.of(q) });
         setCounts(computeCounts(view, q));
-    }, [getView, query, replace, caseSensitive, regexp, wholeWord]);
+    }, [open, documentKey, query, replace, caseSensitive, regexp, wholeWord]);
 
     useEffect(() => {
-        const view = getView();
+        if (!open) return;
+        const view = viewGetter.current();
         if (!view) return;
         if (!query) {
             setCounts({ total: 0, current: 0 });
@@ -61,7 +69,7 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
         };
         raf = window.requestAnimationFrame(tick);
         return () => window.cancelAnimationFrame(raf);
-    }, [getView, query, replaceOpen]);
+    }, [open, query, replaceOpen]);
 
     useEffect(() => {
         if (!open) return;
@@ -75,7 +83,7 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
     }, [open, signal]);
 
     const run = (fn: (view: EditorView) => boolean, center = true) => {
-        const view = getView();
+        const view = viewGetter.current();
         if (!view) return;
         fn(view);
         if (center) {
@@ -114,7 +122,8 @@ export function EditorFindBar({ getView, open, replaceOpenOnMount, seed, signal,
     const status = useMemo(() => {
         if (!query) return "";
         if (counts.total === 0) return "No results";
-        return `${counts.current} of ${counts.total}`;
+        const total = counts.total >= MAX_COUNTED_MATCHES ? `${MAX_COUNTED_MATCHES}+` : `${counts.total}`;
+        return `${counts.current} of ${total}`;
     }, [query, counts]);
 
     if (!open) return null;
@@ -266,6 +275,9 @@ function computeCounts(view: EditorView, q: SearchQuery): { total: number; curre
             if (current === 0 && r.value.from <= sel.from && sel.from <= r.value.to) {
                 current = total;
             }
+            // A document with tens of thousands of hits reports "1000+" rather
+            // than walking the whole thing on every keystroke.
+            if (total >= MAX_COUNTED_MATCHES) break;
         }
     } catch {
         return { total: 0, current: 0 };
