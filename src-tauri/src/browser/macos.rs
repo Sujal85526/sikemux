@@ -17,7 +17,8 @@ use objc2_app_kit::{
     NSTextField, NSView,
 };
 use objc2_foundation::{
-    NSDictionary, NSError, NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    NSData, NSDictionary, NSError, NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
+    NSString,
 };
 use objc2_web_kit::{
     WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
@@ -118,24 +119,29 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
             return;
         };
         let image = unsafe { Retained::retain(image) };
-        let result = match image {
-            Some(image) => {
-                jpeg_bytes(&image).ok_or_else(|| "could not encode the page image".to_string())
-            }
-            None => Err(unsafe { Retained::retain(error) }
+        let Some(image) = image else {
+            done(Err(unsafe { Retained::retain(error) }
                 .map(|error| error.localizedDescription().to_string())
-                .unwrap_or_else(|| "the page could not be captured".into())),
+                .unwrap_or_else(|| "the page could not be captured".into())));
+            return;
         };
-        done(result);
+        let Some(pixels) = image.TIFFRepresentation().map(|tiff| tiff.to_vec()) else {
+            done(Err("could not encode the page image".into()));
+            return;
+        };
+        // Compressing the picture takes milliseconds, and this block runs on
+        // the thread that draws every window.
+        std::thread::spawn(move || {
+            done(jpeg_bytes(&pixels).ok_or_else(|| "could not encode the page image".to_string()));
+        });
     });
     unsafe {
         webview.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &block)
     };
 }
 
-fn jpeg_bytes(image: &NSImage) -> Option<Vec<u8>> {
-    let tiff = image.TIFFRepresentation()?;
-    let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)?;
+fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {
+    let bitmap = NSBitmapImageRep::imageRepWithData(&NSData::with_bytes(image))?;
     let quality = NSNumber::numberWithDouble(0.82);
     let properties: Retained<NSDictionary<NSString, AnyObject>> =
         NSDictionary::from_slices(&[unsafe { NSImageCompressionFactor }], &[&*quality]);
@@ -486,5 +492,29 @@ mod tests {
         assert_eq!(dom_code(33, "["), "BracketLeft");
         assert_eq!(dom_code(36, "\r"), "Enter");
         assert_eq!(dom_code(99, "\u{F704}"), "");
+    }
+
+    /// One red pixel, the smallest picture AppKit will decode.
+    const PIXEL: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8,
+        0xcf, 0xc0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92, 0xef, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    #[test]
+    fn a_page_image_is_encoded_away_from_the_main_thread() {
+        let encoded = std::thread::spawn(|| jpeg_bytes(PIXEL))
+            .join()
+            .expect("the encoder thread finished")
+            .expect("the picture is encoded");
+        assert_eq!(&encoded[..2], &[0xff, 0xd8], "that is not a JPEG");
+        assert_eq!(
+            std::thread::spawn(|| jpeg_bytes(b"not a picture"))
+                .join()
+                .expect("the encoder thread finished"),
+            None
+        );
     }
 }
