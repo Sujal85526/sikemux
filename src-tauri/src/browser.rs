@@ -254,6 +254,10 @@ fn dialog_state_changed(method: &str, message: &Value, pages: &mut PageSessions)
     true
 }
 
+fn connection_is_dead_on_timeout(session_id: Option<&str>) -> bool {
+    session_id.is_none()
+}
+
 impl CdpClient {
     async fn connect(
         url: &str,
@@ -459,6 +463,13 @@ impl CdpClient {
             }
             Err(_) => {
                 self.pending.lock().await.remove(&id);
+                // A page can legitimately be slow (a modal dialog blocks its
+                // input until answered), but a browser-level call never should:
+                // when one times out the connection is wedged or the browser is
+                // gone, so mark it closed and let the next start respawn.
+                if connection_is_dead_on_timeout(session_id) {
+                    self.closed.store(true, Ordering::Release);
+                }
                 return Err(AppError::Other(format!("browser CDP {method} timed out")));
             }
         };
@@ -2072,10 +2083,10 @@ pub async fn browser_key(
 mod tests {
     use super::{
         attached_page_session, broker_request_authorized, clear_agent_registry,
-        dialog_state_changed, editing_commands, initialize_registry, key_params, normalize_url,
-        owned_target_ids, pointer_params, read_active_target, register_target, validate_agent_id,
-        validate_target_id, validate_url_input, virtual_key_code, write_active_target,
-        BrowserKeyInput, BrowserPointerInput, PageSessions,
+        connection_is_dead_on_timeout, dialog_state_changed, editing_commands, initialize_registry,
+        key_params, normalize_url, owned_target_ids, pointer_params, read_active_target,
+        register_target, validate_agent_id, validate_target_id, validate_url_input,
+        virtual_key_code, write_active_target, BrowserKeyInput, BrowserPointerInput, PageSessions,
     };
     #[cfg(unix)]
     use super::{configure_browser_process_group, terminate_and_reap_browser_child};
@@ -2336,6 +2347,14 @@ mod tests {
         assert_eq!(wheel["type"], "mouseWheel");
         assert!(wheel.get("button").is_none());
         assert!(wheel.get("clickCount").is_none());
+    }
+
+    #[test]
+    fn only_a_browser_level_timeout_condemns_the_connection() {
+        // A page-level call (it carries a session) can hang on a modal the
+        // page put up, so its timeout must not tear down the whole browser.
+        assert!(connection_is_dead_on_timeout(None));
+        assert!(!connection_is_dead_on_timeout(Some("session-1")));
     }
 
     #[test]
