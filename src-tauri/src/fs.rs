@@ -306,6 +306,29 @@ pub async fn write_file_versioned(
     .map_err(|e| AppError::Other(format!("write_file_versioned join: {e}")))?
 }
 
+/// Get the new bytes onto the device before the rename that publishes them.
+///
+/// macOS turns an ordinary fsync into a full flush of the drive's write cache,
+/// tens of milliseconds every save. A barrier gives the ordering this needs —
+/// no rename can reach the disk ahead of the bytes it names — without that
+/// flush, and is what SQLite and Apple's own frameworks ask for.
+///
+/// The directory is deliberately not flushed afterwards. Losing the rename to a
+/// power cut means the save did not happen, which the editor already survives;
+/// paying a second full barrier to rule that out is not worth a save.
+fn sync_before_replace(file: &fs::File) -> AppResult<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::fd::AsRawFd;
+        // A filesystem that does not know the barrier falls through to fsync.
+        if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_BARRIERFSYNC) } != -1 {
+            return Ok(());
+        }
+    }
+    file.sync_all()?;
+    Ok(())
+}
+
 fn version_or_conflict(path: &Path) -> AppResult<String> {
     match read_bounded(path, EDITOR_TEXT_MAX_BYTES) {
         Ok(bytes) => Ok(content_version(&bytes)),
@@ -350,7 +373,7 @@ fn write_file_versioned_sync(
     temp.as_file().set_permissions(existing_permissions)?;
     temp.write_all(content)?;
     temp.flush()?;
-    temp.as_file().sync_all()?;
+    sync_before_replace(temp.as_file())?;
 
     // Re-check after the temporary file is durable. This narrows the external
     // writer race to the final atomic replacement rather than the full write.
@@ -363,8 +386,6 @@ fn write_file_versioned_sync(
     }
 
     temp.persist(&target).map_err(|e| AppError::from(e.error))?;
-    #[cfg(unix)]
-    fs::File::open(parent)?.sync_all()?;
     Ok(FileWriteResult {
         version: content_version(content),
     })
@@ -385,10 +406,8 @@ pub(crate) fn write_file_atomic(path: PathBuf, content: &[u8]) -> AppResult<()> 
     }
     temp.write_all(content)?;
     temp.flush()?;
-    temp.as_file().sync_all()?;
+    sync_before_replace(temp.as_file())?;
     temp.persist(&target).map_err(|e| AppError::from(e.error))?;
-    #[cfg(unix)]
-    fs::File::open(parent)?.sync_all()?;
     Ok(())
 }
 
@@ -614,4 +633,51 @@ fn delete_path_sync(path: String) -> AppResult<()> {
     }
     trash::delete(&p).map_err(|error| AppError::Fs(error.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_versioned_save_replaces_the_file_and_refuses_a_stale_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("note.txt");
+        fs::write(&path, b"before").expect("seed");
+        let original = content_version(b"before");
+
+        let result = write_file_versioned_sync(path.clone(), b"after", &original)
+            .expect("the save must land");
+        assert_eq!(result.version, content_version(b"after"));
+        assert_eq!(fs::read(&path).expect("read back"), b"after");
+
+        let stale = write_file_versioned_sync(path.clone(), b"later", &original);
+        assert!(
+            matches!(stale, Err(AppError::FileConflict(_))),
+            "a stale version must be refused"
+        );
+        assert_eq!(fs::read(&path).expect("read back"), b"after");
+    }
+
+    #[test]
+    fn an_atomic_write_keeps_the_file_readable_and_keeps_its_permissions() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("script.sh");
+        fs::write(&path, b"old").expect("seed");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+
+        write_file_atomic(path.clone(), b"new").expect("atomic write");
+
+        assert_eq!(fs::read(&path).expect("read back"), b"new");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).expect("metadata").permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
+    }
 }
