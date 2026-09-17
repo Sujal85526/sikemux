@@ -28,6 +28,7 @@
     "ipc:check": "node scripts/generate-ipc-contracts.mjs --check",
     "agent-tools:generate": "node scripts/generate-agent-tools.mjs",
     "agent-tools:check": "node scripts/generate-agent-tools.mjs --check",
+    "agent-tools:report": "node scripts/report-agent-tools.mjs",
     "deps:audit": "node scripts/check-dependency-health.mjs",
     "audit:rust": "cargo audit --file src-tauri/Cargo.lock",
     "shell:lint": "shellcheck scripts/*.sh",

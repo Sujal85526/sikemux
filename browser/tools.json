@@ -1,6 +1,11 @@
 {
   "comment": "Single source of truth for the agent tool surface. Python serves these over MCP, scripts/generate-agent-tools.mjs emits the Rust method lists, and pnpm agent-tools:check proves every method still has a handler. Edit here, then run pnpm agent-tools:generate.",
-  "guide": "SIKEMUX_GUIDE.md",
+  "guide": {
+    "file": "SIKEMUX_GUIDE.md",
+    "name": "sikemux_guide",
+    "description": "Read this before your first task launch or browser click: cursors, idempotency, UI opens, and the tab model.",
+    "comment": "Served by the sidecar from its own bundle, so it has no harness method."
+  },
   "tools": [
     {
       "name": "browser_navigate",

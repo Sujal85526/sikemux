@@ -15,9 +15,6 @@ import mcp.types as types
 
 
 MANIFEST_FILE_NAME = "tools.json"
-GUIDE_TOOL_NAME = "sikemux_guide"
-GUIDE_SUMMARY = "Read this before your first task launch or browser click: cursors, idempotency, UI opens, and the tab model."
-SERVER_INSTRUCTIONS = f"Sikemux drives the person's open project and this agent's browser tabs. Call {GUIDE_TOOL_NAME} before the first task launch or browser click."
 
 
 def bundled_path(name: str) -> Path:
@@ -28,7 +25,11 @@ def bundled_path(name: str) -> Path:
 
 MANIFEST = json.loads(bundled_path(MANIFEST_FILE_NAME).read_text(encoding="utf-8"))
 TOOLS = MANIFEST["tools"]
-GUIDE_FILE_NAME = MANIFEST["guide"]
+GUIDE = MANIFEST["guide"]
+GUIDE_FILE_NAME = GUIDE["file"]
+GUIDE_TOOL_NAME = GUIDE["name"]
+GUIDE_SUMMARY = GUIDE["description"]
+SERVER_INSTRUCTIONS = f"Sikemux drives the person's open project and this agent's browser tabs. Call {GUIDE_TOOL_NAME} before the first task launch or browser click."
 METHOD_BY_NAME = {tool["name"]: tool["method"] for tool in TOOLS}
 
 
