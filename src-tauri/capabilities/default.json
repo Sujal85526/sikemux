@@ -52,6 +52,8 @@
     "allow-runtime-diagnostics",
     "allow-integration-health",
     "allow-observability-ui-heartbeat",
+    "allow-observability-ui-activity",
+    "allow-hang-reports",
     "allow-update-check",
     "allow-update-install",
     "allow-state-load",

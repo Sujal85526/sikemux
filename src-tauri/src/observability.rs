@@ -6,7 +6,7 @@
 //! implementation. Values attached to events are scalar-only so diagnostics
 //! cannot accidentally retain an arbitrary object graph.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -22,6 +22,9 @@ const DEFAULT_STRING_BYTES: usize = 256;
 const DEFAULT_WATCHDOG_SAMPLE_INTERVAL_MS: u64 = 25;
 const DEFAULT_WATCHDOG_HANG_THRESHOLD_MS: u64 = 100;
 const UI_WATCHDOG_SAMPLE_INTERVAL_MS: u64 = 250;
+const MAX_ACTIVITY_ENTRIES: usize = 32;
+const MAX_ACTIVITY_STRING_CHARS: usize = 200;
+pub const ACTIVITY_HISTORY_CAPACITY: usize = 8;
 const UI_WATCHDOG_HANG_THRESHOLD_MS: u64 = 2_000;
 const IDLE_WATCHDOG_WAIT: Duration = Duration::from_secs(60);
 
@@ -974,6 +977,143 @@ fn apply_ui_heartbeat_update(
     transition
 }
 
+/// A command the UI has invoked and not yet seen answered.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiInflightCommand {
+    pub command: String,
+    pub age_ms: u64,
+}
+
+/// A command the UI has already seen answered.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiRecentCommand {
+    pub command: String,
+    pub ms: u64,
+    pub ok: bool,
+}
+
+/// Something the user did, such as a key press or a pointer drag.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiInteraction {
+    pub kind: String,
+    pub age_ms: u64,
+}
+
+/// A repeated unhandled promise rejection, collapsed by message.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiActivityRejection {
+    pub message: String,
+    pub count: u64,
+}
+
+/// What the UI believes it is doing.
+///
+/// Every field arrives from the webview, so the whole snapshot is bounded
+/// before it is stored and can never grow this process's memory.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct UiActivitySnapshot {
+    pub at_ms: u64,
+    pub inflight: Vec<UiInflightCommand>,
+    pub recent: Vec<UiRecentCommand>,
+    pub focus_pane: Option<String>,
+    pub interactions: Vec<UiInteraction>,
+    pub rejections: Vec<UiActivityRejection>,
+}
+
+impl UiActivitySnapshot {
+    fn bounded(mut self) -> Self {
+        self.inflight.truncate(MAX_ACTIVITY_ENTRIES);
+        self.recent.truncate(MAX_ACTIVITY_ENTRIES);
+        self.interactions.truncate(MAX_ACTIVITY_ENTRIES);
+        self.rejections.truncate(MAX_ACTIVITY_ENTRIES);
+        for entry in &mut self.inflight {
+            truncate_chars(&mut entry.command);
+        }
+        for entry in &mut self.recent {
+            truncate_chars(&mut entry.command);
+        }
+        for entry in &mut self.interactions {
+            truncate_chars(&mut entry.kind);
+        }
+        for entry in &mut self.rejections {
+            truncate_chars(&mut entry.message);
+        }
+        if let Some(pane) = &mut self.focus_pane {
+            truncate_chars(pane);
+        }
+        self
+    }
+}
+
+fn truncate_chars(value: &mut String) {
+    if let Some((boundary, _)) = value.char_indices().nth(MAX_ACTIVITY_STRING_CHARS) {
+        value.truncate(boundary);
+    }
+}
+
+#[derive(Debug, Default)]
+struct UiActivityState {
+    latest: Option<UiActivitySnapshot>,
+    history: VecDeque<UiActivitySnapshot>,
+}
+
+/// The latest UI activity snapshot and a short history behind it.
+#[derive(Debug, Default)]
+pub struct UiActivityLog {
+    state: Mutex<UiActivityState>,
+}
+
+impl UiActivityLog {
+    pub fn record(&self, snapshot: UiActivitySnapshot) {
+        let snapshot = snapshot.bounded();
+        let mut state = self.lock_state();
+        if let Some(previous) = state.latest.replace(snapshot) {
+            if state.history.len() == ACTIVITY_HISTORY_CAPACITY {
+                state.history.pop_front();
+            }
+            state.history.push_back(previous);
+        }
+    }
+
+    /// The latest snapshot, and the ones before it oldest first.
+    pub fn snapshot(&self) -> (Option<UiActivitySnapshot>, Vec<UiActivitySnapshot>) {
+        let state = self.lock_state();
+        (
+            state.latest.clone(),
+            state.history.iter().cloned().collect(),
+        )
+    }
+
+    fn lock_state(&self) -> MutexGuard<'_, UiActivityState> {
+        match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+
+/// Notified once when a watchdog first sees a hang, so evidence can be
+/// gathered while the process is still stuck.
+pub trait HangListener: Send + Sync {
+    fn on_hang(&self, signal: HangSignal);
+}
+
+/// What the watchdog knew at the moment a hang started.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HangSignal {
+    pub watchdog: String,
+    pub delay_us: u64,
+    pub threshold_us: u64,
+    pub heartbeat_sequence: u64,
+    pub visible: bool,
+}
+
 /// Tauri-managed owner of the process UI heartbeat and watchdog thread.
 ///
 /// The watchdog starts inactive. A visible heartbeat update establishes its
@@ -982,12 +1122,14 @@ fn apply_ui_heartbeat_update(
 pub struct UiWatchdogState {
     heartbeat: Heartbeat,
     progress: Mutex<UiHeartbeatProgress>,
+    activity: Arc<UiActivityLog>,
     watchdog: Option<HangWatchdogHandle>,
 }
 
 impl UiWatchdogState {
     pub(crate) fn start() -> std::io::Result<Self> {
         let heartbeat = inactive_ui_heartbeat();
+        let activity = Arc::new(UiActivityLog::default());
         let watchdog = start_hang_watchdog(
             heartbeat.clone(),
             HangWatchdogConfig {
@@ -996,10 +1138,12 @@ impl UiWatchdogState {
                 hang_threshold_ms: UI_WATCHDOG_HANG_THRESHOLD_MS,
                 monitor_hidden: false,
             },
+            crate::autopsy::listener(activity.clone()),
         )?;
         Ok(Self {
             heartbeat,
             progress: Mutex::new(UiHeartbeatProgress::default()),
+            activity,
             watchdog: Some(watchdog),
         })
     }
@@ -1043,6 +1187,20 @@ pub fn observability_ui_heartbeat(
     heartbeat: u32,
 ) {
     state.update(visible, heartbeat);
+}
+
+/// Records what the UI is doing so a hang report can say what it was stuck on.
+///
+/// This also resolves the renderer's process id, which has to be asked for
+/// from the main thread and therefore cannot wait until a hang is underway.
+#[tauri::command]
+pub fn observability_ui_activity(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, UiWatchdogState>,
+    activity: UiActivitySnapshot,
+) {
+    crate::autopsy::ensure_web_content_pid(&app);
+    state.activity.record(activity);
 }
 
 /// Sampling policy for the process hang watchdog.
@@ -1260,6 +1418,7 @@ impl Drop for HangWatchdogHandle {
 pub fn start_hang_watchdog(
     heartbeat: Heartbeat,
     config: HangWatchdogConfig,
+    on_hang: Option<Arc<dyn HangListener>>,
 ) -> std::io::Result<HangWatchdogHandle> {
     let observer = global_observability();
     let config = config.normalized(observer);
@@ -1268,7 +1427,7 @@ pub fn start_hang_watchdog(
     let thread_signal = signal.clone();
     let thread = thread::Builder::new()
         .name("sikemux-hang-watchdog".to_owned())
-        .spawn(move || run_watchdog(heartbeat, config, thread_signal))?;
+        .spawn(move || run_watchdog(heartbeat, config, thread_signal, on_hang))?;
 
     Ok(HangWatchdogHandle {
         signal,
@@ -1276,7 +1435,12 @@ pub fn start_hang_watchdog(
     })
 }
 
-fn run_watchdog(heartbeat: Heartbeat, config: HangWatchdogConfig, signal: Arc<WatchdogSignal>) {
+fn run_watchdog(
+    heartbeat: Heartbeat,
+    config: HangWatchdogConfig,
+    signal: Arc<WatchdogSignal>,
+    on_hang: Option<Arc<dyn HangListener>>,
+) {
     let observer = global_observability();
     let metric_names = WatchdogMetricNames::new(&config.name);
     let sample_interval = Duration::from_millis(config.sample_interval_ms);
@@ -1303,6 +1467,7 @@ fn run_watchdog(heartbeat: Heartbeat, config: HangWatchdogConfig, signal: Arc<Wa
             heartbeat_snapshot,
             delay_us,
             classification,
+            on_hang.as_ref(),
         );
         previously_hung = matches!(
             classification,
@@ -1330,6 +1495,7 @@ fn record_watchdog_sample(
     heartbeat: HeartbeatSnapshot,
     delay_us: u64,
     classification: HeartbeatDelayClassification,
+    on_hang: Option<&Arc<dyn HangListener>>,
 ) {
     if classification == HeartbeatDelayClassification::Inactive {
         return;
@@ -1375,6 +1541,18 @@ fn record_watchdog_sample(
         );
         metadata.insert("visible".to_owned(), ScalarValue::Bool(heartbeat.visible));
         observer.record_event(event_name, None, metadata);
+    }
+
+    if classification == HeartbeatDelayClassification::HangStarted {
+        if let Some(listener) = on_hang {
+            listener.on_hang(HangSignal {
+                watchdog: config.name.clone(),
+                delay_us,
+                threshold_us: config.hang_threshold_ms.saturating_mul(1_000),
+                heartbeat_sequence: heartbeat.sequence,
+                visible: heartbeat.visible,
+            });
+        }
     }
 }
 
@@ -1742,6 +1920,7 @@ mod tests {
             heartbeat,
             125_000,
             HeartbeatDelayClassification::HangStarted,
+            None,
         );
 
         let snapshot = observer.snapshot();
@@ -1773,6 +1952,7 @@ mod tests {
                 sample_interval_ms: 60_000,
                 ..HangWatchdogConfig::default()
             },
+            None,
         )
         .unwrap();
         handle.stop().unwrap();
@@ -1834,5 +2014,157 @@ mod tests {
             ScalarValue::String(value) => value.len() <= 16,
             _ => true,
         }));
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingListener {
+        signals: Mutex<Vec<HangSignal>>,
+    }
+
+    impl HangListener for RecordingListener {
+        fn on_hang(&self, signal: HangSignal) {
+            self.signals.lock().unwrap().push(signal);
+        }
+    }
+
+    /// Only the transition into a hang is worth evidence. Every later sample of
+    /// the same hang must stay silent so one stall cannot spawn a capture
+    /// four times a second.
+    #[test]
+    fn only_the_start_of_a_hang_asks_for_a_capture() {
+        let observer = Observability::default();
+        let watchdog_config = HangWatchdogConfig::default();
+        let metric_names = WatchdogMetricNames::new(&watchdog_config.name);
+        let heartbeat = HeartbeatSnapshot {
+            sequence: 7,
+            last_beat_us: 1,
+            armed: true,
+            visible: true,
+        };
+        let listener = Arc::new(RecordingListener::default());
+        let erased: Arc<dyn HangListener> = listener.clone();
+
+        for classification in [
+            HeartbeatDelayClassification::Healthy,
+            HeartbeatDelayClassification::HangStarted,
+            HeartbeatDelayClassification::HangOngoing,
+            HeartbeatDelayClassification::Recovered,
+            HeartbeatDelayClassification::Inactive,
+        ] {
+            record_watchdog_sample(
+                &observer,
+                &watchdog_config,
+                &metric_names,
+                heartbeat,
+                125_000,
+                classification,
+                Some(&erased),
+            );
+        }
+
+        let signals = listener.signals.lock().unwrap();
+        assert_eq!(signals.len(), 1);
+        assert_eq!(
+            signals[0],
+            HangSignal {
+                watchdog: "ui".to_owned(),
+                delay_us: 125_000,
+                threshold_us: 100_000,
+                heartbeat_sequence: 7,
+                visible: true,
+            }
+        );
+    }
+
+    #[test]
+    fn a_hostile_activity_snapshot_cannot_grow_the_process() {
+        let snapshot = UiActivitySnapshot {
+            at_ms: 42,
+            inflight: (0..128)
+                .map(|index| UiInflightCommand {
+                    command: format!("{index}{}", "c".repeat(4_096)),
+                    age_ms: 1,
+                })
+                .collect(),
+            recent: (0..128)
+                .map(|_| UiRecentCommand {
+                    command: "r".repeat(4_096),
+                    ms: 1,
+                    ok: true,
+                })
+                .collect(),
+            focus_pane: Some("p".repeat(4_096)),
+            interactions: (0..128)
+                .map(|_| UiInteraction {
+                    kind: "k".repeat(4_096),
+                    age_ms: 1,
+                })
+                .collect(),
+            rejections: (0..128)
+                .map(|_| UiActivityRejection {
+                    message: "m".repeat(4_096),
+                    count: 1,
+                })
+                .collect(),
+        }
+        .bounded();
+
+        assert_eq!(snapshot.at_ms, 42);
+        assert_eq!(snapshot.inflight.len(), MAX_ACTIVITY_ENTRIES);
+        assert_eq!(snapshot.recent.len(), MAX_ACTIVITY_ENTRIES);
+        assert_eq!(snapshot.interactions.len(), MAX_ACTIVITY_ENTRIES);
+        assert_eq!(snapshot.rejections.len(), MAX_ACTIVITY_ENTRIES);
+        assert_eq!(snapshot.focus_pane.unwrap().chars().count(), 200);
+        assert!(snapshot
+            .inflight
+            .iter()
+            .all(|entry| entry.command.chars().count() == 200));
+        assert!(snapshot
+            .rejections
+            .iter()
+            .all(|entry| entry.message.chars().count() == 200));
+    }
+
+    #[test]
+    fn multi_byte_activity_text_is_cut_on_a_character_boundary() {
+        let snapshot = UiActivitySnapshot {
+            focus_pane: Some("é".repeat(400)),
+            ..UiActivitySnapshot::default()
+        }
+        .bounded();
+
+        let pane = snapshot.focus_pane.unwrap();
+        assert_eq!(pane.chars().count(), 200);
+        assert_eq!(pane.len(), 400);
+    }
+
+    #[test]
+    fn the_activity_log_keeps_the_latest_and_a_bounded_history() {
+        let log = UiActivityLog::default();
+        for index in 0..(ACTIVITY_HISTORY_CAPACITY as u64 + 4) {
+            log.record(UiActivitySnapshot {
+                at_ms: index,
+                ..UiActivitySnapshot::default()
+            });
+        }
+
+        let (latest, history) = log.snapshot();
+        assert_eq!(latest.unwrap().at_ms, ACTIVITY_HISTORY_CAPACITY as u64 + 3);
+        assert_eq!(history.len(), ACTIVITY_HISTORY_CAPACITY);
+        assert_eq!(history[0].at_ms, 3);
+        assert_eq!(
+            history[ACTIVITY_HISTORY_CAPACITY - 1].at_ms,
+            ACTIVITY_HISTORY_CAPACITY as u64 + 2
+        );
+    }
+
+    #[test]
+    fn an_activity_log_with_one_entry_has_no_history_yet() {
+        let log = UiActivityLog::default();
+        log.record(UiActivitySnapshot::default());
+
+        let (latest, history) = log.snapshot();
+        assert!(latest.is_some());
+        assert!(history.is_empty());
     }
 }

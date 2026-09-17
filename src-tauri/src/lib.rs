@@ -1,6 +1,7 @@
 mod acp;
 mod agent_detection;
 mod agents;
+mod autopsy;
 mod aws;
 mod bounded_process;
 mod browser;
@@ -201,6 +202,8 @@ pub fn run() {
             system::runtime_diagnostics,
             system::integration_health,
             observability::observability_ui_heartbeat,
+            observability::observability_ui_activity,
+            autopsy::hang_reports,
             updates::update_check,
             updates::update_install,
             state::state_load,

@@ -39,6 +39,8 @@ pub const IPC_COMMANDS: &[&str] = &[
     "runtime_diagnostics",
     "integration_health",
     "observability_ui_heartbeat",
+    "observability_ui_activity",
+    "hang_reports",
     "update_check",
     "update_install",
     "state_load",
