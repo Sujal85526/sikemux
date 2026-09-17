@@ -115,6 +115,7 @@ pub fn run() {
                 && payload.event() == tauri::webview::PageLoadEvent::Started
             {
                 use tauri::Manager;
+                autopsy::forget_web_content_pid();
                 if let Some(watchdog) = webview.try_state::<UiWatchdogState>() {
                     watchdog.suspend();
                 }

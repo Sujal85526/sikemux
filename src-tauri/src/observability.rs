@@ -1181,11 +1181,15 @@ impl Drop for UiWatchdogState {
 /// regressed values do not refresh the deadline. A hidden update disarms the
 /// watchdog, and the next visible update establishes a new sequence baseline.
 #[tauri::command]
-pub fn observability_ui_heartbeat(
+pub fn observability_ui_heartbeat<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, UiWatchdogState>,
     visible: bool,
     heartbeat: u32,
 ) {
+    // The heartbeat is the first thing a new page sends, so this is the
+    // earliest a hang report can learn which process to sample.
+    crate::autopsy::ensure_web_content_pid(&app);
     state.update(visible, heartbeat);
 }
 
@@ -1194,8 +1198,8 @@ pub fn observability_ui_heartbeat(
 /// This also resolves the renderer's process id, which has to be asked for
 /// from the main thread and therefore cannot wait until a hang is underway.
 #[tauri::command]
-pub fn observability_ui_activity(
-    app: tauri::AppHandle,
+pub fn observability_ui_activity<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, UiWatchdogState>,
     activity: UiActivitySnapshot,
 ) {

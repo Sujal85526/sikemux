@@ -10,7 +10,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -33,9 +33,10 @@ const SAMPLE_SECONDS: u32 = 2;
 const SAMPLE_GRACE: Duration = Duration::from_secs(20);
 const MAX_SAMPLE_STDOUT_BYTES: usize = 1024 * 1024;
 
-/// The renderer pid, resolved once from the main thread and reused by every
-/// later capture. Zero means it has not been resolved yet.
+/// The renderer pid, resolved from the main thread and reused by every later
+/// capture. Zero means it has not been resolved yet.
 static WEB_CONTENT_PID: AtomicI32 = AtomicI32::new(0);
+static PENDING_PID_REQUEST: AtomicBool = AtomicBool::new(false);
 
 /// One `sample` run against one process.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -460,27 +461,36 @@ pub fn listener(activity: Arc<UiActivityLog>) -> Option<Arc<dyn HangListener>> {
     )))
 }
 
-/// Resolves the renderer pid once, from the thread that owns the webview.
+/// Resolves the renderer pid from the thread that owns the webview.
 ///
 /// Asking during a hang would be too late: the answer has to come from the
-/// main thread, which is exactly the thread a hang may be holding.
-pub fn ensure_web_content_pid(app: &tauri::AppHandle) {
-    if WEB_CONTENT_PID.load(Ordering::Relaxed) > 0 {
+/// main thread, which is exactly the thread a hang may be holding. Callers run
+/// this while the app is healthy and it costs one atomic load once resolved.
+pub fn ensure_web_content_pid<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if WEB_CONTENT_PID.load(Ordering::Acquire) > 0 {
         return;
     }
     #[cfg(target_os = "macos")]
     {
         use tauri::Manager;
-        let Some(webview) = app.get_webview_window("main") else {
+        // One question at a time, so a busy main thread never accumulates a
+        // queue of these behind whatever is already holding it.
+        if PENDING_PID_REQUEST.swap(true, Ordering::AcqRel) {
             return;
-        };
-        // `with_webview` hands the closure to the main thread and returns
-        // immediately, so a caller on any thread stays unblocked.
-        let _ = webview.with_webview(|platform| {
-            if let Some(pid) = macos::web_process_identifier(platform.inner()) {
-                WEB_CONTENT_PID.store(pid, Ordering::Relaxed);
-            }
+        }
+        let dispatched = app.get_webview_window("main").map(|webview| {
+            // `with_webview` hands the closure to the main thread and returns
+            // immediately, so a caller on any thread stays unblocked.
+            webview.with_webview(|platform| {
+                if let Some(pid) = macos::web_process_identifier(platform.inner()) {
+                    WEB_CONTENT_PID.store(pid, Ordering::Release);
+                }
+                PENDING_PID_REQUEST.store(false, Ordering::Release);
+            })
         });
+        if !matches!(dispatched, Some(Ok(()))) {
+            PENDING_PID_REQUEST.store(false, Ordering::Release);
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -488,8 +498,14 @@ pub fn ensure_web_content_pid(app: &tauri::AppHandle) {
     }
 }
 
+/// Loading a page can replace the renderer, so its pid has to be asked for
+/// again rather than sampling a process that has gone.
+pub fn forget_web_content_pid() {
+    WEB_CONTENT_PID.store(0, Ordering::Release);
+}
+
 pub fn web_content_pid() -> Option<i32> {
-    match WEB_CONTENT_PID.load(Ordering::Relaxed) {
+    match WEB_CONTENT_PID.load(Ordering::Acquire) {
         pid if pid > 0 => Some(pid),
         _ => None,
     }
