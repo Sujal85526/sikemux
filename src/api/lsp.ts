@@ -92,6 +92,9 @@ function ownDataProperty(value: Record<PropertyKey, unknown>, key: string): unkn
 
 function boundedString(value: unknown, maxBytes: number, allowEmpty = true): string | null {
     if (typeof value !== "string" || (!allowEmpty && value.length === 0) || value.length > maxBytes) return null;
+    // UTF-8 never spends more than three bytes per UTF-16 unit, so a short
+    // enough string is within budget without encoding it to find out.
+    if (value.length * 3 <= maxBytes) return value;
     return UTF8_ENCODER.encode(value).byteLength <= maxBytes ? value : null;
 }
 

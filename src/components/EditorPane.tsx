@@ -826,8 +826,12 @@ export function EditorPane({
                         continue;
                     }
                     let fresh: string;
+                    const known = documentIORef.current.version(path);
                     try {
                         const snapshot = await documentIORef.current.read(path);
+                        // A path-less watcher event asks about every open tab; most
+                        // of them are still the version this pane already holds.
+                        if (known !== undefined && snapshot.version === known) continue;
                         fresh = snapshot.content;
                     } catch (error) {
                         swallow("refresh clean editor")(error);
