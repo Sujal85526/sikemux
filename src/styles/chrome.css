@@ -411,8 +411,9 @@
 .sess-icon.project {
     color: var(--live);
 }
-.sess-icon.aws {
-    color: var(--warn);
+.sess-icon.aws,
+.icon-aws {
+    color: var(--brand-aws);
 }
 
 .sess-name {

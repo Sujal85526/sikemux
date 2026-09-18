@@ -109,6 +109,10 @@
     color: var(--live);
 }
 
+.session-switcher-icon.aws {
+    color: var(--brand-aws);
+}
+
 .session-switcher-copy {
     min-width: 0;
     display: flex;

@@ -327,7 +327,8 @@ export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) 
     if (role === "diff") return <IconCommit size={size} />;
     if (role === "search") return <IconSearch size={size} />;
     if (role === "agent") return <IconAgent size={size} />;
-    if (role === "aws") return <IconAws size={size} />;
+    // The aws mark is a wordmark, so it keeps its own width instead of the square glyph size.
+    if (role === "aws") return <IconAws className="icon-aws" />;
     if (role === "rundeck") return <IconRundeck size={size} />;
     return <IconWindow size={size} />;
 }

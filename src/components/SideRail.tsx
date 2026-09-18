@@ -39,7 +39,7 @@ import { agentIdsOf } from "../state/selectors";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
-    if (kind === "aws") return <IconAws size={16} />;
+    if (kind === "aws") return <IconAws />;
     if (kind === "rundeck") return <IconRundeck size={14} />;
     if (kind === "bruno") return <IconBruno size={14} />;
     return <IconCommand size={13} />;

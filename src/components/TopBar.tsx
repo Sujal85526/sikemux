@@ -97,7 +97,7 @@ function AwsChip() {
     return (
         <Tooltip label={title}>
             <button className={`tb-aws-chip ${dotClass}`} onClick={onClick} aria-label={title}>
-                <IconAws size={14} />
+                <IconAws />
             </button>
         </Tooltip>
     );

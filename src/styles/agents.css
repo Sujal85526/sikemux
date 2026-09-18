@@ -28,6 +28,7 @@
     --brand-opencode: #a78bfa;
     --brand-omp: #f97316;
     --brand-grok: #fcfcfc;
+    --brand-aws: #ff9900;
 }
 .agent-glyph {
     display: flex;
