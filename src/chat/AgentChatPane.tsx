@@ -1111,64 +1111,64 @@ function ChatComposer({
         <div className="chat-composer">
             {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={selected} onSelect={selectCommand} />}
             <div className="chat-field">
-            {attachments.length > 0 && (
-                <div className="chat-attachments">
-                    {attachments.map((path) => (
-                        <ComposerAttachment
-                            key={path}
-                            path={path}
-                            onRemove={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}
-                        />
-                    ))}
-                </div>
-            )}
-            <textarea
-                ref={editorRef}
-                value={draft}
-                aria-label="Message agent"
-                placeholder={placeholder}
-                rows={3}
-                onChange={(event) => {
-                    setDraft(event.target.value);
-                    setCaret(event.target.selectionStart);
-                    setSlashSelection(0);
-                    setSlashDismissed(false);
-                    onError(null);
-                }}
-                onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-                onKeyDown={(event) => {
-                    if (slashCommands.length > 0) {
-                        if (event.key === "ArrowDown") {
+                {attachments.length > 0 && (
+                    <div className="chat-attachments">
+                        {attachments.map((path) => (
+                            <ComposerAttachment
+                                key={path}
+                                path={path}
+                                onRemove={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}
+                            />
+                        ))}
+                    </div>
+                )}
+                <textarea
+                    ref={editorRef}
+                    value={draft}
+                    aria-label="Message agent"
+                    placeholder={placeholder}
+                    rows={3}
+                    onChange={(event) => {
+                        setDraft(event.target.value);
+                        setCaret(event.target.selectionStart);
+                        setSlashSelection(0);
+                        setSlashDismissed(false);
+                        onError(null);
+                    }}
+                    onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                    onKeyDown={(event) => {
+                        if (slashCommands.length > 0) {
+                            if (event.key === "ArrowDown") {
+                                event.preventDefault();
+                                setSlashSelection((current) => (current + 1) % slashCommands.length);
+                                return;
+                            }
+                            if (event.key === "ArrowUp") {
+                                event.preventDefault();
+                                setSlashSelection((current) => (current - 1 + slashCommands.length) % slashCommands.length);
+                                return;
+                            }
+                            if (event.key === "Tab" || event.key === "Enter") {
+                                event.preventDefault();
+                                selectCommand(slashCommands[selected]);
+                                return;
+                            }
+                            if (event.key === "Escape") {
+                                event.preventDefault();
+                                setSlashDismissed(true);
+                                return;
+                            }
+                        }
+                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                             event.preventDefault();
-                            setSlashSelection((current) => (current + 1) % slashCommands.length);
-                            return;
+                            if (hasPrimaryModifier(event.nativeEvent) && !draft.trim() && attachments.length === 0 && canSteerQueued) {
+                                onSteerQueued();
+                                return;
+                            }
+                            send(hasPrimaryModifier(event.nativeEvent));
                         }
-                        if (event.key === "ArrowUp") {
-                            event.preventDefault();
-                            setSlashSelection((current) => (current - 1 + slashCommands.length) % slashCommands.length);
-                            return;
-                        }
-                        if (event.key === "Tab" || event.key === "Enter") {
-                            event.preventDefault();
-                            selectCommand(slashCommands[selected]);
-                            return;
-                        }
-                        if (event.key === "Escape") {
-                            event.preventDefault();
-                            setSlashDismissed(true);
-                            return;
-                        }
-                    }
-                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                        event.preventDefault();
-                        if (hasPrimaryModifier(event.nativeEvent) && !draft.trim() && attachments.length === 0 && canSteerQueued) {
-                            onSteerQueued();
-                            return;
-                        }
-                        send(hasPrimaryModifier(event.nativeEvent));
-                    }
-                }}
-            />
+                    }}
+                />
             </div>
             {error && <div className="chat-composer-error">{error}</div>}
             <div className="chat-composer-bar">

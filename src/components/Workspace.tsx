@@ -28,8 +28,7 @@ import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
 import { useWheelPan } from "./useWheelPan";
 import { useDocumentSlide } from "./useDocumentSlide";
 
-const copyPath = (_path: string, text: string, label: string) =>
-    copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
+const copyPath = (_path: string, text: string, label: string) => copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 
