@@ -600,7 +600,7 @@
     top: 0;
     bottom: 0;
     left: 0;
-    width: 1.25px;
+    width: 1px;
     background: var(--tree-spine);
 }
 
@@ -627,7 +627,7 @@ button.chat-tool:hover {
 
 .chat-tool-tick {
     width: 9px;
-    height: 1.25px;
+    height: 1px;
     background: var(--tree-tick);
 }
 
