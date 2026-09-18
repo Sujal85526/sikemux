@@ -302,12 +302,22 @@
     user-select: text;
 }
 
+/* The virtualizer measures every row it draws, so a strip that appeared on
+   hover would resize the row under the pointer. The strip always holds its
+   height and only fades, and the whole turn is the thing you point at. */
 .chat-message-meta {
     display: flex;
     align-items: center;
     gap: 8px;
     height: 24px;
     margin-top: 12px;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+
+.chat-message:hover .chat-message-meta,
+.chat-message:focus-within .chat-message-meta {
+    opacity: 1;
 }
 
 .chat-message.user .chat-message-meta {
