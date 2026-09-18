@@ -17,6 +17,7 @@ import { renderWorkbenchItem } from "../workbench/renderers";
 import { FileIcon } from "./FileIcon";
 import { fsapi } from "../api/fs";
 import { useResourceEnabled } from "../state/resources";
+import { useStageMotion } from "../state/nativeViews";
 import { brunoCollectionR } from "../state/resources.defs";
 import { findRequest } from "../bruno/resolve";
 import { basename, relativePath } from "../lib/paths";
@@ -102,6 +103,9 @@ export const Workspace = memo(function Workspace() {
     const activeSlots = useMemo(() => new Map(activeOrder.map((wid, slot) => [wid, slot])), [activeOrder]);
     const pan = useWindowPan(activeSessionId, activeSession?.activeWindowId ?? null, activeSlots);
     useWheelPan(areaRef, pan);
+    // The browser pages are native views placed by measurement, so they only
+    // travel with their screen if they know the stage is moving.
+    useStageMotion(pan.panning);
     // Counts what the strip would actually show, by asking the list the strip
     // renders: a project holding only rail-driven surfaces has no tabs, and no
     // strip, while an editor or Bruno workspace counts its open documents.

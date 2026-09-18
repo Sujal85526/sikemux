@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi, type BrowserSnapshot, type BrowserTab } from "../api/browser";
-import { occludeNativeViews } from "../state/nativeViews";
+import { occludeNativeViews, useStageMotion } from "../state/nativeViews";
 import { useToasts } from "../state/toast";
 import { AgentBrowserShell } from "./BrowserPane";
 
@@ -108,6 +108,12 @@ function renderShell(visible = true) {
 }
 
 const placed = { x: 640, y: 96, width: 480, height: 321 };
+
+/** Stands in for the stage telling the panes on it that it is travelling. */
+function Stage({ moving }: { moving: boolean }) {
+    useStageMotion(moving);
+    return null;
+}
 
 describe("AgentBrowserShell", () => {
     it("opens the right-side browser when tabs appear and routes user tab actions", async () => {
@@ -252,6 +258,48 @@ describe("AgentBrowserShell", () => {
         fireEvent.keyDown(first, { key: "ArrowRight" });
 
         await waitFor(() => expect(browserApi.switchTab).toHaveBeenCalledWith("agent-one", "tab-two"));
+    });
+
+    /* A swipe slides the screen this pane sits on, and the page has to go with
+       it: the rect it is placed at changes every frame, with no scroll or
+       resize to report it. */
+    it("carries the page with its screen while the stage swipes", async () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+        const swipe = (moving: boolean, visible: boolean) => (
+            <>
+                <Stage moving={moving} />
+                <AgentBrowserShell agentId="agent-one" agentType="codex" visible={visible}>
+                    <div>terminal</div>
+                </AgentBrowserShell>
+            </>
+        );
+        const { rerender } = render(swipe(false, true));
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", placed));
+
+        // The screen being left is no longer the one the session is on, and its
+        // page still has to show for as long as any of it is on the window.
+        rerender(swipe(true, false));
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", placed));
+
+        vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+            left: 240,
+            top: 96,
+            width: 480.4,
+            height: 320.6,
+            right: 0,
+            bottom: 0,
+            x: 240,
+            y: 96,
+            toJSON: () => ({}),
+        });
+        await act(async () => {
+            frames.shift()?.(0);
+        });
+        expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", { ...placed, x: 240 });
+
+        rerender(swipe(false, false));
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null));
     });
 
     it("keeps a failed placement out of the way but reports it once", async () => {

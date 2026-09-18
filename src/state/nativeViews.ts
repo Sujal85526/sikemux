@@ -44,3 +44,59 @@ export function useOccludeNativeViews(active: boolean): void {
         return occludeNativeViews();
     }, [active]);
 }
+
+/* A swipe slides the stage sideways by transform, which carries every pane on
+   it somewhere else without a scroll or a resize to say so. A native view is
+   placed by measuring the DOM, so while the stage moves it has to measure every
+   frame, and one loop does that for all of them. */
+let moving = false;
+let frame = 0;
+const watchers = new Set<() => void>();
+const followers = new Set<() => void>();
+
+function tick() {
+    frame = requestAnimationFrame(tick);
+    for (const follower of followers) follower();
+}
+
+function watch(watcher: () => void) {
+    watchers.add(watcher);
+    return () => {
+        watchers.delete(watcher);
+    };
+}
+
+export function stageMoving(): boolean {
+    return moving;
+}
+
+function setStageMoving(next: boolean) {
+    if (moving === next) return;
+    moving = next;
+    if (next) frame = requestAnimationFrame(tick);
+    else {
+        cancelAnimationFrame(frame);
+        frame = 0;
+    }
+    for (const watcher of watchers) watcher();
+}
+
+export function useStageMoving(): boolean {
+    return useSyncExternalStore(watch, stageMoving, stageMoving);
+}
+
+/** Say that the stage is travelling for as long as `active` stays true. */
+export function useStageMotion(active: boolean): void {
+    useEffect(() => {
+        setStageMoving(active);
+        return () => setStageMoving(false);
+    }, [active]);
+}
+
+/** Run `follow` on every frame the stage is travelling. */
+export function onStageFrame(follow: () => void): () => void {
+    followers.add(follow);
+    return () => {
+        followers.delete(follow);
+    };
+}

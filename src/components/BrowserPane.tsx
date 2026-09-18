@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { browserApi, type BrowserBounds, type BrowserSnapshot } from "../api/browser";
-import { useNativeViewsOccluded } from "../state/nativeViews";
+import { onStageFrame, useNativeViewsOccluded, useStageMoving } from "../state/nativeViews";
 import type { AgentType } from "../state/types";
 import { reportError } from "../state/toast";
 import { IconChevron, IconGlobe, IconPlus, IconRefresh } from "./Icons";
@@ -158,12 +158,18 @@ function BrowserPane({
     refresh: (signal?: AbortSignal) => Promise<void>;
 }) {
     const viewportRef = useRef<HTMLDivElement>(null);
+    const measureRef = useRef<() => void>(() => {});
     const [address, setAddress] = useState("");
     const [placement, setPlacement] = useState<BrowserBounds | null>(null);
     const occluded = useNativeViewsOccluded();
+    const moving = useStageMoving();
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const blank = activeTab?.url === BLANK_URL;
-    const shown = visible && !occluded && !blank && !!activeTab;
+    /* A screen sliding on or off stage is on the window without being the screen
+       the session is on, and its page travels with it rather than waiting off
+       screen for it to land. */
+    const travelling = moving && !!placement && placement.x + placement.width > 0 && placement.x < window.innerWidth;
+    const shown = (visible || travelling) && !occluded && !blank && !!activeTab;
 
     useEffect(() => setAddress(activeTab?.url === BLANK_URL ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);
 
@@ -186,6 +192,7 @@ function BrowserPane({
         const schedule = () => {
             if (!frame) frame = window.requestAnimationFrame(measure);
         };
+        measureRef.current = measure;
         measure();
         const observer = new ResizeObserver(schedule);
         observer.observe(host);
@@ -201,6 +208,15 @@ function BrowserPane({
             window.removeEventListener("transitionend", schedule, true);
         };
     }, []);
+
+    /* Nothing reports the stage sliding the way a scroll or a resize would, so
+       the page area is read again on every frame of the travel, and once more
+       where it lands. */
+    useEffect(() => {
+        measureRef.current();
+        if (!moving) return;
+        return onStageFrame(() => measureRef.current());
+    }, [moving]);
 
     useEffect(() => {
         void browserApi.setBounds(agentId, shown && placement ? placement : null).catch(reportError("place browser page"));
