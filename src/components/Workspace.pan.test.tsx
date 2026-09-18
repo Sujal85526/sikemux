@@ -89,22 +89,23 @@ describe("workspace pan", () => {
         expect(slotOf(container.querySelector(".window-layer.painted")!)).toBe(homeSlot);
     });
 
-    /* The texture belongs to each pane now, in CSS, rather than to the screen
-       as one WebGL surface — so no screen carries a field of its own, and the
-       panes are what the ground is painted on. */
-    it("gives the ground to the panes and no field to the screen", async () => {
+    /* The texture belongs to the panes now rather than to the screen, and only
+       to the panes on the screen being read — a field on a screen off stage is
+       a WebGL context taken from a terminal that needs one. */
+    it("gives the texture to the panes on stage and to no other", async () => {
         sessionOfScreens();
         const { container } = render(<Workspace />);
         await act(async () => {});
 
         expect(container.querySelectorAll(".screen-field")).toHaveLength(0);
-        expect(container.querySelector(".window-layer.live")!.querySelectorAll(".pane").length).toBeGreaterThan(0);
+        const live = () => container.querySelector(".window-layer.live")!;
+        expect(live().querySelectorAll(".pane-field").length).toBe(live().querySelectorAll(".pane").length);
+        expect(live().querySelectorAll(".pane-field").length).toBeGreaterThan(0);
 
         act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-9")!));
         await waitFor(() => expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(1));
 
-        expect(container.querySelectorAll(".screen-field")).toHaveLength(0);
-        expect(container.querySelector(".window-layer.live")!.querySelectorAll(".pane").length).toBeGreaterThan(0);
+        expect(live().querySelectorAll(".pane-field").length).toBe(live().querySelectorAll(".pane").length);
     });
 
     /*

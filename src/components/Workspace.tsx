@@ -9,6 +9,7 @@ import { getState, useStore } from "../state/store";
 import { activeTabRef, brunoPaneId, documentsOf, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { ShaderField } from "./ShaderField";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentIcon, IconPlus, WindowIcon } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
@@ -511,6 +512,10 @@ const WindowLayer = memo(function WindowLayer({
                             zIndex: isZoomed ? 2 : 1,
                         }}>
                         <div className={`pane pane-${p.kind}`} data-pane-id={p.id} onMouseDown={() => live && cmd.focusPane(p.id)}>
+                            {/* The pane is a surface, so it carries its own texture — and only
+                                while it is the one being read, so a screen off stage spends no
+                                WebGL context on a field nobody is looking at. */}
+                            <ShaderField preset="ambient" className="pane-field" enabled={live && shown} />
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible })}
                             </ErrorBoundary>

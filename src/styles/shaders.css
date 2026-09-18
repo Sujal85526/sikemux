@@ -85,6 +85,41 @@
     isolation: isolate;
 }
 
+/* ── The pane's surface ──────────────────────────────────────── */
+
+/*
+ * One field per pane on the screen being read.
+ *
+ * It sits above the ground the pane paints and under the pane's own content,
+ * held there by the isolation on the pane. A pane off stage asks for nothing —
+ * a texture nobody is looking at is a WebGL context taken from a terminal that
+ * needs one.
+ */
+.pane-field {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    /*
+     * High, because the field is dots of a surface tone with nothing painted
+     * between them. Opacity buys texture here rather than haze.
+     */
+    --shader-field-strength: 0.85;
+    /*
+     * Weighted to the top and gone by the middle. A pane fills downward —
+     * scrollback, a document, a diff — so the top is the one band reliably
+     * free of anything being read.
+     */
+    mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0.08) 38%, transparent 50%);
+    /*
+     * Clips itself rather than trusting the pane to do it: the mask forces this
+     * into its own composited layer, and a rounded overflow clip on an ancestor
+     * is what WebKit stops applying to a composited descendant. The radius is
+     * the pane's inner edge, inside its border.
+     */
+    clip-path: inset(0 round calc(var(--radius-panel) - 1px));
+}
+
 /*
  * The optional full-window image, under the shader and over the ground.
  *

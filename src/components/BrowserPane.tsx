@@ -125,10 +125,18 @@ function BrowserSession({
         };
     }, [refresh, visible]);
 
-    /* The pane exists because a tab does. When the last one goes the pane has
-       nothing left to show, so it closes itself rather than sitting empty. */
+    /*
+     * The pane exists because a tab does, so when the last one goes it has
+     * nothing left to show and closes itself.
+     *
+     * It has to have held one first. The pane is opened by the same click that
+     * asks for the tab, and the tab arrives a round trip later — closing on an
+     * empty snapshot alone would shut the pane before its first tab landed.
+     */
+    const heldATab = useRef(false);
+    if (snapshot.tabs.length > 0) heldATab.current = true;
     useEffect(() => {
-        if (!visible || snapshot.tabs.length > 0) return;
+        if (!visible || !heldATab.current || snapshot.tabs.length > 0) return;
         onEmpty();
     }, [onEmpty, snapshot.tabs.length, visible]);
 

@@ -59,14 +59,20 @@ interface Runtime {
 export type ShaderFieldPreset = "ambient" | "onboarding";
 
 /*
- * The window's backdrop, and room for the tour.
+ * The panes on the screen being read, plus room for the tour.
  *
- * One each, because neither belongs to a pane: splitting the window no longer
- * costs a context. That matters because a terminal asks for one of the page's
- * ~16 as soon as its WebGL renderer is switched on, and a terminal losing that
- * to a decoration is a far worse trade than a surface without a texture.
+ * The texture belongs to a pane again — a pane is a surface now, and a surface
+ * without its own texture is the thing that made a split read as one card cut
+ * in half. So splitting costs a context again, and the number below is the cap
+ * on how many.
+ *
+ * It stays well under the page's ~16 because a terminal asks for one as soon
+ * as its WebGL renderer is switched on, and a terminal losing that to a
+ * decoration is a far worse trade than a surface without a texture. Only panes
+ * on the live screen ask, and the refusal path below is what keeps the trade
+ * on the right side when a layout goes wider than this.
  */
-const SURFACE_BUDGET = 2;
+const SURFACE_BUDGET = 6;
 
 /*
  * How often a field is repainted. Nothing here is being read, so the motion

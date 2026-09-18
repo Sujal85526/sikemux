@@ -1162,11 +1162,9 @@ textarea,
  * dither, so however the layout splits, every leaf is a surface in its own
  * right.
  *
- * The dither is dots of ink with nothing painted between them, weighted to the
- * top and gone by the middle — a screen fills downward, so the top band is the
- * one reliably free of anything being read. It is CSS rather than the WebGL
- * field the screen used to carry: that is budgeted to two live surfaces
- * (`lib/shaderField.ts`), and a pane past the second would have come up blank.
+ * The texture is the same shader field the screen used to carry, mounted per
+ * pane now that a pane is a surface. Only the panes on the live screen ask for
+ * one; see the budget in `lib/shaderField.ts`.
  */
 .pane {
     --pane-ground: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
@@ -1178,20 +1176,6 @@ textarea,
     border-radius: var(--radius-panel);
     background: var(--pane-ground);
     overflow: hidden;
-}
-
-/* Behind the pane's content and above its ground. `isolation` on the pane is
-   what keeps a negative index inside it rather than letting it fall through to
-   whatever is below. */
-.pane::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background-image: radial-gradient(color-mix(in oklab, var(--ink) 22%, transparent) 0.5px, transparent 0.5px);
-    background-size: 3px 3px;
-    mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0.08) 38%, transparent 50%);
-    pointer-events: none;
 }
 
 

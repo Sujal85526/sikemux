@@ -215,10 +215,10 @@ describe("BrowserPaneHost", () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         renderPane();
         await waitFor(() => expect(browserApi.subscribeTabs).toHaveBeenCalled());
-        /* A pane with no tabs left has nothing to be, and says so rather than
-           sitting there empty. */
-        await waitFor(() => expect(onEmpty).toHaveBeenCalled());
         expect(screen.queryByRole("tab", { name: "Example" })).toBeNull();
+        /* The pane is opened by the same click that asks for the tab, so it
+           waits through the empty snapshot that arrives before the tab does. */
+        expect(onEmpty).not.toHaveBeenCalled();
 
         vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
         await act(async () => {
@@ -226,6 +226,24 @@ describe("BrowserPaneHost", () => {
         });
 
         expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument();
+    });
+
+    it("gives the pane up once the tab it held goes", async () => {
+        let announce = () => {};
+        vi.mocked(browserApi.subscribeTabs).mockImplementation(async (listener) => {
+            announce = listener;
+            return vi.fn<() => void>();
+        });
+        renderPane();
+        await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
+        expect(onEmpty).not.toHaveBeenCalled();
+
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
+        await act(async () => {
+            announce();
+        });
+
+        expect(onEmpty).toHaveBeenCalled();
     });
 
     it("collapses a burst of tab reports into one read and a follow-up", async () => {
