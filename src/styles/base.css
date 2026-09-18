@@ -221,14 +221,6 @@ html.is-transparent .rnd-tree {
     background: transparent;
 }
 
-/* The strip has no ground of its own, so its rule is drawn straight onto the
-   wallpaper, where --border is too quiet to read as an edge. The panes below it
-   solved this by carrying ground; the strip is meant to float, so it keeps the
-   rule and strengthens it instead. */
-html.is-transparent .tabbar.v-agent {
-    border-bottom-color: var(--border-strong);
-}
-
 /* The settings pane paints every one of its surfaces, so every one of them
    has to let go together — a single opaque box inside a transparent window
    reads as a bug rather than a choice. */
