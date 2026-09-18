@@ -1,9 +1,10 @@
 import { expect, it, vi } from "vitest";
 import { chatReducer, initialChatState } from "./reducer";
-import type { ChatState, ToolPart } from "./types";
+import type { ChatPart, ChatState } from "./types";
 
 const update = (state: ChatState, value: Record<string, unknown>) =>
     chatReducer(state, { type: "session_update", sessionId: "session-1", update: value });
+type ToolPart = Extract<ChatPart, { kind: "tool" }>;
 const tools = (state: ChatState) => state.messages.flatMap((message) => message.parts).filter((part): part is ToolPart => part.kind === "tool");
 
 it("times a call it watched run", () => {
