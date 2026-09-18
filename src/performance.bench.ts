@@ -4,6 +4,9 @@ import { UiActivityTracker } from "./lib/activity";
 import { PerformanceTelemetry } from "./lib/performance";
 import { rankBy } from "./lib/fuzzy";
 import { computeLayout, splitPane } from "./state/layout";
+import { tokenizeCode } from "./chat/shikiTokens";
+import { codeThemeName } from "./themes/codeTheme";
+import { DEFAULT_THEME_ID, themeById } from "./themes";
 import type { LayoutNode, PaneNode } from "./state/types";
 
 const candidates = Array.from({ length: 5_000 }, (_, index) => `src/project-${index}/component-${index % 97}.tsx`);
@@ -83,5 +86,27 @@ describe("interactive hot paths", () => {
 
     bench("parse 25 Pierre diffs with 2,000 lines each", () => {
         for (const [base, head] of tallPierreDiffs) parseDiffFromFile(base, head);
+    });
+});
+
+/* What a chat fence costs to colour. The transcript asks for one fence at a
+   time, once each, after it has stopped changing. */
+const chatTheme = themeById(DEFAULT_THEME_ID);
+const chatThemeName = codeThemeName(chatTheme);
+const fence = (lines: number) => Array.from({ length: lines }, (_, line) => `export const value_${line} = fn(${line}); // note`).join("\n");
+const shortFence = fence(20);
+const longestFence = fence(150);
+
+// Loaded once here so the runs below measure the reading rather than the
+// grammar arriving, which a pane pays for at most once a session.
+await tokenizeCode("const ready = true;", "typescript", chatTheme, chatThemeName);
+
+describe("chat code fences", () => {
+    bench("colour a 20-line typescript fence", async () => {
+        await tokenizeCode(shortFence, "typescript", chatTheme, chatThemeName);
+    });
+
+    bench("colour the longest fence a chat will colour", async () => {
+        await tokenizeCode(longestFence, "typescript", chatTheme, chatThemeName);
     });
 });

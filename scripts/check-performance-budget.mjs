@@ -74,7 +74,8 @@ async function computeEagerJsSet() {
 }
 
 // Grammar chunks load one at a time, on demand, keyed by the language of
-// the file being diffed (src/vendor/shiki.ts's bundledLanguages map). This
+// the file being diffed or of the code fence being coloured in a chat
+// (src/vendor/shiki.ts's bundledLanguages map). This
 // list mirrors those keys (minus "zsh", which shares the "shellscript"
 // loader) so a regression that re-folds them into one big chunk shows up as
 // a missing-chunk failure below instead of silently vanishing into the
@@ -129,16 +130,30 @@ const budgets = [
     gzip: 120_000,
   },
   {
+    // Carries the part of fence colouring that has to be there before any
+    // colours are: the grammar table, the token cache and the tokens' own
+    // markup. Shiki itself is a chunk of its own, fetched only once a fence
+    // that can use it settles.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 60_000,
-    gzip: 19_000,
+    raw: 64_000,
+    gzip: 20_500,
   },
   {
-    label: "Diffs lazy chunk (pierre/diffs + shiki core, no grammars)",
+    // Shiki, its two engines and vscode-textmate, with no grammars and no
+    // themes (both are stubbed or dynamic). Fetched on demand the first time
+    // a diff is opened or a chat fence with a grammar we have settles, and
+    // shared by both from then on.
+    label: "Highlighter lazy chunk (shiki core + engines, no grammars)",
+    pattern: /^highlighter-.*\.js$/,
+    raw: 1_400_000,
+    gzip: 450_000,
+  },
+  {
+    label: "Diffs lazy chunk (pierre/diffs, no highlighter)",
     pattern: /^diffs-.*\.js$/,
-    raw: 1_450_000,
-    gzip: 470_000,
+    raw: 60_000,
+    gzip: 20_000,
   },
   {
     label: "Diffs language grammar chunks (one per language, loaded on demand)",
@@ -155,7 +170,7 @@ const budgets = [
   {
     label: "default-path JavaScript except Diffs and its grammar chunks",
     pattern: new RegExp(
-      `^(?!(?:diffs|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
+      `^(?!(?:diffs|highlighter|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
     raw: 2_850_000,
     gzip: 900_000,

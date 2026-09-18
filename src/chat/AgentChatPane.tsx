@@ -47,6 +47,7 @@ import {
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { collapseDiff, fencedDiff, type ToolDiff } from "./diff";
+import { CodeTokens, fenceLanguage, useCodeTokens } from "./codeHighlight";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import type {
     AcpAsyncTask,
@@ -357,6 +358,8 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     const info = /language-(\S+)/.exec(className ?? "")?.[1];
     const text = codeText(children);
     const patch = useMemo(() => (text ? fencedDiff(text, info) : null), [text, info]);
+    // A patch is read by its signs, not its grammar, and it already has colours.
+    const tokens = useCodeTokens(text, patch ? null : fenceLanguage(info));
     if (!info && !patch) return <code className={className}>{children}</code>;
     return (
         <>
@@ -384,6 +387,10 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
                             </span>
                         </span>
                     ))}
+                </code>
+            ) : tokens ? (
+                <code className={className}>
+                    <CodeTokens lines={tokens} />
                 </code>
             ) : (
                 <code className={className}>{children}</code>

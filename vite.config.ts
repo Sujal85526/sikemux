@@ -44,12 +44,12 @@ export default defineConfig({
       output: {
         onlyExplicitManualChunks: true,
         manualChunks(id) {
-          if (
-            id.endsWith("/src/vendor/shiki.ts") ||
-            id.endsWith("/src/vendor/pierreThemes.ts")
-          ) {
-            return "diffs";
-          }
+          if (id.endsWith("/src/vendor/pierreThemes.ts")) return "diffs";
+          // The highlighter is reached two ways: through @pierre/diffs for the
+          // diff panes, and on its own for the code fences in a chat. Keeping
+          // it out of the diffs chunk is what lets a fence colour itself
+          // without also downloading a diff renderer it will never call.
+          if (id.endsWith("/src/vendor/shiki.ts")) return "highlighter";
           if (!id.includes("node_modules")) return undefined;
           const packagePath = id.slice(id.lastIndexOf("/node_modules/") + 14);
           // Grammar packages (@shikijs/langs/*) are reached only through the
@@ -57,15 +57,16 @@ export default defineConfig({
           // them unassigned lets Rollup split each grammar into its own
           // chunk. Every other @shikijs/* package (core, the two engines,
           // vscode-textmate) is the highlighter's static dependency graph,
-          // not a per-language import, so it stays folded into diffs.
+          // not a per-language import, so it stays folded into it.
           if (packagePath.startsWith("@shikijs/langs/")) return undefined;
           if (
-            id.includes("@pierre") ||
             id.includes("@shikijs") ||
             id.includes("/shiki@") ||
-            id.includes("/diff@") ||
             id.includes("oniguruma")
           ) {
+            return "highlighter";
+          }
+          if (id.includes("@pierre") || id.includes("/diff@")) {
             return "diffs";
           }
           const codemirrorPackage = packagePath.startsWith("@")
