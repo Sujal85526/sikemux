@@ -352,9 +352,11 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
             u_colorFront: runtime.getShaderColorFromString(theme.chrome.bgRaised),
             u_shape: runtime.DitheringShapes.simplex,
             u_type: runtime.DitheringTypes["8x8"],
-            // The dots are the texture. 1px disappeared into haze at this strength;
-            // 2px is grain you can actually see across a card-sized field.
-            u_pxSize: 2,
+            // The dots are the texture, and their size is free: the shader
+            // quantizes each fragment against this whether it is 2 or 8, and
+            // the noise behind it is evaluated once per fragment either way.
+            // Bigger cells read as weather; smaller ones wash into haze.
+            u_pxSize: 4,
             ...sizing(runtime, "none", 2.4),
         },
     }),
