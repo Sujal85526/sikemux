@@ -1178,7 +1178,9 @@ textarea,
  * one; see the budget in `lib/shaderField.ts`.
  */
 .pane {
-    --pane-ground: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
+    /* The same glass the screen card used to paint, moved down a level. Only
+       one of the two paints it, so the window is no more solid than it was. */
+    --pane-ground: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
     /* The gutter a pane keeps inside its cell. Cells abut, so two neighbours
        are twice this apart and every pane is this far from the screen's edge —
        which is what makes a split read as two panes rather than one divided. */

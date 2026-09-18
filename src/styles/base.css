@@ -204,6 +204,10 @@ body {
     cursor: default;
 }
 
+/* `.pane` is not in this list: it is the surface the screen card used to be,
+   and it carries that card's glass now. Letting it go transparent too left the
+   window with no ground at all, and a hairline drawn on the wallpaper is a
+   hairline nobody can see. */
 html.is-transparent .top-bar,
 html.is-transparent .side-rail,
 html.is-transparent .workspace-rail,
@@ -213,7 +217,6 @@ html.is-transparent .window-layer,
 html.is-transparent .crumb,
 html.is-transparent .acc-header,
 html.is-transparent .env-dd-btn,
-html.is-transparent .pane,
 html.is-transparent .rnd-tree {
     background: transparent;
 }
