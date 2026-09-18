@@ -188,3 +188,92 @@
         animation: none;
     }
 }
+
+/*
+ * A picture from a transcript, opened.
+ *
+ * The same scrim and card the sheet above uses, sized to the picture rather
+ * than to a column of text: the card is only ever as big as what it holds, and
+ * what it holds is only ever as big as the window allows.
+ */
+.img-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-6);
+    background: color-mix(in oklab, var(--surface-sunken) 68%, transparent);
+    animation: dlgScrimIn var(--dur-2) ease-out;
+}
+
+/* Rows rather than a column of flex: the picture's row is what is left over,
+   which gives it a height to be a share of when it is taller than the window. */
+.img-sheet {
+    display: grid;
+    max-width: 100%;
+    max-height: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-4);
+    background: var(--surface-overlay);
+    box-shadow: var(--shadow-4);
+    overflow: hidden;
+    animation: dlgIn var(--dur-3) var(--ease-out);
+}
+
+.img-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--ui);
+}
+
+/* The name gives way before the two buttons do: they are why the bar is here. */
+.img-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.img-bar button {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    place-items: center;
+    border-radius: var(--radius-2);
+    color: var(--text-secondary);
+}
+
+.img-bar button:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+.img-bar button:disabled {
+    color: var(--text-disabled);
+}
+
+/* Whatever room the bar leaves, and never past the edges of the window. */
+.img-full {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0 auto;
+    object-fit: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .img-scrim,
+    .img-sheet {
+        animation: none;
+    }
+}

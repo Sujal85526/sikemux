@@ -23,6 +23,7 @@ import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { DialogHost } from "./components/DialogHost";
+import { ImageViewer } from "./components/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./components/HarnessBridge";
@@ -952,6 +953,7 @@ export default function App() {
                 {whatsNewOpen && <WhatsNewOverlay />}
             </Suspense>
             <DialogHost />
+            <ImageViewer />
             <Toaster />
         </div>
     );

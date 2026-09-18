@@ -50,6 +50,7 @@ import { collapseDiff, fencedDiff, type DiffLine, type ToolDiff } from "./diff";
 import { CodeRun, CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiffTokens } from "./codeHighlight";
 import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
+import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
     AcpAvailableCommand,
@@ -332,10 +333,34 @@ function openLink(href: string) {
     else void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
 }
 
-function ChatImage({ src, path, className = "chat-image" }: { src: string; path: string; className?: string }) {
+/* An attachment arrives as bytes and a type, with nothing naming it, so the
+   type is the only thing that can say what it would be saved as. */
+function attachmentName(mimeType: string): string {
+    const kind =
+        mimeType
+            .split("/")
+            .pop()
+            ?.split("+")[0]
+            ?.replace(/[^a-z0-9]/gi, "") || "png";
+    return `attachment.${kind}`;
+}
+
+/* Every picture in a transcript is a thumbnail of itself: it opens at the size
+   the window allows, where it can also be saved. */
+function ChatImage({
+    src,
+    path,
+    name = path ? basename(path) : "image.png",
+    className = "chat-image",
+}: {
+    src: string;
+    path?: string;
+    name?: string;
+    className?: string;
+}) {
     return (
-        <button type="button" className="chat-image-button" title={path} onClick={() => openLink(path)}>
-            <img className={className} alt={basename(path)} src={src} />
+        <button type="button" className="chat-image-button" title={path ?? name} onClick={() => showImage({ src, name, path })}>
+            <img className={className} alt={name} src={src} />
         </button>
     );
 }
@@ -468,7 +493,7 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     /* A picture too big to keep was kept by name, so the row says what it was. */
     if (content.type === "image") {
         return typeof content.data === "string" && typeof content.mimeType === "string" ? (
-            <img className="chat-image" alt="Agent attachment" src={`data:${content.mimeType};base64,${content.data}`} />
+            <ChatImage src={`data:${content.mimeType};base64,${content.data}`} name={attachmentName(content.mimeType)} />
         ) : (
             <ResourceLinkPart content={content} />
         );

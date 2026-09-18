@@ -180,6 +180,13 @@ export const IconFile = makeSvgIcon(
 export const IconClose = makeSvgIcon(<path d="M4 4l8 8M12 4l-8 8" />);
 export const IconArrowUp = makeSvgIcon(<path d="M8 12.6V3.4M4.2 7.2 8 3.4l3.8 3.8" />);
 export const IconArrowDown = makeSvgIcon(<path d="M8 3.4v9.2M4.2 8.8 8 12.6l3.8-3.8" />);
+/** The arrow of a download, landing on the floor it saves to. */
+export const IconDownload = makeSvgIcon(
+    <>
+        <path d="M8 2.6v7.2M4.8 6.8 8 9.8l3.2-3" />
+        <path d="M3 11.4v1.4h10v-1.4" />
+    </>,
+);
 /** Substitute once: the match loops back and is written over. */
 export const IconReplace = makeSvgIcon(
     <>

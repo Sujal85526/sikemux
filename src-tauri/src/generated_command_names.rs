@@ -63,6 +63,8 @@ pub const IPC_COMMANDS: &[&str] = &[
     "create_file",
     "create_dir",
     "copy_into_dir",
+    "downloads_dir",
+    "save_base64_into_dir",
     "rename_path",
     "reveal_in_finder",
     "delete_path",

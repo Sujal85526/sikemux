@@ -227,6 +227,8 @@ pub fn run() {
             fs::create_file,
             fs::create_dir,
             fs::copy_into_dir,
+            fs::downloads_dir,
+            fs::save_base64_into_dir,
             fs::rename_path,
             fs::reveal_in_finder,
             fs::delete_path,

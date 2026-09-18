@@ -76,6 +76,8 @@
     "allow-create-file",
     "allow-create-dir",
     "allow-copy-into-dir",
+    "allow-downloads-dir",
+    "allow-save-base64-into-dir",
     "allow-rename-path",
     "allow-reveal-in-finder",
     "allow-delete-path",

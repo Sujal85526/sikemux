@@ -532,23 +532,37 @@ fn copy_into_dir_sync(src: String, dir: String) -> AppResult<String> {
         .file_name()
         .ok_or_else(|| AppError::Fs(format!("source has no filename: {}", src)))?
         .to_os_string();
-    let dest_dir = std::path::PathBuf::from(&dir);
-    fs::create_dir_all(&dest_dir)?;
+    write_new_in_dir(Path::new(&dir), &name, |destination| {
+        let mut source = fs::File::open(&src_path)?;
+        std::io::copy(&mut source, destination)?;
+        Ok(())
+    })
+}
 
-    let stem = std::path::Path::new(&name)
+/// Write a new file into `dir` under `name`, or under "name (N)" when that is
+/// taken, so nothing already there is ever overwritten. Returns where it landed,
+/// and leaves nothing behind if the writing itself fails.
+fn write_new_in_dir(
+    dir: &Path,
+    name: &std::ffi::OsStr,
+    fill: impl FnOnce(&mut fs::File) -> std::io::Result<()>,
+) -> AppResult<String> {
+    fs::create_dir_all(dir)?;
+    let stem = Path::new(name)
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let ext = std::path::Path::new(&name)
+    let ext = Path::new(name)
         .extension()
         .map(|s| format!(".{}", s.to_string_lossy()))
         .unwrap_or_default();
 
+    let mut fill = Some(fill);
     for n in 0..1000 {
         let candidate = if n == 0 {
-            dest_dir.join(&name)
+            dir.join(name)
         } else {
-            dest_dir.join(format!("{stem} ({n}){ext}"))
+            dir.join(format!("{stem} ({n}){ext}"))
         };
         let mut destination = match fs::OpenOptions::new()
             .write(true)
@@ -559,12 +573,9 @@ fn copy_into_dir_sync(src: String, dir: String) -> AppResult<String> {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(AppError::from(error)),
         };
-        let copy_result = (|| -> std::io::Result<()> {
-            let mut source = fs::File::open(&src_path)?;
-            std::io::copy(&mut source, &mut destination)?;
-            destination.sync_all()
-        })();
-        if let Err(error) = copy_result {
+        let written = fill.take().expect("a name is only opened once")(&mut destination)
+            .and_then(|()| destination.sync_all());
+        if let Err(error) = written {
             drop(destination);
             let _ = fs::remove_file(&candidate);
             return Err(AppError::from(error));
@@ -576,6 +587,43 @@ fn copy_into_dir_sync(src: String, dir: String) -> AppResult<String> {
         "no available destination name for {} after 1000 attempts",
         name.to_string_lossy()
     )))
+}
+
+/// Where the platform puts downloads. Falls back to the temp directory, which
+/// is what the browser pane's own downloads do.
+#[tauri::command]
+pub async fn downloads_dir(app: tauri::AppHandle) -> AppResult<String> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .download_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Write base64 bytes into `dir` under `name`, the way a copied file lands
+/// there: never over something already named that. Returns the final path.
+#[tauri::command]
+pub async fn save_base64_into_dir(dir: String, name: String, data: String) -> AppResult<String> {
+    spawn_blocking(move || save_base64_into_dir_sync(dir, name, data))
+        .await
+        .map_err(|e| AppError::Other(format!("save_base64_into_dir join: {e}")))?
+}
+
+fn save_base64_into_dir_sync(dir: String, name: String, data: String) -> AppResult<String> {
+    // The name is whatever named the picture, which may be a path an agent
+    // wrote. Only the last part of it can say where the file goes.
+    let file_name = Path::new(&name)
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or(AppError::BadArg("a saved file needs a name"))?
+        .to_os_string();
+    let bytes = general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|_| AppError::BadArg("a saved file needs base64 contents"))?;
+    write_new_in_dir(Path::new(&dir), &file_name, |destination| {
+        destination.write_all(&bytes)
+    })
 }
 
 /// Reveal a path in the OS file manager, selecting the entry itself.
@@ -638,6 +686,42 @@ fn delete_path_sync(path: String) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_picture_never_lands_on_one_already_there() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let folder = dir.path().to_string_lossy().into_owned();
+        let bytes = general_purpose::STANDARD.encode(b"a picture");
+
+        let first = save_base64_into_dir_sync(folder.clone(), "shot.png".into(), bytes.clone())
+            .expect("the first save must land");
+        let second = save_base64_into_dir_sync(folder.clone(), "shot.png".into(), bytes.clone())
+            .expect("the second save must land beside it");
+        assert_eq!(first, dir.path().join("shot.png").to_string_lossy());
+        assert_eq!(second, dir.path().join("shot (1).png").to_string_lossy());
+        assert_eq!(fs::read(&first).expect("read back"), b"a picture");
+        assert_eq!(fs::read(&second).expect("read back"), b"a picture");
+    }
+
+    #[test]
+    fn a_saved_picture_cannot_be_named_its_way_out_of_the_folder() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let folder = dir.path().to_string_lossy().into_owned();
+        let bytes = general_purpose::STANDARD.encode(b"a picture");
+
+        let landed =
+            save_base64_into_dir_sync(folder.clone(), "../escaped.png".into(), bytes.clone())
+                .expect("the save must land");
+        assert_eq!(landed, dir.path().join("escaped.png").to_string_lossy());
+
+        assert!(
+            matches!(
+                save_base64_into_dir_sync(folder, "shot.png".into(), "not base64!".into()),
+                Err(AppError::BadArg(_))
+            ),
+            "contents that are not base64 must be refused"
+        );
+    }
 
     #[test]
     fn a_versioned_save_replaces_the_file_and_refuses_a_stale_version() {

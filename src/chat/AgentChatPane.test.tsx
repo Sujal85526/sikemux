@@ -5,6 +5,7 @@ import { IS_MACOS } from "../lib/platform";
 import { dispatchPathDrop } from "../state/dropRegistry";
 import type { Agent } from "../state/types";
 import { AgentChatPane } from "./AgentChatPane";
+import { shownImage } from "../state/imageViewer";
 
 const mocks = vi.hoisted(() => ({
     eventListener: null as ((event: AcpEvent) => void) | null,
@@ -608,6 +609,23 @@ describe("AgentChatPane", () => {
 
         fireEvent.click(screen.getByTitle("pnpm vitest run"));
         expect(await screen.findByText(/1 failed/)).toBeInTheDocument();
+    });
+
+    it("opens a picture an agent sent, with a name to save it under", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "image", mimeType: "image/png", data: "SEVMTE8=" },
+            },
+        });
+
+        const picture = await screen.findByRole("img", { name: "attachment.png" });
+        expect(picture).toHaveAttribute("src", "data:image/png;base64,SEVMTE8=");
+
+        fireEvent.click(picture);
+        expect(shownImage()).toEqual({ src: "data:image/png;base64,SEVMTE8=", name: "attachment.png", path: undefined });
     });
 
     it("names an mcp call for the server it went to, and gives the column room for it", async () => {
