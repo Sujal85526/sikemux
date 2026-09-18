@@ -821,12 +821,17 @@
     transform: translateY(-50%);
     cursor: row-resize;
 }
+/* Nothing at rest: the panes carry their own edges and the gutter between them
+   is the separation, so a line drawn there as well says it twice. It shows up
+   under the pointer, which is the only time it is a control. */
 .divider::after {
     content: "";
     position: absolute;
     background: var(--border);
+    opacity: 0;
     transition:
         background 0.12s,
+        opacity 0.12s,
         width 0.12s,
         height 0.12s;
 }
@@ -847,8 +852,10 @@
 .divider-row:hover::after {
     width: 2px;
     background: var(--acc);
+    opacity: 1;
 }
 .divider-column:hover::after {
     height: 2px;
     background: var(--acc);
+    opacity: 1;
 }

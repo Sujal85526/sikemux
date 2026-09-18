@@ -403,6 +403,9 @@
     right: 0;
     z-index: 3;
     height: var(--window-strip-h);
+    /* The strip used to be closed off by the screen card's top edge below it.
+       The card carries no frame now, so the rule belongs to the bar itself. */
+    border-bottom: 1px solid var(--border);
 }
 .tabbar.v-agent .tab {
     height: 100%;
