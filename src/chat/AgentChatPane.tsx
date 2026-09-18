@@ -19,7 +19,9 @@ import { acpApi, type AcpEvent } from "../api/acp";
 import { fsapi } from "../api/fs";
 import { invokeCommand as invoke } from "../api/invoke";
 import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
+import { rateLabel, rowMeta } from "./messageMeta";
 import { permissionCopyForType } from "../agentLaunch";
+import { CopyButton } from "../components/CopyButton";
 import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
@@ -844,7 +846,17 @@ function ChatActivity({ label }: { label: string }) {
     );
 }
 
-const ChatMessageRow = memo(function ChatMessageRow({ message, live }: { message: ChatMessage; live: boolean }) {
+const ChatMessageRow = memo(function ChatMessageRow({
+    message,
+    live,
+    copyable,
+    rate,
+}: {
+    message: ChatMessage;
+    live: boolean;
+    copyable: string;
+    rate: number | null;
+}) {
     return (
         <article className={`chat-message ${message.role}`}>
             <div className="chat-message-content">
@@ -856,6 +868,16 @@ const ChatMessageRow = memo(function ChatMessageRow({ message, live }: { message
                     </div>
                 )}
                 <PartGroups parts={message.parts} live={live} />
+                {copyable && (
+                    <div className="chat-message-meta">
+                        <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
+                        {rate !== null && (
+                            <span className="chat-message-rate" title="Writing speed, estimated from the text that arrived">
+                                {rateLabel(rate)}
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
         </article>
     );
@@ -1661,6 +1683,7 @@ export function AgentChatPane({
                     <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
                         {virtualizer.getVirtualItems().map((item) => {
                             const message = displayState.messages[item.index];
+                            const meta = rowMeta(displayState.messages, item.index);
                             return (
                                 <div
                                     key={message.id}
@@ -1671,6 +1694,8 @@ export function AgentChatPane({
                                     <ChatMessageRow
                                         message={message}
                                         live={displayState.running && item.index === displayState.messages.length - 1}
+                                        copyable={meta.text}
+                                        rate={meta.rate}
                                     />
                                 </div>
                             );

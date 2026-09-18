@@ -72,7 +72,25 @@ function boundContent(content: AcpContentBlock): AcpContentBlock {
     return rest;
 }
 
-function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind: "text" | "thought", chunk: AcpContentChunk): Transcript {
+/* Reloading a session replays its whole history in one burst, which would time
+   the replay rather than the writing. Only a turn this side watched run is
+   timed, and the turn being live is what says so. */
+function timedStream(message: ChatMessage, chars: number): Partial<ChatMessage> {
+    const now = Date.now();
+    return {
+        streamStartedAt: message.streamStartedAt ?? now,
+        streamEndedAt: now,
+        streamChars: (message.streamChars ?? 0) + chars,
+    };
+}
+
+function appendChunk(
+    transcript: Transcript,
+    role: ChatMessage["role"],
+    partKind: "text" | "thought",
+    chunk: AcpContentChunk,
+    timed: boolean,
+): Transcript {
     const contentText = textOf(chunk.content.text);
     const lastMessage = transcript.messages.at(-1);
     const messageId =
@@ -82,12 +100,15 @@ function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind
     const messages = [...transcript.messages];
     let nextId = transcript.nextId;
 
+    const stream = timed && role === "assistant" && contentText !== undefined;
+
     if (existingIndex < 0) {
         const part: ChatPart =
             contentText !== undefined
                 ? { id: `${messageId}-${partKind}-0`, kind: partKind, text: contentText }
                 : { id: `${messageId}-content-0`, kind: "content", content: boundContent(chunk.content) };
-        messages.push({ id: messageId, role, parts: [part] });
+        const opened: ChatMessage = { id: messageId, role, parts: [part] };
+        messages.push(stream ? { ...opened, ...timedStream(opened, contentText.length) } : opened);
         nextId += 1;
     } else {
         const message = messages[existingIndex];
@@ -100,7 +121,7 @@ function appendChunk(transcript: Transcript, role: ChatMessage["role"], partKind
         } else {
             parts.push({ id: `${messageId}-content-${parts.length}`, kind: "content", content: boundContent(chunk.content) });
         }
-        messages[existingIndex] = { ...message, parts };
+        messages[existingIndex] = { ...message, parts, ...(stream ? timedStream(message, contentText.length) : {}) };
     }
 
     return { messages, nextId };
@@ -180,7 +201,7 @@ function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean)
 }
 
 /** Applies the updates a session streams regardless of whose session it is. */
-function transcriptUpdate(transcript: Transcript, update: Record<string, unknown>): Transcript | null {
+function transcriptUpdate(transcript: Transcript, update: Record<string, unknown>, timed: boolean): Transcript | null {
     switch (update.sessionUpdate) {
         case "user_message_chunk":
         case "agent_message_chunk":
@@ -190,7 +211,7 @@ function transcriptUpdate(transcript: Transcript, update: Record<string, unknown
             const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
             if (role === "user" && typeof chunk.content.text === "string" && isMarkupOnly(chunk.content.text)) return null;
             const partKind = update.sessionUpdate === "agent_thought_chunk" ? "thought" : "text";
-            return appendChunk(transcript, role, partKind, chunk);
+            return appendChunk(transcript, role, partKind, chunk, timed);
         }
         case "tool_call": {
             const toolCallId = textOf(update.toolCallId);
@@ -343,13 +364,13 @@ function patchTask(state: ChatState, update: Record<string, unknown>): ChatState
 
 function sessionUpdate(state: ChatState, sessionId: string, update: Record<string, unknown>): ChatState {
     const inSubagent = patchSubagent(state, sessionId, (subagent) => {
-        const next = transcriptUpdate(subagent, update);
+        const next = transcriptUpdate(subagent, update, state.running);
         return next ? { ...subagent, ...next } : subagent;
     });
     if (inSubagent) return inSubagent;
 
     if (update.sessionUpdate === "user_message_chunk" && state.suppressUserEcho) return state;
-    const streamed = transcriptUpdate(state, update);
+    const streamed = transcriptUpdate(state, update, state.running);
     if (streamed) return { ...state, ...streamed, suppressUserEcho: false, revision: state.revision + 1 };
 
     switch (update.sessionUpdate) {

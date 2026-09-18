@@ -428,6 +428,17 @@ describe("AgentChatPane", () => {
         expect(await screen.findByText("One two three")).toBeInTheDocument();
     });
 
+    it("offers a copy on the prompt and on the answer it drew", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "agent_message_chunk", messageId: "m1", content: { type: "text", text: "The pane paints no background" } },
+        });
+
+        expect(await screen.findByRole("button", { name: "Copy message" })).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Copy reply" })).toBeInTheDocument();
+    });
+
     it("says what a running tool is doing instead of quoting the command it was given", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });

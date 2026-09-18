@@ -95,6 +95,12 @@ export interface ChatMessage {
     role: "user" | "assistant";
     parts: ChatPart[];
     attachments?: string[];
+    /* When the first and last characters of a streamed answer landed, and how
+       many arrived between them — what the transcript's speed reading is
+       worked out from. A replayed message has none of these. */
+    streamStartedAt?: number;
+    streamEndedAt?: number;
+    streamChars?: number;
 }
 
 export interface ChatState {
