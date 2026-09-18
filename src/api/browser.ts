@@ -9,6 +9,8 @@ export interface BrowserTab {
     loading: boolean;
     canGoBack: boolean;
     canGoForward: boolean;
+    /** The site's icon as a data URL, once the tab has one. */
+    favicon: string | null;
 }
 
 export interface BrowserSnapshot {

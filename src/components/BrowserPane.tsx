@@ -62,6 +62,14 @@ export function BrowserPaneHost({ paneId, visible, onEmpty }: { paneId: string; 
     return <BrowserSession key={agentId} agentId={agentId} agentType={agentType} visible={visible} onEmpty={onEmpty} />;
 }
 
+/** The site's own mark once it has arrived, and a globe until then. */
+function SiteIcon({ src }: { src: string | null }) {
+    const [broken, setBroken] = useState(false);
+    useEffect(() => setBroken(false), [src]);
+    if (!src || broken) return <IconGlobe size={13} />;
+    return <img className="tab-favicon" src={src} alt="" onError={() => setBroken(true)} />;
+}
+
 function BrowserSession({
     agentId,
     agentType,
@@ -244,7 +252,7 @@ function BrowserPane({
                     label: tab.title || (tab.url === BLANK_URL ? "New tab" : tab.url),
                     title: tab.url,
                     active: tab.id === snapshot.activeTabId,
-                    icon: <IconGlobe size={13} />,
+                    icon: <SiteIcon src={tab.favicon} />,
                     accessory: tab.loading ? (
                         <span className="agent-activity state-working" role="img" aria-label="Loading">
                             <span className="agent-state-loader" aria-hidden="true" />

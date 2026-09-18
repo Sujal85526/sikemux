@@ -46,6 +46,14 @@
     text-align: left;
 }
 
+/* Site icons arrive at whatever shape the site chose, so the box holds them
+   rather than the other way round. */
+.tabbar.v-browser .tab-favicon {
+    width: 13px;
+    height: 13px;
+    object-fit: contain;
+}
+
 .tabbar.v-browser .tab-add,
 .browser-toolbar button {
     display: grid;

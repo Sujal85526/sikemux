@@ -279,7 +279,7 @@ async fn call(view: &Webview, function: &str, args: &[Value]) -> Result<Value, S
         .ok_or_else(|| "the page returned no answer".to_string())
 }
 
-async fn eval(view: &Webview, script: &str) -> Result<String, String> {
+pub(super) async fn eval(view: &Webview, script: &str) -> Result<String, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let sender = std::sync::Mutex::new(Some(sender));
     view.eval_with_callback(script, move |result| {

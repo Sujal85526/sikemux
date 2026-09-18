@@ -36,6 +36,7 @@ function tab(overrides: Partial<BrowserTab> = {}): BrowserTab {
         loading: false,
         canGoBack: false,
         canGoForward: false,
+        favicon: null,
         ...overrides,
     };
 }
@@ -193,6 +194,16 @@ describe("BrowserPaneHost", () => {
         expect(screen.getByRole("textbox", { name: "Address and search" })).toHaveValue("");
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", null));
         expect(browserApi.setBounds).not.toHaveBeenCalledWith("agent-one", placed);
+    });
+
+    it("wears the site's own icon and falls back to a globe when it will not load", async () => {
+        const icon = "data:image/png;base64,iVBORw0KGgo=";
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [tab({ favicon: icon })], activeTabId: "tab-one" });
+        renderPane();
+        const image = await waitFor(() => screen.getByRole("tab", { name: "Example" }).querySelector("img")!);
+        expect(image).toHaveAttribute("src", icon);
+        fireEvent.error(image);
+        expect(screen.getByRole("tab", { name: "Example" }).querySelector("img")).toBeNull();
     });
 
     it("enables history buttons from what the page reports", async () => {

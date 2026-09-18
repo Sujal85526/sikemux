@@ -8,6 +8,7 @@
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
 pub mod agents;
+mod favicon;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod tools;
@@ -40,8 +41,8 @@ const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
 };
 
 /// WebKit's own agent string names no browser at all, and sites answer that
-/// with an "unsupported browser" page, so tabs introduce themselves as Safari.
-#[cfg(target_os = "macos")]
+/// with an "unsupported browser" page, so tabs — and the fetch that goes after
+/// their icons — introduce themselves as Safari.
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -54,6 +55,8 @@ pub struct BrowserTab {
     pub loading: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    /// The site's own icon, inline, since the window can only draw `data:`.
+    pub favicon: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -114,6 +117,7 @@ pub struct TabPage {
     pub loading: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    pub favicon: Option<String>,
 }
 
 /// Which tab is shown and in what order the strip lists them. Kept apart from
@@ -173,6 +177,7 @@ impl TabStrip {
                         loading: page.loading,
                         can_go_back: page.can_go_back,
                         can_go_forward: page.can_go_forward,
+                        favicon: page.favicon.clone(),
                     })
                 })
                 .collect(),
@@ -194,6 +199,7 @@ pub struct BrowserManager {
     next_tab: AtomicU64,
     shortcuts_installed: AtomicBool,
     downloads: Mutex<HashMap<(String, String), PathBuf>>,
+    icons: Mutex<favicon::IconCache>,
 }
 
 impl BrowserManager {
@@ -303,6 +309,9 @@ impl BrowserManager {
                 let history = history_state(&webview);
                 let manager = load_app.state::<BrowserManager>();
                 manager.note_page(&load_app, &load_agent, &load_tab, |page| {
+                    if !favicon::same_site(&page.url, &url) {
+                        page.favicon = None;
+                    }
                     page.loading = loading;
                     page.url = url;
                     if let Some((back, forward)) = history {
@@ -310,6 +319,11 @@ impl BrowserManager {
                         page.can_go_forward = forward;
                     }
                 });
+                if !loading {
+                    let (app, agent, tab) =
+                        (load_app.clone(), load_agent.clone(), load_tab.clone());
+                    tauri::async_runtime::spawn(favicon::refresh(app, agent, tab, webview));
+                }
             })
             .on_document_title_changed(move |_, title| {
                 let manager = title_app.state::<BrowserManager>();
