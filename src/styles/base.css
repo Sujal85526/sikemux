@@ -152,12 +152,12 @@
     font-display: swap;
 }
 :root {
-    --void: #1a1624;
-    --rail: #221e2e;
-    --rail-2: #2d283b;
-    --pane: #221e2e;
-    --line: #322e3e;
-    --line-soft: #1c1a26;
+    --void: #100e16;
+    --rail: #17141e;
+    --rail-2: #201c2b;
+    --pane: #17141e;
+    --line: #262130;
+    --line-soft: #1a1723;
     --ink: #e7e5ef;
     --ink-dim: #8b8898;
     --ink-faint: #736f80;

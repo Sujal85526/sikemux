@@ -53,8 +53,8 @@
      * recess. The recess is the darkest and least saturated of the three
      * grounds a theme declares, and the ramp lifts it with `--ink`, which is
      * near-neutral; mixing a grey into the greyest corner stripped the hue out
-     * of every surface and every border. Aura's panels are `#15121e`, and the
-     * ramp was painting them `#131217` — charcoal, not purple.
+     * of every surface and every border. Aura's panels are purple-black, and
+     * the ramp was painting them charcoal.
      *
      * The fallback matters: `--bg` is written by the theme bus at runtime, so
      * before the first `applyTheme` the ramp resolves against base.css's
