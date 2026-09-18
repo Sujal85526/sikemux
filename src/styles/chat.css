@@ -499,7 +499,7 @@
 /* ── a run of tool calls ──────────────────────────────────────────────
  *
  * The same tree the side rail draws (restored-rails.css): one hairline spine,
- * a 6px tick per row, a 16px icon slot. Each row paints its own segment of the
+ * a 9px tick per row, a 16px icon slot. Each row paints its own segment of the
  * spine, and the last row's segment stops at its tick — that is the elbow.
  * Erasing it instead would need a ground to erase with, and a pane has none.
  */

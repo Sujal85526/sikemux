@@ -85,3 +85,18 @@ describe("project sorting", () => {
         expect(getState().sessionOrder).toEqual(["gamma", "ssh", "alpha", "command", "beta"]);
     });
 });
+
+describe("project tree", () => {
+    it("ends the spine on the last child row", () => {
+        setState({ activeSessionId: "alpha" });
+        render(<SideRail />);
+        const children = document.querySelector(".proj-children");
+        const rows = children?.querySelectorAll(".proj-child") ?? [];
+
+        expect(rows.length).toBeGreaterThan(1);
+        expect(children?.lastElementChild).toHaveClass("proj-child");
+        for (const row of rows) {
+            expect(row.parentElement).toBe(children);
+        }
+    });
+});
