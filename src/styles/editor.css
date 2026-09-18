@@ -406,12 +406,6 @@
     right: var(--pane-gutter);
     z-index: 3;
     height: var(--window-strip-h);
-    /* The strip used to be closed off by the screen card's top edge below it.
-       The card carries no frame now, so the bar is a surface in its own right:
-       its own glass, its own edge, drawn like the panes it sits above. */
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
-    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 .tabbar.v-agent .tab {
     height: 100%;

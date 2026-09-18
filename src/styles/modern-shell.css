@@ -1132,7 +1132,8 @@ textarea,
 }
 
 .side-rail,
-.workspace-rail {
+.workspace-rail,
+.tabbar.v-agent {
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 
