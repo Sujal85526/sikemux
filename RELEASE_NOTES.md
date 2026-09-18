@@ -1,32 +1,27 @@
-# Sikemux v0.4.0-nightly.6
+# Sikemux v0.4.0-nightly.7
 
-The sixth nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The seventh nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-Almost all of this release is speed. Ninety-nine commits, and around sixty of them are about the app doing less work.
+## Every pane is its own surface
 
-## The window stays responsive
+- A pane carries its own ground and its own edge, so panes stand apart instead of being framed by the screen around them. On a see-through window a tab is a shape again and the strip keeps an edge of its own, rather than a band drawn across the glass.
+- The browser is a pane now, not a split inside one, and opening it no longer takes the agent's tab with it. Two panes sit apart with a gap rather than meeting at a pair of rules.
+- The ambient grain settles between haze and blocks, and reads at arm's length.
 
-- Commands that read disk or spawn a process no longer run on the main thread, and neither do pty commands, session listings or stash, remote and branch work. Attaching a terminal no longer stalls the app.
-- Terminal output crosses IPC as raw bytes rather than a JSON array of numbers, the pty reader stops paying for every chunk, a hidden pane stops painting, and a slow renderer pushes back on the child instead of falling behind it. WebGL draws the terminal by default.
-- The top bar, the backdrop, the side rail and the shell's palette stop repainting and rebuilding for nothing. The ambient field drifts at 30fps. A keystroke stops walking every binding and every store.
+## The transcript reads in colour
 
-## Git, the editor and the chat
+- A fence full of code is coloured in the theme's own palette, and the change an edit made reads in colour too.
+- A picture in a transcript opens, and can be kept.
+- A turn ends with a copy button and how fast it was written; the row waits until the turn is pointed at.
+- The composer is a field set in its own surround, a picker menu is as wide as what is in it, and a row highlights to both its edges.
+- A folded run of calls stops reporting one failure as all of them.
 
-- One status walk per change instead of four; staging or discarding a range is one call; a file read at HEAD is cached; the log stops at the newest commits rather than walking the graph; the pane highlights its diffs in workers and mounts them lazily, and the merge review keeps its scroll position across refreshes.
-- CodeMirror leaves the boot bundle and a language pack downloads when a file in it is opened. The gutter ships only changed lines, blame waits for a pause, the find bar stops re-searching on every render, and a save flushes the drive once.
-- Typing a message redraws the composer rather than the transcript, streamed updates cross to the webview a frame at a time, and the transcript holds a handful of thumbnails instead of half a gigabyte.
-- The browser's MCP sidecar is a single Rust process now, screenshots compress off the main thread, and agents read the protocol from a guide rather than every schema.
+## Elsewhere
 
-## When it does hang
+- A browser tab wears the site's own icon.
+- A settled agent keeps a dot rather than a blank, and a live agent connects with its pane rather than with the first look at it.
+- The git log keeps a commit above its own parent, a lane never waits for a commit already drawn, and the diff sits on the window's ground.
+- Copying works inside the app's own webview.
+- The push gate keeps its coverage report to itself, so two agents sharing a checkout stop failing each other's tests.
 
-- A hang leaves evidence behind, a frozen window can say what the UI was doing, and the overlay shows a stall while it is still forming.
-- `sikemux doctor` reads the last autopsy.
-
-## Fixes
-
-- A second Sikemux stops answering for the first one's agents, and pty events reach the workbench rather than browser tabs.
-- Expanding a file in the git pane draws instead of freezing, and the diff shows hunks rather than expandable context rows.
-- A long URL, task name or queued message stops widening the chat pane, and a subagent stops looking alive once its turn is over.
-- The project navigator stays a tree, rail toggles follow focus mode, and an agent can click an icon button.
-
-For the complete patch history, compare [`v0.4.0-nightly.5...v0.4.0-nightly.6`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.5...v0.4.0-nightly.6).
+For the complete patch history, compare [`v0.4.0-nightly.6...v0.4.0-nightly.7`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.6...v0.4.0-nightly.7).
