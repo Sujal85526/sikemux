@@ -355,8 +355,8 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
             // The dots are the texture, and their size is free: the shader
             // quantizes each fragment against this whether it is 2 or 8, and
             // the noise behind it is evaluated once per fragment either way.
-            // Bigger cells read as weather; smaller ones wash into haze.
-            u_pxSize: 4,
+            // 2 washed into haze, 4 read as blocks; this sits between them.
+            u_pxSize: 3,
             ...sizing(runtime, "none", 2.4),
         },
     }),
