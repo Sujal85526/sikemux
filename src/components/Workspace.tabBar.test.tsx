@@ -87,6 +87,16 @@ describe("workspace tab bars", () => {
         expect(getState().newTabPaletteOpen).toBe(true);
     });
 
+    it("names the strip the variant its see-through rule is written against", () => {
+        projectWithAgent();
+        const { container } = render(<Workspace />);
+
+        // base.css strengthens `.tabbar.v-agent` when the window is transparent,
+        // where the strip's rule is drawn on the wallpaper with no ground of its
+        // own. Renaming the variant would drop that edge without failing a test.
+        expect(container.querySelector(".tabbar.v-agent")).toBeInTheDocument();
+    });
+
     it("keeps the agent's tab in the strip once its browser takes focus", () => {
         projectWithAgent();
         render(<Workspace />);
