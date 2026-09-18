@@ -1833,12 +1833,17 @@ button.chat-tool:hover {
     outline-offset: -1px;
 }
 
+/* The menu is as wide as what is in it. `min-width: 100%` resolves against
+   the trigger, so it never comes up narrower than the control it belongs to,
+   and the ceiling keeps a long model name from running off the pane. */
 .chat-picker-menu {
     position: absolute;
     z-index: 30;
     bottom: calc(100% + 12px);
     right: 0;
-    width: min(350px, calc(100vw - 64px));
+    width: max-content;
+    min-width: 100%;
+    max-width: min(350px, calc(100vw - 64px));
     overflow: hidden;
 }
 
@@ -1849,6 +1854,9 @@ button.chat-tool:hover {
 
 .chat-picker-menu > input {
     width: 100%;
+    /* The widest placeholder here is "Search reasoning effort…". The menu is
+       sized to its content, so this is what stops it closing on the search. */
+    min-width: 24ch;
     padding: 13px 14px;
     border: 0;
     border-bottom: 1px solid var(--line);
@@ -1868,6 +1876,9 @@ button.chat-tool:hover {
 .chat-picker-options {
     max-height: min(320px, 45vh);
     overflow-y: auto;
+    /* The menu is sized to its content, so a scrollbar appearing would other-
+       wise take the width out of the labels. */
+    scrollbar-gutter: stable;
     padding: 5px;
 }
 
