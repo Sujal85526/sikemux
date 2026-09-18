@@ -29,8 +29,9 @@ interface RowLayout {
     branches: (Edge & { toLane: number })[]; // node → bottom edge (this commit's parents)
 }
 
-function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: number } {
+export function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: number } {
     const visible = new Set(commits.map((c) => c.full_hash));
+    const drawn = new Set<string>(); // a lane waiting for one of these would never close
     const lanes: (string | null)[] = []; // lanes[i] = full hash that lane i is currently waiting for
     const laneUp: boolean[] = [];
     const rows: RowLayout[] = [];
@@ -74,7 +75,7 @@ function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: numb
         laneUp[commitLane] = false;
 
         const branches: (Edge & { toLane: number })[] = [];
-        const parents = c.parents.filter((p) => visible.has(p));
+        const parents = c.parents.filter((p) => visible.has(p) && !drawn.has(p));
         if (parents.length > 0) {
             const p0 = parents[0];
             const existing0 = lanes.indexOf(p0);
@@ -106,6 +107,8 @@ function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLanes: numb
             through,
             branches,
         });
+
+        drawn.add(c.full_hash);
 
         while (lanes.length > 0 && lanes[lanes.length - 1] === null) {
             lanes.pop();
