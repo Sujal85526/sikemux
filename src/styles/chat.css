@@ -284,7 +284,7 @@
    only thing that hugs the right edge. */
 .chat-message.user .chat-markdown {
     width: max-content;
-    max-width: min(100%, 470px);
+    max-width: 80%;
     margin-left: auto;
     padding: 8px 12px;
     border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
@@ -1657,10 +1657,6 @@ button.chat-tool:hover {
 
     .chat-message {
         padding-inline: 12px;
-    }
-
-    .chat-message.user .chat-message-content {
-        max-width: 86%;
     }
 
     .chat-slash-menu button {
