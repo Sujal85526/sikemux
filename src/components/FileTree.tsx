@@ -10,6 +10,7 @@ import { subscribe } from "../state/bus";
 import { useResourceEnabled } from "../state/resources";
 import { gitOverviewR } from "../state/resources.defs";
 import { notify, reportError, swallow } from "../state/toast";
+import { copyText } from "../lib/clipboard";
 import { confirmDialog } from "../state/dialog";
 import { registerFolderDrop } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
@@ -475,9 +476,9 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
     // ---- right-click context menu -------------------------------------
     const relativePath = (p: string) => pathRelative(p, cwd) ?? basename(p);
 
-    const copyText = async (text: string, label: string) => {
+    const copyToClipboard = async (text: string, label: string) => {
         try {
-            await navigator.clipboard.writeText(text);
+            await copyText(text);
             notify("success", `copied ${label}`);
         } catch (err) {
             reportError("copy")(err);
@@ -519,13 +520,13 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
                 { label: "New Folder", run: () => startNew("folder", cwd) },
                 { sep: true },
                 { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => revealInFinder(cwd) },
-                { label: "Copy Path", run: () => void copyText(cwd, "path") },
+                { label: "Copy Path", run: () => void copyToClipboard(cwd, "path") },
             ];
         }
         const tail: CtxItem[] = [
             { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => revealInFinder(entry.path) },
-            { label: "Copy Path", run: () => void copyText(entry.path, "path") },
-            { label: "Copy Relative Path", run: () => void copyText(relativePath(entry.path), "relative path") },
+            { label: "Copy Path", run: () => void copyToClipboard(entry.path, "path") },
+            { label: "Copy Relative Path", run: () => void copyToClipboard(relativePath(entry.path), "relative path") },
         ];
         if (entry.is_dir) {
             return [

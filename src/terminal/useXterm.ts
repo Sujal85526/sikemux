@@ -24,6 +24,7 @@ import { scheduleNextFrame } from "../lib/instrumentation";
 import { performanceTelemetry } from "../lib/performance";
 import type { PtyAttachment, PtyOutputChunk, PtyShellMetadataSnapshot } from "./ptyController";
 import { RendererRestartBackoff } from "./restartBackoff";
+import { copyText, readClipboardText } from "../lib/clipboard";
 import type { NativePtyController } from "./usePty";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
@@ -127,13 +128,13 @@ export function useXterm(opts: {
             copySelection: async () => {
                 const selection = targetRef.current?.term.getSelection() ?? "";
                 if (!selection) return false;
-                await navigator.clipboard.writeText(selection);
+                await copyText(selection);
                 return true;
             },
             pasteClipboard: async () => {
                 const target = targetRef.current;
                 if (!target) return false;
-                const text = await navigator.clipboard.readText();
+                const text = await readClipboardText();
                 if (!text) return false;
                 target.term.paste(text);
                 return true;
@@ -144,7 +145,7 @@ export function useXterm(opts: {
                 if (!target) return false;
                 const text = terminalBufferText(target.term.buffer.active);
                 if (!text) return false;
-                await navigator.clipboard.writeText(text);
+                await copyText(text);
                 return true;
             },
             clear: () => {

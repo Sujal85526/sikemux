@@ -23,12 +23,13 @@ import { findRequest } from "../bruno/resolve";
 import { basename, relativePath } from "../lib/paths";
 import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
+import { copyText } from "../lib/clipboard";
 import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
 import { useWheelPan } from "./useWheelPan";
 import { useDocumentSlide } from "./useDocumentSlide";
 
 const copyPath = (_path: string, text: string, label: string) =>
-    navigator.clipboard.writeText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
+    copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 

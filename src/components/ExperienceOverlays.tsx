@@ -24,6 +24,7 @@ import { useShaderField } from "../hooks/useShaderField";
 import { Logo } from "./Icons";
 import type { AgentPresentationState } from "../state/types";
 import { useOccludeNativeViews } from "../state/nativeViews";
+import { copyText } from "../lib/clipboard";
 
 interface IntegrationHealth {
     shell: string;
@@ -637,7 +638,7 @@ export function DiagnosticsOverlay() {
                     Reload manifests
                 </button>
                 <button onClick={() => void refresh()}>Refresh</button>
-                <button onClick={() => void navigator.clipboard.writeText(text)}>Copy JSON</button>
+                <button onClick={() => void copyText(text)}>Copy JSON</button>
                 <button
                     disabled={snapshot == null}
                     onClick={() =>

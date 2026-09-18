@@ -44,6 +44,7 @@ import {
 } from "./selectors";
 import { agentWindow } from "./agentWindow";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
+import { copyText, readClipboardText } from "../lib/clipboard";
 import {
     collectPanes,
     cloneLayout,
@@ -1142,12 +1143,12 @@ export async function exportActiveSession(): Promise<void> {
     const payload = JSON.stringify({ format: "sikemux-session", version: 1, session: safeSession, windows, agents }, (key, value) =>
         key === "secretVars" || key === "drafts" || key === "startup" || key === "baselineSessionIds" ? undefined : value,
     );
-    await navigator.clipboard.writeText(payload);
+    await copyText(payload);
     notify("success", `Copied ${session.name} session bundle (secrets and startup commands stripped)`);
 }
 
 export async function importSessionFromClipboard(): Promise<void> {
-    const raw = await navigator.clipboard.readText();
+    const raw = await readClipboardText();
     // Parse and validate the complete untrusted payload before entering Immer.
     // Any error therefore leaves the store byte-for-byte unchanged.
     const bundle = parseSessionBundle(raw);
