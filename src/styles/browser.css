@@ -23,9 +23,11 @@
     overflow: hidden;
 }
 
-/* Two panes side by side, each closed off with its own corners. The gap
-   between them is what separates them; there is no line to draw. */
+/* Two panes side by side, each closed off with its own corners and its own
+   hairline. Neither side paints a fill — the wallpaper is the ground on both —
+   so without an edge there is nothing for a corner or a gap to show up on. */
 .agent-workspace.browser-open .agent-terminal-side {
+    border: 1px solid var(--border);
     border-radius: var(--radius-3);
 }
 
@@ -71,6 +73,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    border: 1px solid var(--border);
     border-radius: var(--radius-3);
     background: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
