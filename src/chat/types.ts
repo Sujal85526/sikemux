@@ -86,7 +86,7 @@ export type ChatPart =
     | { id: string; kind: "content"; content: AcpContentBlock }
     /* A finished call is read once and kept as what the transcript shows: the
        change it made, and what it left behind when it failed. */
-    | { id: string; kind: "tool"; tool: AcpToolCall; diff?: ToolDiff; failure?: string; startedAt: number; endedAt?: number }
+    | { id: string; kind: "tool"; tool: AcpToolCall; diff?: ToolDiff; failure?: string; startedAt?: number; endedAt?: number }
     | { id: string; kind: "subagent"; subagent: AcpSubagent }
     | { id: string; kind: "notice"; notice: AcpTaskNotice };
 

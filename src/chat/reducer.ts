@@ -171,8 +171,11 @@ function upsertTool(transcript: Transcript, update: AcpToolCall, merge: boolean)
        With nothing to merge into and no title to show, a new row would be a
        blank line that spins forever, so let it pass. */
     if (!update.title) return null;
-    const opened: ToolPart = { id: `tool-${update.toolCallId}`, kind: "tool", tool: update, startedAt: Date.now() };
     const ended = update.status === "completed" || update.status === "failed";
+    /* Reloading a session replays its whole history at once, so a call that is
+       already finished the first time this side sees it never ran here. Stamping
+       both ends now would time the replay rather than the call. */
+    const opened: ToolPart = { id: `tool-${update.toolCallId}`, kind: "tool", tool: update, ...(ended ? {} : { startedAt: Date.now() }) };
     return appendPart(transcript, ended ? settleTool({ ...opened, endedAt: Date.now() }) : opened);
 }
 

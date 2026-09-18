@@ -285,7 +285,8 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const status = tool.status ?? "pending";
     /* A call the turn cut off has a duration, but printing it would read as a
        call that ran that long and then finished. It says why it stopped. */
-    const elapsed = status === "cancelled" ? "stopped" : part.endedAt !== undefined ? durationLabel(part.endedAt - part.startedAt) : null;
+    const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
+    const elapsed = status === "cancelled" ? "stopped" : measured !== null ? durationLabel(measured) : null;
     const body = (
         <>
             <span className="chat-tool-tick" aria-hidden="true" />
@@ -589,7 +590,10 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
     const running = tools.some((part) => toolRunning(part.tool));
     const failed = tools.some((part) => part.tool.status === "failed");
     const open = reader ?? (live || running);
-    const spent = tools.reduce((total, part) => total + (part.endedAt !== undefined ? part.endedAt - part.startedAt : 0), 0);
+    const spent = tools.reduce(
+        (total, part) => total + (part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : 0),
+        0,
+    );
     /* One column for every call in the run, as wide as the longest name in it:
        a run of reads stays tight, one that called an MCP server gets the room. */
     const kindWidth = Math.min(16, Math.max(4, ...tools.map((part) => toolKind(part.tool).length)));
