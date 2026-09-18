@@ -1170,7 +1170,9 @@ textarea,
  */
 .pane {
     --pane-ground: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
-    position: relative;
+    /* Positioned by chrome.css as `absolute; inset: 0` — restating it here as
+       `relative` took the pane out of that fill and collapsed it to the height
+       of its own content, which left every pane empty below its header. */
     isolation: isolate;
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
@@ -1178,22 +1180,20 @@ textarea,
     overflow: hidden;
 }
 
+/* Behind the pane's content and above its ground. `isolation` on the pane is
+   what keeps a negative index inside it rather than letting it fall through to
+   whatever is below. */
 .pane::before {
     content: "";
     position: absolute;
     inset: 0;
-    z-index: 0;
+    z-index: -1;
     background-image: radial-gradient(color-mix(in oklab, var(--ink) 22%, transparent) 0.5px, transparent 0.5px);
     background-size: 3px 3px;
     mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0.08) 38%, transparent 50%);
     pointer-events: none;
 }
 
-/* Above the dither, which is the pane's ground rather than part of its content. */
-.pane > * {
-    position: relative;
-    z-index: 1;
-}
 
 /* The shell keeps the darkest tone so the gutter always reads as a recess,
  * and carries the top edge of the frame so the gutter runs all the way round
