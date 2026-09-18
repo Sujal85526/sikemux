@@ -1,80 +1,11 @@
-.agent-workspace {
-    /* The gap between the two panes. It is also the divider's hit area, so it
-       has to stay wide enough to grab even though nothing is drawn in it. */
-    --agent-split-gap: 10px;
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-}
-
-.agent-workspace.browser-open {
-    grid-template-columns: minmax(320px, calc(var(--agent-side-ratio) * 100%)) var(--agent-split-gap) minmax(320px, 1fr);
-}
-
-.agent-terminal-side {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-}
-
-/* Two panes side by side, each closed off with its own corners and its own
-   hairline. Neither side paints a fill — the wallpaper is the ground on both —
-   so without an edge there is nothing for a corner or a gap to show up on. */
-.agent-workspace.browser-open .agent-terminal-side {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-3);
-}
-
-/*
- * The divider paints nothing at rest — a permanent rule between two panes that
- * already have a gap says the same thing twice. It shows a hairline under the
- * pointer, and takes the accent while it is being dragged.
- */
-.agent-browser-divider {
-    position: relative;
-    z-index: 6;
-    min-height: 0;
-    cursor: col-resize;
-    background: transparent;
-}
-
-.agent-browser-divider::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    width: 1px;
-    background: var(--border);
-    opacity: 0;
-    transform: translateX(-50%);
-    transition: opacity var(--dur-1) linear;
-}
-
-.agent-browser-divider:hover::after {
-    opacity: 1;
-}
-
-.agent-browser-divider:active::after {
-    background: var(--acc);
-    opacity: 1;
-}
-
 .browser-pane {
     --browser-agent: var(--acc);
     display: grid;
     grid-template-rows: 31px 34px minmax(0, 1fr);
     min-width: 0;
     min-height: 0;
+    height: 100%;
     overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-3);
     background: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
 }

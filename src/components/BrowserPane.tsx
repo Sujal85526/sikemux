@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { browserApi, type BrowserBounds, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, useNativeViewsOccluded, useStageMoving } from "../state/nativeViews";
 import type { AgentType } from "../state/types";
 import { reportError } from "../state/toast";
 import { IconChevron, IconGlobe, IconPlus, IconRefresh } from "./Icons";
+import { SplitPane } from "./SplitPane";
 import { TabBar } from "./TabBar";
 
 const EMPTY_SNAPSHOT: BrowserSnapshot = {
@@ -56,7 +57,6 @@ export function AgentBrowserShell({
 }) {
     const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
     const [ratio, setRatio] = useState(DEFAULT_RATIO);
-    const hostRef = useRef<HTMLDivElement>(null);
     const browserOpen = snapshot.tabs.length > 0;
 
     const refresh = useCallback(
@@ -109,36 +109,19 @@ export function AgentBrowserShell({
         };
     }, [refresh, visible]);
 
-    const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
-        const host = hostRef.current;
-        if (!host) return;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        const bounds = host.getBoundingClientRect();
-        const move = (next: PointerEvent) => {
-            const min = Math.min(0.42, MIN_SIDE / Math.max(bounds.width, 1));
-            setRatio(Math.min(1 - min, Math.max(min, (next.clientX - bounds.left) / bounds.width)));
-        };
-        const stop = () => {
-            window.removeEventListener("pointermove", move);
-            window.removeEventListener("pointerup", stop);
-        };
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", stop, { once: true });
-    };
-
     return (
-        <div
-            ref={hostRef}
-            className={`agent-workspace${browserOpen ? " browser-open" : ""}`}
-            style={{ "--agent-side-ratio": ratio } as CSSProperties}>
-            <div className="agent-terminal-side">{children}</div>
-            {browserOpen && (
-                <>
-                    <div className="agent-browser-divider" role="separator" aria-orientation="vertical" onPointerDown={startResize} />
+        <SplitPane
+            ratio={ratio}
+            onRatio={setRatio}
+            min={MIN_SIDE}
+            label="Resize the browser"
+            end={
+                browserOpen ? (
                     <BrowserPane agentId={agentId} agentType={agentType} visible={visible} snapshot={snapshot} refresh={refresh} />
-                </>
-            )}
-        </div>
+                ) : undefined
+            }>
+            {children}
+        </SplitPane>
     );
 }
 
