@@ -716,24 +716,28 @@ function taskDetail(task: AcpAsyncTask): string | undefined {
 function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; stopping: string[]; onStop: (taskId: string) => void }) {
     if (tasks.length === 0) return null;
     return (
-        <div className="chat-tasks" aria-label="Background tasks">
-            {tasks.map((task) => (
-                <div className={`chat-task state-${task.state}`} key={task.asyncTaskId}>
-                    <IconTimer size={12} />
-                    <span className="chat-task-name">{task.name}</span>
-                    <span className="chat-task-detail">{taskDetail(task)}</span>
-                    {task.canStop && (
-                        <button
-                            type="button"
-                            aria-label={`Stop ${task.name}`}
-                            disabled={stopping.includes(task.asyncTaskId)}
-                            onClick={() => onStop(task.asyncTaskId)}>
-                            <IconClose size={10} />
-                        </button>
-                    )}
-                </div>
+        <>
+            {groupTasks(tasks).map(([kind, group]) => (
+                <Group label={kind} count={group.length} key={kind}>
+                    {group.map((task) => (
+                        <div className={`chat-task state-${task.state}`} key={task.asyncTaskId}>
+                            <IconTimer size={12} />
+                            <span className="chat-task-name">{task.name}</span>
+                            <span className="chat-task-detail">{taskDetail(task)}</span>
+                            {task.canStop && (
+                                <button
+                                    type="button"
+                                    aria-label={`Stop ${task.name}`}
+                                    disabled={stopping.includes(task.asyncTaskId)}
+                                    onClick={() => onStop(task.asyncTaskId)}>
+                                    <IconClose size={10} />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </Group>
             ))}
-        </div>
+        </>
     );
 }
 
@@ -751,7 +755,7 @@ function runningSubagents(messages: ChatMessage[]): AcpSubagent[] {
 function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
     if (subagents.length === 0) return null;
     return (
-        <div className="chat-tasks" aria-label="Running subagents">
+        <Group label="subagent" count={subagents.length}>
             {subagents.map((subagent) => (
                 <div className="chat-task chat-task-agent" key={subagent.sessionId}>
                     <IconAgent size={12} />
@@ -760,8 +764,38 @@ function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
                     <span className="chat-task-spinner" aria-hidden="true" />
                 </div>
             ))}
+        </Group>
+    );
+}
+
+/* One kind of running work, under a label that counts it. The label is what
+   makes a stack of eight rows readable, so it stays even for a group of one.
+   `plural` is for the kinds that are not a noun with an s on the end. */
+function Group({ label, plural, count, children }: { label: string; plural?: string; count: number; children: ReactNode }) {
+    const word = count === 1 ? label : (plural ?? `${label}s`);
+    return (
+        <div className="chat-group" aria-label={`${count} ${word}`}>
+            <div className="chat-group-label">
+                <span>{word}</span>
+                <span className="chat-group-count">{count}</span>
+            </div>
+            {children}
         </div>
     );
+}
+
+/* An agent names its own task types — "shell", "monitor" — and they are the
+   only thing that separates one background task from another, so they are what
+   the groups are cut on. */
+function groupTasks(tasks: AcpAsyncTask[]): [string, AcpAsyncTask[]][] {
+    const groups = new Map<string, AcpAsyncTask[]>();
+    for (const task of tasks) {
+        const kind = task.taskType || "task";
+        const existing = groups.get(kind);
+        if (existing) existing.push(task);
+        else groups.set(kind, [task]);
+    }
+    return [...groups];
 }
 
 type QueuedMessage = { id: string; text: string; paths: string[] };
@@ -781,7 +815,7 @@ function QueuedMessages({
 }) {
     if (messages.length === 0) return null;
     return (
-        <div className="chat-queued" aria-label="Queued messages">
+        <Group label="queued" plural="queued" count={messages.length}>
             {messages.map((message) => {
                 const label = queuedLabel(message);
                 return (
@@ -803,7 +837,7 @@ function QueuedMessages({
                     </div>
                 );
             })}
-        </div>
+        </Group>
     );
 }
 
@@ -963,6 +997,8 @@ function ChatComposer({
     error,
     onError,
     onSend,
+    onSteerQueued,
+    queuedCount,
     onConfig,
 }: {
     agent: Agent;
@@ -984,6 +1020,8 @@ function ChatComposer({
     error: string | null;
     onError: (message: string | null) => void;
     onSend: (text: string, paths: string[], steerNow: boolean) => boolean;
+    onSteerQueued: () => void;
+    queuedCount: number;
     onConfig: (config: SessionConfig, value: string) => void;
 }) {
     const [draft, setDraft] = useState("");
@@ -1041,6 +1079,10 @@ function ChatComposer({
     const blocked = changingConfig || changingPermissions || !permissionApplied;
     const drafted = Boolean(draft.trim()) || attachments.length > 0;
 
+    /* Steering aborts the turn in flight, so the shortcut only fires when there
+       is exactly one message waiting and no doubt about which one it takes. */
+    const canSteerQueued = running && steerable && queuedCount === 1;
+
     const send = (steerNow = false) => {
         const text = draft.trim();
         if ((!text && attachments.length === 0) || blocked) return;
@@ -1068,6 +1110,7 @@ function ChatComposer({
     return (
         <div className="chat-composer">
             {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={selected} onSelect={selectCommand} />}
+            <div className="chat-field">
             {attachments.length > 0 && (
                 <div className="chat-attachments">
                     {attachments.map((path) => (
@@ -1118,10 +1161,15 @@ function ChatComposer({
                     }
                     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                         event.preventDefault();
+                        if (hasPrimaryModifier(event.nativeEvent) && !draft.trim() && attachments.length === 0 && canSteerQueued) {
+                            onSteerQueued();
+                            return;
+                        }
                         send(hasPrimaryModifier(event.nativeEvent));
                     }
                 }}
             />
+            </div>
             {error && <div className="chat-composer-error">{error}</div>}
             <div className="chat-composer-bar">
                 <button type="button" className="chat-composer-icon" aria-label="Add files" onClick={() => void chooseFiles()}>
@@ -1166,7 +1214,13 @@ function ChatComposer({
                         type="button"
                         className="chat-send"
                         aria-label="Send message"
-                        title={running && steerable ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it` : undefined}
+                        title={
+                            canSteerQueued
+                                ? `${PRIMARY_SHORTCUT}↵ steers the queued message into this turn`
+                                : running && steerable
+                                  ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it`
+                                  : undefined
+                        }
                         disabled={blocked || !drafted}
                         onClick={() => send()}>
                         <IconArrowUp size={18} />
@@ -1759,14 +1813,18 @@ export function AgentChatPane({
                         <IconArrowDown size={14} />
                     </button>
                 )}
-                <RunningSubagents subagents={subagents} />
-                <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
-                <QueuedMessages
-                    messages={queued}
-                    steerable={steerable && state.running}
-                    onSteer={(message) => void steer(message)}
-                    onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
-                />
+                {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
+                    <div className="chat-live-stack">
+                        <RunningSubagents subagents={subagents} />
+                        <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
+                        <QueuedMessages
+                            messages={queued}
+                            steerable={steerable && state.running}
+                            onSteer={(message) => void steer(message)}
+                            onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
+                        />
+                    </div>
+                )}
                 <ChatComposer
                     agent={agent}
                     profile={profile}
@@ -1787,6 +1845,11 @@ export function AgentChatPane({
                     error={composerError}
                     onError={setComposerError}
                     onSend={send}
+                    onSteerQueued={() => {
+                        const head = queued[0];
+                        if (head) void steer(head);
+                    }}
+                    queuedCount={queued.length}
                     onConfig={changeConfig}
                 />
             </div>
