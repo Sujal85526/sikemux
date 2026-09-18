@@ -476,7 +476,7 @@ function AgentsPage() {
                         />
                     </SettingsRow>
                     <SettingsRow label="Idle agents" desc="Put every idle agent to sleep now, freeing its process.">
-                        <button className="settings-btn" type="button" onClick={cmd.sleepIdleAgents}>
+                        <button className="settings-btn" type="button" onClick={() => void cmd.sleepIdleAgents()}>
                             Sleep now
                         </button>
                     </SettingsRow>

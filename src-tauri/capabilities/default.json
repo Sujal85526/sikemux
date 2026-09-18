@@ -62,6 +62,7 @@
     "allow-agent-models",
     "allow-agent-usage",
     "allow-agent-sessions",
+    "allow-live-agent-sessions",
     "allow-agent-sessions-watch-start",
     "allow-agent-sessions-watch-stop",
     "allow-read-dir",

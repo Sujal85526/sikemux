@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     attachAgentSession: vi.fn(),
     setAgentPermissionMode: vi.fn(),
     noteAcpAgentState: vi.fn(),
+    noteAgentBackgroundWork: vi.fn(),
     start: vi.fn(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
 }));
 
@@ -47,6 +48,7 @@ vi.mock("../state/commands", () => ({
     setAgentModelPreferences: mocks.setAgentModelPreferences,
     setAgentTitle: vi.fn(),
     noteAcpAgentState: mocks.noteAcpAgentState,
+    noteAgentBackgroundWork: mocks.noteAgentBackgroundWork,
     toggleAgentSkipPermissions: vi.fn(),
 }));
 
@@ -819,6 +821,29 @@ describe("AgentChatPane", () => {
             update: { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "stopped" },
         });
         await waitFor(() => expect(screen.queryByText("pnpm test")).not.toBeInTheDocument());
+    });
+
+    it("says the agent is still in use while a background task outlives the turn", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "async_task_spawned",
+                asyncTaskId: "task-1",
+                name: "push gate",
+                taskType: "shell",
+                description: "Push 20 commits through pre-push gates",
+            },
+        });
+        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenCalledWith("agent-1", 1));
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "completed" },
+        });
+        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenLastCalledWith("agent-1", 0));
     });
 
     it("says a background task's name once when its description repeats it", async () => {

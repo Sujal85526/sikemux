@@ -885,6 +885,43 @@ fn unpushed_set(repo: &Repository) -> std::collections::HashSet<git2::Oid> {
     set
 }
 
+/// Two commits made in the same second can come back parent-first, because the
+/// time walk has no way to break the tie. Reorder the window so every commit
+/// still precedes its own parents, and leave the time order alone otherwise.
+fn children_before_parents(commits: Vec<git2::Commit<'_>>) -> Vec<git2::Commit<'_>> {
+    let position: std::collections::HashMap<git2::Oid, usize> = commits
+        .iter()
+        .enumerate()
+        .map(|(i, commit)| (commit.id(), i))
+        .collect();
+    let mut waiting_on_children = vec![0usize; commits.len()];
+    for commit in &commits {
+        for parent in commit.parent_ids() {
+            if let Some(&i) = position.get(&parent) {
+                waiting_on_children[i] += 1;
+            }
+        }
+    }
+
+    let mut taken = vec![false; commits.len()];
+    let mut order = Vec::with_capacity(commits.len());
+    while order.len() < commits.len() {
+        let next = (0..commits.len()).find(|&i| !taken[i] && waiting_on_children[i] == 0);
+        let Some(next) = next else { break };
+        taken[next] = true;
+        for parent in commits[next].parent_ids() {
+            if let Some(&i) = position.get(&parent) {
+                waiting_on_children[i] -= 1;
+            }
+        }
+        order.push(next);
+    }
+    order.extend((0..commits.len()).filter(|&i| !taken[i]));
+
+    let mut slots: Vec<Option<git2::Commit<'_>>> = commits.into_iter().map(Some).collect();
+    order.into_iter().filter_map(|i| slots[i].take()).collect()
+}
+
 fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
     let mut revwalk = repo.revwalk().map_err(|e| e.message().to_string())?;
     if revwalk.push_head().is_err() {
@@ -904,6 +941,7 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             commits.push(commit);
         }
     }
+    let commits = children_before_parents(commits);
     let oids: std::collections::HashSet<git2::Oid> = commits.iter().map(|c| c.id()).collect();
     let ref_map = build_ref_map(repo, &oids);
     let unpushed = unpushed_set(repo);
@@ -3720,6 +3758,19 @@ mod tests {
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
 
+    fn git_at(repo: &Path, stamp: &str, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .env("GIT_AUTHOR_DATE", stamp)
+            .env("GIT_COMMITTER_DATE", stamp)
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
     fn init_repo() -> tempfile::TempDir {
         let td = tempdir().expect("tempdir");
         git(td.path(), &["init"]);
@@ -3952,6 +4003,25 @@ mod tests {
         assert!(refs.contains(&"tag: on-tip".to_string()), "{refs:?}");
         assert!(!refs.contains(&"side".to_string()), "{refs:?}");
         assert!(!refs.contains(&"tag: on-base".to_string()), "{refs:?}");
+    }
+
+    /// Commits made in the same second come out of the time walk in whatever
+    /// order the heap likes. The log still has to read newest-first.
+    #[test]
+    fn a_commit_never_follows_its_own_parent_in_the_log() {
+        let td = init_repo();
+        let stamp = "2026-09-18T13:54:44+05:30";
+        for subject in ["base", "second", "third", "fourth"] {
+            fs::write(td.path().join("f.txt"), format!("{subject}\n")).expect("write file");
+            git(td.path(), &["add", "f.txt"]);
+            git_at(td.path(), stamp, &["commit", "-m", subject]);
+        }
+
+        let repo = open_repo(&repo_arg(td.path())).expect("open repo");
+        let log = read_log(&repo, 10).expect("read log");
+
+        let subjects: Vec<&str> = log.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(subjects, vec!["fourth", "third", "second", "base"]);
     }
 
     #[test]

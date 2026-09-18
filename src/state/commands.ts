@@ -25,6 +25,7 @@ import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.def
 import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
+import { agentIdsWithLiveSessions } from "./agentLiveSessions";
 import { confirmDialog } from "./dialog";
 import { agentSupportsSkipPermissions } from "./commands/agentLogic";
 import { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
@@ -1249,6 +1250,7 @@ function disposePaneState(d: StoreState, paneId: string): void {
     delete d.terminalTitles[paneId];
     delete d.agents[paneId];
     delete d.agentActivity[paneId];
+    delete d.agentBackgroundWork[paneId];
 }
 
 function pruneWindowViews(d: StoreState, win: Window): void {
@@ -1939,6 +1941,21 @@ export function resumeAgent(id: string): void {
     });
 }
 
+/* A turn is over long before the work it started is. Shells, monitors and
+   subagents outlive the answer that launched them, and ending the agent ends
+   them too, so the count of what is still going decides whether it can sleep. */
+export function noteAgentBackgroundWork(id: string, count: number): void {
+    mutate((d) => {
+        if (!d.agents[id]) return;
+        if (count > 0) d.agentBackgroundWork[id] = count;
+        else delete d.agentBackgroundWork[id];
+    });
+}
+
+export function agentHasBackgroundWork(state: StoreState, id: string): boolean {
+    return (state.agentBackgroundWork[id] ?? 0) > 0;
+}
+
 export function sleepAgents(ids: readonly string[]): string[] {
     const sleeping = new Set(ids);
     const slept: string[] = [];
@@ -1947,6 +1964,7 @@ export function sleepAgents(ids: readonly string[]): string[] {
             const agent = d.agents[id];
             if (!agent?.resumeId || agent.launchState === "dormant") continue;
             agent.launchState = "dormant";
+            delete d.agentBackgroundWork[id];
             slept.push(id);
         }
     });
@@ -1971,15 +1989,20 @@ export function setAgentKeepAlive(id: string, keepAlive: boolean): void {
     });
 }
 
-export function sleepIdleAgents(): number {
+export async function sleepIdleAgents(): Promise<number> {
     const state = getState();
     const ids = Object.values(state.agents)
         .filter(
             (agent) =>
-                agent.launchState !== "dormant" && !!agent.resumeId && !agent.keepAlive && state.agentActivity[agent.id]?.backendState === "idle",
+                agent.launchState !== "dormant" &&
+                !!agent.resumeId &&
+                !agent.keepAlive &&
+                !agentHasBackgroundWork(state, agent.id) &&
+                state.agentActivity[agent.id]?.backendState === "idle",
         )
         .map((agent) => agent.id);
-    const count = sleepAgents(ids).length;
+    const live = await agentIdsWithLiveSessions(state, ids);
+    const count = sleepAgents(ids.filter((id) => !live.has(id))).length;
     notify("info", count === 0 ? "No idle resumable agents to sleep" : `Put ${count} idle agent${count === 1 ? "" : "s"} to sleep`);
     return count;
 }

@@ -1254,6 +1254,14 @@ export function AgentChatPane({
         cmd.noteAcpAgentState(agent.id, backendState);
     }, [active, agent.id, state.connection, state.running, state.permissions.length]);
 
+    /* A turn ends long before the work it started does. Shells, monitors and
+       subagents keep going after the answer, and they die with the agent, so
+       what is still running is what says the agent is still in use. */
+    const liveTasks = useMemo(() => state.tasks.filter((task) => task.state === "running").length, [state.tasks]);
+    const liveSubagents = useMemo(() => runningSubagents(state.messages).length, [state.messages]);
+    useEffect(() => cmd.noteAgentBackgroundWork(agent.id, liveTasks + liveSubagents), [agent.id, liveTasks, liveSubagents]);
+    useEffect(() => () => cmd.noteAgentBackgroundWork(agent.id, 0), [agent.id]);
+
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 
     useEffect(() => setQueued([]), [agent.id, cwd]);

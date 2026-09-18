@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { agentApi } from "../api/agents";
 import { getState, setState } from "../state/store";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
@@ -12,12 +13,19 @@ import {
     reconcileHiddenAgentTimes,
     type HiddenAgentTimes,
 } from "./AgentLifecycleManager";
+import { agentIdsWithLiveSessions } from "../state/agentLiveSessions";
+
+vi.mock("../api/agents", () => ({ agentApi: { liveSessions: vi.fn(async () => []) } }));
+
+const liveSessions = vi.mocked(agentApi.liveSessions);
 
 const initial = getState();
 
 beforeEach(() => {
     vi.useRealTimers();
     setState(initial, true);
+    liveSessions.mockReset();
+    liveSessions.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -64,6 +72,10 @@ function arrangeAgents(count: number) {
         ...withAgents(state, sessionId, Object.values(agents)),
         agentActivity,
     });
+}
+
+function asClaude(id: string) {
+    setState((state) => ({ agents: { ...state.agents, [id]: { ...state.agents[id], type: "claude" as const } } }));
 }
 
 function focusAgent(id: string) {
@@ -151,6 +163,13 @@ describe("agent sleep policy", () => {
         expect(getState().agents["agent-0"].launchState).toBe("dormant");
     });
 
+    it("keeps an agent that still has a shell, monitor or subagent running", () => {
+        arrangeAgents(1);
+        setState({ agentBackgroundWork: { "agent-0": 1 } });
+        const hiddenSince: HiddenAgentTimes = new Map([["agent-0", 0]]);
+        expect(agentIdsToAutoSleep(getState(), hiddenSince, AGENT_IDLE_SLEEP_MS * 2)).toEqual([]);
+    });
+
     it("drops stale and sleeping entries from hidden-time tracking", () => {
         arrangeAgents(2);
         setState((state) => ({
@@ -163,5 +182,64 @@ describe("agent sleep policy", () => {
         ]);
         reconcileHiddenAgentTimes(getState(), hiddenSince, 20);
         expect([...hiddenSince]).toEqual([["agent-0", 10]]);
+    });
+});
+
+describe("what claude says about its own sessions", () => {
+    it("holds back an agent whose session is still running a background shell", async () => {
+        arrangeAgents(1);
+        asClaude("agent-0");
+        liveSessions.mockResolvedValue([{ sessionId: "session-0", status: "shell" }]);
+
+        expect([...(await agentIdsWithLiveSessions(getState(), ["agent-0"]))]).toEqual(["agent-0"]);
+    });
+
+    it("lets an agent whose session reads idle go", async () => {
+        arrangeAgents(1);
+        asClaude("agent-0");
+        liveSessions.mockResolvedValue([{ sessionId: "session-0", status: "idle" }]);
+
+        expect([...(await agentIdsWithLiveSessions(getState(), ["agent-0"]))]).toEqual([]);
+    });
+
+    it("asks nothing of an agent that is not claude", async () => {
+        arrangeAgents(1);
+
+        expect([...(await agentIdsWithLiveSessions(getState(), ["agent-0"]))]).toEqual([]);
+        expect(liveSessions).not.toHaveBeenCalled();
+    });
+
+    it("leaves the screen's reading alone when claude cannot answer", async () => {
+        arrangeAgents(1);
+        asClaude("agent-0");
+        liveSessions.mockRejectedValue(new Error("claude is not available"));
+
+        expect([...(await agentIdsWithLiveSessions(getState(), ["agent-0"]))]).toEqual([]);
+    });
+
+    it("sleeps a hidden agent whose session has nothing left running", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        arrangeAgents(1);
+        asClaude("agent-0");
+        liveSessions.mockResolvedValue([{ sessionId: "session-0", status: "idle" }]);
+        render(createElement(AgentLifecycleManager));
+
+        await act(async () => vi.advanceTimersByTimeAsync(AGENT_IDLE_SLEEP_MS));
+
+        expect(getState().agents["agent-0"].launchState).toBe("dormant");
+    });
+
+    it("does not sleep a hidden agent that is still running a shell", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        arrangeAgents(1);
+        asClaude("agent-0");
+        liveSessions.mockResolvedValue([{ sessionId: "session-0", status: "shell" }]);
+        render(createElement(AgentLifecycleManager));
+
+        await act(async () => vi.advanceTimersByTimeAsync(AGENT_IDLE_SLEEP_MS));
+
+        expect(getState().agents["agent-0"].launchState).toBe("live");
     });
 });

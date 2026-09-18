@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { performanceTelemetry } from "../lib/performance";
 import * as cmd from "../state/commands";
+import { agentIdsWithLiveSessions } from "../state/agentLiveSessions";
 import { getState, useStore, type StoreState } from "../state/store";
 import { activeAgentId } from "../state/selectors";
 
@@ -40,6 +41,7 @@ export function agentIdsToAutoSleep(state: StoreState, hiddenSince: HiddenAgentT
                 agent.launchState === "dormant" ||
                 !agent.resumeId ||
                 agent.keepAlive ||
+                cmd.agentHasBackgroundWork(state, agent.id) ||
                 activity?.backendState !== "idle" ||
                 activity.confidence === "low"
             ) {
@@ -62,8 +64,10 @@ export function AgentLifecycleManager() {
     const agents = useStore((state) => state.agents);
     const windows = useStore((state) => state.windows);
     const agentActivity = useStore((state) => state.agentActivity);
+    const backgroundWork = useStore((state) => state.agentBackgroundWork);
     const hiddenSinceRef = useRef<HiddenAgentTimes>(new Map());
     const focusedRef = useRef<string | null>(null);
+    const askingRef = useRef(false);
 
     // Landing on a sleeping agent resumes it, so the tab the user switched to is
     // the one they get. Only the switch wakes it: sleeping the agent in front of
@@ -78,19 +82,34 @@ export function AgentLifecycleManager() {
 
     useLayoutEffect(wakeFocusedAgent, [activeSessionId, sessions, windows, agents, wakeFocusedAgent]);
 
-    const enforcePolicy = useCallback(() => {
+    const enforcePolicy = useCallback(async () => {
+        if (askingRef.current) return;
         const state = getState();
         const now = Date.now();
         reconcileHiddenAgentTimes(state, hiddenSinceRef.current, now);
         const sleeping = agentIdsToAutoSleep(state, hiddenSinceRef.current, now);
-        const slept = cmd.sleepAgents(sleeping);
+        if (sleeping.length === 0) return;
+
+        askingRef.current = true;
+        let live: Set<string>;
+        try {
+            live = await agentIdsWithLiveSessions(state, sleeping);
+        } finally {
+            askingRef.current = false;
+        }
+
+        /* The ask takes a moment, and the agent may have woken, been picked, or
+           started a turn while it ran, so the list is worked out again. */
+        const settled = agentIdsToAutoSleep(getState(), hiddenSinceRef.current, Date.now()).filter((id) => !live.has(id));
+        const slept = cmd.sleepAgents(settled);
         if (slept.length > 0) performanceTelemetry.incrementCounter("agent.sleep.auto", slept.length);
+        if (live.size > 0) performanceTelemetry.incrementCounter("agent.sleep.held", live.size);
     }, []);
 
-    useEffect(enforcePolicy, [activeSessionId, sessions, windows, agents, agentActivity, enforcePolicy]);
+    useEffect(() => void enforcePolicy(), [activeSessionId, sessions, windows, agents, agentActivity, backgroundWork, enforcePolicy]);
 
     useEffect(() => {
-        const timer = window.setInterval(enforcePolicy, AGENT_SLEEP_POLICY_INTERVAL_MS);
+        const timer = window.setInterval(() => void enforcePolicy(), AGENT_SLEEP_POLICY_INTERVAL_MS);
         return () => window.clearInterval(timer);
     }, [enforcePolicy]);
 

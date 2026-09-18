@@ -213,6 +213,7 @@ pub fn run() {
             agents::agent_models,
             agents::agent_usage,
             agents::agent_sessions,
+            agents::live_agent_sessions,
             agents::agent_sessions_watch_start,
             agents::agent_sessions_watch_stop,
             fs::read_dir,
