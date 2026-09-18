@@ -81,9 +81,7 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<PaneKind, (props: Workbench
         </Suspense>
     ),
     agent: ({ pane, session, visible }) => <AgentPane paneId={pane.id} session={session} visible={visible} />,
-    browser: ({ pane, visible }) => (
-        <BrowserPaneHost paneId={pane.id} visible={visible} onEmpty={() => cmd.closeBrowserPane(pane.id)} />
-    ),
+    browser: ({ pane, visible }) => <BrowserPaneHost paneId={pane.id} visible={visible} onEmpty={() => cmd.closeBrowserPane(pane.id)} />,
     terminal: ({ pane, session, win, active, visible }) => (
         <TerminalPane
             cwd={paneCwd(pane, session) || undefined}

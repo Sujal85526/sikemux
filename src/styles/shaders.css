@@ -77,7 +77,6 @@
     }
 }
 
-
 /* The shell is a stacking context so the negative z-indexes below stay inside
    it and cannot slide behind the window's own background. */
 .shell {
