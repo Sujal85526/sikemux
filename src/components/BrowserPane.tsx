@@ -70,17 +70,7 @@ function SiteIcon({ src }: { src: string | null }) {
     return <img className="tab-favicon" src={src} alt="" onError={() => setBroken(true)} />;
 }
 
-function BrowserSession({
-    agentId,
-    agentType,
-    visible,
-    onEmpty,
-}: {
-    agentId: string;
-    agentType: AgentType;
-    visible: boolean;
-    onEmpty: () => void;
-}) {
+function BrowserSession({ agentId, agentType, visible, onEmpty }: { agentId: string; agentType: AgentType; visible: boolean; onEmpty: () => void }) {
     const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
 
     const refresh = useCallback(
@@ -265,7 +255,6 @@ function BrowserPane({
                 addIcon={<IconPlus size={13} />}
                 addTitle="New browser tab — ⌘T"
                 addLabel="New browser tab — Command T"
-                trailing={<span className="browser-controller">{agentType}</span>}
             />
             <form
                 className={`browser-toolbar${activeTab?.loading ? " loading" : ""}`}

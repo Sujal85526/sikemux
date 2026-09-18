@@ -78,26 +78,6 @@
     color: var(--ink);
 }
 
-.tabbar.v-browser .tabbar-trailing {
-    padding: 0;
-    margin-right: 0;
-    background: transparent;
-}
-
-.browser-controller {
-    align-self: center;
-    margin: 0 2px 0 auto;
-    padding: 2px 6px;
-    border: 1px solid color-mix(in srgb, var(--browser-agent) 38%, var(--line));
-    border-radius: var(--radius-chip);
-    color: var(--browser-agent);
-    font-family: var(--mono);
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
 .browser-toolbar {
     position: relative;
     display: flex;
