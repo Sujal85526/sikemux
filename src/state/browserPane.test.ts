@@ -92,4 +92,14 @@ describe("the browser pane", () => {
         expect(collectPanes(getState().windows.window.root)).toHaveLength(1);
         expect(getState().browserPanes).toEqual({});
     });
+
+    it("leaves the agent reachable from its window while the browser has focus", () => {
+        openBrowserPane("agent-1");
+
+        // Opening the browser focuses it, so anything that reads the agent off
+        // the focused pane loses the agent, and with it the agent's tab.
+        expect(getState().windows.window.activePaneId).not.toBe("agent-1");
+        expect(agentPaneId(getState().windows.window)).toBe("agent-1");
+        expect(agentIdsOf(getState(), "project")).toEqual(["agent-1"]);
+    });
 });

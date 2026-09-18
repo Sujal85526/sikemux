@@ -45,14 +45,14 @@ export function agentPaneId(win: Window): string | null {
 
 /** The window an agent lives in, wherever it is. */
 export function agentWindowId(state: Pick<StoreState, "windows">, agentId: string): string | null {
-    for (const win of Object.values(state.windows)) if (win.role === "agent" && win.activePaneId === agentId) return win.id;
+    for (const win of Object.values(state.windows)) if (win.role === "agent" && agentPaneId(win) === agentId) return win.id;
     return null;
 }
 
 /** The agent a session is looking at, if its active window is one. */
 export function activeAgentId(state: Pick<StoreState, "windows">, session: Pick<Session, "activeWindowId"> | undefined): string | null {
     const win = session ? state.windows[session.activeWindowId] : undefined;
-    return win?.role === "agent" ? win.activePaneId : null;
+    return win?.role === "agent" ? agentPaneId(win) : null;
 }
 
 /** The session a window belongs to. */

@@ -6,7 +6,7 @@ import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layou
 import * as cmd from "../state/commands";
 import { useBrunoDrafts } from "../state/brunoRuntime";
 import { getState, useStore } from "../state/store";
-import { activeTabRef, brunoPaneId, documentsOf, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
+import { activeTabRef, agentPaneId, brunoPaneId, documentsOf, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ShaderField } from "./ShaderField";
@@ -143,7 +143,7 @@ export const Workspace = memo(function Workspace() {
                             const painted = isActive && pan.paints(wid);
                             // A live agent keeps its process whether or not it is on screen;
                             // a sleeping one has nothing to keep.
-                            const keepsProcess = win.role === "agent" ? agentsById[win.activePaneId]?.launchState !== "dormant" : retained.has(wid);
+                            const keepsProcess = win.role === "agent" ? agentsById[agentPaneId(win) ?? ""]?.launchState !== "dormant" : retained.has(wid);
                             // A layer sliding out has to stay mounted for as long as it paints.
                             if (!live && !painted && wid !== session.activeWindowId && !keepsProcess) return null;
                             return (
@@ -302,7 +302,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         const agents = refs
             .flatMap((ref) => {
                 const win = ref.doc === undefined ? windowsById[ref.id] : undefined;
-                return win?.role === "agent" ? [agentsById[win.activePaneId]] : [];
+                return win?.role === "agent" ? [agentsById[agentPaneId(win) ?? ""]] : [];
             })
             .filter(Boolean) as Agent[];
         const others = agents.filter((x) => x.id !== agent.id);
@@ -362,7 +362,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 ];
             }
             if (win.role === "agent") {
-                const agent = agentsById[win.activePaneId];
+                const agent = agentsById[agentPaneId(win) ?? ""];
                 if (!agent) return [];
                 const state = activity[agent.id];
                 const background = (backgroundWork[agent.id] ?? 0) > 0;
@@ -427,7 +427,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 if (!win) return [];
                 if (ref.doc !== undefined) return win.role === "bruno" ? requestMenu(win, ref.doc) : fileMenu(win, ref.doc);
                 if (win.role === "agent") {
-                    const agent = agentsById[win.activePaneId];
+                    const agent = agentsById[agentPaneId(win) ?? ""];
                     return agent ? agentMenu(agent) : [];
                 }
                 return windowMenu(win);

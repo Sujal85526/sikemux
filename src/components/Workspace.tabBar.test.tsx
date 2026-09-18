@@ -87,6 +87,18 @@ describe("workspace tab bars", () => {
         expect(getState().newTabPaletteOpen).toBe(true);
     });
 
+    it("keeps the agent's tab in the strip once its browser takes focus", () => {
+        projectWithAgent();
+        render(<Workspace />);
+        expect(screen.getByRole("tab", { name: /only agent/ })).toBeInTheDocument();
+
+        act(() => cmd.openBrowserPane("agent-only"));
+
+        // The browser is the focused pane now. Reading the agent off the focused
+        // pane finds nothing and drops the tab, stranding the agent.
+        expect(screen.getByRole("tab", { name: /only agent/ })).toBeInTheDocument();
+    });
+
     it("updates permission mode from the session composer", async () => {
         projectWithAgent(false);
         render(<Workspace />);

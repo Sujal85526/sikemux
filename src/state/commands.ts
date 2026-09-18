@@ -1321,7 +1321,8 @@ export function closeActiveFocusTarget(): void {
 
     const win = st.windows[session.activeWindowId];
     if (win?.role === "agent") {
-        closeAgent(win.activePaneId);
+        const paneId = agentPaneId(win);
+        if (paneId) closeAgent(paneId);
         return;
     }
     if (win?.role === "ssh-config") {
