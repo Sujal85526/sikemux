@@ -566,12 +566,6 @@
 
 /* Only a failure earns a mark here: a run that went fine says so by being a
    run that went fine, and a tick in front of every one of them is noise. */
-.chat-tools-mark {
-    display: grid;
-    place-items: center;
-    color: var(--danger);
-}
-
 .chat-tools-count {
     color: var(--ink-dim);
 }

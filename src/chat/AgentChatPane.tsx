@@ -590,7 +590,6 @@ function toolRunning(tool: AcpToolCall): boolean {
 function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>[]; live: boolean }) {
     const [reader, setReader] = useState<boolean | null>(null);
     const running = tools.some((part) => toolRunning(part.tool));
-    const failed = tools.some((part) => part.tool.status === "failed");
     const open = reader ?? (live || running);
     const spent = tools.reduce(
         (total, part) => total + (part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : 0),
@@ -602,11 +601,6 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
     return (
         <div className="chat-tools">
             <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={() => setReader(!open)}>
-                {failed && (
-                    <span className="chat-tools-mark">
-                        <IconWarning size={11} />
-                    </span>
-                )}
                 <span className="chat-tools-count">
                     {tools.length} tool {tools.length === 1 ? "call" : "calls"}
                 </span>
