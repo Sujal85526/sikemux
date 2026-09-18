@@ -25,12 +25,6 @@
     color: var(--text-primary);
     font-family: var(--ui);
 
-    /* The three surfaces, faded together with the window so the backdrop still
-       reads through at low opacity. */
-    --s-panel: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
-    --s-sunken: color-mix(in srgb, var(--surface-sunken) calc(var(--window-opacity, 1) * 100%), transparent);
-    --s-raised: color-mix(in srgb, var(--surface-raised) calc(var(--window-opacity, 1) * 100%), transparent);
-
     background: var(--s-panel);
 }
 .settings-frame {
@@ -368,61 +362,6 @@ label.settings-row {
     box-shadow: var(--focus-ring);
 }
 
-.settings-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-1h);
-    height: 28px;
-    padding: 0 var(--space-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--s-raised);
-    color: var(--text-secondary);
-    font-family: var(--ui);
-    font-size: var(--text-sm);
-    font-weight: var(--weight-medium);
-    white-space: nowrap;
-    cursor: pointer;
-    transition:
-        background var(--dur-1),
-        border-color var(--dur-1),
-        color var(--dur-1);
-}
-.settings-btn:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--border-strong);
-    color: var(--text-primary);
-}
-.settings-btn:focus-visible {
-    outline: 0;
-    box-shadow: var(--focus-ring);
-}
-.settings-btn:disabled {
-    color: var(--text-disabled);
-    cursor: not-allowed;
-}
-.settings-btn.primary {
-    border-color: transparent;
-    background: var(--acc);
-    color: var(--on-accent);
-    font-weight: var(--weight-semibold);
-}
-.settings-btn.primary:hover:not(:disabled) {
-    border-color: transparent;
-    background: color-mix(in oklab, var(--ink) 14%, var(--acc));
-    color: var(--on-accent);
-}
-.settings-btn.primary:disabled {
-    border-color: var(--border);
-    background: transparent;
-    color: var(--text-disabled);
-}
-.settings-btn.danger:hover:not(:disabled) {
-    border-color: color-mix(in oklab, var(--danger) 52%, transparent);
-    background: color-mix(in oklab, var(--danger) 10%, transparent);
-    color: var(--danger);
-}
 .settings-actions {
     display: flex;
     justify-content: flex-end;

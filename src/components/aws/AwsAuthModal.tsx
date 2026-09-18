@@ -131,7 +131,11 @@ export function AwsAuthModal() {
                     <button className="settings-btn" onClick={onCancel}>
                         Cancel
                     </button>
-                    <button className="settings-btn primary" onClick={onSignIn} disabled={phase === "running" || phase === "ok"}>
+                    <button
+                        className="settings-btn primary"
+                        onClick={onSignIn}
+                        disabled={phase === "running" || phase === "ok"}
+                        aria-busy={phase === "running"}>
                         {phase === "running" ? "Signing in…" : "Sign in with SSO"}
                     </button>
                 </div>
