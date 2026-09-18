@@ -1876,9 +1876,6 @@ button.chat-tool:hover {
 .chat-picker-options {
     max-height: min(320px, 45vh);
     overflow-y: auto;
-    /* The menu is sized to its content, so a scrollbar appearing would other-
-       wise take the width out of the labels. */
-    scrollbar-gutter: stable;
     padding: 5px;
 }
 
