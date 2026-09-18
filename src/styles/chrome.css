@@ -742,7 +742,7 @@
     height: var(--stack-strip-h);
 }
 .pane-cell.in-stack .pane {
-    top: var(--stack-strip-h);
+    top: calc(var(--stack-strip-h) + var(--pane-gutter));
 }
 
 .pane {

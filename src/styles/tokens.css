@@ -129,6 +129,9 @@
        the rail's project children draw the same tree, so they read the same
        pair — accent-led, because the spine is what says these rows belong to
        the row above them. */
+    /* What a pane holds back from its cell, so panes do not touch. */
+    --pane-gutter: 4px;
+
     --tree-spine: color-mix(in srgb, var(--acc) 52%, var(--line));
     --tree-tick: color-mix(in srgb, var(--acc) 72%, transparent);
 
