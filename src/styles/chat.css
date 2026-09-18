@@ -568,7 +568,7 @@
     bottom: 0;
     left: 0;
     width: 1px;
-    background: color-mix(in srgb, var(--line) 78%, var(--acc) 22%);
+    background: var(--tree-spine);
 }
 
 .chat-tool-node:last-child::before {
@@ -595,7 +595,7 @@ button.chat-tool:hover {
 .chat-tool-tick {
     width: 9px;
     height: 1px;
-    background: var(--acc-line);
+    background: var(--tree-tick);
 }
 
 .chat-tool-icon {

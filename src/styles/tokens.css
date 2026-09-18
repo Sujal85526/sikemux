@@ -118,6 +118,13 @@
     --border-strong: var(--gray-500);
     --border-selected: color-mix(in oklab, var(--acc) 42%, transparent);
 
+    /* The tree spine and the ticks hanging off it. The chat's tool calls and
+       the rail's project children draw the same tree, so they read the same
+       pair — accent-led, because the spine is what says these rows belong to
+       the row above them. */
+    --tree-spine: color-mix(in srgb, var(--acc) 52%, var(--line));
+    --tree-tick: color-mix(in srgb, var(--acc) 72%, transparent);
+
     /* ── Text ─────────────────────────────────────────────────────────────
      *
      * Four weights of presence. Body copy sits at `--text-secondary`, not at

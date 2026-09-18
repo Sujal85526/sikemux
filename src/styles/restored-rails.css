@@ -19,7 +19,7 @@
 .side-rail .proj-children {
     padding: 2px 6px 2px 0;
     margin-left: 20px;
-    border-left: 1px solid color-mix(in srgb, var(--line) 85%, var(--acc) 15%);
+    border-left: 1px solid var(--tree-spine);
 }
 .side-rail .proj-child {
     width: 100%;
@@ -50,7 +50,7 @@
     width: 6px;
     height: 1px;
     flex-shrink: 0;
-    background: color-mix(in srgb, var(--acc) 20%, transparent);
+    background: var(--tree-tick);
 }
 .side-rail .proj-child .proj-child-ic {
     display: inline-flex;

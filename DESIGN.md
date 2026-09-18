@@ -125,6 +125,8 @@ you mean.
 | `--surface-active`   | neutral ink tint, 10% — pressed, expanded, open    |
 | `--surface-selected` | accent, 14% — **the current thing, and only that** |
 | `--border-selected`  | accent, 42% — the edge that goes with it           |
+| `--tree-spine`       | accent over `--line`, 52% — the tree's vertical    |
+| `--tree-tick`        | accent, 72% — the stub joining a row to the spine  |
 
 Body copy sits at `--text-secondary`, not full ink. A pane where every row is
 `--gray-1000` glares, and again leaves selection nowhere to go.
