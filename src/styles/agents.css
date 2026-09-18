@@ -86,10 +86,18 @@
     animation: agent-activity-spin 0.72s linear infinite;
     will-change: transform;
 }
+.agent-state-dot {
+    display: block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
 .agent-activity.state-done {
     color: var(--acc);
 }
-.agent-activity.state-blocked {
+.agent-activity.state-blocked,
+.agent-activity.state-background {
     color: var(--warn);
 }
 .agent-activity.state-working {

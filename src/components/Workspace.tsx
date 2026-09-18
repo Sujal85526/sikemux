@@ -203,6 +203,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
     const activity = useStore((s) => s.agentActivity);
+    const backgroundWork = useStore((s) => s.agentBackgroundWork);
     const windowIds = useStore((s) => s.windowsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
@@ -362,6 +363,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 const agent = agentsById[win.activePaneId];
                 if (!agent) return [];
                 const state = activity[agent.id];
+                const background = (backgroundWork[agent.id] ?? 0) > 0;
                 return [
                     {
                         id: key,
@@ -373,7 +375,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                                 <AgentIcon type={agent.type} size={19} />
                             </span>
                         ),
-                        accessory: state ? <AgentStateIndicator state={state.state} /> : undefined,
+                        accessory: state || background ? <AgentStateIndicator state={state?.state ?? "idle"} background={background} /> : undefined,
                     },
                 ];
             }
@@ -400,7 +402,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 panelId: `workspace-content-${session.id}`,
             })),
         );
-    }, [refs, windowsById, agentsById, activity, termTitles, dirtyEditorPaths, collection, drafts, activeKey, session.id]);
+    }, [refs, windowsById, agentsById, activity, backgroundWork, termTitles, dirtyEditorPaths, collection, drafts, activeKey, session.id]);
 
     const refByKey = new Map(refs.map((ref) => [tabRefKey(ref), ref]));
 

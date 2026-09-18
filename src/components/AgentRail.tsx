@@ -47,6 +47,7 @@ export function AgentRailBody() {
     const pageVisible = usePageVisible();
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
+    const backgroundById = useStore((s) => s.agentBackgroundWork);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
@@ -253,7 +254,7 @@ export function AgentRailBody() {
                                             <AgentIcon type={a.type} size={20} />
                                         </span>
                                         <span className="agent-title">{a.title}</span>
-                                        {activityById[a.id] && <AgentStateMark state={activityById[a.id].state} />}
+                                        <AgentStateMark state={activityById[a.id]?.state} background={(backgroundById[a.id] ?? 0) > 0} />
                                         {a.launchState === "dormant" && <span className="agent-dormant-label">paused</span>}
                                     </button>
                                     <Tooltip label={`Close ${a.title}`}>
@@ -299,8 +300,9 @@ export function AgentRailBody() {
     );
 }
 
-function AgentStateMark({ state }: { state: import("../state/types").AgentPresentationState }) {
-    return <AgentStateIndicator state={state} />;
+function AgentStateMark({ state, background }: { state?: import("../state/types").AgentPresentationState; background: boolean }) {
+    if (!state && !background) return null;
+    return <AgentStateIndicator state={state ?? "idle"} background={background} />;
 }
 
 function usagePeak(usage: AgentUsage | undefined): number | undefined {

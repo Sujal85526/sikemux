@@ -115,6 +115,7 @@ interface RailContextValue {
     windowsBySession: Record<string, string[]>;
     agentsById: Record<string, Agent>;
     activityById: Record<string, AgentRuntimeState>;
+    backgroundById: Record<string, number>;
     draggingProjectId: string | null;
     projectDragClass: (id: string) => string;
     onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
@@ -160,7 +161,7 @@ function SimpleRow({ s }: { s: Session }) {
 
 function ProjectBlock({ s }: { s: Session }) {
     const rail = useRail();
-    const { activeSessionId, agentsById, activityById, windowsById, windowsBySession, draggingProjectId, kb } = rail;
+    const { activeSessionId, agentsById, activityById, backgroundById, windowsById, windowsBySession, draggingProjectId, kb } = rail;
     const active = s.id === activeSessionId;
     const winIds = windowsBySession[s.id] ?? [];
     const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
@@ -168,6 +169,7 @@ function ProjectBlock({ s }: { s: Session }) {
         .map((id) => agentsById[id])
         .filter(Boolean);
     const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
+    const rollupBackground = agents.some((agent) => (backgroundById[agent.id] ?? 0) > 0);
     const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
     if (!active) {
@@ -198,7 +200,7 @@ function ProjectBlock({ s }: { s: Session }) {
                                 {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                             </span>
                         )}
-                        {rollup && <AgentStateIndicator state={rollup} />}
+                        {(rollup || rollupBackground) && <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />}
                     </button>
                 </Tooltip>
                 <SessionCloseButton session={s} />
@@ -313,7 +315,9 @@ function ProjectBlock({ s }: { s: Session }) {
                                         {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                                     </span>
                                 )}
-                                {c.role === "agents" && rollup && <AgentStateIndicator state={rollup} />}
+                                {c.role === "agents" && (rollup || rollupBackground) && (
+                                    <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
+                                )}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
                         </Tooltip>
@@ -396,6 +400,7 @@ export const SideRail = memo(function SideRail() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agentsById = useStore((s) => s.agents);
     const activityById = useStore((s) => s.agentActivity);
+    const backgroundById = useStore((s) => s.agentBackgroundWork);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
@@ -614,6 +619,7 @@ export const SideRail = memo(function SideRail() {
         windowsBySession,
         agentsById,
         activityById,
+        backgroundById,
         draggingProjectId,
         projectDragClass,
         onProjectPointerDown,
