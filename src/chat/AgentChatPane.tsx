@@ -46,8 +46,9 @@ import {
     IconWarning,
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
-import { collapseDiff, fencedDiff, type ToolDiff } from "./diff";
-import { CodeTokens, fenceLanguage, useCodeTokens } from "./codeHighlight";
+import { collapseDiff, fencedDiff, type DiffLine, type ToolDiff } from "./diff";
+import { CodeRun, CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiffTokens } from "./codeHighlight";
+import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import type {
     AcpAsyncTask,
@@ -218,9 +219,28 @@ function durationLabel(ms: number): string {
     return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
 
+/* The text of one diff line: its runs, with the span that changed inside the
+   one mark that shows it. A line with no colours yet is its own single run, so
+   the marking is the same either way. */
+function DiffText({ line, tokens }: { line: DiffLine; tokens?: CodeLine }) {
+    const { pre, marked, post } = splitAtMark(tokens ?? [{ text: line.text }], line.mark);
+    return (
+        <span>
+            <CodeRun tokens={pre} />
+            {marked.length > 0 && (
+                <mark>
+                    <CodeRun tokens={marked} />
+                </mark>
+            )}
+            <CodeRun tokens={post} />
+        </span>
+    );
+}
+
 function DiffBody({ diff }: { diff: ToolDiff }) {
     const [expanded, setExpanded] = useState(false);
     const view = useMemo(() => collapseDiff(diff.lines, expanded ? Number.MAX_SAFE_INTEGER : 3), [diff.lines, expanded]);
+    const coloured = useDiffTokens(diff.lines, diff.path);
     return (
         <div className="chat-diff">
             <div className="chat-diff-head">
@@ -241,17 +261,7 @@ function DiffBody({ diff }: { diff: ToolDiff }) {
                         <div className={`chat-diff-line${row.sign === "+" ? " add" : row.sign === "-" ? " del" : ""}`} key={index}>
                             <span className="chat-diff-ln">{row.sign === "+" ? row.newLine : row.oldLine}</span>
                             <span className="chat-diff-sign">{row.sign}</span>
-                            <span>
-                                {row.mark ? (
-                                    <>
-                                        {row.text.slice(0, row.mark[0])}
-                                        <mark>{row.text.slice(row.mark[0], row.mark[1])}</mark>
-                                        {row.text.slice(row.mark[1])}
-                                    </>
-                                ) : (
-                                    row.text
-                                )}
-                            </span>
+                            <DiffText line={row} tokens={coloured?.get(row)} />
                         </div>
                     ),
                 )}
@@ -358,8 +368,10 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     const info = /language-(\S+)/.exec(className ?? "")?.[1];
     const text = codeText(children);
     const patch = useMemo(() => (text ? fencedDiff(text, info) : null), [text, info]);
-    // A patch is read by its signs, not its grammar, and it already has colours.
     const tokens = useCodeTokens(text, patch ? null : fenceLanguage(info));
+    // A patch in a fence is coloured the way the one in a tool call is, which
+    // only happens at all when the fence says what file it is a patch to.
+    const patchColours = useDiffTokens(patch, info);
     if (!info && !patch) return <code className={className}>{children}</code>;
     return (
         <>
@@ -374,17 +386,7 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
                     {patch.map((line, index) => (
                         <span className={`chat-diff-line${line.sign === "+" ? " add" : line.sign === "-" ? " del" : ""}`} key={index}>
                             <span className="chat-diff-sign">{line.sign}</span>
-                            <span>
-                                {line.mark ? (
-                                    <>
-                                        {line.text.slice(0, line.mark[0])}
-                                        <mark>{line.text.slice(line.mark[0], line.mark[1])}</mark>
-                                        {line.text.slice(line.mark[1])}
-                                    </>
-                                ) : (
-                                    line.text
-                                )}
-                            </span>
+                            <DiffText line={line} tokens={patchColours?.get(line)} />
                         </span>
                     ))}
                 </code>

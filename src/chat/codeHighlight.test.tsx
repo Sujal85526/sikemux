@@ -1,7 +1,8 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CodeTokens, fenceLanguage, useCodeTokens } from "./codeHighlight";
+import { CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiffTokens } from "./codeHighlight";
 import type { CodeLine } from "./types";
+import type { DiffLine } from "./diff";
 
 const tokenizeCode = vi.fn<(text: string, lang: string) => Promise<CodeLine[]>>();
 
@@ -115,5 +116,92 @@ describe("useCodeTokens", () => {
         await settle();
         expect(tokenizeCode).not.toHaveBeenCalled();
         expect(screen.getByTestId("fence").querySelector("span")).toBeNull();
+    });
+});
+
+function Diff({ lines, path }: { lines: DiffLine[]; path: string }) {
+    const coloured = useDiffTokens(lines, path);
+    return (
+        <div data-testid="diff">
+            {lines.map((line, index) => (
+                <span key={index} data-read={coloured?.get(line)?.[0]?.text ?? ""}>
+                    {line.text}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+/* The same place in a file before and after a change: read as one document the
+   two versions of the middle line would follow each other, which they never do
+   in the file either of them came from. */
+const hunk: DiffLine[] = [
+    { sign: " ", text: "const a = 1;" },
+    { sign: "-", text: "const b = 2;", mark: [10, 11] },
+    { sign: "+", text: "const b = 3;", mark: [10, 11] },
+    { sign: " ", text: "export {};" },
+];
+
+describe("useDiffTokens", () => {
+    it("reads each side of a diff as the file it came from", async () => {
+        render(<Diff lines={hunk} path="/repo/src/thing.ts" />);
+        await settle();
+
+        expect(tokenizeCode.mock.calls.map(([text]) => text)).toEqual([
+            "const a = 1;\nconst b = 2;\nexport {};",
+            "const a = 1;\nconst b = 3;\nexport {};",
+        ]);
+        // Every line is coloured by its own words, which only holds if the two
+        // sides were read apart and put back line by line.
+        for (const span of screen.getByTestId("diff").querySelectorAll("span")) {
+            expect(span.getAttribute("data-read")).toBe(span.textContent);
+        }
+    });
+
+    it("leaves a diff to a file it has no grammar for alone", async () => {
+        render(<Diff lines={hunk} path="/repo/notes.txt" />);
+        await settle();
+        expect(tokenizeCode).not.toHaveBeenCalled();
+    });
+});
+
+describe("splitAtMark", () => {
+    const line: CodeLine = [
+        { text: "const b = ", color: "#a" },
+        { text: "2", color: "#b" },
+        { text: ";", color: "#c" },
+    ];
+    const said = (tokens: CodeLine) => tokens.map((token) => token.text).join("");
+
+    it("hands back the whole line when nothing changed inside it", () => {
+        const { pre, marked, post } = splitAtMark(line);
+        expect(said(pre)).toBe("const b = 2;");
+        expect(marked).toEqual([]);
+        expect(post).toEqual([]);
+    });
+
+    it("cuts the runs the changed span crosses at its edges", () => {
+        const { pre, marked, post } = splitAtMark(line, [6, 11]);
+        expect(said(pre)).toBe("const ");
+        expect(said(marked)).toBe("b = 2");
+        expect(said(post)).toBe(";");
+        // The run a cut lands in keeps its colour on both sides of it.
+        expect(pre.at(-1)?.color).toBe("#a");
+        expect(marked[0]?.color).toBe("#a");
+        expect(marked.at(-1)?.color).toBe("#b");
+    });
+
+    it("keeps every character of the line, in order", () => {
+        for (const mark of [
+            [0, 1],
+            [0, 12],
+            [3, 4],
+            [10, 11],
+            [11, 12],
+        ] as [number, number][]) {
+            const { pre, marked, post } = splitAtMark(line, mark);
+            expect(said(pre) + said(marked) + said(post)).toBe("const b = 2;");
+            expect(said(marked)).toBe("const b = 2;".slice(mark[0], mark[1]));
+        }
     });
 });

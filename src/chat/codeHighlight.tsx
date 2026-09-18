@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { codeThemeName } from "../themes/codeTheme";
 import { swallow } from "../state/toast";
 import type { CodeLine, CodeToken } from "./types";
+import type { DiffLine } from "./diff";
 
 /* The grammars the app carries, by the word an agent puts after the backticks
    or the extension of the file it names. Anything else stays plain text rather
@@ -179,6 +180,82 @@ export function useCodeTokens(text: string, lang: string | null): CodeLine[] | n
     return lines ?? (kept.current?.text === text ? kept.current.lines : null);
 }
 
+/* The two files a diff is a reading of. Each one is a real slice of a real
+   file, which the two of them interleaved is not: a deleted line and the line
+   that replaced it cannot both be there. */
+function sidesOf(lines: readonly DiffLine[]): { before: string; after: string } {
+    const before: string[] = [];
+    const after: string[] = [];
+    for (const line of lines) {
+        if (line.sign !== "+") before.push(line.text);
+        if (line.sign !== "-") after.push(line.text);
+    }
+    return { before: before.join("\n"), after: after.join("\n") };
+}
+
+function sideBySide(lines: readonly DiffLine[], before: CodeLine[] | null, after: CodeLine[] | null): Map<DiffLine, CodeLine> | null {
+    if (!before && !after) return null;
+    const coloured = new Map<DiffLine, CodeLine>();
+    let deleted = 0;
+    let added = 0;
+    for (const line of lines) {
+        // A line the change left alone reads the same either way, so it takes
+        // whichever side has come back.
+        const colours = line.sign === "-" ? before?.[deleted] : (after?.[added] ?? (line.sign === " " ? before?.[deleted] : undefined));
+        if (colours) coloured.set(line, colours);
+        if (line.sign !== "+") deleted += 1;
+        if (line.sign !== "-") added += 1;
+    }
+    return coloured.size > 0 ? coloured : null;
+}
+
+const NO_LINES: readonly DiffLine[] = [];
+
+/**
+ * The colours for the lines of a diff, by the line they belong to. Each side is
+ * read as the file it came from, so a deleted line is coloured by the file it
+ * was deleted from rather than by the one that replaced it.
+ */
+export function useDiffTokens(lines: readonly DiffLine[] | null, path: string | undefined): Map<DiffLine, CodeLine> | null {
+    const rows = lines ?? NO_LINES;
+    const lang = useMemo(() => fenceLanguage(path), [path]);
+    const sides = useMemo(() => sidesOf(rows), [rows]);
+    const before = useCodeTokens(sides.before, lang);
+    const after = useCodeTokens(sides.after, lang);
+    return useMemo(() => sideBySide(rows, before, after), [rows, before, after]);
+}
+
+function sliced(token: CodeToken, from: number, to: number): CodeToken | null {
+    const text = token.text.slice(from, to);
+    return text ? { ...token, text } : null;
+}
+
+/**
+ * A line's runs, with the changed span lifted out of them. One mark has to wrap
+ * the whole span — it is a rounded box, and a row of them is not the same thing
+ * — so the runs it crosses are cut at its edges rather than wrapped one by one.
+ */
+export function splitAtMark(tokens: CodeLine, mark?: readonly [number, number]): { pre: CodeLine; marked: CodeLine; post: CodeLine } {
+    if (!mark) return { pre: tokens, marked: [], post: [] };
+    const [from, to] = mark;
+    const pre: CodeToken[] = [];
+    const marked: CodeToken[] = [];
+    const post: CodeToken[] = [];
+    let at = 0;
+    for (const token of tokens) {
+        const end = at + token.text.length;
+        const piece = (start: number, stop: number) => sliced(token, Math.max(start, at) - at, Math.min(stop, end) - at);
+        const head = at < from ? piece(0, from) : null;
+        const middle = end > from && at < to ? piece(from, to) : null;
+        const tail = end > to ? piece(to, end) : null;
+        if (head) pre.push(head);
+        if (middle) marked.push(middle);
+        if (tail) post.push(tail);
+        at = end;
+    }
+    return { pre, marked, post };
+}
+
 function styleOf(token: CodeToken): CSSProperties | undefined {
     if (!token.color && !token.italic && !token.bold && !token.underline) return undefined;
     return {
@@ -189,6 +266,24 @@ function styleOf(token: CodeToken): CSSProperties | undefined {
     };
 }
 
+/** One line's runs. A run with no colour of its own stays a plain text node. */
+export function CodeRun({ tokens }: { tokens: CodeLine }) {
+    return (
+        <>
+            {tokens.map((token, at) => {
+                const style = styleOf(token);
+                return style ? (
+                    <span key={at} style={style}>
+                        {token.text}
+                    </span>
+                ) : (
+                    token.text
+                );
+            })}
+        </>
+    );
+}
+
 /** A fence's text, coloured. The characters are the fence's own, unchanged. */
 export function CodeTokens({ lines }: { lines: CodeLine[] }) {
     return (
@@ -196,16 +291,7 @@ export function CodeTokens({ lines }: { lines: CodeLine[] }) {
             {lines.map((line, index) => (
                 <Fragment key={index}>
                     {index > 0 && "\n"}
-                    {line.map((token, at) => {
-                        const style = styleOf(token);
-                        return style ? (
-                            <span key={at} style={style}>
-                                {token.text}
-                            </span>
-                        ) : (
-                            token.text
-                        );
-                    })}
+                    <CodeRun tokens={line} />
                 </Fragment>
             ))}
         </>

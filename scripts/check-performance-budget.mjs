@@ -130,14 +130,14 @@ const budgets = [
     gzip: 120_000,
   },
   {
-    // Carries the part of fence colouring that has to be there before any
-    // colours are: the grammar table, the token cache and the tokens' own
-    // markup. Shiki itself is a chunk of its own, fetched only once a fence
-    // that can use it settles.
+    // Carries the part of colouring code that has to be there before any
+    // colours are: the grammar table, the token cache, the tokens' own markup
+    // and the splitting a diff line's changed span needs. Shiki itself is a
+    // chunk of its own, fetched only once a block that can use it settles.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 64_000,
-    gzip: 20_500,
+    raw: 66_000,
+    gzip: 21_000,
   },
   {
     // Shiki, its two engines and vscode-textmate, with no grammars and no
