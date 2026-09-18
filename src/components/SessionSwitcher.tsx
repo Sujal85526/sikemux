@@ -7,7 +7,7 @@ import { IconAws, IconBruno, IconCommand, IconFolder, IconRundeck } from "./Icon
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={16} />;
-    if (kind === "aws") return <IconAws size={18} />;
+    if (kind === "aws") return <IconAws size={11} />;
     if (kind === "rundeck") return <IconRundeck size={16} />;
     if (kind === "bruno") return <IconBruno size={16} />;
     return <IconCommand size={16} />;

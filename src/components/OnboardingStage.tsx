@@ -60,7 +60,7 @@ export function OnboardingStage({ scene, region, overlay, agentState, commandRow
                             command
                         </span>
                         <span className="onb-win-row">
-                            <IconAws size={9} className="onb-tone-warn" />
+                            <IconAws size={5} className="onb-tone-warn" />
                             billing
                         </span>
                     </div>
@@ -122,7 +122,7 @@ export function OnboardingStage({ scene, region, overlay, agentState, commandRow
                                             sikemux<em>~/proj</em>
                                         </span>
                                         <span className="onb-win-overlay-row">
-                                            <IconAws size={9} className="onb-tone-warn" />
+                                            <IconAws size={5} className="onb-tone-warn" />
                                             billing<em>prod</em>
                                         </span>
                                         <span className="onb-win-overlay-row">
