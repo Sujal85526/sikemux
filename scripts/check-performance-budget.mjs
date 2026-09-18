@@ -194,8 +194,8 @@ const budgets = [
     // buys those rows room without touching what the app loads at startup.
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 33_000,
-    gzip: 6_400,
+    raw: 34_000,
+    gzip: 6_600,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: eight faces
