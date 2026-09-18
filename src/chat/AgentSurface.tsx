@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { TerminalPane } from "../terminal/TerminalPane";
@@ -48,10 +48,6 @@ function YoloToggle({ agent }: { agent: Agent }) {
 
 export function AgentSurface({ agent, session, profile, visible }: { agent: Agent; session: Session; profile?: ProviderProfile; visible: boolean }) {
     const supportsGui = agent.type === "claude" || agent.type === "codex";
-    const [opened, setOpened] = useState(visible);
-    useEffect(() => {
-        if (visible) setOpened(true);
-    }, [visible]);
     const [view, setView] = useState<AgentView>(supportsGui ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
@@ -67,6 +63,10 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
         [agent.id, chatBusy, switching, view],
     );
 
+    /* The window layer stays mounted so a live agent keeps its process, so the
+       session connects as soon as the pane exists rather than when it is first
+       looked at: the adapter and CLI take about a second to come up, and that
+       second should be spent before the user switches to this agent. */
     const guiActive = supportsGui && view === "gui" && !switching;
 
     return (
@@ -106,7 +106,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             agent={agent}
                             profile={profile}
                             cwd={agent.cwd || session.cwd}
-                            active={opened && guiActive}
+                            active={guiActive}
                             visible={visible && guiActive}
                             onBusyChange={setChatBusy}
                         />
