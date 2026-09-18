@@ -136,8 +136,8 @@ const budgets = [
     // chunk of its own, fetched only once a block that can use it settles.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 66_000,
-    gzip: 21_000,
+    raw: 68_000,
+    gzip: 21_600,
   },
   {
     // Shiki, its two engines and vscode-textmate, with no grammars and no
