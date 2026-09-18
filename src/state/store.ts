@@ -118,6 +118,9 @@ export interface ViewState {
     sessionSwitcher: SessionSwitcherView | null;
 
     editorViews: Record<string, EditorPaneView>;
+    /* Which agent a browser pane is showing, by pane id. The pane is an
+       ordinary leaf in the layout; this is the only thing tying it back. */
+    browserPanes: Record<string, string>;
     /** Runtime-only file opens claimed from the CLI broker, keyed by editor pane. */
     pendingEditorOpens: Record<string, CliPendingEditorOpen[]>;
     dirtyEditorPaths: Record<string, string[]>;
@@ -237,6 +240,7 @@ export const useStore = create<StoreState>(() => {
         zoomedPaneId: null,
         sessionSwitcher: null,
         editorViews: {},
+        browserPanes: {},
         pendingEditorOpens: {},
         dirtyEditorPaths: {},
         gitViews: {},

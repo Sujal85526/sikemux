@@ -42,6 +42,8 @@ const PANE_ROLE: Record<PaneKind, WindowRole> = {
     rundeck: "rundeck",
     bruno: "bruno",
     agent: "agent",
+    /* A browser is a pane, not a window role of its own. */
+    browser: "named",
 };
 const pct = (n: number) => `${n * 100}%`;
 

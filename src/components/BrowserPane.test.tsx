@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi, type BrowserSnapshot, type BrowserTab } from "../api/browser";
 import { occludeNativeViews, useStageMotion } from "../state/nativeViews";
 import { useToasts } from "../state/toast";
-import { AgentBrowserShell } from "./BrowserPane";
+import { setState } from "../state/store";
+import { BrowserPaneHost } from "./BrowserPane";
 
 vi.mock("../api/browser", async () => {
     const actual = await vi.importActual<typeof import("../api/browser")>("../api/browser");
@@ -99,13 +100,17 @@ afterEach(() => {
     useToasts.setState({ toasts: [] });
 });
 
-function renderShell(visible = true) {
-    return render(
-        <AgentBrowserShell agentId="agent-one" agentType="codex" visible={visible}>
-            <div>terminal</div>
-        </AgentBrowserShell>,
-    );
+/* The pane finds its agent through the store, the way the layout gives it to
+   it, so the association has to exist before it renders. */
+function renderPane(visible = true) {
+    setState({
+        browserPanes: { "pane-browser": "agent-one" },
+        agents: { "agent-one": { id: "agent-one", type: "codex", title: "codex", launchState: "live" } },
+    } as never);
+    return render(<BrowserPaneHost paneId="pane-browser" visible={visible} onEmpty={onEmpty} />);
 }
+
+const onEmpty = vi.fn();
 
 const placed = { x: 640, y: 96, width: 480, height: 321 };
 
@@ -115,11 +120,10 @@ function Stage({ moving }: { moving: boolean }) {
     return null;
 }
 
-describe("AgentBrowserShell", () => {
+describe("BrowserPaneHost", () => {
     it("opens the right-side browser when tabs appear and routes user tab actions", async () => {
-        renderShell();
+        renderPane();
 
-        expect(screen.getByText("terminal")).toBeInTheDocument();
         await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
         expect(screen.getByRole("region", { name: "codex browser" })).toBeInTheDocument();
 
@@ -135,19 +139,15 @@ describe("AgentBrowserShell", () => {
     /* The page is a native view the window draws on its own; the pane only
        tells it where the page area is, in whole window pixels. */
     it("places the native page over the viewport and parks it when the pane hides", async () => {
-        const { rerender } = renderShell();
+        const { rerender } = renderPane();
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
 
-        rerender(
-            <AgentBrowserShell agentId="agent-one" agentType="codex" visible={false}>
-                <div>terminal</div>
-            </AgentBrowserShell>,
-        );
+        rerender(<BrowserPaneHost paneId="pane-browser" visible={false} onEmpty={onEmpty} />);
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null));
     });
 
     it("re-places the page when its area moves and parks it on unmount", async () => {
-        const { unmount } = renderShell();
+        const { unmount } = renderPane();
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
         vi.mocked(browserApi.setBounds).mockClear();
 
@@ -172,7 +172,7 @@ describe("AgentBrowserShell", () => {
     });
 
     it("steps the page aside while an app overlay is open", async () => {
-        renderShell();
+        renderPane();
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
 
         let release = () => {};
@@ -187,7 +187,7 @@ describe("AgentBrowserShell", () => {
 
     it("shows a themed blank surface instead of the page for a new tab", async () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [tab({ url: "about:blank", title: "" })], activeTabId: "tab-one" });
-        renderShell();
+        renderPane();
         await waitFor(() => expect(screen.getByRole("tab", { name: "New tab" })).toBeInTheDocument());
         expect(screen.getByLabelText("Blank browser page")).toBeInTheDocument();
         expect(screen.getByRole("textbox", { name: "Address and search" })).toHaveValue("");
@@ -197,7 +197,7 @@ describe("AgentBrowserShell", () => {
 
     it("enables history buttons from what the page reports", async () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [tab({ canGoBack: true, loading: true })], activeTabId: "tab-one" });
-        renderShell();
+        renderPane();
         const back = await screen.findByRole("button", { name: "Back" });
         expect(back).toBeEnabled();
         expect(screen.getByRole("button", { name: "Forward" })).toBeDisabled();
@@ -213,16 +213,19 @@ describe("AgentBrowserShell", () => {
             return vi.fn<() => void>();
         });
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
-        renderShell();
+        renderPane();
         await waitFor(() => expect(browserApi.subscribeTabs).toHaveBeenCalled());
-        expect(screen.queryByRole("region", { name: "codex browser" })).toBeNull();
+        /* A pane with no tabs left has nothing to be, and says so rather than
+           sitting there empty. */
+        await waitFor(() => expect(onEmpty).toHaveBeenCalled());
+        expect(screen.queryByRole("tab", { name: "Example" })).toBeNull();
 
         vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
         await act(async () => {
             announce();
         });
 
-        expect(screen.getByRole("region", { name: "codex browser" })).toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument();
     });
 
     it("collapses a burst of tab reports into one read and a follow-up", async () => {
@@ -233,7 +236,7 @@ describe("AgentBrowserShell", () => {
         });
         let release: (() => void) | undefined;
         vi.mocked(browserApi.snapshot).mockImplementation(() => new Promise((resolve) => (release = () => resolve(snapshot))));
-        renderShell();
+        renderPane();
         await waitFor(() => expect(release).toBeDefined());
         expect(browserApi.snapshot).toHaveBeenCalledOnce();
 
@@ -252,7 +255,7 @@ describe("AgentBrowserShell", () => {
             tabs: [tab(), tab({ id: "tab-two", title: "Second", url: "https://second.test", active: false })],
             activeTabId: "tab-one",
         });
-        renderShell();
+        renderPane();
 
         const first = await screen.findByRole("tab", { name: /Example/ });
         fireEvent.keyDown(first, { key: "ArrowRight" });
@@ -266,12 +269,14 @@ describe("AgentBrowserShell", () => {
     it("carries the page with its screen while the stage swipes", async () => {
         const frames: FrameRequestCallback[] = [];
         vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+        setState({
+            browserPanes: { "pane-browser": "agent-one" },
+            agents: { "agent-one": { id: "agent-one", type: "codex", title: "codex", launchState: "live" } },
+        } as never);
         const swipe = (moving: boolean, visible: boolean) => (
             <>
                 <Stage moving={moving} />
-                <AgentBrowserShell agentId="agent-one" agentType="codex" visible={visible}>
-                    <div>terminal</div>
-                </AgentBrowserShell>
+                <BrowserPaneHost paneId="pane-browser" visible={visible} onEmpty={onEmpty} />
             </>
         );
         const { rerender } = render(swipe(false, true));
@@ -304,7 +309,7 @@ describe("AgentBrowserShell", () => {
 
     it("keeps a failed placement out of the way but reports it once", async () => {
         vi.mocked(browserApi.setBounds).mockRejectedValue(new Error("no window"));
-        renderShell();
+        renderPane();
         await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
     });
 });

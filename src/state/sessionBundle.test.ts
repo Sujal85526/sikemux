@@ -53,7 +53,7 @@ describe("session clipboard bundle validation", () => {
         ],
         [
             "unsupported pane kind",
-            { windows: [{ id: "window-1", name: "1", role: "term", root: { ...pane(), kind: "browser" }, activePaneId: "pane-1" }] },
+            { windows: [{ id: "window-1", name: "1", role: "term", root: { ...pane(), kind: "hologram" }, activePaneId: "pane-1" }] },
             "invalid or unsupported",
         ],
         [

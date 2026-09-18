@@ -2,7 +2,6 @@ import { lazy, Suspense } from "react";
 import type { Session } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { AgentBrowserShell } from "./BrowserPane";
 
 const AgentSurface = lazy(() => import("../chat/AgentSurface").then((module) => ({ default: module.AgentSurface })));
 
@@ -14,7 +13,7 @@ export function AgentPane({ paneId, session, visible }: { paneId: string; sessio
     );
     if (!agent) return null;
     return (
-        <AgentBrowserShell agentId={agent.id} agentType={agent.type} visible={visible}>
+        <>
             {agent.launchState === "dormant" ? (
                 <div className="agent-dormant" role="group" aria-label={`${agent.title} is ready to resume`}>
                     <span className={`agent-dormant-notch ${agent.type}`} aria-hidden="true" />
@@ -30,6 +29,6 @@ export function AgentPane({ paneId, session, visible }: { paneId: string; sessio
                     <AgentSurface agent={agent} session={session} profile={profile} visible={visible} />
                 </Suspense>
             )}
-        </AgentBrowserShell>
+        </>
     );
 }

@@ -1248,6 +1248,7 @@ function disposePaneState(d: StoreState, paneId: string): void {
     delete d.ecsViews[paneId];
     delete d.rundeckViews[paneId];
     delete d.brunoViews[paneId];
+    delete d.browserPanes[paneId];
     delete d.terminalTitles[paneId];
     delete d.agents[paneId];
     delete d.agentActivity[paneId];
@@ -2318,8 +2319,52 @@ function activeBrowserAgentId(): string | null {
 export function newBrowserTab(forAgentId?: string): boolean {
     const agentId = forAgentId ?? activeBrowserAgentId();
     if (!agentId) return false;
+    openBrowserPane(agentId);
     void browserApi.newTab(agentId).catch(reportError("open browser tab"));
     return true;
+}
+
+/**
+ * Put the agent's browser beside it, once.
+ *
+ * The pane is a leaf like any other, so it splits, resizes and closes through
+ * the layout rather than through anything the browser owns itself.
+ */
+export function openBrowserPane(agentId: string): void {
+    mutate((d) => {
+        const existing = Object.entries(d.browserPanes).find(([, owner]) => owner === agentId);
+        const windowId = Object.keys(d.windows).find((id) => collectPanes(d.windows[id].root).some((pane) => pane.id === agentId));
+        if (!windowId) return;
+        const win = d.windows[windowId];
+        if (existing && collectPanes(win.root).some((pane) => pane.id === existing[0])) {
+            win.activePaneId = existing[0];
+            return;
+        }
+        const agentPane = collectPanes(win.root).find((candidate) => candidate.id === agentId);
+        const pane = makePane(agentPane?.cwd ?? "", { kind: "browser" });
+        win.root = splitPane(win.root, agentId, "row", pane);
+        win.activePaneId = pane.id;
+        d.browserPanes[pane.id] = agentId;
+        d.zoomedPaneId = null;
+    });
+}
+
+/** The last tab closed, so the pane has nothing left to be. */
+export function closeBrowserPane(paneId: string): void {
+    mutate((d) => {
+        if (!d.browserPanes[paneId]) return;
+        for (const id of Object.keys(d.windows)) {
+            const win = d.windows[id];
+            if (!collectPanes(win.root).some((pane) => pane.id === paneId)) continue;
+            const root = removePane(win.root, paneId);
+            if (root === null) return;
+            win.root = root;
+            const remaining = collectPanes(root);
+            if (!remaining.some((pane) => pane.id === win.activePaneId)) win.activePaneId = remaining[0]?.id ?? win.activePaneId;
+            d.zoomedPaneId = null;
+        }
+        delete d.browserPanes[paneId];
+    });
 }
 
 export function closeActiveBrowserTab(): boolean {

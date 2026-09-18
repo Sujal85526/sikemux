@@ -3,6 +3,7 @@ import type { PaneKind, PaneNode, PtyContext, Session, Window as WindowT } from 
 import * as cmd from "../state/commands";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { AgentPane } from "../components/AgentPane";
+import { BrowserPaneHost } from "../components/BrowserPane";
 
 export interface WorkbenchItemRendererProps {
     pane: PaneNode;
@@ -80,6 +81,9 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<PaneKind, (props: Workbench
         </Suspense>
     ),
     agent: ({ pane, session, visible }) => <AgentPane paneId={pane.id} session={session} visible={visible} />,
+    browser: ({ pane, visible }) => (
+        <BrowserPaneHost paneId={pane.id} visible={visible} onEmpty={() => cmd.closeBrowserPane(pane.id)} />
+    ),
     terminal: ({ pane, session, win, active, visible }) => (
         <TerminalPane
             cwd={paneCwd(pane, session) || undefined}

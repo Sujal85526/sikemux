@@ -43,6 +43,9 @@ export interface BuiltinWorkbenchItemState {
     rundeck: null;
     bruno: null;
     agent: null;
+    /* The agent it belongs to is held in `browserPanes`, keyed by pane id,
+       the same way an editor keeps its view. */
+    browser: null;
 }
 
 /**
@@ -220,6 +223,7 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     rundeck: builtinDefinition("rundeck", "rundeck", NULL_CODEC),
     bruno: builtinDefinition("bruno", "bruno", NULL_CODEC),
     agent: builtinDefinition("agent", "agent", NULL_CODEC),
+    browser: builtinDefinition("browser", "browser", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {

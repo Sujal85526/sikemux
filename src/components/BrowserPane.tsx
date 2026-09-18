@@ -1,19 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { browserApi, type BrowserBounds, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, useNativeViewsOccluded, useStageMoving } from "../state/nativeViews";
 import type { AgentType } from "../state/types";
 import { reportError } from "../state/toast";
 import { IconChevron, IconGlobe, IconPlus, IconRefresh } from "./Icons";
-import { SplitPane } from "./SplitPane";
 import { TabBar } from "./TabBar";
+import { useStore } from "../state/store";
 
 const EMPTY_SNAPSHOT: BrowserSnapshot = {
     tabs: [],
     activeTabId: null,
 };
 
-const MIN_SIDE = 320;
-const DEFAULT_RATIO = 0.52;
 const BLANK_URL = "about:blank";
 
 /*
@@ -44,20 +42,38 @@ function sameBounds(a: BrowserBounds | null, b: BrowserBounds): boolean {
     return !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
-export function AgentBrowserShell({
+/**
+ * A browser pane, as an ordinary leaf in the window layout.
+ *
+ * It is a sibling of the agent it belongs to rather than something drawn
+ * inside it, so it is split, resized, focused and closed by the same layout
+ * the terminals use. `browserPanes` is what ties it back to its agent.
+ */
+export function BrowserPaneHost({ paneId, visible, onEmpty }: { paneId: string; visible: boolean; onEmpty: () => void }) {
+    const agentId = useStore((state) => state.browserPanes[paneId]);
+    const agentType = useStore((state) => (agentId ? state.agents[agentId]?.type : undefined));
+    /* Restored from a layout whose agent is gone — the association is the only
+       thing that made this pane mean anything, so it closes. */
+    const orphaned = !agentId || !agentType;
+    useEffect(() => {
+        if (orphaned) onEmpty();
+    }, [onEmpty, orphaned]);
+    if (orphaned) return null;
+    return <BrowserSession key={agentId} agentId={agentId} agentType={agentType} visible={visible} onEmpty={onEmpty} />;
+}
+
+function BrowserSession({
     agentId,
     agentType,
     visible,
-    children,
+    onEmpty,
 }: {
     agentId: string;
     agentType: AgentType;
     visible: boolean;
-    children: ReactNode;
+    onEmpty: () => void;
 }) {
     const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
-    const [ratio, setRatio] = useState(DEFAULT_RATIO);
-    const browserOpen = snapshot.tabs.length > 0;
 
     const refresh = useCallback(
         async (signal?: AbortSignal) => {
@@ -109,20 +125,14 @@ export function AgentBrowserShell({
         };
     }, [refresh, visible]);
 
-    return (
-        <SplitPane
-            ratio={ratio}
-            onRatio={setRatio}
-            min={MIN_SIDE}
-            label="Resize the browser"
-            end={
-                browserOpen ? (
-                    <BrowserPane agentId={agentId} agentType={agentType} visible={visible} snapshot={snapshot} refresh={refresh} />
-                ) : undefined
-            }>
-            {children}
-        </SplitPane>
-    );
+    /* The pane exists because a tab does. When the last one goes the pane has
+       nothing left to show, so it closes itself rather than sitting empty. */
+    useEffect(() => {
+        if (!visible || snapshot.tabs.length > 0) return;
+        onEmpty();
+    }, [onEmpty, snapshot.tabs.length, visible]);
+
+    return <BrowserPane agentId={agentId} agentType={agentType} visible={visible} snapshot={snapshot} refresh={refresh} />;
 }
 
 /* The page itself is a native view the window draws over this pane, so the
