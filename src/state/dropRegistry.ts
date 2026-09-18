@@ -1,8 +1,18 @@
+import { IS_WINDOWS } from "../lib/platform";
+
 export type DropPathsHandler = (paths: string[]) => void;
 export type DropFolderHandler = (paths: string[]) => void;
 
 const pathHandlers = new WeakMap<HTMLElement, DropPathsHandler>();
 const folderHandlers = new WeakMap<HTMLElement, DropFolderHandler>();
+
+/* Where a native drag sits on the page. Windows reports the cursor in device
+   pixels; macOS and Linux already report it in the units the page lays out in,
+   though Tauri calls all three "physical". */
+export function nativeDropPoint(position: { x: number; y: number }): { x: number; y: number } {
+    const scale = IS_WINDOWS ? window.devicePixelRatio || 1 : 1;
+    return { x: position.x / scale, y: position.y / scale };
+}
 
 export function registerPtyDrop(el: HTMLElement, fn: DropPathsHandler): () => void {
     return registerPathDrop(el, fn);

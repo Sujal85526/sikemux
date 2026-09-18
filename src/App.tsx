@@ -36,7 +36,7 @@ import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
-import { dispatchFolder, dispatchPathDrop, resolvePathDropTarget } from "./state/dropRegistry";
+import { dispatchFolder, dispatchPathDrop, nativeDropPoint, resolvePathDropTarget } from "./state/dropRegistry";
 import { notify, reportError, swallow } from "./state/toast";
 import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
@@ -172,9 +172,9 @@ function whenTrusted(project: string, expected: ValidProjectConfig, requireTaskI
     });
 }
 
-function elementAtPhysicalPosition(pos: { x: number; y: number }): HTMLElement | null {
-    const dpr = window.devicePixelRatio || 1;
-    return document.elementFromPoint(pos.x / dpr, pos.y / dpr) as HTMLElement | null;
+function elementAtDropPosition(pos: { x: number; y: number }): HTMLElement | null {
+    const { x, y } = nativeDropPoint(pos);
+    return document.elementFromPoint(x, y) as HTMLElement | null;
 }
 
 function folderDropElement(treeRoot: HTMLElement, rootPath: string, dir: string): HTMLElement | null {
@@ -833,7 +833,7 @@ export default function App() {
                 return;
             }
 
-            const at = elementAtPhysicalPosition(e.payload.position);
+            const at = elementAtDropPosition(e.payload.position);
 
             if (e.payload.type === "enter" || e.payload.type === "over") {
                 const pathTarget = resolvePathDropTarget(at);
