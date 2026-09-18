@@ -569,18 +569,6 @@ textarea:focus,
     color: var(--text-primary);
 }
 
-/*
- * A tab carries no fill, so with the window see-through its edge is drawn on
- * the wallpaper rather than on a surface, and --border is too quiet to survive
- * that. The selected tab keeps its own edge, which already reads.
- */
-html.is-transparent :is(.tabbar.v-agent, .tabbar.v-editor, .tabbar.v-browser, .tabbar.v-stack) .tab-wrap:not(.active) {
-    /* Enough ground to hold an edge, scaled with the window so a nearly opaque
-       one is not given a second surface it does not need. */
-    background: color-mix(in srgb, var(--surface-raised) calc((1 - var(--window-opacity, 1)) * 34%), transparent);
-    box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-
 /* The label inherits the tab's colour, so the three states are one decision
  * above rather than six rules. Weight stays put between them: a label that
  * gains 100 weight on selection reflows the strip by a pixel or two. */

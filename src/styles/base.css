@@ -204,15 +204,14 @@ body {
     cursor: default;
 }
 
-/* `.pane` is not in this list: it is the surface the screen card used to be,
-   and it carries that card's glass now. Letting it go transparent too left the
-   window with no ground at all, and a hairline drawn on the wallpaper is a
-   hairline nobody can see. */
+/* `.pane` and the tab strip are not in this list: each is a surface that the
+   screen card used to be, and each carries that card's glass now. Letting them
+   go transparent too left the window with no ground at all, and a hairline
+   drawn on the wallpaper is a hairline nobody can see. */
 html.is-transparent .top-bar,
 html.is-transparent .side-rail,
 html.is-transparent .workspace-rail,
 html.is-transparent .stage,
-html.is-transparent .tabbar.v-agent,
 html.is-transparent .window-layer,
 html.is-transparent .crumb,
 html.is-transparent .acc-header,
