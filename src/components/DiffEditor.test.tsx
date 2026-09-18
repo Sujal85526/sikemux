@@ -58,7 +58,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("DiffEditor", () => {
-    it("renders with Pierre Diffs, inherits opacity, and saves edits", async () => {
+    it("renders with Pierre Diffs, paints no ground of its own, and saves edits", async () => {
         const onSaved = vi.fn();
         const { container, getByTestId } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" editable onSaved={onSaved} />);
 
@@ -75,7 +75,12 @@ describe("DiffEditor", () => {
             tokenizeMaxLength: 4000,
         });
         expect(mocks.diffProps?.disableWorkerPool).toBe(true);
-        expect(mocks.diffProps?.style["--diffs-bg"]).toContain("var(--window-opacity, 1)");
+        // The window paints the ground on `body`; a second fill here reads as a
+        // slab beside panes the wallpaper shows through.
+        expect(mocks.diffProps?.style["--diffs-bg"]).toBe("transparent");
+        for (const [name, value] of Object.entries(mocks.diffProps?.style ?? {})) {
+            expect(`${name}: ${String(value)}`).not.toContain("--window-opacity");
+        }
         expect(mocks.diffProps?.style["--diffs-addition-color-override"]).toBe("var(--live)");
         expect(mocks.diffProps?.style["--diffs-deletion-color-override"]).toBe("var(--danger)");
 

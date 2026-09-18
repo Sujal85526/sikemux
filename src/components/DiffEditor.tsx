@@ -11,16 +11,26 @@ import { errMessage, swallow } from "../state/toast";
 import { joinPath } from "../lib/paths";
 import { subscribe } from "../state/bus";
 
+/*
+ * The renderer paints no ground of its own. The window already lays one down
+ * on `body`, so repeating it here composited the same fill twice and the diff
+ * came out a solid slab beside panes the wallpaper shows through. Everything
+ * the diff still needs to mark — context, gutter, separator — is a tint of
+ * ink over whatever is behind, which also follows the theme. The changed rows
+ * fall out of this: the renderer mixes them against this background, so at
+ * `transparent` they land as their own colour at low alpha.
+ */
 const DIFF_SURFACE_STYLE = {
-    "--diffs-bg": "color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent)",
+    "--diffs-bg": "transparent",
     "--diffs-fg": "var(--ink)",
     "--diffs-fg-number-override": "var(--ink-faint)",
     "--diffs-addition-color-override": "var(--live)",
     "--diffs-deletion-color-override": "var(--danger)",
     "--diffs-modified-color-override": "var(--acc)",
-    "--diffs-bg-context-override": "color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 88%), transparent)",
-    "--diffs-bg-context-gutter-override": "color-mix(in srgb, var(--rail) calc(var(--window-opacity, 1) * 55%), transparent)",
-    "--diffs-bg-separator-override": "color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 92%), transparent)",
+    "--diffs-bg-context-override": "color-mix(in oklab, var(--ink) 5%, transparent)",
+    "--diffs-bg-context-gutter-override": "color-mix(in oklab, var(--ink) 3%, transparent)",
+    "--diffs-bg-separator-override": "color-mix(in oklab, var(--ink) 7%, transparent)",
+    "--diffs-bg-buffer-override": "color-mix(in oklab, var(--ink) 10%, transparent)",
     "--diffs-font-family": "var(--mono)",
     "--diffs-header-font-family": "var(--mono)",
     "--diffs-font-size": "12px",
