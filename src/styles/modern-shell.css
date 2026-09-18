@@ -539,7 +539,10 @@ textarea:focus,
     border-right: 0;
     border-radius: var(--radius-2);
     background: transparent;
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 62%, transparent);
+    /* Full strength rather than 62%: the strip used to sit against the screen
+       card's lit top edge, and now it sits against the wallpaper, where a
+       hairline at two thirds of --border stopped reading as an edge at all. */
+    box-shadow: inset 0 0 0 1px var(--border);
     color: var(--text-tertiary);
     overflow: hidden;
     transition:
