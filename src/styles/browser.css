@@ -6,7 +6,6 @@
     min-height: 0;
     height: 100%;
     overflow: hidden;
-    background: color-mix(in srgb, var(--bg) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
 }
 

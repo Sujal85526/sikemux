@@ -77,56 +77,12 @@
     }
 }
 
-/* ── The screen's surface ──────────────────────────────────── */
 
-/*
- * One field, on the screen being read.
- *
- * Behind the whole shell it only ever reached the gutter: every panel above it
- * is near-opaque, so the texture showed in the channels between them and
- * nowhere a surface actually was. Six points of glass is not a backdrop.
- *
- * So it sits inside the screen card instead, above the ground the card paints
- * and under the panes, which paint nothing. It travels and clips with the card
- * on a swipe because it belongs to it, and only the screen on stage carries one
- * — a screen waiting off stage would spend a WebGL context on a texture nobody
- * is looking at.
- */
+/* The shell is a stacking context so the negative z-indexes below stay inside
+   it and cannot slide behind the window's own background. */
 .shell {
     position: relative;
-    /* A stacking context, so the negative z-indexes below stay inside the
-       shell and cannot slide behind the window's own background. */
     isolation: isolate;
-}
-
-.screen-field {
-    position: absolute;
-    inset: 0;
-    /* Panes sit at 1, the card's ground below at 0: between the two. */
-    z-index: 0;
-    pointer-events: none;
-    /*
-     * High, because the field is dots of a surface tone with nothing painted
-     * between them. Opacity buys texture here rather than haze — the value that
-     * had to stay low was the one painting a light ink over a dark surface.
-     */
-    --shader-field-strength: 0.85;
-    /*
-     * Weighted to the top and gone by the middle. A screen fills downward —
-     * scrollback, a document, a diff — so the top is the one band reliably
-     * free of anything being read.
-     */
-    mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0.08) 38%, transparent 50%);
-    /*
-     * Clips itself rather than trusting the card to do it. The card is
-     * `overflow: hidden` with a radius, which normally suffices — but the mask
-     * above forces this into its own composited layer, and a rounded overflow
-     * clip on an ancestor is what WebKit stops applying to a composited
-     * descendant. The dither bled square into all four corners.
-     *
-     * The radius is the card's inner edge: its border sits outside this box.
-     */
-    clip-path: inset(0 round calc(var(--radius-panel) - 1px));
 }
 
 /*

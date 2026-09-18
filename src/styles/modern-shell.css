@@ -1147,14 +1147,52 @@ textarea,
 }
 
 .tabbar.v-agent,
+/* The panes carry the ground now, so the screen behind them paints nothing —
+ * painting here as well stacked a second tint under every one of them. */
 .window-layer {
-    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
+    background: transparent;
 }
 
-/* The screen carries the ground for everything inside it, so the panes stay
- * transparent (see shaders.css) and simply draw on top. */
+/*
+ * Each pane is its own surface.
+ *
+ * The screen used to carry the ground for everything inside it and the panes
+ * stayed transparent, which meant a split was two regions of one card rather
+ * than two panes. Now the pane paints its own ground, its own edge and its own
+ * dither, so however the layout splits, every leaf is a surface in its own
+ * right.
+ *
+ * The dither is dots of ink with nothing painted between them, weighted to the
+ * top and gone by the middle — a screen fills downward, so the top band is the
+ * one reliably free of anything being read. It is CSS rather than the WebGL
+ * field the screen used to carry: that is budgeted to two live surfaces
+ * (`lib/shaderField.ts`), and a pane past the second would have come up blank.
+ */
 .pane {
-    background: transparent;
+    --pane-ground: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
+    position: relative;
+    isolation: isolate;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--pane-ground);
+    overflow: hidden;
+}
+
+.pane::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-image: radial-gradient(color-mix(in oklab, var(--ink) 22%, transparent) 0.5px, transparent 0.5px);
+    background-size: 3px 3px;
+    mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0.08) 38%, transparent 50%);
+    pointer-events: none;
+}
+
+/* Above the dither, which is the pane's ground rather than part of its content. */
+.pane > * {
+    position: relative;
+    z-index: 1;
 }
 
 /* The shell keeps the darkest tone so the gutter always reads as a recess,
