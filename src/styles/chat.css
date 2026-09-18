@@ -548,13 +548,15 @@
     font-size: var(--text-2xs);
 }
 
+/* Pulled back by its own padding so the count still starts on the prose's left
+   edge, while the hover pill sits evenly around it. */
 .chat-tools-sum {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
     height: 22px;
-    margin-left: -2px;
-    padding: 0 6px 0 2px;
+    margin-left: -6px;
+    padding: 0 6px;
     border-radius: var(--radius-1);
     color: var(--ink-dim);
 }
@@ -564,8 +566,6 @@
     color: var(--ink);
 }
 
-/* Only a failure earns a mark here: a run that went fine says so by being a
-   run that went fine, and a tick in front of every one of them is noise. */
 .chat-tools-count {
     color: var(--ink-dim);
 }
