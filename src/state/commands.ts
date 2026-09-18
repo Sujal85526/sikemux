@@ -35,6 +35,7 @@ import {
     agentIdsOf,
     agentWindowId,
     brunoPaneId,
+    agentPaneId,
     nextInCycle,
     ownerSessionId,
     selectTabRefs,
@@ -1450,7 +1451,7 @@ function closeWindowNow(id: string): void {
     const taskPaneIds = collectPanes(closing.root)
         .filter((pane) => pane.externalPty)
         .map((pane) => pane.id);
-    const closingAgent = closing.role === "agent" ? getState().agents[closing.activePaneId] : undefined;
+    const closingAgent = closing.role === "agent" ? getState().agents[agentPaneId(closing) ?? ""] : undefined;
     mutate((d) => {
         const sessionId = ownerSessionId(d, id);
         const session = sessionId ? d.sessions[sessionId] : undefined;

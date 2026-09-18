@@ -1,5 +1,6 @@
 import type { PaneKind, Session, TabRef, Window } from "./types";
 import type { StoreState } from "./store";
+import { collectPanes } from "./layout";
 
 export const selectSessionIds = (state: StoreState): readonly string[] => state.sessionOrder;
 export const selectActiveSessionId = (state: StoreState): string => state.activeSessionId;
@@ -26,8 +27,20 @@ export const selectWindowIds =
 export function agentIdsOf(state: Pick<StoreState, "windowsBySession" | "windows">, sessionId: string): string[] {
     return (state.windowsBySession[sessionId] ?? EMPTY_IDS).flatMap((id) => {
         const win = state.windows[id];
-        return win?.role === "agent" ? [win.activePaneId] : [];
+        const agentId = win && win.role === "agent" ? agentPaneId(win) : null;
+        return agentId ? [agentId] : [];
     });
+}
+
+/**
+ * The agent's own pane in an agent window.
+ *
+ * Not `activePaneId`: an agent window can hold a second pane — its browser —
+ * and focusing that one would otherwise lose the agent, along with its tab, its
+ * rail row and its place in what gets persisted.
+ */
+export function agentPaneId(win: Window): string | null {
+    return collectPanes(win.root).find((pane) => pane.kind === "agent")?.id ?? null;
 }
 
 /** The window an agent lives in, wherever it is. */

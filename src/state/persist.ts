@@ -6,6 +6,7 @@ import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../c
 import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agentLaunch";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
+import { agentPaneId } from "./selectors";
 import { agentDirectCommand, agentStartup } from "./commands";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
@@ -403,7 +404,8 @@ function persistedAgent(agent: Agent): PersistedAgent {
 function durableWindow(s: StoreState, id: string): Window | null {
     const window = s.windows[id];
     if (!window || window.transient) return null;
-    if (window.role === "agent" && !s.agents[window.activePaneId]?.resumeId) return null;
+    const agentPane = window.role === "agent" ? agentPaneId(window) : null;
+    if (window.role === "agent" && !s.agents[agentPane ?? ""]?.resumeId) return null;
     return window;
 }
 
@@ -427,7 +429,7 @@ function snapshot(): string {
         });
         for (const window of windowsBySession[sess.id]) {
             if (window.role === "agent") {
-                const agent = s.agents[window.activePaneId];
+                const agent = s.agents[agentPaneId(window) ?? ""];
                 if (agent) agents.push(persistedAgent(agent));
             }
             const pending = [window.root];
@@ -652,7 +654,7 @@ export function applyHydrate(raw: string): HydrationResult {
         windowsBySession[sid] = windowsBySession[sid].filter((id) => {
             const win = windows[id];
             if (win?.role !== "agent") return true;
-            if (sessions[sid].kind === "project" && agents[win.activePaneId]) return true;
+            if (sessions[sid].kind === "project" && agents[agentPaneId(win) ?? ""]) return true;
             delete windows[id];
             return false;
         });

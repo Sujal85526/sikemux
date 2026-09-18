@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { closeBrowserPane, openBrowserPane } from "./commands";
 import { collectPanes } from "./layout";
+import { agentIdsOf, agentPaneId } from "./selectors";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -71,6 +72,18 @@ describe("the browser pane", () => {
         expect(collectPanes(getState().windows.window.root).map((pane) => pane.kind)).toEqual(["agent"]);
         expect(getState().browserPanes[browserId]).toBeUndefined();
         expect(getState().windows.window.activePaneId).toBe("agent-1");
+    });
+
+    /* Several things find an agent by reading its window — its tab, its rail row
+       and what gets persisted. A browser pane is a second pane in that window,
+       so none of them may go looking at whichever pane happens to be focused. */
+    it("keeps the agent findable once its browser is the focused pane", () => {
+        openBrowserPane("agent-1");
+        const browserId = collectPanes(getState().windows.window.root)[1].id;
+        setState({ windows: { window: { ...getState().windows.window, activePaneId: browserId } } } as never);
+
+        expect(agentIdsOf(getState(), "project")).toEqual(["agent-1"]);
+        expect(agentPaneId(getState().windows.window)).toBe("agent-1");
     });
 
     it("does nothing for an agent that is not in any window", () => {
