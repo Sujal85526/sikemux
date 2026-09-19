@@ -233,6 +233,10 @@
 .agent-chat-pane {
     position: relative;
     display: grid;
+    /* Without a column of its own the grid widens to the longest unbreakable
+       thing in it — one queued message holding a URL shoved the transcript and
+       the composer off the right edge. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     width: 100%;
     height: 100%;
