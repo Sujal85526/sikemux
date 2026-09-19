@@ -3,9 +3,11 @@ import { fsapi } from "../api/fs";
 import { isImagePath } from "../editor/media";
 
 const MAX_CACHED = 12;
-/* A preview is a thumbnail in a transcript, and it lives here as a base64
-   string: a screenshot's worth is generous, a whole photo library is not. */
-const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
+/* A preview is only ever drawn a few hundred pixels wide, so a picture bigger
+   than this is redrawn small before it is kept. A retina screenshot is several
+   megabytes and would otherwise fill the cache on its own. */
+const SHRINK_OVER_BYTES = 1024 * 1024;
+const THUMB_EDGE = 720;
 const MAX_CACHE_BYTES = 12 * 1024 * 1024;
 /* A null entry is a file we already tried and cannot show, so a transcript
    that scrolls past it again does not read it again. */
@@ -27,14 +29,40 @@ function remember(path: string, src: string | null): string | null {
     return src;
 }
 
+function bytesOf(base64: string) {
+    return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+}
+
+/** Redraws a picture at thumbnail size, or null where the webview cannot. */
+async function shrink(blob: Blob): Promise<string | null> {
+    if (typeof createImageBitmap !== "function") return null;
+    try {
+        const bitmap = await createImageBitmap(blob);
+        const scale = Math.min(1, THUMB_EDGE / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const context = canvas.getContext("2d");
+        if (context) context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        return context ? canvas.toDataURL("image/jpeg", 0.82) : null;
+    } catch {
+        return null;
+    }
+}
+
+async function readPreview(path: string): Promise<string | null> {
+    const blob = await fsapi.readFileBase64(path);
+    if (!blob.mime.startsWith("image/")) return null;
+    if (blob.size <= SHRINK_OVER_BYTES) return `data:${blob.mime};base64,${blob.data}`;
+    return shrink(new Blob([bytesOf(blob.data)], { type: blob.mime }));
+}
+
 function loadPreview(path: string): Promise<string | null> {
     const running = pending.get(path);
     if (running) return running;
-    const request = fsapi
-        .readFileBase64(path)
-        .then((blob) =>
-            remember(path, blob.mime.startsWith("image/") && blob.size <= MAX_PREVIEW_BYTES ? `data:${blob.mime};base64,${blob.data}` : null),
-        )
+    const request = readPreview(path)
+        .then((src) => remember(path, src))
         .catch(() => remember(path, null))
         .finally(() => pending.delete(path));
     pending.set(path, request);
@@ -61,6 +89,16 @@ export function localImagePath(uri: string | null | undefined): string | null {
 /** What the preview cache is holding, in characters. */
 export function previewCacheBytes(): number {
     return cachedBytes;
+}
+
+/** Reads a local image whole, for a viewer that wants it at its own size. */
+export async function readImageSource(path: string): Promise<string | null> {
+    try {
+        const blob = await fsapi.readFileBase64(path);
+        return blob.mime.startsWith("image/") ? `data:${blob.mime};base64,${blob.data}` : null;
+    } catch {
+        return null;
+    }
 }
 
 /** Reads a local image as a data URL; null while it loads and if it cannot be shown. */

@@ -37,6 +37,39 @@ describe("chat image previews", () => {
         vi.restoreAllMocks();
     });
 
+    /* A retina screenshot is several megabytes, which used to be refused
+       outright and left the composer showing a file icon. */
+    it("shrinks a screenshot rather than refusing to preview it", async () => {
+        const thumb = "data:image/jpeg;base64,VEhVTUI=";
+        vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: "A".repeat(1024 * 1024), size: 4_634_596 });
+        vi.stubGlobal("createImageBitmap", async () => ({ width: 3024, height: 1890, close: () => {} }));
+        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+        const drawn = vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(thumb);
+
+        const { result } = renderHook(() => useImagePreview("/shots/retina.png"));
+
+        await waitFor(() => expect(result.current).toBe(thumb));
+        expect(drawn.mock.instances[0]).toMatchObject({ width: 720, height: 450 });
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    /* A window with no canvas to draw on has nothing to shrink a picture with,
+       and a file icon beats parking six megabytes in the cache. */
+    it("has no preview for a big picture it cannot shrink", async () => {
+        const read = vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: "A".repeat(1024 * 1024), size: 4_634_596 });
+        vi.stubGlobal("createImageBitmap", undefined);
+        const held = previewCacheBytes();
+
+        const { result } = renderHook(() => useImagePreview("/shots/unshrinkable.png"));
+
+        await waitFor(() => expect(read).toHaveBeenCalled());
+        expect(result.current).toBeNull();
+        expect(previewCacheBytes()).toBeLessThanOrEqual(held);
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
     it("has no local path for remote links", () => {
         expect(localPath("https://example.com/cat.png")).toBeNull();
         expect(localImagePath("https://example.com/cat.png")).toBeNull();

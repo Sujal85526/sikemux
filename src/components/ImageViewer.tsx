@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fsapi } from "../api/fs";
+import { readImageSource } from "../chat/imagePreview";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { hideImage, useShownImage, type ShownImage } from "../state/imageViewer";
 import { useOccludeNativeViews } from "../state/nativeViews";
@@ -26,10 +27,30 @@ export function ImageViewer() {
     return image ? <ImageSheet image={image} /> : null;
 }
 
+/* A thumbnail of a big picture is a shrunk copy of it, so the file is read
+   again here, where the picture is meant to be seen at its own size. */
+function useFullSize(image: ShownImage): string {
+    const [full, setFull] = useState<string | null>(null);
+    const path = image.path;
+    useEffect(() => {
+        setFull(null);
+        if (!path) return;
+        let live = true;
+        void readImageSource(path).then((src) => {
+            if (live) setFull(src);
+        });
+        return () => {
+            live = false;
+        };
+    }, [path]);
+    return full ?? image.src;
+}
+
 function ImageSheet({ image }: { image: ShownImage }) {
     const sheetRef = useRef<HTMLDivElement>(null);
     const closeRef = useRef<HTMLButtonElement>(null);
     const [saving, setSaving] = useState(false);
+    const src = useFullSize(image);
     useModalFocus(sheetRef);
 
     useEffect(() => closeRef.current?.focus(), []);
@@ -86,7 +107,7 @@ function ImageSheet({ image }: { image: ShownImage }) {
                         <IconClose size={14} />
                     </button>
                 </div>
-                <img className="img-full" src={image.src} alt={image.name} />
+                <img className="img-full" src={src} alt={image.name} />
             </div>
         </div>
     );

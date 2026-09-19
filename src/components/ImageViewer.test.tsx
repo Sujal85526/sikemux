@@ -11,6 +11,7 @@ vi.mock("../api/fs", async () => {
         ...actual,
         fsapi: {
             ...actual.fsapi,
+            readFileBase64: vi.fn(),
             downloadsDir: vi.fn(),
             copyIntoDir: vi.fn(),
             saveBase64IntoDir: vi.fn(),
@@ -22,9 +23,11 @@ vi.mock("../api/fs", async () => {
 const { fsapi } = await import("../api/fs");
 
 const shot = { src: "data:image/png;base64,SEVMTE8=", name: "shot.png", path: "/repo/shot.png" };
+const fullShot = "data:image/png;base64,RlVMTFNJWkU=";
 const attachment = { src: "data:image/png;base64,QVRUQUNI", name: "attachment.png" };
 
 beforeEach(() => {
+    vi.mocked(fsapi.readFileBase64).mockResolvedValue({ mime: "image/png", data: "RlVMTFNJWkU=", size: 4_634_596 });
     vi.mocked(fsapi.downloadsDir).mockResolvedValue("/Users/me/Downloads");
     vi.mocked(fsapi.copyIntoDir).mockResolvedValue("/Users/me/Downloads/shot.png");
     vi.mocked(fsapi.saveBase64IntoDir).mockResolvedValue("/Users/me/Downloads/attachment.png");
@@ -45,6 +48,24 @@ describe("ImageViewer", () => {
         act(() => showImage(shot));
         expect(screen.getByRole("dialog", { name: "shot.png" })).toBeInTheDocument();
         expect(screen.getByRole("img", { name: "shot.png" })).toHaveAttribute("src", shot.src);
+    });
+
+    /* The transcript's thumbnail of a big picture is a shrunk copy, so the
+       viewer reads the file to show what was actually attached. */
+    it("reads the file again to replace the thumbnail with the whole picture", async () => {
+        render(<ImageViewer />);
+        act(() => showImage(shot));
+
+        await waitFor(() => expect(screen.getByRole("img", { name: "shot.png" })).toHaveAttribute("src", fullShot));
+        expect(fsapi.readFileBase64).toHaveBeenCalledWith("/repo/shot.png");
+    });
+
+    it("keeps showing a picture that never came from a file", async () => {
+        render(<ImageViewer />);
+        act(() => showImage(attachment));
+
+        await waitFor(() => expect(screen.getByRole("img", { name: "attachment.png" })).toHaveAttribute("src", attachment.src));
+        expect(fsapi.readFileBase64).not.toHaveBeenCalled();
     });
 
     it("closes from the button, from Escape and from the scrim behind it", async () => {

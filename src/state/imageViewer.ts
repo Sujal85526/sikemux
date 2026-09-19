@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
    properly. One is open at a time, and the viewer that shows it is mounted at
    the app's root so it covers the window rather than the pane it came from. */
 export interface ShownImage {
-    /** What to draw: a data URL, which is what a preview and an attachment both are. */
+    /** The data URL the transcript was drawing, which for a big file is a shrunk copy of it. */
     readonly src: string;
     /** What to call it when it is saved. */
     readonly name: string;
