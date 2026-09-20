@@ -640,7 +640,10 @@
     -webkit-text-fill-color: transparent;
 }
 .yolo-switch-option.armed.active .yolo-switch-glyph {
-    animation: yolo-hue 5s linear infinite;
+    /* Not animated: `color` is not a compositor property, so cycling it
+       repainted the glyph and resolved style on every frame, in every pane
+       holding a live agent. The ring beside it already carries the motion. */
+    color: var(--acc);
 }
 
 /* One full turn of the rainbow: the strip is four windows wide and carries two
@@ -651,26 +654,6 @@
     }
     to {
         transform: translateX(-50%);
-    }
-}
-@keyframes yolo-hue {
-    0% {
-        color: var(--acc);
-    }
-    20% {
-        color: var(--cmd);
-    }
-    40% {
-        color: var(--danger);
-    }
-    60% {
-        color: var(--warn);
-    }
-    80% {
-        color: var(--live);
-    }
-    100% {
-        color: var(--acc);
     }
 }
 

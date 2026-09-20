@@ -670,6 +670,18 @@
 .window-layer:not(.painted) {
     visibility: hidden;
 }
+/* A hidden layer is still a running layer. `visibility: hidden` takes it off
+   the screen but leaves its animations ticking, and every tick still resolves
+   style and recomputes what the compositor needs — for a pane nobody can see.
+   With a live agent per layer that was most of the window's idle cost. */
+.window-layer:not(.painted),
+.window-layer:not(.painted) * {
+    /* `!important` earns its place here: every component writes its animation
+       with the `animation` shorthand, and the shorthand resets play-state back
+       to running. Any sheet loaded after this one would restart what this rule
+       just stopped, which is how the AWS spinner kept turning off screen. */
+    animation-play-state: paused !important;
+}
 /* Every session lays a track of its own across the whole stage, one on top of
    the next, and a track is an empty box: nothing to see, and until this was
    here, everything to click. So the screen being read is the only thing on the

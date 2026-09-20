@@ -186,7 +186,10 @@
 }
 
 .yolo-toggle.on .yolo-glyph {
-    animation: yolo-hue 5s linear infinite;
+    /* Not animated: `color` is not a compositor property, so cycling it
+       repainted the glyph and resolved style on every frame, in every pane
+       holding a live agent. The ring beside it already carries the motion. */
+    color: var(--acc);
 }
 
 .yolo-toggle.on .yolo-hint {
