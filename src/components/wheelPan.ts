@@ -26,7 +26,15 @@ const FLICK_WINDOW_MS = 90;
  * throw work on a laptop and fail on a big monitor. Whatever the pointer speed
  * the machine is set to is already in these, which is why it is what it is.
  */
-const FLICK_TRAVEL_PX = 110;
+const FLICK_TRAVEL_PX = 70;
+/**
+ * How far a pull has to have got before letting go of it takes the screen it was
+ * heading for. Less than the half a screen a pull crosses on: the crossing moves
+ * the session while a hand is still on the track, so it has to be sure, while a
+ * hand that has gone is not going to pull any further and what it did is all
+ * there is to go on.
+ */
+const COMMIT = 0.3;
 
 /** How far one wheel event pushed the track, and when. */
 export interface Push {
@@ -53,6 +61,17 @@ export function flicked(pushes: readonly Push[], until: number): number {
     const moved = thrust(pushes, until);
     return Math.abs(moved) < FLICK_TRAVEL_PX ? 0 : Math.sign(moved);
 }
+
+/**
+ * Whether a swipe set down rather than thrown has still pulled far enough to
+ * take the screen it was heading for: -1, 0 or 1.
+ *
+ * `way` is the way the hand was last going, and the offset alone cannot stand in
+ * for it. A pull that has crossed onto a screen is counted from that screen and
+ * so sits behind it, a long way off it and still going forwards — reading that
+ * as a pull backwards would hand the session back to the screen just left.
+ */
+export const pulledOn = (offset: number, way: number) => (Math.abs(offset) >= COMMIT && Math.sign(offset) === way ? way : 0);
 
 /** Below this the gesture is diagonal enough to belong to whatever is under it. */
 const HORIZONTAL_RATIO = 1.5;

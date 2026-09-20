@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsWheel, dragOffset, endDelay, flicked, HELD_END_MS, panned, pushed, SPENT_END_MS, UNWATCHED_END_MS } from "./wheelPan";
+import { claimsWheel, dragOffset, endDelay, flicked, HELD_END_MS, panned, pulledOn, pushed, SPENT_END_MS, UNWATCHED_END_MS } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 const plain: PaneScroller = { overflowX: "visible", scrollWidth: 100, clientWidth: 100, scrollLeft: 0 };
@@ -216,5 +216,30 @@ describe("flicked", () => {
     it("keeps only the pushes still worth counting", () => {
         const kept = pushed(thrownAt(40, 4, 1000), 1400, 40);
         expect(kept).toEqual([{ at: 1400, pixels: 40 }]);
+    });
+});
+
+describe("pulledOn", () => {
+    /* Short of the half a screen a crossing takes, but far enough that the hand
+       leaving it there was the hand choosing it. */
+    it("takes the screen a pull was set down well onto", () => {
+        expect(pulledOn(0.35, 1)).toBe(1);
+        expect(pulledOn(-0.35, -1)).toBe(-1);
+    });
+
+    it("leaves a pull that barely moved where it started", () => {
+        expect(pulledOn(0.2, 1)).toBe(0);
+        expect(pulledOn(-0.2, -1)).toBe(0);
+    });
+
+    /*
+     * A pull that has crossed is counted from the screen it crossed onto, so it
+     * sits a long way behind that screen while still going forwards. The way the
+     * hand was going is the only thing that tells that from a pull backwards, and
+     * without it the swipe hands the session back to the screen it just left.
+     */
+    it("does not read a pull trailing the screen it crossed onto as a pull back", () => {
+        expect(pulledOn(-0.4, 1)).toBe(0);
+        expect(pulledOn(0.4, -1)).toBe(0);
     });
 });

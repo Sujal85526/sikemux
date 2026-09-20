@@ -327,6 +327,23 @@ describe("workspace wheel pan", () => {
     });
 
     /*
+     * A hand that has gone is not going to pull any further, so a pull set down
+     * well onto the next screen has chosen it even though it never reached the
+     * half a screen a crossing takes under a hand that is still there.
+     */
+    it("takes the screen a pull was set down most of the way onto", () => {
+        const { track, live, index } = stageOfScreens();
+
+        swipe(live, 350);
+        expect(activeWindow()).toBe(order()[index]);
+
+        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
+
+        expect(activeWindow()).toBe(order()[index + 1]);
+        expect(panOf(track)).toBe(slidLeft(index + 1));
+    });
+
+    /*
      * A pull that has already crossed onto the next screen is counted from that
      * one, and the ground that carried it there is the same ground a throw is read
      * from, so the throw may not buy a second screen with it. Landing two screens

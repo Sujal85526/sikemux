@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { prefersReducedMotion } from "../lib/motion";
-import { claimsWheel, endDelay, flicked, panned, pushed, thrust } from "./wheelPan";
+import { claimsWheel, endDelay, flicked, panned, pulledOn, pushed, thrust } from "./wheelPan";
 import type { PaneScroller, Push } from "./wheelPan";
 import { fingersDown, onFingers, watchFingers } from "../lib/wheelTouch";
 import { PAN_MS, RETURN_MS, settleMs } from "./useWindowPan";
@@ -36,6 +36,8 @@ interface Gesture {
     slot: number;
     raw: number;
     offset: number;
+    /** The way the hand was last going, which is not the way the track sits once a pull has crossed. */
+    way: number;
     /** The last moments of the swipe, which say whether it was thrown or placed. */
     pushes: readonly Push[];
     /** Whether the swipe has already landed, so what still arrives is only its tail. */
@@ -123,9 +125,10 @@ export function useRailPan(
             if (done.frame != null) cancelAnimationFrame(done.frame);
             done.frame = null;
             if (!done.claimed || !track) return forget();
-            // A throw only carries the swipe onto a page it has already uncovered — see
-            // the stage's `land` for why a pull that has crossed has spent its throw.
-            const flick = flicked(done.pushes, until);
+            // Thrown at the next page, or else pulled far enough onto it to have chosen
+            // it — see the stage's `land` for why a pull that has crossed has already
+            // spent its throw.
+            const flick = flicked(done.pushes, until) || pulledOn(done.offset, done.way);
             const thrown = flick * done.offset < 0 ? 0 : flick;
             const onto = Math.max(0, Math.min(live.current.pages - 1, done.slot + thrown));
             const travel = onto - (done.slot + done.offset);
@@ -151,6 +154,7 @@ export function useRailPan(
                     slot: live.current.index,
                     raw: 0,
                     offset: 0,
+                    way: 0,
                     pushes: [],
                     spent: false,
                     frame: null,
@@ -174,6 +178,7 @@ export function useRailPan(
             }
             const at = performance.now();
             moving.pushes = pushed(moving.pushes, at, event.deltaX);
+            moving.way = Math.sign(event.deltaX) || moving.way;
             const was = moving.slot;
             const now = panned(moving.raw + event.deltaX / moving.stride, moving.slot, live.current.pages);
             moving.slot = now.slot;

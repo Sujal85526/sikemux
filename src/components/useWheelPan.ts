@@ -5,7 +5,7 @@ import { fingersDown, onFingers, watchFingers } from "../lib/wheelTouch";
 import { getState } from "../state/store";
 import { panOffset, RETURN_MS, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
-import { claimsWheel, endDelay, flicked, panned, pushed, thrust } from "./wheelPan";
+import { claimsWheel, endDelay, flicked, panned, pulledOn, pushed, thrust } from "./wheelPan";
 import type { PaneScroller, Push } from "./wheelPan";
 
 interface Gesture {
@@ -21,6 +21,8 @@ interface Gesture {
     offset: number;
     /** The screen showing beside it, which is the one the drag is heading for. */
     toward: string | null;
+    /** The way the hand was last going, which is not the way the track sits once a pull has crossed. */
+    way: number;
     /** Whether React has been handed the pair of screens the gesture is between. */
     held: boolean;
     /** The last moments of the swipe, which say whether it was thrown or placed. */
@@ -126,11 +128,13 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             if (!done.claimed || !done.held) return;
             const { order, on } = session();
             if (on === null || order[done.slot] !== on) return latest.current.park();
-            // A throw only carries the swipe onto a screen it has already uncovered.
-            // Once a pull has crossed onto a screen it is counted from that one, and
-            // the ground that carried it there is the same ground the throw reads, so
-            // spending it twice jumps a screen and slides over one nobody painted.
-            const flick = flicked(done.pushes, until);
+            // Thrown at the next screen, or else pulled far enough onto it to have
+            // chosen it. A throw only carries the swipe onto a screen it has already
+            // uncovered: once a pull has crossed onto a screen it is counted from that
+            // one, and the ground that carried it there is the same ground the throw
+            // reads, so spending it twice jumps a screen and slides over one nobody
+            // painted.
+            const flick = flicked(done.pushes, until) || pulledOn(done.offset, done.way);
             const thrown = flick * done.offset < 0 ? 0 : flick;
             const onto = (thrown === 0 ? null : (order[done.slot + thrown] ?? null)) ?? on;
             const travel = (onto === on ? 0 : thrown) - done.offset;
@@ -167,6 +171,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
                     raw: 0,
                     offset: 0,
                     toward: null,
+                    way: 0,
                     held: false,
                     pushes: [],
                     spent: false,
@@ -186,6 +191,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
 
             const at = performance.now();
             moving.pushes = pushed(moving.pushes, at, event.deltaX);
+            moving.way = Math.sign(event.deltaX) || moving.way;
             const was = moving.slot;
             const now = panned(moving.raw + event.deltaX / moving.stride, moving.slot, order.length);
             moving.slot = now.slot;
