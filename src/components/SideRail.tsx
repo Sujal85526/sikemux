@@ -200,9 +200,13 @@ function ProjectBlock({ s }: { s: Session }) {
                                 {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                             </span>
                         )}
-                        {(rollup || rollupBackground) && <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />}
                     </button>
                 </Tooltip>
+                {(rollup || rollupBackground) && (
+                    <span className="row-status">
+                        <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
+                    </span>
+                )}
                 <SessionCloseButton session={s} />
             </div>
         );

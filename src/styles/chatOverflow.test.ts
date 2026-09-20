@@ -40,6 +40,13 @@ describe("chat overflow", () => {
     /* Agents name a background task with the command they ran, which is a line
        of shell. A name that cannot shrink pushed the row, its stop button and
        the pane's right edge off screen. */
+    /* The pane is a grid, and a grid with rows but no columns widens to the
+       longest unbreakable run inside it — one queued message holding a link
+       pushed the transcript and the composer off the right edge. */
+    it("holds the pane to one column of its own width", () => {
+        expect(block(".agent-chat-pane")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
+    });
+
     it("lets a long task name give way rather than the row", () => {
         const name = block(".chat-task-name");
         expect(name).not.toMatch(/flex:\s*none/);

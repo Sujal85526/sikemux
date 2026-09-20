@@ -254,9 +254,8 @@ export function AgentRailBody() {
                                             <AgentIcon type={a.type} size={20} />
                                         </span>
                                         <span className="agent-title">{a.title}</span>
-                                        <AgentStateMark state={activityById[a.id]?.state} background={(backgroundById[a.id] ?? 0) > 0} />
-                                        {a.launchState === "dormant" && <span className="agent-dormant-label">paused</span>}
                                     </button>
+                                    <AgentStateMark state={activityById[a.id]?.state} background={(backgroundById[a.id] ?? 0) > 0} />
                                     <Tooltip label={`Close ${a.title}`}>
                                         <button type="button" className="row-x" aria-label={`Close ${a.title}`} onClick={() => cmd.closeAgent(a.id)}>
                                             <IconClose size={11} />
@@ -302,7 +301,11 @@ export function AgentRailBody() {
 
 function AgentStateMark({ state, background }: { state?: import("../state/types").AgentPresentationState; background: boolean }) {
     if (!state && !background) return null;
-    return <AgentStateIndicator state={state ?? "idle"} background={background} />;
+    return (
+        <span className="row-status">
+            <AgentStateIndicator state={state ?? "idle"} background={background} />
+        </span>
+    );
 }
 
 function usagePeak(usage: AgentUsage | undefined): number | undefined {

@@ -26,7 +26,8 @@ export interface TabDescriptor {
     /** Defaults to whether `onClose` is provided; set false to pin a tab open. */
     closable?: boolean;
     title?: string;
-    /** Extra control rendered just before the close button (e.g. a per-tab status badge). */
+    /** Per-tab status mark (spinner, activity dot). Takes the trailing slot, and
+     * the close button takes it back under the pointer. */
     accessory?: ReactNode;
 }
 
@@ -117,6 +118,9 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
             {virtualized && <div aria-hidden="true" style={{ flex: `0 0 ${firstVirtual?.start ?? 0}px` }} />}
             {visibleTabs.map(({ tab: t, index }) => {
                 const closable = t.closable ?? !!onClose;
+                // One mark at a time: a tab that is busy says so, a tab that is
+                // only unsaved shows the dot.
+                const status = t.accessory ?? (t.dirty ? <span className="tab-dot" aria-hidden="true" /> : null);
                 return (
                     <div
                         key={t.id}
@@ -176,16 +180,19 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                                 }>
                                 {t.icon && <span className="tab-mark">{t.icon}</span>}
                                 <span className="tab-label">{t.label}</span>
-                                {t.dirty && <span className="tab-dot" aria-hidden="true" />}
-                                {t.accessory}
                             </button>
                         </Tooltip>
-                        {closable && onClose && (
-                            <Tooltip label={`Close ${t.label}`}>
-                                <button type="button" className="tab-x" aria-label={`Close ${t.label}`} onClick={() => onClose(t.id)}>
-                                    <IconClose size={11} />
-                                </button>
-                            </Tooltip>
+                        {(status || (closable && onClose)) && (
+                            <span className="tab-tail">
+                                {status && <span className="tab-status">{status}</span>}
+                                {closable && onClose && (
+                                    <Tooltip label={`Close ${t.label}`}>
+                                        <button type="button" className="tab-x" aria-label={`Close ${t.label}`} onClick={() => onClose(t.id)}>
+                                            <IconClose size={11} />
+                                        </button>
+                                    </Tooltip>
+                                )}
+                            </span>
                         )}
                     </div>
                 );

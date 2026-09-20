@@ -112,12 +112,6 @@
 .agent-activity.state-stopped {
     color: var(--text-tertiary);
 }
-.agent-dormant-label {
-    color: var(--text-tertiary);
-    font-size: var(--text-3xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
 @keyframes agent-activity-spin {
     to {
         transform: rotate(360deg);

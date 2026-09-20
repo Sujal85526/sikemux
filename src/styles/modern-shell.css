@@ -290,8 +290,46 @@ textarea:focus,
     padding-right: calc(var(--space-2) + 20px + var(--space-1));
 }
 
-.tab-x {
+/*
+ * One slot at the trailing edge holds both marks.
+ *
+ * What a tab or a row is doing — a spinner, an activity dot — and the close
+ * button are the same size and want the same corner, so they share it: the
+ * status sits there until the pointer arrives and the close takes over. Two
+ * slots side by side left the close floating a full mark away from the edge.
+ */
+.tab-tail {
+    position: relative;
+    display: grid;
+    flex: 0 0 20px;
+    align-self: center;
+    width: 20px;
+    height: 20px;
     margin-right: var(--space-2);
+}
+
+.tab-tail > * {
+    grid-area: 1 / 1;
+}
+
+.tab-status,
+.row-status {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
+    transition: opacity var(--dur-1) linear;
+}
+
+/* A rail row is a button, so what trails it sits on top of the row's trailing
+   edge, in the room the row keeps free. */
+.row-status {
+    position: absolute;
+    z-index: 2;
+    top: 50%;
+    right: var(--space-1);
+    transform: translateY(-50%);
 }
 
 /* Revealed by the pointer, and by the keyboard when it lands there — a close
@@ -304,6 +342,15 @@ textarea:focus,
 .tab-x:focus-visible {
     opacity: 1;
     pointer-events: auto;
+}
+
+.tab-wrap:hover .tab-status,
+.tab-wrap:has(.tab-x:focus-visible) .tab-status,
+.session-row-shell:hover > .row-status,
+.session-row-shell:has(> .row-x:focus-visible) > .row-status,
+.agent-row-wrap:hover > .row-status,
+.agent-row-wrap:has(> .row-x:focus-visible) > .row-status {
+    opacity: 0;
 }
 
 .row-x:hover,
@@ -474,8 +521,7 @@ textarea:focus,
     letter-spacing: -0.01em;
 }
 
-.agent-ago,
-.agent-dormant-label {
+.agent-ago {
     font-family: var(--mono);
     font-size: var(--text-2xs);
 }
