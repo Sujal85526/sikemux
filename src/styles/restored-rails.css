@@ -459,13 +459,24 @@
  * the only one that gives up width: narrow the rail and it ellipsises, because
  * the gauge is the data and keeps its floor.
  */
-/* No horizontal padding of its own: the head and the rows carry their own
-   inset, and adding the rail gutter on top of it put the whole panel 10px
-   right of every other label in the column. */
+/*
+ * The foot lines up with the list above it rather than hugging the rail.
+ *
+ * It was inset 9px while every row in the log was at 19 and every group label
+ * at 23, which read as the meters falling out of the column. The head takes the
+ * group-label inset and the rows take the row inset, so `LIMITS` sits under
+ * `AGENTS` and the countdowns sit under the timestamps.
+ *
+ * No rule above it either: the space is the separation. A hairline there was
+ * drawing a lid over a list that is already clipped by its own scroller.
+ */
 .one-rail .agent-usage {
     margin: 0;
-    padding: var(--space-2) 0 var(--space-3);
-    border-top: 1px solid var(--border);
+    padding: var(--space-3) var(--gutter-rail) var(--space-3);
+    border-top: 0;
+}
+.one-rail .agent-usage-head {
+    padding-inline: var(--space-3);
 }
 .one-rail .agent-usage-row {
     display: flex;
@@ -500,4 +511,10 @@
 .one-rail .agent-usage-reset {
     flex: 0 0 46px;
     text-align: right;
+}
+
+/* The signature belongs to the foot, so it sits on the rows' inset rather than
+   on the rail's own edge. */
+.one-rail .rail-sig {
+    padding-inline: calc(var(--gutter-rail) + var(--space-2));
 }
