@@ -32,6 +32,8 @@ describe("AgentStateIndicator", () => {
         const { container } = render(<AgentStateIndicator state="idle" background />);
         expect(screen.getByRole("img", { name: "Shells or monitors still running" })).toBeInTheDocument();
         expect(container.querySelector(".state-background")).toBeInTheDocument();
+        expect(container.querySelector(".agent-state-icon")).toBeInTheDocument();
+        expect(container.querySelector(".agent-state-dot")).not.toBeInTheDocument();
     });
 
     it("keeps the spinner while working, background work or not", () => {

@@ -1,5 +1,6 @@
 import { AGENT_STATE_META } from "../state/agentStatus";
 import type { AgentPresentationState } from "../state/types";
+import { IconCommand } from "./Icons";
 
 const BACKGROUND_LABEL = "Shells or monitors still running";
 
@@ -7,6 +8,8 @@ const BACKGROUND_LABEL = "Shells or monitors still running";
  * A spinner while an agent works, a dot once it has something waiting for you,
  * and nothing while it sits idle — a rail of idle agents would be a column of
  * dots carrying no information, since the row already says the agent exists.
+ * Left-over shells get the terminal glyph instead of a dot, so they do not read
+ * as the same amber dot that means the agent is waiting on you.
  */
 export function AgentStateIndicator({
     state,
@@ -30,7 +33,7 @@ export function AgentStateIndicator({
     const label = tone === "background" ? BACKGROUND_LABEL : AGENT_STATE_META[state].label;
     return (
         <span className={`agent-activity state-${tone}${unread ? " unread" : ""}`} title={label} aria-label={label} role="img">
-            <span className="agent-state-dot" aria-hidden="true" />
+            {tone === "background" ? <IconCommand size={11} className="agent-state-icon" /> : <span className="agent-state-dot" aria-hidden="true" />}
         </span>
     );
 }
