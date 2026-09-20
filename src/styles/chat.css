@@ -522,11 +522,8 @@
    whatever it interrupts, so a row still reads as a row and a sentence as a
    sentence. */
 .chat-file-ref {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 4px;
+    display: inline-block;
     max-width: 100%;
-    min-width: 0;
     text-align: left;
     vertical-align: baseline;
 }
@@ -551,22 +548,22 @@
     text-decoration: underline;
 }
 
-/* The tree gives its glyphs a column to line up in. In a sentence the glyph is
-   a letter like any other: as wide as it draws, and sitting on the same
-   baseline, so a bigger icon cannot push the words after it down the line. */
+/* The tree gives its glyphs a column to line up in. Beside words the glyph is
+   a letter among letters: centred on the lower-case ones at whatever size it
+   is drawn, and adding no height of its own, so the line it lands in keeps its
+   spacing and the words after it keep the baseline. */
 .chat-file-ref .file-glyph {
-    display: inline;
+    display: inline-block;
     width: auto;
     height: auto;
+    margin-right: 4px;
     line-height: 0;
+    vertical-align: middle;
     user-select: none;
 }
 
-.chat-file-ref-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.chat-file-ref .file-glyph > svg {
+    display: block;
 }
 
 .chat-thought {

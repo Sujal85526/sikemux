@@ -26,6 +26,19 @@ describe("the yolo ring", () => {
     });
 });
 
+/* The glyph is drawn from a font whose icons are far taller than the letters
+   beside them. Sat on the shared baseline it rode above the words; given a
+   height it pushed the line apart and dropped the full stop after it. */
+describe("the icon on a file reference", () => {
+    it("is centred on the letters rather than stood on the baseline", () => {
+        expect(block(".chat-file-ref .file-glyph")).toMatch(/vertical-align:\s*middle/);
+    });
+
+    it("adds no height of its own to the line it lands in", () => {
+        expect(block(".chat-file-ref .file-glyph")).toMatch(/line-height:\s*0/);
+    });
+});
+
 describe("chat overflow", () => {
     /* A user bubble is sized to its own content, and a box sized that way grows
        to fit the longest word in it. A pasted URL is one word, so the bubble
@@ -45,6 +58,14 @@ describe("chat overflow", () => {
        pushed the transcript and the composer off the right edge. */
     it("holds the pane to one column of its own width", () => {
         expect(block(".agent-chat-pane")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
+    });
+
+    /* The chip is sized to its own content inside a user bubble that is sized
+       to its content in turn, so a path that refuses to break would have
+       widened both past the pane. */
+    it("lets a long file name break like the words around it", () => {
+        expect(block(".chat-file-ref")).not.toMatch(/white-space:\s*nowrap/);
+        expect(chat).not.toMatch(/\.chat-file-ref-name\s*\{[^}]*white-space:\s*nowrap/);
     });
 
     it("lets a long task name give way rather than the row", () => {
