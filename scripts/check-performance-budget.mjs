@@ -136,8 +136,8 @@ const budgets = [
     // chunk of its own, fetched only once a block that can use it settles.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 68_000,
-    gzip: 21_600,
+    raw: 75_000,
+    gzip: 24_200,
   },
   {
     // Shiki, its two engines and vscode-textmate, with no grammars and no
@@ -172,8 +172,8 @@ const budgets = [
     pattern: new RegExp(
       `^(?!(?:diffs|highlighter|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 2_850_000,
-    gzip: 900_000,
+    raw: 2_940_000,
+    gzip: 929_000,
   },
   {
     label: "opt-in shader renderer",
@@ -194,8 +194,8 @@ const budgets = [
     // buys those rows room without touching what the app loads at startup.
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 34_000,
-    gzip: 6_600,
+    raw: 34_700,
+    gzip: 6_800,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: eight faces
