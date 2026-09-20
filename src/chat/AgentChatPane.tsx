@@ -29,6 +29,7 @@ import { registerPathDrop } from "../state/dropRegistry";
 import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
+import { useStore } from "../state/store";
 import {
     IconAgent,
     IconArrowDown,
@@ -52,6 +53,8 @@ import { collapseDiff, fencedDiff, type DiffLine, type ToolDiff } from "./diff";
 import { CodeRun, CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiffTokens } from "./codeHighlight";
 import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
+import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
+import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -216,6 +219,19 @@ function toolTarget(tool: AcpToolCall): string {
     return basename(line) || line;
 }
 
+/* Which file a call was about: the one it reported touching, or the one its
+   title names when it reported nothing. A shell command is not a file, and a
+   title with a space in it is a command. */
+function toolPath(tool: AcpToolCall): string | null {
+    const first = Array.isArray(tool.locations) ? tool.locations[0] : null;
+    if (first && typeof first === "object") {
+        const { path, line } = first as { path?: unknown; line?: unknown };
+        if (typeof path === "string" && path) return typeof line === "number" ? `${path}:${line}` : path;
+    }
+    const named = toolLabel(tool.title).name.split("\n")[0].trim();
+    return named.includes("/") && !/\s/.test(named) ? named : null;
+}
+
 export function durationLabel(ms: number): string {
     // Tool calls are often quicker than a tenth of a second, and rounding those
     // to seconds reported every one of them as the same 0.0s.
@@ -285,45 +301,61 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const failure = part.failure;
     const detail = diff ?? failure;
     const status = tool.status ?? "pending";
+    const file = useFileRef(toolPath(tool));
     /* A call the turn cut off has a duration, but printing it would read as a
        call that ran that long and then finished. It says why it stopped. */
     const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
     const elapsed = status === "cancelled" ? "stopped" : measured !== null ? durationLabel(measured) : null;
-    const body = (
+    const toggle = () => setOpen((current) => !current);
+    const lead = (
         <>
             <span className="chat-tool-tick" aria-hidden="true" />
             <span className="chat-tool-icon">
                 <ToolKindIcon tool={tool} kind={rowKind} />
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
-            <span className="chat-tool-target">{toolTarget(tool)}</span>
-            <span className="chat-tool-end">
-                {diff && (
-                    <span className="chat-tool-stat">
-                        <span className="chat-diff-adds">+{diff.adds}</span>
-                        <span className="chat-diff-dels">−{diff.dels}</span>
-                    </span>
-                )}
-                {elapsed ?? <span className="chat-tool-spinner" aria-hidden="true" />}
-                {detail && <IconChevron size={10} className="chat-tool-chevron" />}
+            <span className="chat-tool-target">
+                {file ? <ChatFileRef refers={file.ref} state={file.state} label={toolTarget(tool)} size={11} /> : toolTarget(tool)}
             </span>
         </>
     );
+    const end = (
+        <>
+            {diff && (
+                <span className="chat-tool-stat">
+                    <span className="chat-diff-adds">+{diff.adds}</span>
+                    <span className="chat-diff-dels">−{diff.dels}</span>
+                </span>
+            )}
+            {elapsed ?? <span className="chat-tool-spinner" aria-hidden="true" />}
+            {detail && <IconChevron size={10} className="chat-tool-chevron" />}
+        </>
+    );
+    const rowProps = { className: `chat-tool status-${status}`, "data-kind": rowKind, title: tool.title };
     return (
         <div className="chat-tool-node">
-            {detail ? (
-                <button
-                    type="button"
-                    className={`chat-tool status-${status}`}
-                    data-kind={rowKind}
-                    title={tool.title}
-                    aria-expanded={open}
-                    onClick={() => setOpen((current) => !current)}>
-                    {body}
+            {/* A row whose target opens a file cannot itself be a button, so
+                what is left of it opens the detail instead. */}
+            {detail && !file ? (
+                <button type="button" {...rowProps} aria-expanded={open} onClick={toggle}>
+                    {lead}
+                    <span className="chat-tool-end">{end}</span>
                 </button>
             ) : (
-                <div className={`chat-tool status-${status}`} data-kind={rowKind} title={tool.title}>
-                    {body}
+                <div {...rowProps}>
+                    {lead}
+                    {detail ? (
+                        <button
+                            type="button"
+                            className="chat-tool-end"
+                            aria-expanded={open}
+                            aria-label={open ? "Hide what the call did" : "Show what the call did"}
+                            onClick={toggle}>
+                            {end}
+                        </button>
+                    ) : (
+                        <span className="chat-tool-end">{end}</span>
+                    )}
                 </div>
             )}
             {detail && open && (
@@ -372,11 +404,28 @@ function ChatImage({
 }
 
 /* An agent writes an attached file back as a link to it. A picture beats its
-   percent-encoded name, so show the picture whenever we can read it. */
-function ChatLink({ href, children }: { href?: string; children?: ReactNode }) {
+   percent-encoded name, so show the picture whenever we can read it.
+
+   A name the message only mentioned in passing arrives here too, marked as a
+   guess. It is a file when the project has one by that name, and the words the
+   agent wrote when it has not. */
+function ChatLink({ href, className, children }: { href?: string; className?: string; children?: ReactNode }) {
+    const guessed = className?.split(/\s+/) ?? [];
     const imagePath = localImagePath(href);
-    const preview = useImagePreview(imagePath);
+    const preview = useImagePreview(guessed.includes(PATH_CLASS) ? null : imagePath);
+    const file = useFileRef(href);
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
+    if (file)
+        return (
+            <ChatFileRef
+                refers={file.ref}
+                state={file.state}
+                label={children}
+                className={guessed.includes(PATH_CODE_CLASS) ? "chat-file-ref code" : "chat-file-ref link"}
+            />
+        );
+    if (guessed.includes(PATH_CODE_CLASS)) return <code>{children}</code>;
+    if (guessed.includes(PATH_CLASS)) return <>{children}</>;
     return (
         <a
             href={href}
@@ -406,12 +455,7 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     if (!info && !patch) return <code className={className}>{children}</code>;
     return (
         <>
-            {info && (
-                <span className="chat-code-title">
-                    <IconFile size={10} />
-                    {decodeURIComponent(info)}
-                </span>
-            )}
+            {info && <CodeTitle info={info} />}
             {patch ? (
                 <code className={`${className ?? ""} chat-code-diff`}>
                     {patch.map((line, index) => (
@@ -432,6 +476,25 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     );
 }
 
+/* A fence says what file it quotes, when it says anything at all. The name is
+   the file itself where the project has one; a bare language name is not. */
+function CodeTitle({ info }: { info: string }) {
+    const name = decodeURIComponent(info);
+    const file = useFileRef(name);
+    return (
+        <span className="chat-code-title">
+            {file ? (
+                <ChatFileRef refers={file.ref} state={file.state} label={name} size={10} />
+            ) : (
+                <>
+                    <IconFile size={10} />
+                    {name}
+                </>
+            )}
+        </span>
+    );
+}
+
 function ChatTable({ children }: { children?: ReactNode }) {
     return (
         <div className="chat-table">
@@ -441,11 +504,11 @@ function ChatTable({ children }: { children?: ReactNode }) {
 }
 
 const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
-const remarkPlugins = [remarkGfm];
+const remarkPlugins = [remarkGfm, remarkFilePaths];
 
 const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
     return (
-        <Markdown remarkPlugins={remarkPlugins} skipHtml components={markdownComponents}>
+        <Markdown remarkPlugins={remarkPlugins} urlTransform={chatUrlTransform} skipHtml components={markdownComponents}>
             {text}
         </Markdown>
     );
@@ -484,11 +547,19 @@ function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "con
     const uri = typeof content.uri === "string" ? content.uri : undefined;
     const imagePath = localImagePath(uri);
     const preview = useImagePreview(imagePath);
+    const file = useFileRef(uri);
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
+    const label = content.title || content.name || uri || "Resource";
     return (
         <div className="chat-resource">
-            <IconFile size={13} />
-            <span>{content.title || content.name || uri || "Resource"}</span>
+            {file ? (
+                <ChatFileRef refers={file.ref} state={file.state} label={label} size={13} />
+            ) : (
+                <>
+                    <IconFile size={13} />
+                    <span>{label}</span>
+                </>
+            )}
         </div>
     );
 }
@@ -532,7 +603,9 @@ const MessagePart = memo(function MessagePart({ part, live }: { part: ChatPart; 
 
 function SentAttachment({ path }: { path: string }) {
     const preview = useImagePreview(path);
+    const file = useFileRef(path);
     if (preview) return <ChatImage src={preview} path={path} className="chat-attachment-thumb" />;
+    if (file) return <ChatFileRef refers={file.ref} state={file.state} label={basename(path)} />;
     return (
         <span title={path}>
             <IconFile size={12} />
@@ -1246,6 +1319,7 @@ export function AgentChatPane({
     visible?: boolean;
     onBusyChange: (busy: boolean) => void;
 }) {
+    const home = useStore((s) => s.home);
     const [state, dispatch] = useReducer(chatReducer, initialChatState);
     const displayStateRef = useRef(state);
     if (visible) displayStateRef.current = state;
@@ -1683,180 +1757,182 @@ export function AgentChatPane({
                     : "Connecting to agent session…";
 
     return (
-        <div className="agent-chat-pane" ref={paneRef}>
-            <div
-                className="chat-scroll"
-                ref={scrollRef}
-                onWheel={noteGesture}
-                onTouchMove={noteGesture}
-                onMouseDown={noteGesture}
-                onKeyDown={noteGesture}
-                onScroll={(event) => {
-                    const element = event.currentTarget;
-                    const previous = lastScrollTopRef.current;
-                    lastScrollTopRef.current = element.scrollTop;
-                    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
-                    // The transcript also scrolls itself, to hold the bottom
-                    // still while rows settle into their real heights. Only a
-                    // scroll up that a wheel, key or drag just asked for means
-                    // the reader walked away; sitting at the bottom means stuck.
-                    const gesture = lastGestureRef.current;
-                    lastGestureRef.current = 0;
-                    const walkedAway = element.scrollTop < previous - 1 && performance.now() - gesture < 150;
-                    const next = walkedAway ? false : distance < BOTTOM_SLACK ? true : stickToBottomRef.current;
-                    if (next === stickToBottomRef.current) return;
-                    stickToBottomRef.current = next;
-                    setAtBottom(next);
-                }}>
-                <div className="chat-scroll-content" ref={scrollContentRef}>
-                    {displayState.messages.length === 0 && (
-                        <div className={`chat-connection-state ${displayState.connection}`} role="status">
-                            {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
-                            <span>
-                                {reconnecting
-                                    ? "Reconnecting…"
-                                    : (connecting ??
-                                      (displayState.connection === "ready"
-                                          ? "Start a session with this project."
-                                          : displayState.connection === "error"
-                                            ? "Structured session unavailable."
-                                            : "Agent session stopped."))}
-                            </span>
-                            {disconnected && !reconnecting && (
-                                <div className="chat-connection-actions">
-                                    <button type="button" onClick={reconnect}>
-                                        Reconnect
-                                    </button>
-                                    {agent.resumeId && (
-                                        <button type="button" onClick={startNewChat}>
-                                            Start new chat
+        <PathRootsProvider cwd={cwd} home={home}>
+            <div className="agent-chat-pane" ref={paneRef}>
+                <div
+                    className="chat-scroll"
+                    ref={scrollRef}
+                    onWheel={noteGesture}
+                    onTouchMove={noteGesture}
+                    onMouseDown={noteGesture}
+                    onKeyDown={noteGesture}
+                    onScroll={(event) => {
+                        const element = event.currentTarget;
+                        const previous = lastScrollTopRef.current;
+                        lastScrollTopRef.current = element.scrollTop;
+                        const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+                        // The transcript also scrolls itself, to hold the bottom
+                        // still while rows settle into their real heights. Only a
+                        // scroll up that a wheel, key or drag just asked for means
+                        // the reader walked away; sitting at the bottom means stuck.
+                        const gesture = lastGestureRef.current;
+                        lastGestureRef.current = 0;
+                        const walkedAway = element.scrollTop < previous - 1 && performance.now() - gesture < 150;
+                        const next = walkedAway ? false : distance < BOTTOM_SLACK ? true : stickToBottomRef.current;
+                        if (next === stickToBottomRef.current) return;
+                        stickToBottomRef.current = next;
+                        setAtBottom(next);
+                    }}>
+                    <div className="chat-scroll-content" ref={scrollContentRef}>
+                        {displayState.messages.length === 0 && (
+                            <div className={`chat-connection-state ${displayState.connection}`} role="status">
+                                {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
+                                <span>
+                                    {reconnecting
+                                        ? "Reconnecting…"
+                                        : (connecting ??
+                                          (displayState.connection === "ready"
+                                              ? "Start a session with this project."
+                                              : displayState.connection === "error"
+                                                ? "Structured session unavailable."
+                                                : "Agent session stopped."))}
+                                </span>
+                                {disconnected && !reconnecting && (
+                                    <div className="chat-connection-actions">
+                                        <button type="button" onClick={reconnect}>
+                                            Reconnect
                                         </button>
-                                    )}
-                                </div>
-                            )}
+                                        {agent.resumeId && (
+                                            <button type="button" onClick={startNewChat}>
+                                                Start new chat
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+                            {virtualizer.getVirtualItems().map((item) => {
+                                const message = displayState.messages[item.index];
+                                const meta = rowMeta(displayState.messages, item.index);
+                                return (
+                                    <div
+                                        key={message.id}
+                                        data-index={item.index}
+                                        ref={virtualizer.measureElement}
+                                        className="chat-virtual-row"
+                                        style={{ transform: `translateY(${item.start}px)` }}>
+                                        <ChatMessageRow
+                                            message={message}
+                                            live={displayState.running && item.index === displayState.messages.length - 1}
+                                            copyable={meta.text}
+                                            rate={meta.rate}
+                                        />
+                                    </div>
+                                );
+                            })}
                         </div>
-                    )}
-                    <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-                        {virtualizer.getVirtualItems().map((item) => {
-                            const message = displayState.messages[item.index];
-                            const meta = rowMeta(displayState.messages, item.index);
-                            return (
-                                <div
-                                    key={message.id}
-                                    data-index={item.index}
-                                    ref={virtualizer.measureElement}
-                                    className="chat-virtual-row"
-                                    style={{ transform: `translateY(${item.start}px)` }}>
-                                    <ChatMessageRow
-                                        message={message}
-                                        live={displayState.running && item.index === displayState.messages.length - 1}
-                                        copyable={meta.text}
-                                        rate={meta.rate}
-                                    />
-                                </div>
-                            );
-                        })}
+                        {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} />}
+                        {plan !== null && (
+                            <details className="chat-plan">
+                                <summary>Plan</summary>
+                                <pre>{plan}</pre>
+                            </details>
+                        )}
+                        {displayState.permissions.map((request) => (
+                            <PermissionRequest
+                                key={request.requestId}
+                                request={request}
+                                busy={replyingPermission === request.requestId}
+                                onReply={(optionId) => void replyPermission(request.requestId, optionId)}
+                            />
+                        ))}
+                        {displayState.error && (
+                            <div className="chat-error" role="alert">
+                                <IconWarning size={14} />
+                                <span>{displayState.error}</span>
+                            </div>
+                        )}
+                        {displayState.messages.length > 0 && disconnected && (
+                            <div className="chat-reconnect" role="status">
+                                {reconnecting ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
+                                <span>{reconnecting ? "Reconnecting…" : "This session dropped."}</span>
+                                {!reconnecting && (
+                                    <div className="chat-connection-actions">
+                                        <button type="button" onClick={reconnect}>
+                                            Reconnect
+                                        </button>
+                                        {agent.resumeId && (
+                                            <button type="button" onClick={startNewChat}>
+                                                Start new chat
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
-                    {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} />}
-                    {plan !== null && (
-                        <details className="chat-plan">
-                            <summary>Plan</summary>
-                            <pre>{plan}</pre>
-                        </details>
+                </div>
+
+                <div className="chat-composer-wrap">
+                    {!atBottom && displayState.messages.length > 0 && (
+                        <button
+                            type="button"
+                            className="chat-jump-bottom"
+                            aria-label="Jump to latest message"
+                            onClick={() => {
+                                stickToBottomRef.current = true;
+                                setAtBottom(true);
+                                pinToBottom();
+                            }}>
+                            <IconArrowDown size={14} />
+                        </button>
                     )}
-                    {displayState.permissions.map((request) => (
-                        <PermissionRequest
-                            key={request.requestId}
-                            request={request}
-                            busy={replyingPermission === request.requestId}
-                            onReply={(optionId) => void replyPermission(request.requestId, optionId)}
-                        />
-                    ))}
-                    {displayState.error && (
-                        <div className="chat-error" role="alert">
-                            <IconWarning size={14} />
-                            <span>{displayState.error}</span>
+                    {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
+                        <div className="chat-live-stack">
+                            <RunningSubagents subagents={subagents} />
+                            <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
+                            <QueuedMessages
+                                messages={queued}
+                                steerable={steerable && state.running}
+                                onSteer={(message) => void steer(message)}
+                                onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
+                            />
                         </div>
                     )}
-                    {displayState.messages.length > 0 && disconnected && (
-                        <div className="chat-reconnect" role="status">
-                            {reconnecting ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
-                            <span>{reconnecting ? "Reconnecting…" : "This session dropped."}</span>
-                            {!reconnecting && (
-                                <div className="chat-connection-actions">
-                                    <button type="button" onClick={reconnect}>
-                                        Reconnect
-                                    </button>
-                                    {agent.resumeId && (
-                                        <button type="button" onClick={startNewChat}>
-                                            Start new chat
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
+                    <ChatComposer
+                        agent={agent}
+                        profile={profile}
+                        paneRef={paneRef}
+                        visible={visible}
+                        connection={state.connection}
+                        running={state.running}
+                        steerable={steerable}
+                        commands={state.commands}
+                        setup={state.setup}
+                        awaitingPermission={state.permissions.length > 0}
+                        agentLocked={agentLockedRef.current}
+                        changingConfig={changingConfig}
+                        changingPermissions={changingPermissions}
+                        permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
+                        permissionMode={permissionMode}
+                        placeholder={composerPlaceholder}
+                        error={composerError}
+                        onError={setComposerError}
+                        onSend={send}
+                        onSteerQueued={() => {
+                            const head = queued[0];
+                            if (head) void steer(head);
+                        }}
+                        queuedCount={queued.length}
+                        onConfig={changeConfig}
+                    />
+                </div>
+                <div className="chat-drop-target" aria-hidden="true">
+                    <IconFile size={22} />
+                    <span>Drop files or folders into this session</span>
                 </div>
             </div>
-
-            <div className="chat-composer-wrap">
-                {!atBottom && displayState.messages.length > 0 && (
-                    <button
-                        type="button"
-                        className="chat-jump-bottom"
-                        aria-label="Jump to latest message"
-                        onClick={() => {
-                            stickToBottomRef.current = true;
-                            setAtBottom(true);
-                            pinToBottom();
-                        }}>
-                        <IconArrowDown size={14} />
-                    </button>
-                )}
-                {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
-                    <div className="chat-live-stack">
-                        <RunningSubagents subagents={subagents} />
-                        <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
-                        <QueuedMessages
-                            messages={queued}
-                            steerable={steerable && state.running}
-                            onSteer={(message) => void steer(message)}
-                            onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
-                        />
-                    </div>
-                )}
-                <ChatComposer
-                    agent={agent}
-                    profile={profile}
-                    paneRef={paneRef}
-                    visible={visible}
-                    connection={state.connection}
-                    running={state.running}
-                    steerable={steerable}
-                    commands={state.commands}
-                    setup={state.setup}
-                    awaitingPermission={state.permissions.length > 0}
-                    agentLocked={agentLockedRef.current}
-                    changingConfig={changingConfig}
-                    changingPermissions={changingPermissions}
-                    permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
-                    permissionMode={permissionMode}
-                    placeholder={composerPlaceholder}
-                    error={composerError}
-                    onError={setComposerError}
-                    onSend={send}
-                    onSteerQueued={() => {
-                        const head = queued[0];
-                        if (head) void steer(head);
-                    }}
-                    queuedCount={queued.length}
-                    onConfig={changeConfig}
-                />
-            </div>
-            <div className="chat-drop-target" aria-hidden="true">
-                <IconFile size={22} />
-                <span>Drop files or folders into this session</span>
-            </div>
-        </div>
+        </PathRootsProvider>
     );
 }

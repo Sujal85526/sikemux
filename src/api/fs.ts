@@ -27,9 +27,12 @@ export interface FileWriteResult {
     version: string;
 }
 
+export type PathKind = "file" | "dir";
+
 export const fsapi = {
     readDir: (path: string) => invoke<DirEntry[]>("read_dir", { path }),
     readDirs: (paths: string[]) => invoke<DirListing[]>("read_dirs", { paths }),
+    pathKinds: (paths: string[]) => invoke<(PathKind | null)[]>("path_kinds", { paths }),
     readFile: (path: string) => invoke<string>("read_file", { path }),
     readFileVersioned: (path: string) => invoke<FileSnapshot>("read_file_versioned", { path }),
     readTextFileLimited: (path: string) => invoke<string>("read_text_file_limited", { path }),

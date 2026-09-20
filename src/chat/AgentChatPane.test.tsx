@@ -6,6 +6,7 @@ import { dispatchPathDrop } from "../state/dropRegistry";
 import type { Agent } from "../state/types";
 import { AgentChatPane } from "./AgentChatPane";
 import { shownImage } from "../state/imageViewer";
+import { forgetPathState } from "./pathExistence";
 
 const mocks = vi.hoisted(() => ({
     eventListener: null as ((event: AcpEvent) => void) | null,
@@ -20,6 +21,19 @@ const mocks = vi.hoisted(() => ({
     noteAcpAgentState: vi.fn(),
     noteAgentBackgroundWork: vi.fn(),
     start: vi.fn(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
+    pathKinds: vi.fn(async (paths: string[]): Promise<(string | null)[]> => paths.map(() => null)),
+    revealInFinder: vi.fn(async () => {}),
+    requestOpenFile: vi.fn(),
+}));
+
+vi.mock("../api/fs", () => ({
+    fsapi: {
+        pathKinds: mocks.pathKinds,
+        revealInFinder: mocks.revealInFinder,
+        readFileBase64: vi.fn(async () => {
+            throw new Error("no file");
+        }),
+    },
 }));
 
 vi.mock("../api/acp", () => ({
@@ -43,6 +57,7 @@ vi.mock("../api/acp", () => ({
 }));
 
 vi.mock("../state/commands", () => ({
+    requestOpenFile: mocks.requestOpenFile,
     attachAgentSession: mocks.attachAgentSession,
     setAgentPermissionMode: mocks.setAgentPermissionMode,
     setAgentModelPreferences: mocks.setAgentModelPreferences,
@@ -137,6 +152,9 @@ function fakeScroller(element: HTMLElement, clientHeight: number) {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    // Nothing a transcript names is a real file unless a test says it is.
+    forgetPathState();
+    mocks.pathKinds.mockImplementation(async (paths: string[]) => paths.map(() => null));
     mocks.eventListener = null;
     resizeCallbacks.clear();
     globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver;
@@ -613,6 +631,42 @@ describe("AgentChatPane", () => {
         expect(rows[1]).toHaveTextContent("BrowserPane.tsx");
         expect(rows[1]).not.toHaveTextContent("src/components");
         expect(rows[1]).toHaveAttribute("title", "src/components/browser/BrowserPane.tsx");
+    });
+
+    it("opens the file a call touched, and still opens what the call did", async () => {
+        mocks.pathKinds.mockImplementation(async (paths: string[]) => paths.map(() => "file"));
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-1",
+                kind: "edit",
+                title: "src/styles/stage.css",
+                status: "completed",
+                locations: [{ path: "/repo/src/styles/stage.css", line: 2 }],
+                content: [
+                    {
+                        type: "diff",
+                        path: "src/styles/stage.css",
+                        oldText: ".stage {\n    background: var(--pane);\n}\n",
+                        newText: ".stage {\n    background: transparent;\n}\n",
+                    },
+                ],
+            },
+        });
+
+        const file = await waitFor(() => {
+            const chip = document.querySelector(".chat-file-ref");
+            expect(chip).not.toBeNull();
+            return chip as HTMLElement;
+        });
+        expect(file).toHaveTextContent("stage.css");
+        fireEvent.click(file);
+        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/repo/src/styles/stage.css", 1, undefined);
+
+        fireEvent.click(screen.getByRole("button", { name: /Show what the call did/ }));
+        await waitFor(() => expect(document.querySelector(".chat-diff-line.add")).not.toBeNull());
     });
 
     it("opens an edit onto the hunk it wrote, and a failure onto why", async () => {

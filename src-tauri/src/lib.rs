@@ -218,6 +218,7 @@ pub fn run() {
             agents::agent_sessions_watch_stop,
             fs::read_dir,
             fs::read_dirs,
+            fs::path_kinds,
             fs::read_file,
             fs::read_file_versioned,
             fs::read_text_file_limited,

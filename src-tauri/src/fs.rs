@@ -29,6 +29,14 @@ pub struct DirListing {
     error: Option<String>,
 }
 
+/// What a path turned out to be, or nothing at all when it is not there.
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PathKind {
+    File,
+    Dir,
+}
+
 #[derive(Serialize)]
 pub struct FileBlob {
     mime: String,
@@ -137,6 +145,37 @@ pub async fn read_dirs(paths: Vec<String>) -> AppResult<Vec<DirListing>> {
     })
     .await
     .map_err(|e| AppError::Other(format!("read_dirs join: {e}")))
+}
+
+/// How many paths one batch may ask about. A transcript on screen mentions
+/// far fewer than this; the cap is what stops a runaway caller.
+const PATH_KINDS_MAX: usize = 256;
+
+/// Say which of these paths exist, and which of those are directories. The
+/// chat asks before it turns something that reads like a filename into a link.
+#[tauri::command]
+pub async fn path_kinds(paths: Vec<String>) -> AppResult<Vec<Option<PathKind>>> {
+    if paths.len() > PATH_KINDS_MAX {
+        return Err(AppError::Fs(format!(
+            "a path batch may name at most {PATH_KINDS_MAX} paths"
+        )));
+    }
+    spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|path| {
+                fs::metadata(&path).ok().map(|meta| {
+                    if meta.is_dir() {
+                        PathKind::Dir
+                    } else {
+                        PathKind::File
+                    }
+                })
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("path_kinds join: {e}")))
 }
 
 #[tauri::command]

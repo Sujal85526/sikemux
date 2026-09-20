@@ -54,6 +54,7 @@ export const IPC_COMMANDS = [
     "agent_sessions_watch_stop",
     "read_dir",
     "read_dirs",
+    "path_kinds",
     "read_file",
     "read_file_versioned",
     "read_text_file_limited",

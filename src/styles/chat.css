@@ -517,6 +517,54 @@
     text-decoration: underline;
 }
 
+/* A file the message names: the icon the rest of the app gives that file, the
+   name as it was written, and somewhere to click. It takes the look of
+   whatever it interrupts, so a row still reads as a row and a sentence as a
+   sentence. */
+.chat-file-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    min-width: 0;
+    text-align: left;
+    vertical-align: baseline;
+}
+
+/* A name the agent wrote between backticks kept the chip it already had. */
+.chat-file-ref.code {
+    padding: 1px 5px 1px 3px;
+    border-radius: var(--radius-xs);
+    background: var(--acc-soft);
+    color: color-mix(in srgb, var(--acc) 74%, var(--ink));
+    font-family: var(--mono);
+    font-size: 0.88em;
+}
+
+/* One written into a sentence stays in the sentence, and reads as the link it
+   now is. */
+.chat-file-ref.link {
+    color: var(--acc);
+}
+
+.chat-file-ref:hover .chat-file-ref-name {
+    text-decoration: underline;
+}
+
+/* The tree sets a column width for its glyphs; in a sentence the glyph is only
+   as wide as it draws. */
+.chat-file-ref .file-glyph {
+    width: auto;
+    user-select: none;
+}
+
+.chat-file-ref-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .chat-thought {
     margin: 9px 0;
     color: var(--ink-faint);
@@ -625,7 +673,8 @@
     text-align: left;
 }
 
-button.chat-tool:hover {
+button.chat-tool:hover,
+.chat-tool:has(> button.chat-tool-end:hover) {
     background: color-mix(in oklab, var(--ink) 6%, transparent);
 }
 
@@ -731,7 +780,8 @@ button.chat-tool:hover {
     transition: transform 120ms;
 }
 
-.chat-tool[aria-expanded="true"] .chat-tool-chevron {
+.chat-tool[aria-expanded="true"] .chat-tool-chevron,
+.chat-tool [aria-expanded="true"] .chat-tool-chevron {
     transform: rotate(90deg);
     opacity: 1;
 }
