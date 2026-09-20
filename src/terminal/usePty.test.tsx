@@ -2,7 +2,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEffect, useRef } from "react";
 import { performanceTelemetry } from "../lib/performance";
-import { dispatchPty } from "../state/dropRegistry";
+import { dispatchPaths } from "../state/dropRegistry";
 import type { PtyContext } from "../state/types";
 import { claimWorkbenchItemRuntime, disposeWorkbenchItemRuntime, resetWorkbenchItemRuntimeForTests } from "../workbench/itemRuntime";
 import { createItemId } from "../workbench/registry";
@@ -528,7 +528,7 @@ describe("usePty", () => {
         await waitFor(() => expect(invoke).toHaveBeenCalledWith("pty_spawn", expect.anything()));
 
         const host = view.container.firstElementChild as HTMLElement;
-        expect(dispatchPty(host, ["/tmp/a b", "/tmp/O'Brien", "-$(touch nope);|*?>\nfile"])).toBe(true);
+        expect(dispatchPaths(host, ["/tmp/a b", "/tmp/O'Brien", "-$(touch nope);|*?>\nfile"])).toBe(true);
 
         await waitFor(() => {
             expect(invoke).toHaveBeenCalledWith("pty_write", {
@@ -554,7 +554,7 @@ describe("usePty", () => {
         await waitFor(() => expect(invoke).toHaveBeenCalledWith("pty_spawn", expect.anything()));
 
         const host = view.container.firstElementChild as HTMLElement;
-        expect(dispatchPty(host, ["C:\\O'Brien and $(touch nope);|*?>\nfile"])).toBe(true);
+        expect(dispatchPaths(host, ["C:\\O'Brien and $(touch nope);|*?>\nfile"])).toBe(true);
 
         await waitFor(() => {
             expect(invoke).toHaveBeenCalledWith("pty_write", {
@@ -576,7 +576,7 @@ describe("usePty", () => {
         await waitFor(() => expect(invoke).toHaveBeenCalledWith("pty_spawn", expect.anything()));
 
         const host = view.container.firstElementChild as HTMLElement;
-        expect(dispatchPty(host, ["/tmp/safe", "/tmp/unsafe\0suffix"])).toBe(true);
+        expect(dispatchPaths(host, ["/tmp/safe", "/tmp/unsafe\0suffix"])).toBe(true);
 
         expect(invoke.mock.calls.some(([command]) => command === "integration_health")).toBe(false);
         expect(invoke.mock.calls.some(([command]) => command === "pty_write")).toBe(false);
@@ -602,7 +602,7 @@ describe("usePty", () => {
         await waitFor(() => expect(invoke).toHaveBeenCalledWith("pty_spawn", expect.anything()));
 
         const host = view.container.firstElementChild as HTMLElement;
-        expect(dispatchPty(host, ["/tmp/file"])).toBe(true);
+        expect(dispatchPaths(host, ["/tmp/file"])).toBe(true);
         await waitFor(() => expect(invoke.mock.calls.some(([command]) => command === "pty_write")).toBe(true));
         await Promise.resolve();
         await Promise.resolve();

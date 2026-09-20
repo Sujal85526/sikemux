@@ -37,7 +37,15 @@ import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
-import { dispatchFolder, dispatchPathDrop, nativeDropPoint, resolvePathDropTarget } from "./state/dropRegistry";
+import {
+    dispatchFolder,
+    dispatchPaths,
+    focusedPathDropTarget,
+    nativeDropPoint,
+    pathDropTargetAt,
+    resolvePathDropTarget,
+    showPathDropHover,
+} from "./state/dropRegistry";
 import { notify, reportError, swallow } from "./state/toast";
 import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
@@ -173,9 +181,17 @@ function whenTrusted(project: string, expected: ValidProjectConfig, requireTaskI
     });
 }
 
-function elementAtDropPosition(pos: { x: number; y: number }): HTMLElement | null {
-    const { x, y } = nativeDropPoint(pos);
-    return document.elementFromPoint(x, y) as HTMLElement | null;
+/**
+ * Which surface takes the paths a drag is carrying. The node under the cursor
+ * answers first, then the file tree, which handles a drop of its own; a drop
+ * that landed on neither still belongs somewhere, so the pane the point sits
+ * inside takes it, and failing that the session last typed in.
+ */
+function pathDropSurface(at: HTMLElement | null, point: { x: number; y: number }): HTMLElement | null {
+    const hit = resolvePathDropTarget(at);
+    if (hit) return hit;
+    if (resolveTreeDropTarget(at)) return null;
+    return pathDropTargetAt(point) ?? focusedPathDropTarget();
 }
 
 function folderDropElement(treeRoot: HTMLElement, rootPath: string, dir: string): HTMLElement | null {
@@ -805,17 +821,8 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        let hoveredPathTarget: HTMLElement | null = null;
-
         const clearTreeHover = () => {
             emit({ type: "tree-native-drag-hover", cwd: null, targetDir: null, highlightPath: null });
-        };
-
-        const setPathHover = (target: HTMLElement | null) => {
-            if (hoveredPathTarget === target) return;
-            if (hoveredPathTarget) delete hoveredPathTarget.dataset.nativePathDragOver;
-            hoveredPathTarget = target;
-            if (hoveredPathTarget) hoveredPathTarget.dataset.nativePathDragOver = "true";
         };
 
         const emitTreeHover = (at: HTMLElement | null) => {
@@ -830,28 +837,29 @@ export default function App() {
 
         const unlistenP = getCurrentWebview().onDragDropEvent((e) => {
             if (e.payload.type === "leave") {
-                setPathHover(null);
+                showPathDropHover(null);
                 clearTreeHover();
                 return;
             }
 
-            const at = elementAtDropPosition(e.payload.position);
+            const point = nativeDropPoint(e.payload.position);
+            const at = document.elementFromPoint(point.x, point.y) as HTMLElement | null;
+            const pathTarget = pathDropSurface(at, point);
 
             if (e.payload.type === "enter" || e.payload.type === "over") {
-                const pathTarget = resolvePathDropTarget(at);
-                setPathHover(pathTarget);
+                showPathDropHover(pathTarget);
                 if (pathTarget) clearTreeHover();
                 else emitTreeHover(at);
                 return;
             }
 
-            setPathHover(null);
+            showPathDropHover(null);
             const paths = e.payload.paths;
             if (!paths || paths.length === 0) {
                 clearTreeHover();
                 return;
             }
-            if (dispatchPathDrop(at, paths)) {
+            if (pathTarget && dispatchPaths(pathTarget, paths)) {
                 clearTreeHover();
                 return;
             }
@@ -860,7 +868,7 @@ export default function App() {
             clearTreeHover();
         });
         return () => {
-            setPathHover(null);
+            showPathDropHover(null);
             void unlistenP.then((u) => u());
         };
     }, []);

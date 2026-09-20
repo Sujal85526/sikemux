@@ -12,7 +12,7 @@ import { gitOverviewR } from "../state/resources.defs";
 import { notify, reportError, swallow } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { confirmDialog } from "../state/dialog";
-import { registerFolderDrop } from "../state/dropRegistry";
+import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTarget, showPathDropHover } from "../state/dropRegistry";
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { Tooltip } from "./Tooltip";
@@ -394,6 +394,13 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
         return { destDir: cwd, highlightPath: null };
     };
 
+    // A row dragged out of the tree lands on whatever else takes paths — a chat
+    // attaches it, a terminal types it — so a drag is never wasted.
+    const surfaceAt = (x: number, y: number): HTMLElement | null => {
+        const at = document.elementFromPoint(x, y) as HTMLElement | null;
+        return resolvePathDropTarget(at) ?? pathDropTargetAt({ x, y });
+    };
+
     const applyDragMove = () => {
         dragFrameRef.current = null;
         const point = dragPointRef.current;
@@ -406,6 +413,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
         }
         const { destDir, highlightPath } = resolveDrop(point.x, point.y);
         const ok = destDir != null && canDropInto(s.path, destDir);
+        showPathDropHover(destDir == null ? surfaceAt(point.x, point.y) : null);
         updateDragOver(ok ? highlightPath : null);
         updateRootDragOver(ok && !highlightPath);
         const nextGhost = { name: basename(s.path), x: point.x, y: point.y };
@@ -426,6 +434,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
         dragFrameRef.current = null;
         dragPointRef.current = null;
         dragSession.current = null;
+        showPathDropHover(null);
         setDraggingPath(null);
         setDragOver(null);
         setRootDragOver(false);
@@ -438,6 +447,10 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
         if (s && active) {
             const { destDir } = resolveDrop(e.clientX, e.clientY);
             if (destDir) void moveEntry(s.path, destDir);
+            else {
+                const surface = surfaceAt(e.clientX, e.clientY);
+                if (surface) dispatchPaths(surface, [s.path]);
+            }
         }
         endDrag();
         // Swallow the click that fires after a real drag. A click only fires when
