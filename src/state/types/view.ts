@@ -3,6 +3,19 @@ export interface EditorPaneView {
     activePath: string | null;
 }
 
+/** A page a browser pane can open again, with the title to label it until it loads. */
+export interface BrowserPaneTab {
+    url: string;
+    title: string;
+}
+
+/** What a browser pane needs to come back: whose browser it is, and what was in it. */
+export interface BrowserPaneView {
+    agentId: string;
+    tabs: BrowserPaneTab[];
+    activeIndex: number;
+}
+
 /** A path handed to the running app by the `sikemux` command-line client. */
 export interface CliOpenTarget {
     id: string;

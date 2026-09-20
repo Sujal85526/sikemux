@@ -8,19 +8,22 @@ import { normalizePermissionMode } from "../agentLaunch";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentPaneId } from "./selectors";
 import { collectPanes, removePane } from "./layout";
+import { browserPaneView } from "./browserStrips";
 import { agentDirectCommand, agentStartup } from "./commands";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { validatePersistedLayout } from "./persistValidation";
-import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane } from "../workbench/registry";
+import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
     AgentPermissionMode,
     AgentProvider,
     AgentType,
+    BrowserPaneView,
     EditorPaneView,
     LayoutNode,
+    PaneKind,
     PersistedAgent,
     PersistedPrefs,
     PersistedSession,
@@ -66,6 +69,9 @@ const PERSISTED_KEYS = [
     "activeSessionId",
     "recent",
     "editorViews",
+    "browserPanes",
+    "browserStrips",
+    "browserRestores",
     "projectRoots",
     "brunoWorkspaces",
     "themeId",
@@ -399,16 +405,16 @@ function persistedAgent(agent: Agent): PersistedAgent {
 }
 
 /**
- * A browser pane means nothing without the running browser it was showing, and
- * that link is never written down, so saving one would restore a blank half.
+ * A browser pane comes back from its saved tabs, so one with no tabs left to
+ * open would restore as a blank half and is dropped instead.
  */
-function withoutBrowserPanes(window: Window): Window | null {
-    const browserPaneIds = collectPanes(window.root)
-        .filter((pane) => pane.kind === "browser")
+function withoutEmptyBrowserPanes(window: Window): Window | null {
+    const emptyPaneIds = collectPanes(window.root)
+        .filter((pane) => pane.kind === "browser" && !browserPaneView(pane.id))
         .map((pane) => pane.id);
-    if (browserPaneIds.length === 0) return window;
+    if (emptyPaneIds.length === 0) return window;
     let root: LayoutNode | null = window.root;
-    for (const paneId of browserPaneIds) root = root && removePane(root, paneId);
+    for (const paneId of emptyPaneIds) root = root && removePane(root, paneId);
     if (!root) return null;
     const panes = collectPanes(root);
     const activePaneId = panes.some((pane) => pane.id === window.activePaneId) ? window.activePaneId : panes[0].id;
@@ -425,7 +431,21 @@ function durableWindow(s: StoreState, id: string): Window | null {
     if (!window || window.transient) return null;
     const agentPane = window.role === "agent" ? agentPaneId(window) : null;
     if (window.role === "agent" && !s.agents[agentPane ?? ""]?.resumeId) return null;
-    return withoutBrowserPanes(window);
+    return withoutEmptyBrowserPanes(window);
+}
+
+/** One malformed item must not cost every other item, or the layout, its save. */
+function encodeItemState<Kind extends PaneKind>(
+    itemStates: NonNullable<PersistedSnapshot["itemStates"]>,
+    itemId: string,
+    kind: Kind,
+    state: BuiltinWorkbenchItemState[Kind],
+): void {
+    try {
+        itemStates[itemId] = workbenchItemRegistry.encodePersisted(createWorkbenchItemRef(itemId, kind), state);
+    } catch {
+        return;
+    }
 }
 
 function snapshot(): string {
@@ -458,14 +478,11 @@ function snapshot(): string {
                     pending.push(...node.children);
                     continue;
                 }
-                if (node.kind !== "editor") continue;
-                const ref = createWorkbenchItemRef(node.id, "editor");
-                const state = s.editorViews[node.id] ?? { openTabs: [], activePath: null };
-                try {
-                    itemStates[node.id] = workbenchItemRegistry.encodePersisted(ref, state);
-                } catch {
-                    // One malformed runtime item must not block the durable
-                    // topology and every other valid item from being saved.
+                if (node.kind === "editor")
+                    encodeItemState(itemStates, node.id, "editor", s.editorViews[node.id] ?? { openTabs: [], activePath: null });
+                if (node.kind === "browser") {
+                    const view = browserPaneView(node.id);
+                    if (view) encodeItemState(itemStates, node.id, "browser", view);
                 }
             }
         }
@@ -691,11 +708,22 @@ export function applyHydrate(raw: string): HydrationResult {
         walk(w.root);
     }
     const editorViews: Record<string, EditorPaneView> = {};
+    const browserPanes: Record<string, string> = {};
+    const browserRestores: Record<string, BrowserPaneView> = {};
     if (decoded.version >= 7) {
         const rawItemStates = isRecord(decoded.itemStates) ? decoded.itemStates : {};
         for (const [itemId, ref] of panesById) {
             const result = workbenchItemRegistry.decodePersisted(ref, rawItemStates[itemId]);
-            if (result.ok && result.ref.kind === "editor") editorViews[itemId] = result.state as EditorPaneView;
+            if (!result.ok) continue;
+            if (result.ref.kind === "editor") editorViews[itemId] = result.state as EditorPaneView;
+            if (result.ref.kind === "browser") {
+                const view = result.state as BrowserPaneView;
+                // Without its agent the pane has nothing to be, and the pane
+                // itself takes the empty leaf back out of the layout.
+                if (!agents[view.agentId]) continue;
+                browserPanes[itemId] = view.agentId;
+                browserRestores[itemId] = view;
+            }
         }
     } else {
         const rawEditorViews = isRecord(decoded.editorViews) ? decoded.editorViews : {};
@@ -730,6 +758,9 @@ export function applyHydrate(raw: string): HydrationResult {
         activeSessionId,
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
         editorViews,
+        browserPanes,
+        browserRestores,
+        browserStrips: {},
         // Pinned projects used to be their own list; they are self-indexed
         // roots now, folded in here so existing setups carry over untouched.
         projectRoots: mergePinnedIntoRoots(

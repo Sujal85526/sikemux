@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PaneKind, PaneNode } from "../state/types/domain";
 import {
+    BROWSER_PERSISTENCE_LIMITS,
     BUILTIN_WORKBENCH_ITEM_MANIFEST,
     DuplicateWorkbenchItemKindError,
     EDITOR_PERSISTENCE_LIMITS,
@@ -209,13 +210,63 @@ describe("workbench item persistence", () => {
         expect(() => registry.encodePersisted(ref, { openTabs: ["/project/a.ts", "/project/a.ts"], activePath: "/project/a.ts" })).toThrow(TypeError);
     });
 
-    it("round-trips null state for every non-editor built-in kind", () => {
+    it("round-trips null state for every kind that keeps no state of its own", () => {
         const registry = new WorkbenchItemRegistry();
-        for (const kind of BUILTIN_KINDS.filter((candidate) => candidate !== "editor")) {
+        for (const kind of BUILTIN_KINDS.filter((candidate) => candidate !== "editor" && candidate !== "browser")) {
             const ref = createWorkbenchItemRef(`pane-${kind}`, kind);
             const encoded = registry.encodePersisted(ref, null);
             expect(registry.decodePersisted(ref, encoded)).toEqual({ ok: true, ref, state: null });
         }
+    });
+
+    it("round-trips the tabs a browser pane can open again", () => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-browser", "browser");
+        const state = { agentId: "agent-one", tabs: [{ url: "https://example.com/docs", title: "Docs" }], activeIndex: 0 };
+
+        expect(registry.decodePersisted(ref, registry.encodePersisted(ref, state))).toEqual({ ok: true, ref, state });
+    });
+
+    /* These come back off disk and a restored tab loads itself, so a scheme
+       that can reach the machine or run on its own must not survive the trip. */
+    it.each([
+        ["a scheme that is not the web", { url: "file:///etc/passwd", title: "" }],
+        ["a script url", { url: "javascript:alert(1)", title: "" }],
+        ["an inline document", { url: "data:text/html,<b>hi</b>", title: "" }],
+        ["a url that is only a scheme", { url: "https://", title: "" }],
+        ["a title carrying control characters", { url: "https://example.com", title: "one\u0000two" }],
+    ])("refuses %s in a saved browser tab", (_label, tab) => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-browser", "browser");
+
+        expect(
+            registry.decodePersisted(ref, {
+                itemId: "pane-browser",
+                kind: "browser",
+                version: 1,
+                state: { agentId: "agent-one", tabs: [tab], activeIndex: 0 },
+            }),
+        ).toEqual({
+            ok: false,
+            reason: "invalid-state",
+        });
+    });
+
+    it("refuses a saved browser pane with no tabs, too many, or an active tab that is not there", () => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-browser", "browser");
+        const page = { url: "https://example.com", title: "Example" };
+        const envelope = (state: unknown) => ({ itemId: "pane-browser", kind: "browser", version: 1, state });
+
+        expect(registry.decodePersisted(ref, envelope({ agentId: "agent-one", tabs: [], activeIndex: 0 })).ok).toBe(false);
+        expect(
+            registry.decodePersisted(
+                ref,
+                envelope({ agentId: "agent-one", tabs: Array.from({ length: BROWSER_PERSISTENCE_LIMITS.maxTabs + 1 }, () => page), activeIndex: 0 }),
+            ).ok,
+        ).toBe(false);
+        expect(registry.decodePersisted(ref, envelope({ agentId: "agent-one", tabs: [page], activeIndex: 1 })).ok).toBe(false);
+        expect(registry.decodePersisted(ref, envelope({ agentId: " ", tabs: [page], activeIndex: 0 })).ok).toBe(false);
     });
 
     it.each([

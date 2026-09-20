@@ -1,27 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { browserApi, type BrowserBounds, type BrowserSnapshot } from "../api/browser";
+import { browserApi, BLANK_URL, type BrowserBounds, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, useNativeViewsOccluded, useStageMoving } from "../state/nativeViews";
 import type { AgentType } from "../state/types";
 import { reportError } from "../state/toast";
 import { IconChevron, IconGlobe, IconPlus, IconRefresh } from "./Icons";
 import { TabBar } from "./TabBar";
 import { useStore } from "../state/store";
-
-const EMPTY_SNAPSHOT: BrowserSnapshot = {
-    tabs: [],
-    activeTabId: null,
-};
-
-const BLANK_URL = "about:blank";
-
-/*
- * How long a lost tab report can go unnoticed.
- *
- * Tabs push their own changes, so this is only a net under the subscription —
- * it used to run every 1.5 seconds, which is an IPC round trip and a React
- * render forty times a minute for a pane that is already being told.
- */
-const TAB_POLL_MS = 15_000;
+import { EMPTY_STRIP, refreshBrowserStrip, takeBrowserRestore } from "../state/browserStrips";
 
 /*
  * Which scrollers can move this pane on screen: its own scrolling ancestors,
@@ -59,7 +44,7 @@ export function BrowserPaneHost({ paneId, visible, onEmpty }: { paneId: string; 
         if (orphaned) onEmpty();
     }, [onEmpty, orphaned]);
     if (orphaned) return null;
-    return <BrowserSession key={agentId} agentId={agentId} agentType={agentType} visible={visible} onEmpty={onEmpty} />;
+    return <BrowserSession key={agentId} paneId={paneId} agentId={agentId} agentType={agentType} visible={visible} onEmpty={onEmpty} />;
 }
 
 /** The site's own mark once it has arrived, and a globe until then. */
@@ -70,58 +55,53 @@ function SiteIcon({ src }: { src: string | null }) {
     return <img className="tab-favicon" src={src} alt="" onError={() => setBroken(true)} />;
 }
 
-function BrowserSession({ agentId, agentType, visible, onEmpty }: { agentId: string; agentType: AgentType; visible: boolean; onEmpty: () => void }) {
-    const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
+function BrowserSession({
+    paneId,
+    agentId,
+    agentType,
+    visible,
+    onEmpty,
+}: {
+    paneId: string;
+    agentId: string;
+    agentType: AgentType;
+    visible: boolean;
+    onEmpty: () => void;
+}) {
+    const snapshot = useStore((state) => state.browserStrips[agentId]) ?? EMPTY_STRIP;
+    const restoring = useStore((state) => !!state.browserRestores[paneId]);
 
-    const refresh = useCallback(
-        async (signal?: AbortSignal) => {
-            const next = await browserApi.snapshot(agentId, signal);
-            if (signal?.aborted) return;
-            setSnapshot(next);
-        },
-        [agentId],
-    );
+    const refresh = useCallback(async () => {
+        await refreshBrowserStrip(agentId);
+    }, [agentId]);
 
+    /* The app keeps the strips up to date for every pane; this one only has to
+       ask for the first read, since its agent may have had no browser at all
+       until the click that opened this pane. */
     useEffect(() => {
         if (!visible) return;
-        const controller = new AbortController();
-        let timer = 0;
-        let reading = false;
-        let again = false;
-
-        /* A loading page reports itself several times over, so a burst
-           collapses into the read already in flight plus one after it. */
-        const sync = async () => {
-            again = true;
-            if (reading) return;
-            reading = true;
-            try {
-                while (again && !controller.signal.aborted) {
-                    again = false;
-                    await refresh(controller.signal);
-                }
-            } catch (error) {
-                if (!controller.signal.aborted) console.warn("browser session read failed", error);
-            } finally {
-                reading = false;
-            }
-        };
-
-        /* Tabs announce their own changes; the poll only notices a report
-           that was lost while this pane was not listening, which is why it
-           reads once on becoming visible and then rarely. */
-        const poll = () => {
-            void sync();
-            timer = window.setTimeout(poll, TAB_POLL_MS);
-        };
-
-        void browserApi.subscribeTabs(() => void sync(), controller.signal).catch(() => {});
-        poll();
-        return () => {
-            controller.abort();
-            window.clearTimeout(timer);
-        };
+        void refresh().catch((error) => console.warn("browser session read failed", error));
     }, [refresh, visible]);
+
+    /*
+     * Tabs saved by the last run wait here until someone looks at the pane, so
+     * a restart does not spend a page on every browser that was left open.
+     */
+    useEffect(() => {
+        if (!visible || !restoring) return;
+        const saved = takeBrowserRestore(paneId);
+        if (!saved) return;
+        void (async () => {
+            const opened: string[] = [];
+            for (const tab of saved.tabs) opened.push(await browserApi.newTab(agentId, tab.url));
+            const active = opened[saved.activeIndex];
+            if (active) await browserApi.switchTab(agentId, active);
+            await refresh();
+        })().catch((error) => {
+            reportError("restore browser tabs")(error);
+            onEmpty();
+        });
+    }, [agentId, onEmpty, paneId, refresh, restoring, visible]);
 
     /*
      * The pane exists because a tab does, so when the last one goes it has
@@ -134,9 +114,9 @@ function BrowserSession({ agentId, agentType, visible, onEmpty }: { agentId: str
     const heldATab = useRef(false);
     if (snapshot.tabs.length > 0) heldATab.current = true;
     useEffect(() => {
-        if (!visible || !heldATab.current || snapshot.tabs.length > 0) return;
+        if (!visible || restoring || !heldATab.current || snapshot.tabs.length > 0) return;
         onEmpty();
-    }, [onEmpty, snapshot.tabs.length, visible]);
+    }, [onEmpty, restoring, snapshot.tabs.length, visible]);
 
     return <BrowserPane agentId={agentId} agentType={agentType} visible={visible} snapshot={snapshot} refresh={refresh} />;
 }

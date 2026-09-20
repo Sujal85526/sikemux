@@ -1,6 +1,9 @@
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport } from "./transport";
 
+/** The page a tab shows before it has been sent anywhere. */
+export const BLANK_URL = "about:blank";
+
 export interface BrowserTab {
     id: string;
     title: string;

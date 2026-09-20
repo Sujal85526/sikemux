@@ -1240,6 +1240,15 @@ function closeActivePane(): void {
     if (taskPaneId) taskPtyBindings.release(taskPaneId);
 }
 
+/* Nothing shows this agent's browser once its pane is gone, so the tabs stop
+   being worth keeping — including the ones a restored pane never opened. */
+function dropBrowserPaneState(d: StoreState, paneId: string): void {
+    const agentId = d.browserPanes[paneId];
+    delete d.browserPanes[paneId];
+    delete d.browserRestores[paneId];
+    if (agentId && !Object.values(d.browserPanes).includes(agentId)) delete d.browserStrips[agentId];
+}
+
 function disposePaneState(d: StoreState, paneId: string): void {
     if (d.gitModal?.ownerPaneId === paneId) d.gitModal = null;
     delete d.editorViews[paneId];
@@ -1249,7 +1258,7 @@ function disposePaneState(d: StoreState, paneId: string): void {
     delete d.ecsViews[paneId];
     delete d.rundeckViews[paneId];
     delete d.brunoViews[paneId];
-    delete d.browserPanes[paneId];
+    dropBrowserPaneState(d, paneId);
     delete d.terminalTitles[paneId];
     delete d.agents[paneId];
     delete d.agentActivity[paneId];
@@ -2367,7 +2376,7 @@ export function closeBrowserPane(paneId: string): void {
             if (!remaining.some((pane) => pane.id === win.activePaneId)) win.activePaneId = remaining[0]?.id ?? win.activePaneId;
             d.zoomedPaneId = null;
         }
-        delete d.browserPanes[paneId];
+        dropBrowserPaneState(d, paneId);
     });
 }
 

@@ -1,5 +1,5 @@
 import type { PaneKind, PaneNode } from "../state/types/domain";
-import type { EditorPaneView } from "../state/types/view";
+import type { BrowserPaneTab, BrowserPaneView, EditorPaneView } from "../state/types/view";
 
 declare const ITEM_ID_BRAND: unique symbol;
 
@@ -45,7 +45,7 @@ export interface BuiltinWorkbenchItemState {
     agent: null;
     /* The agent it belongs to is held in `browserPanes`, keyed by pane id,
        the same way an editor keeps its view. */
-    browser: null;
+    browser: BrowserPaneView;
 }
 
 /**
@@ -56,6 +56,17 @@ export interface BuiltinWorkbenchItemState {
 export const EDITOR_PERSISTENCE_LIMITS = Object.freeze({
     maxOpenTabs: 128,
     maxPathLength: 4_096,
+});
+
+/**
+ * Saved browser tabs are bounded the same way, and only ordinary web pages
+ * come back: a page reopens itself on restore, so a scheme read off disk must
+ * not be one that can reach the machine or run on its own.
+ */
+export const BROWSER_PERSISTENCE_LIMITS = Object.freeze({
+    maxTabs: 24,
+    maxUrlLength: 4_096,
+    maxTitleLength: 200,
 });
 
 export interface PersistedWorkbenchItemEnvelope<Kind extends PaneKind = PaneKind> {
@@ -182,6 +193,42 @@ function decodeEditorView(encoded: unknown): PersistedCodecResult<EditorPaneView
     return { ok: true, value: { openTabs: openTabs.slice(), activePath } };
 }
 
+function isValidPersistedBrowserUrl(value: unknown): value is string {
+    return (
+        typeof value === "string" &&
+        value.length <= BROWSER_PERSISTENCE_LIMITS.maxUrlLength &&
+        !containsControlCharacter(value) &&
+        /^https?:\/\/./i.test(value)
+    );
+}
+
+function decodeBrowserView(encoded: unknown): PersistedCodecResult<BrowserPaneView> {
+    if (!isRecord(encoded)) return CODEC_FAILURE;
+    const { agentId, tabs, activeIndex } = encoded;
+    if (!isValidWorkbenchItemId(agentId)) return CODEC_FAILURE;
+    if (!Array.isArray(tabs) || tabs.length === 0 || tabs.length > BROWSER_PERSISTENCE_LIMITS.maxTabs) return CODEC_FAILURE;
+    const restored: BrowserPaneTab[] = [];
+    for (const tab of tabs) {
+        if (!isRecord(tab)) return CODEC_FAILURE;
+        if (!isValidPersistedBrowserUrl(tab.url)) return CODEC_FAILURE;
+        if (typeof tab.title !== "string" || tab.title.length > BROWSER_PERSISTENCE_LIMITS.maxTitleLength || containsControlCharacter(tab.title))
+            return CODEC_FAILURE;
+        restored.push({ url: tab.url, title: tab.title });
+    }
+    if (!Number.isInteger(activeIndex) || (activeIndex as number) < 0 || (activeIndex as number) >= restored.length) return CODEC_FAILURE;
+    return { ok: true, value: { agentId, tabs: restored, activeIndex: activeIndex as number } };
+}
+
+const BROWSER_CODEC: VersionedPersistedCodec<BrowserPaneView> = Object.freeze({
+    version: 1,
+    encode: (state: BrowserPaneView) => {
+        const decoded = decodeBrowserView(state);
+        if (!decoded.ok) throw new TypeError("Invalid browser workbench state");
+        return decoded.value;
+    },
+    decode: decodeBrowserView,
+});
+
 const EDITOR_CODEC: VersionedPersistedCodec<EditorPaneView> = Object.freeze({
     version: 2,
     encode: (state: EditorPaneView) => {
@@ -223,7 +270,7 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     rundeck: builtinDefinition("rundeck", "rundeck", NULL_CODEC),
     bruno: builtinDefinition("bruno", "bruno", NULL_CODEC),
     agent: builtinDefinition("agent", "agent", NULL_CODEC),
-    browser: builtinDefinition("browser", "browser", NULL_CODEC),
+    browser: builtinDefinition("browser", "browser", BROWSER_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {

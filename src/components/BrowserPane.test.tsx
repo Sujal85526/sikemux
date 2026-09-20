@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi, type BrowserSnapshot, type BrowserTab } from "../api/browser";
 import { occludeNativeViews, useStageMotion } from "../state/nativeViews";
 import { useToasts } from "../state/toast";
-import { setState } from "../state/store";
+import { getState, setState } from "../state/store";
 import { BrowserPaneHost } from "./BrowserPane";
 
 vi.mock("../api/browser", async () => {
@@ -46,6 +46,16 @@ const snapshot: BrowserSnapshot = {
     activeTabId: "tab-one",
 };
 
+/** A pane's worth of saved tabs, as hydration would hand them over. */
+const restored = {
+    agentId: "agent-one",
+    tabs: [
+        { url: "https://example.com", title: "Example" },
+        { url: "https://second.test", title: "Second" },
+    ],
+    activeIndex: 1,
+};
+
 let resizeCallbacks: Array<() => void> = [];
 
 beforeEach(() => {
@@ -76,6 +86,7 @@ beforeEach(() => {
         y: 96,
         toJSON: () => ({}),
     });
+    setState({ browserStrips: {}, browserRestores: {} } as never);
     vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
     vi.mocked(browserApi.subscribeTabs).mockResolvedValue(vi.fn());
     for (const operation of [
@@ -109,6 +120,13 @@ function renderPane(visible = true) {
         agents: { "agent-one": { id: "agent-one", type: "codex", title: "codex", launchState: "live" } },
     } as never);
     return render(<BrowserPaneHost paneId="pane-browser" visible={visible} onEmpty={onEmpty} />);
+}
+
+/** What the app's one reader of the strips would have put in the store. */
+function announceStrip(strip: BrowserSnapshot) {
+    return act(async () => {
+        setState({ browserStrips: { "agent-one": strip } } as never);
+    });
 }
 
 const onEmpty = vi.fn();
@@ -217,66 +235,55 @@ describe("BrowserPaneHost", () => {
         expect(browserApi.back).toHaveBeenCalledWith("agent-one");
     });
 
-    it("shows a tab as soon as the browser reports one, without waiting for a poll", async () => {
-        let announce = () => {};
-        vi.mocked(browserApi.subscribeTabs).mockImplementation(async (listener) => {
-            announce = listener;
-            return vi.fn<() => void>();
-        });
+    it("shows a tab the moment the strip reports one, and asks for the first read itself", async () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         renderPane();
-        await waitFor(() => expect(browserApi.subscribeTabs).toHaveBeenCalled());
+        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledWith("agent-one"));
         expect(screen.queryByRole("tab", { name: "Example" })).toBeNull();
         /* The pane is opened by the same click that asks for the tab, so it
            waits through the empty snapshot that arrives before the tab does. */
         expect(onEmpty).not.toHaveBeenCalled();
 
-        vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
-        await act(async () => {
-            announce();
-        });
+        await announceStrip(snapshot);
 
         expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument();
     });
 
     it("gives the pane up once the tab it held goes", async () => {
-        let announce = () => {};
-        vi.mocked(browserApi.subscribeTabs).mockImplementation(async (listener) => {
-            announce = listener;
-            return vi.fn<() => void>();
-        });
         renderPane();
         await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
         expect(onEmpty).not.toHaveBeenCalled();
 
-        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
-        await act(async () => {
-            announce();
-        });
+        await announceStrip({ tabs: [], activeTabId: null });
 
         expect(onEmpty).toHaveBeenCalled();
     });
 
-    it("collapses a burst of tab reports into one read and a follow-up", async () => {
-        let announce = () => {};
-        vi.mocked(browserApi.subscribeTabs).mockImplementation(async (listener) => {
-            announce = listener;
-            return vi.fn<() => void>();
-        });
-        let release: (() => void) | undefined;
-        vi.mocked(browserApi.snapshot).mockImplementation(() => new Promise((resolve) => (release = () => resolve(snapshot))));
+    /* Tabs a restart saved are only worth a page once someone is looking at
+       the pane, so nothing opens until it is on screen. */
+    it("opens the tabs it was restored with, once, and shows the one that was in front", async () => {
+        setState({ browserRestores: { "pane-browser": restored } } as never);
+        vi.mocked(browserApi.newTab).mockImplementation(async (_agentId, url) => `tab-${url}`);
+        const view = renderPane(false);
+
+        expect(browserApi.newTab).not.toHaveBeenCalled();
+
+        view.rerender(<BrowserPaneHost paneId="pane-browser" visible onEmpty={onEmpty} />);
+
+        await waitFor(() => expect(browserApi.switchTab).toHaveBeenCalledWith("agent-one", "tab-https://second.test"));
+        expect(vi.mocked(browserApi.newTab).mock.calls).toEqual([
+            ["agent-one", "https://example.com"],
+            ["agent-one", "https://second.test"],
+        ]);
+        expect(getState().browserRestores["pane-browser"]).toBeUndefined();
+    });
+
+    it("closes the pane when the tabs it was restored with cannot be opened", async () => {
+        setState({ browserRestores: { "pane-browser": restored } } as never);
+        vi.mocked(browserApi.newTab).mockRejectedValue(new Error("no window"));
         renderPane();
-        await waitFor(() => expect(release).toBeDefined());
-        expect(browserApi.snapshot).toHaveBeenCalledOnce();
 
-        await act(async () => {
-            announce();
-            announce();
-            announce();
-            release!();
-        });
-
-        expect(browserApi.snapshot).toHaveBeenCalledTimes(2);
+        await waitFor(() => expect(onEmpty).toHaveBeenCalled());
     });
 
     it("walks browser tabs with the arrow keys", async () => {

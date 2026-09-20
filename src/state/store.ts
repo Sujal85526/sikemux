@@ -8,10 +8,12 @@ import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from ".
 enableMapSet();
 import { makePane, newId } from "./layout";
 import type { GitCmdEntry, GitModal } from "./gitTypes";
+import type { BrowserSnapshot } from "../api/browser";
 import type {
     Agent,
     AgentPermissionMode,
     AwsService,
+    BrowserPaneView,
     EcsLevel,
     EditorPaneView,
     CliPendingEditorOpen,
@@ -121,6 +123,10 @@ export interface ViewState {
     /* Which agent a browser pane is showing, by pane id. The pane is an
        ordinary leaf in the layout; this is the only thing tying it back. */
     browserPanes: Record<string, string>;
+    /** Each browsing agent's tab strip as the app last heard it, by agent id. */
+    browserStrips: Record<string, BrowserSnapshot>;
+    /** Tabs a restored pane is holding until someone looks at it, by pane id. */
+    browserRestores: Record<string, BrowserPaneView>;
     /** Runtime-only file opens claimed from the CLI broker, keyed by editor pane. */
     pendingEditorOpens: Record<string, CliPendingEditorOpen[]>;
     dirtyEditorPaths: Record<string, string[]>;
@@ -241,6 +247,8 @@ export const useStore = create<StoreState>(() => {
         sessionSwitcher: null,
         editorViews: {},
         browserPanes: {},
+        browserStrips: {},
+        browserRestores: {},
         pendingEditorOpens: {},
         dirtyEditorPaths: {},
         gitViews: {},
