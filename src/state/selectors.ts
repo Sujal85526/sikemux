@@ -64,15 +64,15 @@ export function ownerSessionId(state: Pick<StoreState, "sessionOrder" | "windows
  * Roles the workspace rail drives, which therefore have no tab of their own.
  *
  * The rail is how you reach these and the stage is where they render, so a tab
- * for them was a second handle on one surface: "Changes" in the rail and "Diff"
- * in the strip both meant the same diff. Every other role keeps its tab, since
+ * for them was a second handle on one surface: "Git" in the rail and "Git" in
+ * the strip both meant the same screen. Every other role keeps its tab, since
  * nothing else offers a way back to it.
  *
  * `files` is absent here because an editor is not one surface: the rail browses
  * the tree, but each open document is its own thing to switch between, so an
  * editor contributes a tab per document instead of none.
  */
-const RAIL_DRIVEN_ROLES: ReadonlySet<string> = new Set(["diff", "search"]);
+const RAIL_DRIVEN_ROLES: ReadonlySet<string> = new Set(["diff", "search", "git"]);
 
 /** Whether `role` contributes a window entry to the session tab strip. */
 export function roleHasTab(role: string): boolean {

@@ -9,12 +9,13 @@ const brunoViews = (paneId: string, openPaths: string[], activeRequestPath: stri
 describe("roleHasTab", () => {
     /*
      * The rail reaches these and the stage renders them, so a tab would be a
-     * second handle on one surface — "Changes" in the rail and "Diff" in the
-     * strip meant the same diff.
+     * second handle on one surface — "Git" in the rail and "Git" in the strip
+     * meant the same screen.
      */
     it("denies a window tab to the roles the workspace rail drives", () => {
         expect(roleHasTab("diff")).toBe(false);
         expect(roleHasTab("search")).toBe(false);
+        expect(roleHasTab("git")).toBe(false);
     });
 
     /*
@@ -27,7 +28,7 @@ describe("roleHasTab", () => {
     });
 
     it("keeps a tab for every role nothing else can reach", () => {
-        for (const role of ["term", "git", "aws", "rundeck", "bruno", "ssh-config", "named"]) {
+        for (const role of ["term", "aws", "rundeck", "bruno", "ssh-config", "named"]) {
             expect(roleHasTab(role)).toBe(true);
         }
     });
@@ -43,7 +44,7 @@ describe("expandTabRefs", () => {
             g1: win("g1", "git"),
         });
 
-        expect(refs.map(tabRefKey)).toEqual(["t1", "g1"]);
+        expect(refs.map(tabRefKey)).toEqual(["t1"]);
     });
 
     it("expands an editor into one tab per open document, in their open order", () => {
