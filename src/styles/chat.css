@@ -523,7 +523,7 @@
    sentence. */
 .chat-file-ref {
     display: inline-flex;
-    align-items: center;
+    align-items: baseline;
     gap: 4px;
     max-width: 100%;
     min-width: 0;
@@ -551,10 +551,14 @@
     text-decoration: underline;
 }
 
-/* The tree sets a column width for its glyphs; in a sentence the glyph is only
-   as wide as it draws. */
+/* The tree gives its glyphs a column to line up in. In a sentence the glyph is
+   a letter like any other: as wide as it draws, and sitting on the same
+   baseline, so a bigger icon cannot push the words after it down the line. */
 .chat-file-ref .file-glyph {
+    display: inline;
     width: auto;
+    height: auto;
+    line-height: 0;
     user-select: none;
 }
 
