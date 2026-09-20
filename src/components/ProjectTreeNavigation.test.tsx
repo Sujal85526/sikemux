@@ -30,14 +30,6 @@ it("opens and reuses Files, Git and Search from the expanded project tree", () =
     }
 });
 
-it("reveals the agents rail when navigating to Agents", () => {
-    setState({ agentRailOpen: false });
-    render(<SideRail />);
-    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-    expect(getState().agentRailOpen).toBe(true);
-    expect(getState().agentPaletteOpen).toBe(true);
-});
-
 it("returns to the existing terminal from a project tool", () => {
     render(<SideRail />);
     fireEvent.click(screen.getByRole("button", { name: "Git" }));

@@ -1,4 +1,4 @@
-import { agentApi, type AgentInfo, type AgentModelInfo, type AgentSession, type AgentUsage } from "../api/agents";
+import { agentApi, type AgentInfo, type AgentModelInfo, type AgentSession, type AgentSessionProviderResult, type AgentUsage } from "../api/agents";
 import type { AgentRuntimeProfile } from "../agentProfiles";
 import {
     awsApi,
@@ -143,6 +143,24 @@ export const agentUsageR = resource({
 export const agentSessionsR = resource({
     kind: "agents.sessions",
     fetch: (type: AgentType, cwd: string, configPath?: string): Promise<AgentSession[]> => agentApi.sessions(type, cwd, configPath),
+    staleAfterMs: 0,
+});
+
+/**
+ * Every provider's history for one checkout, in one read.
+ *
+ * The rail shows one list rather than a list per provider, so it needs all of
+ * them together; `sessionResults` already fans out in parallel and keeps a
+ * failing CLI from taking the others down with it.
+ *
+ * Keyed on what identifies a provider's history — its type and config path —
+ * rather than on the whole `AgentInfo`, which carries a detected model and an
+ * error string that change without the history changing.
+ */
+export const agentHistoryR = resource({
+    kind: "agents.history",
+    fetch: (providers: AgentInfo[], cwd: string): Promise<AgentSessionProviderResult[]> => agentApi.sessionResults(providers, cwd),
+    keyFn: ([providers, cwd]) => providers.map((p) => `${p.type}:${p.configPath ?? ""}`).join(",") + "\0" + cwd,
     staleAfterMs: 0,
 });
 

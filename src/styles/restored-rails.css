@@ -1,13 +1,3 @@
-.workspace-rail.agent-rail {
-    flex-direction: column;
-    width: 288px;
-    min-width: 240px;
-}
-.agent-rail > .rail-scroll {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
 /*
  * The project navigator is a tree, not a list of pills.
  *
@@ -119,4 +109,378 @@
 .side-rail .proj-child.active .proj-child-kbd {
     opacity: 1;
     color: var(--acc);
+}
+
+/* ═══ one rail ═════════════════════════════════════════════════════════════
+ *
+ * The agent rail's contents live here now. What made that fit was subtraction,
+ * not arrangement: the provider switch went (every row wears its own provider),
+ * the Open and Recent headings went (weight says which a row is), and the plan
+ * gauges went from two lines each to one. Three group heads in the column —
+ * the project, Agents, Limits — where the two rails had eleven rules between
+ * them.
+ */
+.side-rail.one-rail {
+    width: 300px;
+}
+
+/* ── the head ──────────────────────────────────────────────────────────────
+ * Two words above the strip. The strip says which project; this says whether
+ * you are among projects at all, and carries the dot for the half of the rail
+ * you are not looking at.
+ */
+.seg-head {
+    display: flex;
+    gap: var(--space-0);
+    flex: 0 0 auto;
+    margin: var(--space-2) var(--gutter-rail) 0;
+    padding: var(--space-0);
+    border-radius: var(--radius-2);
+    background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+}
+.seg-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1h);
+    flex: 1 1 0;
+    height: 26px;
+    color: var(--text-tertiary);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    transition:
+        color var(--dur-1) linear,
+        background var(--dur-1) linear;
+}
+.seg-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+}
+.seg-btn:disabled {
+    color: var(--text-disabled);
+    cursor: default;
+}
+.seg-btn.active {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    box-shadow: var(--shadow-1);
+}
+.seg-dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: var(--radius-full);
+    background: var(--acc);
+}
+.seg-dot.state-working {
+    background: var(--live);
+}
+.seg-dot.state-blocked,
+.seg-dot.state-done {
+    background: var(--warn);
+}
+
+/* ── the strip ─────────────────────────────────────────────────────────────
+ * A vertical list cannot say what comes next, because a column has no next.
+ * This can: the chip to the left is the project behind you, the chip to the
+ * right is the one ahead, and the swipe moves along it. Only the projects
+ * scroll — the fade on the trailing edge is what says there are more of them,
+ * because a run that simply stops looks like a run that ended.
+ */
+.proj-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 0 0 auto;
+    padding: var(--space-2) var(--space-1h) var(--space-1h) var(--gutter-rail);
+}
+.proj-strip-run {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent 100%);
+}
+.proj-strip-run::-webkit-scrollbar {
+    display: none;
+}
+.proj-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+    flex: 0 0 auto;
+    height: 26px;
+    padding: 0 var(--space-2);
+    color: var(--text-tertiary);
+    background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 66%, transparent);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    transition:
+        color var(--dur-1) linear,
+        background var(--dur-1) linear;
+}
+.proj-chip:hover {
+    color: var(--text-primary);
+}
+.proj-chip.active {
+    color: var(--text-primary);
+    background: var(--surface-selected);
+    box-shadow: inset 0 0 0 1px var(--border-selected);
+}
+.proj-chip-ic {
+    display: grid;
+    place-items: center;
+    color: var(--live);
+}
+.proj-chip-name {
+    max-width: 148px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.proj-chip .agent-activity {
+    width: 12px;
+    height: 12px;
+}
+.proj-chip .agent-state-dot {
+    width: 5px;
+    height: 5px;
+}
+.proj-chip .agent-state-loader {
+    width: 9px;
+    height: 9px;
+    border-width: 1.5px;
+    transform-origin: 4.5px 4.5px;
+}
+/* Pinned outside the run, or it clips off the edge the moment you have three
+   projects and the way to open another goes with it. */
+.proj-chip-add {
+    flex: 0 0 auto;
+    padding-inline: var(--space-1h);
+    color: var(--text-disabled);
+    background: transparent;
+    box-shadow: none;
+}
+.proj-chip-add:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+/* Reordering is a pointer drag; the page swipe is a wheel gesture. The two
+   never contend for the same movement, which is the split a tab strip makes. */
+.proj-chip.dragging {
+    opacity: 0.4;
+}
+.proj-chip.drop-before::before,
+.proj-chip.drop-after::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 2px;
+    border-radius: var(--radius-full);
+    background: var(--acc);
+}
+.proj-chip.drop-before::before {
+    left: calc(var(--space-1) * -1);
+}
+.proj-chip.drop-after::after {
+    right: calc(var(--space-1) * -1);
+}
+.is-sorting-projects,
+.is-sorting-projects * {
+    cursor: grabbing;
+    user-select: none;
+}
+
+/* ── the track ─────────────────────────────────────────────────────────────
+ * Two elements, not one. The clip cannot live on the track: a transformed box
+ * carries its own overflow with it, so a track that clipped itself would slide
+ * its window along with its contents and never reveal the next page. The stage
+ * splits these the same way — see `.window-area` / `.window-track`.
+ */
+.rail-viewport {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: clip;
+}
+.rail-track {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    /* Vertical scrolling inside a page still belongs to the page. */
+    touch-action: pan-y;
+    transform: translate3d(var(--rail-pan, 0%), 0, 0);
+    transition: transform var(--rail-pan-ms, 280ms) cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+/* A swipe put back where it came from has to stop the track before it can come
+   back, so it drifts on a little the way the hand was going first — see
+   `.window-track.returning`, which is the same close on the stage. */
+.rail-track.returning {
+    transition-timing-function: cubic-bezier(0.34, -0.1, 0.2, 1);
+}
+/* A gesture writes the transform frame by frame; a transition on top of that
+   is the track chasing the finger rather than following it. */
+.rail-viewport.is-panning .rail-track {
+    transition: none;
+}
+.rail-page {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 100%;
+    min-width: 0;
+    min-height: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+    .rail-track {
+        transition: none;
+    }
+}
+
+/* ── the tree ──────────────────────────────────────────────────────────────
+ * It hangs off the chip: the spine is drawn at the children's left edge, and
+ * the strip scrolls until the active chip's mark lands on it. The left edge is
+ * fixed — the tree is the content and does not move, the strip does.
+ */
+.one-rail .proj-children.branch {
+    position: relative;
+    margin-left: var(--space-2);
+    padding-top: 0;
+}
+/* The stub that joins the chip above to the first tick below, so the line
+   arrives from the project rather than starting in mid air. */
+.one-rail .proj-children.branch::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: calc(var(--space-1h) * -1);
+    width: 1px;
+    height: var(--space-1h);
+    background: var(--tree-spine);
+}
+
+/*
+ * One rhythm down the head: 8 to the segments, 8 to the strip, 8 to the tree.
+ * It was 9 / 6 / 29, because three paddings stacked at the last one — the
+ * strip's own, the scroller's, and the group's top margin, which modern-shell
+ * sets on every `.panel-group` and so out-orders panel.css's `:first-child`
+ * reset at equal specificity.
+ */
+.one-rail .rail-page > .rail-scroll {
+    padding-top: 0;
+}
+.one-rail .rail-page .panel-group:first-child {
+    margin-top: 0;
+}
+
+/* ── the log ───────────────────────────────────────────────────────────────
+ * A past chat steps back rather than sitting under a second heading. Weight is
+ * doing what an Open head and a Recent head used to do.
+ */
+.agent-group .agent-row.recent .agent-title {
+    color: var(--text-disabled);
+}
+.agent-group .agent-row.recent .agent-glyph {
+    opacity: 0.55;
+}
+.agent-group .agent-row.recent:hover .agent-title {
+    color: var(--text-primary);
+}
+.agent-group .agent-row.recent:hover .agent-glyph {
+    opacity: 1;
+}
+.rail-group-add.on {
+    color: var(--acc);
+    background: var(--surface-selected);
+}
+.one-rail .rail-find {
+    height: 28px;
+    margin: 0 var(--space-2) var(--space-1h);
+    padding: 0 var(--space-1h);
+    border: 0;
+    border-radius: var(--radius-2);
+    background: color-mix(in srgb, var(--surface-raised) 52%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+}
+.one-rail .rail-find:focus-within {
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.log-more {
+    display: block;
+    width: 100%;
+    height: 26px;
+    color: var(--text-disabled);
+    font-family: var(--ui);
+    font-size: var(--text-2xs);
+    font-style: italic;
+}
+.log-more:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+.log-empty {
+    padding: var(--space-4) var(--space-2);
+    color: var(--text-disabled);
+    font-size: var(--text-2xs);
+    line-height: 1.6;
+}
+
+/* ── limits, in one line per window ────────────────────────────────────────
+ * It was two rows for each of three windows — a name and a countdown on one, a
+ * percentage and a gauge on the next — which made it the tallest block in a
+ * rail that now has a chat log to fit as well. Everything on the row is short,
+ * so the second line was buying nothing.
+ *
+ * Fixed columns, or the three gauges start at three different x. The label is
+ * the only one that gives up width: narrow the rail and it ellipsises, because
+ * the gauge is the data and keeps its floor.
+ */
+/* No horizontal padding of its own: the head and the rows carry their own
+   inset, and adding the rail gutter on top of it put the whole panel 10px
+   right of every other label in the column. */
+.one-rail .agent-usage {
+    margin: 0;
+    padding: var(--space-2) 0 var(--space-3);
+    border-top: 1px solid var(--border);
+}
+.one-rail .agent-usage-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding-inline: var(--space-2);
+    /* The name and the countdown used to sit inside `.agent-usage-line`, which
+       set this for them. Flattening the row to one line took the wrapper away
+       and they fell back to the body's 1.45, which grew every row by 4px. */
+    line-height: 1;
+}
+.one-rail .agent-usage-row + .agent-usage-row {
+    margin-top: var(--space-1h);
+}
+.one-rail .agent-usage-name {
+    flex: 0 1 62px;
+    min-width: 22px;
+    margin: 0;
+    font-size: var(--text-2xs);
+}
+.one-rail .agent-usage-pct {
+    flex: 0 0 34px;
+    min-width: 0;
+    font-size: var(--text-xs);
+    text-align: right;
+}
+.one-rail .agent-usage-track {
+    flex: 1 1 auto;
+    min-width: 54px;
+    height: 7px;
+}
+.one-rail .agent-usage-reset {
+    flex: 0 0 46px;
+    text-align: right;
 }

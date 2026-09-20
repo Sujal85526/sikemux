@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
-import { toggleAgentRail, toggleSideRail } from "./commands";
+import { focusAgents, toggleSideRail } from "./commands";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -13,24 +13,37 @@ beforeEach(() => {
 });
 
 describe("rail toggles", () => {
-    it("toggles a rail on its own when focus mode is off", () => {
-        setState({ zenMode: false, sideRailOpen: true, agentRailOpen: false });
+    it("toggles the rail when focus mode is off", () => {
+        setState({ zenMode: false, sideRailOpen: true });
 
         toggleSideRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: false, agentRailOpen: false });
+        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: false });
 
-        toggleAgentRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: false, agentRailOpen: true });
+        toggleSideRail();
+        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: true });
     });
 
-    it("leaves focus mode and shows the rail that was asked for", () => {
-        setState({ zenMode: true, sideRailOpen: true, agentRailOpen: false });
+    it("leaves focus mode and shows the rail", () => {
+        setState({ zenMode: true, sideRailOpen: true });
 
         toggleSideRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: true, agentRailOpen: false });
+        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: true });
+    });
 
-        setState({ zenMode: true, sideRailOpen: false, agentRailOpen: false });
-        toggleAgentRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: false, agentRailOpen: true });
+    /* The agents moved into the side rail, so the shortcut that reaches them
+       has to open that one — there is no second rail left to reveal. */
+    it("reveals the side rail when the agent shortcut fires", () => {
+        setState({
+            zenMode: false,
+            sideRailOpen: false,
+            sessions: { p: { id: "p", name: "p", kind: "project", cwd: "/p", deploy: null, pinned: false, activeWindowId: "" } },
+            sessionOrder: ["p"],
+            activeSessionId: "p",
+            windows: {},
+            windowsBySession: { p: [] },
+        });
+
+        focusAgents();
+        expect(getState().sideRailOpen).toBe(true);
     });
 });

@@ -13,7 +13,6 @@ import { envFolderOf } from "../state/rundeckShape";
 import { useStore } from "../state/store";
 import { activeAgentId } from "../state/selectors";
 import {
-    IconAgent,
     IconAws,
     IconBattery,
     IconChevron,
@@ -346,7 +345,6 @@ export const TopBar = memo(function TopBar() {
     const zoomed = useStore((s) => s.zoomedPaneId != null);
     const zen = useStore((s) => s.zenMode);
     const sideRailVisible = useStore((s) => s.sideRailOpen && !s.zenMode);
-    const agentRailVisible = useStore((s) => s.agentRailOpen && !s.zenMode);
     const [envOpen, setEnvOpen] = useState(false);
 
     const isProject = !!session && session.kind === "project";
@@ -490,15 +488,6 @@ export const TopBar = memo(function TopBar() {
                             aria-pressed={sideRailVisible}
                             aria-label="Toggle sessions rail">
                             <IconPanelLeft size={15} />
-                        </button>
-                    </Tooltip>
-                    <Tooltip label="Toggle agents rail">
-                        <button
-                            className={`tb-btn${agentRailVisible ? " on" : ""}`}
-                            onClick={cmd.toggleAgentRail}
-                            aria-pressed={agentRailVisible}
-                            aria-label="Toggle agents rail">
-                            <IconAgent size={15} />
                         </button>
                     </Tooltip>
                     <Tooltip label={`Settings — ${PRIMARY_SHORTCUT},`}>

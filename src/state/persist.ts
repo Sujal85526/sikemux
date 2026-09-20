@@ -88,7 +88,6 @@ const PERSISTED_KEYS = [
     "awsProfile",
     "awsService",
     "sideRailOpen",
-    "agentRailOpen",
     "zenMode",
     "rundeck",
     "restoreAgentTabs",
@@ -137,7 +136,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         awsProfile: s.awsProfile,
         awsService: s.awsService,
         sideRailOpen: s.sideRailOpen,
-        agentRailOpen: s.agentRailOpen,
         zenMode: s.zenMode,
         rundeck: s.rundeck,
         restoreAgentTabs: s.restoreAgentTabs,
@@ -791,7 +789,6 @@ export function applyHydrate(raw: string): HydrationResult {
         awsProfile: prefs.awsProfile === null || typeof prefs.awsProfile === "string" ? prefs.awsProfile : cur.awsProfile,
         awsService: AWS_SERVICES.has(prefs.awsService as StoreState["awsService"]) ? (prefs.awsService as StoreState["awsService"]) : cur.awsService,
         sideRailOpen: typeof prefs.sideRailOpen === "boolean" ? prefs.sideRailOpen : cur.sideRailOpen,
-        agentRailOpen: typeof prefs.agentRailOpen === "boolean" ? prefs.agentRailOpen : cur.agentRailOpen,
         zenMode: typeof prefs.zenMode === "boolean" ? prefs.zenMode : cur.zenMode,
         rundeck: {
             activeProject: typeof rundeck.activeProject === "string" ? rundeck.activeProject : "",
