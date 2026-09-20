@@ -123,7 +123,10 @@ export function useRailPan(
             if (done.frame != null) cancelAnimationFrame(done.frame);
             done.frame = null;
             if (!done.claimed || !track) return forget();
-            const thrown = flicked(done.pushes, until);
+            // A throw only carries the swipe onto a page it has already uncovered — see
+            // the stage's `land` for why a pull that has crossed has spent its throw.
+            const flick = flicked(done.pushes, until);
+            const thrown = flick * done.offset < 0 ? 0 : flick;
             const onto = Math.max(0, Math.min(live.current.pages - 1, done.slot + thrown));
             const travel = onto - (done.slot + done.offset);
             const returning = travel * thrust(done.pushes, until) < 0;

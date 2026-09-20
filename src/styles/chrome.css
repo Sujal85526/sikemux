@@ -639,6 +639,15 @@
 .window-track.sliding {
     transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
+/* A close that carries on the way the hand was going starts at the speed the
+   hand had, which is what the curve above opens at. A close that goes back
+   against it cannot: the track is still travelling the other way, and a curve
+   that opens at speed puts most of the way home into the first frame, which
+   reads as the track jumping rather than coming back. So this one drifts on a
+   little the way it was going, stops, and then comes back. */
+.window-track.sliding.returning {
+    transition-timing-function: cubic-bezier(0.34, -0.1, 0.2, 1);
+}
 @media (prefers-reduced-motion: reduce) {
     .window-track.sliding {
         transition: none;

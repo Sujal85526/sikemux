@@ -41,10 +41,16 @@ export function pushed(pushes: readonly Push[], at: number, pixels: number): Pus
     return recent;
 }
 
-/** How many screens of follow-through a swipe had left in it: -1, 0 or 1. */
-export function flicked(pushes: readonly Push[], until: number): number {
+/** Which way the hand was still going when the swipe ended, and how hard, in pixels. */
+export function thrust(pushes: readonly Push[], until: number): number {
     let moved = 0;
     for (const push of pushes) if (until - push.at <= FLICK_WINDOW_MS) moved += push.pixels;
+    return moved;
+}
+
+/** How many screens of follow-through a swipe had left in it: -1, 0 or 1. */
+export function flicked(pushes: readonly Push[], until: number): number {
+    const moved = thrust(pushes, until);
     return Math.abs(moved) < FLICK_TRAVEL_PX ? 0 : Math.sign(moved);
 }
 

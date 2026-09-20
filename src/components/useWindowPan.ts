@@ -11,6 +11,14 @@ const SETTLE_MIN_MS = 120;
 const SETTLE_GUARD_MS = PAN_MS + 120;
 
 /**
+ * How long a swipe put back where it came from takes. One time for all of them,
+ * however far the pull got: a band pulled twice as far comes back twice as fast
+ * rather than taking twice as long, and it is the time that a person reads as
+ * the feel of the thing.
+ */
+export const RETURN_MS = 200;
+
+/**
  * How long to take over the ground a gesture left, which is less than a screen.
  * Not in proportion to it: covering half the distance in half the time looks
  * like the same speed, so a short trip keeps some of the pace of a long one.
@@ -34,6 +42,8 @@ interface Pan {
     readonly distance: number;
     /** How long the travel takes. A gesture hands back less than a screen of it. */
     readonly ms: number;
+    /** Whether the travel runs back against the hand rather than on the way it went. */
+    readonly returning: boolean;
 }
 
 export interface WindowPan {
@@ -41,6 +51,8 @@ export interface WindowPan {
     readonly panning: boolean;
     /** Whether the track is past its parked position and actually travelling. */
     readonly sliding: boolean;
+    /** Whether what is travelling is a swipe coming back rather than carrying on. */
+    readonly returning: boolean;
     /** Where the track sits now, in screen widths from its left edge. */
     readonly at: number;
     /** How long the travel on screen now takes, which the stylesheet needs. */
@@ -58,7 +70,7 @@ export interface WindowPan {
      * Takes the track back when the gesture stops, sliding from wherever it left
      * it onto `onto` over `ms`. The gesture knows how much ground that leaves.
      */
-    snap(onto: string, beside: string | null, ms: number): void;
+    snap(onto: string, beside: string | null, ms: number, returning: boolean): void;
     /**
      * Takes the track back with no travel at all, parked on the screen the
      * session is on now. For a gesture whose screens moved out from under it,
@@ -79,7 +91,7 @@ function planPan(from: string | null, to: string | null, slots: ReadonlyMap<stri
     // Taking over a slide already travelling is that same travel carrying on, so
     // it carries on at the same pace rather than starting a fresh screen's worth.
     const ms = running?.to === from ? running.ms : PAN_MS;
-    return { kind: "slide", from, to, fromSlot, slot: fromSlot + (toSlot > home ? 1 : -1), distance: Math.abs(toSlot - home), ms };
+    return { kind: "slide", from, to, fromSlot, slot: fromSlot + (toSlot > home ? 1 : -1), distance: Math.abs(toSlot - home), ms, returning: false };
 }
 
 /**
@@ -161,6 +173,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
             slot: home,
             distance: 1,
             ms: PAN_MS,
+            returning: false,
         }));
         setRunning(false);
     };
@@ -177,7 +190,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         setRunning(false);
     };
 
-    const snap = (onto: string, beside: string | null, ms: number) => {
+    const snap = (onto: string, beside: string | null, ms: number, returning: boolean) => {
         const home = slots.get(onto);
         // A screen closed under the swipe has nothing left to land on.
         if (home === undefined) return park();
@@ -193,7 +206,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         // The same slide a switch makes, settling the same way, except that the
         // two screens are already side by side so neither has to be parked.
         const neighbour = beside === null ? undefined : slots.get(beside);
-        setPan({ kind: "slide", from: beside ?? onto, to: onto, fromSlot: neighbour ?? home, slot: home, distance: 1, ms });
+        setPan({ kind: "slide", from: beside ?? onto, to: onto, fromSlot: neighbour ?? home, slot: home, distance: 1, ms, returning });
         setRunning(true);
     };
 
@@ -201,6 +214,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         trackRef,
         panning: pan !== null,
         sliding: pan !== null && pan.kind === "slide" && running,
+        returning: pan?.returning === true,
         ms: pan?.ms ?? PAN_MS,
         at: pan ? (running ? pan.slot : pan.fromSlot) : activeWindowId ? (slots.get(activeWindowId) ?? 0) : 0,
         slotOf: (windowId, slot) => {

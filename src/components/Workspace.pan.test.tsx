@@ -8,7 +8,7 @@ import { withAgents } from "../test/agents";
 import { performanceTelemetry } from "../lib/performance";
 import { HELD_END_MS, SPENT_END_MS } from "./wheelPan";
 import { setFingersDown } from "../lib/wheelTouch";
-import { PAN_MS } from "./useWindowPan";
+import { PAN_MS, RETURN_MS, settleMs } from "./useWindowPan";
 import type { Agent } from "../state/types";
 
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div>Terminal output</div> }));
@@ -327,6 +327,24 @@ describe("workspace wheel pan", () => {
     });
 
     /*
+     * A pull that has already crossed onto the next screen is counted from that
+     * one, and the ground that carried it there is the same ground a throw is read
+     * from, so the throw may not buy a second screen with it. Landing two screens
+     * on would also travel across a screen that nobody painted.
+     */
+    it("does not let a throw spend the ground the crossing already did", () => {
+        const { container, track, live, index } = stageOfScreens();
+
+        act(() => setFingersDown(true));
+        swipe(live, 600);
+        act(() => setFingersDown(false));
+
+        expect(activeWindow()).toBe(order()[index + 1]);
+        expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(2);
+        expect(panOf(track)).toBe(slidLeft(index + 1));
+    });
+
+    /*
      * Holding still mid-swipe sends nothing at all, which is exactly what having
      * let go sends. macOS is the only thing that can tell the two apart, and
      * while it says the hand is down the track stays where the hand left it
@@ -443,7 +461,9 @@ describe("workspace wheel pan", () => {
         expect(panOf(track)).toBe(at);
     });
 
-    /* And a hand coming back down mid-glide is a new swipe, not more of the old one. */
+    /* And a hand coming back down mid-glide is a new swipe, not more of the old one.
+       The first one crossed onto the screen after it and closed there, so the second
+       is a fresh 0.3 of a screen from that one and not from where the glide went. */
     it("takes a hand coming back down as a new swipe", () => {
         const { track, live, index } = stageOfScreens();
         setFingersDown(true);
@@ -454,7 +474,7 @@ describe("workspace wheel pan", () => {
         act(() => setFingersDown(true));
         swipe(live, 300);
 
-        expect(panOf(track)).toBe(slidLeft(index + 2.3));
+        expect(panOf(track)).toBe(slidLeft(index + 1.3));
     });
 
     /*
@@ -496,6 +516,46 @@ describe("workspace wheel pan", () => {
         const pulled = Number.parseFloat(panOf(track).slice("calc(".length));
         expect(-pulled - index).toBeGreaterThan(0);
         expect(-pulled - index).toBeLessThan(0.15);
+    });
+
+    /*
+     * A swipe thrown at a screen that is not there is the fastest the track ever
+     * goes, and the close has to turn it round. Coming back is its own movement:
+     * one time for every one of them, whatever the throw was worth, rather than a
+     * time read off the little ground a resisted pull covered.
+     */
+    it("brings a swipe thrown past the last screen back in the time a swipe comes back in", () => {
+        const { track, live } = stageOfScreens();
+        const last = order().at(-1)!;
+        act(() => cmd.selectWindowId(last));
+        act(() => void vi.advanceTimersByTime(PAN_MS * 2));
+        const index = order().indexOf(last);
+
+        act(() => setFingersDown(true));
+        swipe(live, 900);
+        act(() => setFingersDown(false));
+
+        expect(activeWindow()).toBe(last);
+        expect(track).toHaveClass("returning");
+        expect(settleTime(track)).toBe(RETURN_MS);
+        expect(panOf(track)).toBe(slidLeft(index));
+    });
+
+    /* A close that carries on the way the hand went picks up where the hand left
+       off, so it keeps the pace of the ground it has left rather than turning round. */
+    it("carries a thrown swipe on without turning it round", () => {
+        const { track, live, index } = stageOfScreens();
+
+        act(() => setFingersDown(true));
+        swipe(live, 300);
+        act(() => setFingersDown(false));
+
+        expect(activeWindow()).toBe(order()[index + 1]);
+        expect(track).toHaveClass("sliding");
+        expect(track).not.toHaveClass("returning");
+        // A throw of 0.3 of a screen leaves the other 0.7 of it to cover.
+        expect(settleTime(track)).toBe(settleMs(0.7));
+        expect(panOf(track)).toBe(slidLeft(index + 1));
     });
 
     /*

@@ -129,7 +129,9 @@ export const Workspace = memo(function Workspace() {
                     <div
                         key={session.id}
                         ref={isActive ? pan.trackRef : undefined}
-                        className={`window-track${isActive && pan.panning ? " panning" : ""}${isActive && pan.sliding ? " sliding" : ""}`}
+                        className={`window-track${isActive && pan.panning ? " panning" : ""}${isActive && pan.sliding ? " sliding" : ""}${
+                            isActive && pan.returning ? " returning" : ""
+                        }`}
                         style={
                             {
                                 "--window-pan-ms": `${isActive ? pan.ms : PAN_MS}ms`,

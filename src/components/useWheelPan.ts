@@ -3,9 +3,9 @@ import type { RefObject } from "react";
 import * as cmd from "../state/commands";
 import { fingersDown, onFingers, watchFingers } from "../lib/wheelTouch";
 import { getState } from "../state/store";
-import { panOffset, settleMs } from "./useWindowPan";
+import { panOffset, RETURN_MS, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
-import { claimsWheel, endDelay, flicked, panned, pushed } from "./wheelPan";
+import { claimsWheel, endDelay, flicked, panned, pushed, thrust } from "./wheelPan";
 import type { PaneScroller, Push } from "./wheelPan";
 
 interface Gesture {
@@ -110,6 +110,12 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
          * Closes the swipe onto a screen. The finger leaves the track at most half
          * a screen from the one the session is on, unless the swipe was thrown
          * rather than placed, which carries it one screen further the way it went.
+         *
+         * The close either carries on the way the hand was going or turns round and
+         * goes back against it, and those are two different movements: one picks up
+         * where the hand left off, the other has to stop the track first. A fast
+         * swipe put back at the same pace it was taken away at is the one that
+         * reads as broken, so a swipe coming back always comes back the same way.
          */
         const land = (until: number) => {
             const done = gesture;
@@ -120,16 +126,22 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             if (!done.claimed || !done.held) return;
             const { order, on } = session();
             if (on === null || order[done.slot] !== on) return latest.current.park();
-            const thrown = flicked(done.pushes, until);
+            // A throw only carries the swipe onto a screen it has already uncovered.
+            // Once a pull has crossed onto a screen it is counted from that one, and
+            // the ground that carried it there is the same ground the throw reads, so
+            // spending it twice jumps a screen and slides over one nobody painted.
+            const flick = flicked(done.pushes, until);
+            const thrown = flick * done.offset < 0 ? 0 : flick;
             const onto = (thrown === 0 ? null : (order[done.slot + thrown] ?? null)) ?? on;
-            const left = onto === on ? Math.abs(done.offset) : Math.abs(thrown - done.offset);
+            const travel = (onto === on ? 0 : thrown) - done.offset;
+            const returning = travel * thrust(done.pushes, until) < 0;
             if (onto !== on) {
                 // The glide still to come has to find the swipe where it landed,
                 // or it reads as a switch from elsewhere and starts a swipe of its own.
                 done.slot += thrown;
                 cmd.selectWindowId(onto);
             }
-            latest.current.snap(onto, onto === on ? done.toward : on, settleMs(left));
+            latest.current.snap(onto, onto === on ? done.toward : on, returning ? RETURN_MS : settleMs(Math.abs(travel)), returning);
         };
 
         const settle = () => {
