@@ -136,8 +136,20 @@
     margin: var(--space-2) var(--gutter-rail) 0;
     padding: var(--space-0);
     border-radius: var(--radius-2);
-    background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+    /*
+     * A tint, never a fill.
+     *
+     * `--surface-raised` is an opaque colour, so mixing it with `transparent`
+     * only ever gives a partly-opaque grey — over a window that has the
+     * backdrop showing through it, that is a wash, and the art dies under it.
+     * The ink tints are tints of whatever is behind them, so the wallpaper
+     * still reads and the depth is carried by how much ink, not how much paint.
+     *
+     * The track is an outline and nothing else, which leaves the widest range
+     * for the one thing on it that is meant to look raised.
+     */
+    background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 9%, transparent);
 }
 .seg-btn {
     display: flex;
@@ -154,8 +166,9 @@
         color var(--dur-1) linear,
         background var(--dur-1) linear;
 }
-.seg-btn:hover:not(:disabled) {
+.seg-btn:hover:not(:disabled):not(.active) {
     color: var(--text-primary);
+    background: var(--surface-hover);
 }
 .seg-btn:disabled {
     color: var(--text-disabled);
@@ -163,8 +176,10 @@
 }
 .seg-btn.active {
     color: var(--text-primary);
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-    box-shadow: var(--shadow-1);
+    background: color-mix(in oklab, var(--ink) 15%, transparent);
+    box-shadow:
+        var(--shadow-1),
+        inset 0 0 0 1px color-mix(in oklab, var(--ink) 10%, transparent);
 }
 .seg-dot {
     width: 6px;
@@ -217,8 +232,9 @@
     height: 26px;
     padding: 0 var(--space-2);
     color: var(--text-tertiary);
-    background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 66%, transparent);
+    /* Outline at rest, so a row of them does not tile over the backdrop. */
+    background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 9%, transparent);
     font-family: var(--ui);
     font-size: var(--text-xs);
     white-space: nowrap;
@@ -228,6 +244,7 @@
 }
 .proj-chip:hover {
     color: var(--text-primary);
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
 }
 .proj-chip.active {
     color: var(--text-primary);
@@ -406,8 +423,8 @@
     padding: 0 var(--space-1h);
     border: 0;
     border-radius: var(--radius-2);
-    background: color-mix(in srgb, var(--surface-raised) 52%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+    background: color-mix(in oklab, var(--ink) 5%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 9%, transparent);
 }
 .one-rail .rail-find:focus-within {
     box-shadow: inset 0 0 0 1px var(--border-strong);
