@@ -81,7 +81,7 @@ export function ChatFileRef({
     refers,
     state,
     label,
-    size = 16,
+    size = 18,
     className = "chat-file-ref",
 }: {
     refers: PathRef;

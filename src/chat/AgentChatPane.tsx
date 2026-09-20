@@ -315,7 +315,7 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
             <span className="chat-tool-target">
-                {file ? <ChatFileRef refers={file.ref} state={file.state} label={toolTarget(tool)} size={15} /> : toolTarget(tool)}
+                {file ? <ChatFileRef refers={file.ref} state={file.state} label={toolTarget(tool)} size={17} /> : toolTarget(tool)}
             </span>
         </>
     );
@@ -484,7 +484,7 @@ function CodeTitle({ info }: { info: string }) {
     return (
         <span className="chat-code-title">
             {file ? (
-                <ChatFileRef refers={file.ref} state={file.state} label={name} size={14} />
+                <ChatFileRef refers={file.ref} state={file.state} label={name} size={16} />
             ) : (
                 <>
                     <IconFile size={10} />
@@ -553,7 +553,7 @@ function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "con
     return (
         <div className="chat-resource">
             {file ? (
-                <ChatFileRef refers={file.ref} state={file.state} label={label} size={15} />
+                <ChatFileRef refers={file.ref} state={file.state} label={label} size={17} />
             ) : (
                 <>
                     <IconFile size={13} />
