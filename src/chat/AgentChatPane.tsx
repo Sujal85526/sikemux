@@ -794,7 +794,7 @@ function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; s
                 <Group label={kind} count={group.length} key={kind}>
                     {group.map((task) => (
                         <div className={`chat-task state-${task.state}`} key={task.asyncTaskId}>
-                            <IconTimer size={12} />
+                            {kind === "shell" ? <IconCommand size={12} /> : <IconTimer size={12} />}
                             <span className="chat-task-name">{task.name}</span>
                             <span className="chat-task-detail">{taskDetail(task)}</span>
                             {task.canStop && (
