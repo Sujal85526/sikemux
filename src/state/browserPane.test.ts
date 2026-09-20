@@ -74,6 +74,32 @@ describe("the browser pane", () => {
         expect(getState().windows.window.activePaneId).toBe("agent-1");
     });
 
+    /* A pane that came back from a saved layout has no agent behind it, since
+       the link to one only ever lived in memory, and a browser that is not
+       running has nothing to draw. */
+    it("takes itself back out when it is restored without its agent", () => {
+        setState({
+            windows: {
+                window: {
+                    ...window_(),
+                    root: {
+                        type: "split" as const,
+                        id: "split-1",
+                        dir: "row" as const,
+                        sizes: [0.5, 0.5],
+                        children: [window_().root, { type: "pane" as const, id: "orphan", cwd: "/code", kind: "browser" as const, title: "browser" }],
+                    },
+                    activePaneId: "orphan",
+                },
+            },
+        } as never);
+
+        closeBrowserPane("orphan");
+
+        expect(collectPanes(getState().windows.window.root).map((pane) => pane.kind)).toEqual(["agent"]);
+        expect(getState().windows.window.activePaneId).toBe("agent-1");
+    });
+
     /* Several things find an agent by reading its window — its tab, its rail row
        and what gets persisted. A browser pane is a second pane in that window,
        so none of them may go looking at whichever pane happens to be focused. */

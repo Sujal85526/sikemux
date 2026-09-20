@@ -2351,10 +2351,12 @@ export function openBrowserPane(agentId: string): void {
     });
 }
 
-/** The last tab closed, so the pane has nothing left to be. */
+/**
+ * The last tab closed, or the pane came back from a layout without the agent
+ * that gave it meaning — either way there is nothing left for it to show.
+ */
 export function closeBrowserPane(paneId: string): void {
     mutate((d) => {
-        if (!d.browserPanes[paneId]) return;
         for (const id of Object.keys(d.windows)) {
             const win = d.windows[id];
             if (!collectPanes(win.root).some((pane) => pane.id === paneId)) continue;

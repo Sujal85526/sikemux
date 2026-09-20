@@ -7,6 +7,7 @@ import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agentLaunch";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentPaneId } from "./selectors";
+import { collectPanes, removePane } from "./layout";
 import { agentDirectCommand, agentStartup } from "./commands";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
@@ -19,6 +20,7 @@ import type {
     AgentProvider,
     AgentType,
     EditorPaneView,
+    LayoutNode,
     PersistedAgent,
     PersistedPrefs,
     PersistedSession,
@@ -397,6 +399,23 @@ function persistedAgent(agent: Agent): PersistedAgent {
 }
 
 /**
+ * A browser pane means nothing without the running browser it was showing, and
+ * that link is never written down, so saving one would restore a blank half.
+ */
+function withoutBrowserPanes(window: Window): Window | null {
+    const browserPaneIds = collectPanes(window.root)
+        .filter((pane) => pane.kind === "browser")
+        .map((pane) => pane.id);
+    if (browserPaneIds.length === 0) return window;
+    let root: LayoutNode | null = window.root;
+    for (const paneId of browserPaneIds) root = root && removePane(root, paneId);
+    if (!root) return null;
+    const panes = collectPanes(root);
+    const activePaneId = panes.some((pane) => pane.id === window.activePaneId) ? window.activePaneId : panes[0].id;
+    return { ...window, root, activePaneId };
+}
+
+/**
  * A window worth writing. A task terminal is runtime-only, and an agent that
  * has not yet earned a resume id could not be brought back, so neither goes to
  * disk.
@@ -406,7 +425,7 @@ function durableWindow(s: StoreState, id: string): Window | null {
     if (!window || window.transient) return null;
     const agentPane = window.role === "agent" ? agentPaneId(window) : null;
     if (window.role === "agent" && !s.agents[agentPane ?? ""]?.resumeId) return null;
-    return window;
+    return withoutBrowserPanes(window);
 }
 
 function snapshot(): string {

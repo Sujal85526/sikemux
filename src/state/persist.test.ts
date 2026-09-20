@@ -8,6 +8,7 @@ import * as cmd from "./commands";
 import { flushBrunoDrafts, setBrunoDraft, setBrunoSecret } from "./brunoRuntime";
 import { getState, setState } from "./store";
 import { activeAgentId, agentIdsOf, agentWindowId } from "./selectors";
+import { collectPanes } from "./layout";
 import { agentWindow } from "./agentWindow";
 import { withAgents } from "../test/agents";
 import type { Agent } from "./types";
@@ -251,6 +252,29 @@ describe("frontend persistence", () => {
         expect(restored.startup).toContain("session-123");
         expect(restored.startup).not.toContain("still malicious");
         expect(activeAgentId(getState(), getState().sessions[sid])).toBe(agent.id);
+    });
+
+    it("leaves an agent's browser pane out of the saved window", async () => {
+        const sid = getState().activeSessionId;
+        const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
+        setState((s) => {
+            const slices = withAgents(s, sid, [agent]);
+            return {
+                ...slices,
+                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
+            };
+        });
+        cmd.openBrowserPane(agent.id);
+        const windowId = agentWindowId(getState(), agent.id)!;
+        expect(collectPanes(getState().windows[windowId].root).map((pane) => pane.kind)).toEqual(["agent", "browser"]);
+        invoke.mockResolvedValue(undefined);
+
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        const savedWindow = saved.windowsBySession[sid].find((w: { id: string }) => w.id === windowId);
+
+        expect(savedWindow.root).toMatchObject({ type: "pane", kind: "agent", id: agent.id });
+        expect(savedWindow.activePaneId).toBe(agent.id);
     });
 
     it("preserves OMP and Grok reasoning levels across sleep", async () => {
