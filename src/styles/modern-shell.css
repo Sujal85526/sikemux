@@ -982,12 +982,17 @@ textarea,
 /* Panels: the frame's own surfaces, which stay put. `.stage` is not one of
  * them any more — it is the gutter the strip and the screen sit in. The cards
  * are the same surface at a smaller size: a bordered block the pane puts in
- * the middle of itself to say it is empty, busy, or asking to sign in. */
+ * the middle of itself to say it is empty, busy, or asking to sign in.
+ *
+ * `.agent-usage` is deliberately absent, for the reason `.tabbar` is absent
+ * from the control list above: it is not a card any more. It is the foot of
+ * the rail, divided from the list above it by a hairline — and a hairline on a
+ * 10px-rounded box curves down at both ends, which reads as a rounded
+ * separator rather than as a rule. */
 .shell
     :where(
         .side-rail,
         .workspace-rail,
-        .agent-usage,
         .agent-empty,
         .aws-empty-card,
         .git-busy-card,
