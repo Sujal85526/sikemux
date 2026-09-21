@@ -25,7 +25,7 @@
     min-width: 0;
     height: 32px;
     border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
+    background: transparent;
 }
 
 .tabbar.v-browser .tab-wrap {
@@ -74,10 +74,14 @@
 
 .tabbar.v-browser .tab-add:hover,
 .browser-toolbar button:hover {
-    background: var(--rail-2);
+    background: var(--surface-hover);
     color: var(--ink);
 }
 
+/* The strip and the bar under it sit inside a pane that is already the
+   surface, so like the editor's strip they paint nothing. A second fill here
+   stacked on the pane's and left the top of the browser more solid than the
+   rest of the window. */
 .browser-toolbar {
     position: relative;
     display: flex;
@@ -86,7 +90,7 @@
     min-width: 0;
     padding: 4px 7px;
     border-bottom: 1px solid var(--line);
-    background: color-mix(in srgb, var(--bg-raised) calc(var(--window-opacity, 1) * 100%), transparent);
+    background: transparent;
 }
 
 .browser-toolbar button {
