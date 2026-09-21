@@ -32,6 +32,9 @@ pub const BROWSER_TABS_EVENT: &str = "browser-tabs-changed";
 pub const BROWSER_SHORTCUT_EVENT: &str = "browser-shortcut";
 pub const BROWSER_DOWNLOAD_EVENT: &str = "browser-download";
 pub const BLANK_URL: &str = "about:blank";
+/// Injected into every document before its own scripts, so a page's calls are
+/// already recorded by the time an agent asks about them.
+const RECORDER_SCRIPT: &str = include_str!("recorder.js");
 const MAX_URL_LEN: usize = 8192;
 const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
     x: 0.0,
@@ -286,7 +289,8 @@ impl BrowserManager {
         let builder = WebviewBuilder::new(tab_id, WebviewUrl::External(url))
             .accept_first_mouse(true)
             .focused(false)
-            .zoom_hotkeys_enabled(true);
+            .zoom_hotkeys_enabled(true)
+            .initialization_script(RECORDER_SCRIPT);
         #[cfg(target_os = "macos")]
         let builder = builder.user_agent(USER_AGENT);
 

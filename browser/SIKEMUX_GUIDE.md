@@ -126,6 +126,13 @@ load to finish. Prefer it over repeated state reads when a page is settling.
 when layout or rendering matters; use `browser_extract` when you only need
 text.
 
+`browser_network` lists the fetch and XHR calls the page has made since it
+loaded, oldest first, with each status, duration and a truncated response body.
+It is how you tell a request that failed apart from a button that never asked,
+which the DOM alone cannot show. Narrow a busy page with `filter`, a substring
+of the URL. Only fetch and XHR appear; images, scripts and the document itself
+do not.
+
 Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
 `browser_close_tab` act on this pane's tabs, not the person's other windows.
 `browser_navigate` reuses the current tab unless you pass `newTab: true`.

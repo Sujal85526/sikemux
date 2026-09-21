@@ -151,6 +151,15 @@
             else scrollBy({ top: deltaY, behavior: "instant" });
             return { y: Math.round(target ? target.scrollTop : scrollY) };
         },
+        network(limit, filter) {
+            const recorder = window.__sikemuxNet;
+            if (!recorder) return { recording: false, note: "this tab has not recorded anything; reload the page and retry the action" };
+            const all = recorder.entries();
+            const needle = filter ? String(filter).toLowerCase() : "";
+            const matched = needle ? all.filter((entry) => entry.url.toLowerCase().includes(needle)) : all;
+            const keep = Math.max(1, Math.min(100, Number(limit) || 20));
+            return { recording: true, url: location.href, recorded: all.length, matched: matched.length, calls: matched.slice(-keep) };
+        },
         extract(selector) {
             const roots = selector ? [...document.querySelectorAll(selector)] : [document.body];
             if (selector && roots.length === 0) throw new Error(`nothing matches "${selector}"`);

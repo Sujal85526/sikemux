@@ -143,6 +143,24 @@ async fn run(
             )
             .await
         }
+        "browser.network" => {
+            let (_, view) = active(&manager, agent_id)?;
+            call(
+                &view,
+                "network",
+                &[
+                    params
+                        .get("limit")
+                        .and_then(Value::as_u64)
+                        .map(|value| json!(value))
+                        .unwrap_or(Value::Null),
+                    text("filter")
+                        .map(|value| json!(value))
+                        .unwrap_or(Value::Null),
+                ],
+            )
+            .await
+        }
         "browser.extract" => {
             let (_, view) = active(&manager, agent_id)?;
             call(

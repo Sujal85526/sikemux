@@ -109,6 +109,23 @@
       "required": []
     },
     {
+      "name": "browser_network",
+      "method": "browser.network",
+      "description": "List this page's fetch and XHR calls with status, timing and a truncated response body.",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "filter": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": []
+    },
+    {
       "name": "browser_screenshot",
       "method": "browser.screenshot",
       "description": "Capture the visible part of the current tab as a PNG image.",

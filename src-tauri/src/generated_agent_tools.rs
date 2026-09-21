@@ -7,6 +7,7 @@ pub const BROWSER_METHODS: &[&str] = &[
     "browser.press",
     "browser.scroll",
     "browser.extract",
+    "browser.network",
     "browser.screenshot",
     "browser.wait",
     "browser.back",
