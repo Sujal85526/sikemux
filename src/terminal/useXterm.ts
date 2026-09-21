@@ -19,6 +19,7 @@ import {
 import { alternateScreenWheelFallbackSequence } from "./wheelNavigation";
 import { needsTerminalRedraw } from "./redraw";
 import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
+import { cellWidthCorrection, measureCharWidth } from "./cellMetrics";
 import { isTerminalFindShortcut, safeWebUrl, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
 import { scheduleNextFrame } from "../lib/instrumentation";
 import { performanceTelemetry } from "../lib/performance";
@@ -28,6 +29,7 @@ import { copyText, readClipboardText } from "../lib/clipboard";
 import type { NativePtyController } from "./usePty";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
+const FONT_SIZE = 13;
 const FONT_WEIGHT = 500;
 const FONT_WEIGHT_BOLD = 700;
 const SCROLLBACK = 10_000;
@@ -223,7 +225,7 @@ export function useXterm(opts: {
             try {
                 term = new Terminal({
                     fontFamily: FONT,
-                    fontSize: 13,
+                    fontSize: FONT_SIZE,
                     fontWeight: FONT_WEIGHT,
                     fontWeightBold: FONT_WEIGHT_BOLD,
                     lineHeight: 1.0,
@@ -301,9 +303,14 @@ export function useXterm(opts: {
                 let webgl: WebglAddon | null = null;
                 let contextLossSub: { dispose(): void } | null = null;
                 resourceDisposers.push(() => contextLossSub?.dispose());
+                const applyCellCorrection = () => {
+                    const next = renderer === "webgl" ? cellWidthCorrection(measureCharWidth(FONT, FONT_SIZE), window.devicePixelRatio) : 0;
+                    if (term.options.letterSpacing !== next) term.options.letterSpacing = next;
+                };
                 const setRenderer = (next: TerminalRenderer) => {
                     renderer = next;
                     host.dataset.terminalRenderer = next;
+                    applyCellCorrection();
                 };
                 setRenderer("dom");
                 if (WEBGL_REQUESTED) {
@@ -631,6 +638,7 @@ export function useXterm(opts: {
                     resizeFrame = null;
                     if (host.clientWidth === 0 || host.clientHeight === 0) return;
                     const stickToBottom = isAtBottom();
+                    applyCellCorrection();
                     fit.fit();
                     if (stickToBottom) term.scrollToBottom();
                     if (term.cols === lastCols && term.rows === lastRows) return;
@@ -684,14 +692,14 @@ export function useXterm(opts: {
 
         const fontsThenBoot = () =>
             void Promise.all([
-                document.fonts.load(`${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
-                document.fonts.load(`${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
+                document.fonts.load(`${FONT_WEIGHT} ${FONT_SIZE}px "JetBrainsMono NF"`),
+                document.fonts.load(`${FONT_WEIGHT_BOLD} ${FONT_SIZE}px "JetBrainsMono NF"`),
             ]).then(() => {
                 void boot();
                 window.setTimeout(() => {
                     void Promise.all([
-                        document.fonts.load(`italic ${FONT_WEIGHT} 13px "JetBrainsMono NF"`),
-                        document.fonts.load(`italic ${FONT_WEIGHT_BOLD} 13px "JetBrainsMono NF"`),
+                        document.fonts.load(`italic ${FONT_WEIGHT} ${FONT_SIZE}px "JetBrainsMono NF"`),
+                        document.fonts.load(`italic ${FONT_WEIGHT_BOLD} ${FONT_SIZE}px "JetBrainsMono NF"`),
                     ]).catch(() => {});
                 }, 0);
             }, boot);
