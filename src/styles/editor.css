@@ -444,13 +444,16 @@
 .ed-source-host .cm-editor {
     height: 100%;
 }
+/* The source it covers is `display: none` while it is up, so there is nothing
+   to mask and no ground to paint: the pane is the surface, and a full-bleed
+   fill here was a slab the window's transparency could not reach. */
 .ed-markdown-preview {
     position: absolute;
     inset: 0;
     z-index: 3;
     height: 100%;
     overflow: auto;
-    background: var(--bg);
+    background: transparent;
 }
 .ed-markdown-body {
     width: min(100% - 48px, 860px);
@@ -540,7 +543,7 @@
 .ed-markdown-body code {
     padding: 0.16em 0.38em;
     border: 1px solid var(--border);
-    background: var(--surface-raised);
+    background: var(--surface-hover);
     color: var(--text-primary);
     font-family: var(--mono);
     font-size: 0.88em;
@@ -549,7 +552,7 @@
     overflow: auto;
     padding: 14px 16px;
     border: 1px solid var(--border);
-    background: var(--surface-raised);
+    background: var(--surface-hover);
     line-height: 1.55;
 }
 .ed-markdown-body pre code {
@@ -580,7 +583,7 @@
     text-align: left;
 }
 .ed-markdown-body th {
-    background: var(--surface-raised);
+    background: var(--surface-hover);
     color: var(--text-primary);
     font-weight: 650;
 }
@@ -595,7 +598,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--bg);
+    background: transparent;
     color: var(--text-secondary);
     font-family: var(--mono);
     font-size: var(--text-xs);
