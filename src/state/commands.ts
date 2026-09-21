@@ -2075,7 +2075,7 @@ export function focusAgents(): void {
     if (getState().sessions[getState().activeSessionId]?.kind !== "project") return;
     withActiveSession((d, session) => {
         const sess = d.sessions[session.id];
-        d.sideRailOpen = true;
+        d.agentRailOpen = true;
         d.zoomedPaneId = null;
         if (d.windows[sess.activeWindowId]?.role === "agent") return;
         const first = (d.windowsBySession[session.id] ?? []).find((id) => d.windows[id]?.role === "agent");
@@ -2206,6 +2206,8 @@ export async function openSshConfigEditor(): Promise<void> {
 }
 // Focus mode hides both rails, so asking for one back has to leave focus mode.
 export const toggleSideRail = (): void => setState((s) => (s.zenMode ? { zenMode: false, sideRailOpen: true } : { sideRailOpen: !s.sideRailOpen }));
+export const toggleAgentRail = (): void =>
+    setState((s) => (s.zenMode ? { zenMode: false, agentRailOpen: true } : { agentRailOpen: !s.agentRailOpen }));
 export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));
 
 export function requestOpenFile(path: string, line?: number, character?: number): void {

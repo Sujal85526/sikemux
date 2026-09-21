@@ -73,6 +73,7 @@ export interface PersistedPrefs {
     awsProfile: string | null;
     awsService: AwsService;
     sideRailOpen: boolean;
+    agentRailOpen: boolean;
     zenMode: boolean;
     rundeck?: RundeckSettings;
     restoreAgentTabs?: boolean;

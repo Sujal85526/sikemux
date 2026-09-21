@@ -64,6 +64,7 @@ export interface DomainState {
     awsProfile: string | null;
     awsService: AwsService;
     sideRailOpen: boolean;
+    agentRailOpen: boolean;
     diffTarget: Record<string, DiffTarget | null>;
     zenMode: boolean;
     rundeck: RundeckSettings;
@@ -211,6 +212,7 @@ export const useStore = create<StoreState>(() => {
         awsProfile: null,
         awsService: "ecs",
         sideRailOpen: true,
+        agentRailOpen: true,
         diffTarget: {},
         zenMode: false,
         rundeck: {

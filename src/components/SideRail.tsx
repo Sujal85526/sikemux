@@ -1,331 +1,707 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { selectedAgentRuntimeProfiles } from "../agentProfiles";
-import { usePageVisible } from "../hooks/usePageVisible";
-import { prefersReducedMotion } from "../lib/motion";
+import {
+    createContext,
+    memo,
+    useCallback,
+    useContext,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type PointerEvent as ReactPointerEvent,
+    type ReactNode,
+} from "react";
+import { createPortal, flushSync } from "react-dom";
+import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
+import type { Agent, AgentRuntimeState, Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
+import { prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
-import { useResource, useResourceEnabled } from "../state/resources";
-import { agentCatalogR, agentUsageR } from "../state/resources.defs";
-import { agentIdsOf } from "../state/selectors";
-import { useStore } from "../state/store";
-import type { Agent, AgentRuntimeState, Session } from "../state/types";
-import { IconFolder, IconPlus, Logo } from "./Icons";
-import { AgentStateIndicator } from "./AgentStateIndicator";
+import { getState, useStore } from "../state/store";
+import {
+    AgentIcon,
+    IconAgent,
+    IconAws,
+    IconBruno,
+    IconClose,
+    IconCommand,
+    IconFolder,
+    IconPencil,
+    IconPlus,
+    IconRundeck,
+    Logo,
+    WindowIcon,
+} from "./Icons";
 import { Tooltip } from "./Tooltip";
+import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
-import { useRailPan } from "./useRailPan";
-import { ProjectPage } from "./rail/ProjectPage";
-import { ServicesPage } from "./rail/ServicesPage";
-import type { UsageAgentType } from "./rail/RailLimits";
+import { AgentStateIndicator } from "./AgentStateIndicator";
+import { agentIdsOf } from "../state/selectors";
 
-const USAGE_REFRESH_MS = 5 * 60_000;
-/** How far a pointer travels before it is reordering rather than clicking. */
-const DRAG_THRESHOLD_PX = 6;
+function kindIcon(kind: SessionKind): ReactNode {
+    if (kind === "project") return <IconFolder size={13} />;
+    if (kind === "aws") return <IconAws />;
+    if (kind === "rundeck") return <IconRundeck size={14} />;
+    if (kind === "bruno") return <IconBruno size={14} />;
+    return <IconCommand size={13} />;
+}
 
-interface Drag {
-    id: string;
+const MAX_BADGE_ICONS = 3;
+type ProjectDropPlacement = "before" | "after";
+
+interface ProjectDragSession {
+    sourceId: string;
     startX: number;
+    startY: number;
+    grabX: number;
+    grabY: number;
+    width: number;
+    height: number;
+    sourceRow: HTMLElement;
     active: boolean;
+    sequence: number;
 }
 
-interface Drop {
-    targetId: string;
-    placement: "before" | "after";
+interface ProjectDragVisual {
+    width: number;
+    height: number;
+    grabX: number;
+    grabY: number;
+    row: HTMLElement;
 }
 
-/**
- * One rail.
+/*
+ * The row under the pointer, lifted out of the rail into the ghost.
  *
- * The agent rail used to be the other half of this: a provider switch, an Open
- * heading, a Recent heading, a history list and three plan gauges, in a second
- * column. All of it is here now, because a project's chats belong to the
- * project and had no business being filed one column away from it.
- *
- * The shape is one track of pages — a page per project, Services last — so a
- * single swipe walks the projects and arrives at the ssh hosts. Each page is
- * one project: its surfaces as a tree branching off its chip in the strip
- * above, every chat it has under that, and what its plan has left at the foot.
+ * It used to arrive carrying a copy of every computed style of every element
+ * inside it — hundreds of inline properties read one at a time, at the moment
+ * the drag starts. It does not need any of them: everything a project row
+ * paints is styled by class and nothing is scoped to the rail, so the clone
+ * looks the same wherever it lands.
  */
+function cloneProjectRow(source: HTMLElement): HTMLElement {
+    const clone = source.cloneNode(true) as HTMLElement;
+    clone.classList.add("project-drag-ghost-row");
+    clone.removeAttribute("data-project-drop-row");
+    clone.removeAttribute("aria-grabbed");
+    clone.setAttribute("tabindex", "-1");
+    return clone;
+}
+
+function projectElement(id: string): HTMLElement | null {
+    return Array.from(document.querySelectorAll<HTMLElement>("[data-project-id]")).find((element) => element.dataset.projectId === id) ?? null;
+}
+
+function projectRects(): Map<string, DOMRect> {
+    return new Map(
+        Array.from(document.querySelectorAll<HTMLElement>("[data-project-id]"), (element) => [
+            element.dataset.projectId ?? "",
+            element.getBoundingClientRect(),
+        ]),
+    );
+}
+
+/*
+ * What the rows below need from the rail they are in.
+ *
+ * These four used to be declared inside the rail's own render body, which made
+ * them a different component type on every render: React tore the whole rail
+ * out of the tree and rebuilt it whenever anything changed. Tooltips
+ * disappeared mid-hover, focus was lost, and a drag in progress was holding
+ * refs to rows that no longer existed.
+ */
+interface RailContextValue {
+    activeSessionId: string;
+    windowsById: Record<string, Window>;
+    windowsBySession: Record<string, string[]>;
+    agentsById: Record<string, Agent>;
+    activityById: Record<string, AgentRuntimeState>;
+    backgroundById: Record<string, number>;
+    draggingProjectId: string | null;
+    projectDragClass: (id: string) => string;
+    onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
+    selectProject: (id: string) => void;
+    jumpToWindow: (sessionId: string, winId: string) => void;
+    jumpToAgents: (sessionId: string) => void;
+    kb: (id: KeybindingActionId) => string;
+}
+
+const RailContext = createContext<RailContextValue | null>(null);
+
+function useRail(): RailContextValue {
+    const value = useContext(RailContext);
+    if (!value) throw new Error("side rail rows must render inside the rail");
+    return value;
+}
+
+function SessionCloseButton({ session }: { session: Session }) {
+    return (
+        <Tooltip label={`Close ${session.name}`}>
+            <button type="button" className="row-x" aria-label={`Close ${session.name}`} onClick={() => cmd.closeSession(session.id)}>
+                <IconClose size={11} />
+            </button>
+        </Tooltip>
+    );
+}
+
+function SimpleRow({ s }: { s: Session }) {
+    const { activeSessionId } = useRail();
+    const active = s.id === activeSessionId;
+    return (
+        <div className="session-row-shell">
+            <button className={`sess-row${active ? " active" : ""}`} onClick={() => cmd.selectSession(s.id)}>
+                <span className={`sess-icon ${s.kind}`}>
+                    <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
+                </span>
+                <span className="sess-name">{s.name}</span>
+            </button>
+            <SessionCloseButton session={s} />
+        </div>
+    );
+}
+
+function ProjectBlock({ s }: { s: Session }) {
+    const rail = useRail();
+    const { activeSessionId, agentsById, activityById, backgroundById, windowsById, windowsBySession, draggingProjectId, kb } = rail;
+    const active = s.id === activeSessionId;
+    const winIds = windowsBySession[s.id] ?? [];
+    const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
+    const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
+        .map((id) => agentsById[id])
+        .filter(Boolean);
+    const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
+    const rollupBackground = agents.some((agent) => (backgroundById[agent.id] ?? 0) > 0);
+    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
+
+    if (!active) {
+        const visible = agents.slice(0, MAX_BADGE_ICONS);
+        const overflow = agents.length - visible.length;
+        return (
+            <div className={`session-row-shell project-row-shell${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
+                <Tooltip label={s.cwd || s.name} side="right">
+                    <button
+                        className="proj-row collapsed"
+                        data-project-drop-row
+                        aria-grabbed={draggingProjectId === s.id}
+                        onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
+                        onClick={() => rail.selectProject(s.id)}>
+                        <span className="proj-folder">
+                            <IconFolder size={12} />
+                        </span>
+                        <span className="proj-name">{s.name}</span>
+                        {visible.length > 0 && (
+                            <span className="proj-child-icons">
+                                {visible.map((a) => (
+                                    <span
+                                        key={a.id}
+                                        className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
+                                        <AgentIcon type={a.type} size={20} />
+                                    </span>
+                                ))}
+                                {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                            </span>
+                        )}
+                    </button>
+                </Tooltip>
+                {(rollup || rollupBackground) && (
+                    <span className="row-status">
+                        <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
+                    </span>
+                )}
+                <SessionCloseButton session={s} />
+            </div>
+        );
+    }
+
+    const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
+    const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
+    const isSubActive = (role: WindowRole | "agents"): boolean => activeRole === (role === "agents" ? "agent" : role);
+
+    const onSubClick = (role: WindowRole | "agents") => {
+        if (role === "agents") {
+            rail.jumpToAgents(s.id);
+            return;
+        }
+        if (role === "files") {
+            cmd.openEditorPane();
+            return;
+        }
+        if (role === "git") {
+            cmd.openGitWorkbench();
+            return;
+        }
+        if (role === "search") {
+            cmd.focusGlobalSearch();
+            return;
+        }
+        const w = winByRole(role);
+        if (w) {
+            rail.jumpToWindow(s.id, w.id);
+        } else if (role === "term") {
+            if (s.id !== activeSessionId) cmd.selectSession(s.id);
+            cmd.newWindow();
+        }
+    };
+
+    const termIcons: ReactNode[] =
+        tabCount > 1
+            ? Array.from({ length: tabCount }, (_, i) => (
+                  <span key={i} className="proj-pip proj-pip-term">
+                      <IconCommand size={14} />
+                  </span>
+              ))
+            : [];
+    const agentIcons: ReactNode[] = agents.map((a) => (
+        <span key={a.id} className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
+            <AgentIcon type={a.type} size={20} />
+        </span>
+    ));
+
+    const children: SubRow[] = [
+        { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}`, icons: [] },
+        {
+            role: "term",
+            label: "Term",
+            kbd: kb("window.terminal"),
+            title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
+            icons: termIcons,
+        },
+        { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}`, icons: [] },
+        {
+            role: "agents",
+            label: "Agents",
+            kbd: kb("window.agents"),
+            title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
+            icons: agentIcons,
+        },
+        { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
+    ];
+    return (
+        <div className={`proj-tree active${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
+            <div className="session-row-shell project-row-shell">
+                <Tooltip label={s.cwd || s.name} side="right">
+                    <button
+                        className="proj-row expanded"
+                        data-project-drop-row
+                        aria-grabbed={draggingProjectId === s.id}
+                        onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
+                        onClick={() => rail.selectProject(s.id)}>
+                        <span className="proj-folder">
+                            <IconFolder size={12} />
+                        </span>
+                        <span className="proj-name">{s.name}</span>
+                    </button>
+                </Tooltip>
+                <SessionCloseButton session={s} />
+            </div>
+            <div className="proj-children">
+                {children.map((c) => {
+                    const subActive = isSubActive(c.role);
+                    const node = c.role === "agents" ? <IconAgent size={13} /> : <WindowIcon role={c.role} size={13} />;
+                    const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
+                    const overflow = c.icons.length - visibleIcons.length;
+                    return (
+                        <Tooltip key={c.role} label={c.title} side="right">
+                            <button
+                                type="button"
+                                className={`proj-child${subActive ? " active" : ""}`}
+                                aria-label={c.label}
+                                aria-current={subActive ? "page" : undefined}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSubClick(c.role);
+                                }}>
+                                <span className="proj-child-tick" />
+                                <span className="proj-child-ic">{node}</span>
+                                <span className="proj-child-label">{c.label}</span>
+                                {visibleIcons.length > 0 && (
+                                    <span className="proj-child-icons">
+                                        {visibleIcons}
+                                        {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                                    </span>
+                                )}
+                                {c.role === "agents" && (rollup || rollupBackground) && (
+                                    <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
+                                )}
+                                {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
+                            </button>
+                        </Tooltip>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+interface SubRow {
+    role: WindowRole | "agents";
+    label: string;
+    kbd?: string;
+    title: string;
+    icons: ReactNode[];
+}
+
+function renderSession(s: Session) {
+    return s.kind === "project" ? <ProjectBlock key={s.id} s={s} /> : <SimpleRow key={s.id} s={s} />;
+}
+
+function Group({
+    label,
+    list,
+    add,
+    addTitle,
+    addKbd,
+    action,
+    actionTitle,
+    emptyText,
+}: {
+    label: string;
+    list: Session[];
+    add?: () => void;
+    addTitle?: string;
+    addKbd?: string;
+    action?: () => void;
+    actionTitle?: string;
+    emptyText: string;
+}) {
+    return (
+        <Panel variant="group">
+            <PanelHeader
+                label={label}
+                rule
+                extra={
+                    add && (
+                        <span className="rail-group-actions">
+                            {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
+                            {action && (
+                                <Tooltip label={actionTitle}>
+                                    <button className="rail-group-add" onClick={action} aria-label={actionTitle} type="button">
+                                        <IconPencil size={11} />
+                                    </button>
+                                </Tooltip>
+                            )}
+                            <Tooltip label={addTitle}>
+                                <button className="rail-group-add" onClick={add} aria-label={addTitle} type="button">
+                                    <IconPlus size={11} />
+                                </button>
+                            </Tooltip>
+                        </span>
+                    )
+                }
+            />
+            {list.length === 0 ? (
+                <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
+            ) : (
+                list.map(renderSession)
+            )}
+        </Panel>
+    );
+}
+
 export const SideRail = memo(function SideRail() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const activeSessionId = useStore((s) => s.activeSessionId);
     const windowsById = useStore((s) => s.windows);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agentsById = useStore((s) => s.agents);
     const activityById = useStore((s) => s.agentActivity);
     const backgroundById = useStore((s) => s.agentBackgroundWork);
-    const profiles = useStore((s) => s.providerProfiles);
-    const profileSelections = useStore((s) => s.selectedProviderProfileIds);
-    const pageVisible = usePageVisible();
+    const rawActiveSessionId = useStore((s) => s.activeSessionId);
+    const settingsOpen = useStore((s) => s.settingsOpen);
+    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
+    const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
+    const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
+    const sessions = sessionOrder.map((id) => sessionsById[id]);
+    const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
+    const [projectDrop, setProjectDrop] = useState<{ targetId: string; placement: ProjectDropPlacement } | null>(null);
+    const [projectDragVisual, setProjectDragVisual] = useState<ProjectDragVisual | null>(null);
+    const projectDragRef = useRef<ProjectDragSession | null>(null);
+    const projectMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
+    const projectUpHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
+    const projectGhostRef = useRef<HTMLDivElement | null>(null);
+    const projectGhostPointRef = useRef<{ x: number; y: number } | null>(null);
+    const projectDragSequenceRef = useRef(0);
+    const suppressProjectClickRef = useRef(false);
 
-    const sessions = useMemo(() => sessionOrder.map((id) => sessionsById[id]).filter(Boolean), [sessionOrder, sessionsById]);
-    const projects = useMemo(() => sessions.filter((s) => s.kind === "project"), [sessions]);
-    const servicesPage = projects.length;
+    const projects = sessions.filter((s) => s.kind === "project");
+    const sshs = sessions.filter((s) => s.kind === "ssh");
+    const cloud = sessions.filter((s) => s.kind === "aws");
+    const cicd = sessions.filter((s) => s.kind === "rundeck");
+    const apis = sessions.filter((s) => s.kind === "bruno");
+    const commands = sessions.filter((s) => s.kind === "command");
 
-    const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
-    const catalog = useResource(agentCatalogR, runtimeProfiles);
-    const providers = useMemo(() => (catalog.data ?? []).filter((agent) => agent.available !== false), [catalog.data]);
-
-    /* One owner for the plan reads, not one per page: every project that runs
-       the same CLI is asking the same question, and each answer boots that CLI. */
-    const claude = providers.find((agent) => agent.type === "claude");
-    const codex = providers.find((agent) => agent.type === "codex");
-    const claudeUsage = useResourceEnabled(Boolean(claude), agentUsageR, "claude", claude?.command, claude?.configPath ?? undefined);
-    const codexUsage = useResourceEnabled(Boolean(codex), agentUsageR, "codex", codex?.command, codex?.configPath ?? undefined);
-    const refreshRef = useRef({ claude: claudeUsage.refresh, codex: codexUsage.refresh });
-    refreshRef.current = { claude: claudeUsage.refresh, codex: codexUsage.refresh };
-    useEffect(() => {
-        if (!pageVisible || (!claude && !codex)) return;
-        const timer = window.setInterval(() => {
-            if (claude) void refreshRef.current.claude();
-            if (codex) void refreshRef.current.codex();
-        }, USAGE_REFRESH_MS);
-        return () => window.clearInterval(timer);
-    }, [claude, codex, pageVisible]);
-    const usageFor = useCallback((provider: UsageAgentType) => (provider === "codex" ? codexUsage : claudeUsage), [claudeUsage, codexUsage]);
-
-    const viewportRef = useRef<HTMLDivElement>(null);
-    const trackRef = useRef<HTMLDivElement>(null);
-    const runRef = useRef<HTMLDivElement>(null);
-
-    const activeProject = projects.findIndex((p) => p.id === activeSessionId);
-    const [page, setPage] = useState(() => (activeProject >= 0 ? activeProject : servicesPage));
-
-    /* Choosing a project brings the rail to its page. Choosing a host does not
-       take the rail away from the project you were reading. */
-    useEffect(() => {
-        if (activeProject >= 0) setPage(activeProject);
-    }, [activeProject]);
-
-    const onIndex = useCallback(
-        (index: number) => {
-            setPage(index);
-            const project = projects[index];
-            if (project && project.id !== activeSessionId) cmd.selectSession(project.id);
-        },
-        [projects, activeSessionId],
-    );
-
-    const clamped = Math.min(page, servicesPage);
-    const { panning } = useRailPan(viewportRef, trackRef, servicesPage + 1, clamped, onIndex);
-
-    /*
-     * The strip moves, the tree does not.
-     *
-     * The tree holds the one left edge every label in the column sits on, and
-     * the strip scrolls until the active project's mark lands on the spine, so
-     * the branch reads as coming out of that chip. Doing it the other way round
-     * made the content jump sideways every time the project changed.
-     */
-    const alignStrip = useCallback(() => {
-        const run = runRef.current;
-        const viewport = viewportRef.current;
-        const chip = run?.querySelector<HTMLElement>(".proj-chip.active");
-        const branch = trackRef.current?.querySelector<HTMLElement>(".proj-children.branch");
-        const host = branch?.closest(".rail-page");
-        if (!run || !viewport || !chip || !branch || !host) return;
-        const mark = chip.querySelector<HTMLElement>(".proj-chip-ic") ?? chip;
-        const runBox = run.getBoundingClientRect();
-        /* Both measurements have to survive being taken mid-slide. Adding
-           scrollLeft back cancels out a scroll still animating; the spine cannot
-           be read off its live rect at all, because the page it belongs to is
-           still off to the side — but its offset within its own page is a
-           constant, and every page lands flush to the viewport. */
-        const markInContent = mark.getBoundingClientRect().left - runBox.left + run.scrollLeft;
-        const spineInPage = branch.getBoundingClientRect().left - host.getBoundingClientRect().left;
-        const target = markInContent - (viewport.getBoundingClientRect().left + spineInPage - runBox.left);
-        const max = Math.max(0, run.scrollWidth - run.clientWidth);
-        const left = Math.max(0, Math.min(max, target));
-        if (run.scrollTo) run.scrollTo({ left, behavior: prefersReducedMotion() ? "auto" : "smooth" });
-        else run.scrollLeft = left;
+    const resolveProjectDrop = useCallback((x: number, y: number) => {
+        const ghost = projectGhostRef.current;
+        const previousVisibility = ghost?.style.visibility ?? "";
+        if (ghost) ghost.style.visibility = "hidden";
+        let hit: HTMLElement | null;
+        try {
+            hit = document.elementFromPoint(x, y) as HTMLElement | null;
+        } finally {
+            if (ghost) ghost.style.visibility = previousVisibility;
+        }
+        const target = hit?.closest<HTMLElement>("[data-project-id]");
+        const targetId = target?.dataset.projectId;
+        if (!targetId || targetId === projectDragRef.current?.sourceId) return null;
+        const row = target.querySelector<HTMLElement>("[data-project-drop-row]");
+        if (!row) return null;
+        const bounds = row.getBoundingClientRect();
+        return { targetId, placement: y < bounds.top + bounds.height / 2 ? ("before" as const) : ("after" as const) };
     }, []);
 
-    useLayoutEffect(() => {
-        alignStrip();
-    }, [alignStrip, clamped, projects.length]);
+    const moveProjectGhost = useCallback((drag: ProjectDragSession, x: number, y: number) => {
+        projectGhostPointRef.current = { x, y };
+        if (projectGhostRef.current) {
+            projectGhostRef.current.style.transform = `translate3d(${x - drag.grabX}px, ${y - drag.grabY}px, 0)`;
+        }
+    }, []);
 
-    /* ---- reordering ------------------------------------------------------
-     * The strip is horizontal, so a reorder is a horizontal drag — and the page
-     * swipe is a wheel gesture, never a pointer one, so the two never contend
-     * for the same movement. Same split a browser's tab strip makes.
-     */
-    const [drag, setDrag] = useState<Drag | null>(null);
-    const [drop, setDrop] = useState<Drop | null>(null);
-    /* The refs are the truth and the state is only for painting: the handlers
-       below outlive the render that created them, so anything they read out of
-       that closure is whatever it was when the drag started. */
-    const dragRef = useRef<Drag | null>(null);
-    const dropRef = useRef<Drop | null>(null);
+    const animateProjectOrder = useCallback((sourceId: string, drop: { targetId: string; placement: ProjectDropPlacement }) => {
+        const before = prefersReducedMotion() ? null : projectRects();
+        const previousOrder = getState().sessionOrder;
+        flushSync(() => cmd.reorderSession(sourceId, drop.targetId, drop.placement));
+        if (!before || getState().sessionOrder === previousOrder) return;
+        window.requestAnimationFrame(() => {
+            for (const [id, previous] of before) {
+                const element = projectElement(id);
+                if (!element || typeof element.animate !== "function") continue;
+                const shift = previous.top - element.getBoundingClientRect().top;
+                if (Math.abs(shift) < 1) continue;
+                element.animate([{ transform: `translate3d(0, ${shift}px, 0)` }, { transform: "translate3d(0, 0, 0)" }], {
+                    duration: 220,
+                    easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+                });
+            }
+        });
+    }, []);
 
-    const setDragging = (next: Drag | null) => {
-        dragRef.current = next;
-        setDrag(next);
-    };
-    const setDropping = (next: Drop | null) => {
-        dropRef.current = next;
-        setDrop(next);
-    };
+    const endProjectDrag = useCallback((clearGhost = true) => {
+        if (projectMoveHandlerRef.current) window.removeEventListener("pointermove", projectMoveHandlerRef.current);
+        if (projectUpHandlerRef.current) window.removeEventListener("pointerup", projectUpHandlerRef.current);
+        document.body.classList.remove("is-sorting-projects");
+        projectMoveHandlerRef.current = null;
+        projectUpHandlerRef.current = null;
+        projectDragRef.current = null;
+        setDraggingProjectId(null);
+        setProjectDrop(null);
+        if (clearGhost) {
+            projectDragSequenceRef.current += 1;
+            projectGhostPointRef.current = null;
+            setProjectDragVisual(null);
+        }
+    }, []);
 
-    const onChipPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, id: string) => {
-        if (event.button !== 0) return;
-        setDragging({ id, startX: event.clientX, active: false });
+    const settleProjectGhost = useCallback((drag: ProjectDragSession) => {
+        const ghost = projectGhostRef.current;
+        const destination = projectElement(drag.sourceId)?.querySelector<HTMLElement>("[data-project-drop-row]");
+        if (!ghost || !destination || prefersReducedMotion() || typeof ghost.animate !== "function") {
+            projectGhostPointRef.current = null;
+            setProjectDragVisual(null);
+            return;
+        }
 
-        const move = (moved: PointerEvent) => {
-            const held = dragRef.current;
-            if (!held) return;
-            if (!held.active) {
-                if (Math.abs(moved.clientX - held.startX) < DRAG_THRESHOLD_PX) return;
-                setDragging({ ...held, active: true });
+        const bounds = destination.getBoundingClientRect();
+        const sequence = drag.sequence;
+        const animation = ghost.animate(
+            [
+                { transform: ghost.style.transform, opacity: 1 },
+                { transform: `translate3d(${bounds.left}px, ${bounds.top}px, 0)`, opacity: 0 },
+            ],
+            { duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" },
+        );
+        void animation.finished
+            .catch(() => undefined)
+            .then(() => {
+                if (projectDragSequenceRef.current !== sequence) return;
+                projectGhostPointRef.current = null;
+                setProjectDragVisual(null);
+            });
+    }, []);
+
+    const onProjectPointerMove = useCallback(
+        (event: PointerEvent) => {
+            const drag = projectDragRef.current;
+            if (!drag) return;
+            if (!drag.active) {
+                if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
+                drag.active = true;
+                drag.sequence = ++projectDragSequenceRef.current;
+                projectGhostPointRef.current = { x: event.clientX, y: event.clientY };
+                setProjectDragVisual({
+                    width: drag.width,
+                    height: drag.height,
+                    grabX: drag.grabX,
+                    grabY: drag.grabY,
+                    row: cloneProjectRow(drag.sourceRow),
+                });
+                setDraggingProjectId(drag.sourceId);
                 document.body.classList.add("is-sorting-projects");
             }
-            const under = document.elementFromPoint(moved.clientX, moved.clientY)?.closest<HTMLElement>("[data-project-chip]");
-            const targetId = under?.dataset.projectChip;
-            if (!targetId || targetId === held.id) return setDropping(null);
-            const bounds = under.getBoundingClientRect();
-            setDropping({ targetId, placement: moved.clientX < bounds.left + bounds.width / 2 ? "before" : "after" });
-        };
+            event.preventDefault();
+            moveProjectGhost(drag, event.clientX, event.clientY);
+            const drop = resolveProjectDrop(event.clientX, event.clientY);
+            setProjectDrop((current) => (current?.targetId === drop?.targetId && current?.placement === drop?.placement ? current : drop));
+            if (drop) animateProjectOrder(drag.sourceId, drop);
+        },
+        [animateProjectOrder, moveProjectGhost, resolveProjectDrop],
+    );
 
-        const up = () => {
-            window.removeEventListener("pointermove", move);
-            window.removeEventListener("pointerup", up);
-            document.body.classList.remove("is-sorting-projects");
-            const held = dragRef.current;
-            const landed = dropRef.current;
-            setDragging(null);
-            setDropping(null);
-            if (held?.active && landed) cmd.reorderSession(held.id, landed.targetId, landed.placement);
-        };
+    const onProjectPointerUp = useCallback(
+        (event: PointerEvent) => {
+            const drag = projectDragRef.current;
+            const drop = drag?.active ? resolveProjectDrop(event.clientX, event.clientY) : null;
+            const dragged = !!drag?.active;
+            if (drag && drop) animateProjectOrder(drag.sourceId, drop);
+            endProjectDrag(!dragged);
+            if (dragged && drag) settleProjectGhost(drag);
+            suppressProjectClickRef.current = dragged;
+            if (dragged) window.setTimeout(() => (suppressProjectClickRef.current = false), 0);
+        },
+        [animateProjectOrder, endProjectDrag, resolveProjectDrop, settleProjectGhost],
+    );
 
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", up);
+    const onProjectPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => {
+        if (event.button !== 0) return;
+        if (!sessionsById[sourceId]) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        projectDragRef.current = {
+            sourceId,
+            startX: event.clientX,
+            startY: event.clientY,
+            grabX: Math.min(Math.max(event.clientX - bounds.left, 18), Math.max(bounds.width - 18, 18)),
+            grabY: Math.min(Math.max(event.clientY - bounds.top, 8), Math.max(bounds.height - 8, 8)),
+            width: bounds.width,
+            height: bounds.height,
+            sourceRow: event.currentTarget,
+            active: false,
+            sequence: 0,
+        };
+        projectMoveHandlerRef.current = onProjectPointerMove;
+        projectUpHandlerRef.current = onProjectPointerUp;
+        window.addEventListener("pointermove", onProjectPointerMove);
+        window.addEventListener("pointerup", onProjectPointerUp, { once: true });
     };
 
-    const onServices = !projects.length || clamped === servicesPage;
-    const elsewhere = useMemo(() => {
-        const states = projects.flatMap((project) =>
-            agentIdsOf({ windowsBySession, windows: windowsById }, project.id).map((id) => activityById[id]),
-        );
-        const rollup = rollupAgentStates(states);
-        return rollup && rollup !== "idle" ? rollup : null;
-    }, [projects, windowsBySession, windowsById, activityById]);
+    const selectProject = (id: string) => {
+        if (suppressProjectClickRef.current) {
+            suppressProjectClickRef.current = false;
+            return;
+        }
+        cmd.selectSession(id);
+    };
+
+    const projectDragClass = (id: string) => {
+        if (draggingProjectId === id) return " project-drag-source";
+        if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
+        return "";
+    };
+
+    useEffect(() => () => endProjectDrag(), [endProjectDrag]);
+
+    useLayoutEffect(() => {
+        if (!projectGhostRef.current || !projectDragVisual) return;
+        projectGhostRef.current.replaceChildren(projectDragVisual.row);
+    }, [projectDragVisual]);
+
+    const jumpToWindow = (sessionId: string, winId: string) => {
+        if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
+        cmd.selectWindowId(winId);
+    };
+    const jumpToAgents = (sessionId: string) => {
+        if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
+        cmd.focusAgents();
+    };
+
+    const ghostPoint = projectGhostPointRef.current;
+    const ghostTransform =
+        projectDragVisual && ghostPoint
+            ? `translate3d(${ghostPoint.x - projectDragVisual.grabX}px, ${ghostPoint.y - projectDragVisual.grabY}px, 0)`
+            : "translate3d(-100vw, -100vh, 0)";
+
+    const rail: RailContextValue = {
+        activeSessionId,
+        windowsById,
+        windowsBySession,
+        agentsById,
+        activityById,
+        backgroundById,
+        draggingProjectId,
+        projectDragClass,
+        onProjectPointerDown,
+        selectProject,
+        jumpToWindow,
+        jumpToAgents,
+        kb,
+    };
 
     return (
-        <aside className="side-rail one-rail">
-            <div className="seg-head" role="tablist" aria-label="Rail section">
-                <button
-                    type="button"
-                    role="tab"
-                    className={`seg-btn${onServices ? "" : " active"}`}
-                    aria-selected={!onServices}
-                    disabled={projects.length === 0}
-                    onClick={() => setPage(Math.max(0, activeProject))}>
-                    Projects
-                    {/* What the half of the rail you are not looking at is doing.
-                        Without it, an agent needing you is a blind spot for as
-                        long as you are over in Services. */}
-                    {onServices && elsewhere && <span className={`seg-dot state-${elsewhere}`} aria-hidden="true" />}
-                </button>
-                <button
-                    type="button"
-                    role="tab"
-                    className={`seg-btn${onServices ? " active" : ""}`}
-                    aria-selected={onServices}
-                    onClick={() => setPage(servicesPage)}>
-                    Services
-                </button>
-            </div>
-
-            <div className="proj-strip" aria-label="Projects">
-                <div className="proj-strip-run" ref={runRef}>
-                    {projects.map((project, index) => (
-                        <ProjectChip
-                            key={project.id}
-                            project={project}
-                            active={!onServices && index === clamped}
-                            dragging={drag?.active === true && drag.id === project.id}
-                            drop={drop?.targetId === project.id ? drop.placement : null}
-                            agents={
-                                agentIdsOf({ windowsBySession, windows: windowsById }, project.id)
-                                    .map((id) => agentsById[id])
-                                    .filter(Boolean) as Agent[]
-                            }
-                            activityById={activityById}
-                            backgroundById={backgroundById}
-                            onPointerDown={onChipPointerDown}
-                            onSelect={() => {
-                                setPage(index);
-                                cmd.selectSession(project.id);
-                            }}
-                        />
-                    ))}
+        <RailContext.Provider value={rail}>
+            <aside className="side-rail">
+                <div className="rail-scroll">
+                    <Group
+                        label="Projects"
+                        list={projects}
+                        add={() => cmd.openPicker("projects")}
+                        addTitle={`Open project — ${kb("project.open")}`}
+                        addKbd={kb("project.open")}
+                        emptyText="no projects"
+                    />
+                    <Group
+                        label="SSH"
+                        list={sshs}
+                        add={() => cmd.openPicker("ssh")}
+                        addTitle={`Connect to SSH host — ${kb("ssh.open")}`}
+                        addKbd={kb("ssh.open")}
+                        action={() => void cmd.openSshConfigEditor()}
+                        actionTitle="Edit ~/.ssh/config"
+                        emptyText="no ssh hosts"
+                    />
+                    <Group
+                        label="Cloud"
+                        list={cloud}
+                        add={cmd.openAwsSession}
+                        addTitle={`Open AWS — ${kb("aws.open")}`}
+                        addKbd={kb("aws.open")}
+                        emptyText="no cloud sessions"
+                    />
+                    <Group
+                        label="CI/CD"
+                        list={cicd}
+                        add={cmd.openRundeckSession}
+                        addTitle="Open Rundeck deploy center"
+                        emptyText="open rundeck deploy center"
+                    />
+                    <Group
+                        label="API"
+                        list={apis}
+                        add={() => cmd.openPicker("bruno")}
+                        addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
+                        addKbd={kb("bruno.open")}
+                        emptyText="open a bruno workspace"
+                    />
+                    <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
                 </div>
-                <Tooltip label="Open project">
-                    <button type="button" className="proj-chip proj-chip-add" aria-label="Open project" onClick={() => cmd.openPicker("projects")}>
-                        <IconPlus size={12} />
-                    </button>
-                </Tooltip>
-            </div>
 
-            <div className={`rail-viewport${panning ? " is-panning" : ""}`} ref={viewportRef}>
-                <div className="rail-track" ref={trackRef}>
-                    {projects.map((project) => (
-                        <ProjectPage key={project.id} session={project} providers={providers} usageFor={usageFor} />
-                    ))}
-                    <ServicesPage />
+                <UpdateChip />
+
+                {/* Identity lives at the foot of the rail: present when you look for
+                it, out of the way of the sessions above it. */}
+                <div className="rail-sig">
+                    <Logo size={13} />
+                    <span className="rail-sig-name">Sikemux</span>
+                    <VersionChip />
                 </div>
-            </div>
-
-            <UpdateChip />
-
-            <div className="rail-sig">
-                <Logo size={13} />
-                <span className="rail-sig-name">Sikemux</span>
-                <VersionChip />
-            </div>
-        </aside>
+            </aside>
+            {projectDragVisual &&
+                createPortal(
+                    <div
+                        ref={projectGhostRef}
+                        className="project-drag-ghost"
+                        data-project-drag-ghost
+                        aria-hidden="true"
+                        style={{ width: projectDragVisual.width, height: projectDragVisual.height, transform: ghostTransform }}
+                    />,
+                    document.body,
+                )}
+        </RailContext.Provider>
     );
 });
-
-function ProjectChip({
-    project,
-    active,
-    dragging,
-    drop,
-    agents,
-    activityById,
-    backgroundById,
-    onPointerDown,
-    onSelect,
-}: {
-    project: Session;
-    active: boolean;
-    dragging: boolean;
-    drop: "before" | "after" | null;
-    agents: Agent[];
-    activityById: Record<string, AgentRuntimeState | undefined>;
-    backgroundById: Record<string, number>;
-    onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, id: string) => void;
-    onSelect: () => void;
-}) {
-    const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
-    const background = agents.some((agent) => (backgroundById[agent.id] ?? 0) > 0);
-    return (
-        <Tooltip label={project.cwd || project.name} side="bottom">
-            <button
-                type="button"
-                data-project-chip={project.id}
-                className={`proj-chip${active ? " active" : ""}${dragging ? " dragging" : ""}${drop ? ` drop-${drop}` : ""}`}
-                aria-current={active}
-                onPointerDown={(event) => onPointerDown(event, project.id)}
-                onClick={onSelect}>
-                <span className="proj-chip-ic">
-                    <IconFolder size={12} />
-                </span>
-                <span className="proj-chip-name">{project.name}</span>
-                {(rollup || background) && <AgentStateIndicator state={rollup ?? "idle"} background={background} />}
-            </button>
-        </Tooltip>
-    );
-}

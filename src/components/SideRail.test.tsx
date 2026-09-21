@@ -43,48 +43,46 @@ afterEach(() => {
 });
 
 describe("project sorting", () => {
-    /*
-     * The strip is horizontal, so a reorder is a horizontal pointer drag —
-     * and the page swipe is a wheel gesture, so the two never contend for the
-     * same movement. Same split a browser's tab strip makes.
-     */
-    it("drags a project chip before another and reorders on release", () => {
+    it("drags a project before another project and shows the insertion point", () => {
         render(<SideRail />);
         const source = screen.getByRole("button", { name: "gamma" });
         const target = screen.getByRole("button", { name: "alpha" });
-        Object.defineProperty(document, "elementFromPoint", { configurable: true, value: vi.fn(() => target) });
-        vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ left: 100, width: 80 } as DOMRect);
+        let ghostWasHiddenDuringHitTest = false;
+        Object.defineProperty(document, "elementFromPoint", {
+            configurable: true,
+            value: vi.fn(() => {
+                ghostWasHiddenDuringHitTest ||= document.querySelector<HTMLElement>("[data-project-drag-ghost]")?.style.visibility === "hidden";
+                return target;
+            }),
+        });
+        vi.spyOn(source, "getBoundingClientRect").mockReturnValue({ left: 8, top: 80, width: 210, height: 26 } as DOMRect);
+        vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ top: 20, bottom: 48, height: 28 } as DOMRect);
 
-        fireEvent.pointerDown(source, { button: 0, clientX: 300, clientY: 20 });
-        // Under the threshold is still a click, not a drag.
-        fireEvent.pointerMove(window, { clientX: 298, clientY: 20 });
-        expect(source).not.toHaveClass("dragging");
+        fireEvent.pointerDown(source, { button: 0, clientX: 0, clientY: 0 });
+        fireEvent.pointerMove(window, { clientX: 0, clientY: 22 });
+        fireEvent.pointerMove(window, { clientX: 0, clientY: 23 });
 
-        fireEvent.pointerMove(window, { clientX: 120, clientY: 20 });
-        expect(source).toHaveClass("dragging");
-        expect(target).toHaveClass("drop-before");
-        expect(getState().sessionOrder).toEqual(["alpha", "ssh", "beta", "command", "gamma"]);
-
-        /* Reordering is by kind: the projects become gamma, alpha, beta and
-           refill the slots the projects already held, so the ssh host and the
-           command session do not shuffle around them. */
-        fireEvent.pointerUp(window, { clientX: 120, clientY: 20 });
+        const ghost = document.querySelector<HTMLElement>("[data-project-drag-ghost]");
+        expect(ghost).toHaveStyle({ width: "210px", height: "26px" });
+        expect(ghost?.querySelector(".project-drag-ghost-row")).toHaveTextContent("gamma");
+        expect(ghost?.querySelector(".project-drag-ghost-card")).not.toBeInTheDocument();
+        /*
+         * The ghost is styled by class — `.project-drag-ghost *` takes the
+         * pointer events away. It used to arrive with every computed style of
+         * every element written back as an inline property, which is hundreds
+         * of reads at the moment a drag starts.
+         */
+        for (const element of ghost?.querySelectorAll<HTMLElement>("*") ?? []) {
+            expect(element.getAttribute("style")).toBeNull();
+        }
+        expect(ghostWasHiddenDuringHitTest).toBe(true);
+        expect(ghost?.style.visibility).toBe("");
         expect(getState().sessionOrder).toEqual(["gamma", "ssh", "alpha", "command", "beta"]);
-    });
+        expect(screen.getByRole("button", { name: "alpha" }).closest("[data-project-id]")).toHaveClass("project-drop-before");
 
-    it("drops after a chip when the pointer is past its middle", () => {
-        render(<SideRail />);
-        const source = screen.getByRole("button", { name: "alpha" });
-        const target = screen.getByRole("button", { name: "gamma" });
-        Object.defineProperty(document, "elementFromPoint", { configurable: true, value: vi.fn(() => target) });
-        vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ left: 100, width: 80 } as DOMRect);
+        fireEvent.pointerUp(window, { clientX: 0, clientY: 22 });
 
-        fireEvent.pointerDown(source, { button: 0, clientX: 20, clientY: 20 });
-        fireEvent.pointerMove(window, { clientX: 170, clientY: 20 });
-        expect(target).toHaveClass("drop-after");
-
-        fireEvent.pointerUp(window, { clientX: 170, clientY: 20 });
-        expect(getState().sessionOrder).toEqual(["beta", "ssh", "gamma", "command", "alpha"]);
+        expect(getState().sessionOrder).toEqual(["gamma", "ssh", "alpha", "command", "beta"]);
     });
 });
 
