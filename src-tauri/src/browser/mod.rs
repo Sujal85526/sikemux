@@ -257,7 +257,15 @@ impl BrowserManager {
         {
             let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.clone());
             let _ = webview.with_webview(move |platform| {
-                macos::adopt(platform.inner(), app_handle, agent, tab);
+                let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
+                macos::adopt(platform.inner(), agent, tab, move |url, back, forward| {
+                    let manager = app_handle.state::<BrowserManager>();
+                    manager.note_page(&app_handle, &moved_agent, &moved_tab, |page| {
+                        page.url = url;
+                        page.can_go_back = back;
+                        page.can_go_forward = forward;
+                    });
+                });
             });
         }
         self.install_shortcuts(app);

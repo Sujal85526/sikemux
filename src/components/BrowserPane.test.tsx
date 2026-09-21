@@ -155,6 +155,25 @@ describe("BrowserPaneHost", () => {
         expect(browserApi.navigate).toHaveBeenCalledWith("agent-one", "openai.com");
     });
 
+    /* A web app moving between its own screens never loads a document, so the
+       address arrives on its own rather than with a page. */
+    it("follows a page that changes its own address, and keeps out of the way of typing", async () => {
+        renderPane();
+        const address = await waitFor(() => screen.getByRole("textbox", { name: "Address and search" }));
+        expect(address).toHaveValue("https://example.com");
+
+        await announceStrip({ tabs: [tab({ url: "https://example.com/inbox" })], activeTabId: "tab-one" });
+        expect(address).toHaveValue("https://example.com/inbox");
+
+        fireEvent.focus(address);
+        fireEvent.change(address, { target: { value: "openai.c" } });
+        await announceStrip({ tabs: [tab({ url: "https://example.com/sent" })], activeTabId: "tab-one" });
+        expect(address).toHaveValue("openai.c");
+
+        fireEvent.blur(address);
+        expect(address).toHaveValue("https://example.com/sent");
+    });
+
     /* The page is a native view the window draws on its own; the pane only
        tells it where the page area is, in whole window pixels. */
     it("places the native page over the viewport and parks it when the pane hides", async () => {

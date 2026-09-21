@@ -144,7 +144,7 @@ function BrowserPane({
 }) {
     const viewportRef = useRef<HTMLDivElement>(null);
     const measureRef = useRef<() => void>(() => {});
-    const [address, setAddress] = useState("");
+    const [typed, setTyped] = useState<string | null>(null);
     const [placement, setPlacement] = useState<BrowserBounds | null>(null);
     const occluded = useNativeViewsOccluded();
     const moving = useStageMoving();
@@ -158,7 +158,12 @@ function BrowserPane({
     const travelling = moving && painted && !!placement && placement.x + placement.width > 0 && placement.x < window.innerWidth;
     const shown = (visible || travelling) && !occluded && !blank && !!activeTab;
 
-    useEffect(() => setAddress(activeTab?.url === BLANK_URL ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);
+    /* The bar follows the page until someone starts typing in it, and goes back
+       to following once they are done. Pages move on their own — a click inside
+       a web app changes the address — and that must not eat a half-typed one. */
+    const pageAddress = blank ? "" : (activeTab?.url ?? "");
+    const address = typed ?? pageAddress;
+    useEffect(() => setTyped(null), [activeTab?.id]);
 
     useLayoutEffect(() => {
         const host = viewportRef.current;
@@ -248,6 +253,7 @@ function BrowserPane({
                 className={`browser-toolbar${activeTab?.loading ? " loading" : ""}`}
                 onSubmit={(event) => {
                     event.preventDefault();
+                    setTyped(null);
                     run(browserApi.navigate(agentId, address), "navigate browser");
                 }}>
                 <button
@@ -276,7 +282,8 @@ function BrowserPane({
                     placeholder="Search or enter address"
                     spellCheck={false}
                     onFocus={(event) => event.currentTarget.select()}
-                    onChange={(event) => setAddress(event.target.value)}
+                    onBlur={() => setTyped(null)}
+                    onChange={(event) => setTyped(event.target.value)}
                 />
             </form>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>

@@ -1,6 +1,7 @@
 //! The parts of a browser tab only AppKit can do: page dialogs as window
-//! sheets, history without a script round trip, and app shortcuts pressed while
-//! the page owns the keyboard. Everything here runs on the main thread.
+//! sheets, history without a script round trip, the address of a page that
+//! moved without loading anything, and app shortcuts pressed while the page
+//! owns the keyboard. Everything here runs on the main thread.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,7 +18,8 @@ use objc2_app_kit::{
     NSTextField, NSView,
 };
 use objc2_foundation::{
-    NSData, NSDictionary, NSError, NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
+    NSData, NSDictionary, NSError, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSNumber,
+    NSObject, NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize,
     NSString,
 };
 use objc2_web_kit::{
@@ -29,10 +31,27 @@ use tauri::{AppHandle, Emitter};
 
 use super::{BrowserShortcut, BROWSER_SHORTCUT_EVENT};
 
+/// The property the tab watches to hear about a page that moved on its own.
+const URL_KEY_PATH: &str = "URL";
+
 struct NativeTab {
     agent_id: String,
     webview: Retained<WKWebView>,
     _delegate: Retained<TabUiDelegate>,
+    address_observer: Retained<AddressObserver>,
+}
+
+/* AppKit throws if a view is freed while anything is still watching it, so the
+tab lets go of the address before it lets go of either of them. */
+impl Drop for NativeTab {
+    fn drop(&mut self) {
+        unsafe {
+            self.webview.removeObserver_forKeyPath(
+                &self.address_observer,
+                &NSString::from_str(URL_KEY_PATH),
+            );
+        }
+    }
 }
 
 thread_local! {
@@ -44,20 +63,32 @@ fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
     unsafe { Retained::retain(pointer.cast::<WKWebView>()) }
 }
 
-/// Take over the tab's UI delegate so page dialogs get a sheet, and remember
-/// the view so shortcuts can tell which tab has focus.
-pub fn adopt(pointer: *mut c_void, app: AppHandle, agent_id: String, tab_id: String) {
+/// Take over the tab's UI delegate so page dialogs get a sheet, watch where the
+/// page says it is, and remember the view so shortcuts can tell which tab has
+/// focus. `moved` hears the new address and whether history can go either way.
+pub fn adopt(
+    pointer: *mut c_void,
+    agent_id: String,
+    tab_id: String,
+    moved: impl Fn(String, bool, bool) + 'static,
+) {
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
         return;
     };
     let inner = unsafe { webview.UIDelegate() };
     let delegate = TabUiDelegate::new(mtm, inner);
+    let address_observer = AddressObserver::new(mtm, Box::new(moved));
     unsafe {
         webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         webview.setAllowsBackForwardNavigationGestures(true);
         webview.setAllowsMagnification(true);
+        webview.addObserver_forKeyPath_options_context(
+            &address_observer,
+            &NSString::from_str(URL_KEY_PATH),
+            NSKeyValueObservingOptions::empty(),
+            std::ptr::null_mut(),
+        );
     }
-    let _ = app;
     TABS.with(|tabs| {
         tabs.borrow_mut().insert(
             tab_id,
@@ -65,6 +96,7 @@ pub fn adopt(pointer: *mut c_void, app: AppHandle, agent_id: String, tab_id: Str
                 agent_id,
                 webview,
                 _delegate: delegate,
+                address_observer,
             },
         );
     });
@@ -74,6 +106,62 @@ pub fn forget(tab_id: &str) {
     TABS.with(|tabs| {
         tabs.borrow_mut().remove(tab_id);
     });
+}
+
+struct AddressObserverIvars {
+    moved: Box<dyn Fn(String, bool, bool)>,
+}
+
+define_class!(
+    /// What tells the app that a page changed its address without loading a new
+    /// document — a web app routing between its own screens, or a jump to an
+    /// anchor. The navigation hooks never hear about either one.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = AddressObserverIvars]
+    struct AddressObserver;
+
+    unsafe impl NSObjectProtocol for AddressObserver {}
+
+    impl AddressObserver {
+        #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
+        unsafe fn address_changed(
+            &self,
+            _key_path: Option<&NSString>,
+            object: Option<&AnyObject>,
+            _change: Option<&NSDictionary<NSKeyValueChangeKey, AnyObject>>,
+            _context: *mut c_void,
+        ) {
+            let Some(webview) = object.and_then(|object| object.downcast_ref::<WKWebView>()) else {
+                return;
+            };
+            /* A page that is fetching a document reports that address itself
+               when the load commits, and may yet be sent somewhere else or fail
+               outright. Leaving those to the navigation hook keeps the bar from
+               ever showing a page that never arrived. */
+            if unsafe { webview.isLoading() } {
+                return;
+            }
+            let Some(address) = (unsafe { webview.URL() }) else {
+                return;
+            };
+            let Some(address) = address.absoluteString() else {
+                return;
+            };
+            (self.ivars().moved)(address.to_string(), unsafe { webview.canGoBack() }, unsafe {
+                webview.canGoForward()
+            });
+        }
+    }
+);
+
+impl AddressObserver {
+    fn new(mtm: MainThreadMarker, moved: Box<dyn Fn(String, bool, bool)>) -> Retained<Self> {
+        let observer = mtm
+            .alloc::<AddressObserver>()
+            .set_ivars(AddressObserverIvars { moved });
+        unsafe { msg_send![super(observer), init] }
+    }
 }
 
 pub fn history(pointer: *mut c_void, delta: i32) {
