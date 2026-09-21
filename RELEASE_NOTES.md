@@ -1,16 +1,20 @@
-# Sikemux v0.4.0-nightly.9
+# Sikemux v0.4.0-nightly.10
 
-The ninth nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The tenth nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## One rail, a page per project
+## The rail goes back to two
 
-- The agent rail is gone. A project's chats belong to the project, so they live in the side rail with it rather than a column away.
-- What made them fit was subtraction. The provider switch went: every row wears its own provider and the list is one list, newest first, because you look for a chat by its title and never by which CLI wrote it. The Open and Recent headings went: a live chat sits at full ink with its state mark and a close, a past one steps back and carries a time, and the weight says which. The plan gauges went from two lines each to one.
-- The rail is one track of pages, a page per project with Services last, so a single swipe walks the projects and arrives at the ssh hosts. A page holds that project's surfaces as a tree, every chat it has, and what its plan has left at the foot.
-- The strip and its segments tint rather than paint, the limits foot is not a card so its rule does not curve, and the foot lines up with the list above it.
+The single rail that arrived in nightly.9 is reverted: the agents have a rail of their own again. If you updated to nightly.9 and lost the agent rail, this brings it back.
 
-## The swipe
+## The browser
 
-- A shorter swipe is enough to change screen, and a swipe put back comes back rather than snapping.
+- An agent can see what a page asked the server for.
+- The address bar follows a page that moves on its own, rather than showing where the last full load landed — a site that navigates without fetching a new document no longer leaves the bar behind.
+- Only a screen that paints may carry its page, so a tab off stage stops holding one.
 
-For the complete patch history, compare [`v0.4.0-nightly.8...v0.4.0-nightly.9`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.8...v0.4.0-nightly.9).
+## Elsewhere
+
+- WebGL stops squeezing the terminal's columns together.
+- The tab strips go with the window.
+
+For the complete patch history, compare [`v0.4.0-nightly.9...v0.4.0-nightly.10`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.9...v0.4.0-nightly.10).
