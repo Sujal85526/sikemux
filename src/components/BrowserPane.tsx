@@ -34,7 +34,7 @@ function sameBounds(a: BrowserBounds | null, b: BrowserBounds): boolean {
  * inside it, so it is split, resized, focused and closed by the same layout
  * the terminals use. `browserPanes` is what ties it back to its agent.
  */
-export function BrowserPaneHost({ paneId, visible, onEmpty }: { paneId: string; visible: boolean; onEmpty: () => void }) {
+export function BrowserPaneHost({ paneId, visible, painted, onEmpty }: { paneId: string; visible: boolean; painted: boolean; onEmpty: () => void }) {
     const agentId = useStore((state) => state.browserPanes[paneId]);
     const agentType = useStore((state) => (agentId ? state.agents[agentId]?.type : undefined));
     /* Restored from a layout whose agent is gone — the association is the only
@@ -44,7 +44,9 @@ export function BrowserPaneHost({ paneId, visible, onEmpty }: { paneId: string; 
         if (orphaned) onEmpty();
     }, [onEmpty, orphaned]);
     if (orphaned) return null;
-    return <BrowserSession key={agentId} paneId={paneId} agentId={agentId} agentType={agentType} visible={visible} onEmpty={onEmpty} />;
+    return (
+        <BrowserSession key={agentId} paneId={paneId} agentId={agentId} agentType={agentType} visible={visible} painted={painted} onEmpty={onEmpty} />
+    );
 }
 
 /** The site's own mark once it has arrived, and a globe until then. */
@@ -60,12 +62,14 @@ function BrowserSession({
     agentId,
     agentType,
     visible,
+    painted,
     onEmpty,
 }: {
     paneId: string;
     agentId: string;
     agentType: AgentType;
     visible: boolean;
+    painted: boolean;
     onEmpty: () => void;
 }) {
     const snapshot = useStore((state) => state.browserStrips[agentId]) ?? EMPTY_STRIP;
@@ -118,7 +122,7 @@ function BrowserSession({
         onEmpty();
     }, [onEmpty, restoring, snapshot.tabs.length, visible]);
 
-    return <BrowserPane agentId={agentId} agentType={agentType} visible={visible} snapshot={snapshot} refresh={refresh} />;
+    return <BrowserPane agentId={agentId} agentType={agentType} visible={visible} painted={painted} snapshot={snapshot} refresh={refresh} />;
 }
 
 /* The page itself is a native view the window draws over this pane, so the
@@ -127,12 +131,14 @@ function BrowserPane({
     agentId,
     agentType,
     visible,
+    painted,
     snapshot,
     refresh,
 }: {
     agentId: string;
     agentType: AgentType;
     visible: boolean;
+    painted: boolean;
     snapshot: BrowserSnapshot;
     refresh: (signal?: AbortSignal) => Promise<void>;
 }) {
@@ -146,8 +152,10 @@ function BrowserPane({
     const blank = activeTab?.url === BLANK_URL;
     /* A screen sliding on or off stage is on the window without being the screen
        the session is on, and its page travels with it rather than waiting off
-       screen for it to land. */
-    const travelling = moving && !!placement && placement.x + placement.width > 0 && placement.x < window.innerWidth;
+       screen for it to land. Only a painting screen may: one parked off stage
+       still measures a rect over the window, and the stage moves for all of them
+       at once. */
+    const travelling = moving && painted && !!placement && placement.x + placement.width > 0 && placement.x < window.innerWidth;
     const shown = (visible || travelling) && !occluded && !blank && !!activeTab;
 
     useEffect(() => setAddress(activeTab?.url === BLANK_URL ? "" : (activeTab?.url ?? "")), [activeTab?.id, activeTab?.url]);

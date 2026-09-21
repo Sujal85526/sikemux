@@ -11,6 +11,8 @@ export interface WorkbenchItemRendererProps {
     win: WindowT;
     active: boolean;
     visible: boolean;
+    /** Whether the screen this pane is on is drawing — on stage, or sliding on or off it. */
+    painted: boolean;
 }
 
 const EditorPane = lazy(() => import("../components/EditorPane").then((module) => ({ default: module.EditorPane })));
@@ -81,7 +83,9 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<PaneKind, (props: Workbench
         </Suspense>
     ),
     agent: ({ pane, session, visible }) => <AgentPane paneId={pane.id} session={session} visible={visible} />,
-    browser: ({ pane, visible }) => <BrowserPaneHost paneId={pane.id} visible={visible} onEmpty={() => cmd.closeBrowserPane(pane.id)} />,
+    browser: ({ pane, visible, painted }) => (
+        <BrowserPaneHost paneId={pane.id} visible={visible} painted={painted} onEmpty={() => cmd.closeBrowserPane(pane.id)} />
+    ),
     terminal: ({ pane, session, win, active, visible }) => (
         <TerminalPane
             cwd={paneCwd(pane, session) || undefined}

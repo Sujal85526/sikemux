@@ -502,6 +502,7 @@ const WindowLayer = memo(function WindowLayer({
                 const isActive = p.id === win.activePaneId;
                 const paneVisible = live && shown;
                 const paneActive = paneVisible && isActive;
+                const panePainted = painted && shown;
                 return (
                     <div
                         key={p.id}
@@ -520,7 +521,7 @@ const WindowLayer = memo(function WindowLayer({
                                 WebGL context on a field nobody is looking at. */}
                             <ShaderField preset="ambient" className="pane-field" enabled={live && shown} />
                             <ErrorBoundary label={`${p.kind} pane`}>
-                                {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible })}
+                                {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>
                         </div>
                     </div>

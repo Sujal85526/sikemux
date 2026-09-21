@@ -114,12 +114,12 @@ afterEach(() => {
 
 /* The pane finds its agent through the store, the way the layout gives it to
    it, so the association has to exist before it renders. */
-function renderPane(visible = true) {
+function renderPane(visible = true, painted = visible) {
     setState({
         browserPanes: { "pane-browser": "agent-one" },
         agents: { "agent-one": { id: "agent-one", type: "codex", title: "codex", launchState: "live" } },
     } as never);
-    return render(<BrowserPaneHost paneId="pane-browser" visible={visible} onEmpty={onEmpty} />);
+    return render(<BrowserPaneHost paneId="pane-browser" visible={visible} painted={painted} onEmpty={onEmpty} />);
 }
 
 /** What the app's one reader of the strips would have put in the store. */
@@ -161,7 +161,7 @@ describe("BrowserPaneHost", () => {
         const { rerender } = renderPane();
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
 
-        rerender(<BrowserPaneHost paneId="pane-browser" visible={false} onEmpty={onEmpty} />);
+        rerender(<BrowserPaneHost paneId="pane-browser" visible={false} painted={false} onEmpty={onEmpty} />);
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null));
     });
 
@@ -268,7 +268,7 @@ describe("BrowserPaneHost", () => {
 
         expect(browserApi.newTab).not.toHaveBeenCalled();
 
-        view.rerender(<BrowserPaneHost paneId="pane-browser" visible onEmpty={onEmpty} />);
+        view.rerender(<BrowserPaneHost paneId="pane-browser" visible painted onEmpty={onEmpty} />);
 
         await waitFor(() => expect(browserApi.switchTab).toHaveBeenCalledWith("agent-one", "tab-https://second.test"));
         expect(vi.mocked(browserApi.newTab).mock.calls).toEqual([
@@ -309,10 +309,10 @@ describe("BrowserPaneHost", () => {
             browserPanes: { "pane-browser": "agent-one" },
             agents: { "agent-one": { id: "agent-one", type: "codex", title: "codex", launchState: "live" } },
         } as never);
-        const swipe = (moving: boolean, visible: boolean) => (
+        const swipe = (moving: boolean, visible: boolean, painted = true) => (
             <>
                 <Stage moving={moving} />
-                <BrowserPaneHost paneId="pane-browser" visible={visible} onEmpty={onEmpty} />
+                <BrowserPaneHost paneId="pane-browser" visible={visible} painted={painted} onEmpty={onEmpty} />
             </>
         );
         const { rerender } = render(swipe(false, true));
@@ -341,6 +341,30 @@ describe("BrowserPaneHost", () => {
 
         rerender(swipe(false, false));
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null));
+    });
+
+    /* Every session lays its screens over the same stage, and a screen that is
+       not on it keeps its layout: the pane measures a rect over the window it
+       may not draw in. The stage travels for all of them at once, so a swipe
+       anywhere used to put those pages on screen for as long as it lasted. */
+    it("leaves a screen that is not painting parked while the stage swipes", async () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+        setState({
+            browserPanes: { "pane-browser": "agent-one" },
+            agents: { "agent-one": { id: "agent-one", type: "codex", title: "codex", launchState: "live" } },
+            // The app reads every browsing agent's strip, looked at or not.
+            browserStrips: { "agent-one": snapshot },
+        } as never);
+        render(
+            <>
+                <Stage moving />
+                <BrowserPaneHost paneId="pane-browser" visible={false} painted={false} onEmpty={onEmpty} />
+            </>,
+        );
+
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", null));
+        expect(browserApi.setBounds).not.toHaveBeenCalledWith("agent-one", placed);
     });
 
     it("keeps a failed placement out of the way but reports it once", async () => {
