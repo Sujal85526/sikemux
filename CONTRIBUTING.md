@@ -43,7 +43,7 @@ One CI job stays out of the hook: **macOS launched desktop E2E**. Run it with `p
 
 Skip the hook for a work-in-progress push with `git push --no-verify`, or `SKIP_PREPUSH=1 git push`. Force every gate to run with `PREPUSH_FULL=1`.
 
-Release tooling supports two explicit modes. The default community mode requires the Tauri updater private key but no Apple membership and produces an updater-signed, ad-hoc code-signed release. `RELEASE_NOTARIZED=1` additionally requires a Developer ID and Apple notarization credentials and enforces Gatekeeper and stapled-ticket verification.
+Releases publish only from the Release workflow; `scripts/release.sh --publish` refuses to run outside GitHub Actions. Release tooling supports two explicit modes. The default community mode requires the Tauri updater private key but no Apple membership and produces an updater-signed, ad-hoc code-signed release. `RELEASE_NOTARIZED=1` additionally requires a Developer ID and Apple notarization credentials and enforces Gatekeeper and stapled-ticket verification.
 
 Agent tools are declared once in `browser/tools.json`. Add or change one there, run `pnpm agent-tools:generate`, and commit the regenerated `src-tauri/src/generated_agent_tools.rs`. `pnpm agent-tools:check` fails when a declared method has no handler, when a handler is exposed by no tool, or when the generated file is stale. Keep tool descriptions to one line: they are sent on every agent request, so protocol detail belongs in `browser/SIKEMUX_GUIDE.md`, which agents fetch once through `sikemux_guide`. `pnpm agent-tools:report` prints what the surface currently costs.
 

@@ -110,6 +110,20 @@ grep -Fq 'nightly releases must be cut from main' scripts/release.sh || {
   echo "nightly releases are not pinned to main" >&2
   exit 1
 }
+# shellcheck disable=SC2016
+grep -Fq '[[ "${GITHUB_ACTIONS:-}" == "true" ]] || fail "releases publish from the Release workflow' scripts/release.sh || {
+  echo "release tooling can publish from outside the Release workflow" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq './scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"' .github/workflows/release.yml || {
+  echo "the Release workflow no longer publishes through scripts/release.sh" >&2
+  exit 1
+}
+grep -Fq 'group: release' .github/workflows/release.yml || {
+  echo "the Release workflow allows concurrent releases" >&2
+  exit 1
+}
 
 CARGO_METADATA="$(cargo metadata --manifest-path src-tauri/Cargo.toml --offline --locked --no-deps --format-version 1)"
 PACKAGE_VERSION="$(node -p "require('./package.json').version")"

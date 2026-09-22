@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Build, verify, and publish
+    needs: checks
+    runs-on: macos-26
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release
+
+      - name: Resolve version, channel, and notes
+        id: plan
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $version"
+            exit 1
+          fi
+          heading="$(head -n 1 RELEASE_NOTES.md)"
+          if [[ "$heading" != "# Sikemux v$version" ]]; then
+            echo "::error::RELEASE_NOTES.md is headed '$heading', not '# Sikemux v$version'"
+            exit 1
+          fi
+          if [[ "${version%%+*}" == *-* ]]; then channel=nightly; else channel=stable; fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "channel=$channel" >>"$GITHUB_OUTPUT"
+          echo "Releasing $channel v$version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Import the Developer ID certificate
+        if: vars.RELEASE_NOTARIZED == '1'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          base64 --decode <<<"$APPLE_CERTIFICATE" >"$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" >/dev/null
+          keychains=("$keychain")
+          while read -r existing; do keychains+=("${existing//\"/}"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychains[@]}"
+
+      - name: Build, verify, and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASE_NOTARIZED: ${{ vars.RELEASE_NOTARIZED || '0' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          CHANNEL: ${{ steps.plan.outputs.channel }}
+        run: |
+          flags=(--publish)
+          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+          ./scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
+
+      - name: Keep the built artifacts on the run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sikemux-${{ steps.plan.outputs.version }}
+          if-no-files-found: ignore
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/release/bundle/latest.json
+            latest.json

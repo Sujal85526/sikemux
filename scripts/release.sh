@@ -82,13 +82,15 @@ if [[ "$NOTARIZED" == "1" ]]; then
 fi
 [[ -z "$(git status --porcelain --untracked-files=all)" ]] || fail "working tree must be clean"
 # Stable ships from a release line so a hotfix can go out while main runs ahead.
-BRANCH="$(git branch --show-current)"
-if [[ "$CHANNEL" == "stable" ]]; then
-  [[ "$BRANCH" == release/* ]] || fail "stable releases must be cut from a release/<line> branch, not '${BRANCH:-a detached HEAD}'"
-else
-  [[ "$BRANCH" == "main" ]] || fail "nightly releases must be cut from main, not '${BRANCH:-a detached HEAD}'"
-fi
+# A tag build checks out a detached commit, so the check is which branches hold it.
 HEAD_SHA="$(git rev-parse HEAD)"
+if [[ "$CHANNEL" == "stable" ]]; then
+  [[ -n "$(git for-each-ref --contains HEAD refs/heads/release/ refs/remotes/origin/release/)" ]] || \
+    fail "stable releases must be cut from a release/<line> branch; $HEAD_SHA is on none"
+else
+  [[ -n "$(git for-each-ref --contains HEAD refs/heads/main refs/remotes/origin/main)" ]] || \
+    fail "nightly releases must be cut from main; $HEAD_SHA is not on it"
+fi
 [[ -n "$NOTES" ]] || fail "release notes must not be empty"
 pnpm install --frozen-lockfile || fail "frozen frontend dependency install failed"
 
@@ -129,7 +131,10 @@ const compare = (a, b) => {
 };
 process.exit(compare(parse(process.env.NEXT_VERSION), parse(process.env.CURRENT_VERSION)) >= 0 ? 0 : 1);
 NODE
-git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null && fail "tag v$VERSION already exists"
+# A pushed version tag is what starts a CI release, so only a tag elsewhere is a conflict.
+if TAG_SHA="$(git rev-parse -q --verify "refs/tags/v$VERSION^{commit}")"; then
+  [[ "$TAG_SHA" == "$HEAD_SHA" ]] || fail "tag v$VERSION already exists on $TAG_SHA"
+fi
 
 [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]] || fail "TAURI_SIGNING_PRIVATE_KEY is not set"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
@@ -146,9 +151,12 @@ else
   echo "! Community release: updater-signed and ad-hoc code signed, but not Apple-notarized." >&2
 fi
 if [[ "$PUBLISH" == "1" ]]; then
+  [[ "${GITHUB_ACTIONS:-}" == "true" ]] || fail "releases publish from the Release workflow; run this locally without --publish to preview"
   command -v gh >/dev/null || fail "gh is required with --publish"
   gh auth status >/dev/null 2>&1 || fail "gh is not authenticated"
-  gh api "repos/nodelike/sikemux/git/ref/tags/v$VERSION" >/dev/null 2>&1 && fail "remote tag v$VERSION already exists"
+  if REMOTE_TAG_SHA="$(gh api "repos/nodelike/sikemux/commits/v$VERSION" --jq .sha 2>/dev/null)"; then
+    [[ "$REMOTE_TAG_SHA" == "$HEAD_SHA" ]] || fail "remote tag v$VERSION already exists on $REMOTE_TAG_SHA"
+  fi
   gh release view "v$VERSION" >/dev/null 2>&1 && fail "GitHub release v$VERSION already exists"
   gh api "repos/nodelike/sikemux/commits/$HEAD_SHA" >/dev/null 2>&1 || fail "HEAD is not on the remote; push before publishing"
 fi
