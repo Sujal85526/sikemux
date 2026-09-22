@@ -2217,19 +2217,50 @@ fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
     out
 }
 
-/// Pull a title out of one Claude transcript line, updating the running
-/// `ai_title` (last write wins) and `first_user` (first write wins).
-fn scan_claude_line(line: &str, ai_title: &mut Option<String>, first_user: &mut Option<String>) {
-    if line.contains("\"type\":\"ai-title\"") {
+#[derive(Default)]
+struct ClaudeTitles {
+    custom: Option<String>,
+    ai: Option<String>,
+    first_user: Option<String>,
+}
+
+impl ClaudeTitles {
+    /// `custom-title` is what `/rename` and the Claude desktop app write, so it
+    /// outranks the title Claude generates for itself.
+    fn resolve(self) -> Option<String> {
+        self.custom.or(self.ai).or(self.first_user)
+    }
+}
+
+/// Pull a stored title out of one transcript line. Both kinds are appended as the
+/// session grows, so the last one wins.
+fn scan_claude_title_line(line: &str, titles: &mut ClaudeTitles) {
+    if line.contains("\"type\":\"custom-title\"") {
         if let Ok(v) = serde_json::from_str::<Value>(line) {
-            if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense) {
-                *ai_title = Some(t);
+            if let Some(t) = v
+                .get("customTitle")
+                .and_then(|t| t.as_str())
+                .and_then(condense)
+            {
+                titles.custom = Some(t);
             }
         }
-    } else if first_user.is_none() && line.contains("\"type\":\"user\"") {
+    } else if line.contains("\"type\":\"ai-title\"") {
+        if let Ok(v) = serde_json::from_str::<Value>(line) {
+            if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense) {
+                titles.ai = Some(t);
+            }
+        }
+    }
+}
+
+/// As above, plus `first_user` (first write wins) for sessions with no stored title.
+fn scan_claude_line(line: &str, titles: &mut ClaudeTitles) {
+    scan_claude_title_line(line, titles);
+    if titles.first_user.is_none() && line.contains("\"type\":\"user\"") {
         if let Ok(v) = serde_json::from_str::<Value>(line) {
             if v.get("type").and_then(|t| t.as_str()) == Some("user") {
-                *first_user = v
+                titles.first_user = v
                     .get("message")
                     .and_then(|m| m.get("content"))
                     .and_then(text_from_content)
@@ -2246,43 +2277,30 @@ const CLAUDE_HEAD_BYTES: u64 = 128 * 1024;
 const CLAUDE_TAIL_BYTES: u64 = 128 * 1024;
 
 fn claude_title(path: &Path) -> Option<String> {
-    // Claude writes the human-readable title (auto-generated, then overwritten by
-    // `/rename`) as `{"type":"ai-title","aiTitle":...}` entries appended as the
-    // session grows — last one wins. This is what Claude's own /resume picker
-    // shows. Prefer it; fall back to the first user prompt for sessions that have
-    // no title yet. Cheap substring guards keep us from JSON-parsing every line.
+    // Cheap substring guards keep us from JSON-parsing every line.
     let mut file = fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
 
-    let mut ai_title: Option<String> = None;
-    let mut first_user: Option<String> = None;
+    let mut titles = ClaudeTitles::default();
 
-    // Head: captures the first user prompt and any early ai-title. For small
+    // Head: captures the first user prompt and any early title. For small
     // transcripts this covers the whole file, keeping the result exact.
     let head = read_prefix(&mut file, CLAUDE_HEAD_BYTES.min(len))?;
     for line in head.lines() {
-        scan_claude_line(line, &mut ai_title, &mut first_user);
+        scan_claude_line(line, &mut titles);
     }
 
-    // Tail: the most recent ai-title lives at the end of large transcripts. Skip
-    // the first (likely partial) line, then take the last ai-title we can parse.
+    // Tail: the freshest title lives at the end of large transcripts. Skip the
+    // first (likely partial) line.
     if len > CLAUDE_HEAD_BYTES {
         if let Some(tail) = read_suffix(&mut file, len.saturating_sub(CLAUDE_TAIL_BYTES)) {
             for line in tail.lines().skip(1) {
-                if line.contains("\"type\":\"ai-title\"") {
-                    if let Ok(v) = serde_json::from_str::<Value>(line) {
-                        if let Some(t) =
-                            v.get("aiTitle").and_then(|t| t.as_str()).and_then(condense)
-                        {
-                            ai_title = Some(t);
-                        }
-                    }
-                }
+                scan_claude_title_line(line, &mut titles);
             }
         }
     }
 
-    ai_title.or(first_user)
+    titles.resolve()
 }
 
 // ---- codex — ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl ----------------
@@ -3043,7 +3061,7 @@ mod executable_tests {
         parse_line_models, parse_omp_models, parse_pi_models, percent_decode, qualify_model,
         stream_group_key, streaming_transcripts_only, title_cache_stamp, toml_effort, toml_model,
         toml_section_string, yaml_agent_reasoning_effort, yaml_model_section,
-        yaml_top_level_scalar, AgentKind, AgentModelInfo, AgentUsageResetAt,
+        yaml_top_level_scalar, AgentKind, AgentModelInfo, AgentUsageResetAt, CLAUDE_HEAD_BYTES,
         CLAUDE_MODEL_CATALOG_ARGS,
     };
     #[cfg(unix)]
@@ -3758,6 +3776,70 @@ mod executable_tests {
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id, "conversation");
         assert_eq!(sessions[0].title, "Fix top bar overlaps");
+    }
+
+    #[test]
+    fn claude_titles_prefer_the_stored_title_over_the_generated_one() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("projects").join("-repo");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::write(
+            sessions_dir.join("renamed.jsonl"),
+            concat!(
+                "{\"type\":\"user\",\"message\":{\"content\":\"Rate this ContentIQ project codebase\"}}\n",
+                "{\"type\":\"ai-title\",\"aiTitle\":\"Codebase rating\"}\n",
+                "{\"type\":\"custom-title\",\"customTitle\":\"ContentIQ codebase quality assessment\"}\n",
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("generated.jsonl"),
+            concat!(
+                "{\"type\":\"user\",\"message\":{\"content\":\"check jira whats amitoj working on?\"}}\n",
+                "{\"type\":\"ai-title\",\"aiTitle\":\"Amitoj work status\"}\n",
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            sessions_dir.join("untitled.jsonl"),
+            "{\"type\":\"user\",\"message\":{\"content\":\"What happens in this stage?\"}}\n",
+        )
+        .unwrap();
+
+        let sessions = claude_sessions("/repo", root.path().to_str());
+        let title = |id: &str| {
+            sessions
+                .iter()
+                .find(|session| session.id == id)
+                .map(|session| session.title.as_str())
+        };
+
+        assert_eq!(
+            title("renamed"),
+            Some("ContentIQ codebase quality assessment")
+        );
+        assert_eq!(title("generated"), Some("Amitoj work status"));
+        assert_eq!(title("untitled"), Some("What happens in this stage?"));
+    }
+
+    #[test]
+    fn claude_titles_find_a_rename_past_the_head_of_a_long_transcript() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("projects").join("-repo");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        let mut transcript =
+            String::from("{\"type\":\"user\",\"message\":{\"content\":\"Handoff details\"}}\n");
+        while transcript.len() < (CLAUDE_HEAD_BYTES as usize) + 4096 {
+            transcript.push_str("{\"type\":\"assistant\",\"message\":{\"content\":\"filler\"}}\n");
+        }
+        transcript
+            .push_str("{\"type\":\"custom-title\",\"customTitle\":\"SwishX ContentIQ V2 manual test pass\"}\n");
+        std::fs::write(sessions_dir.join("long.jsonl"), transcript).unwrap();
+
+        let sessions = claude_sessions("/repo", root.path().to_str());
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].title, "SwishX ContentIQ V2 manual test pass");
     }
 
     #[test]
