@@ -11,6 +11,7 @@ import type {
     ChatMessage,
     ChatPart,
     ChatState,
+    ContextUsage,
 } from "./types";
 
 export const initialChatState: ChatState = {
@@ -371,6 +372,15 @@ function patchTask(state: ChatState, update: Record<string, unknown>): ChatState
     return { ...state, tasks, revision: state.revision + 1 };
 }
 
+function contextUsage(update: Record<string, unknown>): ContextUsage | null {
+    const { used, size } = update;
+    if (typeof used !== "number" || typeof size !== "number" || !Number.isFinite(used) || !Number.isFinite(size) || size <= 0) return null;
+    const cost = recordOf(update.cost);
+    return typeof cost?.amount === "number" && Number.isFinite(cost.amount) && typeof cost.currency === "string"
+        ? { used, size, cost: { amount: cost.amount, currency: cost.currency } }
+        : { used, size };
+}
+
 function sessionUpdate(state: ChatState, sessionId: string, update: Record<string, unknown>): ChatState {
     const inSubagent = patchSubagent(state, sessionId, (subagent) => {
         const next = transcriptUpdate(subagent, update, state.running);
@@ -416,8 +426,10 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
             };
         case "config_option_update":
             return { ...state, setup: { ...state.setup, configOptions: update.configOptions }, revision: state.revision + 1 };
-        case "usage_update":
-            return { ...state, usage: update, revision: state.revision + 1 };
+        case "usage_update": {
+            const usage = contextUsage(update);
+            return usage ? { ...state, usage, revision: state.revision + 1 } : state;
+        }
         case "session_info_update":
             return { ...state, title: typeof update.title === "string" ? update.title : state.title, revision: state.revision + 1 };
         default:

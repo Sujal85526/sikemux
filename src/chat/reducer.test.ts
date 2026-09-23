@@ -9,6 +9,22 @@ function update(state: ChatState, value: Record<string, unknown>, sessionId = RO
 }
 
 describe("chat reducer", () => {
+    it("keeps the context window the agent reports and ignores a malformed one", () => {
+        const claude = update(initialChatState, {
+            sessionUpdate: "usage_update",
+            used: 84_000,
+            size: 200_000,
+            cost: { amount: 1.25, currency: "USD" },
+        });
+        expect(claude.usage).toEqual({ used: 84_000, size: 200_000, cost: { amount: 1.25, currency: "USD" } });
+
+        const codex = update(claude, { sessionUpdate: "usage_update", used: 90_000, size: 272_000 });
+        expect(codex.usage).toEqual({ used: 90_000, size: 272_000 });
+
+        expect(update(codex, { sessionUpdate: "usage_update", used: 1, size: 0 })).toBe(codex);
+        expect(update(codex, { sessionUpdate: "usage_update", used: "lots", size: 10 })).toBe(codex);
+    });
+
     it("merges streamed text chunks by ACP message id", () => {
         const first = update(initialChatState, {
             sessionUpdate: "agent_message_chunk",

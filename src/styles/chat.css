@@ -1706,6 +1706,66 @@ button.chat-tool:hover,
     display: none;
 }
 
+.chat-context {
+    --usage-signal: var(--acc);
+    display: grid;
+    place-items: center;
+    width: 31px;
+    height: 31px;
+    border-radius: 50%;
+}
+
+.chat-context.claude {
+    --usage-signal: var(--brand-claude);
+}
+
+.chat-context.codex {
+    --usage-signal: var(--brand-codex);
+}
+
+.chat-context[data-tone="warm"] {
+    --usage-signal: var(--warn);
+}
+
+.chat-context[data-tone="hot"] {
+    --usage-signal: var(--danger);
+}
+
+.chat-context:hover {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.chat-context svg {
+    width: 18px;
+    height: 18px;
+    transform: rotate(-90deg);
+}
+
+.chat-context circle {
+    fill: none;
+    stroke-width: 2.2;
+}
+
+.chat-context-track {
+    stroke: var(--line);
+}
+
+.chat-context-fill {
+    stroke: var(--usage-signal);
+    stroke-linecap: round;
+    transition: stroke-dasharray 240ms ease-out;
+}
+
+.chat-context-tip {
+    display: grid;
+    gap: 2px;
+}
+
+.chat-context-tip span {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .chat-composer-spacer {
     flex: 1;
 }
@@ -1854,6 +1914,10 @@ button.chat-tool:hover,
 
     .chat-activity-loader {
         border-color: var(--live);
+    }
+
+    .chat-context-fill {
+        transition: none;
     }
 
     .yolo-toggle.on .yolo-ring::before,

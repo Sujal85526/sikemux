@@ -54,6 +54,7 @@ import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { YoloToggle } from "./YoloToggle";
+import { ContextMeter } from "./ContextMeter";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
 import { showImage } from "../state/imageViewer";
 import type {
@@ -66,6 +67,7 @@ import type {
     ChatMessage,
     ChatPart,
     ChatState,
+    ContextUsage,
 } from "./types";
 
 const MAX_ATTACHMENTS = 32;
@@ -1072,6 +1074,7 @@ function ChatComposer({
     onSend,
     onSteerQueued,
     queuedCount,
+    usage,
     onConfig,
 }: {
     agent: Agent;
@@ -1094,6 +1097,7 @@ function ChatComposer({
     onSend: (text: string, paths: string[], steerNow: boolean) => boolean;
     onSteerQueued: () => void;
     queuedCount: number;
+    usage: ContextUsage | null;
     onConfig: (config: SessionConfig, value: string) => void;
 }) {
     const [draft, setDraft] = useState("");
@@ -1263,6 +1267,7 @@ function ChatComposer({
                     onConfig={onConfig}
                 />
                 <span className="chat-composer-spacer" />
+                <ContextMeter usage={usage} agent={agent.type} />
                 {running && !drafted ? (
                     <button
                         type="button"
@@ -1924,6 +1929,7 @@ export function AgentChatPane({
                             if (head) void steer(head);
                         }}
                         queuedCount={queued.length}
+                        usage={state.usage}
                         onConfig={changeConfig}
                     />
                 </div>

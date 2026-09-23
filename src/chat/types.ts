@@ -112,7 +112,7 @@ export interface ChatState {
     capabilities: Record<string, unknown>;
     setup: Record<string, unknown>;
     plan: unknown;
-    usage: unknown;
+    usage: ContextUsage | null;
     running: boolean;
     suppressUserEcho: boolean;
     error: string | null;
@@ -148,3 +148,10 @@ export interface CodeToken {
 }
 
 export type CodeLine = readonly CodeToken[];
+
+/** How full the session's context window is, as the agent last reported it. */
+export interface ContextUsage {
+    used: number;
+    size: number;
+    cost?: { amount: number; currency: string };
+}
