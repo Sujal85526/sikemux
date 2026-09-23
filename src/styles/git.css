@@ -364,7 +364,10 @@
     color: var(--text-tertiary);
     margin-left: 1px;
 }
-.git-tbtn:hover .git-kbd,
+.git-tbtn:hover .git-kbd {
+    color: var(--text-secondary);
+}
+
 /* The git modal reuses the .dlg surface; only its sizing differs — menus and
    the cheatsheet need more room than a confirm sheet. */
 .git-modal {
