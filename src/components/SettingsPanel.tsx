@@ -20,7 +20,8 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, type Theme, type ThemeGroupKey } from "../themes";
+import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
+import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
 import {
     IconAgent,
@@ -1162,6 +1163,20 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
             baseName: src.name,
         });
 
+    const [readingWallpaper, setReadingWallpaper] = useState(false);
+    const fromWallpaper = async () => {
+        setReadingWallpaper(true);
+        try {
+            const wallpaper = await settingsApi.wallpaperImage();
+            const theme = themeFromColours(wallpaperTheme(await wallpaperPixels(wallpaper.dataUrl), `${wallpaper.name} wallpaper`));
+            openEditor({ theme: cloneTheme(theme, { id: newCustomThemeId() }), original: cloneTheme(theme), isNew: true, baseName: theme.name });
+        } catch (error) {
+            reportError("Theme from wallpaper")(error);
+        } finally {
+            setReadingWallpaper(false);
+        }
+    };
+
     const editCustom = (src: Theme) => openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
 
     const closeEditor = () => {
@@ -1187,6 +1202,8 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     editingId={edit?.theme.id}
                     onCustomize={customizeFrom}
                     onEdit={editCustom}
+                    onFromWallpaper={fromWallpaper}
+                    readingWallpaper={readingWallpaper}
                 />
             </SettingsSection>
 

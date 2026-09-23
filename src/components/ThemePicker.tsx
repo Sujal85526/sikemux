@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CURATED_THEMES, THEMES, type Theme } from "../themes";
 import * as cmd from "../state/commands";
-import { IconCheck, IconPencil, IconSearch, IconTrash } from "./Icons";
+import { IconCheck, IconImage, IconPencil, IconSearch, IconTrash } from "./Icons";
 
 type Tone = "all" | "dark" | "light";
 
@@ -14,6 +14,14 @@ interface Group {
     label: string;
     rows: Row[];
 }
+
+type Item = { kind: "group"; label: string; count: number; top: number } | { kind: "row"; row: Row; top: number };
+
+const ROW_HEIGHT = 30;
+const GROUP_HEIGHT = 28;
+const OVERSCAN = 8 * ROW_HEIGHT;
+/** jsdom measures nothing, so a list with no measured height renders a screenful. */
+const FALLBACK_VIEWPORT = 340;
 
 const CURATED_IDS = new Set(CURATED_THEMES.map((theme) => theme.id));
 const GHOSTTY_THEMES = THEMES.filter((theme) => !CURATED_IDS.has(theme.id));
@@ -43,12 +51,16 @@ export function ThemePicker({
     editingId,
     onCustomize,
     onEdit,
+    onFromWallpaper,
+    readingWallpaper,
 }: {
     themeId: string;
     customThemes: readonly Theme[];
     editingId?: string;
     onCustomize: (theme: Theme) => void;
     onEdit: (theme: Theme) => void;
+    onFromWallpaper: () => void;
+    readingWallpaper: boolean;
 }) {
     const [query, setQuery] = useState("");
     const [tone, setTone] = useState<Tone>("all");
@@ -66,12 +78,41 @@ export function ThemePicker({
     }, [customThemes, query, tone]);
 
     const flat = useMemo(() => groups.flatMap((group) => group.rows), [groups]);
+    const layout = useMemo(() => {
+        const items: Item[] = [];
+        let top = 0;
+        for (const group of groups) {
+            items.push({ kind: "group", label: group.label, count: group.rows.length, top });
+            top += GROUP_HEIGHT;
+            for (const row of group.rows) {
+                items.push({ kind: "row", row, top });
+                top += ROW_HEIGHT;
+            }
+        }
+        return { items, height: top };
+    }, [groups]);
+    const [scrollTop, setScrollTop] = useState(0);
+    const [viewport, setViewport] = useState(FALLBACK_VIEWPORT);
+    useLayoutEffect(() => {
+        const height = listRef.current?.clientHeight;
+        if (height) setViewport(height);
+    }, [layout]);
+    const visible = layout.items.filter((item) => item.top + ROW_HEIGHT >= scrollTop - OVERSCAN && item.top <= scrollTop + viewport + OVERSCAN);
+    const stuck = layout.items.filter((item) => item.kind === "group" && item.top <= scrollTop).at(-1);
     const current = [...customThemes, ...THEMES].find((theme) => theme.id === themeId) ?? THEMES[0];
     const currentIsCustom = customThemes.some((theme) => theme.id === current.id);
 
     useEffect(() => {
-        listRef.current?.querySelector<HTMLElement>(".theme-pick-row.active")?.scrollIntoView?.({ block: "nearest" });
-    }, [themeId]);
+        const list = listRef.current;
+        if (!list) return;
+        const item = layout.items.find((candidate) => candidate.kind === "row" && candidate.row.theme.id === themeId);
+        const height = list.clientHeight || FALLBACK_VIEWPORT;
+        let next = item ? list.scrollTop : 0;
+        if (item && item.top - GROUP_HEIGHT < next) next = Math.max(0, item.top - GROUP_HEIGHT);
+        else if (item && item.top + ROW_HEIGHT > next + height) next = item.top + ROW_HEIGHT - height;
+        list.scrollTop = next;
+        setScrollTop(next);
+    }, [layout, themeId]);
 
     const step = (delta: number) => {
         if (flat.length === 0) return;
@@ -95,6 +136,14 @@ export function ThemePicker({
                     <span className="theme-pick-current-name">{current.name}</span>
                     <Swatches theme={current} />
                 </div>
+                <button
+                    className="settings-btn"
+                    onClick={onFromWallpaper}
+                    disabled={readingWallpaper}
+                    title="Build a theme from the colours of your desktop wallpaper"
+                    type="button">
+                    <IconImage size={12} /> {readingWallpaper ? "Reading…" : "From wallpaper"}
+                </button>
                 <button
                     className="settings-btn"
                     onClick={() => (currentIsCustom ? onEdit(current) : onCustomize(current))}
@@ -140,56 +189,70 @@ export function ThemePicker({
                 </div>
             </div>
 
-            <div className="theme-pick-list" ref={listRef} role="listbox" aria-label="Themes">
-                {groups.map((group) => (
-                    <div key={group.label} role="group" aria-label={group.label}>
-                        <div className="theme-pick-group">
-                            {group.label}
-                            <span>{group.rows.length}</span>
-                        </div>
-                        {group.rows.map(({ theme, custom }) => {
-                            const active = theme.id === themeId;
+            <div
+                className="theme-pick-list"
+                ref={listRef}
+                role="listbox"
+                aria-label="Themes"
+                onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+                {stuck?.kind === "group" && (
+                    <div className="theme-pick-group theme-pick-stuck" aria-hidden="true">
+                        {stuck.label}
+                        <span>{stuck.count}</span>
+                    </div>
+                )}
+                <div className="theme-pick-track" style={{ height: layout.height }}>
+                    {visible.map((item) => {
+                        if (item.kind === "group")
                             return (
-                                <div
-                                    key={theme.id}
-                                    role="option"
-                                    aria-selected={active}
-                                    className={`theme-pick-row${active ? " active" : ""}${theme.id === editingId ? " editing" : ""}`}
-                                    onClick={() => cmd.setThemeId(theme.id)}>
-                                    <Chip theme={theme} />
-                                    <span className="theme-pick-name">{theme.name}</span>
-                                    <span className="theme-pick-actions">
-                                        <button
-                                            className="settings-theme-act"
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                if (custom) onEdit(theme);
-                                                else onCustomize(theme);
-                                            }}
-                                            title={custom ? "Edit theme" : "Customize a copy"}
-                                            type="button">
-                                            <IconPencil size={11} />
-                                        </button>
-                                        {custom && (
-                                            <button
-                                                className="settings-theme-act danger"
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    cmd.deleteCustomTheme(theme.id);
-                                                }}
-                                                title="Delete theme"
-                                                type="button">
-                                                <IconTrash size={11} />
-                                            </button>
-                                        )}
-                                    </span>
-                                    <Swatches theme={theme} />
-                                    <span className="theme-pick-check">{active && <IconCheck size={11} />}</span>
+                                <div key={`group-${item.label}`} className="theme-pick-group" style={{ top: item.top }}>
+                                    {item.label}
+                                    <span>{item.count}</span>
                                 </div>
                             );
-                        })}
-                    </div>
-                ))}
+                        const { theme, custom } = item.row;
+                        const active = theme.id === themeId;
+                        return (
+                            <div
+                                key={theme.id}
+                                role="option"
+                                aria-selected={active}
+                                className={`theme-pick-row${active ? " active" : ""}${theme.id === editingId ? " editing" : ""}`}
+                                style={{ top: item.top }}
+                                onClick={() => cmd.setThemeId(theme.id)}>
+                                <Chip theme={theme} />
+                                <span className="theme-pick-name">{theme.name}</span>
+                                <span className="theme-pick-actions">
+                                    <button
+                                        className="settings-theme-act"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (custom) onEdit(theme);
+                                            else onCustomize(theme);
+                                        }}
+                                        title={custom ? "Edit theme" : "Customize a copy"}
+                                        type="button">
+                                        <IconPencil size={11} />
+                                    </button>
+                                    {custom && (
+                                        <button
+                                            className="settings-theme-act danger"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                cmd.deleteCustomTheme(theme.id);
+                                            }}
+                                            title="Delete theme"
+                                            type="button">
+                                            <IconTrash size={11} />
+                                        </button>
+                                    )}
+                                </span>
+                                <Swatches theme={theme} />
+                                <span className="theme-pick-check">{active && <IconCheck size={11} />}</span>
+                            </div>
+                        );
+                    })}
+                </div>
                 {groups.length === 0 && <div className="theme-pick-empty">No theme matches “{query}”.</div>}
             </div>
         </div>

@@ -140,6 +140,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "scan_project_roots",
     "expand_path",
     "is_directory",
+    "wallpaper_image",
     "project_search",
     "project_search_cancel",
     "project_search_replace",

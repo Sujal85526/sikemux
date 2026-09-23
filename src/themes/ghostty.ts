@@ -50,14 +50,14 @@ export interface ThemeColours {
     terminal: string[];
 }
 
-export function ghosttyTheme(name: string, encoded: string): ThemeColours {
+export function ghosttyTheme(name: string, encoded: string, accent?: string): ThemeColours {
     const [bg, rawFg, cursor, cursorText, rawSelection, ...ansi] = encoded.split(",").map((hex) => (hex ? `#${hex}` : ""));
     const dark = contrastRatio("#ffffff", bg) >= contrastRatio("#000000", bg);
     const bgDim = mix(bg, "#000000", dark ? 0.22 : 0.035);
     const bgRaised = mix(bg, rawFg, dark ? 0.06 : 0.045);
     const grounds = [bg, bgDim, bgRaised];
     const fg = readableColor(rawFg, grounds, dark ? "#ffffff" : "#000000", 5);
-    const acc = accentFor(bg, fg, ansi);
+    const acc = accent ?? accentFor(bg, fg, ansi);
     const line = mix(bg, fg, dark ? 0.11 : 0.13);
     const selection = rawSelection && contrastRatio(rawSelection, fg) >= 2 ? rawSelection : mix(bg, acc, 0.28);
     const inkDim = mix(fg, bg, 0.38);

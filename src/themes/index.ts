@@ -1,4 +1,4 @@
-import { ghosttyThemes, slugify } from "./ghostty";
+import { ghosttyThemes, slugify, type ThemeColours } from "./ghostty";
 
 export interface ThemeChrome {
     bg: string;
@@ -734,11 +734,12 @@ export const CURATED_THEMES: Theme[] = [
     AURA_DAY,
 ];
 
+export const themeFromColours = ({ id, name, dark, chrome, editor, highlight, terminal }: ThemeColours): Theme =>
+    theme(id, name, chrome, editor, highlight, terminal, dark);
+
 export const THEMES: Theme[] = [
     ...CURATED_THEMES,
-    ...ghosttyThemes(new Set(CURATED_THEMES.map((t) => slugify(t.name).replace(/-/g, "")))).map(
-        ({ id, name, dark, chrome, editor, highlight, terminal }) => theme(id, name, chrome, editor, highlight, terminal, dark),
-    ),
+    ...ghosttyThemes(new Set(CURATED_THEMES.map((t) => slugify(t.name).replace(/-/g, "")))).map(themeFromColours),
 ];
 
 export const THEMES_BY_ID: Record<string, Theme> = Object.fromEntries(THEMES.map((t) => [t.id, t]));

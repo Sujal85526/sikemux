@@ -30,6 +30,7 @@ mod state;
 mod system;
 mod transparency;
 mod updates;
+mod wallpaper;
 mod wheel;
 
 use acp::AcpManager;
@@ -304,6 +305,7 @@ pub fn run() {
             settings::scan_project_roots,
             settings::expand_path,
             settings::is_directory,
+            wallpaper::wallpaper_image,
             search::project_search,
             search::project_search_cancel,
             search::project_search_replace,

@@ -90,6 +90,13 @@ export const IconSearch = makeSvgIcon(
         <path d="M10.4 10.4 14 14" />
     </>,
 );
+export const IconImage = makeSvgIcon(
+    <>
+        <rect x="2" y="3" width="12" height="10" rx="1.6" />
+        <circle cx="5.8" cy="6.4" r="1.1" />
+        <path d="m2.4 11.6 3.4-3.2 2.6 2.4 1.9-1.7 3.3 2.9" />
+    </>,
+);
 export const IconEye = makeSvgIcon(
     <>
         <path d="M1.6 8s2.3-4 6.4-4 6.4 4 6.4 4-2.3 4-6.4 4S1.6 8 1.6 8Z" />

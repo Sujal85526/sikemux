@@ -1,12 +1,22 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settingsApi } from "../api/settings";
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { IS_MACOS } from "../lib/platform";
 import { SETTINGS_INDEX, SETTINGS_PAGE_ORDER } from "../settingsIndex";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { SettingsPanel } from "./SettingsPanel";
+
+vi.mock("../themes/wallpaper", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../themes/wallpaper")>()),
+    wallpaperPixels: async () => {
+        const pixels = new Uint8ClampedArray(32 * 32 * 4);
+        for (let i = 0; i < pixels.length; i += 4) pixels.set(i % 64 < 8 ? [240, 70, 150, 255] : [10, 12, 24, 255], i);
+        return pixels;
+    },
+}));
 
 const initial = getState();
 
@@ -82,6 +92,21 @@ describe("SettingsPanel keybindings", () => {
         await user.click(screen.getByRole("button", { name: "Save profile" }));
 
         expect(getState().providerProfiles.find((profile) => profile.id === "builtin-codex")?.executablePath).toBe("/opt/codex/bin/codex");
+    });
+
+    it("drafts a theme from the wallpaper and keeps it once saved", async () => {
+        const user = userEvent.setup();
+        vi.spyOn(settingsApi, "wallpaperImage").mockResolvedValue({ name: "Neon", dataUrl: "data:image/png;base64," });
+        render(<SettingsPanel />);
+        await user.click(screen.getByRole("button", { name: "Appearance" }));
+
+        await user.click(screen.getByRole("button", { name: /From wallpaper/ }));
+        expect(await screen.findByDisplayValue("Neon wallpaper")).toBeInTheDocument();
+        expect(getState().customThemes).toHaveLength(0);
+
+        await user.click(screen.getByRole("button", { name: "Save theme" }));
+        expect(getState().customThemes.map((theme) => theme.name)).toEqual(["Neon wallpaper"]);
+        expect(getState().themeId).toBe(getState().customThemes[0].id);
     });
 
     it("searches Ghostty's themes and applies them from the keyboard", async () => {
