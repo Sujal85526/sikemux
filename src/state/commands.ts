@@ -2312,6 +2312,11 @@ export function newBrowserTab(forAgentId?: string): boolean {
     return true;
 }
 
+export function openUrlInBrowserPane(agentId: string, url: string): void {
+    openBrowserPane(agentId);
+    void browserApi.newTab(agentId, url).catch(reportError("open link in browser"));
+}
+
 /** Hiding the browser keeps its tabs alive, so showing it again brings them back as they were. */
 export function toggleBrowserPane(agentId: string): void {
     const openPaneId = shownBrowserPaneId(getState(), agentId);
