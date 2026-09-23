@@ -752,14 +752,17 @@ function AboutPage() {
         <SettingsPage>
             <SettingsSection title="Updates">
                 <SettingsRows>
-                    <SettingsRow label="Channel" desc="Stable follows the latest signed release; nightly the newest prerelease." wide>
+                    <SettingsRow
+                        label="Channel"
+                        desc="Stable follows the latest signed release; nightly the newest build, prerelease or stable."
+                        wide>
                         <Dropdown
                             className="settings-dd"
                             label="update channel"
                             value={updateChannel}
                             options={[
                                 { value: "stable", label: "Stable", detail: "Latest signed release" },
-                                { value: "nightly", label: "Nightly", detail: "Newest signed prerelease build" },
+                                { value: "nightly", label: "Nightly", detail: "Newest signed build, prerelease or stable" },
                             ]}
                             onChange={(value) => cmd.setUpdateChannel(value as "stable" | "nightly")}
                         />
