@@ -39,6 +39,7 @@ import {
     nextInCycle,
     ownerSessionId,
     selectTabRefs,
+    shownBrowserPaneId,
     stripOrder,
     tabRefKey,
     type TabSource,
@@ -2335,26 +2336,47 @@ export function newBrowserTab(forAgentId?: string): boolean {
     return true;
 }
 
+/** Hiding the browser keeps its tabs alive, so showing it again brings them back as they were. */
+export function toggleBrowserPane(agentId: string): void {
+    const openPaneId = shownBrowserPaneId(getState(), agentId);
+    if (openPaneId) {
+        closeBrowserPane(openPaneId);
+        return;
+    }
+    openBrowserPane(agentId);
+    void browserApi
+        .snapshot(agentId)
+        .then((snapshot) => (snapshot.tabs.length === 0 ? browserApi.newTab(agentId) : undefined))
+        .catch(reportError("open browser tab"));
+}
+
+/** Brings the browser on screen for an agent that started using it, leaving focus where the person had it. */
+export function revealBrowserPane(agentId: string): void {
+    if (shownBrowserPaneId(getState(), agentId)) return;
+    openBrowserPane(agentId, { focus: false });
+}
+
 /**
  * Put the agent's browser beside it, once.
  *
  * The pane is a leaf like any other, so it splits, resizes and closes through
  * the layout rather than through anything the browser owns itself.
  */
-export function openBrowserPane(agentId: string): void {
+export function openBrowserPane(agentId: string, opts: { focus?: boolean } = {}): void {
+    const focus = opts.focus ?? true;
     mutate((d) => {
         const existing = Object.entries(d.browserPanes).find(([, owner]) => owner === agentId);
         const windowId = Object.keys(d.windows).find((id) => collectPanes(d.windows[id].root).some((pane) => pane.id === agentId));
         if (!windowId) return;
         const win = d.windows[windowId];
         if (existing && collectPanes(win.root).some((pane) => pane.id === existing[0])) {
-            win.activePaneId = existing[0];
+            if (focus) win.activePaneId = existing[0];
             return;
         }
         const agentPane = collectPanes(win.root).find((candidate) => candidate.id === agentId);
         const pane = makePane(agentPane?.cwd ?? "", { kind: "browser" });
         win.root = splitPane(win.root, agentId, "row", pane);
-        win.activePaneId = pane.id;
+        if (focus) win.activePaneId = pane.id;
         d.browserPanes[pane.id] = agentId;
         d.zoomedPaneId = null;
     });

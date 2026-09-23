@@ -252,6 +252,12 @@ textarea:focus,
     flex: 0 0 auto;
 }
 
+.tab-badge {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+}
+
 .row-x,
 .tab-x {
     display: grid;

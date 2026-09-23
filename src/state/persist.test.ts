@@ -15,7 +15,7 @@ import type { Agent } from "./types";
 import { useToasts } from "./toast";
 
 function browserTab(id: string, url: string, title: string) {
-    return { id, title, url, active: false, loading: false, canGoBack: false, canGoForward: false, favicon: null };
+    return { id, title, url, active: false, loading: false, canGoBack: false, canGoForward: false, favicon: null, acting: false };
 }
 
 function deferred<T>() {

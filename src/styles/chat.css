@@ -73,7 +73,7 @@
 
 .agent-view-switch button[aria-pressed="true"] {
     color: var(--ink);
-    background: var(--rail-2);
+    background: var(--surface-active);
 }
 
 .agent-view-switch button:disabled {
@@ -84,15 +84,14 @@
 .agent-browser-open {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    justify-content: center;
+    width: var(--control-h);
     height: var(--control-h);
-    padding: 0 10px;
+    padding: 0;
     border: 1px solid var(--line);
     border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--void) 46%, transparent);
     color: var(--ink-faint);
-    font-family: var(--ui);
-    font-size: 10.5px;
     transition:
         color 100ms,
         border-color 100ms;
@@ -100,6 +99,11 @@
 
 .agent-browser-open:hover {
     border-color: var(--acc-line);
+    color: var(--ink);
+}
+
+.agent-browser-open[aria-pressed="true"] {
+    background: var(--surface-active);
     color: var(--ink);
 }
 

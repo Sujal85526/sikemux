@@ -29,6 +29,9 @@ export interface TabDescriptor {
     /** Per-tab status mark (spinner, activity dot). Takes the trailing slot, and
      * the close button takes it back under the pointer. */
     accessory?: ReactNode;
+    /** Sits after the label, just before the close button, and stays visible. */
+    badge?: ReactNode;
+    className?: string;
 }
 
 export type TabVariant = "editor" | "agent" | "browser" | "stack";
@@ -126,7 +129,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                         key={t.id}
                         data-index={index}
                         ref={virtualized ? tabVirtualizer.measureElement : undefined}
-                        className={`tab-wrap${t.active ? " active" : ""}`}
+                        className={`tab-wrap${t.active ? " active" : ""}${t.className ? ` ${t.className}` : ""}`}
                         role="presentation">
                         <Tooltip label={t.title}>
                             <button
@@ -180,6 +183,7 @@ export function TabBar({ variant, tabs, onSelect, onClose, buildMenu, onAdd, add
                                 }>
                                 {t.icon && <span className="tab-mark">{t.icon}</span>}
                                 <span className="tab-label">{t.label}</span>
+                                {t.badge && <span className="tab-badge">{t.badge}</span>}
                             </button>
                         </Tooltip>
                         {(status || (closable && onClose)) && (
