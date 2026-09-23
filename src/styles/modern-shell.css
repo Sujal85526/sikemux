@@ -548,12 +548,10 @@ textarea:focus,
     border-radius: 999px;
 }
 
-/* The workspace strip is a surface of its own now (the fill is set with the
- * other panels, below), so it takes an edge the whole way round like the
- * screen under it. A border on the bottom only would read as a lid again. */
+/* The workspace strip is not a surface: it paints nothing and keeps one rule
+ * underneath to separate it from the screen below. */
 .tabbar.v-agent {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
+    border-bottom: 1px solid var(--border);
 }
 
 /* The editor's strip sits inside a pane that already is the surface, and a
@@ -1196,8 +1194,7 @@ textarea,
 }
 
 .side-rail,
-.workspace-rail,
-.tabbar.v-agent {
+.workspace-rail {
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 
