@@ -749,10 +749,6 @@ export function themeById(id: string): Theme {
     return THEMES_BY_ID[id] ?? THEMES_BY_ID[DEFAULT_THEME_ID];
 }
 
-export function isBuiltinTheme(id: string): boolean {
-    return id in THEMES_BY_ID;
-}
-
 /** Deep-clone a theme so its colour maps can be mutated independently of the source. */
 export function cloneTheme(src: Theme, overrides?: Partial<Pick<Theme, "id" | "name" | "dark">>): Theme {
     return {

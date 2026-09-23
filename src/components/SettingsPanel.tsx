@@ -39,7 +39,7 @@ import {
     IconTrash,
     IconWindow,
 } from "./Icons";
-import { Dropdown, type DropdownOption } from "./Dropdown";
+import { Dropdown } from "./Dropdown";
 import { Checkbox, Slider, Switch } from "./Controls";
 import { Tooltip } from "./Tooltip";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
@@ -1140,18 +1140,6 @@ interface ThemeEdit {
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = useStore((state) => state.uiTextScale);
     const customThemes = useStore((s) => s.customThemes);
-    /** Themes matching the requested appearance, plus the current pick so it stays selectable. */
-    const themeOptions = (dark: boolean, selectedId: string): DropdownOption[] =>
-        [...THEMES, ...customThemes]
-            .filter((theme) => theme.dark === dark || theme.id === selectedId)
-            .map((theme) => ({
-                value: theme.id,
-                label: theme.name,
-                ...(customThemes.some((candidate) => candidate.id === theme.id) ? { detail: "custom" } : {}),
-            }));
-    const themeMode = useStore((s) => s.themeMode);
-    const systemLightThemeId = useStore((s) => s.systemLightThemeId);
-    const systemDarkThemeId = useStore((s) => s.systemDarkThemeId);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
 
@@ -1224,41 +1212,6 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     />
                 </div>
             )}
-
-            <SettingsSection title="System appearance">
-                <SettingsRows>
-                    <SettingsRow
-                        label="Follow system light/dark"
-                        desc="Switches the moment the host appearance changes."
-                        asLabel
-                        control={
-                            <Switch
-                                checked={themeMode === "system"}
-                                onChange={(enabled) => cmd.setThemeMode(enabled ? "system" : "manual")}
-                                label="Follow system light/dark"
-                            />
-                        }
-                    />
-                    <SettingsRow label="Light appearance" wide>
-                        <Dropdown
-                            className="settings-dd"
-                            label="Light appearance"
-                            value={systemLightThemeId}
-                            options={themeOptions(false, systemLightThemeId)}
-                            onChange={cmd.setSystemLightThemeId}
-                        />
-                    </SettingsRow>
-                    <SettingsRow label="Dark appearance" wide>
-                        <Dropdown
-                            className="settings-dd"
-                            label="Dark appearance"
-                            value={systemDarkThemeId}
-                            options={themeOptions(true, systemDarkThemeId)}
-                            onChange={cmd.setSystemDarkThemeId}
-                        />
-                    </SettingsRow>
-                </SettingsRows>
-            </SettingsSection>
 
             <SettingsSection title="Interface">
                 <SettingsRows>

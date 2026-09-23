@@ -84,20 +84,6 @@ describe("SettingsPanel keybindings", () => {
         expect(getState().providerProfiles.find((profile) => profile.id === "builtin-codex")?.executablePath).toBe("/opt/codex/bin/codex");
     });
 
-    it("configures separate themes for system light and dark appearances", async () => {
-        const user = userEvent.setup();
-        render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "Appearance" }));
-
-        // The app dropdown is a button + listbox, not a native <select>.
-        await user.click(screen.getByRole("button", { name: "Light appearance" }));
-        await user.click(within(screen.getByRole("listbox", { name: "Light appearance" })).getByRole("option", { name: "Aura Day" }));
-        await user.click(screen.getByRole("button", { name: "Dark appearance" }));
-        await user.click(within(screen.getByRole("listbox", { name: "Dark appearance" })).getByRole("option", { name: "Dracula" }));
-
-        expect(getState()).toMatchObject({ systemLightThemeId: "aura-day", systemDarkThemeId: "dracula" });
-    });
-
     it("searches Ghostty's themes and applies them from the keyboard", async () => {
         const user = userEvent.setup();
         render(<SettingsPanel />);

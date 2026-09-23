@@ -53,10 +53,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
 
     section("appearance", "Theme", "colours colors palette dark light custom fork editor"),
-    section("appearance", "System appearance", "dark mode light mode automatic"),
-    row("appearance", "System appearance", "Follow system light/dark", "dark mode automatic os"),
-    row("appearance", "System appearance", "Light appearance", "light theme day"),
-    row("appearance", "System appearance", "Dark appearance", "dark theme night"),
     section("appearance", "Interface"),
     row("appearance", "Interface", "Text size", "font zoom scale larger smaller accessibility"),
     ...(IS_MACOS

@@ -51,9 +51,6 @@ export interface DomainState {
     /** Imported Bruno (API) workspace collection paths, most-recent-first. Survive session close so they stay reopenable. */
     brunoWorkspaces: string[];
     themeId: string;
-    themeMode: "manual" | "system";
-    systemLightThemeId: string;
-    systemDarkThemeId: string;
     /** User-defined themes, derived from a built-in or another custom theme via the theme editor. */
     customThemes: Theme[];
     uiTextScale: number;
@@ -201,9 +198,6 @@ export const useStore = create<StoreState>(() => {
         projectRoots: [],
         brunoWorkspaces: [],
         themeId: DEFAULT_THEME_ID,
-        themeMode: "manual",
-        systemLightThemeId: "aura-day",
-        systemDarkThemeId: DEFAULT_THEME_ID,
         customThemes: [],
         uiTextScale: 1,
         windowOpacity: 1,

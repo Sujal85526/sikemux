@@ -13,7 +13,7 @@ import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname, isPathWithin, joinPath } from "../lib/paths";
 import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../agentLaunch";
-import { cloneTheme, DEFAULT_THEME_ID, THEMES_BY_ID, type Theme } from "../themes";
+import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
 import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../themes/bus";
@@ -2243,37 +2243,8 @@ export const openCommitDiff = (rev: string, subject: string): void => focusDiff(
 
 export function setThemeId(id: string): void {
     applyTheme(id);
-    setState({ themeId: id, themeMode: "manual" });
-}
-
-export function applySystemTheme(dark: boolean): void {
-    const state = getState();
-    if (state.themeMode !== "system") return;
-    const id = dark ? state.systemDarkThemeId : state.systemLightThemeId;
-    applyTheme(id);
     setState({ themeId: id });
 }
-
-export function setThemeMode(mode: "manual" | "system"): void {
-    setState({ themeMode: mode });
-    if (mode === "system") applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
-}
-
-function setSystemThemeId(mode: "light" | "dark", id: string): void {
-    const state = getState();
-    const exists = !!THEMES_BY_ID[id] || state.customThemes.some((theme) => theme.id === id);
-    if (!exists) return;
-    setState(mode === "light" ? { systemLightThemeId: id } : { systemDarkThemeId: id });
-    if (state.themeMode !== "system") return;
-    const hostIsDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (hostIsDark === (mode === "dark")) {
-        applyTheme(id);
-        setState({ themeId: id });
-    }
-}
-
-export const setSystemLightThemeId = (id: string): void => setSystemThemeId("light", id);
-export const setSystemDarkThemeId = (id: string): void => setSystemThemeId("dark", id);
 
 /** Live-apply a draft theme to the whole UI without persisting it — drives the theme editor preview. */
 export function previewThemeDraft(theme: Theme): void {

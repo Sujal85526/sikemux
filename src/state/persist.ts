@@ -1,6 +1,6 @@
 import { invokeCommand as invoke } from "../api/invoke";
 import { sshStartup } from "../terminal/sshStartup";
-import { isBuiltinTheme, isTheme } from "../themes";
+import { isTheme } from "../themes";
 import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
@@ -75,9 +75,6 @@ const PERSISTED_KEYS = [
     "projectRoots",
     "brunoWorkspaces",
     "themeId",
-    "themeMode",
-    "systemLightThemeId",
-    "systemDarkThemeId",
     "customThemes",
     "uiTextScale",
     "windowOpacity",
@@ -124,9 +121,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         projectRoots: s.projectRoots,
         brunoWorkspaces: s.brunoWorkspaces,
         themeId: s.themeId,
-        themeMode: s.themeMode,
-        systemLightThemeId: s.systemLightThemeId,
-        systemDarkThemeId: s.systemDarkThemeId,
         customThemes: s.customThemes,
         uiTextScale: s.uiTextScale,
         windowOpacity: s.windowOpacity,
@@ -168,11 +162,6 @@ const AWS_SERVICES = new Set<StoreState["awsService"]>(["ecs", "ec2", "lambda", 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function isThemeId(value: string, customThemes: unknown): boolean {
-    if (isBuiltinTheme(value)) return true;
-    return Array.isArray(customThemes) && customThemes.some((theme) => isTheme(theme) && theme.id === value);
 }
 
 const COMMAND_CONTEXTS = new Set<CommandContext>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
@@ -772,15 +761,6 @@ export function applyHydrate(raw: string): HydrationResult {
             Object.values(sessions),
         ),
         themeId: typeof prefs.themeId === "string" ? prefs.themeId : cur.themeId,
-        themeMode: prefs.themeMode === "system" || prefs.themeMode === "manual" ? prefs.themeMode : cur.themeMode,
-        systemLightThemeId:
-            typeof prefs.systemLightThemeId === "string" && isThemeId(prefs.systemLightThemeId, prefs.customThemes)
-                ? prefs.systemLightThemeId
-                : cur.systemLightThemeId,
-        systemDarkThemeId:
-            typeof prefs.systemDarkThemeId === "string" && isThemeId(prefs.systemDarkThemeId, prefs.customThemes)
-                ? prefs.systemDarkThemeId
-                : cur.systemDarkThemeId,
         customThemes: Array.isArray(prefs.customThemes) ? prefs.customThemes.filter(isTheme) : cur.customThemes,
         uiTextScale: typeof prefs.uiTextScale === "number" && [1, 1.1, 1.25].includes(prefs.uiTextScale) ? prefs.uiTextScale : cur.uiTextScale,
         windowOpacity: typeof prefs.windowOpacity === "number" && Number.isFinite(prefs.windowOpacity) ? prefs.windowOpacity : cur.windowOpacity,

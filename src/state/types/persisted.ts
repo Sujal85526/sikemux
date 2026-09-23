@@ -60,9 +60,6 @@ export interface PersistedPrefs {
     projectRoots: ProjectRoot[];
     brunoWorkspaces?: string[];
     themeId: string;
-    themeMode?: "manual" | "system";
-    systemLightThemeId?: string;
-    systemDarkThemeId?: string;
     customThemes?: Theme[];
     uiTextScale?: number;
     windowOpacity: number;

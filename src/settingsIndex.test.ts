@@ -19,7 +19,7 @@ describe("searchSettings", () => {
     });
 
     it("puts labels that start with the query first, then labels containing it", () => {
-        expect(labels("dark")).toEqual(["Dark appearance", "Follow system light/dark", "Theme", "System appearance"]);
+        expect(labels("profile").slice(0, 2)).toEqual(["Profile directory", "Provider profiles"]);
     });
 
     it("finds everything on a page by the page's name", () => {

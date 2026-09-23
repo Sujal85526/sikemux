@@ -701,7 +701,6 @@ export default function App() {
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
                     applyWindowOpacity(st.windowOpacity);
-                    if (st.themeMode === "system") cmd.applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
                     cmd.setWindowBlur(st.windowBlur);
                     if (hydrationAllowsPersistence(hydrationResult)) {
                         if (!st.onboardingComplete) cmd.openOnboarding();
@@ -751,13 +750,6 @@ export default function App() {
             }),
         [],
     );
-
-    useEffect(() => {
-        const media = window.matchMedia("(prefers-color-scheme: dark)");
-        const apply = () => cmd.applySystemTheme(media.matches);
-        media.addEventListener("change", apply);
-        return () => media.removeEventListener("change", apply);
-    }, []);
 
     useEffect(() => {
         let disposed = false;
