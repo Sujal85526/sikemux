@@ -902,6 +902,7 @@ function QueuedMessages({
                                 aria-label={`Steer the running turn with ${label}`}
                                 onClick={() => onSteer(message)}>
                                 Steer
+                                {messages.length === 1 && <kbd className="chat-queued-steer-key">{PRIMARY_SHORTCUT}↵</kbd>}
                             </button>
                         )}
                         <button type="button" aria-label={`Drop ${label} from the queue`} onClick={() => onDrop(message.id)}>
