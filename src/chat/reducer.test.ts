@@ -248,6 +248,15 @@ describe("chat reducer", () => {
         expect(notified.messages).toEqual([]);
     });
 
+    it("keeps Claude's interrupt marker out of the transcript", () => {
+        const replayed = ["[Request interrupted by user]", "[Request interrupted by user for tool use]"].reduce(
+            (state, text) => update(state, { sessionUpdate: "user_message_chunk", content: { type: "text", text } }),
+            initialChatState,
+        );
+
+        expect(replayed.messages).toEqual([]);
+    });
+
     it("keeps a message that only mentions a tag", () => {
         const asked = update(initialChatState, {
             sessionUpdate: "user_message_chunk",

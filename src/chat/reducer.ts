@@ -52,6 +52,10 @@ function isMarkupOnly(text: string): boolean {
     return /^<([a-z][\w-]*)\b[^>]*>[\s\S]*<\/\1>$/i.test(trimmed);
 }
 
+/* Claude records a stop as a user message, so replaying a session would show
+   the person saying something they never typed. */
+const isInterruptMarker = (text: string): boolean => /^\[Request interrupted by user[^\]]*\]$/.test(text.trim());
+
 function contentChunk(update: Record<string, unknown>): AcpContentChunk | null {
     const content = recordOf(update.content);
     if (!content || typeof content.type !== "string") return null;
@@ -209,7 +213,12 @@ function transcriptUpdate(transcript: Transcript, update: Record<string, unknown
             const chunk = contentChunk(update);
             if (!chunk) return null;
             const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
-            if (role === "user" && typeof chunk.content.text === "string" && isMarkupOnly(chunk.content.text)) return null;
+            if (
+                role === "user" &&
+                typeof chunk.content.text === "string" &&
+                (isMarkupOnly(chunk.content.text) || isInterruptMarker(chunk.content.text))
+            )
+                return null;
             const partKind = update.sessionUpdate === "agent_thought_chunk" ? "thought" : "text";
             return appendChunk(transcript, role, partKind, chunk, timed);
         }
