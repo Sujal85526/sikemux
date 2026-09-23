@@ -6,10 +6,10 @@ use std::collections::{HashMap, HashSet};
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::{RundeckError, RundeckResult};
 
-use super::client::{get_json, post_empty_json, post_json};
-use super::projects::resolve_job;
+use crate::client::{get_json, post_empty_json, post_json};
+use crate::projects::resolve_job;
 
 #[derive(Serialize, Clone, Deserialize)]
 pub struct Execution {
@@ -54,13 +54,12 @@ struct ExecutionList {
     executions: Vec<Execution>,
 }
 
-#[tauri::command]
-pub async fn rnd_executions(
+pub async fn executions(
     job_id: String,
     project: String,
     max: Option<u32>,
     only_succeeded: Option<bool>,
-) -> AppResult<Vec<Execution>> {
+) -> RundeckResult<Vec<Execution>> {
     let limit = max.unwrap_or(25);
     let succeeded_only = only_succeeded.unwrap_or(false);
     let mut query: Vec<(&str, String)> = vec![("max", limit.to_string())];
@@ -144,8 +143,7 @@ fn execution_started_at(execution: &Execution) -> Option<i64> {
         .and_then(|started| started.unixtime)
 }
 
-#[tauri::command]
-pub async fn rnd_execution(execution_id: u64) -> AppResult<Execution> {
+pub async fn execution(execution_id: u64) -> RundeckResult<Execution> {
     get_json(&format!("/execution/{execution_id}"), &[]).await
 }
 
@@ -163,16 +161,15 @@ struct RunRequest<'a> {
 
 /// Trigger a job. `extra_options` is anything beyond BRANCH (pass None when
 /// the form has nothing extra to send).
-#[tauri::command]
-pub async fn rnd_run(
+pub async fn run(
     project: String,
     service: String,
     branch: String,
     extra_options: Option<HashMap<String, String>>,
-) -> AppResult<RunResult> {
+) -> RundeckResult<RunResult> {
     let branch = branch.trim().to_string();
     if branch.is_empty() {
-        return Err(crate::error::AppError::BadArg("branch is empty"));
+        return Err(RundeckError::BadArg("branch is empty"));
     }
     let job = resolve_job(&project, &service).await?;
     let mut options: HashMap<&str, String> = HashMap::new();
@@ -210,8 +207,7 @@ pub struct AbortBody {
     pub reason: Option<String>,
 }
 
-#[tauri::command]
-pub async fn rnd_abort(execution_id: u64) -> AppResult<AbortResult> {
+pub async fn abort(execution_id: u64) -> RundeckResult<AbortResult> {
     post_empty_json(&format!("/execution/{execution_id}/abort")).await
 }
 
@@ -250,8 +246,7 @@ pub struct WorkflowState {
     pub completed: Option<bool>,
 }
 
-#[tauri::command]
-pub async fn rnd_execution_state(execution_id: u64) -> AppResult<WorkflowState> {
+pub async fn execution_state(execution_id: u64) -> RundeckResult<WorkflowState> {
     get_json(&format!("/execution/{execution_id}/state"), &[]).await
 }
 

@@ -11,15 +11,15 @@ use reqwest::{Client, Method, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{RundeckError, RundeckResult};
 
-use super::config;
+use crate::config;
 
 pub const API_VERSION: u32 = 41;
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
-pub fn http() -> &'static Client {
-    static C: OnceLock<Client> = OnceLock::new();
+fn http() -> RundeckResult<&'static Client> {
+    static C: OnceLock<Option<Client>> = OnceLock::new();
     C.get_or_init(|| {
         Client::builder()
             // Servers behind corporate proxies sometimes drop idle keep-alive
@@ -29,15 +29,17 @@ pub fn http() -> &'static Client {
             .redirect(reqwest::redirect::Policy::none())
             .user_agent("sikemux-rundeck/0.1")
             .build()
-            .expect("build reqwest client")
+            .ok()
     })
+    .as_ref()
+    .ok_or_else(|| RundeckError::Api("could not start the HTTP client".into()))
 }
 
 /// A warm client per pinned target. Building one per request threw away the
 /// connection pool, so a private-HTTP install paid a fresh handshake on every
 /// call of the dashboard's fan-out. The key is the pinned address set, so a
 /// different DNS answer never reuses the old client.
-fn pinned_http(transport: &config::ValidatedTransport) -> AppResult<Client> {
+fn pinned_http(transport: &config::ValidatedTransport) -> RundeckResult<Client> {
     const MAX_CACHED_CLIENTS: usize = 8;
     static CACHE: OnceLock<Mutex<HashMap<String, Client>>> = OnceLock::new();
 
@@ -75,21 +77,21 @@ async fn send_with_token(
     body: Option<&serde_json::Value>,
     query: &[(&str, String)],
     token_override: Option<&str>,
-) -> AppResult<Response> {
-    // Cache may be empty on cold boot (rnd_status hasn't run yet) or stale
+) -> RundeckResult<Response> {
+    // Cache may be empty on cold boot (status hasn't run yet) or stale
     // after a `rnd login` from the CLI. Refresh on every request so the
-    // first rnd_branches_matrix from the TopBar's DeployChip doesn't race
+    // first branchesMatrix call from the TopBar's DeployChip doesn't race
     // ahead of the pane's status check and falsely report "not configured".
     let cfg = config::refresh_from_disk()
         .await
         .unwrap_or_else(|_| config::RundeckConfig::default());
     if cfg.url.is_empty() {
-        return Err(AppError::RundeckUnconfigured);
+        return Err(RundeckError::Unconfigured);
     }
     let transport = config::validate_transport(&cfg.url, cfg.allow_insecure_private_http).await?;
     let token = token_override.unwrap_or(&cfg.token);
     if token.is_empty() {
-        return Err(AppError::RundeckUnconfigured);
+        return Err(RundeckError::Unconfigured);
     }
 
     // For acknowledged private HTTP, bind this client to the exact private
@@ -100,7 +102,10 @@ async fn send_with_token(
     } else {
         None
     };
-    let client = private_client.as_ref().unwrap_or_else(|| http());
+    let client = match private_client.as_ref() {
+        Some(client) => client,
+        None => http()?,
+    };
     let mut req = client
         .request(method, api_url(&cfg.url, endpoint))
         .header("X-Rundeck-Auth-Token", token)
@@ -119,7 +124,7 @@ async fn send_with_token(
 pub async fn get_json<T: DeserializeOwned>(
     endpoint: &str,
     query: &[(&str, String)],
-) -> AppResult<T> {
+) -> RundeckResult<T> {
     request_json(Method::GET, endpoint, None, query).await
 }
 
@@ -127,13 +132,13 @@ pub async fn get_json<T: DeserializeOwned>(
 pub async fn post_json<B: Serialize, T: DeserializeOwned>(
     endpoint: &str,
     body: &B,
-) -> AppResult<T> {
-    let val = serde_json::to_value(body).map_err(AppError::Json)?;
+) -> RundeckResult<T> {
+    let val = serde_json::to_value(body).map_err(RundeckError::Json)?;
     request_json(Method::POST, endpoint, Some(&val), &[]).await
 }
 
 /// POST with no body, expecting JSON response.
-pub async fn post_empty_json<T: DeserializeOwned>(endpoint: &str) -> AppResult<T> {
+pub async fn post_empty_json<T: DeserializeOwned>(endpoint: &str) -> RundeckResult<T> {
     request_json(Method::POST, endpoint, None, &[]).await
 }
 
@@ -142,25 +147,25 @@ async fn request_json<T: DeserializeOwned>(
     endpoint: &str,
     body: Option<&serde_json::Value>,
     query: &[(&str, String)],
-) -> AppResult<T> {
+) -> RundeckResult<T> {
     let resp = send_with_token(method, endpoint, body, query, None).await?;
     decode(resp).await
 }
 
-async fn decode<T: DeserializeOwned>(resp: Response) -> AppResult<T> {
+async fn decode<T: DeserializeOwned>(resp: Response) -> RundeckResult<T> {
     let status = resp.status();
     if resp
         .content_length()
         .is_some_and(|size| size > MAX_RESPONSE_BYTES as u64)
     {
-        return Err(AppError::Rundeck("response exceeds 16 MiB limit".into()));
+        return Err(RundeckError::Api("response exceeds 16 MiB limit".into()));
     }
     let mut stream = resp.bytes_stream();
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES {
-            return Err(AppError::Rundeck("response exceeds 16 MiB limit".into()));
+            return Err(RundeckError::Api("response exceeds 16 MiB limit".into()));
         }
         bytes.extend_from_slice(&chunk);
     }
@@ -173,16 +178,16 @@ async fn decode<T: DeserializeOwned>(resp: Response) -> AppResult<T> {
                 body
             }
         });
-        return Err(AppError::RundeckHttp {
+        return Err(RundeckError::Http {
             status: status.as_u16(),
             message,
         });
     }
     if bytes.is_empty() {
         // Caller deserialising into () should still succeed.
-        return serde_json::from_slice::<T>(b"null").map_err(AppError::Json);
+        return serde_json::from_slice::<T>(b"null").map_err(RundeckError::Json);
     }
-    serde_json::from_slice::<T>(&bytes).map_err(AppError::Json)
+    serde_json::from_slice::<T>(&bytes).map_err(RundeckError::Json)
 }
 
 fn extract_message(body: &str) -> Option<String> {

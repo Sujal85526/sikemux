@@ -39,18 +39,6 @@ pub enum AppError {
     #[error("lsp server `{bin}` for {language} not found")]
     LspServerMissing { language: String, bin: String },
 
-    #[error("rundeck: {0}")]
-    Rundeck(String),
-
-    #[error("rundeck: not configured")]
-    RundeckUnconfigured,
-
-    #[error("rundeck: auth failed: {0}")]
-    RundeckAuth(String),
-
-    #[error("rundeck: http {status}: {message}")]
-    RundeckHttp { status: u16, message: String },
-
     #[error("http: {0}")]
     Http(String),
 
@@ -91,7 +79,7 @@ pub enum AppError {
 
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
-        AppError::Rundeck(e.to_string())
+        AppError::Http(e.to_string())
     }
 }
 
@@ -129,7 +117,6 @@ struct Wire<'a> {
 impl Serialize for AppError {
     fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         let (category, status, plugin) = match self {
-            AppError::RundeckHttp { status, .. } => (self.category(), Some(*status), None),
             AppError::Plugin { plugin, error } => {
                 (error.category.as_str(), error.status, Some(plugin.as_str()))
             }
@@ -157,10 +144,6 @@ impl AppError {
             AppError::AwsNoCredentials => "aws-no-credentials",
             AppError::Lsp(_) => "lsp",
             AppError::LspServerMissing { .. } => "lsp-server-missing",
-            AppError::Rundeck(_) => "rundeck",
-            AppError::RundeckUnconfigured => "rundeck-unconfigured",
-            AppError::RundeckAuth(_) => "rundeck-auth",
-            AppError::RundeckHttp { .. } => "rundeck-http",
             AppError::Http(_) => "http",
             AppError::Plugin { .. } => "plugin",
             AppError::BadArg(_) => "bad-arg",
@@ -194,25 +177,12 @@ mod tests {
             "aws-cli-missing"
         );
         assert_eq!(
-            AppError::RundeckUnconfigured.category(),
-            "rundeck-unconfigured"
-        );
-        assert_eq!(
             AppError::LspServerMissing {
                 language: "go".into(),
                 bin: "gopls".into(),
             }
             .category(),
             "lsp-server-missing"
-        );
-        assert_eq!(AppError::RundeckAuth("x".into()).category(), "rundeck-auth");
-        assert_eq!(
-            AppError::RundeckHttp {
-                status: 401,
-                message: "".into()
-            }
-            .category(),
-            "rundeck-http"
         );
         assert_eq!(AppError::BadArg("x").category(), "bad-arg");
         assert_eq!(AppError::Pty("x".into()).category(), "pty");
@@ -222,13 +192,14 @@ mod tests {
 
     #[test]
     fn wire_payload_round_trip() {
-        let e = AppError::RundeckHttp {
-            status: 401,
-            message: "boom".into(),
+        let e = AppError::Plugin {
+            plugin: "sikemux.rundeck".into(),
+            error: sikemux_plugin_api::PluginError::new("http", "boom").with_status(401),
         };
         let s = serde_json::to_string(&e).unwrap();
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
-        assert_eq!(v["category"], "rundeck-http");
-        assert!(v["message"].as_str().unwrap().contains("401"));
+        assert_eq!(v["category"], "http");
+        assert_eq!(v["status"], 401);
+        assert_eq!(v["plugin"], "sikemux.rundeck");
     }
 }

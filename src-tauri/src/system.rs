@@ -13,7 +13,6 @@ use crate::{
     aws::LogsTailManager,
     error::{AppError, AppResult},
     pty::PtyManager,
-    rundeck::{RundeckLogsManager, RundeckWatchManager},
     state::state_load_sync,
 };
 
@@ -535,8 +534,7 @@ pub struct RuntimeDiagnostics {
     repo_watchers: usize,
     agent_session_watchers: usize,
     aws_log_tails: usize,
-    rundeck_watchers: usize,
-    rundeck_log_tails: usize,
+    plugin_streams: usize,
     observability: crate::observability::ObservabilitySnapshot,
 }
 
@@ -570,8 +568,7 @@ fn current_fd_limit() -> (Option<u64>, Option<u64>) {
 pub async fn runtime_diagnostics(
     ptys: tauri::State<'_, PtyManager>,
     aws_logs: tauri::State<'_, LogsTailManager>,
-    rundeck_watch: tauri::State<'_, RundeckWatchManager>,
-    rundeck_logs: tauri::State<'_, RundeckLogsManager>,
+    plugins: tauri::State<'_, crate::plugins::PluginHost>,
 ) -> AppResult<RuntimeDiagnostics> {
     // Counting /dev/fd is a directory read, so it goes to the blocking pool
     // even though everything else here is in-memory bookkeeping.
@@ -604,8 +601,7 @@ pub async fn runtime_diagnostics(
         repo_watchers: crate::fs_watch::watch_count(),
         agent_session_watchers: crate::agents::watch_count(),
         aws_log_tails: aws_logs.count(),
-        rundeck_watchers: rundeck_watch.count(),
-        rundeck_log_tails: rundeck_logs.count(),
+        plugin_streams: plugins.stream_count(),
         observability: crate::observability::global_observability().snapshot(),
     })
 }

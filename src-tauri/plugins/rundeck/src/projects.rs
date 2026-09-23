@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use futures::{future::join_all, stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::{RundeckError, RundeckResult};
 
-use super::client::get_json;
+use crate::client::get_json;
 
 // ---- projects ------------------------------------------------------------
 
@@ -23,8 +23,7 @@ pub struct RundeckProject {
     pub description: Option<String>,
 }
 
-#[tauri::command]
-pub async fn rnd_projects() -> AppResult<Vec<RundeckProject>> {
+pub async fn projects() -> RundeckResult<Vec<RundeckProject>> {
     let mut out: Vec<RundeckProject> = get_json("/projects", &[]).await?;
     out.sort_by_key(|project| project.name.to_lowercase());
     Ok(out)
@@ -53,8 +52,7 @@ impl RundeckJob {
     }
 }
 
-#[tauri::command]
-pub async fn rnd_jobs(project: String) -> AppResult<Vec<RundeckJob>> {
+pub async fn jobs(project: String) -> RundeckResult<Vec<RundeckJob>> {
     let mut out: Vec<RundeckJob> = get_json(&format!("/project/{project}/jobs"), &[]).await?;
     out.sort_by_key(|job| job.qualified_name());
     Ok(out)
@@ -143,7 +141,7 @@ async fn fetch_last_for_job(job: &RundeckJob, only_succeeded: bool) -> MatrixCel
         query.push(("status", "succeeded".to_string()));
     }
     let path = format!("/job/{}/executions", job.id);
-    let result: AppResult<ExecutionListResponse> = get_json(&path, &query).await;
+    let result: RundeckResult<ExecutionListResponse> = get_json(&path, &query).await;
 
     let mut cell = MatrixCell {
         service: job.qualified_name(),
@@ -182,12 +180,11 @@ async fn fetch_last_for_job(job: &RundeckJob, only_succeeded: bool) -> MatrixCel
     cell
 }
 
-#[tauri::command]
-pub async fn rnd_branches_matrix(envs: Vec<EnvSpec>) -> AppResult<MatrixResult> {
+pub async fn branches_matrix(envs: Vec<EnvSpec>) -> RundeckResult<MatrixResult> {
     let started = std::time::Instant::now();
 
     let per_env = join_all(envs.into_iter().map(|spec| async move {
-        let jobs_result = rnd_jobs(spec.project.clone()).await;
+        let jobs_result = jobs(spec.project.clone()).await;
         let (cells, err) = match jobs_result {
             Ok(jobs) => {
                 let mut cells = stream::iter(jobs)
@@ -226,27 +223,22 @@ fn job_matches_service_ref(job: &RundeckJob, service_ref: &str) -> bool {
 
 /// Convenience for the deploy flow — resolves group/name to a single job id,
 /// erroring on ambiguity. Mirrors `_find_job_id` in the bash CLI.
-pub async fn resolve_job(project: &str, service_ref: &str) -> AppResult<RundeckJob> {
-    let jobs = rnd_jobs(project.to_string()).await?;
+pub async fn resolve_job(project: &str, service_ref: &str) -> RundeckResult<RundeckJob> {
+    let jobs = jobs(project.to_string()).await?;
     let matches: Vec<&RundeckJob> = jobs
         .iter()
         .filter(|j| job_matches_service_ref(j, service_ref))
         .collect();
     match matches.as_slice() {
-        [] => Err(crate::error::AppError::Rundeck(format!(
+        [] => Err(RundeckError::Api(format!(
             "job '{service_ref}' not found in project '{project}'"
         ))),
         [j] => Ok((*j).clone()),
-        many => Err(crate::error::AppError::Rundeck(format!(
+        many => Err(RundeckError::Api(format!(
             "job '{service_ref}' is ambiguous in '{project}' ({} matches — pass group/name)",
             many.len()
         ))),
     }
-}
-
-#[tauri::command]
-pub async fn rnd_resolve_job(project: String, service: String) -> AppResult<RundeckJob> {
-    resolve_job(&project, &service).await
 }
 
 #[cfg(test)]

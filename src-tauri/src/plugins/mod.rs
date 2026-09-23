@@ -166,6 +166,10 @@ impl PluginHost {
         }
     }
 
+    pub fn stream_count(&self) -> usize {
+        self.streams.len()
+    }
+
     pub fn drain(&self) {
         let ids: Vec<u32> = self.streams.iter().map(|entry| *entry.key()).collect();
         for stream_id in ids {

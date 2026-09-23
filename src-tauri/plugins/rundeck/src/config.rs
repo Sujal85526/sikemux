@@ -17,7 +17,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{RundeckError, RundeckResult};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RundeckConfig {
@@ -50,12 +50,17 @@ pub fn config_path() -> Option<PathBuf> {
 /// dollar-quoted ($'...'), and plain bare words.
 fn unquote(raw: &str) -> String {
     let s = raw.trim();
-    if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
-        return s[1..s.len() - 1].replace("'\\''", "'");
+    if let Some(inner) = s
+        .strip_prefix('\'')
+        .and_then(|rest| rest.strip_suffix('\''))
+    {
+        return inner.replace("'\\''", "'");
     }
-    if s.len() >= 3 && s.starts_with("$'") && s.ends_with('\'') {
+    if let Some(inner) = s
+        .strip_prefix("$'")
+        .and_then(|rest| rest.strip_suffix('\''))
+    {
         // $'...': interpret \n, \t, \', \\
-        let inner = &s[2..s.len() - 1];
         let mut out = String::with_capacity(inner.len());
         let mut chars = inner.chars().peekable();
         while let Some(c) = chars.next() {
@@ -78,8 +83,8 @@ fn unquote(raw: &str) -> String {
         }
         return out;
     }
-    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
-        return s[1..s.len() - 1].to_string();
+    if let Some(inner) = s.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) {
+        return inner.to_string();
     }
     s.to_string()
 }
@@ -91,7 +96,7 @@ fn quote(s: &str) -> String {
     format!("'{escaped}'")
 }
 
-fn read_file() -> AppResult<RundeckConfig> {
+fn read_file() -> RundeckResult<RundeckConfig> {
     let Some(path) = config_path() else {
         return Ok(RundeckConfig::default());
     };
@@ -126,18 +131,18 @@ fn read_file() -> AppResult<RundeckConfig> {
     Ok(cfg)
 }
 
-fn write_file(cfg: &RundeckConfig) -> AppResult<()> {
+fn write_file(cfg: &RundeckConfig) -> RundeckResult<()> {
     let Some(path) = config_path() else {
-        return Err(AppError::Rundeck("no HOME directory".into()));
+        return Err(RundeckError::Api("no HOME directory".into()));
     };
     write_file_at(&path, cfg)
 }
 
-fn write_file_at(path: &Path, cfg: &RundeckConfig) -> AppResult<()> {
+fn write_file_at(path: &Path, cfg: &RundeckConfig) -> RundeckResult<()> {
     validate_base_url_with_policy(&cfg.url, cfg.allow_insecure_private_http)?;
     let parent = path
         .parent()
-        .ok_or_else(|| AppError::Rundeck("invalid config path".into()))?;
+        .ok_or_else(|| RundeckError::Api("invalid config path".into()))?;
     fs::create_dir_all(parent)?;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     #[cfg(unix)]
@@ -162,7 +167,7 @@ fn write_file_at(path: &Path, cfg: &RundeckConfig) -> AppResult<()> {
         })
     )?;
     temp.as_file_mut().sync_all()?;
-    temp.persist(path).map_err(|e| AppError::Io(e.error))?;
+    temp.persist(path).map_err(|e| RundeckError::Io(e.error))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -172,28 +177,28 @@ fn write_file_at(path: &Path, cfg: &RundeckConfig) -> AppResult<()> {
 }
 
 #[cfg(test)]
-pub fn validate_base_url(raw: &str) -> AppResult<()> {
+pub fn validate_base_url(raw: &str) -> RundeckResult<()> {
     validate_base_url_with_policy(raw, false)
 }
 
 pub fn validate_base_url_with_policy(
     raw: &str,
     allow_insecure_private_http: bool,
-) -> AppResult<()> {
-    let url = url::Url::parse(raw).map_err(|_| AppError::BadArg("invalid Rundeck URL"))?;
+) -> RundeckResult<()> {
+    let url = url::Url::parse(raw).map_err(|_| RundeckError::BadArg("invalid Rundeck URL"))?;
     if url.username() != "" || url.password().is_some() {
-        return Err(AppError::BadArg(
+        return Err(RundeckError::BadArg(
             "credentials in the Rundeck URL are not allowed",
         ));
     }
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(AppError::BadArg("Rundeck URL must use HTTP or HTTPS"));
+        return Err(RundeckError::BadArg("Rundeck URL must use HTTP or HTTPS"));
     }
     if url.host_str().is_none() {
-        return Err(AppError::BadArg("Rundeck URL must include a host"));
+        return Err(RundeckError::BadArg("Rundeck URL must include a host"));
     }
     if url.scheme() == "http" && !allow_insecure_private_http {
-        return Err(AppError::BadArg(
+        return Err(RundeckError::BadArg(
             "plaintext HTTP requires explicit private-network acknowledgement",
         ));
     }
@@ -250,12 +255,12 @@ impl ValidatedTransport {
 pub async fn validate_transport(
     raw: &str,
     allow_insecure_private_http: bool,
-) -> AppResult<ValidatedTransport> {
+) -> RundeckResult<ValidatedTransport> {
     validate_base_url_with_policy(raw, allow_insecure_private_http)?;
-    let url = url::Url::parse(raw).map_err(|_| AppError::BadArg("invalid Rundeck URL"))?;
+    let url = url::Url::parse(raw).map_err(|_| RundeckError::BadArg("invalid Rundeck URL"))?;
     let host = url
         .host_str()
-        .ok_or(AppError::BadArg("Rundeck URL must include a host"))?
+        .ok_or(RundeckError::BadArg("Rundeck URL must include a host"))?
         .to_string();
     if url.scheme() == "https" {
         return Ok(ValidatedTransport {
@@ -263,19 +268,19 @@ pub async fn validate_transport(
             private_http_addresses: Vec::new(),
         });
     }
-    let port = url
-        .port_or_known_default()
-        .ok_or(AppError::BadArg("Rundeck URL must include a valid port"))?;
+    let port = url.port_or_known_default().ok_or(RundeckError::BadArg(
+        "Rundeck URL must include a valid port",
+    ))?;
     let addresses: Vec<_> = tokio::net::lookup_host((host.as_str(), port))
         .await
-        .map_err(|_| AppError::BadArg("Rundeck HTTP host could not be resolved"))?
+        .map_err(|_| RundeckError::BadArg("Rundeck HTTP host could not be resolved"))?
         .collect();
     if addresses.is_empty()
         || addresses
             .iter()
             .any(|address| !is_allowed_private_ip(address.ip()))
     {
-        return Err(AppError::BadArg(
+        return Err(RundeckError::BadArg(
             "plaintext Rundeck HTTP is allowed only when every resolved address is private or loopback",
         ));
     }
@@ -312,7 +317,7 @@ fn mtime_of(path: &PathBuf) -> Option<SystemTime> {
 /// (2 pollers × every 1.5s × multiple disk reads each). Now we stat the
 /// file (one syscall) and only re-read on an mtime change, so a long
 /// session with no `rnd login` does effectively zero disk work.
-pub async fn refresh_from_disk() -> AppResult<RundeckConfig> {
+pub async fn refresh_from_disk() -> RundeckResult<RundeckConfig> {
     let path = match config_path() {
         Some(p) => p,
         None => return Ok(RundeckConfig::default()),
@@ -335,7 +340,7 @@ pub async fn get() -> RundeckConfig {
     cache().read().await.cfg.clone()
 }
 
-pub async fn save(cfg: RundeckConfig) -> AppResult<()> {
+pub async fn save(cfg: RundeckConfig) -> RundeckResult<()> {
     write_file(&cfg)?;
     let path = config_path();
     let mut w = cache().write().await;
@@ -356,6 +361,17 @@ mod tests {
         assert!(validate_base_url_with_policy("http://localhost:4440", true).is_ok());
         assert!(validate_base_url("ftp://rundeck.example.com").is_err());
         assert!(validate_base_url("https://user:pass@rundeck.example.com").is_err());
+    }
+
+    #[test]
+    fn unquotes_every_form_the_cli_writes() {
+        assert_eq!(unquote("'it'\\''s'"), "it's");
+        assert_eq!(unquote("$'a\\nb'"), "a\nb");
+        assert_eq!(unquote("\"plain\""), "plain");
+        assert_eq!(unquote("''"), "");
+        assert_eq!(unquote("'"), "'");
+        assert_eq!(unquote("bare"), "bare");
+        assert_eq!(unquote(&quote("tök'en")), "tök'en");
     }
 
     #[test]

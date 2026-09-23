@@ -3,7 +3,6 @@ mod agent_detection;
 mod agents;
 mod autopsy;
 mod aws;
-mod bounded_process;
 mod browser;
 mod bruno;
 pub mod cli_client;
@@ -23,7 +22,6 @@ mod lsp;
 pub mod observability;
 mod plugins;
 mod pty;
-mod rundeck;
 mod search;
 mod settings;
 mod ssh;
@@ -40,7 +38,7 @@ use browser::BrowserManager;
 use observability::UiWatchdogState;
 use plugins::PluginHost;
 use pty::PtyManager;
-use rundeck::{RundeckLogsManager, RundeckWatchManager};
+use sikemux_process as bounded_process;
 use tauri::Manager;
 
 pub fn run() {
@@ -84,8 +82,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(LogsTailManager::default())
-        .manage(RundeckWatchManager::default())
-        .manage(RundeckLogsManager::default())
         .on_window_event(|window, event| {
             // Drain every live PTY on close so we don't leave orphan
             // shells, agents, or `tail`s alive after the user quits.
@@ -341,23 +337,6 @@ pub fn run() {
             aws::s3::aws_s3_buckets,
             aws::logs::aws_logs_tail_start,
             aws::logs::aws_logs_tail_stop,
-            rundeck::auth::rnd_status,
-            rundeck::auth::rnd_login,
-            rundeck::auth::rnd_logout,
-            rundeck::projects::rnd_projects,
-            rundeck::projects::rnd_jobs,
-            rundeck::projects::rnd_branches_matrix,
-            rundeck::projects::rnd_resolve_job,
-            rundeck::executions::rnd_executions,
-            rundeck::executions::rnd_execution,
-            rundeck::executions::rnd_execution_state,
-            rundeck::executions::rnd_run,
-            rundeck::executions::rnd_abort,
-            rundeck::watch::rnd_watch_start,
-            rundeck::watch::rnd_watch_stop,
-            rundeck::logs::rnd_logs_start,
-            rundeck::logs::rnd_logs_stop,
-            rundeck::plan::rnd_plan,
             external::open_url,
             external::macos_focus_app,
             external::run_background_command,

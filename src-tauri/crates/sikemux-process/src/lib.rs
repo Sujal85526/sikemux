@@ -41,7 +41,7 @@ impl fmt::Display for ProcessRunError {
 
 impl std::error::Error for ProcessRunError {}
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ProcessCancellation(Arc<AtomicBool>);
 
 impl ProcessCancellation {

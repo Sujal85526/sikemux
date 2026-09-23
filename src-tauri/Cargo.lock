@@ -4222,6 +4222,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "sikemux-plugin-api",
+ "sikemux-plugin-rundeck",
+ "sikemux-process",
  "similar",
  "tauri",
  "tauri-build",
@@ -4247,6 +4249,29 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "sikemux-plugin-rundeck"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "git2",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "sikemux-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

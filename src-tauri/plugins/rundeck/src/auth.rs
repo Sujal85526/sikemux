@@ -11,35 +11,35 @@ use futures::StreamExt;
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{AppError, AppResult};
+use crate::error::{RundeckError, RundeckResult};
 
-use super::client::API_VERSION;
-use super::config::{self, RundeckConfig};
+use crate::client::API_VERSION;
+use crate::config::{self, RundeckConfig};
 
 const MAX_AUTH_RESPONSE_BYTES: usize = 1024 * 1024;
 
-async fn response_text_limited(resp: Response) -> AppResult<String> {
+async fn response_text_limited(resp: Response) -> RundeckResult<String> {
     if resp
         .content_length()
         .is_some_and(|size| size > MAX_AUTH_RESPONSE_BYTES as u64)
     {
-        return Err(AppError::RundeckAuth(
+        return Err(RundeckError::Auth(
             "authentication response exceeds 1 MiB limit".into(),
         ));
     }
     let mut stream = resp.bytes_stream();
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| AppError::RundeckAuth(e.to_string()))?;
+        let chunk = chunk.map_err(|e| RundeckError::Auth(e.to_string()))?;
         if bytes.len() + chunk.len() > MAX_AUTH_RESPONSE_BYTES {
-            return Err(AppError::RundeckAuth(
+            return Err(RundeckError::Auth(
                 "authentication response exceeds 1 MiB limit".into(),
             ));
         }
         bytes.extend_from_slice(&chunk);
     }
     String::from_utf8(bytes)
-        .map_err(|_| AppError::RundeckAuth("authentication response is not UTF-8".into()))
+        .map_err(|_| RundeckError::Auth("authentication response is not UTF-8".into()))
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -72,7 +72,7 @@ fn short_hostname() -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
-fn fresh_session_client(transport: &config::ValidatedTransport) -> AppResult<Client> {
+fn fresh_session_client(transport: &config::ValidatedTransport) -> RundeckResult<Client> {
     Ok(transport
         .pin_dns(Client::builder())
         .cookie_provider(Arc::new(reqwest::cookie::Jar::default()))
@@ -98,7 +98,7 @@ fn fresh_session_client(transport: &config::ValidatedTransport) -> AppResult<Cli
 }
 
 /// Drive the j_security_check → /tokens/{user} flow. Returns the bearer token.
-pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
+pub async fn perform_login(req: &LoginRequest) -> RundeckResult<String> {
     let url = req.url.trim_end_matches('/');
     let transport = config::validate_transport(url, req.allow_insecure_private_http).await?;
     let client = fresh_session_client(&transport)?;
@@ -113,15 +113,15 @@ pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
         .form(&form)
         .send()
         .await
-        .map_err(|e| AppError::RundeckAuth(format!("login request: {e}")))?;
+        .map_err(|e| RundeckError::Auth(format!("login request: {e}")))?;
 
     let final_url = resp.url().to_string();
     if final_url.contains("/user/error") || final_url.contains("/user/login") {
-        return Err(AppError::RundeckAuth("invalid username or password".into()));
+        return Err(RundeckError::Auth("invalid username or password".into()));
     }
     let status = resp.status();
     if !status.is_success() && !status.is_redirection() {
-        return Err(AppError::RundeckAuth(format!(
+        return Err(RundeckError::Auth(format!(
             "login returned http {}",
             status.as_u16()
         )));
@@ -166,7 +166,7 @@ pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
         .json(&payload)
         .send()
         .await
-        .map_err(|e| AppError::RundeckAuth(format!("token request: {e}")))?;
+        .map_err(|e| RundeckError::Auth(format!("token request: {e}")))?;
 
     let status = token_resp.status();
     let body = response_text_limited(token_resp).await?;
@@ -175,18 +175,18 @@ pub async fn perform_login(req: &LoginRequest) -> AppResult<String> {
             .ok()
             .and_then(|v| v.get("message").and_then(|s| s.as_str()).map(String::from))
             .unwrap_or(body);
-        return Err(AppError::RundeckAuth(format!(
+        return Err(RundeckError::Auth(format!(
             "could not mint token (http {}): {}",
             status.as_u16(),
             msg
         )));
     }
     let parsed: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| AppError::RundeckAuth(e.to_string()))?;
+        serde_json::from_str(&body).map_err(|e| RundeckError::Auth(e.to_string()))?;
     let token = parsed
         .get("token")
         .and_then(|t| t.as_str())
-        .ok_or_else(|| AppError::RundeckAuth("token field missing in response".into()))?
+        .ok_or_else(|| RundeckError::Auth("token field missing in response".into()))?
         .to_string();
     Ok(token)
 }
@@ -206,20 +206,19 @@ pub struct RundeckStatus {
     pub allow_insecure_private_http: bool,
 }
 
-fn is_auth_failure(e: &AppError) -> bool {
+fn is_auth_failure(e: &RundeckError) -> bool {
     matches!(
         e,
-        AppError::RundeckAuth(_)
-            | AppError::RundeckUnconfigured
-            | AppError::RundeckHttp {
+        RundeckError::Auth(_)
+            | RundeckError::Unconfigured
+            | RundeckError::Http {
                 status: 401 | 403,
                 ..
             }
     )
 }
 
-#[tauri::command]
-pub async fn rnd_status() -> RundeckStatus {
+pub async fn status() -> RundeckStatus {
     // Always reload from disk on status checks — the CLI may have written
     // a new token since boot.
     let cfg = config::refresh_from_disk()
@@ -254,7 +253,7 @@ pub async fn rnd_status() -> RundeckStatus {
         };
     }
 
-    let info: AppResult<serde_json::Value> = super::client::get_json("/system/info", &[]).await;
+    let info: RundeckResult<serde_json::Value> = crate::client::get_json("/system/info", &[]).await;
     match info {
         Ok(v) => RundeckStatus {
             configured: true,
@@ -284,8 +283,7 @@ pub async fn rnd_status() -> RundeckStatus {
     }
 }
 
-#[tauri::command]
-pub async fn rnd_login(req: LoginRequest) -> AppResult<LoginResult> {
+pub async fn login(req: LoginRequest) -> RundeckResult<LoginResult> {
     let url = req.url.trim_end_matches('/').to_string();
     let token = perform_login(&LoginRequest {
         url: url.clone(),
@@ -304,7 +302,7 @@ pub async fn rnd_login(req: LoginRequest) -> AppResult<LoginResult> {
     config::save(cfg).await?;
 
     // Verify against /system/info so the user gets immediate feedback.
-    let version: Option<String> = super::client::get_json::<serde_json::Value>("/system/info", &[])
+    let version: Option<String> = crate::client::get_json::<serde_json::Value>("/system/info", &[])
         .await
         .ok()
         .and_then(|v| {
@@ -321,8 +319,7 @@ pub async fn rnd_login(req: LoginRequest) -> AppResult<LoginResult> {
     })
 }
 
-#[tauri::command]
-pub async fn rnd_logout() -> AppResult<()> {
+pub async fn logout() -> RundeckResult<()> {
     // Clear in-memory and on-disk auth state without wiping URL — user often
     // just wants to switch accounts on the same Rundeck.
     let mut cfg = config::get().await;

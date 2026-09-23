@@ -7,12 +7,11 @@ use git2::{BranchType, Repository};
 use serde::Serialize;
 use std::time::Duration;
 
-use crate::bounded_process;
-use crate::error::AppResult;
+use crate::error::RundeckResult;
 
-use super::client::get_json;
-use super::executions::Execution;
-use super::projects::resolve_job;
+use crate::client::get_json;
+use crate::executions::Execution;
+use crate::projects::resolve_job;
 
 #[derive(Serialize, Clone)]
 pub struct PlanResult {
@@ -68,20 +67,19 @@ struct ExecutionList {
 /// (caller resolves "current" before calling — we don't peek the cwd). Pass
 /// an empty `repo_path` if you don't have a local checkout — git-side fields
 /// will fall back to "no repo" semantics.
-#[tauri::command]
-pub async fn rnd_plan(
+pub async fn plan(
     project: String,
     service: String,
     target_branch: String,
     repo_path: String,
-) -> AppResult<PlanResult> {
+) -> RundeckResult<PlanResult> {
     let target_branch = target_branch.trim().to_string();
     let job = resolve_job(&project, &service).await?;
 
     // Last-successful deploy via API; tolerant of error (caller still wants
     // the git-side analysis).
     let deployed_branch: Option<String> = {
-        let res: AppResult<ExecutionList> = get_json(
+        let res: RundeckResult<ExecutionList> = get_json(
             &format!("/job/{}/executions", job.id),
             &[
                 ("max", "1".to_string()),
@@ -125,7 +123,19 @@ pub async fn rnd_plan(
         return Ok(plan);
     }
 
-    let repo = match Repository::discover(&repo_path) {
+    let fallback = plan.clone();
+    tokio::task::spawn_blocking(move || inspect_repo(plan, &repo_path))
+        .await
+        .unwrap_or(Ok(fallback))
+}
+
+/// Fetches and walks the local checkout, which can take as long as the fetch
+/// timeout, so it runs off the async threads.
+fn inspect_repo(mut plan: PlanResult, repo_path: &str) -> RundeckResult<PlanResult> {
+    let target_branch = plan.target_branch.clone();
+    let deployed_branch = plan.deployed_branch.clone();
+    let (project, service) = (plan.project.clone(), plan.service.clone());
+    let repo = match Repository::discover(repo_path) {
         Ok(r) => r,
         Err(_) => return Ok(plan),
     };
@@ -135,10 +145,10 @@ pub async fn rnd_plan(
     let mut fetch = std::process::Command::new("git");
     fetch
         .arg("-C")
-        .arg(&repo_path)
+        .arg(repo_path)
         .args(["fetch", "origin", "--quiet"])
         .env("GIT_TERMINAL_PROMPT", "0");
-    let _ = bounded_process::run(
+    let _ = sikemux_process::run(
         &mut fetch,
         None,
         Duration::from_secs(30),

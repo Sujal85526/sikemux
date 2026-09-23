@@ -1,0 +1,7 @@
+{
+  "id": "sikemux.rundeck",
+  "name": "Rundeck",
+  "version": "0.1.0",
+  "sikemux": ">=0.4",
+  "group": "ci-cd"
+}

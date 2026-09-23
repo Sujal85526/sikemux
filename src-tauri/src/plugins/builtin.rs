@@ -1,7 +1,18 @@
 use std::sync::Arc;
 
-use sikemux_plugin_api::Plugin;
+use sikemux_plugin_api::{Plugin, PluginError};
 
 pub fn plugins() -> Vec<Arc<dyn Plugin>> {
-    Vec::new()
+    let compiled_in: Vec<Result<Arc<dyn Plugin>, PluginError>> = vec![
+        #[cfg(feature = "rundeck")]
+        sikemux_plugin_rundeck::plugin(),
+    ];
+    compiled_in
+        .into_iter()
+        .filter_map(|plugin| {
+            plugin
+                .inspect_err(|error| eprintln!("a built-in plugin failed to load: {error}"))
+                .ok()
+        })
+        .collect()
 }
