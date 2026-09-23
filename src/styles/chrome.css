@@ -618,7 +618,7 @@
 /* A session whose surfaces all come from the rails shows no strip, and then the
    screens have nothing to start below. */
 .window-area--strip {
-    --window-strip-h: 34px;
+    --window-strip-h: 28px;
     --window-strip-gap: calc(var(--shell-gap) - var(--pane-gutter));
 }
 /* One session's screens laid end to end. The track slides sideways to bring a

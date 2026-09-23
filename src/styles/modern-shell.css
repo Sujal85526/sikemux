@@ -607,9 +607,8 @@ textarea:focus,
         color var(--dur-1) linear;
 }
 
-/* A tab fills the strip, so its corners sit just inside the strip's border. */
+/* The strip is sized to the tab, so its corners sit just inside the strip's border. */
 .tabbar.v-agent .tab-wrap {
-    height: 100%;
     border-radius: calc(var(--radius-panel) - 1px);
 }
 
