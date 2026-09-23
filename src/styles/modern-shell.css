@@ -755,11 +755,17 @@ textarea:focus,
  */
 .body {
     position: relative;
-    gap: var(--space-3);
+    gap: var(--shell-gap);
     /* Half gutter under the bar: it is window chrome, not another panel, so it
        sits closer than the panels do to each other. The bar's own slack under
        the crumb is most of it; this tops it up to match the gap above. */
-    padding: var(--space-1) var(--space-3) var(--space-3);
+    padding: var(--space-1) var(--shell-gap) var(--shell-gap);
+}
+
+/* Panes hold a gutter back from their cell, so the window area reaches out by
+   that much to put the outer panes flush with the stage's edges. */
+.window-area {
+    inset: 0 calc(-1 * var(--pane-gutter)) calc(-1 * var(--pane-gutter));
 }
 
 .rail-peek {
@@ -767,25 +773,25 @@ textarea:focus,
     position: absolute;
     inset-block: 0;
     z-index: 4;
-    width: calc(var(--rail-peek-width) + var(--space-3));
+    width: calc(var(--rail-peek-width) + var(--shell-gap));
     pointer-events: none;
 }
 
 .rail-peek--start {
-    --rail-peek-offset: calc(-100% - var(--space-3));
+    --rail-peek-offset: calc(-100% - var(--shell-gap));
     left: 0;
 }
 
 .rail-peek--end {
     --rail-peek-width: 312px;
-    --rail-peek-offset: calc(100% + var(--space-3));
+    --rail-peek-offset: calc(100% + var(--shell-gap));
     right: 0;
 }
 
 .rail-peek-sensor {
     position: absolute;
     inset-block: 0;
-    width: var(--space-3);
+    width: var(--shell-gap);
     pointer-events: auto;
 }
 
