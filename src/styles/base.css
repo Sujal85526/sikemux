@@ -192,6 +192,13 @@ body,
     width: 100%;
 }
 
+/* WebKit rubber-bands the whole page on a trackpad swipe even with overflow
+   hidden, and can leave it resting a few points down the window. */
+html,
+body {
+    overscroll-behavior: none;
+}
+
 body {
     background: color-mix(in srgb, var(--bg, var(--void)) calc(var(--window-opacity, 1) * 100%), transparent);
     color: var(--ink);
