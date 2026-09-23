@@ -145,7 +145,7 @@ pub fn run() {
             _app.manage(PluginHost::with_builtins(
                 &_app.path().app_data_dir()?.join("plugins"),
                 &_app.package_info().version,
-            ));
+            )?);
             wheel::watch(_app.handle());
             let cli_broker = match cli_server::CliBroker::start(_app.handle().clone()) {
                 Ok(cli_broker) => Some(cli_broker),

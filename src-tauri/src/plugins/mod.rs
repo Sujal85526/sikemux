@@ -4,14 +4,16 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use dashmap::DashMap;
 use semver::Version;
 use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{Manifest, Plugin, PluginContext, PluginError, StreamSink};
-use tauri::async_runtime::JoinHandle;
 use tauri::ipc::Channel;
+use tokio::runtime::{Handle, Runtime};
+use tokio::task::JoinHandle;
 
 use crate::error::{AppError, AppResult};
 
@@ -20,18 +22,36 @@ struct Loaded {
     context: Arc<PluginContext>,
 }
 
+const PLUGIN_THREADS: usize = 2;
+const CALL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Plugins run on threads of their own, so one that blocks or spins starves
+/// other plugins but never the terminals and agents on the app's runtime.
 pub struct PluginHost {
     plugins: BTreeMap<String, Loaded>,
     streams: Arc<DashMap<u32, JoinHandle<()>>>,
     next_stream: AtomicU32,
+    runtime: Option<Runtime>,
+    spawner: Handle,
+    call_timeout: Duration,
 }
 
 impl PluginHost {
-    pub fn with_builtins(data_root: &Path, sikemux: &Version) -> Self {
-        Self::new(data_root, sikemux, builtin::plugins())
+    pub fn with_builtins(data_root: &Path, sikemux: &Version) -> std::io::Result<Self> {
+        Self::new(data_root, sikemux, builtin::plugins(), CALL_TIMEOUT)
     }
 
-    fn new(data_root: &Path, sikemux: &Version, plugins: Vec<Arc<dyn Plugin>>) -> Self {
+    fn new(
+        data_root: &Path,
+        sikemux: &Version,
+        plugins: Vec<Arc<dyn Plugin>>,
+        call_timeout: Duration,
+    ) -> std::io::Result<Self> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(PLUGIN_THREADS)
+            .thread_name("sikemux-plugin")
+            .enable_all()
+            .build()?;
         let mut loaded = BTreeMap::new();
         for plugin in plugins {
             let manifest = plugin.manifest();
@@ -52,11 +72,14 @@ impl PluginHost {
             let context = Arc::new(PluginContext::new(data_root.join(&manifest.id)));
             loaded.insert(manifest.id.clone(), Loaded { plugin, context });
         }
-        Self {
+        Ok(Self {
             plugins: loaded,
             streams: Arc::default(),
             next_stream: AtomicU32::new(1),
-        }
+            spawner: runtime.handle().clone(),
+            runtime: Some(runtime),
+            call_timeout,
+        })
     }
 
     fn get(&self, id: &str) -> AppResult<&Loaded> {
@@ -75,14 +98,31 @@ impl PluginHost {
 
     pub async fn call(&self, id: &str, method: &str, params: Value) -> AppResult<Value> {
         let loaded = self.get(id)?;
-        loaded
-            .plugin
-            .call(&loaded.context, method, params)
-            .await
-            .map_err(|error| AppError::Plugin {
-                plugin: id.to_owned(),
-                error,
-            })
+        let plugin = Arc::clone(&loaded.plugin);
+        let context = Arc::clone(&loaded.context);
+        let owned_method = method.to_owned();
+        let task = self
+            .spawner
+            .spawn(async move { plugin.call(&context, &owned_method, params).await });
+        let abort = task.abort_handle();
+        let outcome = match tokio::time::timeout(self.call_timeout, task).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(stopped)) => Err(PluginError::new("stopped", stopped.to_string())),
+            Err(_) => {
+                abort.abort();
+                Err(PluginError::new(
+                    "timed-out",
+                    format!(
+                        "`{method}` did not answer within {}s",
+                        self.call_timeout.as_secs()
+                    ),
+                ))
+            }
+        };
+        outcome.map_err(|error| AppError::Plugin {
+            plugin: id.to_owned(),
+            error,
+        })
     }
 
     pub fn start_stream(
@@ -100,7 +140,7 @@ impl PluginHost {
         let items = on_event.clone();
         let sink = StreamSink::new(move |value| items.send(StreamEvent::Item { value }).is_ok());
         let (registered, is_registered) = tokio::sync::oneshot::channel::<()>();
-        let task = tauri::async_runtime::spawn(async move {
+        let task = self.spawner.spawn(async move {
             if is_registered.await.is_err() {
                 return;
             }
@@ -130,6 +170,14 @@ impl PluginHost {
         let ids: Vec<u32> = self.streams.iter().map(|entry| *entry.key()).collect();
         for stream_id in ids {
             self.stop_stream(stream_id);
+        }
+    }
+}
+
+impl Drop for PluginHost {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
         }
     }
 }
@@ -209,6 +257,11 @@ mod tests {
             Box::pin(async move {
                 match method {
                     "echo" => Ok(params),
+                    "block" => {
+                        std::thread::sleep(Duration::from_millis(300));
+                        Ok(Value::Null)
+                    }
+                    "hang" => std::future::pending().await,
                     "fail" => {
                         Err(PluginError::new("unconfigured", "sign in first").with_status(401))
                     }
@@ -219,7 +272,13 @@ mod tests {
     }
 
     fn host(plugins: Vec<Arc<dyn Plugin>>) -> PluginHost {
-        PluginHost::new(Path::new("/tmp/plugins"), &Version::new(0, 4, 0), plugins)
+        PluginHost::new(
+            Path::new("/tmp/plugins"),
+            &Version::new(0, 4, 0),
+            plugins,
+            Duration::from_millis(100),
+        )
+        .expect("plugin runtime starts")
     }
 
     #[test]
@@ -259,5 +318,33 @@ mod tests {
             serde_json::to_value(&missing).expect("serializes")["category"],
             "not-installed"
         );
+    }
+
+    #[tokio::test]
+    async fn a_plugin_that_never_answers_times_out() {
+        let host = host(vec![Echo::plugin("test.echo", "*")]);
+        let error = host
+            .call("test.echo", "hang", Value::Null)
+            .await
+            .expect_err("times out");
+        assert_eq!(
+            serde_json::to_value(&error).expect("serializes")["category"],
+            "timed-out"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_blocking_plugin_does_not_hold_up_the_caller() {
+        let host = host(vec![Echo::plugin("test.echo", "*")]);
+        let started = std::time::Instant::now();
+        let error = host
+            .call("test.echo", "block", Value::Null)
+            .await
+            .expect_err("times out");
+        assert_eq!(
+            serde_json::to_value(&error).expect("serializes")["category"],
+            "timed-out"
+        );
+        assert!(started.elapsed() < Duration::from_millis(250));
     }
 }
