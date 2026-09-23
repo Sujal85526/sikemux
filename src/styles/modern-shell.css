@@ -118,7 +118,7 @@ textarea:focus,
 /* Widths only. Both rails take their surface and their border from the one
  * rule at the foot of this sheet, so they can never drift apart again. */
 .side-rail {
-    width: 258px;
+    width: var(--side-rail-w);
 }
 
 /* Agent rail: a little wider so titles, provider identity, and timestamps do
@@ -126,7 +126,7 @@ textarea:focus,
  * taken out of it — a rail that pays for its own chrome by truncating agent
  * titles is a worse rail. */
 .workspace-rail {
-    width: 312px;
+    width: var(--agent-rail-w);
 }
 
 /* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
@@ -663,14 +663,6 @@ textarea:focus,
 }
 
 @media (max-width: 900px) {
-    .side-rail {
-        width: 224px;
-    }
-
-    .workspace-rail {
-        width: 286px;
-    }
-
     .agent-header-copy {
         min-width: 60px;
     }
@@ -762,6 +754,19 @@ textarea:focus,
     padding: var(--space-1) var(--shell-gap) var(--shell-gap);
 }
 
+/* The rail handles sit in the middle of the gutter beside each rail. */
+.rail-resizer {
+    top: var(--space-1);
+    bottom: var(--shell-gap);
+}
+.rail-resizer--start {
+    left: calc(var(--shell-gap) * 1.5 + var(--side-rail-w));
+}
+.rail-resizer--end {
+    right: calc(var(--shell-gap) * 1.5 + var(--agent-rail-w));
+    transform: translateX(50%);
+}
+
 /* Panes hold a gutter back from their cell, so the window area reaches out by
    that much to put the outer panes flush with the stage's edges. */
 .window-area {
@@ -769,7 +774,7 @@ textarea:focus,
 }
 
 .rail-peek {
-    --rail-peek-width: 258px;
+    --rail-peek-width: var(--side-rail-w);
     position: absolute;
     inset-block: 0;
     z-index: 4;
@@ -783,7 +788,7 @@ textarea:focus,
 }
 
 .rail-peek--end {
-    --rail-peek-width: 312px;
+    --rail-peek-width: var(--agent-rail-w);
     --rail-peek-offset: calc(100% + var(--shell-gap));
     right: 0;
 }
@@ -852,16 +857,6 @@ textarea:focus,
     to {
         opacity: 0;
         transform: translate3d(var(--rail-peek-offset), 0, 0);
-    }
-}
-
-@media (max-width: 900px) {
-    .rail-peek--start {
-        --rail-peek-width: 224px;
-    }
-
-    .rail-peek--end {
-        --rail-peek-width: 286px;
     }
 }
 

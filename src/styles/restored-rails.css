@@ -1,6 +1,5 @@
 .workspace-rail.agent-rail {
     flex-direction: column;
-    width: 288px;
     min-width: 240px;
 }
 .agent-rail > .rail-scroll {

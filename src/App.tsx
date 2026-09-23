@@ -8,6 +8,7 @@ import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
 import { RailPeek } from "./components/RailPeek";
+import { RailResizer, useRailWidthVars } from "./components/RailResizer";
 import { AgentSessionSync } from "./components/AgentSessionSync";
 import { AgentLifecycleManager } from "./components/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./components/AgentPalettePortal";
@@ -635,6 +636,7 @@ export default function App() {
     useBrowserDownloads();
     useBrowserReveal();
     useBrowserStrips();
+    useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
     const zen = useStore((s) => s.zenMode);
@@ -898,6 +900,7 @@ export default function App() {
             <TopBar />
             <div className="body">
                 {sideRailVisible && <SideRail />}
+                {sideRailVisible && <RailResizer edge="start" />}
                 {!sideRailOpen && !zen && (
                     <RailPeek edge="start">
                         <SideRail />
@@ -912,6 +915,7 @@ export default function App() {
                     )}
                 </main>
                 {agentRailVisible && activeSessionIsProject && <AgentRail />}
+                {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
                 {!agentRailOpen && !zen && activeSessionIsProject && (
                     <RailPeek edge="end">
                         <AgentRail />

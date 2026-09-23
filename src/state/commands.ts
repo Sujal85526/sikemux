@@ -12,6 +12,7 @@ import { emptyRequest } from "../bruno/types";
 import { parseRequest } from "../bruno/parse";
 import { serializeRequest } from "../bruno/serialize";
 import { basename, dirname, isPathWithin, joinPath } from "../lib/paths";
+import { clampRailWidth, type RailEdge } from "../lib/railWidths";
 import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../agentLaunch";
 import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
@@ -2211,6 +2212,8 @@ export async function openSshConfigEditor(): Promise<void> {
 export const toggleSideRail = (): void => setState((s) => (s.zenMode ? { zenMode: false, sideRailOpen: true } : { sideRailOpen: !s.sideRailOpen }));
 export const toggleAgentRail = (): void =>
     setState((s) => (s.zenMode ? { zenMode: false, agentRailOpen: true } : { agentRailOpen: !s.agentRailOpen }));
+export const setRailWidth = (edge: RailEdge, px: number): void =>
+    setState(edge === "start" ? { sideRailWidth: clampRailWidth(edge, px) } : { agentRailWidth: clampRailWidth(edge, px) });
 export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));
 
 export function requestOpenFile(path: string, line?: number, character?: number): void {

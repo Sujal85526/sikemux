@@ -4,6 +4,7 @@ import { DEFAULT_THEME_ID, type Theme } from "../themes";
 import type { KeybindingOverrides } from "../keybindings";
 import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settingsIndex";
+import { RAIL_WIDTH } from "../lib/railWidths";
 import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
 
 enableMapSet();
@@ -63,6 +64,8 @@ export interface DomainState {
     awsService: AwsService;
     sideRailOpen: boolean;
     agentRailOpen: boolean;
+    sideRailWidth: number;
+    agentRailWidth: number;
     diffTarget: Record<string, DiffTarget | null>;
     zenMode: boolean;
     rundeck: RundeckSettings;
@@ -209,6 +212,8 @@ export const useStore = create<StoreState>(() => {
         awsService: "ecs",
         sideRailOpen: true,
         agentRailOpen: true,
+        sideRailWidth: RAIL_WIDTH.start.initial,
+        agentRailWidth: RAIL_WIDTH.end.initial,
         diffTarget: {},
         zenMode: false,
         rundeck: {

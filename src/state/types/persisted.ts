@@ -71,6 +71,8 @@ export interface PersistedPrefs {
     awsService: AwsService;
     sideRailOpen: boolean;
     agentRailOpen: boolean;
+    sideRailWidth?: number;
+    agentRailWidth?: number;
     zenMode: boolean;
     rundeck?: RundeckSettings;
     restoreAgentTabs?: boolean;

@@ -189,6 +189,20 @@ describe("frontend persistence", () => {
         expect(getState()).toMatchObject({ sideRailOpen: false, agentRailOpen: true });
     });
 
+    it("persists rail widths and pulls stored ones back inside their bounds", async () => {
+        setState({ sideRailWidth: 320, agentRailWidth: 400 });
+        invoke.mockResolvedValue(undefined);
+
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.prefs).toMatchObject({ sideRailWidth: 320, agentRailWidth: 400 });
+
+        saved.prefs.sideRailWidth = 20;
+        saved.prefs.agentRailWidth = 9000;
+        applyHydrate(JSON.stringify(saved));
+        expect(getState()).toMatchObject({ sideRailWidth: 180, agentRailWidth: 560 });
+    });
+
     it("never persists or hydrates live agent commands", async () => {
         const sid = getState().activeSessionId;
         const terminalWindowId = getState().sessions[sid].activeWindowId;

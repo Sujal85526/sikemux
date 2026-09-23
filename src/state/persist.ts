@@ -5,6 +5,7 @@ import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agentLaunch";
+import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentPaneId } from "./selectors";
 import { collectPanes, removePane } from "./layout";
@@ -86,6 +87,8 @@ const PERSISTED_KEYS = [
     "awsService",
     "sideRailOpen",
     "agentRailOpen",
+    "sideRailWidth",
+    "agentRailWidth",
     "zenMode",
     "rundeck",
     "restoreAgentTabs",
@@ -132,6 +135,8 @@ function packPrefs(s: StoreState): PersistedPrefs {
         awsService: s.awsService,
         sideRailOpen: s.sideRailOpen,
         agentRailOpen: s.agentRailOpen,
+        sideRailWidth: s.sideRailWidth,
+        agentRailWidth: s.agentRailWidth,
         zenMode: s.zenMode,
         rundeck: s.rundeck,
         restoreAgentTabs: s.restoreAgentTabs,
@@ -772,6 +777,14 @@ export function applyHydrate(raw: string): HydrationResult {
         awsService: AWS_SERVICES.has(prefs.awsService as StoreState["awsService"]) ? (prefs.awsService as StoreState["awsService"]) : cur.awsService,
         sideRailOpen: typeof prefs.sideRailOpen === "boolean" ? prefs.sideRailOpen : cur.sideRailOpen,
         agentRailOpen: typeof prefs.agentRailOpen === "boolean" ? prefs.agentRailOpen : cur.agentRailOpen,
+        sideRailWidth:
+            typeof prefs.sideRailWidth === "number" && Number.isFinite(prefs.sideRailWidth)
+                ? clampRailWidth("start", prefs.sideRailWidth)
+                : cur.sideRailWidth,
+        agentRailWidth:
+            typeof prefs.agentRailWidth === "number" && Number.isFinite(prefs.agentRailWidth)
+                ? clampRailWidth("end", prefs.agentRailWidth)
+                : cur.agentRailWidth,
         zenMode: typeof prefs.zenMode === "boolean" ? prefs.zenMode : cur.zenMode,
         rundeck: {
             activeProject: typeof rundeck.activeProject === "string" ? rundeck.activeProject : "",
