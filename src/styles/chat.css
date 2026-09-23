@@ -94,17 +94,20 @@
     color: var(--ink-faint);
     transition:
         color 100ms,
-        border-color 100ms;
+        border-color 100ms,
+        background 100ms;
 }
 
 .agent-browser-open:hover {
-    border-color: var(--acc-line);
-    color: var(--ink);
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+    color: var(--text-primary);
 }
 
 .agent-browser-open[aria-pressed="true"] {
-    background: var(--surface-active);
-    color: var(--ink);
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+    color: var(--acc);
 }
 
 .yolo-toggle {
