@@ -54,6 +54,12 @@ pub enum AppError {
     #[error("http: {0}")]
     Http(String),
 
+    #[error("{plugin}: {error}")]
+    Plugin {
+        plugin: String,
+        error: sikemux_plugin_api::PluginError,
+    },
+
     #[error("invalid argument: {0}")]
     BadArg(&'static str),
 
@@ -116,17 +122,24 @@ struct Wire<'a> {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     status: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plugin: Option<&'a str>,
 }
 
 impl Serialize for AppError {
     fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        let (category, status, plugin) = match self {
+            AppError::RundeckHttp { status, .. } => (self.category(), Some(*status), None),
+            AppError::Plugin { plugin, error } => {
+                (error.category.as_str(), error.status, Some(plugin.as_str()))
+            }
+            _ => (self.category(), None, None),
+        };
         Wire {
-            category: self.category(),
+            category,
             message: self.to_string(),
-            status: match self {
-                AppError::RundeckHttp { status, .. } => Some(*status),
-                _ => None,
-            },
+            status,
+            plugin,
         }
         .serialize(ser)
     }
@@ -149,6 +162,7 @@ impl AppError {
             AppError::RundeckAuth(_) => "rundeck-auth",
             AppError::RundeckHttp { .. } => "rundeck-http",
             AppError::Http(_) => "http",
+            AppError::Plugin { .. } => "plugin",
             AppError::BadArg(_) => "bad-arg",
             AppError::Pty(_) => "pty",
             AppError::Search(_) => "search",

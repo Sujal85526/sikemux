@@ -6,6 +6,9 @@ authors = ["nodelike"]
 edition = "2021"
 default-run = "sikemux"
 
+[workspace]
+members = ["crates/*"]
+
 [lib]
 name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -48,6 +51,7 @@ thiserror = "1"
 uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
 semver = "1"
+sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
 agent-client-protocol = "2.0.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util", "net"] }
 tokio-tungstenite = "0.28"
