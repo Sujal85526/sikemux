@@ -104,6 +104,11 @@ async fn newest_update(
     channel: &str,
     timeout: Duration,
 ) -> AppResult<Option<Update>> {
+    if cfg!(debug_assertions) {
+        return Err(AppError::Other(
+            "development builds do not update themselves".into(),
+        ));
+    }
     let checks = channel_feeds(channel)?.iter().map(|endpoint| async move {
         feed_updater(app, endpoint, timeout)?
             .check()

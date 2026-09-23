@@ -808,6 +808,7 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        if (import.meta.env.DEV) return;
         const firstCheck = window.setTimeout(() => void checkForUpdate(), 4000);
         const poll = window.setInterval(() => void checkForUpdate(), 30 * 60_000);
         return () => {
