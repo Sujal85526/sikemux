@@ -1268,8 +1268,8 @@ function ChatComposer({
                     }}
                     onConfig={onConfig}
                 />
-                <span className="chat-composer-spacer" />
                 <ContextMeter usage={usage} agent={agent.type} />
+                <span className="chat-composer-spacer" />
                 {running && !drafted ? (
                     <button
                         type="button"
