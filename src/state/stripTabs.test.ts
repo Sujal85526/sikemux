@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeTabRef, expandTabRefs, nextInCycle, roleHasTab, stripOrder, tabRefKey } from "./selectors";
+import { activeTabRef, expandTabRefs, nextInCycle, roleHasTab, selectSwipeOrder, stripOrder, tabRefKey } from "./selectors";
 import type { StoreState } from "./store";
 
 const win = (id: string, role: string) => ({ id, role, activePaneId: `${id}-pane` }) as unknown as StoreState["windows"][string];
@@ -31,6 +31,19 @@ describe("roleHasTab", () => {
         for (const role of ["term", "aws", "rundeck", "bruno", "ssh-config", "named"]) {
             expect(roleHasTab(role)).toBe(true);
         }
+    });
+});
+
+describe("selectSwipeOrder", () => {
+    it("skips the windows the strip has no tab for", () => {
+        const state = {
+            windowsBySession: { s: ["a1", "e1", "g1", "a2"] },
+            windows: { a1: win("a1", "agent"), e1: win("e1", "files"), g1: win("g1", "git"), a2: win("a2", "agent") },
+            editorViews: { "e1-pane": { openTabs: [], activePath: null } },
+            brunoViews: {},
+        } as unknown as StoreState;
+
+        expect(selectSwipeOrder(state, "s")).toEqual(["a1", "a2"]);
     });
 });
 

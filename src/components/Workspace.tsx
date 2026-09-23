@@ -6,7 +6,7 @@ import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layou
 import * as cmd from "../state/commands";
 import { useBrunoDrafts } from "../state/brunoRuntime";
 import { getState, useStore } from "../state/store";
-import { activeTabRef, agentPaneId, brunoPaneId, documentsOf, expandTabRefs, selectTabRefs, tabRefKey } from "../state/selectors";
+import { activeTabRef, agentPaneId, brunoPaneId, documentsOf, expandTabRefs, selectSwipeOrder, selectTabRefs, tabRefKey } from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ShaderField } from "./ShaderField";
@@ -101,7 +101,7 @@ export const Workspace = memo(function Workspace() {
     const liveWorkbenchId =
         liveWindow && (liveWindow.role === "git" || liveWindow.role === "files" || liveWindow.role === "term") ? liveWindow.id : null;
     const retained = retainWorkbenchWindows(mountedWorkbenchWindows.current, liveWorkbenchId, (id) => id in windowsById);
-    const activeOrder = windowsBySession[activeSessionId] ?? EMPTY_IDS;
+    const activeOrder = useStore(useShallow((state) => selectSwipeOrder(state, state.activeSessionId)));
     const activeSlots = useMemo(() => new Map(activeOrder.map((wid, slot) => [wid, slot])), [activeOrder]);
     const pan = useWindowPan(activeSessionId, activeSession?.activeWindowId ?? null, activeSlots);
     useWheelPan(areaRef, pan);
@@ -155,7 +155,7 @@ export const Workspace = memo(function Workspace() {
                                     session={session}
                                     win={win}
                                     areaRef={areaRef}
-                                    slot={isActive ? pan.slotOf(wid, slot) : slot}
+                                    slot={isActive ? pan.slotOf(wid, activeSlots.get(wid) ?? slot) : slot}
                                     live={live}
                                     painted={painted}
                                 />
@@ -164,7 +164,7 @@ export const Workspace = memo(function Workspace() {
                     </div>
                 );
             })}
-            {activeSession && activeOrder.length > 1 && (
+            {activeSession && activeOrder.length > 1 && activeSlots.has(activeSession.activeWindowId) && (
                 <WindowScrollIndicator count={activeOrder.length} index={activeOrder.indexOf(activeSession.activeWindowId)} ms={pan.ms} />
             )}
         </div>

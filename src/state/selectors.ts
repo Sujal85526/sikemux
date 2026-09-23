@@ -142,6 +142,13 @@ export function selectTabRefs(state: StoreState, sessionId: string): TabRef[] {
     return expandTabRefs(state.windowsBySession[sessionId] ?? EMPTY_IDS, state.windows, state.editorViews, state.brunoViews);
 }
 
+/** The windows a swipe walks through: only the ones the strip has a tab for. */
+export function selectSwipeOrder(state: StoreState, sessionId: string): string[] {
+    return (state.windowsBySession[sessionId] ?? EMPTY_IDS).filter(
+        (id) => expandTabRefs([id], state.windows, state.editorViews, state.brunoViews).length > 0,
+    );
+}
+
 /**
  * Which tab of `session` is live.
  *
