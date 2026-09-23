@@ -1298,10 +1298,15 @@ textarea,
     font-size: var(--text-sm);
 }
 
-.side-rail .proj-child-kbd,
-.side-rail .rail-group-kbd,
 .workspace-rail .agent-ago {
     font-family: var(--mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+
+.side-rail .proj-child-kbd,
+.side-rail .rail-group-kbd {
+    font-family: var(--kbd);
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
