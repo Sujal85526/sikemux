@@ -257,6 +257,19 @@ describe("AgentChatPane", () => {
         expect(acpApi.stop).not.toHaveBeenCalled();
     });
 
+    it("leaves YOLO to the TUI once the chat session has stopped", async () => {
+        const props = { agent, cwd: "/repo", active: true, onBusyChange: () => {} };
+        const { rerender } = render(<AgentChatPane {...props} />);
+        await waitFor(() => expect(screen.getByRole("textbox", { name: "Message agent" })).toBeEnabled());
+        rerender(<AgentChatPane {...props} active={false} />);
+
+        rerender(<AgentChatPane {...props} active={false} agent={{ ...agent, permissionMode: "bypass" }} />);
+        await act(async () => {});
+
+        expect(mocks.setPermissionMode).not.toHaveBeenCalled();
+        expect(mocks.setAgentPermissionMode).not.toHaveBeenCalled();
+    });
+
     it("serializes rapid permission changes and applies the latest choice", async () => {
         let complete!: () => void;
         mocks.setPermissionMode.mockImplementationOnce(

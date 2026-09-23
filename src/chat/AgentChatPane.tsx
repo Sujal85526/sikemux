@@ -1543,8 +1543,9 @@ export function AgentChatPane({
     ]);
 
     useEffect(() => {
-        if (state.connection !== "ready" || changingPermissions || appliedPermissionMode === null || permissionMode === appliedPermissionMode) return;
         const sessionId = sessionIdRef.current;
+        if (sessionId === null || state.connection !== "ready" || changingPermissions || appliedPermissionMode === null || permissionMode === appliedPermissionMode)
+            return;
         setChangingPermissions(true);
         void acpApi
             .setPermissionMode(agent.id, permissionMode)
