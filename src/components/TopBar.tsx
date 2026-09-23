@@ -27,7 +27,6 @@ import {
     WindowIcon,
 } from "./Icons";
 import { branchKind } from "./rundeck/branchStyle";
-import { CopyButton } from "./CopyButton";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
 import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
@@ -223,7 +222,6 @@ function GitChip({ repo }: { repo: string }) {
                         )}
                     </button>
                 </Tooltip>
-                <CopyButton className="tb-git-copy" value={st.branch} label="branch name" size={11} />
             </span>
             <span className="tb-sep" />
         </>
