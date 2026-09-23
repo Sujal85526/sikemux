@@ -2,6 +2,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
+import { IS_MACOS } from "../lib/platform";
+import { SETTINGS_INDEX, SETTINGS_PAGE_ORDER } from "../settingsIndex";
+import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -93,5 +96,116 @@ describe("SettingsPanel keybindings", () => {
         await user.click(screen.getByRole("option", { name: /Dracula/i }));
 
         expect(getState()).toMatchObject({ systemLightThemeId: "aura-day", systemDarkThemeId: "dracula" });
+    });
+});
+
+describe("SettingsPanel navigation", () => {
+    it("indexes every section and row each page renders, and nothing it does not", () => {
+        for (const page of SETTINGS_PAGE_ORDER) {
+            setState({ settingsPage: page });
+            const { container, unmount } = render(<SettingsPanel />);
+            const rendered = [...container.querySelectorAll<HTMLElement>("[data-settings-target]")].map((element) => element.dataset.settingsTarget);
+            const indexed = SETTINGS_INDEX.filter((entry) => entry.page === page).map((entry) => entry.target);
+            expect(new Set(rendered), page).toEqual(new Set(indexed));
+            unmount();
+        }
+    });
+
+    it("finds a setting on another page and lands on it", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        const search = screen.getByRole("combobox", { name: "Search settings" });
+        expect(search).toHaveFocus();
+
+        await user.type(search, "sleep");
+        expect(screen.getByRole("option", { name: /Idle agents/ })).toHaveAttribute("aria-selected", "true");
+
+        await user.keyboard("{Enter}");
+        expect(getState().settingsPage).toBe("agents");
+        expect(search).toHaveValue("");
+        const row = screen.getByRole("button", { name: "Sleep now" }).closest<HTMLElement>("[data-settings-target]");
+        expect(row?.dataset.settingsTarget).toBe("Idle agents");
+        expect(row).toHaveAttribute("data-settings-flash");
+        expect(screen.getByRole("button", { name: "Sleep now" })).toHaveFocus();
+    });
+
+    it("moves through results with the arrow keys and opens a shortcut already filtered", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        await user.type(screen.getByRole("combobox", { name: "Search settings" }), "open aws");
+        const options = screen.getAllByRole("option");
+        expect(options[0]).toHaveTextContent("Open AWS");
+
+        await user.keyboard("{Enter}");
+        expect(getState().settingsPage).toBe("keybindings");
+        expect(screen.getByRole("textbox", { name: "Filter shortcuts" })).toHaveValue("Open AWS");
+
+        await user.type(screen.getByRole("combobox", { name: "Search settings" }), "a");
+        const first = screen.getAllByRole("option")[0];
+        await user.keyboard("{ArrowDown}");
+        expect(first).toHaveAttribute("aria-selected", "false");
+        expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("says so when nothing matches", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        await user.type(screen.getByRole("combobox", { name: "Search settings" }), "zzzz");
+        expect(screen.getByText("No settings match “zzzz”.")).toBeInTheDocument();
+    });
+
+    it("clears the search on the first Escape and closes on the second", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        const search = screen.getByRole("combobox", { name: "Search settings" });
+        await user.type(search, "blur");
+        await user.keyboard("{Escape}");
+        expect(search).toHaveValue("");
+        expect(getState().settingsOpen).toBe(true);
+
+        await user.keyboard("{Escape}");
+        expect(getState().settingsOpen).toBe(false);
+    });
+
+    it("focuses the search from anywhere with the find shortcut", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        await user.click(screen.getByRole("button", { name: "Agents" }));
+        expect(screen.getByRole("button", { name: "Agents" })).toHaveFocus();
+
+        fireEvent.keyDown(window, { key: "f", code: "KeyF", metaKey: IS_MACOS, ctrlKey: !IS_MACOS });
+        expect(screen.getByRole("combobox", { name: "Search settings" })).toHaveFocus();
+    });
+
+    it("walks the sidebar with the arrow keys, wrapping at the ends", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        await user.click(screen.getByRole("button", { name: "General" }));
+
+        await user.keyboard("{ArrowDown}");
+        expect(getState().settingsPage).toBe("appearance");
+        expect(screen.getByRole("button", { name: "Appearance" })).toHaveFocus();
+
+        await user.keyboard("{ArrowUp}{ArrowUp}");
+        expect(getState().settingsPage).toBe("cloud");
+
+        await user.keyboard("{Home}");
+        expect(getState().settingsPage).toBe("general");
+    });
+
+    it("reopens on the page it was left on, or the one asked for", async () => {
+        const user = userEvent.setup();
+        const { unmount } = render(<SettingsPanel />);
+        await user.click(screen.getByRole("button", { name: "Cloud" }));
+        unmount();
+
+        render(<SettingsPanel />);
+        expect(screen.getByRole("button", { name: "Cloud" })).toHaveAttribute("aria-current", "page");
+        cleanup();
+
+        cmd.openSettings("about");
+        render(<SettingsPanel />);
+        expect(screen.getByRole("button", { name: "About" })).toHaveAttribute("aria-current", "page");
+        expect(screen.getByRole("button", { name: "Check now" })).toBeInTheDocument();
     });
 });

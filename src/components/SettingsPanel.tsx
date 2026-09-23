@@ -1,5 +1,5 @@
 import { useModalFocus } from "../hooks/useModalFocus";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
 import {
@@ -16,7 +16,7 @@ import {
 import { settingsApi } from "../api/settings";
 import { isUpdateBusy, updateCheckLabel } from "../api/updater";
 import { prettyPath } from "../lib/paths";
-import { IS_MACOS } from "../lib/platform";
+import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -45,39 +45,43 @@ import { Tooltip } from "./Tooltip";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agentLaunch";
+import {
+    searchSettings,
+    SETTINGS_GROUPS,
+    SETTINGS_INDEX,
+    SETTINGS_PAGE_NAMES,
+    SETTINGS_PAGE_ORDER,
+    type SettingsEntry,
+    type SettingsPageId,
+} from "../settingsIndex";
 import "../styles/settings.css";
 
-type Page = "general" | "appearance" | "keybindings" | "commands" | "agents" | "cli" | "cloud" | "about";
+const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
+    general: <IconFolder size={13} />,
+    appearance: <IconWindow size={13} />,
+    keybindings: <IconCommand size={13} />,
+    about: <IconInfo size={13} />,
+    agents: <IconAgent size={13} />,
+    actions: <IconRun size={13} />,
+    cli: <IconEditor size={13} />,
+    cloud: <IconGlobe size={13} />,
+};
 
-interface PageEntry {
-    id: Page;
-    name: string;
-    icon: ReactNode;
+const FOCUSABLE = "button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])";
+
+const RAIL_STEPS: Record<string, (index: number) => number> = {
+    ArrowDown: (index) => (index + 1) % SETTINGS_PAGE_ORDER.length,
+    ArrowRight: (index) => (index + 1) % SETTINGS_PAGE_ORDER.length,
+    ArrowUp: (index) => (index - 1 + SETTINGS_PAGE_ORDER.length) % SETTINGS_PAGE_ORDER.length,
+    ArrowLeft: (index) => (index - 1 + SETTINGS_PAGE_ORDER.length) % SETTINGS_PAGE_ORDER.length,
+    Home: () => 0,
+    End: () => SETTINGS_PAGE_ORDER.length - 1,
+};
+
+function isFindShortcut(event: KeyboardEvent): boolean {
+    const primary = IS_MACOS ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+    return primary && !event.shiftKey && !event.altKey && event.code === "KeyF";
 }
-
-/** Two groups: what the window looks and feels like, then what it talks to. */
-const NAV: { label: string; pages: PageEntry[] }[] = [
-    {
-        label: "Workspace",
-        pages: [
-            { id: "general", name: "General", icon: <IconFolder size={13} /> },
-            { id: "appearance", name: "Appearance", icon: <IconWindow size={13} /> },
-            { id: "keybindings", name: "Keybindings", icon: <IconCommand size={13} /> },
-            { id: "commands", name: "Command deck", icon: <IconRun size={13} /> },
-        ],
-    },
-    {
-        label: "Integrations",
-        pages: [
-            { id: "agents", name: "Agents", icon: <IconAgent size={13} /> },
-            { id: "cli", name: "Command line", icon: <IconEditor size={13} /> },
-            { id: "cloud", name: "Cloud", icon: <IconGlobe size={13} /> },
-            { id: "about", name: "About", icon: <IconInfo size={13} /> },
-        ],
-    },
-];
-
-const PAGE_TITLES = Object.fromEntries(NAV.flatMap((group) => group.pages).map((entry) => [entry.id, entry.name])) as Record<Page, string>;
 
 export function SettingsPanel() {
     const modalRef = useRef<HTMLDivElement>(null);
@@ -90,21 +94,106 @@ export function SettingsPanel() {
     const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const home = useStore((s) => s.home);
+    const page = useStore((s) => s.settingsPage);
     const settingsBinding = resolvedKeybinding(keybindingOverrides, "settings.toggle");
     const closeSettingsHint = settingsBinding ? `Esc / ${keybindingLabel(settingsBinding)}` : "Esc";
 
-    const [page, setPage] = useState<Page>("general");
+    const [query, setQuery] = useState("");
+    const [activeResult, setActiveResult] = useState(0);
+    const [jump, setJump] = useState<{ entry: SettingsEntry; at: number } | null>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const railItems = useRef(new Map<SettingsPageId, HTMLButtonElement>());
+
+    const entries = useMemo<SettingsEntry[]>(
+        () => [
+            ...SETTINGS_INDEX,
+            ...KEYBINDING_ACTIONS.map((action) => ({
+                page: "keybindings" as const,
+                section: "Shortcuts",
+                label: action.label,
+                target: "Shortcuts",
+                keywords: `${action.detail} shortcut ${keybindingLabel(resolvedKeybinding(keybindingOverrides, action.id as KeybindingActionId))}`,
+                filter: action.label,
+            })),
+        ],
+        [keybindingOverrides],
+    );
+    const results = useMemo(() => searchSettings(query, entries), [query, entries]);
+    const searching = query.trim().length > 0;
+
+    useEffect(() => {
+        searchRef.current?.focus();
+    }, []);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 e.preventDefault();
                 cmd.closeSettings();
+            } else if (isFindShortcut(e)) {
+                e.preventDefault();
+                searchRef.current?.focus();
+                searchRef.current?.select();
             }
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, []);
+
+    useEffect(() => {
+        if (!jump) return;
+        const target = [...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-settings-target]") ?? [])].find(
+            (element) => element.dataset.settingsTarget === jump.entry.target,
+        );
+        if (!target) return;
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+        target.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
+        delete target.dataset.settingsFlash;
+        void target.offsetWidth;
+        target.dataset.settingsFlash = "";
+        const timer = window.setTimeout(() => delete target.dataset.settingsFlash, 1600);
+        return () => window.clearTimeout(timer);
+    }, [jump]);
+
+    const goTo = (next: SettingsPageId) => {
+        setJump(null);
+        setQuery("");
+        cmd.setSettingsPage(next);
+    };
+
+    const openEntry = (entry: SettingsEntry) => {
+        setQuery("");
+        setActiveResult(0);
+        cmd.setSettingsPage(entry.page);
+        setJump({ entry, at: Date.now() });
+    };
+
+    const onSearchKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            if (!results.length) return;
+            e.preventDefault();
+            setActiveResult((index) => (e.key === "ArrowDown" ? Math.min(index + 1, results.length - 1) : Math.max(index - 1, 0)));
+        } else if (e.key === "Enter") {
+            const entry = results[activeResult];
+            if (!entry) return;
+            e.preventDefault();
+            openEntry(entry);
+        } else if (e.key === "Escape" && query) {
+            e.preventDefault();
+            e.stopPropagation();
+            setQuery("");
+        }
+    };
+
+    const onRailKey = (e: ReactKeyboardEvent<HTMLElement>) => {
+        const step = RAIL_STEPS[e.key];
+        if (!step || !(e.target instanceof HTMLElement) || !e.target.closest(".settings-rail-item")) return;
+        e.preventDefault();
+        const next = SETTINGS_PAGE_ORDER[step(SETTINGS_PAGE_ORDER.indexOf(page))];
+        goTo(next);
+        railItems.current.get(next)?.focus();
+    };
 
     const pretty = (p: string) => prettyPath(p, home);
 
@@ -112,21 +201,47 @@ export function SettingsPanel() {
         <div ref={modalRef} tabIndex={-1} className="settings-pane" role="dialog" aria-modal="true" aria-label="Settings">
             <div className="settings-frame">
                 <aside className="settings-rail">
-                    <nav className="settings-nav" aria-label="Settings sections">
-                        {NAV.map((group) => (
+                    <label className="settings-search">
+                        <IconSearch size={12} />
+                        <input
+                            ref={searchRef}
+                            value={query}
+                            onChange={(e) => {
+                                setQuery(e.target.value);
+                                setActiveResult(0);
+                            }}
+                            onKeyDown={onSearchKey}
+                            placeholder="Search settings"
+                            aria-label="Search settings"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-expanded={searching}
+                            aria-controls="settings-results"
+                            aria-activedescendant={searching && results.length ? `settings-result-${activeResult}` : undefined}
+                            spellCheck={false}
+                        />
+                        {!query && <kbd className="settings-search-key">{PRIMARY_SHORTCUT}F</kbd>}
+                    </label>
+
+                    <nav className="settings-nav" aria-label="Settings sections" onKeyDown={onRailKey}>
+                        {SETTINGS_GROUPS.map((group) => (
                             <div className="settings-nav-group" key={group.label}>
                                 <span className="settings-nav-label">{group.label}</span>
-                                {group.pages.map((entry) => (
+                                {group.pages.map((id) => (
                                     <button
-                                        key={entry.id}
-                                        className={`settings-rail-item${page === entry.id ? " active" : ""}`}
-                                        onClick={() => setPage(entry.id)}
-                                        aria-current={page === entry.id ? "page" : undefined}
+                                        key={id}
+                                        ref={(node) => {
+                                            if (node) railItems.current.set(id, node);
+                                            else railItems.current.delete(id);
+                                        }}
+                                        className={`settings-rail-item${page === id && !searching ? " active" : ""}`}
+                                        onClick={() => goTo(id)}
+                                        aria-current={page === id ? "page" : undefined}
                                         type="button">
                                         <span className="settings-rail-icon" aria-hidden="true">
-                                            {entry.icon}
+                                            {PAGE_ICONS[id]}
                                         </span>
-                                        <span className="settings-rail-name">{entry.name}</span>
+                                        <span className="settings-rail-name">{SETTINGS_PAGE_NAMES[id]}</span>
                                     </button>
                                 ))}
                             </div>
@@ -138,7 +253,7 @@ export function SettingsPanel() {
 
                 <div className="settings-main">
                     <header className="settings-topbar">
-                        <span className="settings-topbar-title">{PAGE_TITLES[page]}</span>
+                        <span className="settings-topbar-title">{searching ? "Search" : SETTINGS_PAGE_NAMES[page]}</span>
                         <button
                             className="settings-topbar-close"
                             onClick={cmd.closeSettings}
@@ -149,26 +264,77 @@ export function SettingsPanel() {
                         </button>
                     </header>
 
-                    <div className="settings-scroll">
-                        {page === "general" && <GeneralPage projectRoots={projectRoots} home={home} pretty={pretty} />}
+                    <div className="settings-scroll" ref={scrollRef}>
+                        {searching ? (
+                            <SearchResults query={query} results={results} active={activeResult} onHover={setActiveResult} onOpen={openEntry} />
+                        ) : (
+                            <>
+                                {page === "general" && <GeneralPage projectRoots={projectRoots} home={home} pretty={pretty} />}
 
-                        {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
+                                {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
 
-                        {page === "keybindings" && <KeybindingsPage overrides={keybindingOverrides} />}
+                                {page === "keybindings" && (
+                                    <KeybindingsPage key={jump?.at} overrides={keybindingOverrides} initialQuery={jump?.entry.filter ?? ""} />
+                                )}
 
-                        {page === "commands" && <CommandsPage />}
+                                {page === "about" && <AboutPage />}
 
-                        {page === "agents" && <AgentsPage />}
+                                {page === "agents" && <AgentsPage />}
 
-                        {page === "cli" && <CliPage />}
+                                {page === "actions" && <ActionsPage />}
 
-                        {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
+                                {page === "cli" && <CliPage />}
 
-                        {page === "about" && <AboutPage />}
+                                {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
         </div>
+    );
+}
+
+interface SearchResultsProps {
+    query: string;
+    results: SettingsEntry[];
+    active: number;
+    onHover: (index: number) => void;
+    onOpen: (entry: SettingsEntry) => void;
+}
+
+function SearchResults({ query, results, active, onHover, onOpen }: SearchResultsProps) {
+    return (
+        <SettingsPage>
+            {results.length === 0 ? (
+                <div className="settings-empty">No settings match “{query.trim()}”.</div>
+            ) : (
+                <div className="settings-results" id="settings-results" role="listbox" aria-label="Matching settings">
+                    {results.map((entry, index) => {
+                        const pageName = SETTINGS_PAGE_NAMES[entry.page];
+                        const path = entry.section === entry.label ? pageName : `${pageName} › ${entry.section}`;
+                        return (
+                            <button
+                                key={`${entry.page}:${entry.section}:${entry.label}`}
+                                id={`settings-result-${index}`}
+                                className={`settings-result${index === active ? " active" : ""}`}
+                                role="option"
+                                aria-selected={index === active}
+                                tabIndex={-1}
+                                type="button"
+                                onMouseMove={() => index !== active && onHover(index)}
+                                onClick={() => onOpen(entry)}>
+                                <span className="settings-rail-icon" aria-hidden="true">
+                                    {PAGE_ICONS[entry.page]}
+                                </span>
+                                <span className="settings-result-label">{entry.label}</span>
+                                <span className="settings-result-path">{path}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </SettingsPage>
     );
 }
 
@@ -179,7 +345,7 @@ function blankCommand(): CustomCommand {
     return { id: `command-${Date.now().toString(36)}`, title: "", detail: "", command: "", contexts: [], placement: "terminal" };
 }
 
-function CommandsPage() {
+function ActionsPage() {
     const commands = useStore((s) => s.customCommands);
     const [draft, setDraft] = useState<CustomCommand>(() => blankCommand());
     const editing = commands.some((item) => item.id === draft.id);
@@ -634,21 +800,6 @@ function AboutPage() {
                     </button>
                 </div>
             </SettingsSection>
-
-            <SettingsSection title="Session transfer" sub="Move a workspace between machines through the clipboard.">
-                <div className="settings-actions start">
-                    <button className="settings-btn" onClick={() => void cmd.exportActiveSession().catch(reportError("session export"))}>
-                        Copy active session
-                    </button>
-                    <button className="settings-btn" onClick={() => void cmd.importSessionFromClipboard().catch(reportError("session import"))}>
-                        Import from clipboard
-                    </button>
-                </div>
-                <p className="settings-hint">
-                    A bundle leaves out Bruno secrets, drafts, terminal history, environment values and startup commands. Imported agents arrive
-                    dormant.
-                </p>
-            </SettingsSection>
         </SettingsPage>
     );
 }
@@ -663,11 +814,6 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
     const [draftPath, setDraftPath] = useState("");
     const [draftDepth, setDraftDepth] = useState(1);
     const [draftSelfIndex, setDraftSelfIndex] = useState(false);
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        inputRef.current?.focus();
-    }, []);
 
     const resolveDirectory = async (raw: string) => {
         const expanded = await settingsApi.expandPath(raw);
@@ -749,7 +895,6 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
                     <div className="settings-list-add">
                         <div className="settings-add">
                             <input
-                                ref={inputRef}
                                 className="settings-input mono"
                                 aria-label="Folder to add"
                                 placeholder="~/proj    or    /Users/me/work"
@@ -785,12 +930,27 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
                     Indexing a folder itself offers it in the picker even when it is not a repo — useful for a scratch directory.
                 </p>
             </SettingsSection>
+
+            <SettingsSection title="Session transfer" sub="Move a workspace between machines through the clipboard.">
+                <div className="settings-actions start">
+                    <button className="settings-btn" onClick={() => void cmd.exportActiveSession().catch(reportError("session export"))}>
+                        Copy active session
+                    </button>
+                    <button className="settings-btn" onClick={() => void cmd.importSessionFromClipboard().catch(reportError("session import"))}>
+                        Import from clipboard
+                    </button>
+                </div>
+                <p className="settings-hint">
+                    A bundle leaves out Bruno secrets, drafts, terminal history, environment values and startup commands. Imported agents arrive
+                    dormant.
+                </p>
+            </SettingsSection>
         </SettingsPage>
     );
 }
 
-function KeybindingsPage({ overrides }: { overrides: KeybindingOverrides }) {
-    const [query, setQuery] = useState("");
+function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOverrides; initialQuery: string }) {
+    const [query, setQuery] = useState(initialQuery);
     const [recording, setRecording] = useState<KeybindingActionId | null>(null);
     const [message, setMessage] = useState("");
     const normalizedQuery = query.trim().toLowerCase();
@@ -1432,7 +1592,7 @@ function SettingsPage({ children }: { children: ReactNode }) {
 
 function SettingsSection({ title, meta, sub, children }: { title: ReactNode; meta?: ReactNode; sub?: ReactNode; children: ReactNode }) {
     return (
-        <section className="settings-section">
+        <section className="settings-section" data-settings-target={typeof title === "string" ? title : undefined}>
             <header className="settings-section-head">
                 <div className="settings-section-topline">
                     <h2 className="settings-section-title">{title}</h2>
@@ -1473,7 +1633,9 @@ function SettingsRow({
 }) {
     const Tag = asLabel ? "label" : "div";
     return (
-        <Tag className={`settings-row${wide ? " wide" : ""}${stack ? " stack" : ""}`}>
+        <Tag
+            className={`settings-row${wide ? " wide" : ""}${stack ? " stack" : ""}`}
+            data-settings-target={typeof label === "string" ? label : undefined}>
             <span className="settings-row-copy">
                 <span className="settings-row-label">{label}</span>
                 {desc && <span className="settings-row-desc">{desc}</span>}

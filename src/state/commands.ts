@@ -47,6 +47,7 @@ import {
 import { agentWindow } from "./agentWindow";
 import { DEFAULT_BRUNO_VIEW, DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
 import { copyText, readClipboardText } from "../lib/clipboard";
+import type { SettingsPageId } from "../settingsIndex";
 import {
     collectPanes,
     cloneLayout,
@@ -2136,7 +2137,8 @@ export const closeBrunoReqPalette = (): void => setState({ brunoReqPaletteOpen: 
 export const openBrunoEnvPalette = (): void =>
     setState({ brunoEnvPaletteOpen: true, brunoReqPaletteOpen: false, filePaletteOpen: false, agentPaletteOpen: false, pickerOpen: false });
 export const closeBrunoEnvPalette = (): void => setState({ brunoEnvPaletteOpen: false });
-export const openSettings = (): void => setState({ settingsOpen: true });
+export const openSettings = (page?: SettingsPageId): void => setState(page ? { settingsOpen: true, settingsPage: page } : { settingsOpen: true });
+export const setSettingsPage = (page: SettingsPageId): void => setState({ settingsPage: page });
 export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));
 export async function openSshConfigEditor(): Promise<void> {

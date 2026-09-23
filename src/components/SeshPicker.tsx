@@ -239,7 +239,7 @@ export function SeshPicker() {
                                         className="picker-link"
                                         onClick={() => {
                                             cmd.closePicker();
-                                            cmd.openSettings();
+                                            cmd.openSettings("general");
                                         }}>
                                         open settings
                                     </button>{" "}

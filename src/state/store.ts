@@ -3,6 +3,7 @@ import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID, type Theme } from "../themes";
 import type { KeybindingOverrides } from "../keybindings";
 import type { CustomCommand } from "../commands/registry";
+import type { SettingsPageId } from "../settingsIndex";
 import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
 
 enableMapSet();
@@ -115,6 +116,7 @@ export interface ViewState {
     brunoReqPaletteOpen: boolean;
     brunoEnvPaletteOpen: boolean;
     settingsOpen: boolean;
+    settingsPage: SettingsPageId;
     awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
     zoomedPaneId: string | null;
     sessionSwitcher: SessionSwitcherView | null;
@@ -242,6 +244,7 @@ export const useStore = create<StoreState>(() => {
         brunoReqPaletteOpen: false,
         brunoEnvPaletteOpen: false,
         settingsOpen: false,
+        settingsPage: "general",
         awsAuthModal: null,
         zoomedPaneId: null,
         sessionSwitcher: null,
