@@ -235,6 +235,7 @@ export function ComposerPickers({
     });
     const builtin = DEFAULT_PROVIDER_PROFILE_SELECTION[agent.type];
     const agentValue = profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : agent.type);
+    const agentIcon = <AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />;
     return (
         <div className="chat-pickers">
             {!agentLocked && (
@@ -245,7 +246,7 @@ export function ComposerPickers({
                     options={agentOptions}
                     compact
                     disabled={disabled}
-                    icon={<AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />}
+                    icon={agentIcon}
                     onSelect={(value) => {
                         if (value === agentValue) return;
                         const next = profiles.find((item) => item.id === value);
@@ -270,6 +271,7 @@ export function ComposerPickers({
                         value={config?.currentValue || ""}
                         options={config?.options || []}
                         disabled={disabled || !config?.options.length}
+                        icon={agentLocked && id === "model" ? agentIcon : undefined}
                         onSelect={(value) => {
                             if (config && value !== config.currentValue) onConfig(config, value);
                         }}

@@ -99,6 +99,7 @@ describe("composer pickers", () => {
             />,
         );
         expect(screen.queryByRole("button", { name: "Agent" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Model" }).querySelector(".agent-glyph.codex")).not.toBeNull();
         expect(screen.getByRole("button", { name: "Model" })).toBeEnabled();
         expect(screen.getByRole("button", { name: "Reasoning effort" })).toBeEnabled();
     });
