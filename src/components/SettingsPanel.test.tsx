@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
@@ -91,11 +91,33 @@ describe("SettingsPanel keybindings", () => {
 
         // The app dropdown is a button + listbox, not a native <select>.
         await user.click(screen.getByRole("button", { name: "Light appearance" }));
-        await user.click(screen.getByRole("option", { name: /Aura Day/i }));
+        await user.click(within(screen.getByRole("listbox", { name: "Light appearance" })).getByRole("option", { name: "Aura Day" }));
         await user.click(screen.getByRole("button", { name: "Dark appearance" }));
-        await user.click(screen.getByRole("option", { name: /Dracula/i }));
+        await user.click(within(screen.getByRole("listbox", { name: "Dark appearance" })).getByRole("option", { name: "Dracula" }));
 
         expect(getState()).toMatchObject({ systemLightThemeId: "aura-day", systemDarkThemeId: "dracula" });
+    });
+
+    it("searches Ghostty's themes and applies them from the keyboard", async () => {
+        const user = userEvent.setup();
+        render(<SettingsPanel />);
+        await user.click(screen.getByRole("button", { name: "Appearance" }));
+
+        const themes = screen.getByRole("listbox", { name: "Themes" });
+        const search = screen.getByRole("textbox", { name: "Search themes" });
+        await user.type(search, "rose pine");
+        expect(
+            within(themes)
+                .getAllByRole("option")
+                .map((option) => option.textContent),
+        ).toEqual(["AaRose Pine", "AaRose Pine Dawn", "AaRose Pine Moon"]);
+
+        await user.click(screen.getByRole("radio", { name: "light" }));
+        expect(within(themes).getAllByRole("option")).toHaveLength(1);
+
+        await user.type(search, "{ArrowDown}");
+        expect(getState().themeId).toBe("ghostty-rose-pine-dawn");
+        expect(within(themes).getByRole("option", { selected: true })).toHaveTextContent("Rose Pine Dawn");
     });
 });
 

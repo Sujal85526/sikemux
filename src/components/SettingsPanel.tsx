@@ -20,7 +20,8 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
+import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, type Theme, type ThemeGroupKey } from "../themes";
+import { ThemePicker } from "./ThemePicker";
 import {
     IconAgent,
     IconCheck,
@@ -30,7 +31,6 @@ import {
     IconFolder,
     IconGlobe,
     IconInfo,
-    IconPencil,
     IconPlus,
     IconRefresh,
     IconRun,
@@ -1176,8 +1176,6 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
 
     const editCustom = (src: Theme) => openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
 
-    const newFromActive = () => customizeFrom(THEMES_BY_ID[themeId] ?? customThemes.find((t) => t.id === themeId) ?? THEMES[0]);
-
     const closeEditor = () => {
         setEdit(null);
         cmd.cancelThemePreview();
@@ -1189,86 +1187,19 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
         setEdit(null);
     };
 
-    const renderCard = (th: Theme, custom: boolean) => {
-        const active = th.id === themeId;
-        const editing = edit?.theme.id === th.id;
-        return (
-            <div key={th.id} className={`settings-theme${active ? " active" : ""}${editing ? " editing" : ""}`}>
-                <button className="settings-theme-hit" onClick={() => cmd.setThemeId(th.id)} title={`Apply ${th.name}`} type="button">
-                    {/* The theme's own ground. `editor.bg` is "transparent" in every theme —
-                        the editor sits on the chrome — so using it painted nothing and left
-                        all ten swatches showing the theme already applied. */}
-                    <div className="settings-theme-preview" style={{ background: th.chrome.bg, color: th.chrome.ink }}>
-                        <span className="settings-theme-preview-mark" style={{ color: th.chrome.acc }}>
-                            Aa
-                        </span>
-                        <span className="settings-theme-preview-code" style={{ color: th.highlight.comment }}>
-                            // make it yours
-                        </span>
-                    </div>
-                    <div className="settings-theme-body">
-                        <div className="settings-theme-name-row">
-                            <span className="settings-theme-name">{th.name}</span>
-                            {active ? (
-                                <span className="settings-theme-current">Current</span>
-                            ) : (
-                                custom && <span className="settings-theme-badge">Custom</span>
-                            )}
-                        </div>
-                        <div className="settings-swatches">
-                            <span style={{ background: th.terminal.red }} />
-                            <span style={{ background: th.terminal.green }} />
-                            <span style={{ background: th.terminal.yellow }} />
-                            <span style={{ background: th.terminal.blue }} />
-                            <span style={{ background: th.terminal.magenta }} />
-                            <span style={{ background: th.terminal.cyan }} />
-                        </div>
-                    </div>
-                </button>
-                <div className="settings-theme-actions">
-                    {custom ? (
-                        <>
-                            <button className="settings-theme-act" onClick={() => editCustom(th)} title="Edit theme" type="button">
-                                <IconPencil size={11} />
-                            </button>
-                            <button
-                                className="settings-theme-act danger"
-                                onClick={() => cmd.deleteCustomTheme(th.id)}
-                                title="Delete theme"
-                                type="button">
-                                <IconTrash size={11} />
-                            </button>
-                        </>
-                    ) : (
-                        <button className="settings-theme-act" onClick={() => customizeFrom(th)} title="Customize a copy" type="button">
-                            <IconPencil size={11} />
-                        </button>
-                    )}
-                </div>
-            </div>
-        );
-    };
-
     return (
         <SettingsPage>
             <SettingsSection
                 title="Theme"
                 meta={`${THEMES.length} built-in · ${customThemes.length} custom`}
-                sub="Applies instantly to chrome, editor and terminal. Hover a card to fork or delete it.">
-                <div className="settings-theme-grid">{THEMES.map((th) => renderCard(th, false))}</div>
-
-                {customThemes.length > 0 && (
-                    <>
-                        <div className="settings-theme-divider">your themes</div>
-                        <div className="settings-theme-grid">{customThemes.map((th) => renderCard(th, true))}</div>
-                    </>
-                )}
-
-                <div className="settings-actions start">
-                    <button className="settings-btn" onClick={newFromActive} type="button" title="Fork the active theme into a new editable copy">
-                        <IconPlus size={12} /> New from current
-                    </button>
-                </div>
+                sub="Applies instantly to chrome, editor and terminal. Arrow keys in the search step through the list.">
+                <ThemePicker
+                    themeId={themeId}
+                    customThemes={customThemes}
+                    editingId={edit?.theme.id}
+                    onCustomize={customizeFrom}
+                    onEdit={editCustom}
+                />
             </SettingsSection>
 
             {edit && (
