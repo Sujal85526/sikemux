@@ -150,6 +150,10 @@
     letter-spacing: 0.02em;
 }
 
+.yolo-hint kbd {
+    font: inherit;
+}
+
 .yolo-toggle.on {
     border-color: transparent;
 }

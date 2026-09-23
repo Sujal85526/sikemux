@@ -45,7 +45,9 @@ function YoloToggle({ agent }: { agent: Agent }) {
                 {on ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
             </span>
             <span className="yolo-label">{on ? "yolo" : "safe"}</span>
-            <kbd className="yolo-hint">⌥Y</kbd>
+            <span className="yolo-hint">
+                <kbd>⌥Y</kbd>
+            </span>
         </button>
     );
 }
