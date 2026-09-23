@@ -24,7 +24,10 @@ const mocks = vi.hoisted(() => ({
     pathKinds: vi.fn(async (paths: string[]): Promise<(string | null)[]> => paths.map(() => null)),
     revealInFinder: vi.fn(async () => {}),
     requestOpenFile: vi.fn(),
+    sessionContext: vi.fn(async (): Promise<{ used: number; size: number | null } | null> => null),
 }));
+
+vi.mock("../api/agents", () => ({ agentApi: { sessionContext: mocks.sessionContext } }));
 
 vi.mock("../api/fs", () => ({
     fsapi: {
@@ -195,6 +198,23 @@ describe("AgentChatPane", () => {
 
         rerender(<AgentChatPane {...props} />);
         expect(await screen.findByRole("button", { name: "Allow hidden tool" })).toBeInTheDocument();
+    });
+
+    it("shows a resumed session's saved context until the agent reports its own", async () => {
+        mocks.sessionContext.mockResolvedValueOnce({ used: 84_000, size: null });
+        mocks.start.mockResolvedValueOnce({
+            sessionId: "session-1",
+            capabilities: {},
+            setup: { configOptions: [{ id: "model", type: "select", currentValue: "opus[1m]", options: [] }] },
+        });
+        const claude: Agent = { ...agent, type: "claude", startup: "claude", resumeId: "saved-1" };
+        render(<AgentChatPane agent={claude} cwd="/repo" active onBusyChange={() => {}} />);
+
+        expect(await screen.findByRole("img", { name: "Context window 8% used" })).toBeInTheDocument();
+        expect(mocks.sessionContext).toHaveBeenCalledWith("claude", "/repo", "saved-1", undefined);
+
+        emit("session_update", { sessionId: "session-1", update: { sessionUpdate: "usage_update", used: 150_000, size: 200_000 } });
+        expect(await screen.findByRole("img", { name: "Context window 75% used" })).toBeInTheDocument();
     });
 
     it("keeps the harness editable for a loaded session without messages", async () => {

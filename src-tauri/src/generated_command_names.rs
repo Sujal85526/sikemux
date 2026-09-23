@@ -49,6 +49,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "agent_models",
     "agent_usage",
     "agent_sessions",
+    "agent_session_context",
     "live_agent_sessions",
     "agent_sessions_watch_start",
     "agent_sessions_watch_stop",

@@ -130,6 +130,7 @@ export type ChatAction =
     | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }
     | { type: "local_prompt"; text: string; paths: string[] }
     | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
+    | { type: "saved_usage"; usage: ContextUsage }
     | { type: "turn_started" }
     | { type: "turn_completed"; stopReason?: string }
     | { type: "permission_requested"; request: AcpPermissionRequest }

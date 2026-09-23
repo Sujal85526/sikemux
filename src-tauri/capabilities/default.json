@@ -62,6 +62,7 @@
     "allow-agent-models",
     "allow-agent-usage",
     "allow-agent-sessions",
+    "allow-agent-session-context",
     "allow-live-agent-sessions",
     "allow-agent-sessions-watch-start",
     "allow-agent-sessions-watch-stop",

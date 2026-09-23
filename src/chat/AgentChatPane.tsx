@@ -55,6 +55,8 @@ import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { YoloToggle } from "./YoloToggle";
 import { ContextMeter } from "./ContextMeter";
+import { guessClaudeWindow } from "./contextWindow";
+import { agentApi } from "../api/agents";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
 import { showImage } from "../state/imageViewer";
 import type {
@@ -1566,6 +1568,26 @@ export function AgentChatPane({
                 if (sessionIdRef.current === sessionId) setChangingPermissions(false);
             });
     }, [agent.id, state.connection, permissionMode, appliedPermissionMode, changingPermissions]);
+
+    const setupRef = useRef(state.setup);
+    setupRef.current = state.setup;
+    const reported = state.usage !== null;
+    useEffect(() => {
+        const { resumeId, type } = agentRef.current;
+        if (state.connection !== "ready" || reported || !resumeId || (type !== "claude" && type !== "codex")) return;
+        let current = true;
+        void agentApi
+            .sessionContext(type, cwd, resumeId, profile?.configPath)
+            .then((saved) => {
+                if (!current || !saved) return;
+                const size = saved.size ?? guessClaudeWindow(setupRef.current, agentRef.current.model);
+                dispatch({ type: "saved_usage", usage: { used: saved.used, size } });
+            })
+            .catch(() => {});
+        return () => {
+            current = false;
+        };
+    }, [agent.id, agent.resumeId, cwd, profile?.configPath, state.connection, reported]);
 
     useEffect(() => {
         if (state.title && state.title !== agent.title) cmd.setAgentTitle(agent.id, state.title);
