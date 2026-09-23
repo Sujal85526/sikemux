@@ -363,11 +363,11 @@
 }
 /* Provider plan telemetry — a branded readout that borrows the rail's
    group-head grammar, then answers “how much is left?” with a big tabular
-   number and a segmented gauge that matches the app's terminal grain. */
+   number and a ruler of ticks that matches the app's terminal grain. */
 .agent-usage {
     --usage-fill: var(--acc);
-    --usage-cell: 4px;
-    --usage-pitch: 6px;
+    --usage-cell: 1.5px;
+    --usage-pitch: 4px;
     flex: 0 0 auto;
     /* margin-top pushes it to the foot when the list is shorter than the rail;
        flex:1 on .rail-scroll already does it when the list is taller. */
@@ -474,15 +474,15 @@
     font-style: normal;
     font-weight: 400;
 }
-/* Cell geometry is shared by track and fill, so lit and unlit cells line up. */
+/* Tick geometry is shared by track and fill, so lit and unlit ticks line up. */
 .agent-usage-track {
     position: relative;
     flex: 1 1 auto;
-    height: 8px;
+    height: 12px;
     overflow: hidden;
     background-image: repeating-linear-gradient(
         90deg,
-        color-mix(in srgb, var(--text-tertiary) 34%, transparent) 0 var(--usage-cell),
+        color-mix(in srgb, var(--text-tertiary) 30%, transparent) 0 var(--usage-cell),
         transparent var(--usage-cell) var(--usage-pitch)
     );
 }
