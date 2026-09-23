@@ -576,6 +576,7 @@ textarea:focus,
 
 .tabbar.v-agent {
     padding-inline: 0;
+    padding-bottom: 3px;
 }
 
 /*
