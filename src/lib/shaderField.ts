@@ -333,11 +333,9 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
      * already shows. It used to paint the theme's recess there too, and on a
      * see-through window — where the card paints nothing — that recess was the
      * only fill on the screen, so the mask turned it into a dark wash sliding
-     * down over the desktop. The dots are a surface tone one step off the
-     * ground rather than an ink, so however many of them there are the mean
-     * barely moves. The step goes toward the ink: raised on a dark theme, the
-     * hairline tone on a light one, where raised is white and the recess is too
-     * close to the ground to show.
+     * down over the desktop. On a dark theme the dots are the raised surface
+     * tone. On a light one every surface tone is too close to the ground to
+     * show, so they take the muted ink instead.
      */
     ambient: (runtime, theme) => ({
         /*
@@ -357,7 +355,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
         continuous: true,
         uniforms: {
             u_colorBack: TRANSPARENT,
-            u_colorFront: runtime.getShaderColorFromString(theme.dark ? theme.chrome.bgRaised : theme.chrome.line),
+            u_colorFront: runtime.getShaderColorFromString(theme.dark ? theme.chrome.bgRaised : theme.chrome.inkMuted),
             u_shape: runtime.DitheringShapes.simplex,
             u_type: runtime.DitheringTypes["8x8"],
             // The dots are the texture, and their size is free: the shader
