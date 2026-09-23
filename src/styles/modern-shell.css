@@ -607,11 +607,6 @@ textarea:focus,
         color var(--dur-1) linear;
 }
 
-/* The strip is sized to the tab, so its corners sit just inside the strip's border. */
-.tabbar.v-agent .tab-wrap {
-    border-radius: calc(var(--radius-panel) - 1px);
-}
-
 .tabbar.v-agent .tab-wrap:hover,
 .tabbar.v-editor .tab-wrap:hover,
 .tabbar.v-browser .tab-wrap:hover,
