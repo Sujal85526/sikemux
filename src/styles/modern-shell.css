@@ -574,6 +574,10 @@ textarea:focus,
     align-items: center;
 }
 
+.tabbar.v-agent {
+    padding-inline: 0;
+}
+
 /*
  * Every tab is a shape; only the selected one is a surface.
  *
@@ -601,6 +605,12 @@ textarea:focus,
         background var(--dur-1) linear,
         box-shadow var(--dur-1) linear,
         color var(--dur-1) linear;
+}
+
+/* A tab fills the strip, so its corners sit just inside the strip's border. */
+.tabbar.v-agent .tab-wrap {
+    height: 100%;
+    border-radius: calc(var(--radius-panel) - 1px);
 }
 
 .tabbar.v-agent .tab-wrap:hover,
