@@ -20,13 +20,12 @@ import { fsapi } from "../api/fs";
 import { invokeCommand as invoke } from "../api/invoke";
 import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { rateLabel, rowMeta } from "./messageMeta";
-import { permissionCopyForType } from "../agentLaunch";
 import { CopyButton } from "../components/CopyButton";
 import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
-import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
+import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
@@ -54,6 +53,7 @@ import { CodeRun, CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiff
 import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
+import { YoloToggle } from "./YoloToggle";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
 import { showImage } from "../state/imageViewer";
 import type {
@@ -1066,7 +1066,6 @@ function ChatComposer({
     changingConfig,
     changingPermissions,
     permissionApplied,
-    permissionMode,
     placeholder,
     error,
     onError,
@@ -1089,7 +1088,6 @@ function ChatComposer({
     changingConfig: boolean;
     changingPermissions: boolean;
     permissionApplied: boolean;
-    permissionMode: AgentPermissionMode;
     placeholder: string;
     error: string | null;
     onError: (message: string | null) => void;
@@ -1179,8 +1177,6 @@ function ChatComposer({
         }
     };
 
-    const permission = permissionCopyForType(agent.type, permissionMode);
-
     return (
         <div className="chat-composer">
             {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={selected} onSelect={selectCommand} />}
@@ -1249,15 +1245,11 @@ function ChatComposer({
                 <button type="button" className="chat-composer-icon" aria-label="Add files" onClick={() => void chooseFiles()}>
                     <IconPlus size={17} />
                 </button>
-                <button
-                    type="button"
-                    className={`chat-permission-mode tone-${permission.tone}`}
+                <YoloToggle
+                    agent={agent}
+                    relaunches={false}
                     disabled={connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied}
-                    title={permission.detail}
-                    onClick={() => cmd.toggleAgentSkipPermissions(agent.id)}>
-                    <IconShieldBolt size={14} />
-                    <span>{permission.label}</span>
-                </button>
+                />
                 <ComposerPickers
                     agent={agent}
                     profile={profile}
@@ -1544,7 +1536,13 @@ export function AgentChatPane({
 
     useEffect(() => {
         const sessionId = sessionIdRef.current;
-        if (sessionId === null || state.connection !== "ready" || changingPermissions || appliedPermissionMode === null || permissionMode === appliedPermissionMode)
+        if (
+            sessionId === null ||
+            state.connection !== "ready" ||
+            changingPermissions ||
+            appliedPermissionMode === null ||
+            permissionMode === appliedPermissionMode
+        )
             return;
         setChangingPermissions(true);
         void acpApi
@@ -1917,7 +1915,6 @@ export function AgentChatPane({
                         changingConfig={changingConfig}
                         changingPermissions={changingPermissions}
                         permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
-                        permissionMode={permissionMode}
                         placeholder={composerPlaceholder}
                         error={composerError}
                         onError={setComposerError}

@@ -132,8 +132,13 @@
         border-color 100ms;
 }
 
-.yolo-toggle:hover {
+.yolo-toggle:hover:not(:disabled) {
     color: var(--ink);
+}
+
+.yolo-toggle:disabled {
+    cursor: default;
+    opacity: 0.42;
 }
 
 .yolo-glyph {
@@ -1658,6 +1663,7 @@ button.chat-tool:hover,
 }
 
 .chat-composer-bar {
+    --control-h: 31px;
     display: flex;
     align-items: center;
     gap: 5px;
@@ -1683,28 +1689,21 @@ button.chat-tool:hover,
     color: var(--ink);
 }
 
-.chat-permission-mode {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 31px;
-    padding: 0 7px;
-    border-radius: var(--radius-control);
-    color: var(--ink-dim);
-    font-size: 10.5px;
+/* Beside the borderless pickers the toggle is text too: the rainbow word
+   carries YOLO, and the ring and key hint stay in the pane header. */
+.chat-composer-bar .yolo-toggle {
+    padding: 0 8px;
+    border-color: transparent;
+    background: none;
 }
 
-.chat-permission-mode.tone-danger {
-    color: var(--warn);
+.chat-composer-bar .yolo-toggle:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
-.chat-permission-mode:hover {
-    background: color-mix(in srgb, currentColor 8%, transparent);
-}
-
-.chat-permission-mode:disabled {
-    cursor: default;
-    opacity: 0.42;
+.chat-composer-bar .yolo-ring,
+.chat-composer-bar .yolo-hint {
+    display: none;
 }
 
 .chat-composer-spacer {
@@ -1857,7 +1856,7 @@ button.chat-tool:hover,
         border-color: var(--live);
     }
 
-    .yolo-toggle.on::before,
+    .yolo-toggle.on .yolo-ring::before,
     .yolo-toggle.on .yolo-label,
     .yolo-toggle.on .yolo-glyph {
         animation: none;

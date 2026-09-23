@@ -2,11 +2,12 @@ import { useCallback, useState } from "react";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { IconAgent, IconCommand, IconGlobe, IconShield, IconShieldBolt } from "../components/Icons";
+import { IconAgent, IconCommand, IconGlobe } from "../components/Icons";
 import { useStore } from "../state/store";
 import { shownBrowserPaneId } from "../state/selectors";
 import * as cmd from "../state/commands";
 import { AgentChatPane } from "./AgentChatPane";
+import { YoloToggle } from "./YoloToggle";
 import "../styles/chat.css";
 
 type AgentView = "gui" | "tui";
@@ -23,31 +24,6 @@ function BrowserButton({ agent }: { agent: Agent }) {
             title={label}
             onClick={() => cmd.toggleBrowserPane(agent.id)}>
             <IconGlobe size={13} />
-        </button>
-    );
-}
-
-function YoloToggle({ agent }: { agent: Agent }) {
-    const on = agent.permissionMode === "bypass";
-    return (
-        <button
-            type="button"
-            className={`yolo-toggle${on ? " on" : ""}`}
-            aria-pressed={on}
-            title={
-                on
-                    ? `YOLO mode on — ${agent.type} runs without approvals. ⌥Y turns it off, which restarts the CLI.`
-                    : `Safe mode — ${agent.type} asks before it acts. ⌥Y goes YOLO, which restarts the CLI.`
-            }
-            onClick={() => cmd.toggleAgentSkipPermissions(agent.id)}>
-            {on && <span className="yolo-ring" aria-hidden="true" />}
-            <span className="yolo-glyph" aria-hidden="true">
-                {on ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
-            </span>
-            <span className="yolo-label">{on ? "yolo" : "safe"}</span>
-            <span className="yolo-hint">
-                <kbd>⌥Y</kbd>
-            </span>
         </button>
     );
 }
@@ -81,7 +57,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 <span className="agent-surface-title" title={agent.title}>
                     {agent.title}
                 </span>
-                {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} />}
+                {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
                 <div className="agent-view-switch" role="group" aria-label="Agent view">
                     <button
                         type="button"
