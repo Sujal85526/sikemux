@@ -324,6 +324,12 @@ interface Recipe {
 
 const TRANSPARENT: [number, number, number, number] = [0, 0, 0, 0];
 
+function lightDotColor(runtime: Runtime, theme: Theme): [number, number, number, number] {
+    const hairline = runtime.getShaderColorFromString(theme.chrome.line);
+    const ink = runtime.getShaderColorFromString(theme.chrome.inkMuted);
+    return [0, 1, 2].map((i) => (hairline[i] + ink[i]) / 2).concat(1) as [number, number, number, number];
+}
+
 const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Recipe> = {
     /*
      * The screen's surface: a Bayer grid over simplex noise, so the card being
@@ -335,7 +341,8 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
      * only fill on the screen, so the mask turned it into a dark wash sliding
      * down over the desktop. On a dark theme the dots are the raised surface
      * tone. On a light one every surface tone is too close to the ground to
-     * show, so they take the muted ink instead.
+     * show and the muted ink is too loud, so they sit halfway between that ink
+     * and the hairline.
      */
     ambient: (runtime, theme) => ({
         /*
@@ -355,7 +362,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
         continuous: true,
         uniforms: {
             u_colorBack: TRANSPARENT,
-            u_colorFront: runtime.getShaderColorFromString(theme.dark ? theme.chrome.bgRaised : theme.chrome.inkMuted),
+            u_colorFront: theme.dark ? runtime.getShaderColorFromString(theme.chrome.bgRaised) : lightDotColor(runtime, theme),
             u_shape: runtime.DitheringShapes.simplex,
             u_type: runtime.DitheringTypes["8x8"],
             // The dots are the texture, and their size is free: the shader
