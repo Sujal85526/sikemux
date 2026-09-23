@@ -205,7 +205,7 @@ describe("AgentChatPane", () => {
             update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Existing message" } },
         });
         emit("ready", { capabilities: {}, setup: {} });
-        await waitFor(() => expect(screen.getByRole("button", { name: "Agent" })).toBeDisabled());
+        await waitFor(() => expect(screen.queryByRole("button", { name: "Agent" })).not.toBeInTheDocument());
     });
 
     it("changes the model live and persists only the confirmed configuration", async () => {

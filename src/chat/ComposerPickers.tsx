@@ -69,7 +69,6 @@ function Picker({
     disabled,
     onSelect,
     icon,
-    hint,
     compact = false,
 }: {
     name: string;
@@ -79,8 +78,6 @@ function Picker({
     disabled: boolean;
     onSelect: (value: string) => void;
     icon?: ReactNode;
-    /** Shown on the trigger when the picker is disabled and cannot explain itself. */
-    hint?: string;
     /** Descriptions stay searchable but go unrendered, so the rows read as one line. */
     compact?: boolean;
 }) {
@@ -126,7 +123,7 @@ function Picker({
                 aria-haspopup="listbox"
                 aria-expanded={open && !disabled}
                 disabled={disabled}
-                title={disabled && hint ? hint : label}
+                title={label}
                 onClick={() => {
                     setOpen(!open);
                     setQuery("");
@@ -240,23 +237,24 @@ export function ComposerPickers({
     const agentValue = profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : agent.type);
     return (
         <div className="chat-pickers">
-            <Picker
-                name="Agent"
-                label={profile?.name || (agent.type === "codex" ? "Codex" : "Claude")}
-                value={agentValue}
-                options={agentOptions}
-                compact
-                disabled={disabled || agentLocked}
-                icon={<AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />}
-                hint={agentLocked ? "The agent is fixed after the first message." : undefined}
-                onSelect={(value) => {
-                    if (agentLocked || value === agentValue) return;
-                    const next = profiles.find((item) => item.id === value);
-                    const type = next?.provider ?? value;
-                    if (type !== "claude" && type !== "codex") return;
-                    onAgent(type, next?.id);
-                }}
-            />
+            {!agentLocked && (
+                <Picker
+                    name="Agent"
+                    label={profile?.name || (agent.type === "codex" ? "Codex" : "Claude")}
+                    value={agentValue}
+                    options={agentOptions}
+                    compact
+                    disabled={disabled}
+                    icon={<AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />}
+                    onSelect={(value) => {
+                        if (value === agentValue) return;
+                        const next = profiles.find((item) => item.id === value);
+                        const type = next?.provider ?? value;
+                        if (type !== "claude" && type !== "codex") return;
+                        onAgent(type, next?.id);
+                    }}
+                />
+            )}
             {["model", agent.type === "claude" ? "effort" : "reasoning_effort"].map((id) => {
                 const config = configs.find((item) => item.id === id);
                 const name = id === "model" ? "Model" : "Reasoning effort";

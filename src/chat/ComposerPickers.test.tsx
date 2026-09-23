@@ -82,7 +82,7 @@ describe("composer pickers", () => {
         expect(screen.getByRole("option", { name: /Codex/ })).toHaveAttribute("aria-selected", "true");
     });
 
-    it("locks the agent after messages while keeping model and effort available", () => {
+    it("drops the agent picker after messages while keeping model and effort available", () => {
         render(
             <ComposerPickers
                 agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
@@ -98,7 +98,7 @@ describe("composer pickers", () => {
                 }}
             />,
         );
-        expect(screen.getByRole("button", { name: "Agent" })).toBeDisabled();
+        expect(screen.queryByRole("button", { name: "Agent" })).not.toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Model" })).toBeEnabled();
         expect(screen.getByRole("button", { name: "Reasoning effort" })).toBeEnabled();
     });
