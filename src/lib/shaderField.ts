@@ -327,7 +327,7 @@ const TRANSPARENT: [number, number, number, number] = [0, 0, 0, 0];
 function lightDotColor(runtime: Runtime, theme: Theme): [number, number, number, number] {
     const hairline = runtime.getShaderColorFromString(theme.chrome.line);
     const ink = runtime.getShaderColorFromString(theme.chrome.inkMuted);
-    return [0, 1, 2].map((i) => hairline[i] * 0.75 + ink[i] * 0.25).concat(1) as [number, number, number, number];
+    return [0, 1, 2].map((i) => hairline[i] * 0.9 + ink[i] * 0.1).concat(1) as [number, number, number, number];
 }
 
 const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Recipe> = {
@@ -342,7 +342,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme) => Rec
      * down over the desktop. On a dark theme the dots are the raised surface
      * tone. On a light one every surface tone is too close to the ground to
      * show and the muted ink is too loud, so they are the hairline nudged a
-     * quarter of the way toward that ink.
+     * tenth of the way toward that ink.
      */
     ambient: (runtime, theme) => ({
         /*
