@@ -27,8 +27,24 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         .agent_id
         .as_deref()
         .ok_or("browser tools need the agent's id")?;
-    tauri::async_runtime::block_on(run(app, agent_id, &request.method, &request.params))
-        .map_err(|error| error.to_string())
+    let manager = app.state::<BrowserManager>();
+    let acts_on_a_tab = !matches!(
+        request.method.as_str(),
+        "browser.tabs" | "browser.tab.close"
+    );
+    let mut marks = Vec::new();
+    if acts_on_a_tab {
+        manager.announce_acting(app, agent_id);
+        marks.extend(manager.mark_acting(app, agent_id));
+    }
+    let result =
+        tauri::async_runtime::block_on(run(app, agent_id, &request.method, &request.params))
+            .map_err(|error| error.to_string());
+    if acts_on_a_tab {
+        marks.extend(manager.mark_acting(app, agent_id));
+        manager.release_acting(app, agent_id, marks);
+    }
+    result
 }
 
 async fn run(

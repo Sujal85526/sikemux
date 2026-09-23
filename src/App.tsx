@@ -32,6 +32,7 @@ import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
+import { useBrowserReveal } from "./state/browserReveal";
 import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
 import { emit, subscribe } from "./state/bus";
@@ -632,6 +633,7 @@ function ShellBackdrop() {
 export default function App() {
     useKeymap();
     useBrowserDownloads();
+    useBrowserReveal();
     useBrowserStrips();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);

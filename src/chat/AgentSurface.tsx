@@ -3,8 +3,8 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { IconAgent, IconCommand, IconGlobe, IconShield, IconShieldBolt } from "../components/Icons";
-import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { useStore } from "../state/store";
+import { shownBrowserPaneId } from "../state/selectors";
 import * as cmd from "../state/commands";
 import { AgentChatPane } from "./AgentChatPane";
 import "../styles/chat.css";
@@ -12,13 +12,17 @@ import "../styles/chat.css";
 type AgentView = "gui" | "tui";
 
 function BrowserButton({ agent }: { agent: Agent }) {
-    const overrides = useStore((state) => state.keybindingOverrides);
-    const binding = resolvedKeybinding(overrides, "browser.tabNew");
-    const label = `New browser tab${binding ? ` — ${keybindingLabel(binding)}` : ""}`;
+    const open = useStore((state) => shownBrowserPaneId(state, agent.id) !== null);
+    const label = open ? "Hide browser" : "Show browser";
     return (
-        <button type="button" className="agent-browser-open" aria-label={label} title={label} onClick={() => cmd.newBrowserTab(agent.id)}>
+        <button
+            type="button"
+            className="agent-browser-open"
+            aria-pressed={open}
+            aria-label={label}
+            title={label}
+            onClick={() => cmd.toggleBrowserPane(agent.id)}>
             <IconGlobe size={13} />
-            <span>Browser</span>
         </button>
     );
 }

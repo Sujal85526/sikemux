@@ -50,6 +50,15 @@ export function agentWindowId(state: Pick<StoreState, "windows">, agentId: strin
 }
 
 /** The agent a session is looking at, if its active window is one. */
+/** The agent's browser pane, when one is in a window's layout right now. */
+export function shownBrowserPaneId(state: Pick<StoreState, "browserPanes" | "windows">, agentId: string): string | null {
+    const paneId = Object.keys(state.browserPanes).find(
+        (id) =>
+            state.browserPanes[id] === agentId && Object.values(state.windows).some((win) => collectPanes(win.root).some((pane) => pane.id === id)),
+    );
+    return paneId ?? null;
+}
+
 export function activeAgentId(state: Pick<StoreState, "windows">, session: Pick<Session, "activeWindowId"> | undefined): string | null {
     const win = session ? state.windows[session.activeWindowId] : undefined;
     return win?.role === "agent" ? agentPaneId(win) : null;
