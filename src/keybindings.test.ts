@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
     keybindingActions,
     actionForEvent,
@@ -9,6 +9,8 @@ import {
     keybindingLabel,
     normaliseKeybindingOverrides,
     pluginOpenedBy,
+    pluginShortcutFor,
+    keybindingCategories,
     resolvedKeybinding,
 } from "./keybindings";
 
@@ -101,3 +103,31 @@ describe("plugin shortcuts", () => {
         });
     });
 });
+
+describe("a plugin's own shortcuts", () => {
+    it("are listed under the plugin's name and run only when they apply", async () => {
+        const { registerFrontendPlugin } = await import("./plugins/registry");
+        let applies = true;
+        const run = vi.fn(() => applies);
+        registerFrontendPlugin({
+            id: "test.shortcuts",
+            surfaces: [{ kind: "test.shortcuts:main", title: "Tester", icon: () => null, render: () => null }],
+            open: () => {},
+            openTitle: "Open Tester",
+            shortcuts: [{ name: "go", label: "Go", detail: "Run the test", defaultBinding: "Alt+Shift+KeyG", run }],
+        });
+
+        expect(keybindingCategories()).toContain("Tester");
+        expect(keybindingActions().find((action) => action.id === "plugin.run:test.shortcuts/go")).toMatchObject({
+            label: "Go",
+            category: "Tester",
+            defaultBinding: "Alt+Shift+KeyG",
+        });
+        expect(actionForEvent(key("KeyG", { altKey: true, shiftKey: true }), {})).toBe("plugin.run:test.shortcuts/go");
+        expect(pluginShortcutFor("plugin.run:test.shortcuts/go")?.run()).toBe(true);
+        applies = false;
+        expect(pluginShortcutFor("plugin.run:test.shortcuts/go")?.run()).toBe(false);
+        expect(pluginShortcutFor("plugin.run:test.shortcuts/missing")).toBeNull();
+    });
+});
+

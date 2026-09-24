@@ -1,7 +1,9 @@
 import { IS_MACOS } from "./lib/platform";
-import { frontendPlugins } from "./plugins/registry";
+import { frontendPlugin, frontendPlugins, type FrontendPlugin, type PluginShortcut } from "./plugins/registry";
 
-export type KeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser" | "Bruno";
+type CoreKeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser";
+/** A plugin's own shortcuts are grouped under its name. */
+export type KeybindingCategory = CoreKeybindingCategory | (string & {});
 
 export interface KeybindingAction {
     id: string;
@@ -388,12 +390,35 @@ const coreKeybindingActions = [
 export type CoreKeybindingActionId = (typeof coreKeybindingActions)[number]["id"];
 /** Opens a plugin, for plugins that ask for a shortcut. */
 export type PluginOpenActionId = `plugin.open:${string}`;
-export type KeybindingActionId = CoreKeybindingActionId | PluginOpenActionId;
+/** One of a plugin's own shortcuts, as `plugin.run:<plugin id>/<name>`. */
+export type PluginRunActionId = `plugin.run:${string}`;
+export type KeybindingActionId = CoreKeybindingActionId | PluginOpenActionId | PluginRunActionId;
 export type KeybindingOverrides = Partial<Record<KeybindingActionId, string | null>>;
 
-export const KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", "Panes", "Navigation", "Browser", "Bruno"];
+const CORE_KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", "Panes", "Navigation", "Browser"];
+
+/** Core's sections, then one for each plugin with shortcuts of its own. */
+export function keybindingCategories(): readonly KeybindingCategory[] {
+    return [...CORE_KEYBINDING_CATEGORIES, ...frontendPlugins().filter((plugin) => plugin.shortcuts?.length).map(pluginCategory)];
+}
 
 const PLUGIN_OPEN = "plugin.open:";
+const PLUGIN_RUN = "plugin.run:";
+
+function pluginCategory(plugin: FrontendPlugin): KeybindingCategory {
+    return plugin.surfaces[0]?.title ?? plugin.id;
+}
+
+export function pluginRunAction(pluginId: string, name: string): PluginRunActionId {
+    return `${PLUGIN_RUN}${pluginId}/${name}`;
+}
+
+/** The plugin shortcut an action runs, when it is one of those. */
+export function pluginShortcutFor(id: string): PluginShortcut | null {
+    if (!id.startsWith(PLUGIN_RUN)) return null;
+    const [pluginId, name] = id.slice(PLUGIN_RUN.length).split("/");
+    return frontendPlugin(pluginId)?.shortcuts?.find((shortcut) => shortcut.name === name) ?? null;
+}
 
 export function pluginOpenAction(pluginId: string): PluginOpenActionId {
     return `${PLUGIN_OPEN}${pluginId}`;
@@ -419,7 +444,16 @@ export function keybindingActions(): readonly KeybindingAction[] {
               ]
             : [],
     );
-    return [...coreKeybindingActions, ...opens];
+    const own: KeybindingAction[] = frontendPlugins().flatMap((plugin) =>
+        (plugin.shortcuts ?? []).map((shortcut) => ({
+            id: pluginRunAction(plugin.id, shortcut.name),
+            label: shortcut.label,
+            detail: shortcut.detail,
+            category: pluginCategory(plugin),
+            defaultBinding: shortcut.defaultBinding,
+        })),
+    );
+    return [...coreKeybindingActions, ...opens, ...own];
 }
 
 const MODIFIER_CODES = new Set(["MetaLeft", "MetaRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight"]);

@@ -7,7 +7,7 @@ import {
     findKeybindingConflict,
     keybindingActions,
     type KeybindingAction,
-    KEYBINDING_CATEGORIES,
+    keybindingCategories,
     keybindingHasModifier,
     keybindingLabel,
     resolvedKeybinding,
@@ -1063,7 +1063,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
                 </div>
 
                 <div className="keymap-groups">
-                    {KEYBINDING_CATEGORIES.map((category) => {
+                    {keybindingCategories().map((category) => {
                         const actions = keybindingActions().filter((action) => action.category === category && matches(action));
                         if (!actions.length) return null;
                         return (

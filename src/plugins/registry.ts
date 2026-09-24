@@ -22,6 +22,16 @@ export interface PluginTopBarProps {
     readonly stripHovered: boolean;
 }
 
+/** A shortcut a plugin offers while it is in use; people can rebind it in Settings. */
+export interface PluginShortcut {
+    readonly name: string;
+    readonly label: string;
+    readonly detail: string;
+    readonly defaultBinding: string;
+    /** False when it does not apply right now, which leaves the key to whatever else wants it. */
+    readonly run: () => boolean;
+}
+
 export interface FrontendPlugin {
     readonly id: string;
     readonly surfaces: readonly PluginSurface[];
@@ -29,6 +39,7 @@ export interface FrontendPlugin {
     readonly openTitle: string;
     /** A default shortcut for `open`, like "Alt+KeyA"; people can change it in Settings. */
     readonly openShortcut?: string;
+    readonly shortcuts?: readonly PluginShortcut[];
     /** Always mounted; it decides for itself when to show. */
     readonly Overlay?: ComponentType;
     readonly TopBarItem?: ComponentType<PluginTopBarProps>;

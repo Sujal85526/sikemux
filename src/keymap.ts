@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { browserApi } from "./api/browser";
-import { actionForEvent, pluginOpenedBy, type KeybindingActionId } from "./keybindings";
+import { actionForEvent, pluginOpenedBy, pluginShortcutFor, type KeybindingActionId } from "./keybindings";
 import * as cmd from "./state/commands";
 import { activeAgentId } from "./state/selectors";
 import { emit } from "./state/bus";
@@ -81,6 +81,8 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         plugin?.open();
         return !!plugin;
     }
+    const shortcut = pluginShortcutFor(action);
+    if (shortcut) return shortcut.run();
 
     switch (action) {
         case "palette.commands":
