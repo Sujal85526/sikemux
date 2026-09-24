@@ -1161,6 +1161,15 @@ function ChatComposer({
     const [slashDismissed, setSlashDismissed] = useState(false);
     const editorRef = useRef<HTMLTextAreaElement>(null);
 
+    /* The field grows with what is typed until it reaches its CSS max-height,
+       and scrolls from there. */
+    useLayoutEffect(() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.style.height = "auto";
+        editor.style.height = `${editor.scrollHeight}px`;
+    }, [draft]);
+
     useEffect(() => {
         const element = paneRef.current;
         if (!element) return;

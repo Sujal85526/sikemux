@@ -1611,6 +1611,8 @@ button.chat-tool:hover,
     display: block;
     width: 100%;
     min-height: 66px;
+    max-height: min(320px, 40vh);
+    overflow-y: auto;
     resize: none;
     padding: 13px 14px;
     border: 0;
