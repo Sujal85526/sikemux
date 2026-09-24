@@ -10,6 +10,7 @@ import { ServiceSidebar } from "./ServiceSidebar";
 import { SignozSignIn } from "./SignozSignIn";
 import { TraceList } from "./TraceList";
 import { TraceView } from "./TraceView";
+import "../signoz.css";
 
 const refreshAll = () => invalidate((kind) => kind.startsWith("signoz."));
 

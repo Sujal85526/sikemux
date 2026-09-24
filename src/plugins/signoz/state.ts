@@ -71,7 +71,15 @@ const FRESH: ExploreView = {
     tracesErrorsOnly: false,
 };
 
-export const useSignoz = create<{ views: Record<string, ExploreView> }>()(() => ({ views: {} }));
+export const useSignoz = create<{ views: Record<string, ExploreView>; paletteOpen: boolean }>()(() => ({ views: {}, paletteOpen: false }));
+
+export function togglePalette(): void {
+    useSignoz.setState((state) => ({ paletteOpen: !state.paletteOpen }));
+}
+
+export function closePalette(): void {
+    useSignoz.setState({ paletteOpen: false });
+}
 
 onPaneClosed((paneId) => {
     if (!(paneId in useSignoz.getState().views)) return;
