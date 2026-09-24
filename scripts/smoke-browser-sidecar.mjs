@@ -32,8 +32,10 @@ function fakeSikemux(received) {
       frame += chunk;
       const newline = frame.indexOf("\n");
       if (newline < 0) return;
-      received.push(JSON.parse(frame.slice(0, newline)));
-      socket.end(`${JSON.stringify({ status: "result", value: STATE })}\n`);
+      const call = JSON.parse(frame.slice(0, newline));
+      received.push(call);
+      const value = call.request?.method === "plugins.tools" ? [] : STATE;
+      socket.end(`${JSON.stringify({ status: "result", value })}\n`);
     });
   });
   return new Promise((resolve) => {
@@ -117,7 +119,9 @@ async function exercise(sidecar, environment, received) {
         `the sidecar relayed the wrong answer: ${JSON.stringify(navigated.content)}`,
       );
 
-    const [call] = received;
+    const call = received.find(
+      (entry) => entry?.request?.method === "browser.navigate",
+    );
     if (
       call?.request?.method !== "browser.navigate" ||
       call?.request?.agentId !== "agent-smoke" ||
