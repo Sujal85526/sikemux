@@ -4,6 +4,7 @@ import { FILE_MANAGER_NAME } from "../../plugin-api/ui";
 import { findRequest } from "./lib/resolve";
 import { useBrunoRuntime } from "./runtime";
 import { brunoCloseTab, brunoReorderTab, brunoSelectRequest, brunoSettings, useBruno, viewOf } from "./state";
+import "./method.css";
 
 const copy = (text: string, label: string) => void copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
 

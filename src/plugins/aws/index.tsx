@@ -5,7 +5,6 @@ import { AwsOverlay } from "./components/AwsOverlay";
 import { AwsTopBarItem } from "./components/AwsTopBarItem";
 import { AWS_CONSOLE, AWS_PLUGIN_ID } from "./kinds";
 import { openAwsSession } from "./state";
-import "./aws.css";
 
 const AwsPane = lazy(() => import("./components/AwsPane").then((module) => ({ default: module.AwsPane })));
 

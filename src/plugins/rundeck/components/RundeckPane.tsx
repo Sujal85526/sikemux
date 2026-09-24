@@ -10,6 +10,7 @@ import { RundeckProjectTree } from "./RundeckProjectTree";
 import { RundeckService } from "./RundeckService";
 import { RundeckDeploy } from "./RundeckDeploy";
 import { RundeckExecution } from "./RundeckExecution";
+import "../rundeck.css";
 
 interface Props {
     paneId: string;

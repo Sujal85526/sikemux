@@ -30,6 +30,7 @@ import { BrunoEnvSelect } from "./BrunoEnvSelect";
 import { BrunoTree } from "./BrunoTree";
 import { BrunoRequestView } from "./BrunoRequest";
 import { BrunoResponseView } from "./BrunoResponse";
+import "../bruno.css";
 
 interface Props {
     paneId: string;

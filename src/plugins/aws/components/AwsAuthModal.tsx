@@ -5,6 +5,7 @@ import { IconClose } from "../../../plugin-api/ui";
 import { awsApi, type SsoLogin } from "../api";
 import { awsIdentityR } from "../resources";
 import { closeAwsAuthModal, useAws } from "../state";
+import "../auth.css";
 
 async function signedIn(profile: string): Promise<void> {
     await awsApi.identity(profile, true).catch(swallow("refresh AWS identity"));

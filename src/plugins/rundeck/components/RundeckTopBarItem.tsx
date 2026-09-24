@@ -9,6 +9,7 @@ import { basenameOf, displayStatus, groupSegments, isProdTarget, targetTone, typ
 import { openRundeckJob, rundeckSettings, setDeployTarget } from "../state";
 import { branchKind } from "./branchStyle";
 import { useMenuKeys } from "./hooks";
+import "../branch.css";
 
 const MAX_MATCHES = 12;
 

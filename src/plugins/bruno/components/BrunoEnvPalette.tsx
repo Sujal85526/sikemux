@@ -5,6 +5,7 @@ import { IconCheck, IconSearch, rankBy, useMouseActive } from "../../../plugin-a
 import { BRUNO_CLIENT } from "../kinds";
 import { findRequest } from "../lib/resolve";
 import { brunoCollectionR, brunoSelectEnv, brunoSettings, closePalettes, useBrunoView } from "../state";
+import "../bruno.css";
 
 const NO_ENV = "__none__";
 

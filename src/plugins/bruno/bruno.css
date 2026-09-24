@@ -123,34 +123,6 @@
 .bruno-folder-row .bruno-row-name {
     color: var(--ink);
 }
-.bruno-method {
-    flex: 0 0 auto;
-    width: 30px;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.03em;
-    text-align: left;
-    color: var(--ink-dim);
-}
-.m-get {
-    color: var(--live);
-}
-.m-post {
-    color: var(--warn);
-}
-.m-put {
-    color: #7dd3fc;
-}
-.m-delete {
-    color: var(--danger);
-}
-.m-patch {
-    color: var(--cmd);
-}
-.m-options,
-.m-head {
-    color: var(--ink-dim);
-}
 .bruno-row-dirty {
     flex: 0 0 auto;
     width: 6px;
@@ -1006,7 +978,6 @@ body.bruno-resizing {
 /* ── window-opacity passthrough ──────────────────────── */
 html.is-transparent .bruno-head,
 html.is-transparent .bruno-tree,
-html.is-transparent .dd-btn,
 html.is-transparent .bruno-save,
 html.is-transparent .bruno-icon-btn,
 html.is-transparent .bruno-secrets-btn:not(.active) {

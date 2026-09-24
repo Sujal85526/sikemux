@@ -16,7 +16,6 @@ import {
     togglePalette,
     viewOf,
 } from "./state";
-import "./bruno.css";
 
 const BrunoPane = lazy(() => import("./components/BrunoPane").then((module) => ({ default: module.BrunoPane })));
 

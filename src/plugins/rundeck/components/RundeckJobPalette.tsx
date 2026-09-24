@@ -7,6 +7,7 @@ import { rndJobIndexR } from "../resources";
 import { groupSegments, targetTone } from "../shape";
 import { RUNDECK_DEPLOY } from "../kinds";
 import { useActiveProjectCwd, useActiveSurfacePane } from "../../../plugin-api/host";
+import "../rundeck.css";
 
 const MAX_RESULTS = 400;
 

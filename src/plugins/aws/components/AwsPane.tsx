@@ -7,6 +7,7 @@ import { AwsServiceNav } from "./AwsServiceNav";
 import { AwsEcsView } from "./AwsEcsView";
 import { AwsBillingView, AwsEc2View, AwsLambdaView, AwsS3View, AwsSqsView } from "./AwsListViews";
 import { AwsAuthEmpty } from "./AwsAuthEmpty";
+import "../aws.css";
 
 type AwsViewProps = { profile: string; active: boolean };
 

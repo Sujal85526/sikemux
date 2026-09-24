@@ -5,6 +5,7 @@ import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import { BRUNO_CLIENT } from "../kinds";
 import type { BruTreeNode, HttpMethod } from "../lib/types";
 import { brunoCollectionR, brunoSelectRequest, brunoSettings, closePalettes } from "../state";
+import "../bruno.css";
 
 const MAX_RESULTS = 300;
 

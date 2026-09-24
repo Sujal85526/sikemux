@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { basename } from "../../../plugin-api/host";
 import { IconBruno, IconClose, IconFolder, IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import { brunoSettings, closePalettes, openBrunoFolder, openBrunoSession, removeBrunoWorkspace } from "../state";
+import "../bruno.css";
 
 /** Switches the loaded workspace, adds one, or forgets one. */
 export function BrunoWorkspacePalette() {
