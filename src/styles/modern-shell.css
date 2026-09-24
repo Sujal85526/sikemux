@@ -359,6 +359,23 @@ textarea:focus,
     opacity: 0;
 }
 
+.session-row-shell:has(> .row-x:hover) > .sess-row:not(.active),
+.session-row-shell:has(> .row-x:hover) > .proj-row:not(.expanded),
+.agent-row-wrap:has(> .row-x:hover) > .agent-row:not(.active) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+/* Project rows keep no room for the close, so it covers the last agent icon. */
+.project-row-shell .proj-child-icons > :last-child {
+    transition: opacity var(--dur-1) linear;
+}
+
+.project-row-shell:not(:has(> .row-status)):hover .proj-child-icons > :last-child,
+.project-row-shell:not(:has(> .row-status)):has(> .row-x:focus-visible) .proj-child-icons > :last-child {
+    opacity: 0;
+}
+
 .row-x:hover,
 .tab-x:hover {
     color: var(--danger);
