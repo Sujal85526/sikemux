@@ -365,14 +365,25 @@ textarea:focus,
     color: var(--text-primary);
 }
 
-/* Project rows keep no room at the trailing edge, so the status or the close covers the last agent icon. */
+.proj-row-status {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    margin-left: -6px;
+    transition: opacity var(--dur-1) linear;
+}
+
+/* Project rows keep no room for the close, so it covers whatever ends the row. */
 .project-row-shell .proj-child-icons > :last-child {
     transition: opacity var(--dur-1) linear;
 }
 
-.project-row-shell:has(> .row-status) .proj-child-icons > :last-child,
-.project-row-shell:hover .proj-child-icons > :last-child,
-.project-row-shell:has(> .row-x:focus-visible) .proj-child-icons > :last-child {
+.project-row-shell:hover .proj-row-status,
+.project-row-shell:has(> .row-x:focus-visible) .proj-row-status,
+.project-row-shell:not(:has(.proj-row-status)):hover .proj-child-icons > :last-child,
+.project-row-shell:not(:has(.proj-row-status)):has(> .row-x:focus-visible) .proj-child-icons > :last-child {
     opacity: 0;
 }
 
