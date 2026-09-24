@@ -935,13 +935,14 @@ button.chat-tool:hover,
 /* ── a subagent's own thread ──────────────────────────────────────── */
 
 /* The card is the record of what a subagent did, so it keeps to itself until
-   it is opened: an outline in the colour of how it ended, and one line saying
-   so. What it is doing right now lives over the composer instead. */
+   it is opened: one line, and a chip saying how it ended. What it is doing
+   right now lives over the composer instead. */
 .chat-subagent {
     --chat-agent: color-mix(in srgb, var(--acc) 62%, var(--ink-faint));
     margin: 6px 0;
-    border: 1px solid color-mix(in srgb, var(--chat-agent) 40%, transparent);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
+    background: var(--s-raised);
 }
 
 .chat-subagent.state-completed {
