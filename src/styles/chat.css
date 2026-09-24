@@ -1374,12 +1374,8 @@ button.chat-tool:hover,
     font-size: 9.5px;
 }
 
-.chat-activity-dot {
+.chat-activity-mark {
     flex: none;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--live);
     animation: chat-activity-breathe 1.5s ease-in-out infinite;
 }
 
@@ -1907,7 +1903,7 @@ button.chat-tool:hover,
     /* The elapsed seconds keep saying the turn is alive without any motion. */
     .chat-activity-label,
     .chat-activity-loader,
-    .chat-activity-dot,
+    .chat-activity-mark,
     .chat-tool-spinner {
         animation: none;
     }
