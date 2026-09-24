@@ -1603,13 +1603,7 @@ button.chat-tool:hover,
     background: var(--chat-composer-fill);
 }
 
-.chat-field {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--s-raised);
-}
-
-.chat-composer:focus-within .chat-field {
+.chat-composer:focus-within {
     border-color: var(--border-selected);
 }
 
