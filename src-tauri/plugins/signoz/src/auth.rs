@@ -116,14 +116,16 @@ fn bearer(url: &str, token: &str) -> Credentials {
     }
 }
 
-/// Both tokens live in one Keychain entry, joined by a dot. SigNoz makes them
-/// from letters and digits only, and renewing a session needs both.
+/// Both tokens live in one Keychain entry, since renewing a session needs both.
+/// They are joined by a tilde because SigNoz tokens can be JWTs, which have dots.
+const TOKEN_SEPARATOR: char = '~';
+
 fn pack(access: &str, refresh: &str) -> String {
-    format!("{access}.{refresh}")
+    format!("{access}{TOKEN_SEPARATOR}{refresh}")
 }
 
 fn unpack(saved: &str) -> Option<(String, String)> {
-    let (access, refresh) = saved.split_once('.')?;
+    let (access, refresh) = saved.split_once(TOKEN_SEPARATOR)?;
     (!access.is_empty() && !refresh.is_empty()).then(|| (access.to_string(), refresh.to_string()))
 }
 
@@ -567,10 +569,18 @@ mod tests {
 
     #[test]
     fn keeps_both_tokens_in_one_keychain_entry() {
-        let saved = pack("AbC123", "xYz789");
-        assert_eq!(unpack(&saved), Some(("AbC123".into(), "xYz789".into())));
+        let access = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl";
+        let refresh = "eyJhbGciOiJIUzI1NiJ9.eyJyZWZyZXNoIjoxfQ.b3RoZXI";
+        assert_eq!(
+            unpack(&pack(access, refresh)),
+            Some((access.into(), refresh.into()))
+        );
+        assert_eq!(
+            unpack(&pack("AbC123", "xYz789")),
+            Some(("AbC123".into(), "xYz789".into()))
+        );
         assert_eq!(unpack("only-one"), None);
-        assert_eq!(unpack(".refresh"), None);
+        assert_eq!(unpack("~refresh"), None);
     }
 
     #[test]
