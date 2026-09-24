@@ -219,13 +219,15 @@ describe("AgentChatPane", () => {
 
     it("keeps the harness editable for a loaded session without messages", async () => {
         render(<AgentChatPane agent={{ ...agent, resumeId: "empty-session" }} cwd="/repo" active onBusyChange={() => {}} />);
-        await waitFor(() => expect(screen.getByRole("button", { name: "Agent" })).toBeEnabled());
+        await waitFor(() => expect(screen.getByRole("button", { name: "Model" })).toBeEnabled());
+        fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        expect(screen.getByRole("group", { name: "Agent" })).toBeInTheDocument();
         emit("session_update", {
             sessionId: "session-1",
             update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Existing message" } },
         });
         emit("ready", { capabilities: {}, setup: {} });
-        await waitFor(() => expect(screen.queryByRole("button", { name: "Agent" })).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument());
     });
 
     it("changes the model live and persists only the confirmed configuration", async () => {

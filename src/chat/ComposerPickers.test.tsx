@@ -62,8 +62,8 @@ describe("composer pickers", () => {
                 onConfig={() => {}}
             />,
         );
-        fireEvent.click(screen.getByRole("button", { name: "Agent" }));
-        fireEvent.click(screen.getByRole("option", { name: /Work Claude/ }));
+        fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        fireEvent.click(screen.getByRole("button", { name: /Work Claude/ }));
         expect(mocks.onAgent).toHaveBeenCalledWith("claude", "work");
     });
 
@@ -77,9 +77,10 @@ describe("composer pickers", () => {
                 onConfig={() => {}}
             />,
         );
-        fireEvent.click(screen.getByRole("button", { name: "Agent" }));
-        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Codex", "Claude"]);
-        expect(screen.getByRole("option", { name: /Codex/ })).toHaveAttribute("aria-selected", "true");
+        fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        const agents = screen.getByRole("group", { name: "Agent" }).querySelectorAll("button");
+        expect(Array.from(agents, (button) => button.textContent)).toEqual(["Codex", "Claude"]);
+        expect(screen.getByRole("button", { name: /Codex/ })).toHaveAttribute("aria-pressed", "true");
     });
 
     it("drops the agent picker after messages while keeping model and effort available", () => {
@@ -98,9 +99,10 @@ describe("composer pickers", () => {
                 }}
             />,
         );
-        expect(screen.queryByRole("button", { name: "Agent" })).not.toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Model" }).querySelector(".agent-glyph.codex")).not.toBeNull();
         expect(screen.getByRole("button", { name: "Model" })).toBeEnabled();
+        fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Reasoning effort" })).toBeEnabled();
     });
 
@@ -119,7 +121,7 @@ describe("composer pickers", () => {
                             type: "select",
                             currentValue: "sonnet",
                             options: [
-                                { value: "sonnet", name: "Sonnet" },
+                                { value: "sonnet", name: "Sonnet", description: "Sonnet 5 · Efficient for routine tasks" },
                                 { value: "opus", name: "Opus" },
                             ],
                         },
@@ -128,6 +130,8 @@ describe("composer pickers", () => {
             />,
         );
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        expect(screen.queryByText(/Efficient for routine tasks/)).not.toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /Sonnet 5/ }).querySelector(".agent-glyph.codex")).not.toBeNull();
         const option = screen.getByRole("option", { name: /Opus/ });
         fireEvent.focusOut(screen.getByRole("combobox", { name: "Search model" }), { relatedTarget: null });
         fireEvent.click(option);

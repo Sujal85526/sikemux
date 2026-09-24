@@ -69,6 +69,7 @@ function Picker({
     disabled,
     onSelect,
     icon,
+    header,
     compact = false,
 }: {
     name: string;
@@ -78,6 +79,7 @@ function Picker({
     disabled: boolean;
     onSelect: (value: string) => void;
     icon?: ReactNode;
+    header?: (close: () => void) => ReactNode;
     /** Descriptions stay searchable but go unrendered, so the rows read as one line. */
     compact?: boolean;
 }) {
@@ -172,6 +174,7 @@ function Picker({
                             }
                         }}
                     />
+                    {header?.(close)}
                     <div id={listId} role="listbox" aria-label={`${name} options`} className="chat-picker-options">
                         {filtered.map((option, index) => (
                             <button
@@ -223,55 +226,60 @@ export function ComposerPickers({
     const profiles = useStore((state) => state.providerProfiles);
     const configs = sessionConfigs(setup);
     const agentOptions = HARNESSES.flatMap(({ type, label }) => {
-        const icon = <AgentIcon type={type} size={19} className={`agent-glyph ${type}`} />;
+        const icon = <AgentIcon type={type} size={15} className={`agent-glyph ${type}`} />;
         const owned = profiles.filter((item) => item.provider === type);
-        if (owned.length === 0) return [{ value: type, label, description: "Default configuration", icon }];
-        return owned.map((item) => ({
-            value: item.id,
-            label: item.name,
-            description: item.id === DEFAULT_PROVIDER_PROFILE_SELECTION[type] ? "Default configuration" : label,
-            icon,
-        }));
+        if (owned.length === 0) return [{ value: type, label, icon }];
+        return owned.map((item) => ({ value: item.id, label: item.name, icon }));
     });
     const builtin = DEFAULT_PROVIDER_PROFILE_SELECTION[agent.type];
     const agentValue = profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : agent.type);
     const agentIcon = <AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />;
-    return (
-        <div className="chat-pickers">
-            {!agentLocked && (
-                <Picker
-                    name="Agent"
-                    label={profile?.name || (agent.type === "codex" ? "Codex" : "Claude")}
-                    value={agentValue}
-                    options={agentOptions}
-                    compact
-                    disabled={disabled}
-                    icon={agentIcon}
-                    onSelect={(value) => {
-                        if (value === agentValue) return;
-                        const next = profiles.find((item) => item.id === value);
-                        const type = next?.provider ?? value;
+    const rowIcon = <AgentIcon type={agent.type} size={15} className={`agent-glyph ${agent.type}`} />;
+    const agentRow = (close: () => void) => (
+        <div className="chat-picker-agents" role="group" aria-label="Agent">
+            {agentOptions.map((option) => (
+                <button
+                    type="button"
+                    key={option.value}
+                    aria-pressed={option.value === agentValue}
+                    title={option.label}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                        close();
+                        if (option.value === agentValue) return;
+                        const next = profiles.find((item) => item.id === option.value);
+                        const type = next?.provider ?? option.value;
                         if (type !== "claude" && type !== "codex") return;
                         onAgent(type, next?.id);
-                    }}
-                />
-            )}
+                    }}>
+                    {option.icon}
+                    <span>{option.label}</span>
+                </button>
+            ))}
+        </div>
+    );
+    return (
+        <div className="chat-pickers">
             {["model", agent.type === "claude" ? "effort" : "reasoning_effort"].map((id) => {
                 const config = configs.find((item) => item.id === id);
-                const name = id === "model" ? "Model" : "Reasoning effort";
+                const model = id === "model";
+                const name = model ? "Model" : "Reasoning effort";
                 const label =
                     config?.options.find((option) => option.value === config.currentValue)?.label ??
                     config?.currentValue ??
-                    (id === "model" ? agent.model || "Model" : agent.effort || "Effort");
+                    (model ? agent.model || "Model" : agent.effort || "Effort");
+                const options = config?.options || [];
                 return (
                     <Picker
                         key={id}
                         name={name}
                         label={label}
                         value={config?.currentValue || ""}
-                        options={config?.options || []}
-                        disabled={disabled || !config?.options.length}
-                        icon={agentLocked && id === "model" ? agentIcon : undefined}
+                        options={model ? options.map((option) => ({ ...option, icon: rowIcon })) : options}
+                        disabled={disabled || (!options.length && (!model || agentLocked))}
+                        icon={model ? agentIcon : undefined}
+                        header={model && !agentLocked ? agentRow : undefined}
+                        compact={model}
                         onSelect={(value) => {
                             if (config && value !== config.currentValue) onConfig(config, value);
                         }}

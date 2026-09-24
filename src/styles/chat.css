@@ -1974,7 +1974,7 @@ button.chat-tool:hover,
     opacity: 0.6;
 }
 
-.chat-picker:nth-child(2) .chat-picker-trigger {
+.chat-picker:first-child .chat-picker-trigger {
     color: var(--acc);
 }
 
@@ -2025,6 +2025,50 @@ button.chat-tool:hover,
     color: var(--ink);
     font: inherit;
     font-size: var(--text-xs);
+}
+
+.chat-picker-agents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px;
+    border-bottom: 1px solid var(--line);
+}
+
+.chat-picker-agents > button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 26px;
+    padding: 0 8px;
+    color: var(--ink-dim);
+    font-size: var(--text-2xs);
+}
+
+.chat-picker-agents > button > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-picker-agents > button > svg {
+    flex-shrink: 0;
+}
+
+.chat-picker-agents > button:hover {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    color: var(--ink);
+}
+
+.chat-picker-agents > button[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--acc) 14%, transparent);
+    color: var(--ink);
+}
+
+.chat-picker-agents > button:focus-visible {
+    outline: 1px solid var(--acc);
+    outline-offset: -1px;
 }
 
 .chat-picker-hint {
