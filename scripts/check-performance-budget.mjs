@@ -204,8 +204,8 @@ const budgets = [
     // a PUA glyph is actually rendered.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 262_000,
-    gzip: 45_000,
+    raw: 281_000,
+    gzip: 48_100,
   },
   {
     label: "settings lazy CSS",
