@@ -20,8 +20,12 @@ export function buildEditorThemeExtensions(theme: Theme): Extension {
             ".cm-cursor, .cm-dropCursor": { borderLeftColor: theme.editor.caret },
             "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: theme.editor.selection },
             ".cm-activeLine": { backgroundColor: theme.editor.activeLine },
+            /* The gutter stays put while the code scrolls sideways under it, so
+               it needs a solid ground or the code shows through the numbers. A
+               theme whose editor is transparent falls back to its chrome, as
+               the code-block theme does. */
             ".cm-gutters": {
-                backgroundColor: "transparent",
+                backgroundColor: theme.editor.bg === "transparent" ? theme.chrome.bg : theme.editor.bg,
                 color: theme.editor.gutter,
                 border: "none",
             },
