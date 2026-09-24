@@ -209,6 +209,7 @@ export const IconWarning = makeSvgIcon(
         <path d="M8 6.1v3.6M8 11.6v.1" />
     </>,
 );
+export const IconActivity = makeSvgIcon(<path d="M3.2 13V9.4M8 13V3.4M12.8 13V6.6" />);
 export const IconInfo = makeSvgIcon(
     <>
         <circle cx="8" cy="8" r="6.2" />

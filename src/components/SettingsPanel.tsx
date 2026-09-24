@@ -25,6 +25,7 @@ import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, t
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
 import {
+    IconActivity,
     IconAgent,
     IconCheck,
     IconClose,
@@ -59,12 +60,15 @@ import {
 } from "../settingsIndex";
 import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
+import { ActivityPage } from "./ActivityPage";
+import { SettingsPage, SettingsSection } from "./SettingsLayout";
 import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
     general: <IconFolder size={13} />,
     appearance: <IconWindow size={13} />,
     keybindings: <IconCommand size={13} />,
+    activity: <IconActivity size={13} />,
     about: <IconInfo size={13} />,
     agents: <IconAgent size={13} />,
     actions: <IconRun size={13} />,
@@ -282,6 +286,8 @@ export function SettingsPanel() {
                                 {page === "keybindings" && (
                                     <KeybindingsPage key={jump?.at} overrides={keybindingOverrides} initialQuery={jump?.entry.filter ?? ""} />
                                 )}
+
+                                {page === "activity" && <ActivityPage />}
 
                                 {page === "about" && <AboutPage />}
 
@@ -1537,25 +1543,6 @@ function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
                 </SettingsRows>
             </SettingsSection>
         </SettingsPage>
-    );
-}
-
-function SettingsPage({ children }: { children: ReactNode }) {
-    return <div className="settings-page">{children}</div>;
-}
-
-function SettingsSection({ title, meta, sub, children }: { title: ReactNode; meta?: ReactNode; sub?: ReactNode; children: ReactNode }) {
-    return (
-        <section className="settings-section" data-settings-target={typeof title === "string" ? title : undefined}>
-            <header className="settings-section-head">
-                <div className="settings-section-topline">
-                    <h2 className="settings-section-title">{title}</h2>
-                    {meta && <span className="settings-section-meta">{meta}</span>}
-                </div>
-                {sub && <p className="settings-section-sub">{sub}</p>}
-            </header>
-            <div className="settings-section-body">{children}</div>
-        </section>
     );
 }
 

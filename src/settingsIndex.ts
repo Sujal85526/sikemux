@@ -1,9 +1,9 @@
 import { IS_MACOS } from "./lib/platform";
 
-export type SettingsPageId = "general" | "appearance" | "keybindings" | "about" | "agents" | "actions" | "cli" | "cloud" | "plugins";
+export type SettingsPageId = "general" | "appearance" | "keybindings" | "activity" | "about" | "agents" | "actions" | "cli" | "cloud" | "plugins";
 
 export const SETTINGS_GROUPS: { label: string; pages: SettingsPageId[] }[] = [
-    { label: "App", pages: ["general", "appearance", "keybindings", "about"] },
+    { label: "App", pages: ["general", "appearance", "keybindings", "activity", "about"] },
     { label: "Tools", pages: ["agents", "actions", "cli", "cloud", "plugins"] },
 ];
 
@@ -13,6 +13,7 @@ export const SETTINGS_PAGE_NAMES: Record<SettingsPageId, string> = {
     general: "General",
     appearance: "Appearance",
     keybindings: "Keybindings",
+    activity: "Activity",
     about: "About",
     agents: "Agents",
     actions: "Actions",
@@ -66,6 +67,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
         : []),
 
     section("keybindings", "Shortcuts", "keybindings hotkeys keys keyboard remap"),
+
+    section("activity", "Overview", "stats statistics analytics dashboard profile usage totals sessions tokens commits hours"),
+    section("activity", "Calendar", "heatmap contributions streak days year"),
+    section("activity", "By agent", "claude codex share breakdown"),
+    section("activity", "By project", "repositories share breakdown"),
 
     section("about", "Updates", "version upgrade release"),
     row("about", "Updates", "Channel", "nightly stable prerelease beta"),
