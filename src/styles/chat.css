@@ -935,13 +935,13 @@ button.chat-tool:hover,
 /* ── a subagent's own thread ──────────────────────────────────────── */
 
 /* The card is the record of what a subagent did, so it keeps to itself until
-   it is opened: a rail in the colour of how it ended, and one line saying so.
-   What it is doing right now lives over the composer instead. */
+   it is opened: an outline in the colour of how it ended, and one line saying
+   so. What it is doing right now lives over the composer instead. */
 .chat-subagent {
     --chat-agent: color-mix(in srgb, var(--acc) 62%, var(--ink-faint));
     margin: 6px 0;
-    border-left: 2px solid color-mix(in srgb, var(--chat-agent) 55%, transparent);
-    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+    border: 1px solid color-mix(in srgb, var(--chat-agent) 40%, transparent);
+    border-radius: var(--radius-2);
 }
 
 .chat-subagent.state-completed {
@@ -963,7 +963,7 @@ button.chat-tool:hover,
     gap: 7px;
     min-height: 24px;
     padding: 3px 9px 3px 8px;
-    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+    border-radius: calc(var(--radius-2) - 1px);
     font-size: var(--text-2xs);
     list-style: none;
     cursor: pointer;
@@ -971,6 +971,10 @@ button.chat-tool:hover,
 
 .chat-subagent summary::-webkit-details-marker {
     display: none;
+}
+
+.chat-subagent[open] summary {
+    border-radius: calc(var(--radius-2) - 1px) calc(var(--radius-2) - 1px) 0 0;
 }
 
 .chat-subagent summary:hover {
