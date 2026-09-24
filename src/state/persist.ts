@@ -1,4 +1,5 @@
 import { invokeCommand as invoke } from "../api/invoke";
+import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
 import { isTheme } from "../themes";
 import { normaliseKeybindingOverrides } from "../keybindings";
@@ -250,7 +251,7 @@ function toSession(value: unknown): Session | null {
     }
     const session: Session = {
         id: value.id,
-        name: value.name,
+        name: fixedSessionName(value.kind as Session["kind"]) ?? value.name,
         kind: value.kind as Session["kind"],
         cwd: value.cwd,
         pinned: value.pinned,
@@ -590,14 +591,12 @@ function moveRundeckSettings(decoded: Record<string, unknown>): void {
 }
 
 /**
- * Before v12 each Bruno workspace was its own session, named after its folder.
- * Now one session named Bruno switches between them, so the first stays, the
- * rest close, and every folder stays on the list of workspaces. AWS gets its
- * proper name at the same time.
+ * Before v12 each Bruno workspace was its own session. Now one session switches
+ * between them, so the first stays, the rest close, and every folder stays on
+ * the list of workspaces.
  */
 function mergeBrunoSessions(decoded: Record<string, unknown>): void {
     const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
-    for (const row of sessions) if (isRecord(row) && row.kind === "aws") row.name = "AWS";
     const [kept, ...extra] = sessions.filter((row): row is Record<string, unknown> => isRecord(row) && row.kind === "bruno");
     if (!kept) return;
     const folders = [kept, ...extra].flatMap((row) => {
@@ -607,7 +606,6 @@ function mergeBrunoSessions(decoded: Record<string, unknown>): void {
     const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
     const saved = Array.isArray(prefs.brunoWorkspaces) ? prefs.brunoWorkspaces : [];
     decoded.prefs = { ...prefs, brunoWorkspaces: [...saved, ...folders] };
-    kept.name = "Bruno";
 
     const closed = new Set(extra.map((row) => row.id));
     decoded.sessions = sessions.filter((row) => !isRecord(row) || !closed.has(row.id));

@@ -1,4 +1,5 @@
 import type { PluginManifest } from "../api/plugins";
+import { FIXED_SESSION_NAMES, fixedSessionName } from "./sessionNames";
 import type { PluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import { RAIL_GROUP_ORDER, railGroupOf } from "./railGroups";
@@ -451,7 +452,7 @@ function openSingletonPaneSession(kind: "aws" | PluginKind): void {
             d.zoomedPaneId = null;
             return;
         }
-        const title = kind === "aws" ? "AWS" : (pluginSurface(kind)?.title ?? kind);
+        const title = fixedSessionName(kind) ?? pluginSurface(kind)?.title ?? kind;
         const win = makeWindow("", kind === "aws" ? kind : title, { kind, role: kind, fixed: true });
         attachSession(d as unknown as StoreState, makeSession(kind, title, "", win.id), [win]);
     });
@@ -490,7 +491,7 @@ export function openBrunoSession(collectionPath?: string): void {
         }
         const path = collectionPath ?? d.brunoWorkspaces[0] ?? "";
         const win = makeWindow(path, "bruno", { kind: "bruno", role: "bruno", fixed: true });
-        const session = makeSession("bruno", "Bruno", path, win.id);
+        const session = makeSession("bruno", FIXED_SESSION_NAMES.bruno, path, win.id);
         session.bruno = { collectionPath: path, selectedEnvs: {} };
         attachSession(d as unknown as StoreState, session, [win]);
     });

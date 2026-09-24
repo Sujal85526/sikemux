@@ -797,6 +797,32 @@ describe("frontend persistence", () => {
         expect(st.brunoWorkspaces).toEqual(expect.arrayContaining(["/ws/old", "/ws/api-docs", "/ws/billing"]));
     });
 
+    it("names the AWS and Bruno sessions after their tools whatever name was saved", () => {
+        cmd.openAwsSession();
+        const aws = getState().sessions[getState().activeSessionId];
+        const awsWindow = getState().windows[aws.activeWindowId];
+        cmd.openBrunoSession("/ws/api-docs");
+        const bruno = getState().sessions[getState().activeSessionId];
+        const brunoWindow = getState().windows[bruno.activeWindowId];
+        applyHydrate(
+            JSON.stringify({
+                version: 12,
+                sessions: [
+                    { ...aws, name: "aws" },
+                    { ...bruno, name: "bruno" },
+                ],
+                windowsBySession: { [aws.id]: [awsWindow], [bruno.id]: [brunoWindow] },
+                sessionOrder: [aws.id, bruno.id],
+                activeSessionId: aws.id,
+                prefs: {},
+                itemStates: {},
+            }),
+        );
+
+        expect(getState().sessions[aws.id].name).toBe("AWS");
+        expect(getState().sessions[bruno.id].name).toBe("Bruno");
+    });
+
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {
         const sid = getState().activeSessionId;
         const session = getState().sessions[sid];
