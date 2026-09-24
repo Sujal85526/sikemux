@@ -679,7 +679,7 @@ export const SideRail = memo(function SideRail() {
                         emptyText="no ssh hosts"
                     />
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
-                    <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
+                    <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
                 </div>
 
                 <UpdateChip />
