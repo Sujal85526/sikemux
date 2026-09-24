@@ -358,9 +358,9 @@ textarea:focus,
     opacity: 0;
 }
 
-.session-row-shell:has(> .row-x:hover) > .sess-row:not(.active),
-.session-row-shell:has(> .row-x:hover) > .proj-row:not(.expanded),
-.agent-row-wrap:has(> .row-x:hover) > .agent-row:not(.active) {
+.session-row-shell:hover > .sess-row:not(.active),
+.session-row-shell:hover > .proj-row:not(.expanded),
+.agent-row-wrap:hover > .agent-row:not(.active) {
     background: var(--surface-hover);
     color: var(--text-primary);
 }
