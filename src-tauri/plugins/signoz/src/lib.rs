@@ -147,6 +147,7 @@ impl Plugin for Signoz {
                 "dashboards" => answer(dashboards::list(data_dir)).await,
                 "dashboard" => answer(dashboards::get(data_dir, params(input)?)).await,
                 "panel" => answer(dashboards::panel(data_dir, params(input)?)).await,
+                "dashboardPanel" => answer(dashboards::saved_panel(data_dir, params(input)?)).await,
                 "services" => answer(services::health(data_dir, params(input)?)).await,
                 "serviceOverview" => answer(services::overview(data_dir, params(input)?)).await,
                 "operations" => answer(services::operations(data_dir, params(input)?)).await,

@@ -404,6 +404,71 @@ fn request_type(kind: &str) -> SignozResult<&'static str> {
     }
 }
 
+/// One panel of a saved dashboard, found by id, so a caller never handles the
+/// saved query itself. Variables not given keep the dashboard's own choice.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedPanelRequest {
+    pub dashboard_id: String,
+    pub panel_id: String,
+    #[serde(default)]
+    pub variables: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub scope: Scope,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedPanel {
+    pub title: String,
+    pub kind: String,
+    pub unit: String,
+    pub data: PanelData,
+}
+
+pub async fn saved_panel(data_dir: &Path, request: SavedPanelRequest) -> SignozResult<SavedPanel> {
+    let dashboard = get(
+        data_dir,
+        DashboardRequest {
+            id: request.dashboard_id,
+        },
+    )
+    .await?;
+    let panel = dashboard
+        .panels
+        .into_iter()
+        .find(|panel| panel.id == request.panel_id)
+        .ok_or_else(|| SignozError::BadArg("that dashboard has no panel with this id".into()))?;
+    if !panel.drawable {
+        return Err(SignozError::BadArg(format!(
+            "`{}` is a {} panel, which Sikemux cannot read yet",
+            panel.title, panel.kind
+        )));
+    }
+    let mut variables: BTreeMap<String, String> = dashboard
+        .variables
+        .into_iter()
+        .map(|variable| (variable.name, variable.selected))
+        .collect();
+    variables.extend(request.variables);
+    let data = self::panel(
+        data_dir,
+        PanelRequest {
+            kind: panel.kind.clone(),
+            query: panel.query,
+            variables,
+            scope: request.scope,
+        },
+    )
+    .await?;
+    Ok(SavedPanel {
+        title: panel.title,
+        kind: panel.kind,
+        unit: panel.unit,
+        data,
+    })
+}
+
 pub async fn panel(data_dir: &Path, request: PanelRequest) -> SignozResult<PanelData> {
     let request_type = request_type(&request.kind)?;
     let (start, end) = request.scope.window();
