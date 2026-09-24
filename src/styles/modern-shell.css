@@ -291,7 +291,6 @@ textarea:focus,
 }
 
 .session-row-shell > .sess-row,
-.session-row-shell:has(> .row-status) > .proj-row,
 .agent-row-wrap > .agent-row {
     padding-right: calc(var(--space-2) + 20px + var(--space-1));
 }
@@ -366,13 +365,14 @@ textarea:focus,
     color: var(--text-primary);
 }
 
-/* Project rows keep no room for the close, so it covers the last agent icon. */
+/* Project rows keep no room at the trailing edge, so the status or the close covers the last agent icon. */
 .project-row-shell .proj-child-icons > :last-child {
     transition: opacity var(--dur-1) linear;
 }
 
-.project-row-shell:not(:has(> .row-status)):hover .proj-child-icons > :last-child,
-.project-row-shell:not(:has(> .row-status)):has(> .row-x:focus-visible) .proj-child-icons > :last-child {
+.project-row-shell:has(> .row-status) .proj-child-icons > :last-child,
+.project-row-shell:hover .proj-child-icons > :last-child,
+.project-row-shell:has(> .row-x:focus-visible) .proj-child-icons > :last-child {
     opacity: 0;
 }
 
