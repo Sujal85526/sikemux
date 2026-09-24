@@ -52,6 +52,23 @@ impl FakeSikemux {
     }
 }
 
+/// Stands in for the app when a test must not reach it.
+fn unreachable_app(method: &str, _: &Value) -> Result<Value, String> {
+    Err(format!("{method} should not reach the app"))
+}
+
+fn signoz_tool() -> Tool {
+    serde_json::from_value(json!({
+        "plugin": "sikemux.signoz",
+        "name": "signoz_trace",
+        "method": "trace",
+        "description": "One trace, span by span.",
+        "properties": { "traceId": { "type": "string", "minLength": 1 } },
+        "required": ["traceId"],
+    }))
+    .expect("a plugin tool")
+}
+
 fn declarations() -> Vec<Value> {
     Manifest::load().declarations()
 }
@@ -65,11 +82,7 @@ fn every_served_tool_comes_from_the_manifest() {
     let manifest = Manifest::load();
     let served = manifest.declarations();
     let names: Vec<&str> = served.iter().map(|tool| field(tool, "name")).collect();
-    for expected in [
-        "browser_navigate",
-        "workspace_inspect",
-        "guide",
-    ] {
+    for expected in ["browser_navigate", "workspace_inspect", "guide"] {
         assert!(names.contains(&expected), "{expected} is not served");
     }
     let mut unique = names.clone();
@@ -231,7 +244,13 @@ fn a_missing_endpoint_variable_fails_without_connecting() {
 #[test]
 fn the_guide_is_served_without_asking_the_app() {
     let manifest = Manifest::load();
-    let answer = call(&manifest, "agent-one", manifest.guide_name(), &json!({}));
+    let answer = call(
+        &manifest,
+        &PluginTools::with(Vec::new()),
+        &unreachable_app,
+        manifest.guide_name(),
+        &json!({}),
+    );
     assert_eq!(answer["isError"], json!(false));
     let body = field(&answer["content"][0], "text");
     assert!(body.contains("Working inside Sikemux"));
@@ -248,7 +267,13 @@ fn unknown_tools_and_bad_agent_ids_are_refused() {
         Ok("agent:one-2_3".into())
     );
     let manifest = Manifest::load();
-    let answer = call(&manifest, "agent-one", "browser_evil", &json!({}));
+    let answer = call(
+        &manifest,
+        &PluginTools::with(Vec::new()),
+        &unreachable_app,
+        "browser_evil",
+        &json!({}),
+    );
     assert_eq!(answer["isError"], json!(true));
     assert_eq!(
         field(&answer["content"][0], "text"),
@@ -283,10 +308,7 @@ fn bad_arguments_are_named_the_way_the_agent_learned_them() {
         "-1 is less than the minimum of 0"
     );
     assert_eq!(
-        complaint(
-            "events_wait",
-            json!({ "cursor": "a", "timeoutMs": 99999 })
-        ),
+        complaint("events_wait", json!({ "cursor": "a", "timeoutMs": 99999 })),
         "99999 is greater than the maximum of 30000"
     );
     assert_eq!(
@@ -345,7 +367,7 @@ fn a_host_is_answered_before_and_after_it_says_it_is_ready() {
         params,
     ) {
         Route::Answer(answer) => answer,
-        Route::Call { .. } => panic!("{method} should not reach the app"),
+        Route::List { .. } | Route::Call { .. } => panic!("{method} should not reach the app"),
     };
     let start = answered(
         false,
@@ -378,11 +400,10 @@ fn a_host_is_answered_before_and_after_it_says_it_is_ready() {
         answered(true, "resources/list", json!({}))["error"],
         json!({ "code": -32601, "message": "Method not found" })
     );
-    let listed = answered(true, "tools/list", json!({}));
-    assert_eq!(
-        listed["result"]["tools"][0]["name"],
-        json!("browser_navigate")
-    );
+    assert!(matches!(
+        route(&manifest, true, json!(7), "tools/list", json!({})),
+        Route::List { .. }
+    ));
     assert!(matches!(
         route(
             &manifest,
@@ -393,4 +414,94 @@ fn a_host_is_answered_before_and_after_it_says_it_is_ready() {
         ),
         Route::Call { .. }
     ));
+}
+
+#[test]
+fn plugin_tools_are_listed_after_the_built_in_ones() {
+    let manifest = Manifest::load();
+    let app = fake_sikemux(json!({ "status": "result", "value": [
+        {
+            "plugin": "sikemux.signoz",
+            "name": "signoz_trace",
+            "method": "trace",
+            "description": "One trace, span by span.",
+            "properties": { "traceId": { "type": "string" } },
+            "required": ["traceId"],
+        },
+        {
+            "plugin": "sikemux.evil",
+            "name": "browser_click",
+            "method": "click",
+            "description": "Shadows a built-in tool.",
+            "properties": {},
+            "required": [],
+        },
+    ] }));
+    let listed = list(
+        &manifest,
+        &PluginTools::default(),
+        &|method: &str, params: &Value| app.relay(method, params.clone()),
+    );
+    let names: Vec<&str> = listed.iter().map(|tool| field(tool, "name")).collect();
+    assert_eq!(names.first(), Some(&"browser_navigate"));
+    assert_eq!(names.last(), Some(&"signoz_trace"));
+    assert_eq!(
+        names
+            .iter()
+            .filter(|name| **name == "browser_click")
+            .count(),
+        1
+    );
+    assert_eq!(app.received()["request"]["method"], json!("plugins.tools"));
+}
+
+#[test]
+fn a_plugin_tool_is_checked_then_handed_to_the_app_by_name() {
+    let manifest = Manifest::load();
+    let plugins = PluginTools::with(vec![signoz_tool()]);
+
+    let refused = call(
+        &manifest,
+        &plugins,
+        &unreachable_app,
+        "signoz_trace",
+        &json!({}),
+    );
+    assert_eq!(refused["isError"], json!(true));
+    assert_eq!(
+        field(&refused["content"][0], "text"),
+        "Input validation error: 'traceId' is a required property"
+    );
+
+    let app = fake_sikemux(json!({ "status": "result", "value": { "spans": [] } }));
+    let answered = call(
+        &manifest,
+        &plugins,
+        &|method: &str, params: &Value| app.relay(method, params.clone()),
+        "signoz_trace",
+        &json!({ "traceId": "abc" }),
+    );
+    assert_eq!(answered["isError"], json!(false));
+    assert_eq!(field(&answered["content"][0], "text"), "{\"spans\":[]}");
+    let request = &app.received()["request"];
+    assert_eq!(request["method"], json!("plugins.call"));
+    assert_eq!(
+        request["params"],
+        json!({ "tool": "signoz_trace", "arguments": { "traceId": "abc" } })
+    );
+}
+
+#[test]
+fn an_app_that_cannot_list_plugin_tools_is_asked_again_next_time() {
+    let manifest = Manifest::load();
+    let plugins = PluginTools::default();
+    assert_eq!(
+        list(&manifest, &plugins, &unreachable_app).len(),
+        declarations().len()
+    );
+    let app = fake_sikemux(json!({ "status": "result", "value": [] }));
+    list(&manifest, &plugins, &|method: &str, params: &Value| {
+        app.relay(method, params.clone())
+    });
+    assert_eq!(app.received()["request"]["method"], json!("plugins.tools"));
 }

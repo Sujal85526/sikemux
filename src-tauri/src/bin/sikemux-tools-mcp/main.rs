@@ -1,19 +1,19 @@
-//! The agent's browser and workspace tools, served over MCP on stdio. Sikemux
-//! itself answers them over the CLI broker socket and they act on the tabs the
-//! person sees in the agent's pane. The one exception is the guide, which this
-//! binary carries and serves on its own.
+//! The agent's browser, workspace and plugin tools, served over MCP on stdio.
+//! Sikemux itself answers them over the CLI broker socket and they act on the
+//! tabs the person sees in the agent's pane. The one exception is the guide,
+//! which this binary carries and serves on its own.
 
 mod harness;
 mod manifest;
 
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use manifest::Manifest;
+use manifest::{Manifest, Tool};
 
 const LATEST_PROTOCOL_VERSION: &str = "2025-11-25";
 const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
@@ -74,10 +74,54 @@ fn watch_parent() {
 #[cfg(not(unix))]
 fn watch_parent() {}
 
+/// Only the app knows which plugins this build carries, so their tools are
+/// asked for when an agent first lists tools. A failed ask is not remembered,
+/// and the next listing tries again.
+#[derive(Default)]
+struct PluginTools(Mutex<Option<Arc<Vec<Tool>>>>);
+
+impl PluginTools {
+    fn get(&self, manifest: &Manifest, relay: &Relay<'_>) -> Arc<Vec<Tool>> {
+        let mut cached = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(tools) = cached.as_ref() {
+            return Arc::clone(tools);
+        }
+        let Ok(answer) = relay("plugins.tools", &json!({})) else {
+            return Arc::default();
+        };
+        let tools = Arc::new(plugin_tools(manifest, answer));
+        *cached = Some(Arc::clone(&tools));
+        tools
+    }
+
+    #[cfg(test)]
+    fn with(tools: Vec<Tool>) -> Self {
+        Self(Mutex::new(Some(Arc::new(tools))))
+    }
+}
+
+/// A plugin tool that reuses a built-in name is dropped rather than shadowing it.
+fn plugin_tools(manifest: &Manifest, answer: Value) -> Vec<Tool> {
+    serde_json::from_value::<Vec<Tool>>(answer)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|tool| !manifest.declares(&tool.name))
+        .collect()
+}
+
+/// One request to the app: a harness method and its params.
+type Relay<'a> = dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync + 'a;
+
 /// Newline-delimited JSON-RPC, the framing every MCP stdio client speaks. The
 /// loop ends when the host closes the pipe.
 fn serve(manifest: Arc<Manifest>, agent_id: String) {
     let initialized = Arc::new(AtomicBool::new(false));
+    let plugins = Arc::new(PluginTools::default());
+    let relay: Arc<Relay<'static>> =
+        Arc::new(move |method: &str, params: &Value| harness::call(&agent_id, method, params));
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
@@ -105,17 +149,36 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
             params,
         ) {
             Route::Answer(answer) => emit(&answer),
+            Route::List { id } => {
+                let (manifest, plugins, relay) = (
+                    Arc::clone(&manifest),
+                    Arc::clone(&plugins),
+                    Arc::clone(&relay),
+                );
+                std::thread::spawn(move || {
+                    emit(&reply(
+                        id,
+                        json!({ "tools": list(&manifest, &plugins, &*relay) }),
+                    ));
+                });
+            }
             Route::Call {
                 id,
                 name,
                 arguments,
             } => {
-                let manifest = Arc::clone(&manifest);
-                let agent_id = agent_id.clone();
+                let (manifest, plugins, relay) = (
+                    Arc::clone(&manifest),
+                    Arc::clone(&plugins),
+                    Arc::clone(&relay),
+                );
                 // A call waits on the app, so it runs off the read loop; a host
                 // that pipelines a ping behind a navigation still gets answered.
                 std::thread::spawn(move || {
-                    emit(&reply(id, call(&manifest, &agent_id, &name, &arguments)));
+                    emit(&reply(
+                        id,
+                        call(&manifest, &plugins, &*relay, &name, &arguments),
+                    ));
                 });
             }
         }
@@ -124,6 +187,9 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
 
 enum Route {
     Answer(Value),
+    List {
+        id: Value,
+    },
     Call {
         id: Value,
         name: String,
@@ -145,7 +211,7 @@ fn route(manifest: &Manifest, initialized: bool, id: Value, method: &str, params
     }
     match method {
         "ping" => Route::Answer(reply(id, json!({}))),
-        "tools/list" => Route::Answer(reply(id, json!({ "tools": manifest.declarations() }))),
+        "tools/list" => Route::List { id },
         "tools/call" => match params.get("name").and_then(Value::as_str) {
             Some(name) => Route::Call {
                 id,
@@ -179,20 +245,53 @@ fn initialize(manifest: &Manifest, params: &Value) -> Value {
     })
 }
 
-fn call(manifest: &Manifest, agent_id: &str, name: &str, arguments: &Value) -> Value {
+fn list(manifest: &Manifest, plugins: &PluginTools, relay: &Relay<'_>) -> Vec<Value> {
+    let mut tools = manifest.declarations();
+    tools.extend(plugins.get(manifest, relay).iter().map(Tool::declaration));
+    tools
+}
+
+fn call(
+    manifest: &Manifest,
+    plugins: &PluginTools,
+    relay: &Relay<'_>,
+    name: &str,
+    arguments: &Value,
+) -> Value {
     if name == manifest.guide_name() {
         return content(vec![text(manifest.guide_text())], false);
     }
-    let Some(tool) = manifest.tool(name) else {
+    if let Some(tool) = manifest.tool(name) {
+        if let Err(message) = tool.validate(arguments) {
+            return invalid(&message);
+        }
+        return answer(name, relay(&tool.method, arguments));
+    }
+    let offered = plugins.get(manifest, relay);
+    let Some(tool) = offered.iter().find(|tool| tool.name == name) else {
         return content(vec![text(&format!("Unknown tool: {name}"))], true);
     };
     if let Err(message) = tool.validate(arguments) {
-        return content(
-            vec![text(&format!("Input validation error: {message}"))],
-            true,
-        );
+        return invalid(&message);
     }
-    match harness::call(agent_id, &tool.method, arguments) {
+    answer(
+        name,
+        relay(
+            "plugins.call",
+            &json!({ "tool": name, "arguments": arguments }),
+        ),
+    )
+}
+
+fn invalid(message: &str) -> Value {
+    content(
+        vec![text(&format!("Input validation error: {message}"))],
+        true,
+    )
+}
+
+fn answer(name: &str, result: Result<Value, String>) -> Value {
+    match result {
         Ok(value) => content(content_for(name, &value), false),
         Err(message) => content(vec![text(&message)], true),
     }

@@ -7,6 +7,8 @@ use serde_json::{json, Map, Value};
 const MANIFEST: &str = include_str!("../../../../browser/tools.json");
 const GUIDE: &str = include_str!("../../../../browser/SIKEMUX_GUIDE.md");
 
+/// A tool from browser/tools.json, or one a plugin offers, which the app
+/// describes in the same shape.
 #[derive(Deserialize)]
 pub struct Tool {
     pub name: String,
@@ -59,19 +61,13 @@ impl Manifest {
         self.tools.iter().find(|tool| tool.name == name)
     }
 
+    /// Whether a name is already taken here, so a plugin tool cannot shadow it.
+    pub fn declares(&self, name: &str) -> bool {
+        name == self.guide.name || self.tool(name).is_some()
+    }
+
     pub fn declarations(&self) -> Vec<Value> {
-        let mut declared: Vec<Value> = self
-            .tools
-            .iter()
-            .map(|tool| {
-                declaration(
-                    &tool.name,
-                    &tool.description,
-                    &tool.properties,
-                    &tool.required,
-                )
-            })
-            .collect();
+        let mut declared: Vec<Value> = self.tools.iter().map(Tool::declaration).collect();
         declared.push(declaration(
             &self.guide.name,
             &self.guide.description,
@@ -101,6 +97,15 @@ fn declaration(
 }
 
 impl Tool {
+    pub fn declaration(&self) -> Value {
+        declaration(
+            &self.name,
+            &self.description,
+            &self.properties,
+            &self.required,
+        )
+    }
+
     /// The wording matches what the agent used to read from the Python server,
     /// so a model that learned to recover from one of these still can.
     pub fn validate(&self, arguments: &Value) -> Result<(), String> {

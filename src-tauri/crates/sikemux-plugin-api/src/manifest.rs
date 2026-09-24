@@ -1,9 +1,11 @@
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 use crate::PluginError;
 
 const MAX_ID_LENGTH: usize = 128;
+const MAX_TOOL_NAME_LENGTH: usize = 64;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -12,6 +14,22 @@ pub struct Manifest {
     pub name: String,
     pub version: Version,
     pub sikemux: VersionReq,
+    #[serde(default)]
+    pub tools: Vec<AgentTool>,
+}
+
+/// A plugin method that agents may call as a tool. Only methods named here are
+/// reachable from an agent; everything else stays behind the plugin's own UI.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentTool {
+    pub name: String,
+    pub method: String,
+    pub description: String,
+    #[serde(default)]
+    pub properties: Map<String, Value>,
+    #[serde(default)]
+    pub required: Vec<String>,
 }
 
 impl Manifest {
@@ -23,6 +41,38 @@ impl Manifest {
                 "manifest",
                 format!("`{}` is not a reverse-DNS plugin id", manifest.id),
             ));
+        }
+        for (index, tool) in manifest.tools.iter().enumerate() {
+            if !is_valid_tool_name(&tool.name) {
+                return Err(PluginError::new(
+                    "manifest",
+                    format!("`{}` is not a usable agent tool name", tool.name),
+                ));
+            }
+            if manifest
+                .tools
+                .iter()
+                .take(index)
+                .any(|earlier| earlier.name == tool.name)
+            {
+                return Err(PluginError::new(
+                    "manifest",
+                    format!("agent tool `{}` is declared twice", tool.name),
+                ));
+            }
+            if let Some(missing) = tool
+                .required
+                .iter()
+                .find(|name| !tool.properties.contains_key(*name))
+            {
+                return Err(PluginError::new(
+                    "manifest",
+                    format!(
+                        "agent tool `{}` requires `{missing}`, which it never declares",
+                        tool.name
+                    ),
+                ));
+            }
         }
         Ok(manifest)
     }
@@ -42,6 +92,14 @@ pub fn is_valid_id(id: &str) -> bool {
     }
     let segments: Vec<&str> = id.split('.').collect();
     segments.len() >= 2 && segments.iter().all(|segment| is_valid_segment(segment))
+}
+
+/// Lowercase words joined by underscores, which every agent host accepts in a tool name.
+fn is_valid_tool_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    name.len() <= MAX_TOOL_NAME_LENGTH
+        && bytes.next().is_some_and(|first| first.is_ascii_lowercase())
+        && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 fn is_valid_segment(segment: &str) -> bool {
@@ -90,6 +148,32 @@ mod tests {
             assert!(!is_valid_id(id), "{id} should be rejected");
         }
         assert!(is_valid_id("dev.someone.signoz-lite"));
+    }
+
+    #[test]
+    fn reads_agent_tools_and_refuses_bad_ones() -> Result<(), PluginError> {
+        let with_tools = |tools: &str| {
+            Manifest::from_json(&format!(
+                r#"{{"id":"a.b","name":"B","version":"1.0.0","sikemux":"*","tools":{tools}}}"#
+            ))
+        };
+        let manifest = with_tools(
+            r#"[{"name":"b_logs","method":"searchLogs","description":"Search logs.","properties":{"text":{"type":"string"}},"required":["text"]}]"#,
+        )?;
+        assert_eq!(
+            manifest.tools.first().map(|tool| tool.method.as_str()),
+            Some("searchLogs")
+        );
+        assert!(with_tools(r#"[{"name":"B-Logs","method":"x","description":"x"}]"#).is_err());
+        assert!(with_tools(
+            r#"[{"name":"b","method":"x","description":"x"},{"name":"b","method":"y","description":"y"}]"#
+        )
+        .is_err());
+        assert!(
+            with_tools(r#"[{"name":"b","method":"x","description":"x","required":["text"]}]"#)
+                .is_err()
+        );
+        Ok(())
     }
 
     #[test]

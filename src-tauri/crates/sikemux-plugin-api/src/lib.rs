@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub use error::{PluginError, PluginResult};
-pub use manifest::{is_valid_id, Manifest};
+pub use manifest::{is_valid_id, AgentTool, Manifest};
 
 pub type PluginFuture<'a, T> = Pin<Box<dyn Future<Output = PluginResult<T>> + Send + 'a>>;
 

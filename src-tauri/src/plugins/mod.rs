@@ -1,3 +1,4 @@
+pub mod agent;
 mod builtin;
 
 use std::collections::BTreeMap;
@@ -10,7 +11,7 @@ use dashmap::DashMap;
 use semver::Version;
 use serde::Serialize;
 use serde_json::Value;
-use sikemux_plugin_api::{Manifest, Plugin, PluginContext, PluginError, StreamSink};
+use sikemux_plugin_api::{AgentTool, Manifest, Plugin, PluginContext, PluginError, StreamSink};
 use tauri::ipc::Channel;
 use tokio::runtime::{Handle, Runtime};
 use tokio::task::JoinHandle;
@@ -94,6 +95,29 @@ impl PluginHost {
             .values()
             .map(|loaded| loaded.plugin.manifest().clone())
             .collect()
+    }
+
+    /// Every tool the loaded plugins offer agents, beside the plugin that answers it.
+    pub fn agent_tools(&self) -> impl Iterator<Item = (&str, &AgentTool)> {
+        self.plugins.iter().flat_map(|(id, loaded)| {
+            loaded
+                .plugin
+                .manifest()
+                .tools
+                .iter()
+                .map(move |tool| (id.as_str(), tool))
+        })
+    }
+
+    /// Runs a tool by the name an agent knows it by. A plugin method that no
+    /// tool names cannot be reached this way.
+    pub async fn call_agent_tool(&self, name: &str, arguments: Value) -> AppResult<Value> {
+        let (plugin, method) = self
+            .agent_tools()
+            .find(|(_, tool)| tool.name == name)
+            .map(|(plugin, tool)| (plugin.to_owned(), tool.method.clone()))
+            .ok_or_else(|| AppError::Other(format!("no plugin offers the tool `{name}`")))?;
+        self.call(&plugin, &method, arguments).await
     }
 
     pub async fn call(&self, id: &str, method: &str, params: Value) -> AppResult<Value> {
@@ -240,7 +264,8 @@ mod tests {
     impl Echo {
         fn plugin(id: &str, sikemux: &str) -> Arc<dyn Plugin> {
             let manifest = Manifest::from_json(
-                &json!({ "id": id, "name": "Echo", "version": "1.0.0", "sikemux": sikemux }).to_string(),
+                &json!({ "id": id, "name": "Echo", "version": "1.0.0", "sikemux": sikemux })
+                    .to_string(),
             )
             .expect("test manifest parses");
             Arc::new(Self(manifest))
@@ -322,6 +347,32 @@ mod tests {
             serde_json::to_value(&missing).expect("serializes")["category"],
             "not-installed"
         );
+    }
+
+    #[tokio::test]
+    async fn agents_reach_only_the_methods_a_plugin_names_as_tools() {
+        let manifest = Manifest::from_json(
+            &json!({
+                "id": "test.echo", "name": "Echo", "version": "1.0.0", "sikemux": "*",
+                "tools": [{ "name": "echo_back", "method": "echo", "description": "Echo." }],
+            })
+            .to_string(),
+        )
+        .expect("test manifest parses");
+        let host = host(vec![Arc::new(Echo(manifest))]);
+
+        let offered: Vec<(&str, &str)> = host
+            .agent_tools()
+            .map(|(plugin, tool)| (plugin, tool.name.as_str()))
+            .collect();
+        assert_eq!(offered, [("test.echo", "echo_back")]);
+        assert_eq!(
+            host.call_agent_tool("echo_back", json!({ "a": 1 }))
+                .await
+                .ok(),
+            Some(json!({ "a": 1 }))
+        );
+        assert!(host.call_agent_tool("fail", Value::Null).await.is_err());
     }
 
     #[tokio::test]
