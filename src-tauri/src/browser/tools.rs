@@ -407,6 +407,11 @@ async fn run(
             }
             Ok(result)
         }
+        "browser.record" => match text("action").as_deref() {
+            Some("start") => native::start_recording(app, agent_id, text("path")).await,
+            Some("stop") => native::stop_recording(app, agent_id).await,
+            _ => Err("action must be start or stop".into()),
+        },
         "browser.annotate" => {
             let (_, view) = active(&manager, agent_id)?;
             let clear = params.get("clear").and_then(Value::as_bool) == Some(true);
@@ -566,6 +571,21 @@ mod native {
             on_tab(view, move |tab| input::insert_text(tab, &text)).await
         }
 
+        pub async fn start_recording(
+            app: &tauri::AppHandle,
+            agent_id: &str,
+            path: Option<String>,
+        ) -> Result<serde_json::Value, String> {
+            super::super::super::recording::start(app, agent_id, path).await
+        }
+
+        pub async fn stop_recording(
+            app: &tauri::AppHandle,
+            agent_id: &str,
+        ) -> Result<serde_json::Value, String> {
+            super::super::super::recording::stop(app, agent_id).await
+        }
+
         pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
             let (sender, receiver) = tokio::sync::oneshot::channel();
             let body = body.to_owned();
@@ -623,6 +643,21 @@ mod native {
             Err(UNSUPPORTED.into())
         }
 
+        pub async fn start_recording(
+            _: &tauri::AppHandle,
+            _: &str,
+            _: Option<String>,
+        ) -> Result<serde_json::Value, String> {
+            Err(UNSUPPORTED.into())
+        }
+
+        pub async fn stop_recording(
+            _: &tauri::AppHandle,
+            _: &str,
+        ) -> Result<serde_json::Value, String> {
+            Err(UNSUPPORTED.into())
+        }
+
         pub async fn answer_dialog(
             _: &Webview,
             _: &str,
@@ -653,6 +688,21 @@ mod native {
 
     pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
         platform::run_script(view, body).await
+    }
+
+    pub async fn start_recording(
+        app: &tauri::AppHandle,
+        agent_id: &str,
+        path: Option<String>,
+    ) -> Result<serde_json::Value, String> {
+        platform::start_recording(app, agent_id, path).await
+    }
+
+    pub async fn stop_recording(
+        app: &tauri::AppHandle,
+        agent_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        platform::stop_recording(app, agent_id).await
     }
 
     pub async fn answer_dialog(

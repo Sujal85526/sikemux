@@ -13,6 +13,8 @@ mod favicon;
 mod input;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod recording;
 pub mod tools;
 
 use std::collections::HashMap;
@@ -243,6 +245,8 @@ pub struct BrowserManager {
     icons: Mutex<favicon::IconCache>,
     dialogs: Mutex<HashMap<String, PageDialog>>,
     uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
+    #[cfg(target_os = "macos")]
+    recordings: Mutex<HashMap<String, recording::Session>>,
 }
 
 impl BrowserManager {
@@ -480,6 +484,13 @@ impl BrowserManager {
         self.uploads_lock().insert(tab_id.to_owned(), paths);
     }
 
+    #[cfg(target_os = "macos")]
+    fn recordings_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, recording::Session>> {
+        self.recordings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     pub fn upload_pending(&self, tab_id: &str) -> bool {
         self.uploads_lock().contains_key(tab_id)
     }
@@ -547,6 +558,8 @@ impl BrowserManager {
 
     pub fn close_agent(&self, app: &AppHandle, agent_id: &str) -> AppResult<()> {
         validate_agent_id(agent_id)?;
+        #[cfg(target_os = "macos")]
+        self.recordings_lock().remove(agent_id);
         let views = self
             .lock()
             .remove(agent_id)

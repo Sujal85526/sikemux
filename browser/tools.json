@@ -296,6 +296,26 @@
       "required": []
     },
     {
+      "name": "browser_record",
+      "method": "browser.record",
+      "description": "Start or stop recording this tab to an MP4 video.",
+      "properties": {
+        "action": {
+          "enum": [
+            "start",
+            "stop"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "action"
+      ]
+    },
+    {
       "name": "browser_wait",
       "method": "browser.wait",
       "description": "Wait ms milliseconds, then for any load to finish.",

@@ -184,6 +184,14 @@ Drawings stay until `durationMs` passes or you call it with `clear: true`,
 they follow the page as it scrolls, and screenshots include them. Use them to
 point something out, or to narrate a recording.
 
+`browser_record` with `action: "start"` films the tab you are on, ten frames a
+second, until `action: "stop"`, which returns the video's `path`, length and
+size. Pass an absolute `path` ending in `.mp4`, or it is saved in the
+person's Movies folder under Sikemux, named after the page. It follows you
+across tabs, includes your pointer, boxes and captions, and stops by itself
+after ten minutes. Narrate with `browser_annotate` captions as you go; a
+recording of a tab the person is not looking at still works.
+
 `browser_network` lists the fetch and XHR calls the page has made since it
 loaded, oldest first, with each status, duration and a truncated response body.
 It is how you tell a request that failed apart from a button that never asked,

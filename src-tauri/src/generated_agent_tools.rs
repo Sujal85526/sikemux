@@ -15,6 +15,7 @@ pub const BROWSER_METHODS: &[&str] = &[
     "browser.console",
     "browser.screenshot",
     "browser.annotate",
+    "browser.record",
     "browser.wait",
     "browser.back",
     "browser.forward",
