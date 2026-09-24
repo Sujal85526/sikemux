@@ -1,20 +1,20 @@
-# Sikemux v0.4.0-nightly.10
+# Sikemux v0.4.2-nightly.1
 
-The tenth nightly build. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The first nightly on the 0.4.2 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## The rail goes back to two
+## New since 0.4.1
 
-The single rail that arrived in nightly.9 is reverted: the agents have a rail of their own again. If you updated to nightly.9 and lost the agent rail, this brings it back.
+- Terminal tabs are named Terminal instead of being numbered.
+- The pane texture can be switched off.
 
-## The browser
+## Everything in 0.4.1
 
-- An agent can see what a page asked the server for.
-- The address bar follows a page that moves on its own, rather than showing where the last full load landed — a site that navigates without fetching a new document no longer leaves the bar behind.
-- Only a screen that paints may carry its page, so a tab off stage stops holding one.
+If you are coming from nightly.10, this build also carries all of [0.4.1](https://github.com/nodelike/sikemux/releases/tag/v0.4.1):
 
-## Elsewhere
+- **Plugins.** AWS, Rundeck, Bruno and the new SigNoz pane are plugins in one Plugins group in the rail. Each can be switched off, loads its styles only when its pane opens, and can offer tools to your agents.
+- **SigNoz.** A live error feed, logs, traces with a waterfall, dashboards, and services as pages of their own — readable by your agents too.
+- **The agent's browser.** Real input, JavaScript, page dialogs, frames, file uploads, console logs, drawing and capture, and recording a tab to video.
+- **Agents and the chat.** A context-window ring in the composer, pasted images, a composer that grows with its draft, and agents waiting for input gathered across projects.
+- **The workspace.** Drag tabs to reorder them, resize text with ⌘=, ⌘− and ⌘0, resize either rail, Ghostty's 463 themes or one drafted from your wallpaper, an Activity page, and What's New.
 
-- WebGL stops squeezing the terminal's columns together.
-- The tab strips go with the window.
-
-For the complete patch history, compare [`v0.4.0-nightly.9...v0.4.0-nightly.10`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.9...v0.4.0-nightly.10).
+For the complete patch history, compare [`v0.4.0-nightly.10...v0.4.2-nightly.1`](https://github.com/nodelike/sikemux/compare/v0.4.0-nightly.10...v0.4.2-nightly.1).
