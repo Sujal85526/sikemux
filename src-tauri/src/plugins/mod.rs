@@ -21,6 +21,7 @@ use crate::error::{AppError, AppResult};
 struct Loaded {
     plugin: Arc<dyn Plugin>,
     context: Arc<PluginContext>,
+    call_timeout: Duration,
 }
 
 const PLUGIN_THREADS: usize = 2;
@@ -34,7 +35,6 @@ pub struct PluginHost {
     next_stream: AtomicU32,
     runtime: Option<Runtime>,
     spawner: Handle,
-    call_timeout: Duration,
 }
 
 impl PluginHost {
@@ -46,7 +46,7 @@ impl PluginHost {
         data_root: &Path,
         sikemux: &Version,
         plugins: Vec<Arc<dyn Plugin>>,
-        call_timeout: Duration,
+        default_call_timeout: Duration,
     ) -> std::io::Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(PLUGIN_THREADS)
@@ -71,7 +71,17 @@ impl PluginHost {
                 continue;
             }
             let context = Arc::new(PluginContext::new(data_root.join(&manifest.id)));
-            loaded.insert(manifest.id.clone(), Loaded { plugin, context });
+            let call_timeout = manifest
+                .call_timeout_secs
+                .map_or(default_call_timeout, Duration::from_secs);
+            loaded.insert(
+                manifest.id.clone(),
+                Loaded {
+                    plugin,
+                    context,
+                    call_timeout,
+                },
+            );
         }
         Ok(Self {
             plugins: loaded,
@@ -79,7 +89,6 @@ impl PluginHost {
             next_stream: AtomicU32::new(1),
             spawner: runtime.handle().clone(),
             runtime: Some(runtime),
-            call_timeout,
         })
     }
 
@@ -127,12 +136,13 @@ impl PluginHost {
         let loaded = self.get(id)?;
         let plugin = Arc::clone(&loaded.plugin);
         let context = Arc::clone(&loaded.context);
+        let call_timeout = loaded.call_timeout;
         let owned_method = method.to_owned();
         let task = self
             .spawner
             .spawn(async move { plugin.call(&context, &owned_method, params).await });
         let abort = task.abort_handle();
-        let outcome = match tokio::time::timeout(self.call_timeout, task).await {
+        let outcome = match tokio::time::timeout(call_timeout, task).await {
             Ok(Ok(result)) => result,
             Ok(Err(stopped)) => Err(PluginError::new("stopped", stopped.to_string())),
             Err(_) => {
@@ -141,7 +151,7 @@ impl PluginHost {
                     "timed-out",
                     format!(
                         "`{method}` did not answer within {}s",
-                        self.call_timeout.as_secs()
+                        call_timeout.as_secs()
                     ),
                 ))
             }
@@ -412,6 +422,27 @@ mod tests {
             serde_json::to_value(&error).expect("serializes")["category"],
             "timed-out"
         );
+    }
+
+    #[tokio::test]
+    async fn a_plugin_gets_the_call_timeout_it_declares() {
+        let manifest = Manifest::from_json(
+            &json!({
+                "id": "test.slow", "name": "Slow", "version": "1.0.0", "sikemux": "*",
+                "callTimeoutSecs": 1,
+            })
+            .to_string(),
+        )
+        .expect("test manifest parses");
+        let host = host(vec![
+            Arc::new(Echo(manifest)),
+            Echo::plugin("test.echo", "*"),
+        ]);
+        assert_eq!(
+            host.call("test.slow", "block", Value::Null).await.ok(),
+            Some(Value::Null)
+        );
+        assert!(host.call("test.echo", "block", Value::Null).await.is_err());
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -6,6 +6,7 @@ use crate::PluginError;
 
 const MAX_ID_LENGTH: usize = 128;
 const MAX_TOOL_NAME_LENGTH: usize = 64;
+const MAX_CALL_TIMEOUT_SECS: u64 = 600;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -14,6 +15,8 @@ pub struct Manifest {
     pub name: String,
     pub version: Version,
     pub sikemux: VersionReq,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_timeout_secs: Option<u64>,
     #[serde(default)]
     pub tools: Vec<AgentTool>,
 }
@@ -41,6 +44,14 @@ impl Manifest {
                 "manifest",
                 format!("`{}` is not a reverse-DNS plugin id", manifest.id),
             ));
+        }
+        if let Some(secs) = manifest.call_timeout_secs {
+            if !(1..=MAX_CALL_TIMEOUT_SECS).contains(&secs) {
+                return Err(PluginError::new(
+                    "manifest",
+                    format!("callTimeoutSecs must be 1 to {MAX_CALL_TIMEOUT_SECS}, not {secs}"),
+                ));
+            }
         }
         for (index, tool) in manifest.tools.iter().enumerate() {
             if !is_valid_tool_name(&tool.name) {
@@ -173,6 +184,25 @@ mod tests {
             with_tools(r#"[{"name":"b","method":"x","description":"x","required":["text"]}]"#)
                 .is_err()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_call_timeout_must_be_between_one_second_and_ten_minutes() -> Result<(), PluginError> {
+        let with_timeout = |secs: &str| {
+            Manifest::from_json(&format!(
+                r#"{{"id":"a.b","name":"B","version":"1.0.0","sikemux":"*","callTimeoutSecs":{secs}}}"#
+            ))
+        };
+        assert_eq!(with_timeout("1")?.call_timeout_secs, Some(1));
+        assert_eq!(with_timeout("600")?.call_timeout_secs, Some(600));
+        assert_eq!(manifest("*")?.call_timeout_secs, None);
+        for refused in ["0", "601", "-1", "1.5", "\"60\""] {
+            assert!(
+                with_timeout(refused).is_err(),
+                "{refused} should be refused"
+            );
+        }
         Ok(())
     }
 
