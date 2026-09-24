@@ -11,6 +11,7 @@ pub const BROWSER_METHODS: &[&str] = &[
     "browser.extract",
     "browser.evaluate",
     "browser.network",
+    "browser.console",
     "browser.screenshot",
     "browser.wait",
     "browser.back",

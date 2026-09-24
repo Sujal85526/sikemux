@@ -280,6 +280,22 @@ async fn run(
                 "result": serde_json::from_str::<Value>(&answer).unwrap_or(Value::String(answer)),
             }))
         }
+        "browser.console" => {
+            let (_, view) = active(&manager, agent_id)?;
+            call(
+                &view,
+                "console",
+                &[
+                    params
+                        .get("limit")
+                        .and_then(Value::as_u64)
+                        .map(|value| json!(value))
+                        .unwrap_or(Value::Null),
+                    json!(params.get("errors").and_then(Value::as_bool) == Some(true)),
+                ],
+            )
+            .await
+        }
         "browser.extract" => {
             let (_, view) = active(&manager, agent_id)?;
             call(

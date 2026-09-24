@@ -171,6 +171,14 @@
             const keep = Math.max(1, Math.min(100, Number(limit) || 20));
             return { recording: true, url: location.href, recorded: all.length, matched: matched.length, calls: matched.slice(-keep) };
         },
+        console(limit, errorsOnly) {
+            const recorder = window.__sikemuxConsole;
+            if (!recorder) return { recording: false, note: "this tab has not recorded anything; reload the page and retry the action" };
+            const all = recorder.entries();
+            const matched = errorsOnly ? all.filter((entry) => entry.level !== "log" && entry.level !== "info" && entry.level !== "debug") : all;
+            const keep = Math.max(1, Math.min(200, Number(limit) || 50));
+            return { recording: true, url: location.href, recorded: all.length, matched: matched.length, messages: matched.slice(-keep) };
+        },
         extract(selector) {
             const roots = selector ? [...document.querySelectorAll(selector)] : [document.body];
             if (selector && roots.length === 0) throw new Error(`nothing matches "${selector}"`);

@@ -202,6 +202,22 @@
       "required": []
     },
     {
+      "name": "browser_console",
+      "method": "browser.console",
+      "description": "List the page's console messages and uncaught errors.",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "errors": {
+          "type": "boolean"
+        }
+      },
+      "required": []
+    },
+    {
       "name": "browser_screenshot",
       "method": "browser.screenshot",
       "description": "Capture the visible part of the current tab as a PNG image.",

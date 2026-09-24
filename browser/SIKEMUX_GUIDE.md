@@ -165,6 +165,12 @@ which the DOM alone cannot show. Narrow a busy page with `filter`, a substring
 of the URL. Only fetch and XHR appear; images, scripts and the document itself
 do not.
 
+`browser_console` lists what the page logged since it loaded, oldest first:
+each message's `level` (`log`, `info`, `warn`, `error`, `debug`, `uncaught`
+for a thrown error nobody caught, `unhandled rejection` for a failed promise)
+and its text. `errors: true` drops the log, info and debug noise. Up to 200
+messages are kept, and the newest 50 are returned unless you pass `limit`.
+
 Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
 `browser_close_tab` act on this pane's tabs, not the person's other windows.
 `browser_navigate` reuses the current tab unless you pass `newTab: true`.
