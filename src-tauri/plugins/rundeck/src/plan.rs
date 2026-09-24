@@ -1,17 +1,22 @@
-// Read-only pre-deploy plan. Mirrors `cmd_plan` from the bash CLI:
-// inspect git state, project's last successful deploy on this env, and the
-// relation between the two so the user can sanity-check before pushing the
-// big red button. Pure git2 — no shell-out.
+// Read-only pre-deploy plan. Mirrors `cmd_plan` from the bash CLI: inspect
+// the local checkout, the branch the job last deployed successfully, and how
+// the two relate, so the user can sanity-check before running the job. Repo
+// state is read with git2; refreshing remote refs shells out to `git fetch`.
 
-use git2::{BranchType, Repository};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+use git2::{BranchType, ErrorCode, Repository};
 use serde::Serialize;
-use std::time::Duration;
 
 use crate::error::RundeckResult;
 
-use crate::client::get_json;
-use crate::executions::Execution;
-use crate::projects::resolve_job;
+use crate::executions::{deployed_branch, newest_succeeded};
+
+const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+const FETCH_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Serialize, Clone)]
 pub struct PlanResult {
@@ -43,6 +48,7 @@ pub enum BranchRelation {
     UnknownNoDeployedBranch,
     UnknownDeployedNotOnOrigin,
     UnknownTargetNotOnOrigin,
+    UnknownNoRepo,
 }
 
 #[derive(Serialize, Clone, PartialEq, Eq)]
@@ -58,48 +64,40 @@ pub enum PushAction {
     NotPushDetached,
 }
 
-#[derive(serde::Deserialize)]
-struct ExecutionList {
-    executions: Vec<Execution>,
+pub struct PlanRequest {
+    pub job_id: String,
+    pub project: String,
+    pub service: String,
+    pub target_branch: String,
+    pub repo_path: String,
+    pub branch_options: Vec<String>,
 }
 
-/// Compute a read-only deploy plan. `target_branch` is the branch to deploy
-/// (caller resolves "current" before calling — we don't peek the cwd). Pass
-/// an empty `repo_path` if you don't have a local checkout — git-side fields
-/// will fall back to "no repo" semantics.
-pub async fn plan(
-    project: String,
-    service: String,
-    target_branch: String,
-    repo_path: String,
-) -> RundeckResult<PlanResult> {
-    let target_branch = target_branch.trim().to_string();
-    let job = resolve_job(&project, &service).await?;
+fn relation_without_repo(deployed: Option<&str>, target: &str) -> BranchRelation {
+    match deployed {
+        None => BranchRelation::UnknownNoDeployedBranch,
+        Some(deployed) if deployed == target => BranchRelation::Same,
+        Some(_) => BranchRelation::UnknownNoRepo,
+    }
+}
 
-    // Last-successful deploy via API; tolerant of error (caller still wants
-    // the git-side analysis).
-    let deployed_branch: Option<String> = {
-        let res: RundeckResult<ExecutionList> = get_json(
-            &format!("/job/{}/executions", job.id),
-            &[
-                ("max", "1".to_string()),
-                ("status", "succeeded".to_string()),
-            ],
-        )
-        .await;
-        res.ok()
-            .and_then(|l| l.executions.into_iter().next())
-            .and_then(|e| e.job)
-            .and_then(|j| j.options)
-            .and_then(|o| o.get("BRANCH").cloned())
-    };
+/// Compute a read-only deploy plan. An empty `repo_path` skips the git side.
+pub async fn plan(request: PlanRequest) -> RundeckResult<PlanResult> {
+    let target_branch = request.target_branch.trim().to_string();
 
-    let mut plan = PlanResult {
-        project: project.clone(),
-        service: service.clone(),
-        target_branch: target_branch.clone(),
-        deployed_branch: deployed_branch.clone(),
-        branch_relation: BranchRelation::UnknownNoDeployedBranch,
+    // The git-side analysis is still useful when the deploy history is not.
+    let deployed_branch = newest_succeeded(&request.job_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|execution| deployed_branch(&execution, &request.branch_options));
+
+    let plan = PlanResult {
+        project: request.project,
+        service: request.service,
+        branch_relation: relation_without_repo(deployed_branch.as_deref(), &target_branch),
+        target_branch,
+        deployed_branch,
         branch_relation_detail: None,
         git_root: None,
         current_branch: None,
@@ -112,21 +110,75 @@ pub async fn plan(
         push_action: PushAction::NotPushNoRepo,
     };
 
+    let repo_path = request.repo_path;
     if repo_path.trim().is_empty() {
-        if let Some(d) = &deployed_branch {
-            plan.branch_relation = if d == &target_branch {
-                BranchRelation::Same
-            } else {
-                BranchRelation::UnknownDeployedNotOnOrigin
-            };
-        }
         return Ok(plan);
     }
-
     let fallback = plan.clone();
     tokio::task::spawn_blocking(move || inspect_repo(plan, &repo_path))
         .await
         .unwrap_or(Ok(fallback))
+}
+
+/// True when this repo has not been fetched in the last `FETCH_INTERVAL`, and
+/// marks it as fetched now.
+fn claim_fetch(root: PathBuf) -> bool {
+    static LAST_FETCH: OnceLock<Mutex<HashMap<PathBuf, Instant>>> = OnceLock::new();
+    let mut last = LAST_FETCH
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let now = Instant::now();
+    if last
+        .get(&root)
+        .is_some_and(|at| now.duration_since(*at) < FETCH_INTERVAL)
+    {
+        return false;
+    }
+    last.insert(root, now);
+    true
+}
+
+fn fetch_origin(root: &std::path::Path) {
+    let mut fetch = std::process::Command::new("git");
+    fetch
+        .arg("-C")
+        .arg(root)
+        .args(["fetch", "origin", "--quiet"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+        .env("GIT_ASKPASS", "true")
+        .env("SSH_ASKPASS", "true")
+        .env("SSH_ASKPASS_REQUIRE", "never")
+        .stdin(std::process::Stdio::null());
+    let _ = sikemux_process::run(&mut fetch, None, FETCH_TIMEOUT, 4 * 1024 * 1024, None);
+}
+
+/// Sets the branch and commit HEAD is on. A detached HEAD has no branch; a
+/// branch with no commits yet has no commit.
+fn read_head(repo: &Repository, plan: &mut PlanResult) -> bool {
+    match repo.head() {
+        Ok(head) => {
+            if let Some(oid) = head.target() {
+                plan.head_sha = Some(oid.to_string().chars().take(7).collect());
+            }
+            let detached = repo.head_detached().unwrap_or(false);
+            if !detached {
+                plan.current_branch = head.shorthand().ok().map(String::from);
+            }
+            detached
+        }
+        Err(error) if error.code() == ErrorCode::UnbornBranch => {
+            plan.current_branch = repo.find_reference("HEAD").ok().and_then(|head| {
+                head.symbolic_target()
+                    .ok()
+                    .flatten()
+                    .map(|target| target.trim_start_matches("refs/heads/").to_string())
+            });
+            false
+        }
+        Err(_) => false,
+    }
 }
 
 /// Fetches and walks the local checkout, which can take as long as the fetch
@@ -142,30 +194,12 @@ fn inspect_repo(mut plan: PlanResult, repo_path: &str) -> RundeckResult<PlanResu
     plan.git_root = repo.workdir().map(|p| p.to_string_lossy().to_string());
 
     // Best-effort fetch — we want fresh refs but tolerate offline machines.
-    let mut fetch = std::process::Command::new("git");
-    fetch
-        .arg("-C")
-        .arg(repo_path)
-        .args(["fetch", "origin", "--quiet"])
-        .env("GIT_TERMINAL_PROMPT", "0");
-    let _ = sikemux_process::run(
-        &mut fetch,
-        None,
-        Duration::from_secs(30),
-        4 * 1024 * 1024,
-        None,
-    );
-
-    // HEAD info
-    if let Ok(head) = repo.head() {
-        if let Ok(name) = head.shorthand() {
-            plan.current_branch = Some(name.to_string());
-        }
-        if let Some(oid) = head.target() {
-            let s = oid.to_string();
-            plan.head_sha = Some(s.chars().take(7).collect());
-        }
+    let root = repo.workdir().unwrap_or_else(|| repo.path()).to_path_buf();
+    if claim_fetch(root.clone()) {
+        fetch_origin(&root);
     }
+
+    let detached = read_head(&repo, &mut plan);
 
     // Dirty tree
     if let Ok(statuses) = repo.statuses(None) {
@@ -201,6 +235,7 @@ fn inspect_repo(mut plan: PlanResult, repo_path: &str) -> RundeckResult<PlanResu
 
     // Push action prediction
     plan.push_action = match &plan.current_branch {
+        _ if detached => PushAction::NotPushDetached,
         Some(cb) if cb == &target_branch => PushAction::PushCurrent,
         Some(_) => PushAction::NotPushDifferentBranch,
         None => PushAction::NotPushDetached,
@@ -243,4 +278,23 @@ fn inspect_repo(mut plan: PlanResult, repo_path: &str) -> RundeckResult<PlanResu
     };
 
     Ok(plan)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn without_a_repo_only_an_exact_match_is_known() {
+        assert!(relation_without_repo(Some("main"), "main") == BranchRelation::Same);
+        assert!(relation_without_repo(Some("dev"), "main") == BranchRelation::UnknownNoRepo);
+        assert!(relation_without_repo(None, "main") == BranchRelation::UnknownNoDeployedBranch);
+    }
+
+    #[test]
+    fn fetches_a_repo_at_most_once_per_interval() {
+        let root = PathBuf::from("/tmp/sikemux-plan-fetch-throttle-test");
+        assert!(claim_fetch(root.clone()));
+        assert!(!claim_fetch(root));
+    }
 }

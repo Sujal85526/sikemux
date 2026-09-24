@@ -20,17 +20,28 @@ pub struct WatchUpdate {
     pub terminal: bool,
 }
 
+/// Polls allowed after the execution ends for the step view to catch up.
+const SETTLE_POLLS: u32 = 3;
+
+/// Every status but the in-progress ones is final, including custom `other`
+/// statuses and `failed-with-retry`.
 fn is_terminal(status: &Option<String>) -> bool {
     status.as_deref().is_some_and(|value| {
-        matches!(
+        !matches!(
             value.to_ascii_lowercase().as_str(),
-            "succeeded" | "failed" | "aborted" | "timedout" | "missed" | "other-failed"
+            "running" | "scheduled" | "queued"
         )
     })
 }
 
 fn state_is_terminal(state: &WorkflowState) -> bool {
-    state.completed.unwrap_or(false) || is_terminal(&state.execution_state)
+    state.completed.unwrap_or(false)
+        || state.execution_state.as_deref().is_some_and(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "succeeded" | "failed" | "aborted" | "node_partial_succeeded" | "node_mixed"
+            )
+        })
 }
 
 pub async fn watch(execution_id: u64, sink: StreamSink) -> PluginResult<()> {
@@ -75,7 +86,7 @@ pub async fn watch(execution_id: u64, sink: StreamSink) -> PluginResult<()> {
             terminal_settle_polls = 0;
         }
         let terminal = (workflow_terminal && (execution_terminal || execution.is_none()))
-            || terminal_settle_polls >= 6
+            || terminal_settle_polls > SETTLE_POLLS
             || consecutive_errors >= ERROR_GIVEUP;
         sink.send(reply(WatchUpdate {
             execution,
@@ -108,6 +119,25 @@ mod tests {
         assert!(is_terminal(&Some("SUCCEEDED".into())));
         assert!(state_is_terminal(&WorkflowState {
             execution_state: Some("FAILED".into()),
+            ..WorkflowState::default()
+        }));
+    }
+
+    #[test]
+    fn only_in_progress_statuses_keep_the_watch_open() {
+        for status in ["other", "failed-with-retry", "Succeeded", "aborted"] {
+            assert!(is_terminal(&Some(status.into())), "{status}");
+        }
+        for status in ["running", "SCHEDULED", "queued"] {
+            assert!(!is_terminal(&Some(status.into())), "{status}");
+        }
+        assert!(!is_terminal(&None));
+    }
+
+    #[test]
+    fn a_waiting_workflow_is_not_finished() {
+        assert!(!state_is_terminal(&WorkflowState {
+            execution_state: Some("WAITING".into()),
             ..WorkflowState::default()
         }));
     }

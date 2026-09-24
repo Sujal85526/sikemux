@@ -16,6 +16,8 @@ describe("Rundeck branch/status styling logic", () => {
         expect(statusKind("succeeded")).toBe("succeeded");
         expect(statusKind("timedout")).toBe("failed");
         expect(statusKind("running")).toBe("running");
+        expect(statusKind("queued")).toBe("running");
+        expect(statusKind("failed-with-retry")).toBe("failed");
         expect(statusKind("aborted")).toBe("aborted");
         expect(statusKind(undefined)).toBe("unknown");
     });

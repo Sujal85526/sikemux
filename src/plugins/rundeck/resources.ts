@@ -1,9 +1,13 @@
 import { resource } from "../../plugin-api/resources";
 import {
     rundeckApi,
+    type JobDetail,
+    type JobIndexEntry,
+    type MatrixCell,
     type MatrixResult,
+    type OptionValue,
+    type PlanRequest,
     type PlanResult,
-    type RundeckEnvSpec,
     type RundeckExecution,
     type RundeckJob,
     type RundeckProject,
@@ -28,9 +32,33 @@ export const rndJobsR = resource({
     staleAfterMs: 60_000,
 });
 
+export const rndJobIndexR = resource({
+    kind: "rnd.jobIndex",
+    fetch: (): Promise<JobIndexEntry[]> => rundeckApi.jobIndex(),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const rndJobDetailR = resource({
+    kind: "rnd.jobDetail",
+    fetch: (jobId: string): Promise<JobDetail> => rundeckApi.jobDetail(jobId),
+    staleAfterMs: 60_000,
+});
+
+export const rndOptionValuesR = resource({
+    kind: "rnd.optionValues",
+    fetch: (url: string): Promise<OptionValue[]> => rundeckApi.optionValues(url),
+    staleAfterMs: 60_000,
+});
+
 export const rndMatrixR = resource({
     kind: "rnd.matrix",
-    fetch: (envs: RundeckEnvSpec[]): Promise<MatrixResult> => rundeckApi.branchesMatrix(envs),
+    fetch: (project: string, branchOptions: string[]): Promise<MatrixResult> => rundeckApi.branchesMatrix(project, branchOptions),
+    staleAfterMs: 30_000,
+});
+
+export const rndJobCellsR = resource({
+    kind: "rnd.jobCells",
+    fetch: (jobs: RundeckJob[], branchOptions: string[]): Promise<MatrixCell[]> => rundeckApi.jobCells(jobs, branchOptions),
     staleAfterMs: 30_000,
 });
 
@@ -42,7 +70,6 @@ export const rndExecutionsR = resource({
 
 export const rndPlanR = resource({
     kind: "rnd.plan",
-    fetch: (project: string, service: string, branch: string, repoPath: string): Promise<PlanResult> =>
-        rundeckApi.plan(project, service, branch, repoPath),
+    fetch: (request: PlanRequest): Promise<PlanResult> => rundeckApi.plan(request),
     staleAfterMs: 10_000,
 });

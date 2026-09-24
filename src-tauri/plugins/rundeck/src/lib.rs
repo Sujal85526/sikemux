@@ -1,22 +1,15 @@
-// Rundeck integration — full-fledged in-app deploy center.
-//
-// Unlike the AWS surface (which shells out to the `aws` CLI), Rundeck talks
-// plain bearer-token REST so we hit the API directly via reqwest. Reasons:
-//
-//   1. The matrix dashboard fans out N × M (services × envs) per refresh —
-//      one async HTTP client with keep-alive beats forking subprocess-per-cell.
-//   2. The live execution view streams /state + /output diffs every ~1.5s
-//      to a Tauri Channel. Subprocess polling can't give us that shape.
-//   3. The bash CLI's auth flow is the only really tricky bit; we mirror it
-//      faithfully and stay byte-compatible with `~/.rd-config` so `rnd login`
-//      from a terminal and our in-app login coexist.
+// Rundeck integration: projects, jobs, the deploy matrix, running jobs and
+// following them live. Rundeck speaks bearer-token REST, so we call the API
+// directly with reqwest rather than shelling out to the `rnd` CLI, and share
+// `~/.rd-config` with that CLI so a login in either place works in both.
 //
 // Module split:
-//   config      — read/write ~/.rd-config (CLI-compatible key=value)
-//   client      — shared reqwest::Client + auto-refresh on 401/403
-//   auth        — j_security_check → POST /tokens/{user}; verify via /system/info
-//   projects    — projects, jobs, branches_matrix (parallel)
-//   executions  — last, history, run, abort
+//   config      — read/write ~/.rd-config and check the URL is safe to call
+//   client      — shared HTTP client, error classification, request limiter
+//   auth        — password login, token login, logout, status
+//   projects    — projects, jobs, job index, the matrix
+//   jobs        — job definition and remote option values
+//   executions  — history, run, abort, latest/deployed summaries
 //   watch       — stream of execution state until it finishes
 //   logs        — stream of log output with an offset cursor
 //   plan        — read-only git inspection (dirty / ahead-behind / relation)
@@ -26,12 +19,12 @@ mod client;
 mod config;
 mod error;
 mod executions;
+mod jobs;
 mod logs;
 mod plan;
 mod projects;
 mod watch;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::Deserialize;
@@ -60,15 +53,30 @@ struct ProjectParams {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ServiceParams {
-    project: String,
-    service: String,
+struct JobParams {
+    job_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UrlParams {
+    url: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MatrixParams {
-    envs: Vec<projects::EnvSpec>,
+    project: String,
+    #[serde(default)]
+    branch_options: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JobCellsParams {
+    jobs: Vec<projects::RundeckJob>,
+    #[serde(default)]
+    branch_options: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -83,31 +91,37 @@ struct ExecutionsParams {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecutionParams {
+    #[serde(deserialize_with = "executions::id_from_string_or_number")]
     execution_id: u64,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RunParams {
-    project: String,
-    service: String,
-    branch: String,
-    extra_options: Option<HashMap<String, String>>,
+    job_id: String,
+    #[serde(flatten)]
+    request: executions::RunRequest,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PlanParams {
+    job_id: String,
     project: String,
     service: String,
     target_branch: String,
+    #[serde(default)]
     repo_path: String,
+    #[serde(default)]
+    branch_options: Vec<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LogsParams {
+    #[serde(deserialize_with = "executions::id_from_string_or_number")]
     execution_id: u64,
+    offset: Option<String>,
     backlog: Option<u32>,
 }
 
@@ -132,19 +146,35 @@ impl Plugin for Rundeck {
             match method {
                 "status" => reply(auth::status().await),
                 "login" => answer(auth::login(params(input)?)).await,
+                "loginWithToken" => answer(auth::login_with_token(params(input)?)).await,
                 "logout" => answer(auth::logout()).await,
                 "projects" => answer(projects::projects()).await,
                 "jobs" => {
                     let ProjectParams { project } = params(input)?;
                     answer(projects::jobs(project)).await
                 }
-                "branchesMatrix" => {
-                    let MatrixParams { envs } = params(input)?;
-                    answer(projects::branches_matrix(envs)).await
+                "jobIndex" => answer(projects::job_index()).await,
+                "jobDetail" => {
+                    let JobParams { job_id } = params(input)?;
+                    answer(jobs::job_detail(job_id)).await
                 }
-                "resolveJob" => {
-                    let ServiceParams { project, service } = params(input)?;
-                    answer(projects::resolve_job(&project, &service)).await
+                "optionValues" => {
+                    let UrlParams { url } = params(input)?;
+                    answer(jobs::option_values(url)).await
+                }
+                "branchesMatrix" => {
+                    let MatrixParams {
+                        project,
+                        branch_options,
+                    } = params(input)?;
+                    answer(projects::branches_matrix(project, branch_options)).await
+                }
+                "jobCells" => {
+                    let JobCellsParams {
+                        jobs,
+                        branch_options,
+                    } = params(input)?;
+                    answer(projects::job_cells(jobs, branch_options)).await
                 }
                 "executions" => {
                     let p: ExecutionsParams = params(input)?;
@@ -165,14 +195,8 @@ impl Plugin for Rundeck {
                     answer(executions::execution_state(execution_id)).await
                 }
                 "run" => {
-                    let p: RunParams = params(input)?;
-                    answer(executions::run(
-                        p.project,
-                        p.service,
-                        p.branch,
-                        p.extra_options,
-                    ))
-                    .await
+                    let RunParams { job_id, request } = params(input)?;
+                    answer(executions::run(job_id, request)).await
                 }
                 "abort" => {
                     let ExecutionParams { execution_id } = params(input)?;
@@ -180,12 +204,14 @@ impl Plugin for Rundeck {
                 }
                 "plan" => {
                     let p: PlanParams = params(input)?;
-                    answer(plan::plan(
-                        p.project,
-                        p.service,
-                        p.target_branch,
-                        p.repo_path,
-                    ))
+                    answer(plan::plan(plan::PlanRequest {
+                        job_id: p.job_id,
+                        project: p.project,
+                        service: p.service,
+                        target_branch: p.target_branch,
+                        repo_path: p.repo_path,
+                        branch_options: p.branch_options,
+                    }))
                     .await
                 }
                 _ => Err(PluginError::unknown_method(method)),
@@ -209,9 +235,10 @@ impl Plugin for Rundeck {
                 "logs" => {
                     let LogsParams {
                         execution_id,
+                        offset,
                         backlog,
                     } = params(input)?;
-                    logs::logs(execution_id, backlog, sink).await
+                    logs::logs(execution_id, offset, backlog, sink).await
                 }
                 _ => Err(PluginError::unknown_method(method)),
             }
@@ -227,5 +254,29 @@ mod tests {
     fn its_manifest_parses() {
         let plugin = plugin().expect("manifest parses");
         assert_eq!(plugin.manifest().id, "sikemux.rundeck");
+    }
+
+    #[test]
+    fn run_params_take_the_job_id_and_skip_missing_fields() {
+        let p: RunParams = params(serde_json::json!({
+            "jobId": "abc",
+            "options": {"BRANCH": "main"},
+            "loglevel": "DEBUG",
+            "filter": null,
+            "runAtTime": null,
+            "asUser": null
+        }))
+        .unwrap();
+        assert_eq!(p.job_id, "abc");
+        assert_eq!(
+            serde_json::to_value(&p.request).unwrap(),
+            serde_json::json!({"options": {"BRANCH": "main"}, "loglevel": "DEBUG"})
+        );
+    }
+
+    #[test]
+    fn execution_ids_may_be_strings() {
+        let p: ExecutionParams = params(serde_json::json!({"executionId": "42"})).unwrap();
+        assert_eq!(p.execution_id, 42);
     }
 }

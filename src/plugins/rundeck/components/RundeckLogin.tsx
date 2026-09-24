@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { rundeckApi } from "../api";
+import { errorMessage, rundeckApi } from "../api";
 import { Checkbox } from "../../../plugin-api/ui";
 
 interface Props {
-    paneId: string;
     initialUrl?: string;
     initialUser?: string;
     initialAllowInsecurePrivateHttp?: boolean;
@@ -11,35 +10,41 @@ interface Props {
     onDone: () => void;
 }
 
+type Mode = "password" | "token";
+
+const textProps = { spellCheck: false, autoCapitalize: "off", autoCorrect: "off" } as const;
+
 export function RundeckLogin({ initialUrl = "", initialUser = "", initialAllowInsecurePrivateHttp = false, notice, onDone }: Props) {
+    const [mode, setMode] = useState<Mode>("password");
     const [url, setUrl] = useState(initialUrl);
     const [user, setUser] = useState(initialUser);
     const [password, setPassword] = useState("");
+    const [token, setToken] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(notice ?? null);
-    const [version, setVersion] = useState<string | null>(null);
     const [allowInsecurePrivateHttp, setAllowInsecurePrivateHttp] = useState(initialAllowInsecurePrivateHttp);
 
-    const insecureHttp = url.trim().toLowerCase().startsWith("http://");
-    const canSubmit = url.trim() && user.trim() && password.length > 0 && (!insecureHttp || allowInsecurePrivateHttp) && !busy;
+    const trimmedUrl = url.trim();
+    const insecureHttp = trimmedUrl.toLowerCase().startsWith("http://");
+    const secretReady = mode === "password" ? !!user.trim() && password.length > 0 : !!token.trim();
+    const canSubmit = !!trimmedUrl && secretReady && (!insecureHttp || allowInsecurePrivateHttp) && !busy;
 
     const submit = async () => {
         if (!canSubmit) return;
         setBusy(true);
         setError(null);
+        const allow_insecure_private_http = insecureHttp && allowInsecurePrivateHttp;
         try {
-            const res = await rundeckApi.login({
-                url: url.trim(),
-                user: user.trim(),
-                password,
-                allow_insecure_private_http: insecureHttp && allowInsecurePrivateHttp,
-            });
-            setVersion(res.rundeck_version ?? "connected");
-            setPassword("");
+            if (mode === "password") {
+                await rundeckApi.login({ url: trimmedUrl, user: user.trim(), password, allow_insecure_private_http });
+                setPassword("");
+            } else {
+                await rundeckApi.loginWithToken({ url: trimmedUrl, token: token.trim(), allow_insecure_private_http });
+                setToken("");
+            }
             onDone();
         } catch (e) {
-            const msg = typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e);
-            setError(msg);
+            setError(errorMessage(e));
         } finally {
             setBusy(false);
         }
@@ -47,13 +52,35 @@ export function RundeckLogin({ initialUrl = "", initialUser = "", initialAllowIn
 
     return (
         <div className="rnd-login">
-            <div className="rnd-login-card">
+            <form
+                className="rnd-login-card"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    void submit();
+                }}>
                 <div className="rnd-login-title">
                     <span>connect to rundeck</span>
                 </div>
+                <div className="rnd-login-modes" role="radiogroup" aria-label="Sign-in method">
+                    <ModeChip mode="password" current={mode} onPick={setMode}>
+                        password
+                    </ModeChip>
+                    <ModeChip mode="token" current={mode} onPick={setMode}>
+                        API token
+                    </ModeChip>
+                </div>
                 <div className="rnd-login-help">
-                    The minted token is stored at <code>~/.rd-config</code> (chmod&nbsp;600) and shared with the <code>rnd</code> CLI. Your password
-                    is never saved.
+                    {mode === "password" ? (
+                        <>
+                            Signs in once to mint an API token, stored at <code>~/.rd-config</code> (chmod&nbsp;600) and shared with the{" "}
+                            <code>rnd</code> CLI. Your password is never saved.
+                        </>
+                    ) : (
+                        <>
+                            Paste a token from your Rundeck profile page. It is stored at <code>~/.rd-config</code> (chmod&nbsp;600) and shared with
+                            the <code>rnd</code> CLI.
+                        </>
+                    )}
                 </div>
 
                 <label className="rnd-field">
@@ -63,52 +90,53 @@ export function RundeckLogin({ initialUrl = "", initialUser = "", initialAllowIn
                         placeholder="http://rundeck.internal:4440"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
-                        spellCheck={false}
-                        autoCapitalize="off"
-                        autoCorrect="off"
+                        {...textProps}
                     />
                 </label>
 
                 {insecureHttp && (
                     <div className="rnd-insecure-http">
                         <Checkbox checked={allowInsecurePrivateHttp} onChange={setAllowInsecurePrivateHttp}>
-                            Allow plaintext HTTP for this private-subnet host. I understand the password and token are not protected by TLS. Sikemux
-                            will refuse the connection unless every resolved address is private or loopback.
+                            Allow plaintext HTTP for this private-subnet host. I understand the{" "}
+                            {mode === "password" ? "password and token are" : "token is"} not protected by TLS. Sikemux will refuse the connection
+                            unless every resolved address is private or loopback.
                         </Checkbox>
                     </div>
                 )}
 
-                <label className="rnd-field">
-                    <span>Username</span>
-                    <input
-                        type="text"
-                        value={user}
-                        onChange={(e) => setUser(e.target.value)}
-                        spellCheck={false}
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                    />
-                </label>
-
-                <label className="rnd-field">
-                    <span>Password</span>
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter") void submit();
-                        }}
-                    />
-                </label>
+                {mode === "password" ? (
+                    <>
+                        <label className="rnd-field">
+                            <span>Username</span>
+                            <input type="text" autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} {...textProps} />
+                        </label>
+                        <label className="rnd-field">
+                            <span>Password</span>
+                            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                        </label>
+                    </>
+                ) : (
+                    <label className="rnd-field">
+                        <span>API token</span>
+                        <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} {...textProps} />
+                    </label>
+                )}
 
                 {error && <div className="rnd-login-error">{error}</div>}
-                {version && <div className="rnd-login-success">✓ connected ({version})</div>}
 
-                <button className="rnd-btn rnd-btn-primary" disabled={!canSubmit} onClick={submit}>
+                <button type="submit" className="rnd-btn rnd-btn-primary" disabled={!canSubmit}>
                     {busy ? "signing in…" : "sign in"}
                 </button>
-            </div>
+            </form>
         </div>
+    );
+}
+
+function ModeChip({ mode, current, onPick, children }: { mode: Mode; current: Mode; onPick: (mode: Mode) => void; children: string }) {
+    const on = mode === current;
+    return (
+        <button type="button" role="radio" aria-checked={on} className={`rnd-mode-chip${on ? " on" : ""}`} onClick={() => onPick(mode)}>
+            {children}
+        </button>
     );
 }

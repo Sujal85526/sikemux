@@ -1,11 +1,9 @@
-// ~/.rd-config — byte-compatible with the bash `rnd` CLI so terminal and
-// in-app workflows share one credential store. The CLI writes lines like
-// `RD_URL=%q`-formatted (POSIX-quoted); we accept that form on read but
-// always write plain-quoted strings on save. Either form re-parses cleanly.
+// ~/.rd-config is shared with the bash `rnd` CLI so terminal and in-app logins
+// use one credential store. We read the CLI's `%q`-quoted values, and on save
+// rewrite only the keys this plugin owns, keeping every other line as it was.
 //
-// One global RwLock<RundeckConfig> holds the in-process cache. The HTTP
-// client refreshes from disk before every request so a `rnd login` in a
-// terminal is picked up without restarting the app.
+// One global RwLock<RundeckConfig> caches the file; it is re-read whenever the
+// file's mtime changes, so a `rnd login` in a terminal is picked up.
 
 use std::fs;
 use std::io::Write;
@@ -23,10 +21,10 @@ use crate::error::{RundeckError, RundeckResult};
 pub struct RundeckConfig {
     pub url: String,
     pub user: String,
-    /// Ephemeral login password received from the UI. It is never written to
-    /// disk and is cleared from the returned/saved configuration.
-    pub password: String,
     pub token: String,
+    /// Id of the token this app minted, so logout can revoke it. Empty for a
+    /// pasted token or one the CLI wrote.
+    pub token_id: String,
     /// Explicit user acknowledgement for plaintext HTTP. Even when enabled,
     /// every request must resolve exclusively to private or loopback addresses.
     #[serde(default)]
@@ -96,39 +94,86 @@ fn quote(s: &str) -> String {
     format!("'{escaped}'")
 }
 
-fn read_file() -> RundeckResult<RundeckConfig> {
-    let Some(path) = config_path() else {
-        return Ok(RundeckConfig::default());
-    };
-    if !path.exists() {
-        return Ok(RundeckConfig::default());
+const OWNED_KEYS: [&str; 5] = [
+    "RD_URL",
+    "RD_USER",
+    "RD_TOKEN",
+    "RD_TOKEN_ID",
+    "RD_ALLOW_INSECURE_PRIVATE_HTTP",
+];
+
+fn line_entry(line: &str) -> Option<(&str, &str)> {
+    let line = line.trim();
+    if line.starts_with('#') {
+        return None;
     }
-    let content = fs::read_to_string(&path)?;
+    line.split_once('=').map(|(key, value)| (key.trim(), value))
+}
+
+fn parse(content: &str) -> RundeckConfig {
     let mut cfg = RundeckConfig::default();
-    for raw in content.lines() {
-        let line = raw.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if line.starts_with('#') {
-            continue;
-        }
-        let Some((k, v)) = line.split_once('=') else {
-            continue;
-        };
-        let val = unquote(v);
-        match k.trim() {
+    for (key, value) in content.lines().filter_map(line_entry) {
+        let val = unquote(value);
+        match key {
             "RD_URL" => cfg.url = val.trim_end_matches('/').to_string(),
             "RD_USER" => cfg.user = val,
-            "RD_PASSWORD" => cfg.password = val,
             "RD_TOKEN" => cfg.token = val,
+            "RD_TOKEN_ID" => cfg.token_id = val,
             "RD_ALLOW_INSECURE_PRIVATE_HTTP" => {
                 cfg.allow_insecure_private_http = matches!(val.as_str(), "1" | "true" | "yes")
             }
             _ => {}
         }
     }
-    Ok(cfg)
+    cfg
+}
+
+fn read_file() -> RundeckResult<RundeckConfig> {
+    let Some(path) = config_path() else {
+        return Ok(RundeckConfig::default());
+    };
+    match fs::read_to_string(&path) {
+        Ok(content) => Ok(parse(&content)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(RundeckConfig::default()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn owned_line(key: &str, cfg: &RundeckConfig) -> String {
+    let value = match key {
+        "RD_URL" => cfg.url.as_str(),
+        "RD_USER" => cfg.user.as_str(),
+        "RD_TOKEN" => cfg.token.as_str(),
+        "RD_TOKEN_ID" => cfg.token_id.as_str(),
+        _ if cfg.allow_insecure_private_http => "1",
+        _ => "0",
+    };
+    format!("{key}={}", quote(value))
+}
+
+/// The new file: every existing line kept, owned keys rewritten in place (or
+/// appended when missing) and duplicates of them dropped.
+fn render(existing: &str, cfg: &RundeckConfig) -> String {
+    let mut written: Vec<&str> = Vec::new();
+    let mut out = String::with_capacity(existing.len() + 256);
+    for line in existing.lines() {
+        let owned = line_entry(line)
+            .and_then(|(key, _)| OWNED_KEYS.iter().find(|owned| **owned == key).copied());
+        match owned {
+            Some(key) if written.contains(&key) => continue,
+            Some(key) => {
+                written.push(key);
+                out.push_str(&owned_line(key, cfg));
+            }
+            None => out.push_str(line),
+        }
+        out.push('\n');
+    }
+    for key in OWNED_KEYS.iter().filter(|key| !written.contains(key)) {
+        out.push_str(&owned_line(key, cfg));
+        out.push('\n');
+    }
+    out
 }
 
 fn write_file(cfg: &RundeckConfig) -> RundeckResult<()> {
@@ -139,7 +184,11 @@ fn write_file(cfg: &RundeckConfig) -> RundeckResult<()> {
 }
 
 fn write_file_at(path: &Path, cfg: &RundeckConfig) -> RundeckResult<()> {
-    validate_base_url_with_policy(&cfg.url, cfg.allow_insecure_private_http)?;
+    let existing = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
     let parent = path
         .parent()
         .ok_or_else(|| RundeckError::Api("invalid config path".into()))?;
@@ -151,21 +200,7 @@ fn write_file_at(path: &Path, cfg: &RundeckConfig) -> RundeckResult<()> {
         temp.as_file()
             .set_permissions(fs::Permissions::from_mode(0o600))?;
     }
-    writeln!(temp, "RD_URL={}", quote(&cfg.url))?;
-    writeln!(temp, "RD_USER={}", quote(&cfg.user))?;
-    // Passwords are intentionally never persisted. A rejected token now asks
-    // the user to log in again rather than retaining a reusable password.
-    writeln!(temp, "RD_PASSWORD={}", quote(""))?;
-    writeln!(temp, "RD_TOKEN={}", quote(&cfg.token))?;
-    writeln!(
-        temp,
-        "RD_ALLOW_INSECURE_PRIVATE_HTTP={}",
-        quote(if cfg.allow_insecure_private_http {
-            "1"
-        } else {
-            "0"
-        })
-    )?;
+    temp.write_all(render(&existing, cfg).as_bytes())?;
     temp.as_file_mut().sync_all()?;
     temp.persist(path).map_err(|e| RundeckError::Io(e.error))?;
     #[cfg(unix)]
@@ -336,8 +371,13 @@ pub async fn refresh_from_disk() -> RundeckResult<RundeckConfig> {
     Ok(fresh)
 }
 
-pub async fn get() -> RundeckConfig {
-    cache().read().await.cfg.clone()
+/// Re-reads the file even when its mtime looks unchanged.
+pub async fn load() -> RundeckResult<RundeckConfig> {
+    let fresh = read_file()?;
+    let mut w = cache().write().await;
+    w.cfg = fresh.clone();
+    w.seen_mtime = config_path().as_ref().and_then(mtime_of);
+    Ok(fresh)
 }
 
 pub async fn save(cfg: RundeckConfig) -> RundeckResult<()> {
@@ -375,20 +415,30 @@ mod tests {
     }
 
     #[test]
-    fn writes_atomically_without_persisting_password() {
+    fn writes_atomically_and_keeps_lines_it_does_not_own() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rd-config");
+        fs::write(
+            &path,
+            "# written by rnd\nRD_URL='https://old.example.com'\nRD_PASSWORD='cli-secret'\nRD_PROJECT=ops\nRD_TOKEN='old'\nRD_TOKEN='older'\n",
+        )
+        .unwrap();
         let cfg = RundeckConfig {
             url: "https://rundeck.example.com".into(),
             user: "alice".into(),
-            password: "never-store-me".into(),
             token: "token".into(),
+            token_id: "abc".into(),
             allow_insecure_private_http: false,
         };
         write_file_at(&path, &cfg).unwrap();
         let text = fs::read_to_string(&path).unwrap();
-        assert!(!text.contains("never-store-me"));
-        assert!(text.contains("RD_PASSWORD=''"));
+        assert_eq!(
+            text,
+            "# written by rnd\nRD_URL='https://rundeck.example.com'\nRD_PASSWORD='cli-secret'\nRD_PROJECT=ops\nRD_TOKEN='token'\nRD_USER='alice'\nRD_TOKEN_ID='abc'\nRD_ALLOW_INSECURE_PRIVATE_HTTP='0'\n"
+        );
+        let reread = parse(&text);
+        assert_eq!(reread.token_id, "abc");
+        assert_eq!(reread.url, "https://rundeck.example.com");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -397,5 +447,17 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[test]
+    fn a_cleared_config_writes_without_a_valid_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rd-config");
+        let cfg = RundeckConfig {
+            url: "not a url".into(),
+            ..RundeckConfig::default()
+        };
+        write_file_at(&path, &cfg).unwrap();
+        assert!(!fs::read_to_string(&path).unwrap().contains("RD_PASSWORD"));
     }
 }

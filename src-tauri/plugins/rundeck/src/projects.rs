@@ -1,19 +1,18 @@
-// Project / job listing and the matrix dashboard's one-shot fan-out.
-//
-// The matrix endpoint resolves a list of environment "aliases" (dev /
-// staging / preprod / prod) into real Rundeck project names, then in
-// parallel fetches every job and its last successful execution. Result
-// shape: { env → [{ service, branch, jobId, status, ranAt }] }. One Tauri
-// round-trip drives the entire dashboard render.
+// Projects and jobs, plus the matrix: every job of one project with its
+// newest execution and its newest successful one, fetched in one call.
 
-use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
-use futures::{future::join_all, stream, StreamExt};
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
+use tokio::time::timeout_at;
 
-use crate::error::{RundeckError, RundeckResult};
+use crate::error::RundeckResult;
 
-use crate::client::get_json;
+use crate::client::{get_json, limited, seg};
+use crate::executions::{latest_and_deployed, ExecSummary};
+
+const MATRIX_DEADLINE: Duration = Duration::from_secs(40);
 
 // ---- projects ------------------------------------------------------------
 
@@ -40,6 +39,12 @@ pub struct RundeckJob {
     pub description: Option<String>,
     pub href: Option<String>,
     pub permalink: Option<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub scheduled: Option<bool>,
+    #[serde(rename = "scheduleEnabled", default)]
+    pub schedule_enabled: Option<bool>,
 }
 
 impl RundeckJob {
@@ -53,221 +58,156 @@ impl RundeckJob {
 }
 
 pub async fn jobs(project: String) -> RundeckResult<Vec<RundeckJob>> {
-    let mut out: Vec<RundeckJob> = get_json(&format!("/project/{project}/jobs"), &[]).await?;
+    let path = format!("/project/{}/jobs", seg(&project)?);
+    let mut out: Vec<RundeckJob> = get_json(&path, &[]).await?;
     out.sort_by_key(|job| job.qualified_name());
     Ok(out)
 }
 
-// ---- last-execution + branch matrix --------------------------------------
-
-#[derive(Deserialize)]
-struct ExecutionListResponse {
-    executions: Vec<ExecutionLite>,
-}
-
-#[derive(Deserialize)]
-struct ExecutionLite {
-    id: u64,
-    status: Option<String>,
-    user: Option<String>,
-    job: Option<ExecutionJobLite>,
-    #[serde(rename = "date-started")]
-    date_started: Option<DateField>,
-    #[serde(rename = "date-ended")]
-    date_ended: Option<DateField>,
-    permalink: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct ExecutionJobLite {
-    options: Option<HashMap<String, String>>,
-}
-
-#[derive(Deserialize)]
-struct DateField {
-    date: Option<String>,
-}
-
-#[derive(Serialize, Clone)]
-pub struct MatrixCell {
-    /// Full qualified path including group — kept for back-compat callers
-    /// that still want `backend/user-service` or `dev/backend/user-service`
-    /// as a single string. New UI prefers `name` + `group`.
-    pub service: String,
-    /// Leaf service name only (no group prefix). For both legacy
-    /// `backend/user-service` and product `dev/backend/user-service`
-    /// this is `user-service`.
-    pub name: String,
-    pub job_id: String,
-    /// Slash-separated job group path (`backend`, `dev/backend`, etc.) —
-    /// the UI splits the first segment as the env folder for product
-    /// projects.
-    pub group: Option<String>,
-    pub branch: Option<String>,
-    pub status: Option<String>,
-    pub user: Option<String>,
-    pub started_at: Option<String>,
-    pub ended_at: Option<String>,
-    pub execution_id: Option<u64>,
-    pub permalink: Option<String>,
+#[derive(Serialize)]
+pub struct JobIndexEntry {
+    pub project: String,
+    pub jobs: Vec<RundeckJob>,
     pub error: Option<String>,
 }
 
-#[derive(Serialize)]
-pub struct MatrixEnv {
-    pub env: String,
-    pub project: String,
-    pub cells: Vec<MatrixCell>,
+pub async fn job_index() -> RundeckResult<Vec<JobIndexEntry>> {
+    let all = projects().await?;
+    Ok(join_all(all.into_iter().map(|project| async move {
+        match limited(jobs(project.name.clone())).await {
+            Ok(jobs) => JobIndexEntry {
+                project: project.name,
+                jobs,
+                error: None,
+            },
+            Err(error) => JobIndexEntry {
+                project: project.name,
+                jobs: Vec::new(),
+                error: Some(error.to_string()),
+            },
+        }
+    }))
+    .await)
+}
+
+// ---- matrix ---------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+pub struct MatrixCell {
+    pub service: String,
+    pub name: String,
+    pub job_id: String,
+    pub group: Option<String>,
+    pub enabled: Option<bool>,
+    pub scheduled: Option<bool>,
+    pub latest: Option<ExecSummary>,
+    pub deployed: Option<ExecSummary>,
     pub error: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct MatrixResult {
-    pub envs: Vec<MatrixEnv>,
+    pub project: String,
+    pub cells: Vec<MatrixCell>,
+    pub error: Option<String>,
+    pub partial: bool,
     pub elapsed_ms: u64,
 }
 
-#[derive(Deserialize)]
-pub struct EnvSpec {
-    pub label: String,
-    pub project: String,
-    #[serde(default)]
-    pub only_succeeded: bool,
-}
-
-async fn fetch_last_for_job(job: &RundeckJob, only_succeeded: bool) -> MatrixCell {
-    let mut query: Vec<(&str, String)> = vec![("max", "1".to_string())];
-    if only_succeeded {
-        query.push(("status", "succeeded".to_string()));
-    }
-    let path = format!("/job/{}/executions", job.id);
-    let result: RundeckResult<ExecutionListResponse> = get_json(&path, &query).await;
-
-    let mut cell = MatrixCell {
+fn empty_cell(job: &RundeckJob) -> MatrixCell {
+    MatrixCell {
         service: job.qualified_name(),
         name: job.name.clone(),
         job_id: job.id.clone(),
         group: job.group.clone(),
-        branch: None,
-        status: None,
-        user: None,
-        started_at: None,
-        ended_at: None,
-        execution_id: None,
-        permalink: None,
+        enabled: job.enabled,
+        scheduled: job.scheduled,
+        latest: None,
+        deployed: None,
         error: None,
-    };
-    match result {
-        Ok(resp) => {
-            if let Some(ex) = resp.executions.into_iter().next() {
-                cell.execution_id = Some(ex.id);
-                cell.status = ex.status;
-                cell.user = ex.user;
-                cell.permalink = ex.permalink;
-                cell.started_at = ex.date_started.and_then(|d| d.date);
-                cell.ended_at = ex.date_ended.and_then(|d| d.date);
-                cell.branch = ex
-                    .job
-                    .and_then(|j| j.options)
-                    .and_then(|opts| opts.get("BRANCH").cloned());
-            }
+    }
+}
+
+async fn cell_for(job: &RundeckJob, branch_options: &[String]) -> MatrixCell {
+    let mut cell = empty_cell(job);
+    match latest_and_deployed(&job.id, branch_options).await {
+        Ok((latest, deployed)) => {
+            cell.latest = latest;
+            cell.deployed = deployed;
         }
-        Err(e) => {
-            cell.status = Some("error".into());
-            cell.error = Some(e.to_string());
-        }
+        Err(error) => cell.error = Some(error.to_string()),
     }
     cell
 }
 
-pub async fn branches_matrix(envs: Vec<EnvSpec>) -> RundeckResult<MatrixResult> {
-    let started = std::time::Instant::now();
-
-    let per_env = join_all(envs.into_iter().map(|spec| async move {
-        let jobs_result = jobs(spec.project.clone()).await;
-        let (cells, err) = match jobs_result {
-            Ok(jobs) => {
-                let mut cells = stream::iter(jobs)
-                    .map(|j| async move { fetch_last_for_job(&j, spec.only_succeeded).await })
-                    .buffer_unordered(8)
-                    .collect::<Vec<_>>()
-                    .await;
-                cells.sort_by(|a, b| a.service.cmp(&b.service));
-                (cells, None)
+/// One cell per job, in input order. Cells still loading at `deadline` come
+/// back with a "timed out" error; the flag says whether any did.
+async fn cells_until(
+    jobs: &[RundeckJob],
+    branch_options: &[String],
+    deadline: tokio::time::Instant,
+) -> (Vec<MatrixCell>, bool) {
+    let cells = join_all(jobs.iter().map(|job| async move {
+        match timeout_at(deadline, cell_for(job, branch_options)).await {
+            Ok(cell) => (cell, false),
+            Err(_) => {
+                let mut cell = empty_cell(job);
+                cell.error = Some("timed out".into());
+                (cell, true)
             }
-            Err(e) => (Vec::new(), Some(e.to_string())),
-        };
-        MatrixEnv {
-            env: spec.label,
-            project: spec.project,
-            cells,
-            error: err,
         }
     }))
     .await;
+    let partial = cells.iter().any(|(_, timed_out)| *timed_out);
+    (cells.into_iter().map(|(cell, _)| cell).collect(), partial)
+}
 
+pub async fn branches_matrix(
+    project: String,
+    branch_options: Vec<String>,
+) -> RundeckResult<MatrixResult> {
+    let started = Instant::now();
+    let deadline = tokio::time::Instant::now() + MATRIX_DEADLINE;
+    let elapsed_ms = |started: Instant| started.elapsed().as_millis() as u64;
+
+    let listed = match timeout_at(deadline, limited(jobs(project.clone()))).await {
+        Ok(listed) => listed,
+        Err(_) => {
+            return Ok(MatrixResult {
+                project,
+                cells: Vec::new(),
+                error: Some("timed out".into()),
+                partial: true,
+                elapsed_ms: elapsed_ms(started),
+            })
+        }
+    };
+    let jobs = match listed {
+        Ok(jobs) => jobs,
+        Err(error) => {
+            return Ok(MatrixResult {
+                project,
+                cells: Vec::new(),
+                error: Some(error.to_string()),
+                partial: false,
+                elapsed_ms: elapsed_ms(started),
+            })
+        }
+    };
+    let (cells, partial) = cells_until(&jobs, &branch_options, deadline).await;
     Ok(MatrixResult {
-        envs: per_env,
-        elapsed_ms: started.elapsed().as_millis() as u64,
+        project,
+        cells,
+        error: None,
+        partial,
+        elapsed_ms: elapsed_ms(started),
     })
 }
 
-fn job_matches_service_ref(job: &RundeckJob, service_ref: &str) -> bool {
-    let target = service_ref.trim_matches('/');
-    if target.contains('/') {
-        job.qualified_name() == target
-    } else {
-        job.name == target
-    }
-}
-
-/// Convenience for the deploy flow — resolves group/name to a single job id,
-/// erroring on ambiguity. Mirrors `_find_job_id` in the bash CLI.
-pub async fn resolve_job(project: &str, service_ref: &str) -> RundeckResult<RundeckJob> {
-    let jobs = jobs(project.to_string()).await?;
-    let matches: Vec<&RundeckJob> = jobs
-        .iter()
-        .filter(|j| job_matches_service_ref(j, service_ref))
-        .collect();
-    match matches.as_slice() {
-        [] => Err(RundeckError::Api(format!(
-            "job '{service_ref}' not found in project '{project}'"
-        ))),
-        [j] => Ok((*j).clone()),
-        many => Err(RundeckError::Api(format!(
-            "job '{service_ref}' is ambiguous in '{project}' ({} matches — pass group/name)",
-            many.len()
-        ))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{job_matches_service_ref, RundeckJob};
-
-    fn job(group: Option<&str>, name: &str) -> RundeckJob {
-        RundeckJob {
-            id: "id".into(),
-            name: name.into(),
-            group: group.map(str::to_string),
-            project: "project".into(),
-            description: None,
-            href: None,
-            permalink: None,
-        }
-    }
-
-    #[test]
-    fn matches_nested_group_service_refs() {
-        let j = job(Some("dev/backend"), "content-service");
-        assert!(job_matches_service_ref(&j, "dev/backend/content-service"));
-        assert!(!job_matches_service_ref(&j, "dev"));
-        assert!(!job_matches_service_ref(&j, "dev/content-service"));
-    }
-
-    #[test]
-    fn name_only_refs_still_match_any_group() {
-        let j = job(Some("dev/backend"), "content-service");
-        assert!(job_matches_service_ref(&j, "content-service"));
-    }
+pub async fn job_cells(
+    jobs: Vec<RundeckJob>,
+    branch_options: Vec<String>,
+) -> RundeckResult<Vec<MatrixCell>> {
+    let deadline = tokio::time::Instant::now() + MATRIX_DEADLINE;
+    Ok(cells_until(&jobs, &branch_options, deadline).await.0)
 }

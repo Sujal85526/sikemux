@@ -1,25 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
-import { rundeckApi, type LogEntry, type RundeckExecution as Execution, type RundeckStep, type RundeckWorkflowState } from "../api";
+import { useMemo, useState } from "react";
+import { confirmDialog, openUrl, swallow } from "../../../plugin-api/host";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { EmptyState, IconClock, IconGit, IconRun, IconTimer, IconUser } from "../../../plugin-api/ui";
+import { errorMessage, rundeckApi, type RundeckStep } from "../api";
 import * as cmd from "../state";
+import type { JobRef } from "../state";
+import { rndJobDetailR } from "../resources";
+import { branchOf, displayStatus, duration, formatTime, isLiveStatus } from "../shape";
 import { statusKind } from "./branchStyle";
-import { openUrl, swallow } from "../../../plugin-api/host";
-import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../../../plugin-api/ui";
-import { VirtualLogList } from "../../../plugin-api/ui";
-import { Switch } from "../../../plugin-api/ui";
-import { EmptyState } from "../../../plugin-api/ui";
 import { executionProgress } from "./executionProgress";
+import { useNow } from "./hooks";
+import { reusableOptions } from "./options";
+import { RundeckLogView } from "./RundeckLogView";
+import { useExecutionStreams } from "./useExecutionStreams";
 
 interface Props {
     paneId: string;
-    level: {
-        kind: "execution";
-        executionId: number;
-        project: string;
-        service: string;
-        env?: string;
-        jobId?: string;
-        repoPath?: string;
-    };
+    level: { kind: "execution"; executionId: number } & JobRef;
     active: boolean;
 }
 
@@ -34,171 +31,63 @@ const STEP_STATE: Record<string, { label: string; cls: "pending" | "running" | "
     NOT_ELIGIBLE: { label: "—", cls: "skip" },
 };
 
-const MAX_LOG_ENTRIES = 10000;
-
 export function RundeckExecution({ paneId, level, active }: Props) {
-    const [execution, setExecution] = useState<Execution | null>(null);
-    const [state, setState] = useState<RundeckWorkflowState | null>(null);
-    const [terminal, setTerminal] = useState(false);
-    const [watchErr, setWatchErr] = useState<string | null>(null);
-
-    const [entries, setEntries] = useState<LogEntry[]>([]);
-    const [logsCompleted, setLogsCompleted] = useState(false);
-    const [logsErr, setLogsErr] = useState<string | null>(null);
-    const [followTail, setFollowTail] = useState(true);
+    const { execution, state, terminal, watchErr, logs } = useExecutionStreams(level.executionId, active);
+    const detail = useResourceEnabled(active, rndJobDetailR, level.jobId);
+    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
     const [stepFilter, setStepFilter] = useState<string | null>(null);
     const [aborting, setAborting] = useState(false);
+    const [abortErr, setAbortErr] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (!active) return;
-        setExecution(null);
-        setState(null);
-        setTerminal(false);
-        setWatchErr(null);
-        setEntries([]);
-        setLogsCompleted(false);
-        setLogsErr(null);
-        setStepFilter(null);
-        let watchId: number | undefined;
-        let logsId: number | undefined;
-        let watchStarting = false;
-        let logsStarting = false;
-        let generation = 0;
-        let alive = true;
-
-        const startWatch = () => {
-            if (watchId != null || watchStarting || document.hidden || !alive) return;
-            const startedIn = generation;
-            watchStarting = true;
-            rundeckApi
-                .watchStart(level.executionId, (u) => {
-                    if (!alive || startedIn !== generation) return;
-                    if (u.execution) setExecution(u.execution);
-                    if (u.state) setState(u.state);
-                    setTerminal(u.terminal);
-                    if (u.error) setWatchErr(u.error);
-                    else setWatchErr(null);
-                })
-                .then((id) => {
-                    if (!alive || startedIn !== generation) void rundeckApi.watchStop(id);
-                    else watchId = id;
-                })
-                .catch((e) => {
-                    if (alive && startedIn === generation) setWatchErr(String(e));
-                })
-                .finally(() => {
-                    watchStarting = false;
-                    if (startedIn !== generation) startWatch();
-                });
-        };
-
-        const startLogs = () => {
-            if (logsId != null || logsStarting || document.hidden || !alive) return;
-            const startedIn = generation;
-            logsStarting = true;
-            rundeckApi
-                .logsStart(level.executionId, null, (tick) => {
-                    if (!alive || startedIn !== generation) return;
-                    if (tick.entries.length) {
-                        setEntries((prev) => {
-                            const next = prev.concat(tick.entries);
-                            return next.length > MAX_LOG_ENTRIES ? next.slice(-MAX_LOG_ENTRIES) : next;
-                        });
-                    }
-                    setLogsErr(tick.error);
-                    if (tick.completed) setLogsCompleted(true);
-                })
-                .then((id) => {
-                    if (!alive || startedIn !== generation) void rundeckApi.logsStop(id);
-                    else logsId = id;
-                })
-                .catch((error) => {
-                    if (alive && startedIn === generation) swallow("rnd logs start")(error);
-                })
-                .finally(() => {
-                    logsStarting = false;
-                    if (startedIn !== generation) startLogs();
-                });
-        };
-
-        const start = () => {
-            setEntries([]);
-            setLogsCompleted(false);
-            setLogsErr(null);
-            startWatch();
-            startLogs();
-        };
-
-        const stop = () => {
-            generation += 1;
-            if (watchId != null) {
-                void rundeckApi.watchStop(watchId);
-                watchId = undefined;
-            }
-            if (logsId != null) {
-                void rundeckApi.logsStop(logsId);
-                logsId = undefined;
-            }
-        };
-
-        if (!document.hidden) start();
-        const onVisibility = () => {
-            if (document.hidden) stop();
-            else start();
-        };
-        document.addEventListener("visibilitychange", onVisibility);
-
-        return () => {
-            alive = false;
-            document.removeEventListener("visibilitychange", onVisibility);
-            stop();
-        };
-    }, [level.executionId, active]);
-
-    const filteredEntries = useMemo(() => {
-        if (!stepFilter) return entries;
-        return entries.filter((e) => (e.stepctx ?? "") === stepFilter);
-    }, [entries, stepFilter]);
-
-    const status = execution?.status ?? state?.executionState ?? "unknown";
-    const sk = statusKind(status);
-    const branch = execution?.job?.options?.BRANCH ?? "—";
+    const rawStatus = execution?.status ?? state?.executionState ?? null;
+    const status = displayStatus(rawStatus, execution?.customStatus);
+    const live = isLiveStatus(rawStatus);
+    const now = useNow(live);
+    const options = execution?.job?.options ?? null;
+    const branch = branchOf(options, branchOptions);
     const started = execution?.["date-started"]?.date ?? null;
     const ended = execution?.["date-ended"]?.date ?? null;
-    const dur = duration(started, ended);
-    const running = status.toLowerCase() === "running";
     const progress = executionProgress(state);
+    const steps = state?.steps ?? [];
+    const stepNames = detail.data?.steps ?? [];
+    const stepLabel = (idx: number) => stepNames[idx] || `step ${idx + 1}`;
+    const filterIndex = stepFilter ? steps.findIndex((s, i) => stepKey(s, i) === stepFilter) : -1;
+
+    const secureNames = useMemo(() => new Set(detail.data?.options.filter((o) => o.secure).map((o) => o.name) ?? []), [detail.data]);
 
     const abort = async () => {
+        const ok = await confirmDialog({
+            title: `Abort execution #${level.executionId}?`,
+            body: `${level.name} will be stopped where it is.`,
+            confirmLabel: "abort",
+            destructive: true,
+        });
+        if (!ok) return;
         setAborting(true);
+        setAbortErr(null);
         try {
-            await rundeckApi.abort(level.executionId);
+            const result = await rundeckApi.abort(level.executionId);
+            if (result.abort?.status === "failed") setAbortErr(`Rundeck refused to abort: ${result.abort.reason ?? "no reason given"}`);
+        } catch (e) {
+            setAbortErr(errorMessage(e));
         } finally {
             setAborting(false);
         }
     };
 
-    const replayBranch = execution?.job?.options?.BRANCH ?? "";
-    const canRunAgain = !!level.jobId && !!level.env && !!replayBranch;
+    const canRunAgain = !!execution?.job;
     const runAgain = () => {
-        if (!level.jobId || !level.env || !replayBranch) return;
-        cmd.rundeckPush(paneId, {
-            kind: "deploy",
-            env: level.env,
-            project: level.project,
-            service: level.service,
-            jobId: level.jobId,
-            branch: replayBranch,
-            repoPath: level.repoPath,
-        });
+        if (!execution?.job) return;
+        const job: JobRef = { project: level.project, jobId: level.jobId, name: level.name, group: level.group, repoPath: level.repoPath };
+        cmd.rundeckPush(paneId, { kind: "deploy", ...job, branch: branch ?? undefined, options: reusableOptions(options, secureNames) });
     };
 
     return (
         <div className="rnd-exec">
             <header className="rnd-exec-head">
                 <div className="rnd-exec-head-l">
-                    <span className={`rnd-exec-pill rnd-status-${sk}`}>{status}</span>
-                    {running && (
+                    <span className={`rnd-exec-pill rnd-status-${statusKind(rawStatus)}`}>{status}</span>
+                    {live && (
                         <span className="rnd-head-progress">
                             <span
                                 className={`rnd-progress-track${progress ? "" : " indeterminate"}`}
@@ -217,28 +106,30 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                 </div>
                 <div className="rnd-exec-head-r">
                     <div className="rnd-exec-meta-row">
-                        <span className="rnd-exec-meta" title="branch">
-                            <IconGit size={12} className="rnd-meta-ic branch" />
-                            <span className="rnd-meta-v">{branch}</span>
-                        </span>
-                        <span className="rnd-exec-meta" title="triggered by">
+                        {branch && (
+                            <span className="rnd-exec-meta" title="branch">
+                                <IconGit size={12} className="rnd-meta-ic branch" />
+                                <span className="rnd-meta-v">{branch}</span>
+                            </span>
+                        )}
+                        <span className="rnd-exec-meta dim" title="triggered by">
                             <IconUser size={12} className="rnd-meta-ic" />
                             <span className="rnd-meta-v">{execution?.user ?? "—"}</span>
                         </span>
-                        <span className="rnd-exec-meta" title="started">
+                        <span className="rnd-exec-meta dim" title="started">
                             <IconClock size={12} className="rnd-meta-ic" />
-                            <span className="rnd-meta-v">{started ? formatTime(started) : "—"}</span>
+                            <span className="rnd-meta-v">{started ? formatTime(started, true) : "—"}</span>
                         </span>
-                        <span className="rnd-exec-meta" title="duration">
+                        <span className="rnd-exec-meta dim" title="duration">
                             <IconTimer size={12} className="rnd-meta-ic" />
-                            <span className="rnd-meta-v">{dur || "—"}</span>
+                            <span className="rnd-meta-v">{duration(started, ended, now) || "—"}</span>
                         </span>
                     </div>
                     <button
                         className="rnd-btn-sm rnd-btn-primary"
                         disabled={!canRunAgain}
                         onClick={runAgain}
-                        title={canRunAgain ? `Deploy ${replayBranch} again` : "Run again unavailable for this execution"}>
+                        title={canRunAgain ? "Open the run form with this execution's options" : "Run again unavailable for this execution"}>
                         <IconRun size={11} />
                         run again
                     </button>
@@ -246,15 +137,12 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                         <button
                             type="button"
                             className="rnd-btn-sm"
-                            onClick={() => {
-                                if (execution.permalink) void openUrl(execution.permalink).catch(swallow("open Rundeck URL"));
-                            }}
-                            title="Open in Rundeck UI">
+                            onClick={() => void openUrl(execution.permalink!).catch(swallow("open Rundeck URL"))}>
                             open ↗
                         </button>
                     )}
-                    {running && (
-                        <button className="rnd-btn-sm rnd-btn-danger" disabled={aborting} onClick={abort}>
+                    {live && (
+                        <button className="rnd-btn-sm rnd-btn-danger" disabled={aborting} onClick={() => void abort()}>
                             {aborting ? "aborting…" : "abort"}
                         </button>
                     )}
@@ -262,107 +150,80 @@ export function RundeckExecution({ paneId, level, active }: Props) {
             </header>
 
             {watchErr && <div className="rnd-banner warn">{watchErr}</div>}
-            {logsErr && <div className="rnd-banner warn">Log stream: {logsErr}</div>}
+            {abortErr && <div className="rnd-banner danger">{abortErr}</div>}
 
             <div className="rnd-exec-body">
                 <aside className="rnd-steps">
                     <div className="rnd-steps-head">
                         <span>steps</span>
                         {stepFilter && (
-                            <button className="rnd-pill-x" onClick={() => setStepFilter(null)} title="Clear step filter">
+                            <button className="rnd-pill-x" onClick={() => setStepFilter(null)}>
                                 clear filter
                             </button>
                         )}
                     </div>
                     <div className="rnd-steps-list">
-                        {(state?.steps ?? []).length === 0 && <EmptyState message="waiting for steps…" />}
-                        {(state?.steps ?? []).map((s, i) => {
-                            const filterKey = stepFilterKey(s, i);
+                        {steps.length === 0 && <EmptyState message="waiting for steps…" />}
+                        {steps.map((s, i) => {
+                            const key = stepKey(s, i);
                             return (
                                 <StepRow
-                                    key={filterKey}
+                                    key={key}
                                     idx={i}
+                                    label={stepLabel(i)}
                                     step={s}
-                                    selected={stepFilter === filterKey}
-                                    onClick={() => setStepFilter(filterKey)}
+                                    now={now}
+                                    selected={stepFilter === key}
+                                    onClick={() => setStepFilter(stepFilter === key ? null : key)}
                                 />
                             );
                         })}
                     </div>
                 </aside>
 
-                <section className="rnd-logs">
-                    <div className="rnd-logs-toolbar">
-                        <span className="rnd-logs-title">
-                            output
-                            {stepFilter ? ` · step ${stepFilter}` : " · all steps"}
-                            {logsCompleted ? " · ended" : terminal ? " · ending…" : " · live"}
-                        </span>
-                        <label className="rnd-toggle">
-                            <span>follow</span>
-                            <Switch checked={followTail} onChange={setFollowTail} label="Follow log tail" />
-                        </label>
-                        <span className="rnd-logs-count">{filteredEntries.length} lines</span>
-                    </div>
-                    <VirtualLogList
-                        items={filteredEntries}
-                        className="rnd-logs-stream"
-                        rowClassName={(entry) => `rnd-log-line${entry.level ? ` lvl-${entry.level.toLowerCase()}` : ""}`}
-                        estimateSize={20}
-                        follow={followTail}
-                        empty={<EmptyState message={`no output${stepFilter ? " for this step" : ""} yet`} />}
-                        getItemKey={(entry, index) => `${entry.time ?? ""}:${entry.stepctx ?? ""}:${index}`}
-                        renderRow={(entry) => (
-                            <>
-                                <span className="rnd-log-step">{entry.stepctx ? `[${entry.stepctx}]` : ""}</span>
-                                <span className="rnd-log-text">{entry.log}</span>
-                            </>
-                        )}
-                    />
-                </section>
+                <RundeckLogView
+                    logs={logs}
+                    stepFilter={stepFilter}
+                    stepLabel={filterIndex >= 0 ? stepLabel(filterIndex) : null}
+                    terminal={terminal}
+                    permalink={execution?.permalink ?? null}
+                />
             </div>
         </div>
     );
 }
 
-function stepFilterKey(step: RundeckStep, idx: number): string {
+function stepKey(step: RundeckStep, idx: number): string {
     return step.stepctx ?? String(idx + 1);
 }
 
-function StepRow({ idx, step, selected, onClick }: { idx: number; step: RundeckStep; selected: boolean; onClick: () => void }) {
+function StepRow({
+    idx,
+    label,
+    step,
+    now,
+    selected,
+    onClick,
+}: {
+    idx: number;
+    label: string;
+    step: RundeckStep;
+    now: number;
+    selected: boolean;
+    onClick: () => void;
+}) {
     const stateName = step.executionState ?? "NOT_STARTED";
     const ui = STEP_STATE[stateName] ?? { label: "?", cls: "pending" as const };
-    const dur = duration(step.startTime, step.endTime);
     return (
-        <button className={`rnd-step${selected ? " selected" : ""} step-${ui.cls}`} onClick={onClick} title={stateName}>
+        <button
+            className={`rnd-step${selected ? " selected" : ""} step-${ui.cls}`}
+            onClick={onClick}
+            title={`${label} · ${stateName.toLowerCase()}`}
+            aria-pressed={selected}>
             <span className="rnd-step-num">{idx + 1}</span>
             <span className={`rnd-step-glyph step-${ui.cls}`}>{ui.label}</span>
-            <span className="rnd-step-label">step {stepFilterKey(step, idx)}</span>
-            <span className="rnd-step-dur">{dur}</span>
+            <span className="rnd-step-label">{label}</span>
+            <span className="rnd-step-dur">{duration(step.startTime, step.endTime, now)}</span>
         </button>
     );
-}
-
-function formatTime(iso: string): string {
-    const t = Date.parse(iso);
-    if (Number.isNaN(t)) return iso;
-    return new Date(t).toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-    });
-}
-
-function duration(start: string | null, end: string | null): string {
-    if (!start) return "";
-    const a = Date.parse(start);
-    const b = end ? Date.parse(end) : Date.now();
-    if (Number.isNaN(a) || Number.isNaN(b)) return "";
-    const s = Math.max(0, Math.round((b - a) / 1000));
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    const rest = s % 60;
-    return rest ? `${m}m ${rest}s` : `${m}m`;
 }

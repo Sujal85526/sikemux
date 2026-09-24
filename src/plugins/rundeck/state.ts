@@ -2,84 +2,118 @@ import { create } from "zustand";
 import { closeCorePalettes, onPaneClosed, openSurface } from "../../plugin-api/host";
 import { definePluginSettings } from "../../plugin-api/settings";
 import { RUNDECK_DEPLOY, RUNDECK_PLUGIN_ID } from "./kinds";
-import { envFolderOf, inferEnv } from "./shape";
+import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, basenameOf } from "./shape";
+
+/** A Rundeck job as the views address it, plus the local checkout linked to it, if any. */
+export interface JobRef {
+    project: string;
+    jobId: string;
+    name: string;
+    group: string | null;
+    repoPath?: string;
+}
 
 export type RundeckLevel =
     | { kind: "matrix" }
-    | { kind: "service"; env: string; project: string; service: string; jobId: string; repoPath?: string }
-    | {
-          kind: "deploy";
-          env: string;
-          project: string;
-          service: string;
-          jobId: string;
-          branch: string;
-          repoPath?: string;
-      }
-    | { kind: "execution"; executionId: number; service: string; project: string; env?: string; jobId?: string; repoPath?: string };
+    | ({ kind: "service" } & JobRef)
+    | ({ kind: "deploy"; branch?: string; options?: Record<string, string> } & JobRef)
+    | ({ kind: "execution"; executionId: number } & JobRef);
 
 export interface RundeckView {
     stack: RundeckLevel[];
 }
 
-/** A place a service is deployed from: a Rundeck project plus an env subfolder. */
-export interface DeployRef {
+export interface DeployTarget {
     project: string;
-    folder: string | null;
+    jobId: string;
 }
 
 export interface RundeckSettings {
     activeProject: string;
-    activeEnvFolder: string | null;
+    activeGroup: string | null;
     prodEnvs: string[];
-    /** The deploy location picked for each project folder. */
-    deployTargets: Record<string, DeployRef>;
+    branchOptions: string[];
+    /** The job picked for each local project folder. */
+    deployTargets: Record<string, DeployTarget>;
+    treeHidden: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
-function decodeDeployRef(value: unknown): DeployRef | null {
-    if (!isRecord(value) || typeof value.project !== "string") return null;
-    if (value.folder !== null && typeof value.folder !== "string") return null;
-    return { project: value.project, folder: value.folder };
-}
+const stringList = (value: unknown, fallback: string[]): string[] => {
+    if (!Array.isArray(value)) return fallback;
+    return value.filter((entry): entry is string => typeof entry === "string");
+};
 
 function decodeSettings(saved: unknown): RundeckSettings {
     const raw = isRecord(saved) ? saved : {};
-    const deployTargets: Record<string, DeployRef> = {};
+    const deployTargets: Record<string, DeployTarget> = {};
     for (const [cwd, target] of Object.entries(isRecord(raw.deployTargets) ? raw.deployTargets : {})) {
-        const ref = decodeDeployRef(target);
-        if (ref) deployTargets[cwd] = ref;
+        if (isRecord(target) && typeof target.project === "string" && typeof target.jobId === "string") {
+            deployTargets[cwd] = { project: target.project, jobId: target.jobId };
+        }
     }
     return {
         activeProject: typeof raw.activeProject === "string" ? raw.activeProject : "",
-        activeEnvFolder: typeof raw.activeEnvFolder === "string" ? raw.activeEnvFolder : null,
-        prodEnvs: Array.isArray(raw.prodEnvs) ? raw.prodEnvs.filter((env): env is string => typeof env === "string") : ["prod", "production"],
+        activeGroup: typeof raw.activeGroup === "string" && raw.activeGroup ? raw.activeGroup : null,
+        prodEnvs: stringList(raw.prodEnvs, DEFAULT_PROD_ENVS),
+        branchOptions: stringList(raw.branchOptions, DEFAULT_BRANCH_OPTIONS),
         deployTargets,
+        treeHidden: raw.treeHidden === true,
     };
 }
 
 export const rundeckSettings = definePluginSettings(RUNDECK_PLUGIN_ID, decodeSettings);
 
-export function setDeployTarget(projectCwd: string, target: DeployRef): void {
+export function updateRundeckSettings(patch: Partial<RundeckSettings>): void {
+    rundeckSettings.update((settings) => ({ ...settings, ...patch }));
+}
+
+export function setDeployTarget(projectCwd: string, target: DeployTarget): void {
     rundeckSettings.update((settings) => ({ ...settings, deployTargets: { ...settings.deployTargets, [projectCwd]: target } }));
 }
+
+/** The local checkout for a job: the project in front when its folder is named after the job, else the folder that picked this job. */
+export function linkedRepoPath(job: { jobId: string; name: string }, activeCwd: string | null): string | undefined {
+    if (activeCwd && basenameOf(activeCwd) === job.name) return activeCwd;
+    const targets = rundeckSettings.get().deployTargets;
+    return Object.keys(targets).find((cwd) => targets[cwd].jobId === job.jobId);
+}
+
+export const TREE_MIN_WIDTH = 140;
+export const TREE_MAX_WIDTH = 360;
 
 interface RundeckRuntime {
     views: Record<string, RundeckView>;
     jobPaletteOpen: boolean;
+    /** Folder open/closed choices per pane, keyed by `treeKey`. Absent means "follow the selection". */
+    treeOpen: Record<string, Record<string, boolean>>;
+    treeWidth: number;
 }
 
-export const useRundeck = create<RundeckRuntime>()(() => ({ views: {}, jobPaletteOpen: false }));
+export const useRundeck = create<RundeckRuntime>()(() => ({ views: {}, jobPaletteOpen: false, treeOpen: {}, treeWidth: 196 }));
 
 onPaneClosed((paneId) => {
-    if (!(paneId in useRundeck.getState().views)) return;
-    useRundeck.setState((state) => {
-        const views = { ...state.views };
+    const state = useRundeck.getState();
+    if (!(paneId in state.views) && !(paneId in state.treeOpen)) return;
+    useRundeck.setState((current) => {
+        const views = { ...current.views };
+        const treeOpen = { ...current.treeOpen };
         delete views[paneId];
-        return { views };
+        delete treeOpen[paneId];
+        return { views, treeOpen };
     });
 });
+
+export const treeKey = (project: string, path: string | null): string => `${project}\u0000${path ?? ""}`;
+
+export function setTreeOpen(paneId: string, key: string, open: boolean): void {
+    useRundeck.setState((state) => ({ treeOpen: { ...state.treeOpen, [paneId]: { ...state.treeOpen[paneId], [key]: open } } }));
+}
+
+export function setTreeWidth(width: number): void {
+    useRundeck.setState({ treeWidth: Math.round(Math.max(TREE_MIN_WIDTH, Math.min(TREE_MAX_WIDTH, width))) });
+}
 
 const HOME: RundeckView = { stack: [{ kind: "matrix" }] };
 
@@ -116,12 +150,8 @@ export function rundeckHome(paneId: string): void {
     setStack(paneId, HOME.stack);
 }
 
-function setRundeckProject(project: string, envFolder: string | null = null): void {
-    rundeckSettings.update((settings) => ({ ...settings, activeProject: project, activeEnvFolder: envFolder }));
-}
-
-export function selectRundeckProject(paneId: string, project: string, envFolder: string | null = null): void {
-    setRundeckProject(project, envFolder);
+export function selectRundeckGroup(paneId: string, project: string, group: string | null = null): void {
+    updateRundeckSettings({ activeProject: project, activeGroup: group });
     rundeckHome(paneId);
 }
 
@@ -143,23 +173,17 @@ export const openRundeckSession = (): void => {
     openSurface(RUNDECK_DEPLOY);
 };
 
-interface RundeckTarget {
-    project: string;
-    service: string;
-    jobId: string;
-    group: string | null;
-}
-
-/** Open the Rundeck session straight to a known service, and to its deploy form when a branch is given. */
-export function openRundeckTarget(target: RundeckTarget, repoPath: string, branch?: string): void {
-    const env = inferEnv(target.project, target.group);
-    const paneId = openSurface(RUNDECK_DEPLOY);
+/**
+ * Opens a job, and its run form when a branch is given. `push` keeps the pane's
+ * history underneath; otherwise the pane starts over from the job list.
+ */
+export function openRundeckJob(job: JobRef, options: { paneId?: string | null; branch?: string; push?: boolean } = {}): void {
+    const paneId = options.paneId ?? openSurface(RUNDECK_DEPLOY);
     if (!paneId) return;
-    setRundeckProject(target.project, envFolderOf(target.group));
-    const common = { env, project: target.project, service: target.service, jobId: target.jobId, repoPath };
-    setStack(paneId, [
-        { kind: "matrix" },
-        { kind: "service", ...common },
-        ...(branch !== undefined ? [{ kind: "deploy" as const, ...common, branch }] : []),
-    ]);
+    const settings = rundeckSettings.get();
+    if (settings.activeProject !== job.project) updateRundeckSettings({ activeProject: job.project, activeGroup: null });
+    const service: RundeckLevel = { kind: "service", ...job };
+    const deploy: RundeckLevel[] = options.branch !== undefined ? [{ kind: "deploy", ...job, branch: options.branch }] : [];
+    const base = options.push ? rundeckView(paneId).stack : HOME.stack;
+    setStack(paneId, [...base, service, ...deploy]);
 }

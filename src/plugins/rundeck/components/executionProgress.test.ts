@@ -14,6 +14,7 @@ function execution(id: number, unixtime: number | null, date: string | null = nu
     return {
         id,
         status: "succeeded",
+        customStatus: null,
         user: null,
         project: null,
         "date-started": { date, unixtime },

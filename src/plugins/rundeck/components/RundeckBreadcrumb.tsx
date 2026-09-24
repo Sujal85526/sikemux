@@ -1,150 +1,126 @@
 import { type RundeckStatus } from "../api";
 import * as cmd from "../state";
-import type { RundeckLevel } from "../state";
-import { IconChevron } from "../../../plugin-api/ui";
+import type { JobRef, RundeckLevel } from "../state";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { IconChevron, IconPanelLeft, Tooltip } from "../../../plugin-api/ui";
+import { rndJobDetailR } from "../resources";
+import { branchOptionName, groupSegments } from "../shape";
+import { RundeckSettingsPopover } from "./RundeckSettingsPopover";
 
 interface Props {
     paneId: string;
     status: RundeckStatus | null;
-}
-
-export function RundeckBreadcrumb({ paneId, status }: Props) {
-    const { stack } = cmd.useRundeckView(paneId);
-    const activeProject = cmd.rundeckSettings.useSelect((s) => s.activeProject);
-    const activeEnvFolder = cmd.rundeckSettings.useSelect((s) => s.activeEnvFolder);
-
-    const labels = breadcrumbLabels(paneId, stack, activeProject, activeEnvFolder);
-
-    return (
-        <div className="rnd-bar">
-            <button className="rnd-bar-back" title="Back" disabled={stack.length <= 1} onClick={() => cmd.rundeckPop(paneId)}>
-                <span style={{ transform: "rotate(90deg)", display: "inline-flex" }}>
-                    <IconChevron size={11} />
-                </span>
-            </button>
-            <div className="rnd-bar-trail">
-                {labels.map((l, idx) => (
-                    <span key={l.key} className="rnd-crumb-row">
-                        {idx > 0 && (
-                            <span className="rnd-crumb-sep">
-                                <IconChevron size={9} />
-                            </span>
-                        )}
-                        <button
-                            className={`rnd-crumb${idx === labels.length - 1 ? " current" : ""}`}
-                            onClick={l.onClick}
-                            disabled={l.disabled || idx === labels.length - 1}>
-                            {l.label}
-                        </button>
-                    </span>
-                ))}
-            </div>
-            <div className="rnd-bar-right">
-                {status?.url && (
-                    <span className="rnd-host" title={`${status.user ?? ""}@${status.url}`}>
-                        {hostFromUrl(status.url)}
-                    </span>
-                )}
-            </div>
-        </div>
-    );
+    signedIn: boolean;
+    onSignedOut: () => void;
 }
 
 interface Crumb {
     key: string;
     label: string;
-    onClick: () => void;
-    disabled?: boolean;
+    onClick?: () => void;
 }
 
-function breadcrumbLabels(paneId: string, stack: RundeckLevel[], activeProject: string, activeEnvFolder: string | null): Crumb[] {
+export function RundeckBreadcrumb({ paneId, status, signedIn, onSignedOut }: Props) {
+    const { stack } = cmd.useRundeckView(paneId);
+    const activeProject = cmd.rundeckSettings.useSelect((s) => s.activeProject);
+    const activeGroup = cmd.rundeckSettings.useSelect((s) => s.activeGroup);
+    const treeHidden = cmd.rundeckSettings.useSelect((s) => s.treeHidden);
+    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
     const top = stack[stack.length - 1];
-    if (!top || top.kind === "matrix") {
-        return projectCrumbs(paneId, activeProject, activeEnvFolder);
-    }
+    const deployJobId = top?.kind === "deploy" ? top.jobId : "";
+    const detail = useResourceEnabled(!!deployJobId, rndJobDetailR, deployJobId);
+    const runsBranch = detail.data
+        ? branchOptionName(
+              detail.data.options.map((o) => o.name),
+              branchOptions,
+          ) !== null
+        : !!detail.error;
 
-    if (top.kind === "service") {
-        return [
-            ...projectCrumbs(paneId, top.project, top.env),
-            ...serviceCrumbs(paneId, top.service, top.env, {
-                disabled: true,
-            }),
-        ];
-    }
+    const crumbs = breadcrumbs(paneId, stack, activeProject, activeGroup, runsBranch ? "deploy" : "run");
 
-    if (top.kind === "deploy") {
-        const serviceIndex = findPriorServiceIndex(stack, top.project, top.service);
-        return [
-            ...projectCrumbs(paneId, top.project, top.env),
-            ...serviceCrumbs(paneId, top.service, top.env, {
-                onClick:
-                    serviceIndex >= 0
-                        ? () => cmd.rundeckPopTo(paneId, serviceIndex)
-                        : () =>
-                              cmd.rundeckReplace(paneId, {
-                                  kind: "service",
-                                  env: top.env,
-                                  project: top.project,
-                                  service: top.service,
-                                  jobId: top.jobId,
-                                  repoPath: top.repoPath,
-                              }),
-            }),
-            {
-                key: `deploy-${top.project}-${top.service}-${top.branch}`,
-                label: "deploy",
-                onClick: () => cmd.rundeckPopTo(paneId, stack.length - 1),
-            },
-        ];
-    }
+    return (
+        <div className="rnd-bar">
+            <button className="rnd-bar-back" aria-label="Back" disabled={stack.length <= 1} onClick={() => cmd.rundeckPop(paneId)}>
+                <IconChevron size={11} className="rnd-bar-back-ic" />
+            </button>
+            {signedIn && (
+                <Tooltip label={treeHidden ? "Show project tree" : "Hide project tree"}>
+                    <button
+                        className={`rnd-bar-icon${treeHidden ? "" : " on"}`}
+                        aria-pressed={!treeHidden}
+                        aria-label="Project tree"
+                        onClick={() => cmd.updateRundeckSettings({ treeHidden: !treeHidden })}>
+                        <IconPanelLeft size={13} />
+                    </button>
+                </Tooltip>
+            )}
+            <nav className="rnd-bar-trail" aria-label="Rundeck location">
+                {crumbs.map((crumb, idx) => {
+                    const current = idx === crumbs.length - 1;
+                    return (
+                        <span key={crumb.key} className="rnd-crumb-row">
+                            {idx > 0 && (
+                                <span className="rnd-crumb-sep" aria-hidden="true">
+                                    <IconChevron size={9} />
+                                </span>
+                            )}
+                            <button
+                                className={`rnd-crumb${current ? " current" : ""}`}
+                                onClick={crumb.onClick}
+                                disabled={current || !crumb.onClick}
+                                aria-current={current ? "page" : undefined}>
+                                {crumb.label}
+                            </button>
+                        </span>
+                    );
+                })}
+            </nav>
+            <div className="rnd-bar-right">
+                {status?.url && (
+                    <span
+                        className="rnd-host"
+                        title={[`${status.user ?? ""}@${status.url}`, status.ok ? status.message : null].filter(Boolean).join(" · ")}>
+                        {hostFromUrl(status.url)}
+                    </span>
+                )}
+                {signedIn && <RundeckSettingsPopover onSignedOut={onSignedOut} />}
+            </div>
+        </div>
+    );
+}
 
-    const serviceIndex = findPriorServiceIndex(stack, top.project, top.service);
-    const env = top.env ?? activeEnvFolder;
+function breadcrumbs(paneId: string, stack: RundeckLevel[], activeProject: string, activeGroup: string | null, runWord: string): Crumb[] {
+    const top = stack[stack.length - 1];
+    if (!top || top.kind === "matrix") return locationCrumbs(paneId, activeProject, activeGroup);
+
+    const serviceIndex = findPriorServiceIndex(stack, top.jobId);
+    const job: Crumb = {
+        key: `job-${top.jobId}`,
+        label: top.name,
+        onClick: serviceIndex >= 0 ? () => cmd.rundeckPopTo(paneId, serviceIndex) : undefined,
+    };
+    const base = [...locationCrumbs(paneId, top.project, top.group), job];
+    if (top.kind === "service") return base;
+    if (top.kind === "deploy") return [...base, { key: "run", label: runWord }];
+    return [...base, { key: `execution-${top.executionId}`, label: `#${top.executionId}` }];
+}
+
+function locationCrumbs(paneId: string, project: string, group: string | null): Crumb[] {
+    if (!project) return [{ key: "deployments", label: "deployments", onClick: () => cmd.rundeckHome(paneId) }];
+    const segments = groupSegments(group);
     return [
-        ...projectCrumbs(paneId, top.project, env),
-        ...serviceCrumbs(paneId, top.service, env, {
-            disabled: serviceIndex < 0,
-            onClick: serviceIndex >= 0 ? () => cmd.rundeckPopTo(paneId, serviceIndex) : undefined,
+        { key: `project-${project}`, label: project, onClick: () => cmd.selectRundeckGroup(paneId, project, null) },
+        ...segments.map((segment, index) => {
+            const path = segments.slice(0, index + 1).join("/");
+            return { key: `group-${path}`, label: segment, onClick: () => cmd.selectRundeckGroup(paneId, project, path) };
         }),
-        {
-            key: `execution-${top.executionId}`,
-            label: `#${top.executionId}`,
-            onClick: () => cmd.rundeckPopTo(paneId, stack.length - 1),
-        },
     ];
 }
 
-function projectCrumbs(paneId: string, project: string, env: string | null | undefined): Crumb[] {
-    if (!project) {
-        return [{ key: "deployments", label: "deployments", onClick: () => cmd.rundeckHome(paneId) }];
-    }
-    const envFolder = env && env.toLowerCase() !== project.toLowerCase() ? env : null;
-    return [
-        { key: `project-${project}`, label: project, onClick: () => cmd.selectRundeckProject(paneId, project, null) },
-        ...(envFolder ? [{ key: `env-${envFolder}`, label: envFolder, onClick: () => cmd.selectRundeckProject(paneId, project, envFolder) }] : []),
-    ];
-}
-
-function serviceCrumbs(paneId: string, service: string, env: string | null | undefined, opts: { onClick?: () => void; disabled?: boolean }): Crumb[] {
-    const parts = service
-        .split("/")
-        .map((p) => p.trim())
-        .filter(Boolean);
-    const normalized = env && parts[0] === env ? parts.slice(1) : parts;
-    return normalized.map((label, i) => ({
-        key: `svc-${i}-${label}`,
-        label,
-        onClick: opts.onClick ?? (() => cmd.rundeckHome(paneId)),
-        disabled: opts.disabled,
-    }));
-}
-
-function findPriorServiceIndex(stack: RundeckLevel[], project: string, service: string): number {
+function findPriorServiceIndex(stack: RundeckLevel[], jobId: JobRef["jobId"]): number {
     for (let i = stack.length - 2; i >= 0; i -= 1) {
         const level = stack[i];
-        if (level.kind === "service" && level.project === project && level.service === service) {
-            return i;
-        }
+        if (level.kind === "service" && level.jobId === jobId) return i;
     }
     return -1;
 }

@@ -8,6 +8,8 @@ pub enum RundeckError {
     Api(String),
     Unconfigured,
     Auth(String),
+    Forbidden(String),
+    Transport(String),
     Http { status: u16, message: String },
     BadArg(&'static str),
     Io(io::Error),
@@ -20,6 +22,8 @@ impl fmt::Display for RundeckError {
             Self::Api(message) => write!(formatter, "rundeck: {message}"),
             Self::Unconfigured => formatter.write_str("rundeck: not configured"),
             Self::Auth(message) => write!(formatter, "rundeck: auth failed: {message}"),
+            Self::Forbidden(message) => write!(formatter, "rundeck: not allowed: {message}"),
+            Self::Transport(message) => write!(formatter, "rundeck: {message}"),
             Self::Http { status, message } => {
                 write!(formatter, "rundeck: http {status}: {message}")
             }
@@ -44,7 +48,7 @@ impl From<serde_json::Error> for RundeckError {
 
 impl From<reqwest::Error> for RundeckError {
     fn from(error: reqwest::Error) -> Self {
-        Self::Api(error.to_string())
+        Self::Transport(error.to_string())
     }
 }
 
@@ -54,6 +58,8 @@ impl From<RundeckError> for PluginError {
             RundeckError::Api(_) => "rundeck",
             RundeckError::Unconfigured => "unconfigured",
             RundeckError::Auth(_) => "auth",
+            RundeckError::Forbidden(_) => "forbidden",
+            RundeckError::Transport(_) => "rundeck",
             RundeckError::Http { .. } => "http",
             RundeckError::BadArg(_) => "bad-params",
             RundeckError::Io(_) => "io",
@@ -61,6 +67,7 @@ impl From<RundeckError> for PluginError {
         };
         let status = match &error {
             RundeckError::Http { status, .. } => Some(*status),
+            RundeckError::Forbidden(_) => Some(403),
             _ => None,
         };
         let plugin_error = PluginError::new(category, error.to_string());

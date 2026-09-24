@@ -1,78 +1,69 @@
 import { useMemo } from "react";
-import { type MatrixCell, type RundeckEnvSpec } from "../api";
+import type { MatrixCell } from "../api";
 import * as cmd from "../state";
 import { useResourceEnabled } from "../../../plugin-api/resources";
+import { useActiveProjectCwd } from "../../../plugin-api/host";
 import { rndMatrixR } from "../resources";
-import { envFolderOf, inferEnv } from "../shape";
-import { IconSearch } from "../../../plugin-api/ui";
-import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
-import { PRIMARY_SHORTCUT } from "../../../plugin-api/ui";
-import { EmptyState } from "../../../plugin-api/ui";
-import { IconWarning, IconRundeck } from "../../../plugin-api/ui";
+import { childSegment, inGroup, isLiveStatus } from "../shape";
+import { EmptyState, IconRundeck, IconSearch, IconWarning } from "../../../plugin-api/ui";
+import { useNow } from "./hooks";
+import { RundeckMatrixRow } from "./RundeckMatrixRow";
 
 interface Props {
     paneId: string;
     active: boolean;
 }
 
+interface RowGroup {
+    segment: string | null;
+    cells: MatrixCell[];
+}
+
 export function RundeckMatrix({ paneId, active }: Props) {
     const project = cmd.rundeckSettings.useSelect((s) => s.activeProject);
-    const envFolder = cmd.rundeckSettings.useSelect((s) => s.activeEnvFolder);
+    const activeGroup = cmd.rundeckSettings.useSelect((s) => s.activeGroup);
+    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const activeCwd = useActiveProjectCwd();
 
-    const specs = useMemo<RundeckEnvSpec[]>(() => (project ? [{ label: project, project, only_succeeded: true }] : []), [project]);
-
-    const res = useResourceEnabled(active && specs.length > 0, rndMatrixR, specs);
-
+    const res = useResourceEnabled(active && !!project, rndMatrixR, project, branchOptions);
     const data = res.data;
-    const env = data?.envs[0] ?? null;
-    const cells = useMemo(() => {
-        const list = (env?.cells ?? []).filter((c) => {
-            if (!envFolder) return true;
-            return envFolderOf(c.group) === envFolder;
-        });
-        list.sort((a, b) => a.name.localeCompare(b.name));
-        return list;
-    }, [env, envFolder]);
-    const loading = res.status === "loading" && !data;
 
-    const groups = useMemo(() => {
-        if (envFolder) return [{ env: null, cells }];
-        const map = new Map<string, MatrixCell[]>();
-        for (const c of cells) {
-            const folder = envFolderOf(c.group) ?? "_ungrouped";
-            const arr = map.get(folder) ?? [];
-            arr.push(c);
-            map.set(folder, arr);
-        }
-        if (map.size === 1 && map.has("_ungrouped")) {
-            return [{ env: null, cells }];
+    const cells = useMemo(() => {
+        const list = (data?.cells ?? []).filter((c) => inGroup(c.group, activeGroup));
+        return list.sort((a, b) => a.name.localeCompare(b.name));
+    }, [data, activeGroup]);
+
+    const groups = useMemo<RowGroup[]>(() => {
+        const map = new Map<string | null, MatrixCell[]>();
+        for (const cell of cells) {
+            const segment = childSegment(cell.group, activeGroup);
+            map.set(segment, [...(map.get(segment) ?? []), cell]);
         }
         return [...map.entries()]
-            .sort(([a], [b]) => {
-                if (a === "_ungrouped") return 1;
-                if (b === "_ungrouped") return -1;
-                return a.localeCompare(b);
-            })
-            .map(([folder, group]) => ({
-                env: folder === "_ungrouped" ? null : folder,
-                cells: group,
-            }));
-    }, [cells, envFolder]);
+            .sort(([a], [b]) => (a === null ? -1 : b === null ? 1 : a.localeCompare(b)))
+            .map(([segment, list]) => ({ segment, cells: list }));
+    }, [cells, activeGroup]);
+
+    const anyLive = cells.some((c) => isLiveStatus(c.latest?.status));
+    const now = useNow(active, anyLive ? 1_000 : 30_000);
+    const loading = res.status === "loading";
+    const timedOut = cells.filter((c) => c.error === "timed out").length;
 
     if (!project) {
-        return <EmptyState icon={<IconRundeck size={14} />} message="Pick a Rundeck project from the top bar." />;
+        return <EmptyState icon={<IconRundeck size={14} />} message="Pick a Rundeck project from the tree." />;
     }
+
+    const groupPath = (segment: string) => (activeGroup ? `${activeGroup}/${segment}` : segment);
 
     return (
         <div className="rnd-list">
             <div className="rnd-list-toolbar">
                 <span className="rnd-list-meta">
                     <span className="rnd-list-meta-n">{cells.length}</span>
-                    <span className="rnd-list-meta-l">services</span>
+                    <span className="rnd-list-meta-l">jobs</span>
                     <span className="rnd-list-meta-sep">·</span>
-                    <span className="rnd-list-meta-l">project</span>
-                    <span className="rnd-list-meta-v">{project}</span>
-                    {data && (
+                    <span className="rnd-list-meta-v">{activeGroup ? `${project} / ${activeGroup}` : project}</span>
+                    {data && !loading && (
                         <>
                             <span className="rnd-list-meta-sep">·</span>
                             <span className="rnd-list-meta-l">{data.elapsed_ms}ms</span>
@@ -87,17 +78,23 @@ export function RundeckMatrix({ paneId, active }: Props) {
                     )}
                 </span>
                 <div className="rnd-list-tools">
-                    <button className="rnd-btn-sm" onClick={cmd.openRundeckJobPalette} disabled={cells.length === 0} title="Search jobs">
+                    <button className="rnd-btn-sm" onClick={cmd.openRundeckJobPalette} title="Search jobs in every project">
                         <IconSearch size={12} />
                         search
                     </button>
-                    <button className="rnd-btn-sm" onClick={() => res.refresh()} disabled={loading} title="Refresh">
+                    <button className="rnd-btn-sm" onClick={() => void res.refresh()} disabled={loading} title="Refresh">
                         refresh
                     </button>
                 </div>
             </div>
 
-            {env?.error && <div className="rnd-banner warn">{env.error}</div>}
+            {data?.error && <div className="rnd-banner warn">{data.error}</div>}
+            {data?.partial && (
+                <div className="rnd-banner warn">
+                    Rundeck was slow to answer{timedOut ? `: ${timedOut} job${timedOut === 1 ? "" : "s"} timed out` : ""}. Those rows show no recent
+                    runs — refresh to try again.
+                </div>
+            )}
             {res.error && !data && (
                 <EmptyState
                     tone="error"
@@ -109,106 +106,26 @@ export function RundeckMatrix({ paneId, active }: Props) {
             )}
 
             <div className="rnd-list-rows">
-                {cells.length === 0 && !loading && <EmptyState message={`No jobs in ${project}.`} />}
+                {data && cells.length === 0 && <EmptyState message={activeGroup ? `No jobs in ${activeGroup}.` : `No jobs in ${project}.`} />}
                 {groups.map((g) => (
-                    <div className="rnd-group" key={g.env ?? "_flat"}>
-                        {g.env && (
+                    <div className="rnd-group" key={g.segment ?? "\u0000"}>
+                        {g.segment !== null && (
                             <div className="rnd-group-head">
-                                <span className="rnd-group-folder">{g.env}/</span>
-                                <span className="rnd-group-count">{g.cells.length}</span>
+                                <button
+                                    type="button"
+                                    className="rnd-group-link"
+                                    onClick={() => cmd.selectRundeckGroup(paneId, project, groupPath(g.segment!))}>
+                                    <span className="rnd-group-folder">{g.segment}/</span>
+                                    <span className="rnd-group-count">{g.cells.length}</span>
+                                </button>
                             </div>
                         )}
                         {g.cells.map((c) => (
-                            <DeployRow key={c.job_id} paneId={paneId} project={project} cell={c} />
+                            <RundeckMatrixRow key={c.job_id} paneId={paneId} project={project} cell={c} activeCwd={activeCwd} now={now} />
                         ))}
                     </div>
                 ))}
             </div>
         </div>
     );
-}
-
-function DeployRow({ paneId, project, cell }: { paneId: string; project: string; cell: MatrixCell }) {
-    const branch = cell.branch ?? null;
-    const k = branchKind(branch);
-    const sk = statusKind(cell.status);
-    const env = inferEnv(project, cell.group);
-
-    const open = () =>
-        cmd.rundeckPush(paneId, {
-            kind: "service",
-            env,
-            project,
-            service: cell.service,
-            jobId: cell.job_id,
-        });
-
-    const deploy = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        open();
-        cmd.rundeckPush(paneId, {
-            kind: "deploy",
-            env,
-            project,
-            service: cell.service,
-            jobId: cell.job_id,
-            branch: branch ?? "",
-        });
-    };
-
-    const openLast = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (cell.execution_id == null) return;
-        open();
-        cmd.rundeckPush(paneId, {
-            kind: "execution",
-            executionId: cell.execution_id,
-            project,
-            service: cell.service,
-            env,
-            jobId: cell.job_id,
-        });
-    };
-
-    return (
-        <div className="rnd-list-row" title={cell.error ?? undefined}>
-            <button
-                type="button"
-                className="rnd-row-open"
-                aria-label={`Open ${cell.name} in ${env}`}
-                onClick={(event) => {
-                    if (event.metaKey || event.ctrlKey) deploy(event);
-                    else open();
-                }}>
-                <span className={`rnd-row-glyph rnd-branch-${k}`}>{BRANCH_GLYPH[k]}</span>
-                <span className="rnd-row-svc">{cell.name}</span>
-                <span className={`rnd-row-branch rnd-branch-${k}`} title={branch ?? ""}>
-                    {branch ?? "—"}
-                </span>
-                <span className={`rnd-row-status rnd-status-${sk}`}>{cell.status ?? "—"}</span>
-                <span className="rnd-row-user">{cell.user ?? "—"}</span>
-                <span className="rnd-row-when">{cell.ended_at ? relativeTime(cell.ended_at) : "—"}</span>
-            </button>
-            <span className="rnd-row-actions">
-                {cell.execution_id != null && (
-                    <button className="rnd-row-action" onClick={openLast} title="View last execution">
-                        last
-                    </button>
-                )}
-                <button className="rnd-row-action accent" onClick={deploy} title={`Deploy (${PRIMARY_SHORTCUT}click anywhere on the row)`}>
-                    deploy
-                </button>
-            </span>
-        </div>
-    );
-}
-
-function relativeTime(iso: string): string {
-    const t = Date.parse(iso);
-    if (Number.isNaN(t)) return "";
-    const dt = (Date.now() - t) / 1000;
-    if (dt < 60) return `${Math.floor(dt)}s ago`;
-    if (dt < 3600) return `${Math.floor(dt / 60)}m ago`;
-    if (dt < 86400) return `${Math.floor(dt / 3600)}h ago`;
-    return `${Math.floor(dt / 86400)}d ago`;
 }

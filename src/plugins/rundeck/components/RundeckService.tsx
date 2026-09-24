@@ -1,92 +1,159 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { git } from "../../../plugin-api/host";
-import { rundeckApi, type RundeckExecution } from "../api";
+import { git, openUrl, swallow } from "../../../plugin-api/host";
+import { errorMessage, type JobDetail, type RundeckExecution } from "../api";
 import * as cmd from "../state";
+import type { JobRef } from "../state";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { rndExecutionsR } from "../resources";
-import { IconFetch, IconGit, IconRefresh, IconRun } from "../../../plugin-api/ui";
-import { EmptyState } from "../../../plugin-api/ui";
-import { SkeletonRows } from "../../../plugin-api/ui";
+import { rndExecutionsR, rndJobDetailR, rndJobsR } from "../resources";
+import { EmptyState, IconFetch, IconGit, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
+import { branchOf, branchOptionName, displayStatus, duration, formatTime, groupSegments, isLiveStatus } from "../shape";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 import { executionProgress, newestExecutions } from "./executionProgress";
+import { useNow } from "./hooks";
+import { reusableOptions } from "./options";
 
 interface Props {
     paneId: string;
-    level: {
-        kind: "service";
-        env: string;
-        project: string;
-        service: string;
-        jobId: string;
-        repoPath?: string;
-    };
+    level: { kind: "service" } & JobRef;
     active: boolean;
 }
 
 export function RundeckService({ paneId, level, active }: Props) {
+    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const detail = useResourceEnabled(active, rndJobDetailR, level.jobId);
+    const jobs = useResourceEnabled(active, rndJobsR, level.project);
     const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 25);
     const [actionError, setActionError] = useState<string | null>(null);
     const [manualBranch, setManualBranch] = useState("");
     const refreshRef = useRef(execs.refresh);
     refreshRef.current = execs.refresh;
+
     const executions = useMemo(() => newestExecutions(execs.data ?? []), [execs.data]);
+    const summary = jobs.data?.find((job) => job.id === level.jobId) ?? null;
+    const anyLive = executions.some((ex) => isLiveStatus(ex.status));
+    const now = useNow(active && anyLive);
+
+    const branchKey = detail.data
+        ? branchOptionName(
+              detail.data.options.map((o) => o.name),
+              branchOptions,
+          )
+        : null;
+    const runsBranch = detail.data
+        ? branchKey !== null
+        : !!detail.error || executions.some((ex) => branchOf(ex.job?.options, branchOptions) !== null);
+    const runWord = runsBranch ? "deploy" : "run";
+    const executionEnabled = detail.data?.execution_enabled !== false && summary?.enabled !== false;
+    const secureNames = useMemo(() => new Set(detail.data?.options.filter((o) => o.secure).map((o) => o.name) ?? []), [detail.data]);
+
+    const lastGood = executions.find((ex) => ex.status === "succeeded" && (!runsBranch || branchOf(ex.job?.options, branchOptions) !== null)) ?? null;
 
     useEffect(() => {
         if (!active) return;
         const refresh = () => {
             if (!document.hidden) void refreshRef.current().catch(() => {});
         };
-        const timer = window.setInterval(refresh, 3_000);
+        const timer = window.setInterval(refresh, anyLive ? 3_000 : 20_000);
         document.addEventListener("visibilitychange", refresh);
         return () => {
             window.clearInterval(timer);
             document.removeEventListener("visibilitychange", refresh);
         };
-    }, [active, level.jobId, level.project]);
+    }, [active, anyLive, level.jobId, level.project]);
+
+    const job: JobRef = { project: level.project, jobId: level.jobId, name: level.name, group: level.group, repoPath: level.repoPath };
+
+    const openForm = (branch: string | undefined, options?: Record<string, string>) => {
+        setActionError(null);
+        cmd.rundeckPush(paneId, { kind: "deploy", ...job, branch, options });
+    };
+
+    const deployCurrentBranch = async () => {
+        if (!level.repoPath) return;
+        setActionError(null);
+        try {
+            const status = await git.status(level.repoPath);
+            openForm(status.branch === "HEAD" ? "" : status.branch);
+        } catch (e) {
+            setActionError(errorMessage(e));
+        }
+    };
+
+    const repeatLast = () => {
+        if (!lastGood) return;
+        openForm(branchOf(lastGood.job?.options, branchOptions) ?? undefined, reusableOptions(lastGood.job?.options, secureNames));
+    };
 
     return (
         <div className="rnd-service">
+            <ServiceHeader
+                level={level}
+                detail={detail.data ?? null}
+                permalink={summary?.permalink ?? null}
+                scheduled={summary?.scheduled ?? detail.data?.scheduled ?? false}
+            />
+            {detail.error && <div className="rnd-banner muted">Couldn't read job options: {detail.error}</div>}
+            {!executionEnabled && <div className="rnd-banner warn">Executions are disabled for this job in Rundeck.</div>}
+
             <div className="rnd-svc-bar">
-                <form
-                    className="rnd-composer"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        deployBranch(paneId, level, manualBranch, setActionError);
-                    }}>
-                    <input
-                        type="text"
-                        value={manualBranch}
-                        onChange={(e) => setManualBranch(e.target.value)}
-                        placeholder="branch name"
-                        spellCheck={false}
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                        title="Branch to deploy"
-                    />
-                    <button className="rnd-composer-go" disabled={!manualBranch.trim()} title="Review and deploy this branch">
+                {runsBranch ? (
+                    <form
+                        className="rnd-composer"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            const branch = manualBranch.trim();
+                            if (branch) openForm(branch);
+                        }}>
+                        <input
+                            type="text"
+                            value={manualBranch}
+                            onChange={(e) => setManualBranch(e.target.value)}
+                            placeholder="branch name"
+                            aria-label="Branch to deploy"
+                            spellCheck={false}
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                        />
+                        <button className="rnd-composer-go" disabled={!manualBranch.trim() || !executionEnabled}>
+                            <IconRun size={11} />
+                            deploy
+                        </button>
+                    </form>
+                ) : (
+                    <button className="rnd-btn rnd-btn-primary" onClick={() => openForm(undefined)} disabled={!executionEnabled}>
                         <IconRun size={11} />
-                        deploy
+                        run…
                     </button>
-                </form>
+                )}
 
                 <span className="rnd-svc-div" />
 
+                {runsBranch && (
+                    <Tooltip label={level.repoPath ? `Deploy the branch checked out in ${level.repoPath}` : "No local checkout linked to this job"}>
+                        <span className="rnd-btn-wrap">
+                            <button
+                                className="rnd-ghost-btn"
+                                onClick={() => void deployCurrentBranch()}
+                                disabled={!level.repoPath || !executionEnabled}>
+                                <IconGit size={13} />
+                                current branch
+                            </button>
+                        </span>
+                    </Tooltip>
+                )}
+                <Tooltip label={lastGood ? `Prefill from #${lastGood.id}` : `No successful ${runWord} with a branch in the list below`}>
+                    <span className="rnd-btn-wrap">
+                        <button className="rnd-ghost-btn" onClick={repeatLast} disabled={!lastGood || !executionEnabled}>
+                            <IconFetch size={13} />
+                            {runsBranch ? "redeploy last" : "rerun last"}
+                        </button>
+                    </span>
+                </Tooltip>
                 <button
-                    className="rnd-ghost-btn"
-                    onClick={() => void deployCurrentBranch(paneId, level, setActionError)}
-                    title="Deploy current local branch">
-                    <IconGit size={13} />
-                    current branch
-                </button>
-                <button
-                    className="rnd-ghost-btn"
-                    onClick={() => void redeployLast(paneId, level, executions, setActionError)}
-                    disabled={!executions.length}
-                    title="Redeploy the last successful branch">
-                    <IconFetch size={13} />
-                    redeploy last
-                </button>
-                <button className="rnd-icon-btn" onClick={() => execs.refresh()} disabled={execs.status === "loading"} title="Refresh executions">
+                    className="rnd-icon-btn"
+                    onClick={() => void execs.refresh()}
+                    disabled={execs.status === "loading"}
+                    aria-label="Refresh executions">
                     <IconRefresh size={13} />
                 </button>
             </div>
@@ -98,9 +165,10 @@ export function RundeckService({ paneId, level, active }: Props) {
                     <span>recent executions</span>
                     <span className="rnd-history-help">click a row to open the live view</span>
                 </div>
+                {execs.error && <div className="rnd-banner danger">{execs.error}</div>}
                 {execs.status === "loading" && !execs.data && <SkeletonRows rows={4} label="Loading executions" />}
                 {executions.map((ex) => (
-                    <ExecutionRow key={ex.id} paneId={paneId} level={level} ex={ex} />
+                    <ExecutionRow key={ex.id} paneId={paneId} job={job} ex={ex} branchOptions={branchOptions} now={now} />
                 ))}
                 {execs.data && execs.data.length === 0 && <EmptyState message="No executions for this job yet." />}
             </div>
@@ -108,48 +176,77 @@ export function RundeckService({ paneId, level, active }: Props) {
     );
 }
 
+function ServiceHeader({
+    level,
+    detail,
+    permalink,
+    scheduled,
+}: {
+    level: JobRef;
+    detail: JobDetail | null;
+    permalink: string | null;
+    scheduled: boolean;
+}) {
+    const path = groupSegments(level.group).join(" / ");
+    return (
+        <div className="rnd-section-head">
+            <div className="rnd-section-title">
+                <span className="rnd-section-eyebrow">{path ? `${level.project} / ${path}` : level.project}</span>
+                <span className="rnd-section-name">{level.name}</span>
+                {detail?.description && <span className="rnd-section-desc">{detail.description}</span>}
+                <span className="rnd-tags">
+                    {scheduled && <span className={`rnd-tag${detail?.schedule_enabled === false ? " muted" : ""}`}>scheduled</span>}
+                    {detail && !detail.execution_enabled && <span className="rnd-tag warn">disabled</span>}
+                    {detail?.node_filter && (
+                        <span className="rnd-tag" title={detail.node_filter}>
+                            nodes: {detail.node_filter}
+                        </span>
+                    )}
+                </span>
+            </div>
+            {permalink && (
+                <button className="rnd-btn-sm" onClick={() => void openUrl(permalink).catch(swallow("open Rundeck URL"))}>
+                    open in Rundeck ↗
+                </button>
+            )}
+        </div>
+    );
+}
+
 function ExecutionRow({
     paneId,
-    level,
+    job,
     ex,
+    branchOptions,
+    now,
 }: {
     paneId: string;
-    level: { env: string; project: string; service: string; jobId: string; repoPath?: string };
+    job: JobRef;
     ex: RundeckExecution;
+    branchOptions: string[];
+    now: number;
 }) {
-    const branch = ex.job?.options?.BRANCH ?? null;
+    const branch = branchOf(ex.job?.options, branchOptions);
     const kind = branchKind(branch);
-    const sk = statusKind(ex.status);
     const started = ex["date-started"]?.date ?? null;
     const ended = ex["date-ended"]?.date ?? null;
-    const dur = duration(started, ended);
-    const running = ex.status?.toLowerCase() === "running";
+    const live = isLiveStatus(ex.status);
     const progress = executionProgress(ex.workflowState);
 
     return (
         <button
-            className={`rnd-exec-row${running ? " running" : ""}`}
-            onClick={() =>
-                cmd.rundeckPush(paneId, {
-                    kind: "execution",
-                    executionId: ex.id,
-                    project: level.project,
-                    service: level.service,
-                    env: level.env,
-                    jobId: level.jobId,
-                    repoPath: level.repoPath,
-                })
-            }>
-            <span className={`rnd-exec-status rnd-status-${sk}`}>{ex.status}</span>
+            className={`rnd-exec-row${live ? " running" : ""}`}
+            onClick={() => cmd.rundeckPush(paneId, { kind: "execution", ...job, executionId: ex.id })}>
+            <span className={`rnd-exec-status rnd-status-${statusKind(ex.status)}`}>{displayStatus(ex.status, ex.customStatus)}</span>
             <span className="rnd-exec-id">#{ex.id}</span>
             <span className={`rnd-exec-branch rnd-branch-${kind}`}>
-                <span className="rnd-cell-glyph">{BRANCH_GLYPH[kind]}</span>
+                {branch && <span className="rnd-cell-glyph">{BRANCH_GLYPH[kind]}</span>}
                 {branch ?? "—"}
             </span>
             <span className="rnd-exec-user">{ex.user ?? "—"}</span>
             <span className="rnd-exec-when">{started ? formatTime(started) : "—"}</span>
-            <span className="rnd-exec-dur">{dur}</span>
-            {running && (
+            <span className="rnd-exec-dur">{duration(started, ended, now)}</span>
+            {live && (
                 <span className="rnd-row-progress">
                     <span className="rnd-progress-copy">{progress ? `${progress.completed} of ${progress.total} steps` : "syncing steps"}</span>
                     <span
@@ -166,110 +263,4 @@ function ExecutionRow({
             )}
         </button>
     );
-}
-
-function deployBranch(
-    paneId: string,
-    level: { env: string; project: string; service: string; jobId: string; repoPath?: string },
-    branch: string,
-    setError: (message: string | null) => void,
-) {
-    const branchValue = branch.trim();
-    if (!branchValue) {
-        setError("Enter a branch to deploy.");
-        return;
-    }
-    setError(null);
-    cmd.rundeckPush(paneId, {
-        kind: "deploy",
-        env: level.env,
-        project: level.project,
-        service: level.service,
-        jobId: level.jobId,
-        branch: branchValue,
-        repoPath: level.repoPath,
-    });
-}
-
-async function deployCurrentBranch(
-    paneId: string,
-    level: { env: string; project: string; service: string; jobId: string; repoPath?: string },
-    setError: (message: string | null) => void,
-) {
-    setError(null);
-    const repoPath = level.repoPath ?? "";
-    let branch = "";
-    if (repoPath) {
-        try {
-            const status = await git.status(repoPath);
-            branch = status.branch === "HEAD" ? "" : status.branch;
-        } catch (e) {
-            setError(typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e));
-        }
-    }
-    cmd.rundeckPush(paneId, {
-        kind: "deploy",
-        env: level.env,
-        project: level.project,
-        service: level.service,
-        jobId: level.jobId,
-        branch,
-        repoPath,
-    });
-}
-
-async function redeployLast(
-    paneId: string,
-    level: { env: string; project: string; service: string; jobId: string; repoPath?: string },
-    execs: RundeckExecution[],
-    setError: (message: string | null) => void,
-) {
-    setError(null);
-    let branch = execs.find((e) => e.status === "succeeded" && e.job?.options?.BRANCH)?.job?.options?.BRANCH ?? "";
-    if (!branch) {
-        try {
-            const latest = await rundeckApi.executions(level.jobId, level.project, 1, true);
-            branch = latest[0]?.job?.options?.BRANCH ?? "";
-        } catch (e) {
-            setError(typeof e === "object" && e && "message" in e ? String((e as { message: string }).message) : String(e));
-            return;
-        }
-    }
-    if (!branch) {
-        setError("No successful execution with a BRANCH option found.");
-        return;
-    }
-    cmd.rundeckPush(paneId, {
-        kind: "deploy",
-        env: level.env,
-        project: level.project,
-        service: level.service,
-        jobId: level.jobId,
-        branch,
-        repoPath: level.repoPath,
-    });
-}
-
-function formatTime(iso: string): string {
-    const t = Date.parse(iso);
-    if (Number.isNaN(t)) return iso;
-    const d = new Date(t);
-    return d.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-}
-
-function duration(start: string | null, end: string | null): string {
-    if (!start) return "";
-    const a = Date.parse(start);
-    const b = end ? Date.parse(end) : Date.now();
-    if (Number.isNaN(a) || Number.isNaN(b)) return "";
-    const s = Math.max(0, Math.round((b - a) / 1000));
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    const rest = s % 60;
-    return rest ? `${m}m ${rest}s` : `${m}m`;
 }
