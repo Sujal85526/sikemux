@@ -1,67 +1,97 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { swallow } from "../../../plugin-api/host";
-import { EmptyState, IconSearch, Switch, VirtualLogList } from "../../../plugin-api/ui";
-import { signozApi, type LogLine } from "../api";
-import { signozSettings, updateView, useExploreView } from "../state";
+import { EmptyState, VirtualLogList } from "../../../plugin-api/ui";
+import { failureMessage, signozApi, type LogLine, type LogSearch } from "../api";
+import { addFilter, scopeOf, signozSettings, updateView, useExploreView } from "../state";
 import { LogRow } from "./LogRow";
 
 const KEPT_LINES = 3_000;
-const ERROR_LEVELS = ["ERROR", "FATAL"];
-const TYPE_PAUSE_MS = 400;
+const PAGE = 200;
 
 /** Near enough to the bottom that new lines should keep it there. */
 const followable = (element: HTMLDivElement) => element.scrollHeight - element.scrollTop - element.clientHeight < 48;
 
-export function LogFeed({ paneId, active }: { paneId: string; active: boolean }) {
+function useLogSearch(paneId: string): LogSearch {
     const view = useExploreView(paneId);
     const minutes = signozSettings.useSelect((settings) => settings.minutes);
-    const [draft, setDraft] = useState(view.text);
+    const environment = signozSettings.useSelect((settings) => settings.environment);
+    return useMemo(
+        () => ({ ...scopeOf(view, { minutes, environment }), text: view.text || undefined, severities: view.severities }),
+        [view, minutes, environment],
+    );
+}
+
+/** Streams new lines while live. Held still, reads the window page by page, back from its end. */
+function useLines(paneId: string, active: boolean, search: LogSearch, live: boolean) {
     const [lines, setLines] = useState<LogLine[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-    const [follow, setFollow] = useState(true);
-    const followRef = useRef(follow);
-    followRef.current = follow;
-
-    useEffect(() => {
-        if (draft === view.text) return;
-        const timer = window.setTimeout(() => updateView(paneId, { text: draft }), TYPE_PAUSE_MS);
-        return () => window.clearTimeout(timer);
-    }, [draft, paneId, view.text]);
+    const [olderAt, setOlderAt] = useState<number | null>(null);
+    const [loadingOlder, setLoadingOlder] = useState(false);
+    const key = JSON.stringify(search);
 
     useEffect(() => {
         if (!active) return;
         setLines([]);
         setError(null);
+        setOlderAt(null);
         let alive = true;
+        if (!live) {
+            signozApi
+                .searchLogs({ ...search, limit: PAGE, offset: 0 })
+                .then((page) => {
+                    if (!alive) return;
+                    setLines([...page.lines].reverse());
+                    setOlderAt(page.nextOffset);
+                })
+                .catch((failure: unknown) => alive && setError(failureMessage(failure)));
+            return () => {
+                alive = false;
+            };
+        }
         let streamId: number | null = null;
         signozApi
-            .tailStart(
-                {
-                    service: view.service ?? undefined,
-                    text: view.text || undefined,
-                    severities: view.errorsOnly ? ERROR_LEVELS : [],
-                    minutes,
-                    limit: 200,
-                },
-                (tick) => {
-                    if (!alive) return;
-                    setError(tick.error);
-                    if (tick.lines.length > 0) setLines((current) => current.concat(tick.lines).slice(-KEPT_LINES));
-                },
-            )
+            .tailStart({ ...search, limit: PAGE }, (tick) => {
+                if (!alive) return;
+                setError(tick.error);
+                if (tick.lines.length > 0) setLines((current) => current.concat(tick.lines).slice(-KEPT_LINES));
+            })
             .then((id) => {
                 if (alive) streamId = id;
                 else void signozApi.tailStop(id);
             })
-            .catch((failure: unknown) => {
-                if (alive) setError(String(failure));
-            });
+            .catch((failure: unknown) => alive && setError(failureMessage(failure)));
         return () => {
             alive = false;
             if (streamId !== null) void signozApi.tailStop(streamId).catch(swallow("stop SigNoz tail"));
         };
-    }, [active, view.service, view.text, view.errorsOnly, minutes]);
+        // The search is compared by value: a new object with the same filters is the same feed.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [active, key, live, paneId]);
+
+    const loadOlder = () => {
+        if (olderAt === null || loadingOlder) return;
+        setLoadingOlder(true);
+        signozApi
+            .searchLogs({ ...search, limit: PAGE, offset: olderAt })
+            .then((page) => {
+                setLines((current) => [...page.lines].reverse().concat(current));
+                setOlderAt(page.nextOffset);
+            })
+            .catch((failure: unknown) => setError(failureMessage(failure)))
+            .finally(() => setLoadingOlder(false));
+    };
+
+    return { lines, error, canLoadOlder: olderAt !== null, loadingOlder, loadOlder };
+}
+
+export function LogFeed({ paneId, active }: { paneId: string; active: boolean }) {
+    const view = useExploreView(paneId);
+    const search = useLogSearch(paneId);
+    const { lines, error, canLoadOlder, loadingOlder, loadOlder } = useLines(paneId, active, search, view.live);
+    const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+    const [follow, setFollow] = useState(true);
+    const followRef = useRef(follow);
+    followRef.current = follow && view.live;
 
     const toggle = (id: string) =>
         setExpanded((current) => {
@@ -71,50 +101,36 @@ export function LogFeed({ paneId, active }: { paneId: string; active: boolean })
             return next;
         });
 
+    const quiet = view.severities.length > 0 && view.severities.every((severity) => severity === "ERROR" || severity === "FATAL");
     return (
         <div className="sgz-feed">
-            <div className="sgz-filters">
-                <label className="sgz-search">
-                    <IconSearch size={12} />
-                    <input
-                        className="sgz-input"
-                        placeholder="text in the log line"
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        spellCheck={false}
-                    />
-                </label>
-                {view.service && (
-                    <button
-                        type="button"
-                        className="sgz-chip-filter"
-                        onClick={() => updateView(paneId, { service: null })}
-                        title="Show every service">
-                        {view.service} ×
-                    </button>
-                )}
-                <label className="sgz-toggle">
-                    <Switch checked={view.errorsOnly} onChange={(errorsOnly) => updateView(paneId, { errorsOnly })} />
-                    errors only
-                </label>
-            </div>
             {error && <div className="sgz-banner">{error}</div>}
+            {!view.live && canLoadOlder && (
+                <button type="button" className="sgz-older" onClick={loadOlder} disabled={loadingOlder}>
+                    {loadingOlder ? "loading…" : "Load older lines"}
+                </button>
+            )}
             <VirtualLogList
                 items={lines}
                 className="sgz-lines"
                 rowClassName="sgz-line-slot"
                 estimateSize={22}
-                follow={follow}
+                follow={view.live && follow}
                 allowFollow={() => followRef.current}
                 onScroll={(element) => setFollow(followable(element))}
                 getItemKey={(line) => line.id}
-                empty={<EmptyState message={view.errorsOnly ? `no errors in the last ${minutes} minutes` : "waiting for log lines"} />}
+                empty={
+                    <EmptyState
+                        message={quiet ? "No errors in this window." : view.live ? "Waiting for log lines." : "No log lines in this window."}
+                    />
+                }
                 renderRow={(line) => (
                     <LogRow
                         line={line}
                         expanded={expanded.has(line.id)}
                         onToggle={() => toggle(line.id)}
                         onOpenTrace={(trace) => updateView(paneId, { trace })}
+                        onFilter={(key, value, keep) => addFilter(paneId, { key, op: keep ? "equals" : "not-equals", value })}
                     />
                 )}
             />

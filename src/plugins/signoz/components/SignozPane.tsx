@@ -1,47 +1,26 @@
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { reportError } from "../../../plugin-api/host";
-import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
-import { signozApi, type ServiceHealth } from "../api";
-import { signozServicesR, signozStatusR } from "../resources";
-import { WINDOWS, setWindow, signozSettings, updateView, useExploreView } from "../state";
+import { EmptyState, SkeletonRows, Switch } from "../../../plugin-api/ui";
+import { signozApi } from "../api";
+import { signozStatusR } from "../resources";
+import { WINDOWS, setLive, signozSettings, updateSettings, updateView, useExploreView, type ExploreTab } from "../state";
+import { FilterBar } from "./FilterBar";
 import { LogFeed } from "./LogFeed";
+import { ServiceSidebar } from "./ServiceSidebar";
 import { SignozSignIn } from "./SignozSignIn";
-import { TraceView, formatMs } from "./TraceView";
+import { TraceList } from "./TraceList";
+import { TraceView } from "./TraceView";
 
 const refreshAll = () => invalidate((kind) => kind.startsWith("signoz."));
 
-function windowLabel(minutes: number): string {
+export function windowLabel(minutes: number): string {
     return minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`;
 }
 
-function ServiceStrip({ paneId, active }: { paneId: string; active: boolean }) {
-    const minutes = signozSettings.useSelect((settings) => settings.minutes);
-    const selected = useExploreView(paneId).service;
-    const services = useResourceEnabled(active, signozServicesR, minutes);
-    const pick = (service: ServiceHealth) => updateView(paneId, { service: selected === service.service ? null : service.service, trace: null });
-    return (
-        <div className="sgz-services" role="listbox" aria-label="Services">
-            {services.status === "loading" && !services.data && <span className="sgz-muted">reading services…</span>}
-            {services.data?.length === 0 && <span className="sgz-muted">no traced services in the last {windowLabel(minutes)}</span>}
-            {services.data?.map((service) => (
-                <button
-                    key={service.service}
-                    type="button"
-                    role="option"
-                    aria-selected={selected === service.service}
-                    className={`sgz-service${selected === service.service ? " selected" : ""}`}
-                    onClick={() => pick(service)}
-                    title={`${service.calls} calls, ${service.errors} errors, p99 ${formatMs(service.p99Ms)}`}>
-                    <span className="sgz-service-name">{service.service}</span>
-                    <span className={`sgz-service-errors${service.errors > 0 ? " bad" : ""}`}>
-                        {(service.errorRate * 100).toFixed(service.errorRate >= 0.1 ? 0 : 1)}%
-                    </span>
-                    <span className="sgz-service-p99">{formatMs(service.p99Ms)}</span>
-                </button>
-            ))}
-        </div>
-    );
-}
+const TABS: { id: ExploreTab; label: string }[] = [
+    { id: "logs", label: "Logs" },
+    { id: "traces", label: "Traces" },
+];
 
 export function SignozPane({ paneId, active }: { paneId: string; active: boolean }) {
     const status = useResourceEnabled(active, signozStatusR);
@@ -66,35 +45,66 @@ export function SignozPane({ paneId, active }: { paneId: string; active: boolean
     const signOut = () => void signozApi.signOut().then(refreshAll).catch(reportError("sign out of SigNoz"));
 
     return (
-        <div className="sgz-pane">
-            <header className="sgz-bar">
-                <ServiceStrip paneId={paneId} active={active} />
-                <div className="sgz-bar-end">
-                    <select
-                        className="sgz-input sgz-window"
-                        value={minutes}
-                        onChange={(event) => setWindow(Number(event.target.value))}
-                        aria-label="Time window">
-                        {WINDOWS.map((option) => (
-                            <option key={option} value={option}>
-                                last {windowLabel(option)}
-                            </option>
+        <div className="sgz-pane sgz-layout">
+            <ServiceSidebar paneId={paneId} active={active} />
+            <section className="sgz-main">
+                <header className="sgz-bar">
+                    <div className="sgz-tabs" role="tablist" aria-label="Signal">
+                        {TABS.map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={view.tab === tab.id && !view.trace}
+                                className={`sgz-tab${view.tab === tab.id && !view.trace ? " on" : ""}`}
+                                onClick={() => updateView(paneId, { tab: tab.id, trace: null })}>
+                                {tab.label}
+                            </button>
                         ))}
-                    </select>
-                    <button
-                        type="button"
-                        className="sgz-who"
-                        onClick={signOut}
-                        title={`Signed in to ${status.data.url}${status.data.email ? ` as ${status.data.email}` : " with an API key"}. Click to sign out.`}>
-                        {status.data.email || "API key"}
-                    </button>
-                </div>
-            </header>
-            {view.trace ? (
-                <TraceView traceId={view.trace} onBack={() => updateView(paneId, { trace: null })} />
-            ) : (
-                <LogFeed paneId={paneId} active={active} />
-            )}
+                    </div>
+                    <div className="sgz-bar-end">
+                        <label className="sgz-toggle" title={view.live ? "Following new data" : "Held on the window ending when you paused"}>
+                            <Switch checked={view.live} onChange={(live) => setLive(paneId, live)} />
+                            live
+                        </label>
+                        {!view.live && (
+                            <button
+                                type="button"
+                                className="sgz-add-filter"
+                                onClick={() => setLive(paneId, false)}
+                                title="Move the window to end now">
+                                now
+                            </button>
+                        )}
+                        <select
+                            className="sgz-input sgz-window"
+                            value={minutes}
+                            onChange={(event) => updateSettings({ minutes: Number(event.target.value) })}
+                            aria-label="Time window">
+                            {WINDOWS.map((option) => (
+                                <option key={option} value={option}>
+                                    last {windowLabel(option)}
+                                </option>
+                            ))}
+                        </select>
+                        <button
+                            type="button"
+                            className="sgz-who"
+                            onClick={signOut}
+                            title={`Signed in to ${status.data.url}${status.data.email ? ` as ${status.data.email}` : " with an API key"}. Click to sign out.`}>
+                            {status.data.email || "API key"}
+                        </button>
+                    </div>
+                </header>
+                {view.trace ? (
+                    <TraceView traceId={view.trace} onBack={() => updateView(paneId, { trace: null })} />
+                ) : (
+                    <>
+                        <FilterBar paneId={paneId} signal={view.tab} />
+                        {view.tab === "logs" ? <LogFeed paneId={paneId} active={active} /> : <TraceList paneId={paneId} active={active} />}
+                    </>
+                )}
+            </section>
         </div>
     );
 }

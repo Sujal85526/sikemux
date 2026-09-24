@@ -1,12 +1,65 @@
 import { describe, expect, it } from "vitest";
-import { signozSettings, type SignozSettings } from "./state";
+import { mergeByService } from "./components/ServiceSidebar";
+import { addFilter, removeFilter, scopeOf, setLive, signozSettings, viewOf, type SignozSettings } from "./state";
 
 describe("signozSettings", () => {
     it("falls back to usable settings whatever was saved", () => {
-        const saved = { minutes: 7, serviceByProject: { "/repo": "api", "/bad": 3 } } as unknown as SignozSettings;
+        const saved = {
+            minutes: 7,
+            serviceSort: "vibes",
+            environment: 3,
+            serviceByProject: { "/repo": "api", "/bad": 3 },
+        } as unknown as SignozSettings;
         signozSettings.update(() => saved);
-        expect(signozSettings.get()).toEqual({ minutes: 15, serviceByProject: { "/repo": "api" } });
-        signozSettings.update(() => ({ minutes: 60, serviceByProject: {} }));
-        expect(signozSettings.get().minutes).toBe(60);
+        expect(signozSettings.get()).toEqual({ minutes: 15, environment: null, serviceSort: "errors", serviceByProject: { "/repo": "api" } });
+    });
+});
+
+describe("filters", () => {
+    it("replaces a filter on the same attribute and operator instead of stacking it", () => {
+        addFilter("pane-filters", { key: "path", op: "equals", value: "/a" });
+        addFilter("pane-filters", { key: "path", op: "not-equals", value: "/health" });
+        addFilter("pane-filters", { key: "path", op: "equals", value: "/b" });
+        expect(viewOf("pane-filters").filters).toEqual([
+            { key: "path", op: "not-equals", value: "/health" },
+            { key: "path", op: "equals", value: "/b" },
+        ]);
+        removeFilter("pane-filters", 0);
+        expect(viewOf("pane-filters").filters).toEqual([{ key: "path", op: "equals", value: "/b" }]);
+    });
+});
+
+describe("scopeOf", () => {
+    it("reads the last N minutes while live, and a fixed window once held", () => {
+        const settings = { minutes: 15, environment: "production" };
+        expect(scopeOf(viewOf("pane-live"), settings)).toMatchObject({ minutes: 15, environment: "production" });
+
+        setLive("pane-held", false);
+        const held = scopeOf(viewOf("pane-held"), settings);
+        expect(held.minutes).toBeUndefined();
+        expect(held.end! - held.start!).toBe(15 * 60_000);
+    });
+});
+
+describe("mergeByService", () => {
+    const rows = [
+        { service: "reel-worker", environment: "production", calls: 90, errors: 9, errorRate: 0.1, p99Ms: 10 },
+        { service: "reel-worker", environment: "dev", calls: 10, errors: 1, errorRate: 0.1, p99Ms: 40 },
+        { service: "api", environment: "dev", calls: 5, errors: 0, errorRate: 0, p99Ms: 1 },
+    ];
+
+    it("adds a service up across environments and keeps its worst p99", () => {
+        const merged = mergeByService(rows, null);
+        expect(merged.find((row) => row.service === "reel-worker")).toEqual({
+            service: "reel-worker",
+            calls: 100,
+            errors: 10,
+            errorRate: 0.1,
+            p99Ms: 40,
+        });
+    });
+
+    it("keeps only the chosen environment", () => {
+        expect(mergeByService(rows, "production").map((row) => row.service)).toEqual(["reel-worker"]);
     });
 });

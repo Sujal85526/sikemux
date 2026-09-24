@@ -24,10 +24,12 @@ interface Props {
     expanded: boolean;
     onToggle: () => void;
     onOpenTrace?: (traceId: string) => void;
+    /** Offered beside each attribute, so a filter is built from the value in front of you. */
+    onFilter?: (key: string, value: string, keep: boolean) => void;
     showService?: boolean;
 }
 
-export function LogRow({ line, expanded, onToggle, onOpenTrace, showService = true }: Props) {
+export function LogRow({ line, expanded, onToggle, onOpenTrace, onFilter, showService = true }: Props) {
     const attributes = Object.entries(line.attributes).filter(([, value]) => value !== "" && value !== null);
     return (
         <div className={`sgz-log${expanded ? " open" : ""}`}>
@@ -53,6 +55,22 @@ export function LogRow({ line, expanded, onToggle, onOpenTrace, showService = tr
                                 <div key={key} className="sgz-attr">
                                     <dt>{key}</dt>
                                     <dd>{valueText(value)}</dd>
+                                    {onFilter && (
+                                        <span className="sgz-attr-actions">
+                                            <button
+                                                type="button"
+                                                title={`Only lines where ${key} is this`}
+                                                onClick={() => onFilter(key, valueText(value), true)}>
+                                                =
+                                            </button>
+                                            <button
+                                                type="button"
+                                                title={`Hide lines where ${key} is this`}
+                                                onClick={() => onFilter(key, valueText(value), false)}>
+                                                ≠
+                                            </button>
+                                        </span>
+                                    )}
                                 </div>
                             ))}
                         </dl>

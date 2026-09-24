@@ -1,12 +1,19 @@
 import { create } from "zustand";
 import { onPaneClosed, openSurface } from "../../plugin-api/host";
 import { definePluginSettings } from "../../plugin-api/settings";
+import type { Filter, Scope, TraceOrder } from "./api";
 import { SIGNOZ_EXPLORE, SIGNOZ_PLUGIN_ID } from "./kinds";
 
 export const WINDOWS = [5, 15, 60, 360, 1440] as const;
+export const SEVERITIES = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"] as const;
+export const SERVICE_SORTS = ["errors", "calls", "p99", "name"] as const;
+export type ServiceSort = (typeof SERVICE_SORTS)[number];
 
 export interface SignozSettings {
     minutes: number;
+    /** Which deployment.environment every view reads, or all of them. */
+    environment: string | null;
+    serviceSort: ServiceSort;
     /** The service each project folder reports as, when it is not the folder's own name. */
     serviceByProject: Record<string, string>;
 }
@@ -19,24 +26,50 @@ function decodeSettings(saved: unknown): SignozSettings {
     for (const [cwd, service] of Object.entries(isRecord(raw.serviceByProject) ? raw.serviceByProject : {})) {
         if (typeof service === "string" && service) serviceByProject[cwd] = service;
     }
-    const minutes = typeof raw.minutes === "number" && (WINDOWS as readonly number[]).includes(raw.minutes) ? raw.minutes : 15;
-    return { minutes, serviceByProject };
+    return {
+        minutes: typeof raw.minutes === "number" && (WINDOWS as readonly number[]).includes(raw.minutes) ? raw.minutes : 15,
+        environment: typeof raw.environment === "string" && raw.environment ? raw.environment : null,
+        serviceSort: (SERVICE_SORTS as readonly unknown[]).includes(raw.serviceSort) ? (raw.serviceSort as ServiceSort) : "errors",
+        serviceByProject,
+    };
 }
 
 export const signozSettings = definePluginSettings(SIGNOZ_PLUGIN_ID, decodeSettings);
 
-export function setWindow(minutes: number): void {
-    signozSettings.update((settings) => ({ ...settings, minutes }));
+export function updateSettings(patch: Partial<SignozSettings>): void {
+    signozSettings.update((settings) => ({ ...settings, ...patch }));
 }
+
+export type ExploreTab = "logs" | "traces";
 
 export interface ExploreView {
+    tab: ExploreTab;
     service: string | null;
+    filters: Filter[];
+    severities: string[];
     text: string;
-    errorsOnly: boolean;
+    expression: string;
+    /** Following new data as it arrives, or holding still on a window that ends at `fixedEnd`. */
+    live: boolean;
+    fixedEnd: number | null;
     trace: string | null;
+    traceOrder: TraceOrder;
+    tracesErrorsOnly: boolean;
 }
 
-const FRESH: ExploreView = { service: null, text: "", errorsOnly: true, trace: null };
+const FRESH: ExploreView = {
+    tab: "logs",
+    service: null,
+    filters: [],
+    severities: ["FATAL", "ERROR"],
+    text: "",
+    expression: "",
+    live: true,
+    fixedEnd: null,
+    trace: null,
+    traceOrder: "slowest",
+    tracesErrorsOnly: false,
+};
 
 export const useSignoz = create<{ views: Record<string, ExploreView> }>()(() => ({ views: {} }));
 
@@ -53,8 +86,41 @@ export function useExploreView(paneId: string): ExploreView {
     return useSignoz((state) => state.views[paneId] ?? FRESH);
 }
 
+export function viewOf(paneId: string): ExploreView {
+    return useSignoz.getState().views[paneId] ?? FRESH;
+}
+
 export function updateView(paneId: string, patch: Partial<ExploreView>): void {
     useSignoz.setState((state) => ({ views: { ...state.views, [paneId]: { ...(state.views[paneId] ?? FRESH), ...patch } } }));
+}
+
+/** One filter per attribute and operator: saying it again replaces it rather than stacking a copy. */
+export function addFilter(paneId: string, filter: Filter): void {
+    const others = viewOf(paneId).filters.filter((existing) => existing.key !== filter.key || existing.op !== filter.op);
+    updateView(paneId, { filters: [...others, filter], trace: null });
+}
+
+export function removeFilter(paneId: string, index: number): void {
+    updateView(paneId, { filters: viewOf(paneId).filters.filter((_, position) => position !== index) });
+}
+
+export function setLive(paneId: string, live: boolean): void {
+    updateView(paneId, { live, fixedEnd: live ? null : Date.now() });
+}
+
+/** What the view narrows every query by, in the shape the backend reads. */
+export function scopeOf(view: ExploreView, settings: Pick<SignozSettings, "minutes" | "environment">): Scope {
+    const range =
+        view.live || view.fixedEnd === null
+            ? { minutes: settings.minutes }
+            : { start: view.fixedEnd - settings.minutes * 60_000, end: view.fixedEnd };
+    return {
+        ...range,
+        service: view.service ?? undefined,
+        environment: settings.environment ?? undefined,
+        filters: view.filters,
+        expression: view.expression.trim() || undefined,
+    };
 }
 
 export function openSignoz(): void {
@@ -65,4 +131,9 @@ export function openSignoz(): void {
 export function openTrace(traceId: string): void {
     const paneId = openSurface(SIGNOZ_EXPLORE);
     if (paneId) updateView(paneId, { trace: traceId });
+}
+
+export function openService(service: string): void {
+    const paneId = openSurface(SIGNOZ_EXPLORE);
+    if (paneId) updateView(paneId, { service, trace: null });
 }

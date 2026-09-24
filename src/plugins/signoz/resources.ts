@@ -1,5 +1,17 @@
 import { resource } from "../../plugin-api/resources";
-import { signozApi, type LogPage, type LogSearch, type ServiceHealth, type SignozStatus, type Trace } from "./api";
+import {
+    signozApi,
+    type FieldKey,
+    type LogPage,
+    type LogSearch,
+    type Scope,
+    type ServiceHealth,
+    type Signal,
+    type SignozStatus,
+    type Trace,
+    type TracePage,
+    type TraceSearch,
+} from "./api";
 
 export const signozStatusR = resource({
     kind: "signoz.status",
@@ -9,7 +21,13 @@ export const signozStatusR = resource({
 
 export const signozServicesR = resource({
     kind: "signoz.services",
-    fetch: (minutes: number): Promise<ServiceHealth[]> => signozApi.services(minutes),
+    fetch: (scope: Scope): Promise<ServiceHealth[]> => signozApi.services(scope),
+    staleAfterMs: 30_000,
+});
+
+export const signozTracesR = resource({
+    kind: "signoz.traces",
+    fetch: (search: TraceSearch): Promise<TracePage> => signozApi.searchTraces(search),
     staleAfterMs: 30_000,
 });
 
@@ -22,5 +40,17 @@ export const signozTraceR = resource({
 export const signozTraceLogsR = resource({
     kind: "signoz.traceLogs",
     fetch: (search: LogSearch): Promise<LogPage> => signozApi.searchLogs(search),
+    staleAfterMs: 60_000,
+});
+
+export const signozFieldKeysR = resource({
+    kind: "signoz.fieldKeys",
+    fetch: (signal: Signal, search: string): Promise<FieldKey[]> => signozApi.fieldKeys(signal, search),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const signozFieldValuesR = resource({
+    kind: "signoz.fieldValues",
+    fetch: (signal: Signal, name: string, search: string): Promise<string[]> => signozApi.fieldValues(signal, name, search),
     staleAfterMs: 60_000,
 });

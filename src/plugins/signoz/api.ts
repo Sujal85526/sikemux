@@ -37,6 +37,25 @@ export interface Inspection {
     orgs: OrgSignIn[];
 }
 
+export type FilterOp = "equals" | "not-equals" | "contains" | "not-contains" | "exists" | "not-exists";
+
+export interface Filter {
+    key: string;
+    op: FilterOp;
+    value: string;
+}
+
+/** What every query narrows by. A fixed `start`/`end` wins over `minutes`. */
+export interface Scope {
+    service?: string;
+    environment?: string;
+    filters?: Filter[];
+    expression?: string;
+    start?: number;
+    end?: number;
+    minutes?: number;
+}
+
 export interface LogLine {
     id: string;
     timestamp: string;
@@ -49,13 +68,10 @@ export interface LogLine {
     resources: Record<string, unknown>;
 }
 
-export interface LogSearch {
+export interface LogSearch extends Scope {
     text?: string;
-    service?: string;
     severities?: string[];
     traceId?: string;
-    expression?: string;
-    minutes?: number;
     limit?: number;
     offset?: number;
 }
@@ -72,10 +88,36 @@ export interface TailTick {
 
 export interface ServiceHealth {
     service: string;
+    environment: string | null;
     calls: number;
     errors: number;
     errorRate: number;
     p99Ms: number;
+}
+
+export type TraceOrder = "slowest" | "recent";
+
+export interface TraceSearch extends Scope {
+    errorsOnly?: boolean;
+    minDurationMs?: number;
+    order?: TraceOrder;
+    limit?: number;
+    offset?: number;
+}
+
+export interface TraceSummary {
+    traceId: string;
+    timestamp: string;
+    service: string;
+    name: string;
+    durationMs: number;
+    error: boolean;
+    statusCode: string | null;
+}
+
+export interface TracePage {
+    traces: TraceSummary[];
+    nextOffset: number | null;
 }
 
 export interface TraceSpan {
@@ -99,6 +141,14 @@ export interface Trace {
     services: string[];
     spans: TraceSpan[];
     truncated: boolean;
+}
+
+export type Signal = "logs" | "traces";
+
+export interface FieldKey {
+    name: string;
+    context: string;
+    dataType: string;
 }
 
 export function failureMessage(error: unknown): string {
@@ -131,9 +181,12 @@ export const signozApi = {
     useApiKey: (url: string, apiKey?: string, account?: string) => backend.call<SignozStatus>("useApiKey", { url, apiKey, account }),
     signOut: () => backend.call<void>("signOut"),
 
-    services: (minutes: number) => read<ServiceHealth[]>("services", { minutes }),
+    services: (scope: Scope) => read<ServiceHealth[]>("services", scope),
     searchLogs: (search: LogSearch) => read<LogPage>("searchLogs", search),
+    searchTraces: (search: TraceSearch) => read<TracePage>("searchTraces", search),
     trace: (traceId: string) => read<Trace>("trace", { traceId }),
+    fieldKeys: (signal: Signal, search: string) => read<FieldKey[]>("fieldKeys", { signal, search }),
+    fieldValues: (signal: Signal, name: string, search: string) => read<string[]>("fieldValues", { signal, name, search }),
 
     tailStart: (search: LogSearch, onTick: (tick: TailTick) => void) => backend.openStream<TailTick>("tailLogs", search, onTick),
     tailStop: (id: number) => backend.closeStream(id),
