@@ -1610,11 +1610,10 @@ button.chat-tool:hover,
 .chat-composer textarea {
     display: block;
     width: 100%;
-    min-height: 66px;
     max-height: min(320px, 40vh);
     overflow-y: auto;
     resize: none;
-    padding: 13px 14px;
+    padding: 10px 12px;
     border: 0;
     outline: 0;
     background: transparent;
@@ -1637,7 +1636,7 @@ button.chat-tool:hover,
     display: flex;
     flex-wrap: wrap;
     gap: 7px;
-    padding: 11px 11px 0;
+    padding: 6px 12px 0;
 }
 
 .chat-attachments > span {

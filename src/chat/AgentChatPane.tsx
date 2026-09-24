@@ -1265,7 +1265,7 @@ function ChatComposer({
                     value={draft}
                     aria-label="Message agent"
                     placeholder={placeholder}
-                    rows={3}
+                    rows={2}
                     onChange={(event) => {
                         setDraft(event.target.value);
                         setCaret(event.target.selectionStart);
