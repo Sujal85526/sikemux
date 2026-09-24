@@ -379,7 +379,19 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             })),
         );
         // eslint-disable-next-line react-hooks/exhaustive-deps -- a plugin's documents live outside the store
-    }, [refs, windowsById, agentsById, activity, backgroundWork, subagentCounts, termTitles, dirtyEditorPaths, activeKey, session.id, documentsVersion]);
+    }, [
+        refs,
+        windowsById,
+        agentsById,
+        activity,
+        backgroundWork,
+        subagentCounts,
+        termTitles,
+        dirtyEditorPaths,
+        activeKey,
+        session.id,
+        documentsVersion,
+    ]);
 
     const refByKey = new Map(refs.map((ref) => [tabRefKey(ref), ref]));
 
