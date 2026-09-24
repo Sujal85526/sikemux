@@ -434,9 +434,9 @@ export const SideRail = memo(function SideRail() {
     const sshs = inGroup("ssh");
     const commands = inGroup("command");
     const plugins = inGroup("plugins");
-    const apis = inGroup("apis");
     const openers: Opener[] = [
         ...(plugins.some((session) => session.kind === "aws") ? [] : [{ label: "open aws", open: cmd.openAwsSession }]),
+        ...(plugins.some((session) => session.kind === "bruno") ? [] : [{ label: "open bruno", open: () => cmd.openBrunoSession() }]),
         ...pluginManifests.flatMap((manifest) => {
             const plugin = frontendPlugin(manifest.id);
             const open = plugins.some((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === manifest.id);
@@ -671,14 +671,6 @@ export const SideRail = memo(function SideRail() {
                         emptyText="no ssh hosts"
                     />
                     <Group label="Plugins" list={plugins} emptyText="no plugins" openers={openers} />
-                    <Group
-                        label="API"
-                        list={apis}
-                        add={() => cmd.openPicker("bruno")}
-                        addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
-                        addKbd={kb("bruno.open")}
-                        emptyText="open a bruno workspace"
-                    />
                     <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
                 </div>
 

@@ -102,7 +102,7 @@ describe("project tree", () => {
 });
 
 describe("plugins group", () => {
-    it("gathers AWS and every plugin under one group, offering whatever is not open", () => {
+    it("gathers AWS, Bruno and every plugin under one group, offering whatever is not open", () => {
         setState({
             sessions: { ...getState().sessions, aws: session("aws", "aws"), signoz: session("signoz", "sikemux.signoz:explore") },
             sessionOrder: [...getState().sessionOrder, "aws", "signoz"],
@@ -119,6 +119,8 @@ describe("plugins group", () => {
         expect(screen.getByRole("button", { name: "aws" })).toBeTruthy();
         expect(screen.getByRole("button", { name: "signoz" })).toBeTruthy();
         expect(screen.getByRole("button", { name: "open rundeck deploy center" })).toBeTruthy();
+        expect(screen.getByRole("button", { name: "open bruno" })).toBeTruthy();
+        expect(screen.queryByText("API")).toBeNull();
         expect(screen.queryByRole("button", { name: "open aws" })).toBeNull();
         expect(screen.queryByRole("button", { name: "open signoz" })).toBeNull();
     });
