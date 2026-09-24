@@ -79,7 +79,7 @@ export type ProviderProfileSelection = Partial<Record<AgentType, string>>;
 
 export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = [
     { id: "builtin-claude", name: "Claude", provider: "claude", accent: "#d97757" },
-    { id: "builtin-codex", name: "Codex", provider: "codex", accent: "#10a37f" },
+    { id: "builtin-codex", name: "Codex", provider: "codex", accent: "#7a9dff" },
     { id: "builtin-gemini", name: "Gemini", provider: "gemini", accent: "#4285f4" },
 ];
 
