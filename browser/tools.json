@@ -128,7 +128,7 @@
     {
       "name": "browser_upload",
       "method": "browser.upload",
-      "description": "Give files to a file input, as if picked in the chooser its number or x,y opens.",
+      "description": "Give files to a file input, as if picked in its chooser.",
       "properties": {
         "paths": {
           "type": "array",
@@ -252,8 +252,47 @@
     {
       "name": "browser_screenshot",
       "method": "browser.screenshot",
-      "description": "Capture the visible part of the current tab as a PNG image.",
-      "properties": {},
+      "description": "Capture the tab; fullPage for the whole page, annotate to number elements.",
+      "properties": {
+        "fullPage": {
+          "type": "boolean"
+        },
+        "annotate": {
+          "type": "boolean"
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "browser_annotate",
+      "method": "browser.annotate",
+      "description": "Draw a labelled box or a caption over the page.",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "x": {
+          "type": "number",
+          "minimum": 0
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 600000
+        },
+        "clear": {
+          "type": "boolean"
+        }
+      },
       "required": []
     },
     {

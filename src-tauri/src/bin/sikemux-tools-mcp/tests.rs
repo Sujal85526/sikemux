@@ -356,6 +356,26 @@ fn a_screenshot_comes_back_as_an_image() {
     );
 }
 
+/// The numbers drawn on an annotated picture are only useful beside the list
+/// saying what each one is.
+#[test]
+fn an_annotated_screenshot_carries_its_numbered_elements() {
+    let blocks = content_for(
+        "browser_screenshot",
+        &json!({
+            "data": "aGk=",
+            "title": "Example",
+            "url": "https://example.com",
+            "elements": "[0] <button> Save",
+            "cutAt": 14400.0,
+        }),
+    );
+    assert_eq!(
+        field(&blocks[1], "text"),
+        "Example https://example.com\n(cut at 14400px; the page is taller)\n[0] <button> Save"
+    );
+}
+
 #[test]
 fn a_host_is_answered_before_and_after_it_says_it_is_ready() {
     let manifest = Manifest::load();

@@ -317,7 +317,16 @@ fn content_for(name: &str, value: &Value) -> Vec<Value> {
                 .get("mimeType")
                 .and_then(Value::as_str)
                 .unwrap_or("image/png");
-            let caption = format!("{} {}", field("title"), field("url"));
+            let mut caption = format!("{} {}", field("title"), field("url"))
+                .trim()
+                .to_owned();
+            if let Some(height) = value.get("cutAt").and_then(Value::as_f64) {
+                caption.push_str(&format!("\n(cut at {height}px; the page is taller)"));
+            }
+            if !field("elements").is_empty() {
+                caption.push('\n');
+                caption.push_str(field("elements"));
+            }
             let caption = caption.trim();
             return vec![
                 json!({ "type": "image", "data": data, "mimeType": mime_type }),

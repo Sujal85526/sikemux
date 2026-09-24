@@ -25,8 +25,8 @@ use objc2_foundation::{
 };
 use objc2_web_kit::{
     WKContentWorld, WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
-    WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration, WKUIDelegate, WKWebView,
-    WKWebViewConfiguration, WKWindowFeatures,
+    WKPDFConfiguration, WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration,
+    WKUIDelegate, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -292,6 +292,54 @@ fn script_error(error: &NSError) -> String {
         .and_then(|value| value.downcast::<NSString>().ok())
         .map(|text| text.to_string());
     message.unwrap_or_else(|| error.localizedDescription().to_string())
+}
+
+/// The whole page rather than the part on screen, as a JPEG at 1x. WebKit
+/// lays it out as one tall PDF page, which is then drawn as a picture. A page
+/// taller than `most` is cut at that height.
+pub fn full_page_jpeg(
+    pointer: *mut c_void,
+    height: f64,
+    most: f64,
+    done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send>,
+) {
+    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+        done(Err("the tab is gone".into()));
+        return;
+    };
+    let configuration = unsafe { WKPDFConfiguration::new(mtm) };
+    if height > most {
+        let width = webview.frame().size.width;
+        unsafe {
+            configuration.setRect(NSRect::new(
+                NSPoint::new(0.0, 0.0),
+                NSSize::new(width, most),
+            ))
+        };
+    }
+    let done = std::sync::Mutex::new(Some(done));
+    let block = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
+        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+            return;
+        };
+        let Some(data) = (unsafe { Retained::retain(data) }) else {
+            done(Err(unsafe { Retained::retain(error) }
+                .map(|error| error.localizedDescription().to_string())
+                .unwrap_or_else(|| "the page could not be captured".into())));
+            return;
+        };
+        let pixels = NSImage::initWithData(mtm.alloc::<NSImage>(), &data)
+            .and_then(|image| image.TIFFRepresentation())
+            .map(|tiff| tiff.to_vec());
+        let Some(pixels) = pixels else {
+            done(Err("could not draw the page".into()));
+            return;
+        };
+        std::thread::spawn(move || {
+            done(jpeg_bytes(&pixels).ok_or_else(|| "could not encode the page image".to_string()));
+        });
+    });
+    unsafe { webview.createPDFWithConfiguration_completionHandler(Some(&configuration), &block) };
 }
 
 fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {

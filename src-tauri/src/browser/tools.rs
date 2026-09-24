@@ -16,6 +16,8 @@ const SETTLE: Duration = Duration::from_millis(250);
 const MAX_WAIT_MS: u64 = 30_000;
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_SCRIPT_RESULT: usize = 100_000;
+/// A full-page capture goes through a PDF page, and PDF stops at 14,400 points.
+const MAX_PAGE_HEIGHT: f64 = 14_400.0;
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_UPLOAD_FILES: usize = 20;
 const DRAG_STEPS: u32 = 12;
@@ -117,6 +119,7 @@ async fn run(
             } else {
                 1
             };
+            show_pointer(&view, x, y, !hover).await;
             native::mouse(&view, Mouse::Move, x, y, 0).await?;
             if hover {
                 result["hover"] = call(&view, "hover", &[json!(x), json!(y)]).await?;
@@ -166,6 +169,7 @@ async fn run(
                 .map(|name| name.to_string_lossy().into_owned())
                 .collect();
             manager.offer_upload(&tab_id, paths);
+            show_pointer(&view, x, y, true).await;
             native::mouse(&view, Mouse::Down, x, y, 1).await?;
             native::mouse(&view, Mouse::Up, x, y, 1).await?;
             let started = Instant::now();
@@ -191,6 +195,7 @@ async fn run(
                 &[json!(from_x), json!(from_y), json!(to_x), json!(to_y)],
             )
             .await?;
+            show_pointer(&view, from_x, from_y, false).await;
             if dragged.get("dropped").is_none() {
                 native::mouse(&view, Mouse::Move, from_x, from_y, 0).await?;
                 native::mouse(&view, Mouse::Down, from_x, from_y, 1).await?;
@@ -208,6 +213,7 @@ async fn run(
                 }
                 native::mouse(&view, Mouse::Up, to_x, to_y, 1).await?;
             }
+            show_pointer(&view, to_x, to_y, false).await;
             settle(&manager, agent_id, &tab_id).await;
             merge(
                 json!({ "from": from, "to": to, "dragged": dragged }),
@@ -360,15 +366,77 @@ async fn run(
         }
         "browser.screenshot" => {
             let (tab_id, view) = active(&manager, agent_id)?;
-            let png = screenshot(&view).await?;
+            let annotate = params.get("annotate").and_then(Value::as_bool) == Some(true);
+            let full_page = params.get("fullPage").and_then(Value::as_bool) == Some(true);
+            let marked = if annotate {
+                let page = state(&manager, agent_id).await?;
+                call(&view, "showMarks", &[json!(true)]).await?;
+                page.get("elements").cloned()
+            } else {
+                let _ = call(&view, "pointerVisible", &[json!(false)]).await;
+                None
+            };
+            let height = if full_page {
+                call(&view, "pageHeight", &[])
+                    .await?
+                    .as_f64()
+                    .map(Some)
+                    .ok_or("the page did not report its height")?
+            } else {
+                None
+            };
+            let image = screenshot(&view, height).await;
+            let _ = if annotate {
+                call(&view, "showMarks", &[json!(false)]).await
+            } else {
+                call(&view, "pointerVisible", &[json!(true)]).await
+            };
             let page = manager.page(agent_id, &tab_id).unwrap_or_default();
-            Ok(json!({
+            let mut result = json!({
                 "tabId": tab_id,
                 "url": page.url,
                 "title": page.title,
                 "mimeType": "image/jpeg",
-                "data": base64_encode(&png),
-            }))
+                "data": base64_encode(&image?),
+            });
+            if let Some(elements) = marked {
+                result["elements"] = elements;
+            }
+            if height.is_some_and(|height| height > MAX_PAGE_HEIGHT) {
+                result["cutAt"] = json!(MAX_PAGE_HEIGHT);
+            }
+            Ok(result)
+        }
+        "browser.annotate" => {
+            let (_, view) = active(&manager, agent_id)?;
+            let clear = params.get("clear").and_then(Value::as_bool) == Some(true);
+            let placing = ["index", "x", "text"]
+                .iter()
+                .any(|key| params.get(*key).is_some());
+            let cleared = if clear {
+                call(&view, "clearAnnotations", &[]).await?
+            } else {
+                json!({})
+            };
+            if !placing {
+                return Ok(cleared);
+            }
+            let number = |key: &str| params.get(key).cloned().unwrap_or(Value::Null);
+            merge(
+                call(
+                    &view,
+                    "annotate",
+                    &[
+                        number("index"),
+                        number("x"),
+                        number("y"),
+                        number("text"),
+                        number("durationMs"),
+                    ],
+                )
+                .await?,
+                cleared,
+            )
         }
         "browser.wait" => {
             let ms = params
@@ -417,6 +485,12 @@ try {{
     return JSON.stringify(String(value));
 }}"#
     )
+}
+
+/// Draws the agent's pointer where it is about to act, so the person, and any
+/// recording, can follow along. A page that refuses the drawing still acts.
+async fn show_pointer(view: &Webview, x: f64, y: f64, ripple: bool) {
+    let _ = call(view, "mark", &[json!(x), json!(y), json!(ripple)]).await;
 }
 
 /// Where to point: the centre of a numbered element, scrolled into view, or
@@ -733,20 +807,24 @@ pub(super) async fn eval(view: &Webview, script: &str) -> Result<String, String>
     }
 }
 
-async fn screenshot(view: &Webview) -> Result<Vec<u8>, String> {
+/// The visible part of the tab, or with `height` the whole page down to it.
+async fn screenshot(view: &Webview, height: Option<f64>) -> Result<Vec<u8>, String> {
     #[cfg(target_os = "macos")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let sender = std::sync::Mutex::new(Some(sender));
         view.with_webview(move |platform| {
-            super::macos::snapshot_jpeg(
-                platform.inner(),
-                Box::new(move |result| {
-                    if let Some(sender) = sender.lock().ok().and_then(|mut slot| slot.take()) {
-                        let _ = sender.send(result);
-                    }
-                }),
-            );
+            let done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send> = Box::new(move |result| {
+                if let Some(sender) = sender.lock().ok().and_then(|mut slot| slot.take()) {
+                    let _ = sender.send(result);
+                }
+            });
+            match height {
+                Some(height) => {
+                    super::macos::full_page_jpeg(platform.inner(), height, MAX_PAGE_HEIGHT, done)
+                }
+                None => super::macos::snapshot_jpeg(platform.inner(), done),
+            }
         })
         .map_err(|error| error.to_string())?;
         match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
@@ -757,7 +835,7 @@ async fn screenshot(view: &Webview) -> Result<Vec<u8>, String> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = view;
+        let _ = (view, height);
         Err("screenshots are not available on this platform yet".into())
     }
 }

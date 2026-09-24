@@ -116,6 +116,60 @@
         return compact(element.textContent).length > 0;
     };
 
+    // What the agent draws over the page: a pointer that follows its actions,
+    // a ripple where it clicks, boxes and captions it places. The layer ignores
+    // the pointer, so clicks and hit tests pass straight through it.
+    const OVERLAY_STYLE = [
+        ":host { all: initial; }",
+        ".layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483647; font: 600 12px/1.3 -apple-system, system-ui, sans-serif; }",
+        ".layer.quiet .pointer, .layer.quiet .ripple { visibility: hidden; }",
+        ".pointer { position: absolute; left: 0; top: 0; width: 18px; height: 18px; margin: -3px 0 0 -3px; transition: transform 220ms cubic-bezier(.2,.7,.3,1), opacity 400ms; opacity: 0; }",
+        ".pointer.shown { opacity: 1; }",
+        ".ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid #ff4f7b; animation: ripple 520ms ease-out forwards; }",
+        "@keyframes ripple { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }",
+        ".box { position: absolute; border: 2px solid #ff4f7b; border-radius: 3px; }",
+        ".box.marks { border-width: 1px; }",
+        ".tag { position: absolute; left: -2px; bottom: 100%; margin-bottom: 2px; padding: 1px 5px; border-radius: 3px; background: #ff4f7b; color: #fff; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }",
+        ".box.marks .tag { bottom: auto; top: 0; margin: 0; padding: 0 3px; font-size: 10px; border-radius: 0 0 3px 0; }",
+        ".caption { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); max-width: 80%; padding: 10px 16px; border-radius: 8px; background: rgba(17, 17, 20, .86); color: #fff; font-size: 15px; font-weight: 500; text-align: center; }",
+    ].join("\n");
+    const POINTER_SVG =
+        '<svg viewBox="0 0 18 18" width="18" height="18"><path d="M2 1.5 L2 15 L5.8 11.4 L8.4 17 L10.9 15.9 L8.4 10.5 L13.6 10.5 Z" fill="#ff4f7b" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+    let overlay = null;
+    const layer = () => {
+        if (overlay && overlay.host.isConnected) return overlay;
+        const host = document.createElement("sikemux-overlay");
+        const root = host.attachShadow({ mode: "closed" });
+        root.innerHTML = `<style>${OVERLAY_STYLE}</style><div class="layer"><div class="pointer">${POINTER_SVG}</div></div>`;
+        document.documentElement.appendChild(host);
+        overlay = { host, layer: root.querySelector(".layer"), pointer: root.querySelector(".pointer"), notes: [], marks: [], fade: 0 };
+        const follow = () => overlay && [...overlay.notes, ...overlay.marks].forEach(place);
+        addEventListener("scroll", follow, { capture: true, passive: true });
+        addEventListener("resize", follow, { passive: true });
+        return overlay;
+    };
+    const place = (note) => {
+        if (!note.element) return;
+        if (!note.element.isConnected) return note.node.remove();
+        const rect = rectOf(note.element);
+        Object.assign(note.node.style, { left: `${rect.left - 3}px`, top: `${rect.top - 3}px`, width: `${rect.width + 2}px`, height: `${rect.height + 2}px` });
+    };
+    const box = (element, point, text, className) => {
+        const node = document.createElement("div");
+        node.className = className;
+        if (text) {
+            const tag = document.createElement("div");
+            tag.className = "tag";
+            tag.textContent = text;
+            node.append(tag);
+        }
+        const note = { element, node };
+        if (element) place(note);
+        else Object.assign(node.style, { left: `${point.x - 14}px`, top: `${point.y - 14}px`, width: "24px", height: "24px", borderRadius: "50%" });
+        layer().layer.append(node);
+        return note;
+    };
+
     window.__sikemux = {
         state() {
             const list = [];
@@ -217,6 +271,71 @@
             if (!refused) fire(target, "drop", toX, toY);
             fire(source, "dragend", toX, toY);
             return { html5: true, dropped: !refused, onto: describe(target) };
+        },
+        mark(x, y, ripple) {
+            const { layer: root, pointer } = layer();
+            // A tab nobody can see runs no transitions, which would leave the
+            // pointer stuck where it started.
+            pointer.style.transition = document.visibilityState === "visible" ? "" : "none";
+            pointer.style.transform = `translate(${x}px, ${y}px)`;
+            pointer.classList.add("shown");
+            if (ripple) {
+                const ripple = document.createElement("div");
+                ripple.className = "ripple";
+                Object.assign(ripple.style, { left: `${x}px`, top: `${y}px` });
+                root.append(ripple);
+                setTimeout(() => ripple.remove(), 600);
+            }
+            clearTimeout(overlay.fade);
+            overlay.fade = setTimeout(() => pointer.classList.remove("shown"), 2500);
+            return {};
+        },
+        annotate(index, x, y, text, durationMs) {
+            const element = index == null ? null : pick(index);
+            if (element || x != null) {
+                if (element) element.scrollIntoView({ block: "center", inline: "center" });
+                const note = box(element, { x, y }, text, "box");
+                overlay.notes.push(note);
+                if (durationMs) setTimeout(() => note.node.remove(), durationMs);
+                return { annotated: element ? describe(element) : { x, y } };
+            }
+            if (!text) throw new Error("pass text for a caption, or an element or point to box");
+            const { layer: root } = layer();
+            root.querySelector(".caption")?.remove();
+            const caption = document.createElement("div");
+            caption.className = "caption";
+            caption.textContent = text;
+            root.append(caption);
+            if (durationMs) setTimeout(() => caption.remove(), durationMs);
+            return { caption: text };
+        },
+        clearAnnotations() {
+            if (!overlay) return { cleared: 0 };
+            const cleared = overlay.notes.length + (overlay.layer.querySelector(".caption") ? 1 : 0);
+            overlay.notes.forEach((note) => note.node.remove());
+            overlay.notes = [];
+            overlay.layer.querySelector(".caption")?.remove();
+            return { cleared };
+        },
+        // Numbers every element from the latest state on the page itself, so a
+        // picture and the element list can be matched up.
+        showMarks(visible) {
+            if (overlay) overlay.marks.forEach((mark) => mark.node.remove());
+            if (!visible) {
+                if (overlay) overlay.marks = [];
+                return {};
+            }
+            layer().marks = refs()
+                .map((element, index) => (element.isConnected && inViewport(rectOf(element)) ? box(element, null, String(index), "box marks") : null))
+                .filter(Boolean);
+            return { marked: overlay.marks.length };
+        },
+        pageHeight() {
+            return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+        },
+        pointerVisible(visible) {
+            if (overlay) overlay.layer.classList.toggle("quiet", !visible);
+            return {};
         },
         scroll(deltaY, index) {
             const target = index == null ? null : pick(index);

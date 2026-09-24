@@ -169,7 +169,20 @@ load to finish. Prefer it over repeated state reads when a page is settling.
 
 `browser_screenshot` returns an image of the visible part of the tab. Use it
 when layout or rendering matters; use `browser_extract` when you only need
-text.
+text. Its pixels are CSS pixels, so a point you read off it can go straight to
+`browser_click` as `x` and `y`. `fullPage: true` captures the whole page
+instead, cut at 14,400 pixels tall (`cutAt` says when it was).
+`annotate: true` reads state afresh, draws each element's number on the
+picture, and returns the element list with it, which is the quickest way to
+match what you see to a number.
+
+While you act, the person sees a pointer move to each click, with a ripple
+where it lands. Screenshots leave the pointer out. `browser_annotate` draws
+for them on purpose: with `index` (or `x`, `y`) and `text` it boxes an element
+with a label; with only `text` it shows a caption along the bottom of the page.
+Drawings stay until `durationMs` passes or you call it with `clear: true`,
+they follow the page as it scrolls, and screenshots include them. Use them to
+point something out, or to narrate a recording.
 
 `browser_network` lists the fetch and XHR calls the page has made since it
 loaded, oldest first, with each status, duration and a truncated response body.
