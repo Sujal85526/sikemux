@@ -418,7 +418,7 @@ mod live {
         assert_eq!(status["ok"], true, "{status}");
         reads_everything(&plugin, &ctx).await;
 
-        auth::forget_access().await;
+        auth::expire_access().await;
         plugin
             .call(&ctx, "services", json!({ "minutes": 5 }))
             .await

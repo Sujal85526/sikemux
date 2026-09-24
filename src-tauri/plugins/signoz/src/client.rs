@@ -114,13 +114,15 @@ pub async fn request(
     body: Option<&Value>,
 ) -> SignozResult<Value> {
     let credentials = auth::credentials(data_dir).await?;
-    match send(&credentials, method.clone(), path, body).await {
-        Err(SignozError::Http { status: 401, .. }) if credentials.is_session() => {
-            auth::forget_access().await;
-            let renewed = auth::credentials(data_dir).await?;
+    match (
+        send(&credentials, method.clone(), path, body).await,
+        &credentials.auth,
+    ) {
+        (Err(SignozError::Http { status: 401, .. }), Auth::Bearer(refused)) => {
+            let renewed = auth::renew(data_dir, refused).await?;
             send(&renewed, method, path, body).await
         }
-        answer => answer,
+        (answer, _) => answer,
     }
 }
 

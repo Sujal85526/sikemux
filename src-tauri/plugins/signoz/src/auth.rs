@@ -35,15 +35,12 @@ impl Credentials {
             auth: Auth::None,
         }
     }
-
-    pub fn is_session(&self) -> bool {
-        matches!(self.auth, Auth::Bearer(_))
-    }
 }
 
 struct Access {
     url: String,
     token: String,
+    refresh: String,
     renew_at: Instant,
 }
 
@@ -112,22 +109,62 @@ async fn api_key(config: SignozConfig) -> SignozResult<Credentials> {
     })
 }
 
-async fn session(config: SignozConfig) -> SignozResult<Credentials> {
-    let mut access = ACCESS.lock().await;
-    if let Some(current) = access.as_ref() {
-        if current.url == config.url && Instant::now() < current.renew_at {
-            return Ok(Credentials {
-                url: config.url,
-                auth: Auth::Bearer(current.token.clone()),
-            });
-        }
+fn bearer(url: &str, token: &str) -> Credentials {
+    Credentials {
+        url: url.to_string(),
+        auth: Auth::Bearer(token.to_string()),
     }
+}
+
+/// Both tokens live in one Keychain entry, joined by a dot. SigNoz makes them
+/// from letters and digits only, and renewing a session needs both.
+fn pack(access: &str, refresh: &str) -> String {
+    format!("{access}.{refresh}")
+}
+
+fn unpack(saved: &str) -> Option<(String, String)> {
+    let (access, refresh) = saved.split_once('.')?;
+    (!access.is_empty() && !refresh.is_empty()).then(|| (access.to_string(), refresh.to_string()))
+}
+
+async fn saved_session(config: &SignozConfig) -> SignozResult<(String, String)> {
     let account = config.account.clone();
-    let refresh = blocking(move || config::keychain_read(SESSION_SERVICE, &account))
+    let saved = blocking(move || config::keychain_read(SESSION_SERVICE, &account))
         .await?
         .ok_or(SignozError::Unconfigured)?;
+    unpack(&saved).ok_or(SignozError::Unconfigured)
+}
+
+async fn session(config: SignozConfig) -> SignozResult<Credentials> {
+    let mut access = ACCESS.lock().await;
+    if let Some(current) = access.as_ref().filter(|current| current.url == config.url) {
+        if Instant::now() < current.renew_at {
+            return Ok(bearer(&config.url, &current.token));
+        }
+        let (token, refresh) = (current.token.clone(), current.refresh.clone());
+        return rotate(&mut access, &config, &token, &refresh).await;
+    }
+    // After a restart the saved pair is used until SigNoz says it is stale.
+    let (token, refresh) = saved_session(&config).await?;
+    *access = Some(Access {
+        url: config.url.clone(),
+        token: token.clone(),
+        refresh,
+        renew_at: Instant::now() + ASSUMED_LIFETIME,
+    });
+    Ok(bearer(&config.url, &token))
+}
+
+/// SigNoz renews a session from the access token it is replacing, sent as
+/// the bearer, together with the refresh token in the body.
+async fn rotate(
+    access: &mut Option<Access>,
+    config: &SignozConfig,
+    token: &str,
+    refresh: &str,
+) -> SignozResult<Credentials> {
     let renewed = client::send(
-        &Credentials::anonymous(&config.url),
+        &bearer(&config.url, token),
         Method::POST,
         "/api/v2/sessions/rotate",
         Some(&json!({ "refreshToken": refresh })),
@@ -140,7 +177,22 @@ async fn session(config: SignozConfig) -> SignozResult<Credentials> {
         other => other,
     })?;
     let tokens = Tokens::from_answer(&renewed)?;
-    remember(&mut access, &config, tokens).await
+    remember(access, config, tokens).await
+}
+
+/// For a request SigNoz turned down with `refused`. When another request has
+/// already renewed the session, its new token is the answer.
+pub async fn renew(data_dir: &Path, refused: &str) -> SignozResult<Credentials> {
+    let config = load(data_dir).await?;
+    let mut access = ACCESS.lock().await;
+    let current = match access.as_ref().filter(|current| current.url == config.url) {
+        Some(current) => (current.token.clone(), current.refresh.clone()),
+        None => saved_session(&config).await?,
+    };
+    if current.0 != refused {
+        return Ok(bearer(&config.url, &current.0));
+    }
+    rotate(&mut access, &config, &current.0, &current.1).await
 }
 
 #[derive(Deserialize)]
@@ -164,8 +216,11 @@ async fn remember(
     config: &SignozConfig,
     tokens: Tokens,
 ) -> SignozResult<Credentials> {
-    let (account, refresh) = (config.account.clone(), tokens.refresh_token.clone());
-    blocking(move || config::keychain_write(SESSION_SERVICE, &account, &refresh)).await?;
+    let (account, saved) = (
+        config.account.clone(),
+        pack(&tokens.access_token, &tokens.refresh_token),
+    );
+    blocking(move || config::keychain_write(SESSION_SERVICE, &account, &saved)).await?;
     let lifetime = if tokens.expires_in == 0 {
         ASSUMED_LIFETIME
     } else {
@@ -174,16 +229,18 @@ async fn remember(
     *access = Some(Access {
         url: config.url.clone(),
         token: tokens.access_token.clone(),
+        refresh: tokens.refresh_token,
         renew_at: Instant::now() + lifetime.saturating_sub(RENEW_BEFORE_EXPIRY),
     });
-    Ok(Credentials {
-        url: config.url.clone(),
-        auth: Auth::Bearer(tokens.access_token),
-    })
+    Ok(bearer(&config.url, &tokens.access_token))
 }
 
-pub async fn forget_access() {
-    *ACCESS.lock().await = None;
+/// Makes the next request renew the session, as if its token had run out.
+#[cfg(test)]
+pub async fn expire_access() {
+    if let Some(current) = ACCESS.lock().await.as_mut() {
+        current.renew_at = Instant::now();
+    }
 }
 
 pub fn forget_api_key() {
@@ -432,13 +489,20 @@ async fn save(data_dir: &Path, config: SignozConfig) -> SignozResult<()> {
 /// Ends the session on SigNoz's side too, and removes only the Keychain entries Sikemux made.
 pub async fn sign_out(data_dir: &Path) -> SignozResult<()> {
     let config = load(data_dir).await?;
-    if config.auth == AuthMode::Session {
-        if let Some(current) = ACCESS.lock().await.take() {
-            let credentials = Credentials {
-                url: config.url.clone(),
-                auth: Auth::Bearer(current.token),
-            };
-            let _ = client::send(&credentials, Method::DELETE, "/api/v2/sessions", None).await;
+    if config.auth == AuthMode::Session && !config.account.is_empty() {
+        let cached = ACCESS.lock().await.take().map(|current| current.token);
+        let token = match cached {
+            Some(token) => Some(token),
+            None => saved_session(&config).await.ok().map(|(token, _)| token),
+        };
+        if let Some(token) = token {
+            let _ = client::send(
+                &bearer(&config.url, &token),
+                Method::DELETE,
+                "/api/v2/sessions",
+                None,
+            )
+            .await;
         }
     }
     forget_api_key();
@@ -499,6 +563,14 @@ mod tests {
         assert!(orgs[0].password && orgs[0].sso.is_empty());
         assert!(!orgs[1].password);
         assert_eq!(orgs[1].sso[0].provider, "google");
+    }
+
+    #[test]
+    fn keeps_both_tokens_in_one_keychain_entry() {
+        let saved = pack("AbC123", "xYz789");
+        assert_eq!(unpack(&saved), Some(("AbC123".into(), "xYz789".into())));
+        assert_eq!(unpack("only-one"), None);
+        assert_eq!(unpack(".refresh"), None);
     }
 
     #[test]
