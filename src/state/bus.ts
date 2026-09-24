@@ -10,7 +10,6 @@ export type Event =
     | { type: "agent-focus"; sessionId: string }
     | { type: "search-focus"; sessionId: string }
     | { type: "pane-closed"; paneId: string }
-    | { type: "aws-auth-expired"; profile: string; reason: string }
     | { type: "bruno-run"; sessionId: string };
 
 type AnyHandler = (e: Event) => void;

@@ -16,6 +16,7 @@ import {
     keybindingLabelForAction,
     matchesKeybinding,
     resolvedKeybinding,
+    type CoreKeybindingActionId,
     type KeybindingActionId,
     type KeybindingOverrides,
 } from "../keybindings";
@@ -66,7 +67,7 @@ const ONBOARDING_LAUNCHES = [
     { id: "session.open", label: "Open any session", overlay: "sessions", region: null, run: () => cmd.openPicker("all") },
     { id: "palette.commands", label: "Open the command deck", overlay: "commands", region: null, run: cmd.openCommandPalette },
 ] as const satisfies readonly {
-    id: KeybindingActionId;
+    id: CoreKeybindingActionId;
     label: string;
     overlay: OnboardingOverlay | null;
     region: OnboardingRegion | null;
@@ -270,7 +271,7 @@ export function Onboarding() {
             first.focus();
         }
     };
-    const shortcut = (id: KeybindingActionId) => ({
+    const shortcut = (id: CoreKeybindingActionId) => ({
         action: getKeybindingAction(id),
         label: keybindingLabelForAction(overrides, id),
     });

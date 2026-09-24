@@ -109,17 +109,6 @@ export const DEFAULT_GLOBAL_SEARCH_VIEW: GlobalSearchView = {
     selected: null,
 };
 
-export type EcsLevel =
-    | { kind: "clusters" }
-    | { kind: "services"; cluster: string }
-    | {
-          kind: "service";
-          cluster: string;
-          service: string;
-          tab: "logs" | "tasks";
-          taskFilter?: { taskId: string; stream: string };
-      };
-
 export type BrunoReqTab = "params" | "body" | "headers" | "auth" | "vars" | "script" | "docs";
 export type BrunoResTab = "body" | "headers" | "timeline" | "tests";
 

@@ -46,19 +46,19 @@ function deriveRole(w: Window): WindowRole {
     if (WINDOW_ROLES.has(w.role) || isPluginKind(w.role)) return w.role;
     if (w.name === "files") return "files";
     if (w.name === "git") return "git";
-    if (w.name === "aws") return "aws";
     if (w.name === "bruno") return "bruno";
     if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
     return "named";
 }
 
-export const VERSION = 12;
+export const VERSION = 13;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
 const PLUGIN_KIND_MIGRATION_VERSION = 10;
 const PLUGIN_SETTINGS_MIGRATION_VERSION = 11;
 const ONE_BRUNO_SESSION_MIGRATION_VERSION = 12;
+const AWS_PLUGIN_MIGRATION_VERSION = 13;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -93,8 +93,6 @@ const PERSISTED_KEYS = [
     "cloudBrowser",
     "cloudBrowserShortcut",
     "keybindingOverrides",
-    "awsProfile",
-    "awsService",
     "sideRailOpen",
     "agentRailOpen",
     "sideRailWidth",
@@ -144,8 +142,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         cloudBrowser: s.cloudBrowser,
         cloudBrowserShortcut: s.cloudBrowserShortcut,
         keybindingOverrides: s.keybindingOverrides,
-        awsProfile: s.awsProfile,
-        awsService: s.awsService,
         sideRailOpen: s.sideRailOpen,
         agentRailOpen: s.agentRailOpen,
         sideRailWidth: s.sideRailWidth,
@@ -174,8 +170,7 @@ function mergeBrunoWorkspaces(saved: string[] | undefined, sessions: Session[]):
     return out;
 }
 
-const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "aws", "bruno", "ssh-config", "named", "agent"]);
-const AWS_SERVICES = new Set<StoreState["awsService"]>(["ecs", "ec2", "lambda", "sqs", "billing", "s3"]);
+const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "bruno", "ssh-config", "named", "agent"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -565,8 +560,8 @@ export function flushPersist(): Promise<boolean> {
 /** Before v10 Rundeck was built in, and its sessions, windows, panes and command contexts were plain "rundeck". */
 const LEGACY_PLUGIN_KINDS: ReadonlyMap<unknown, string> = new Map([["rundeck", "sikemux.rundeck:deploy"]]);
 
-function renameLegacyPluginKinds(decoded: Record<string, unknown>): void {
-    const rename = (value: unknown) => LEGACY_PLUGIN_KINDS.get(value) ?? value;
+function renameLegacyPluginKinds(decoded: Record<string, unknown>, kinds: ReadonlyMap<unknown, string> = LEGACY_PLUGIN_KINDS): void {
+    const rename = (value: unknown) => kinds.get(value) ?? value;
     for (const row of Array.isArray(decoded.sessions) ? decoded.sessions : []) if (isRecord(row)) row.kind = rename(row.kind);
     const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
     for (const rows of Object.values(windowsBySession)) {
@@ -585,6 +580,32 @@ function renameLegacyPluginKinds(decoded: Record<string, unknown>): void {
     for (const command of Array.isArray(prefs.customCommands) ? prefs.customCommands : []) {
         if (isRecord(command) && Array.isArray(command.contexts)) command.contexts = command.contexts.map(rename);
     }
+}
+
+/**
+ * Before v13 AWS was built in. Its sessions, windows and panes were plain "aws",
+ * its profile and service sat among core's settings, and its shortcut was core's.
+ */
+function moveAwsIntoItsPlugin(decoded: Record<string, unknown>): void {
+    const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
+    for (const rows of Object.values(windowsBySession)) {
+        for (const row of Array.isArray(rows) ? rows : []) {
+            if (isRecord(row) && row.role === undefined && row.name === "aws") row.role = "aws";
+        }
+    }
+    renameLegacyPluginKinds(decoded, new Map([["aws", "sikemux.aws:console"]]));
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    const pluginSettings = isRecord(prefs.pluginSettings) ? prefs.pluginSettings : {};
+    const keybindingOverrides = isRecord(prefs.keybindingOverrides) ? { ...prefs.keybindingOverrides } : {};
+    if ("aws.open" in keybindingOverrides) {
+        keybindingOverrides["plugin.open:sikemux.aws"] = keybindingOverrides["aws.open"];
+        delete keybindingOverrides["aws.open"];
+    }
+    decoded.prefs = {
+        ...prefs,
+        keybindingOverrides,
+        pluginSettings: { ...pluginSettings, "sikemux.aws": { profile: prefs.awsProfile, service: prefs.awsService } },
+    };
 }
 
 /** Before v11 Rundeck's settings sat among core's, and each session kept the deploy location picked for its folder. */
@@ -649,6 +670,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version < PLUGIN_KIND_MIGRATION_VERSION) renameLegacyPluginKinds(decoded);
     if (decoded.version < PLUGIN_SETTINGS_MIGRATION_VERSION) moveRundeckSettings(decoded);
     if (decoded.version < ONE_BRUNO_SESSION_MIGRATION_VERSION) mergeBrunoSessions(decoded);
+    if (decoded.version < AWS_PLUGIN_MIGRATION_VERSION) moveAwsIntoItsPlugin(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
@@ -845,8 +867,6 @@ export function applyHydrate(raw: string): HydrationResult {
         cloudBrowser: typeof prefs.cloudBrowser === "string" ? prefs.cloudBrowser : cur.cloudBrowser,
         cloudBrowserShortcut: typeof prefs.cloudBrowserShortcut === "string" ? prefs.cloudBrowserShortcut : cur.cloudBrowserShortcut,
         keybindingOverrides: normaliseKeybindingOverrides(prefs.keybindingOverrides),
-        awsProfile: prefs.awsProfile === null || typeof prefs.awsProfile === "string" ? prefs.awsProfile : cur.awsProfile,
-        awsService: AWS_SERVICES.has(prefs.awsService as StoreState["awsService"]) ? (prefs.awsService as StoreState["awsService"]) : cur.awsService,
         sideRailOpen: typeof prefs.sideRailOpen === "boolean" ? prefs.sideRailOpen : cur.sideRailOpen,
         agentRailOpen: typeof prefs.agentRailOpen === "boolean" ? prefs.agentRailOpen : cur.agentRailOpen,
         sideRailWidth:

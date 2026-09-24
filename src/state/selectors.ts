@@ -323,7 +323,6 @@ export function selectItemState(state: StoreState, kind: PaneKind, itemId: strin
         case "search":
             return sessionId ? state.globalSearchBySession[sessionId] : undefined;
         case "terminal":
-        case "aws":
         case "agent":
             return undefined;
         default:

@@ -28,7 +28,7 @@ describe("narrow store selectors", () => {
     it("adapts existing item-local state maps by kind", () => {
         const state = getState();
         expect(selectItemState(state, "terminal", "pane")).toBeUndefined();
-        expect(selectItemState(state, "aws", "pane")).toBeUndefined();
+        expect(selectItemState(state, "agent", "pane")).toBeUndefined();
         expect(selectItemState(state, "editor", "missing")).toBeUndefined();
     });
 

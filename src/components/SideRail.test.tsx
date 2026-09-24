@@ -102,12 +102,13 @@ describe("project tree", () => {
 });
 
 describe("plugins group", () => {
-    it("gathers AWS, Bruno and every plugin under one group, offering whatever is not open", () => {
+    it("gathers Bruno and every plugin under one group, offering whatever is not open", () => {
         setState({
-            sessions: { ...getState().sessions, aws: session("aws", "aws"), signoz: session("signoz", "sikemux.signoz:explore") },
+            sessions: { ...getState().sessions, aws: session("aws", "sikemux.aws:console"), signoz: session("signoz", "sikemux.signoz:explore") },
             sessionOrder: [...getState().sessionOrder, "aws", "signoz"],
             windowsBySession: { ...getState().windowsBySession, aws: [], signoz: [] },
             pluginManifests: [
+                { id: "sikemux.aws", name: "AWS", version: "0.1.0", sikemux: ">=0.4" },
                 { id: "sikemux.rundeck", name: "Rundeck", version: "0.1.0", sikemux: ">=0.4" },
                 { id: "sikemux.signoz", name: "SigNoz", version: "0.1.0", sikemux: ">=0.4" },
             ],

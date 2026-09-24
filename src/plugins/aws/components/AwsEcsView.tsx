@@ -1,12 +1,10 @@
 import type { ReactNode } from "react";
-import { useResourceEnabled } from "../../state/resources";
-import { ecsClustersR, ecsServiceLogConfigR, ecsServicesR, ecsTasksR } from "../../state/resources.defs";
-import { awsApi, type EcsCluster, type EcsService, type EcsTask } from "../../api/aws";
-import { reportError } from "../../state/toast";
-import * as cmd from "../../state/commands";
-import { useStore } from "../../state/store";
-import type { EcsLevel } from "../../state/types";
-import { IconChevron } from "../Icons";
+import { reportError } from "../../../plugin-api/host";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { IconChevron } from "../../../plugin-api/ui";
+import { awsApi, type EcsCluster, type EcsService, type EcsTask } from "../api";
+import { ecsClustersR, ecsServiceLogConfigR, ecsServicesR, ecsTasksR } from "../resources";
+import { setEcsLevel, useAws, type EcsLevel } from "../state";
 import { AwsLogTailView } from "./AwsLogTailView";
 import { AwsRefresh } from "./AwsRefresh";
 
@@ -156,8 +154,8 @@ const TASK_COLUMNS: EcsColumn<EcsTask>[] = [
 ];
 
 export function AwsEcsView({ profile, active }: ViewProps) {
-    const level = useStore((s) => s.ecsViews[profile] ?? DEFAULT_LEVEL);
-    const setLevel = (l: EcsLevel) => cmd.setEcsLevel(profile, l);
+    const level = useAws((s) => s.ecsViews[profile] ?? DEFAULT_LEVEL);
+    const setLevel = (l: EcsLevel) => setEcsLevel(profile, l);
 
     return (
         <div className="aws-view">

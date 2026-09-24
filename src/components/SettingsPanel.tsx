@@ -5,7 +5,8 @@ import { invokeCommand as invoke } from "../api/invoke";
 import {
     eventToKeybinding,
     findKeybindingConflict,
-    KEYBINDING_ACTIONS,
+    keybindingActions,
+    type KeybindingAction,
     KEYBINDING_CATEGORIES,
     keybindingHasModifier,
     keybindingLabel,
@@ -110,7 +111,7 @@ export function SettingsPanel() {
     const entries = useMemo<SettingsEntry[]>(
         () => [
             ...SETTINGS_INDEX,
-            ...KEYBINDING_ACTIONS.map((action) => ({
+            ...keybindingActions().map((action) => ({
                 page: "keybindings" as const,
                 section: "Shortcuts",
                 label: action.label,
@@ -340,7 +341,7 @@ function SearchResults({ query, results, active, onHover, onOpen }: SearchResult
     );
 }
 
-const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh", "aws", "bruno"];
+const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh", "bruno"];
 const COMMAND_PLACEMENTS: CustomCommandPlacement[] = ["terminal", "split", "popup", "background", "replace"];
 
 function blankCommand(): CustomCommand {
@@ -999,7 +1000,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
         if (event.key === "Backspace" || event.key === "Delete") {
             cmd.setKeybinding(id, null);
             setRecording(null);
-            setMessage(`${KEYBINDING_ACTIONS.find((action) => action.id === id)?.label} is now unassigned.`);
+            setMessage(`${keybindingActions().find((action) => action.id === id)?.label} is now unassigned.`);
             return;
         }
 
@@ -1017,10 +1018,10 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
 
         cmd.setKeybinding(id, binding);
         setRecording(null);
-        setMessage(`${KEYBINDING_ACTIONS.find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.`);
+        setMessage(`${keybindingActions().find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.`);
     };
 
-    const matches = (action: (typeof KEYBINDING_ACTIONS)[number]) =>
+    const matches = (action: KeybindingAction) =>
         !normalizedQuery ||
         `${action.label} ${action.detail} ${keybindingLabel(resolvedKeybinding(overrides, action.id as KeybindingActionId))}`
             .toLowerCase()
@@ -1030,7 +1031,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
         <SettingsPage>
             <SettingsSection
                 title="Shortcuts"
-                meta={`${KEYBINDING_ACTIONS.length} commands · ${overrideCount} changed`}
+                meta={`${keybindingActions().length} commands · ${overrideCount} changed`}
                 sub="Select a keycap, then press a new combination. Conflicts are blocked.">
                 <div className="keymap-toolbar">
                     <label className="keymap-search">
@@ -1063,7 +1064,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
 
                 <div className="keymap-groups">
                     {KEYBINDING_CATEGORIES.map((category) => {
-                        const actions = KEYBINDING_ACTIONS.filter((action) => action.category === category && matches(action));
+                        const actions = keybindingActions().filter((action) => action.category === category && matches(action));
                         if (!actions.length) return null;
                         return (
                             <section className="keymap-group" key={category}>
@@ -1117,7 +1118,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
                             </section>
                         );
                     })}
-                    {normalizedQuery && !KEYBINDING_ACTIONS.some(matches) && (
+                    {normalizedQuery && !keybindingActions().some(matches) && (
                         <div className="settings-empty">No commands match “{query.trim()}”.</div>
                     )}
                 </div>

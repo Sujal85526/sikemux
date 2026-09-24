@@ -1,21 +1,23 @@
-import { invokeCommand as invoke } from "./invoke";
-import { emit } from "../state/bus";
+import { createPluginBackend, isPluginFailure } from "../../plugin-api/backend";
+import { AWS_PLUGIN_ID } from "./kinds";
 
-async function awsInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+const backend = createPluginBackend(AWS_PLUGIN_ID);
+
+const SIGNED_OUT = new Set(["aws-token-expired", "aws-no-credentials", "aws-cli-missing"]);
+
+let onSignedOut: (profile: string) => void = () => {};
+
+/** Called when a request finds the profile signed out, so the plugin can drop what it has cached. */
+export function whenSignedOut(listener: (profile: string) => void): void {
+    onSignedOut = listener;
+}
+
+async function call<T>(method: string, params: Record<string, unknown>): Promise<T> {
     try {
-        return await invoke<T>(cmd, args);
-    } catch (e) {
-        const err = e as { category?: string; message?: string };
-        const cat = err?.category ?? "";
-        if (cat === "aws-token-expired" || cat === "aws-no-credentials" || cat === "aws-cli-missing") {
-            const profile = (args["profile"] as string) ?? "";
-            emit({
-                type: "aws-auth-expired",
-                profile,
-                reason: err?.message ?? cat,
-            });
-        }
-        throw e;
+        return await backend.call<T>(method, params);
+    } catch (error) {
+        if (isPluginFailure(error) && SIGNED_OUT.has(error.category) && typeof params.profile === "string") onSignedOut(params.profile);
+        throw error;
     }
 }
 
@@ -137,34 +139,64 @@ export interface S3Bucket {
     created_at: string | null;
 }
 
+export interface SsoLogin {
+    readonly result: Promise<AwsLoginResult>;
+    cancel(): void;
+}
+
 export const awsApi = {
-    profiles: () => invoke<AwsProfile[]>("aws_profiles"),
-    identity: (profile: string, force = false) => invoke<AwsIdentity>("aws_caller_identity", { profile, force }),
-    ssoLogin: (profile: string, operationId: string) => invoke<AwsLoginResult>("aws_sso_login", { profile, operationId }),
-    ssoCancel: (operationId: string) => invoke<boolean>("aws_sso_cancel", { operationId }),
-    ecsClusters: (profile: string) => awsInvoke<EcsCluster[]>("aws_ecs_clusters", { profile }),
-    ecsServices: (profile: string, cluster: string) => awsInvoke<EcsService[]>("aws_ecs_services", { profile, cluster }),
-    ecsTasks: (profile: string, cluster: string, service: string) => awsInvoke<EcsTask[]>("aws_ecs_tasks", { profile, cluster, service }),
-    ecsTaskLogConfig: (profile: string, cluster: string, taskArn: string) =>
-        awsInvoke<EcsTaskLog>("aws_ecs_task_log_config", {
-            profile,
-            cluster,
-            taskArn,
-        }),
+    profiles: () => backend.call<AwsProfile[]>("profiles", {}),
+    identity: (profile: string, force = false) => backend.call<AwsIdentity>("identity", { profile, force }),
+    ecsClusters: (profile: string) => call<EcsCluster[]>("ecsClusters", { profile }),
+    ecsServices: (profile: string, cluster: string) => call<EcsService[]>("ecsServices", { profile, cluster }),
+    ecsTasks: (profile: string, cluster: string, service: string) => call<EcsTask[]>("ecsTasks", { profile, cluster, service }),
+    ecsTaskLogConfig: (profile: string, cluster: string, taskArn: string) => call<EcsTaskLog>("ecsTaskLogConfig", { profile, cluster, taskArn }),
     ecsServiceLogConfig: (profile: string, cluster: string, service: string) =>
-        awsInvoke<EcsServiceLog>("aws_ecs_service_log_config", {
-            profile,
-            cluster,
-            service,
+        call<EcsServiceLog>("ecsServiceLogConfig", { profile, cluster, service }),
+    ec2Instances: (profile: string) => call<Ec2Instance[]>("ec2Instances", { profile }),
+    lambdaFunctions: (profile: string) => call<LambdaFn[]>("lambdaFunctions", { profile }),
+    sqsQueues: (profile: string) => call<SqsQueue[]>("sqsQueues", { profile }),
+    billingMonths: (profile: string, monthsBack = 5) => call<BillingMonth[]>("billingMonths", { profile, monthsBack }),
+    s3Buckets: (profile: string) => call<S3Bucket[]>("s3Buckets", { profile }),
+
+    /** Waits for the person to approve in their browser, so it streams rather than calls: a call would time out. */
+    ssoLogin(profile: string): SsoLogin {
+        let settle: { resolve: (result: AwsLoginResult) => void; reject: (error: unknown) => void } | null = null;
+        const result = new Promise<AwsLoginResult>((resolve, reject) => {
+            settle = { resolve, reject };
+        });
+        const finish = (outcome: AwsLoginResult | Error) => {
+            const pending = settle;
+            settle = null;
+            if (!pending) return;
+            if (outcome instanceof Error) pending.reject(outcome);
+            else pending.resolve(outcome);
+        };
+        const stream = backend.stream<AwsLoginResult>(
+            "ssoLogin",
+            { profile },
+            {
+                onItem: finish,
+                onEnd: () => finish(new Error("the sign-in ended without an answer")),
+                onError: (error) => finish(new Error(error.message)),
+            },
+        );
+        return {
+            result,
+            cancel() {
+                stream.stop();
+                finish(new Error("cancelled"));
+            },
+        };
+    },
+
+    tailLogs: (
+        params: { profile: string; logGroup: string; logStream: string | null; since: string },
+        handlers: { onLine: (line: string) => void; onEnd: () => void; onError: (message: string) => void },
+    ) =>
+        backend.stream<string>("tailLogs", params, {
+            onItem: handlers.onLine,
+            onEnd: handlers.onEnd,
+            onError: (error) => handlers.onError(error.message),
         }),
-    ec2Instances: (profile: string) => awsInvoke<Ec2Instance[]>("aws_ec2_instances", { profile }),
-    lambdaFunctions: (profile: string) => awsInvoke<LambdaFn[]>("aws_lambda_functions", { profile }),
-    sqsQueues: (profile: string) => awsInvoke<SqsQueue[]>("aws_sqs_queues", { profile }),
-    billingMonths: (profile: string, monthsBack = 5) =>
-        awsInvoke<BillingMonth[]>("aws_billing_months", {
-            profile,
-            monthsBack,
-        }),
-    s3Buckets: (profile: string) => awsInvoke<S3Bucket[]>("aws_s3_buckets", { profile }),
-    logsTailStop: (id: number) => invoke<void>("aws_logs_tail_stop", { id }),
 };

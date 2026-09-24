@@ -18,9 +18,7 @@ import type { BrowserSnapshot } from "../api/browser";
 import type {
     Agent,
     AgentPermissionMode,
-    AwsService,
     BrowserPaneView,
-    EcsLevel,
     EditorPaneView,
     CliPendingEditorOpen,
     GitPaneView,
@@ -65,8 +63,6 @@ export interface DomainState {
     cloudBrowser: string;
     cloudBrowserShortcut: string;
     keybindingOverrides: KeybindingOverrides;
-    awsProfile: string | null;
-    awsService: AwsService;
     sideRailOpen: boolean;
     agentRailOpen: boolean;
     sideRailWidth: number;
@@ -124,7 +120,6 @@ export interface ViewState {
     brunoEnvPaletteOpen: boolean;
     settingsOpen: boolean;
     settingsPage: SettingsPageId;
-    awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
     zoomedPaneId: string | null;
     sessionSwitcher: SessionSwitcherView | null;
 
@@ -140,9 +135,7 @@ export interface ViewState {
     pendingEditorOpens: Record<string, CliPendingEditorOpen[]>;
     dirtyEditorPaths: Record<string, string[]>;
     gitViews: Record<string, GitPaneView>;
-    ecsViews: Record<string, EcsLevel>;
     brunoViews: Record<string, BrunoView>;
-    expandedBillingMonth: Record<string, string | null>;
 
     gitModal: GitModal | null;
     gitCmdLog: GitCmdEntry[];
@@ -216,8 +209,6 @@ export const useStore = create<StoreState>(() => {
         cloudBrowser: "",
         cloudBrowserShortcut: "",
         keybindingOverrides: {},
-        awsProfile: null,
-        awsService: "ecs",
         sideRailOpen: true,
         agentRailOpen: true,
         sideRailWidth: RAIL_WIDTH.start.initial,
@@ -248,7 +239,6 @@ export const useStore = create<StoreState>(() => {
         brunoEnvPaletteOpen: false,
         settingsOpen: false,
         settingsPage: "general",
-        awsAuthModal: null,
         zoomedPaneId: null,
         sessionSwitcher: null,
         editorViews: {},
@@ -258,9 +248,7 @@ export const useStore = create<StoreState>(() => {
         pendingEditorOpens: {},
         dirtyEditorPaths: {},
         gitViews: {},
-        ecsViews: {},
         brunoViews: {},
-        expandedBillingMonth: {},
         gitModal: null,
         gitCmdLog: [],
         gitCmdLogOpen: false,

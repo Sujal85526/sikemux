@@ -4,25 +4,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
 import * as cmd from "../state/commands";
-import { useResource, useResourceEnabled } from "../state/resources";
+import { useResource } from "../state/resources";
 import { swallow } from "../state/toast";
-import { awsIdentityR, gitOverviewR } from "../state/resources.defs";
+import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { useStore } from "../state/store";
 import { activeAgentId } from "../state/selectors";
-import {
-    IconAgent,
-    IconAws,
-    IconBattery,
-    IconChevron,
-    IconCommand,
-    IconFocus,
-    IconFolder,
-    IconGit,
-    IconPanelLeft,
-    IconZoom,
-    WindowIcon,
-} from "./Icons";
+import { IconAgent, IconBattery, IconChevron, IconCommand, IconFocus, IconFolder, IconGit, IconPanelLeft, IconZoom, WindowIcon } from "./Icons";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
 import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
@@ -57,45 +45,6 @@ function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
     const h24 = d.getHours();
     const h = h24 % 12 || 12;
     return { h, m: d.getMinutes(), ap: h24 >= 12 ? "pm" : "am" };
-}
-
-function AwsChip() {
-    const profile = useStore((s) => s.awsProfile);
-    const identity = useResourceEnabled(!!profile, awsIdentityR, profile ?? "", false);
-    const status = profile ? identity.data?.status : undefined;
-
-    const dotClass =
-        status === "authed"
-            ? "ok"
-            : identity.status === "loading"
-              ? "checking"
-              : status === "expired" || status === "no-credentials"
-                ? "fail"
-                : !profile
-                  ? "off"
-                  : "warn";
-
-    const onClick = () => {
-        if (!profile) {
-            cmd.openAwsSession();
-            return;
-        }
-        if (status === "expired" || status === "no-credentials") {
-            cmd.openAwsAuthModal(profile, null);
-            return;
-        }
-        cmd.openAwsSession();
-    };
-
-    const title = profile ? `AWS · ${profile}${status ? ` · ${status}` : ""}` : "AWS — sign in";
-
-    return (
-        <Tooltip label={title}>
-            <button className={`tb-aws-chip ${dotClass}`} onClick={onClick} aria-label={title}>
-                <IconAws />
-            </button>
-        </Tooltip>
-    );
 }
 
 /*
@@ -294,7 +243,6 @@ export const TopBar = memo(function TopBar() {
                 {plugins.map(({ id, TopBarItem }) =>
                     TopBarItem ? <TopBarItem key={id} projectCwd={isProject ? session.cwd || null : null} stripHovered={stripHovered} /> : null,
                 )}
-                <AwsChip />
                 <BatteryChip />
                 <ClockChip />
                 <div className="tb-toggles">

@@ -1,5 +1,5 @@
-import type { ResourceHandle } from "../../state/resources";
-import { IconRefresh } from "../Icons";
+import type { ResourceHandle } from "../../../plugin-api/resources";
+import { IconRefresh } from "../../../plugin-api/ui";
 
 export function AwsRefresh<T>({ handle }: { handle: ResourceHandle<T> }) {
     const busy = handle.status === "loading";

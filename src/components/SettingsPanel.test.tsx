@@ -46,16 +46,16 @@ describe("SettingsPanel keybindings", () => {
         const replacementLabel = keybindingLabel("Ctrl+Shift+KeyO");
         expect(screen.getByRole("button", { name: `Open project: ${replacementLabel}. Activate to change.` })).toBeInTheDocument();
 
-        const awsDefault = keybindingLabel(resolvedKeybinding({}, "aws.open"));
-        const aws = screen.getByRole("button", { name: `Open AWS: ${awsDefault}. Activate to change.` });
-        await user.click(aws);
-        fireEvent.keyDown(aws, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
-        expect(getState().keybindingOverrides["aws.open"]).toBeUndefined();
+        const sshDefault = keybindingLabel(resolvedKeybinding({}, "ssh.open"));
+        const ssh = screen.getByRole("button", { name: `Connect to SSH host: ${sshDefault}. Activate to change.` });
+        await user.click(ssh);
+        fireEvent.keyDown(ssh, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
+        expect(getState().keybindingOverrides["ssh.open"]).toBeUndefined();
         expect(screen.getByText(`${replacementLabel} is already assigned to “Open project”.`)).toBeInTheDocument();
 
-        fireEvent.keyDown(aws, { key: "Backspace", code: "Backspace" });
-        expect(getState().keybindingOverrides["aws.open"]).toBeNull();
-        expect(screen.getByRole("button", { name: "Open AWS: Unassigned. Activate to change." })).toBeInTheDocument();
+        fireEvent.keyDown(ssh, { key: "Backspace", code: "Backspace" });
+        expect(getState().keybindingOverrides["ssh.open"]).toBeNull();
+        expect(screen.getByRole("button", { name: "Connect to SSH host: Unassigned. Activate to change." })).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Reset all" }));
         expect(getState().keybindingOverrides).toEqual({});
@@ -165,13 +165,13 @@ describe("SettingsPanel navigation", () => {
     it("moves through results with the arrow keys and opens a shortcut already filtered", async () => {
         const user = userEvent.setup();
         render(<SettingsPanel />);
-        await user.type(screen.getByRole("combobox", { name: "Search settings" }), "open aws");
+        await user.type(screen.getByRole("combobox", { name: "Search settings" }), "connect to ssh");
         const options = screen.getAllByRole("option");
-        expect(options[0]).toHaveTextContent("Open AWS");
+        expect(options[0]).toHaveTextContent("Connect to SSH host");
 
         await user.keyboard("{Enter}");
         expect(getState().settingsPage).toBe("keybindings");
-        expect(screen.getByRole("textbox", { name: "Filter shortcuts" })).toHaveValue("Open AWS");
+        expect(screen.getByRole("textbox", { name: "Filter shortcuts" })).toHaveValue("Connect to SSH host");
 
         await user.type(screen.getByRole("combobox", { name: "Search settings" }), "a");
         const first = screen.getAllByRole("option")[0];

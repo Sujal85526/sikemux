@@ -1,10 +1,9 @@
 import { useEffect, type ReactNode } from "react";
-import { useResourceEnabled, type ResourceHandle } from "../../state/resources";
-import { billingMonthsR, ec2InstancesR, lambdaFnsR, s3BucketsR, sqsQueuesR } from "../../state/resources.defs";
-import * as cmd from "../../state/commands";
-import { useStore } from "../../state/store";
-import type { Ec2Instance, LambdaFn, S3Bucket, SqsQueue } from "../../api/aws";
-import { IconChevron } from "../Icons";
+import { useResourceEnabled, type ResourceHandle } from "../../../plugin-api/resources";
+import { IconChevron } from "../../../plugin-api/ui";
+import type { Ec2Instance, LambdaFn, S3Bucket, SqsQueue } from "../api";
+import { billingMonthsR, ec2InstancesR, lambdaFnsR, s3BucketsR, sqsQueuesR } from "../resources";
+import { setBillingExpandedMonth, useAws } from "../state";
 import { AwsRefresh } from "./AwsRefresh";
 
 type Column<T> = {
@@ -172,13 +171,13 @@ function splitCharges(by_service: { amount: string }[]): {
 
 export function AwsBillingView({ profile, active }: { profile: string; active: boolean }) {
     const handle = useResourceEnabled(active, billingMonthsR, profile, 5);
-    const expanded = useStore((s) => s.expandedBillingMonth[profile] ?? null);
+    const expanded = useAws((s) => s.expandedBillingMonth[profile] ?? null);
     const data = handle.data;
 
     useEffect(() => {
         if (!data || expanded !== null) return;
         const cur = data.find((m) => m.is_current);
-        if (cur) cmd.setBillingExpandedMonth(profile, cur.period_start);
+        if (cur) setBillingExpandedMonth(profile, cur.period_start);
     }, [data, expanded, profile]);
 
     if (!data) {
@@ -253,9 +252,7 @@ export function AwsBillingView({ profile, active }: { profile: string; active: b
                     const hasCredits = Math.abs(split.credits) > 0.005;
                     return (
                         <div key={m.period_start} className={`aws-bill-month${isOpen ? " open" : ""}${m.is_current ? " current" : ""}`}>
-                            <button
-                                className="aws-bill-month-head"
-                                onClick={() => cmd.setBillingExpandedMonth(profile, isOpen ? null : m.period_start)}>
+                            <button className="aws-bill-month-head" onClick={() => setBillingExpandedMonth(profile, isOpen ? null : m.period_start)}>
                                 <span className="aws-bill-chev">
                                     <IconChevron size={11} />
                                 </span>

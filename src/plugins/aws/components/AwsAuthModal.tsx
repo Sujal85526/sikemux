@@ -1,77 +1,62 @@
 import { useEffect, useRef, useState } from "react";
-import { invokeCommand as invoke } from "../../api/invoke";
-import * as cmd from "../../state/commands";
-import { useStore } from "../../state/store";
-import { IconClose } from "../Icons";
-import { swallow } from "../../state/toast";
-import { awsApi } from "../../api/aws";
+import { focusSignInBrowser, openSignInUrl, swallow } from "../../../plugin-api/host";
+import { invalidate } from "../../../plugin-api/resources";
+import { IconClose } from "../../../plugin-api/ui";
+import { awsApi, type SsoLogin } from "../api";
+import { awsIdentityR } from "../resources";
+import { closeAwsAuthModal, useAws } from "../state";
+
+async function signedIn(profile: string): Promise<void> {
+    await awsApi.identity(profile, true).catch(swallow("refresh AWS identity"));
+    invalidate((kind, args) => kind === awsIdentityR.kind && args[0] === profile);
+}
 
 export function AwsAuthModal() {
-    const modal = useStore((s) => s.awsAuthModal);
-    const cloudBrowser = useStore((s) => s.cloudBrowser);
-    const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
+    const modal = useAws((s) => s.authModal);
 
     const [phase, setPhase] = useState<"idle" | "running" | "ok" | "fail">("idle");
     const [errOut, setErrOut] = useState("");
-    const cancelledRef = useRef(false);
-    const operationRef = useRef<string | null>(null);
+    const loginRef = useRef<SsoLogin | null>(null);
 
     useEffect(() => {
         if (!modal) return;
-        cancelledRef.current = false;
         setPhase("idle");
         setErrOut("");
         return () => {
-            cancelledRef.current = true;
-            const operationId = operationRef.current;
-            operationRef.current = null;
-            if (operationId) void awsApi.ssoCancel(operationId).catch(swallow("cancel AWS sign-in"));
+            loginRef.current?.cancel();
+            loginRef.current = null;
         };
     }, [modal]);
 
     if (!modal) return null;
 
-    const openInBrowser = (url: string) =>
-        invoke("open_url", {
-            url,
-            app: cloudBrowser || null,
-            shortcut: cloudBrowserShortcut || null,
-        }).catch(swallow("open_url"));
+    const openInBrowser = (url: string) => void openSignInUrl(url).catch(swallow("open the SSO portal"));
 
     const onCancel = () => {
-        cancelledRef.current = true;
-        const operationId = operationRef.current;
-        operationRef.current = null;
-        if (operationId) void awsApi.ssoCancel(operationId).catch(swallow("cancel AWS sign-in"));
-        cmd.closeAwsAuthModal();
+        loginRef.current?.cancel();
+        loginRef.current = null;
+        closeAwsAuthModal();
     };
 
     const onSignIn = async () => {
-        cancelledRef.current = false;
         setPhase("running");
         setErrOut("");
+        await focusSignInBrowser().catch(swallow("bring the sign-in browser forward"));
+        const login = awsApi.ssoLogin(modal.profile);
+        loginRef.current = login;
         try {
-            const operationId = crypto.randomUUID();
-            operationRef.current = operationId;
-            if (cloudBrowser) {
-                await invoke("macos_focus_app", {
-                    app: cloudBrowser,
-                    shortcut: cloudBrowserShortcut || null,
-                }).catch(swallow("macos_focus_app"));
-            }
-            const ok = await cmd.runAwsSsoLogin(modal.profile, operationId);
-            if (operationRef.current === operationId) operationRef.current = null;
-            if (cancelledRef.current) return;
-            setPhase(ok ? "ok" : "fail");
-            if (ok) {
-                window.setTimeout(cmd.closeAwsAuthModal, 700);
-            }
+            const result = await login.result;
+            if (loginRef.current !== login) return;
+            if (result.success) await signedIn(modal.profile);
+            setPhase(result.success ? "ok" : "fail");
+            if (!result.success) setErrOut(result.stderr.trim());
+            if (result.success) window.setTimeout(closeAwsAuthModal, 700);
         } catch (e) {
-            if (cancelledRef.current) return;
+            if (loginRef.current !== login) return;
             setPhase("fail");
             setErrOut(String(e));
         } finally {
-            operationRef.current = null;
+            if (loginRef.current === login) loginRef.current = null;
         }
     };
 

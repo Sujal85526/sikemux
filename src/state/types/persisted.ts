@@ -4,7 +4,6 @@ import type { KeybindingOverrides } from "../../keybindings";
 import type {
     Agent,
     AgentPermissionMode,
-    AwsService,
     ProjectRoot,
     ProviderProfile,
     ProviderProfileSelection,
@@ -69,8 +68,6 @@ export interface PersistedPrefs {
     cloudBrowser: string;
     cloudBrowserShortcut: string;
     keybindingOverrides?: KeybindingOverrides;
-    awsProfile: string | null;
-    awsService: AwsService;
     sideRailOpen: boolean;
     agentRailOpen: boolean;
     sideRailWidth?: number;

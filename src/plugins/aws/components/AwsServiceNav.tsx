@@ -1,6 +1,4 @@
-import * as cmd from "../../state/commands";
-import { useStore } from "../../state/store";
-import { AWS_SERVICES, type AwsService } from "../../state/types";
+import { AWS_SERVICES, awsSettings, setAwsService, type AwsService } from "../state";
 
 const META: Record<AwsService, { label: string; hint: string }> = {
     ecs: { label: "ECS", hint: "clusters · services · tasks · logs" },
@@ -12,7 +10,7 @@ const META: Record<AwsService, { label: string; hint: string }> = {
 };
 
 export function AwsServiceNav() {
-    const active = useStore((s) => s.awsService);
+    const active = awsSettings.useSelect((s) => s.service);
     return (
         <nav className="aws-nav">
             <div className="aws-nav-label">Services</div>
@@ -20,7 +18,7 @@ export function AwsServiceNav() {
                 const m = META[s];
                 const sel = active === s;
                 return (
-                    <button key={s} className={`aws-nav-item${sel ? " active" : ""}`} onClick={() => cmd.setAwsService(s)} title={m.hint}>
+                    <button key={s} className={`aws-nav-item${sel ? " active" : ""}`} onClick={() => setAwsService(s)} title={m.hint}>
                         <span className="aws-nav-key">{i + 1}</span>
                         <span className="aws-nav-name">{m.label}</span>
                     </button>

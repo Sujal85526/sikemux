@@ -17,7 +17,7 @@ import * as cmd from "../state/commands";
 import { prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconAws, IconBruno, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, Logo, WindowIcon } from "./Icons";
+import { AgentIcon, IconAgent, IconBruno, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, Logo, WindowIcon } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
@@ -35,7 +35,6 @@ interface Opener {
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
-    if (kind === "aws") return <IconAws size={18} />;
     const surface = pluginSurface(kind);
     if (surface) return surface.icon(15);
     if (kind === "bruno") return <IconBruno size={20} />;
@@ -437,7 +436,6 @@ export const SideRail = memo(function SideRail() {
     const commands = inGroup("command");
     const plugins = inGroup("plugins");
     const openers: Opener[] = [
-        ...(plugins.some((session) => session.kind === "aws") ? [] : [{ label: "open aws", open: cmd.openAwsSession }]),
         ...(plugins.some((session) => session.kind === "bruno") ? [] : [{ label: "open bruno", open: () => cmd.openBrunoSession() }]),
         ...pluginManifests.flatMap((manifest) => {
             const plugin = frontendPlugin(manifest.id);

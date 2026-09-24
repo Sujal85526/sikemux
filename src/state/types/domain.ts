@@ -8,7 +8,7 @@ import type { PluginKind } from "../../plugins/kinds";
  * are tabs, and the active pane decides which is on top.
  */
 export type SplitDir = "row" | "column" | "stack";
-export type CorePaneKind = "terminal" | "editor" | "git" | "diff" | "aws" | "search" | "bruno" | "agent" | "browser";
+export type CorePaneKind = "terminal" | "editor" | "git" | "diff" | "search" | "bruno" | "agent" | "browser";
 export type PaneKind = CorePaneKind | PluginKind;
 
 export interface PaneNode {
@@ -34,9 +34,9 @@ export interface SplitNode {
 
 export type LayoutNode = PaneNode | SplitNode;
 
-export type SessionKind = "project" | "command" | "ssh" | "aws" | "bruno" | PluginKind;
+export type SessionKind = "project" | "command" | "ssh" | "bruno" | PluginKind;
 
-export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "aws" | "bruno" | "ssh-config" | "named" | "agent" | PluginKind;
+export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "bruno" | "ssh-config" | "named" | "agent" | PluginKind;
 
 export interface Window {
     id: string;
@@ -214,9 +214,6 @@ export interface RecentEntry {
     name: string;
     cwd: string;
 }
-
-export type AwsService = "ecs" | "ec2" | "lambda" | "sqs" | "billing" | "s3";
-export const AWS_SERVICES: AwsService[] = ["ecs", "ec2", "lambda", "sqs", "billing", "s3"];
 
 export interface ProjectRoot {
     path: string;

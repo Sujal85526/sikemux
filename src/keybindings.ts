@@ -1,4 +1,5 @@
 import { IS_MACOS } from "./lib/platform";
+import { frontendPlugins } from "./plugins/registry";
 
 export type KeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser" | "Bruno";
 
@@ -10,7 +11,7 @@ export interface KeybindingAction {
     defaultBinding: string;
 }
 
-const keybindingActions = [
+const coreKeybindingActions = [
     {
         id: "palette.commands",
         label: "Open command deck",
@@ -59,13 +60,6 @@ const keybindingActions = [
         detail: "Open the SSH host picker",
         category: "Workspace",
         defaultBinding: "Alt+Shift+KeyS",
-    },
-    {
-        id: "aws.open",
-        label: "Open AWS",
-        detail: "Create an AWS session",
-        category: "Workspace",
-        defaultBinding: "Alt+KeyA",
     },
     {
         id: "bruno.open",
@@ -391,23 +385,54 @@ const keybindingActions = [
     },
 ] as const satisfies readonly KeybindingAction[];
 
-export type KeybindingActionId = (typeof keybindingActions)[number]["id"];
+export type CoreKeybindingActionId = (typeof coreKeybindingActions)[number]["id"];
+/** Opens a plugin, for plugins that ask for a shortcut. */
+export type PluginOpenActionId = `plugin.open:${string}`;
+export type KeybindingActionId = CoreKeybindingActionId | PluginOpenActionId;
 export type KeybindingOverrides = Partial<Record<KeybindingActionId, string | null>>;
 
-export const KEYBINDING_ACTIONS: readonly KeybindingAction[] = keybindingActions;
 export const KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", "Panes", "Navigation", "Browser", "Bruno"];
 
-const ACTION_IDS = new Set<string>(KEYBINDING_ACTIONS.map((action) => action.id));
-const ACTIONS_BY_ID = new Map<string, KeybindingAction>(KEYBINDING_ACTIONS.map((action) => [action.id, action]));
+const PLUGIN_OPEN = "plugin.open:";
+
+export function pluginOpenAction(pluginId: string): PluginOpenActionId {
+    return `${PLUGIN_OPEN}${pluginId}`;
+}
+
+/** The plugin a shortcut opens, when it is one of those. */
+export function pluginOpenedBy(id: string): string | null {
+    return id.startsWith(PLUGIN_OPEN) ? id.slice(PLUGIN_OPEN.length) : null;
+}
+
+/** Core's actions, then one for each plugin that asks for a shortcut to open it. */
+export function keybindingActions(): readonly KeybindingAction[] {
+    const opens: KeybindingAction[] = frontendPlugins().flatMap((plugin) =>
+        plugin.openShortcut
+            ? [
+                  {
+                      id: pluginOpenAction(plugin.id),
+                      label: plugin.openTitle,
+                      detail: `${plugin.openTitle}, or bring it forward`,
+                      category: "Workspace",
+                      defaultBinding: plugin.openShortcut,
+                  },
+              ]
+            : [],
+    );
+    return [...coreKeybindingActions, ...opens];
+}
+
 const MODIFIER_CODES = new Set(["MetaLeft", "MetaRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight"]);
 
-export function getKeybindingAction(id: KeybindingActionId): KeybindingAction {
-    return ACTIONS_BY_ID.get(id) as KeybindingAction;
+export function getKeybindingAction(id: CoreKeybindingActionId): KeybindingAction;
+export function getKeybindingAction(id: KeybindingActionId): KeybindingAction | undefined;
+export function getKeybindingAction(id: KeybindingActionId): KeybindingAction | undefined {
+    return keybindingActions().find((action) => action.id === id);
 }
 
 export function resolvedKeybinding(overrides: KeybindingOverrides, id: KeybindingActionId): string | null {
     const override = overrides[id];
-    return override === undefined ? getKeybindingAction(id).defaultBinding : override;
+    return override === undefined ? (getKeybindingAction(id)?.defaultBinding ?? null) : override;
 }
 
 export function eventToKeybinding(event: Pick<KeyboardEvent, "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">): string | null {
@@ -441,18 +466,19 @@ export function matchesKeybinding(event: Pick<KeyboardEvent, "code" | "metaKey" 
  * or so actions and built a binding string for each — on every single keydown,
  * including every character typed into a terminal.
  */
-let bindingIndex: { overrides: KeybindingOverrides; byBinding: Map<string, KeybindingActionId> } | null = null;
+let bindingIndex: { overrides: KeybindingOverrides; actions: number; byBinding: Map<string, KeybindingActionId> } | null = null;
 
 function keybindingIndex(overrides: KeybindingOverrides): Map<string, KeybindingActionId> {
-    if (bindingIndex?.overrides !== overrides) {
+    const actions = keybindingActions();
+    if (bindingIndex?.overrides !== overrides || bindingIndex.actions !== actions.length) {
         const byBinding = new Map<string, KeybindingActionId>();
-        for (const action of KEYBINDING_ACTIONS) {
+        for (const action of actions) {
             const binding = resolvedKeybinding(overrides, action.id as KeybindingActionId);
             // Declaration order decides a clash, which is what the scan this
             // replaces did by returning the first match.
             if (binding && !byBinding.has(binding)) byBinding.set(binding, action.id as KeybindingActionId);
         }
-        bindingIndex = { overrides, byBinding };
+        bindingIndex = { overrides, actions: actions.length, byBinding };
     }
     return bindingIndex.byBinding;
 }
@@ -475,7 +501,7 @@ export function actionForEvent(
 
 export function findKeybindingConflict(overrides: KeybindingOverrides, id: KeybindingActionId, binding: string): KeybindingAction | null {
     return (
-        KEYBINDING_ACTIONS.find((action) => action.id !== id && resolvedKeybinding(overrides, action.id as KeybindingActionId) === binding) ?? null
+        keybindingActions().find((action) => action.id !== id && resolvedKeybinding(overrides, action.id as KeybindingActionId) === binding) ?? null
     );
 }
 
@@ -529,9 +555,10 @@ export function keybindingLabelForAction(overrides: KeybindingOverrides, id: Key
 
 export function normaliseKeybindingOverrides(value: unknown): KeybindingOverrides {
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const known = new Set(keybindingActions().map((action) => action.id));
     const out: KeybindingOverrides = {};
     for (const [id, binding] of Object.entries(value)) {
-        if (!ACTION_IDS.has(id)) continue;
+        if (!known.has(id)) continue;
         if (binding === null) {
             out[id as KeybindingActionId] = null;
             continue;

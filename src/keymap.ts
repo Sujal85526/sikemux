@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { browserApi } from "./api/browser";
-import { actionForEvent, type KeybindingActionId } from "./keybindings";
+import { actionForEvent, pluginOpenedBy, type KeybindingActionId } from "./keybindings";
 import * as cmd from "./state/commands";
 import { activeAgentId } from "./state/selectors";
 import { emit } from "./state/bus";
@@ -11,7 +11,7 @@ import { applicationActionContext, executeApplicationAction, matchApplicationAct
 import { reportError } from "./state/toast";
 import { isPluginKind } from "./plugins/kinds";
 import { pluginOverlayOpen } from "./plugins/overlays";
-import { pluginSurface } from "./plugins/registry";
+import { frontendPlugin, pluginSurface } from "./plugins/registry";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
@@ -52,7 +52,6 @@ function hasOpenModal(st: StoreState): boolean {
         st.diagnosticsOpen ||
         st.whatsNewOpen ||
         st.settingsOpen ||
-        st.awsAuthModal !== null ||
         pluginOverlayOpen()
     );
 }
@@ -76,6 +75,12 @@ function modifierHeld(event: KeyboardEvent, modifier: KeyModifier): boolean {
 
 export function runKeybindingAction(action: KeybindingActionId, event: KeyboardEvent, st: StoreState): boolean {
     const active = st.sessions[st.activeSessionId];
+    const opened = pluginOpenedBy(action);
+    if (opened) {
+        const plugin = frontendPlugin(opened);
+        plugin?.open();
+        return !!plugin;
+    }
 
     switch (action) {
         case "palette.commands":
@@ -175,7 +180,6 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             else if (active?.kind === "project") cmd.newWindow();
             else if (active?.kind === "command") cmd.createCommandSession();
             else if (active?.kind === "ssh") cmd.openPicker("ssh");
-            else if (active?.kind === "aws") cmd.openAwsSession();
             else if (active && isPluginKind(active.kind)) cmd.openPluginSession(active.kind);
             else if (active?.kind === "bruno") cmd.openPicker("bruno");
             else return false;
@@ -200,9 +204,6 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             return true;
         case "ssh.open":
             cmd.openPicker("ssh");
-            return true;
-        case "aws.open":
-            cmd.openAwsSession();
             return true;
         case "bruno.open":
             cmd.openBrunoSession();
@@ -283,6 +284,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.focusGlobalSearch();
             return true;
     }
+    return false;
 }
 
 /*

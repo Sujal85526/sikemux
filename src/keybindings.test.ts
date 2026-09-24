@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-    KEYBINDING_ACTIONS,
+    keybindingActions,
     actionForEvent,
     eventToKeybinding,
     findKeybindingConflict,
@@ -8,6 +8,7 @@ import {
     keybindingHasModifier,
     keybindingLabel,
     normaliseKeybindingOverrides,
+    pluginOpenedBy,
     resolvedKeybinding,
 } from "./keybindings";
 
@@ -51,12 +52,12 @@ describe("keybindings", () => {
         const overrides = { "project.open": "Ctrl+Shift+KeyO" } as const;
         expect(actionForEvent(key("KeyO", { ctrlKey: true, shiftKey: true }), overrides)).toBe("project.open");
         expect(actionForEvent(key("KeyP", { altKey: true }), overrides)).toBeNull();
-        expect(findKeybindingConflict(overrides, "aws.open", "Ctrl+Shift+KeyO")?.id).toBe("project.open");
+        expect(findKeybindingConflict(overrides, "ssh.open", "Ctrl+Shift+KeyO")?.id).toBe("project.open");
     });
 
     it("keeps every default binding unique and routes both session actions", () => {
         const owners = new Map<string, string[]>();
-        for (const action of KEYBINDING_ACTIONS) {
+        for (const action of keybindingActions()) {
             const bindingOwners = owners.get(action.defaultBinding) ?? [];
             bindingOwners.push(action.id);
             owners.set(action.defaultBinding, bindingOwners);
@@ -84,6 +85,19 @@ describe("keybindings", () => {
         ).toEqual({
             "project.open": "Ctrl+KeyP",
             "pane.zoom": null,
+        });
+    });
+});
+
+describe("plugin shortcuts", () => {
+    it("lists a plugin's open shortcut once it registers, and knows which plugin it opens", async () => {
+        await import("./plugins/builtin");
+        const aws = keybindingActions().find((action) => action.id === "plugin.open:sikemux.aws");
+        expect(aws).toMatchObject({ label: "Open AWS", defaultBinding: "Alt+KeyA" });
+        expect(pluginOpenedBy("plugin.open:sikemux.aws")).toBe("sikemux.aws");
+        expect(pluginOpenedBy("ssh.open")).toBeNull();
+        expect(normaliseKeybindingOverrides({ "plugin.open:sikemux.aws": "Alt+Shift+KeyA", "aws.open": "Alt+KeyZ" })).toEqual({
+            "plugin.open:sikemux.aws": "Alt+Shift+KeyA",
         });
     });
 });

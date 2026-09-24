@@ -1,12 +1,10 @@
 import type { PluginManifest } from "../api/plugins";
 import { FIXED_SESSION_NAMES, fixedSessionName } from "./sessionNames";
 import type { PluginKind } from "../plugins/kinds";
-import { pluginSurface } from "../plugins/registry";
 import { RAIL_GROUP_ORDER, railGroupOf } from "./railGroups";
 import { invokeCommand as invoke } from "../api/invoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { AgentSession } from "../api/agents";
-import { awsApi } from "../api/aws";
 import { browserApi } from "../api/browser";
 import { fsapi } from "../api/fs";
 import { filesApi } from "../api/files";
@@ -29,8 +27,8 @@ import { applyEditorTextScale, clampEditorTextScale, DEFAULT_EDITOR_TEXT_SCALE }
 import { brunoDrafts, forgetBrunoSession, setBrunoDraft, setBrunoSecret } from "./brunoRuntime";
 import { emit } from "./bus";
 import { reduceAgentState } from "./agentStatus";
-import { fetchResource, invalidate, peekResource } from "./resources";
-import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.defs";
+import { invalidate, peekResource } from "./resources";
+import { agentSessionsR, projectRootsScanR } from "./resources.defs";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
 import { agentIdsWithLiveSessions } from "./agentLiveSessions";
@@ -74,14 +72,12 @@ import type {
     AgentEffort,
     AgentPermissionMode,
     AgentType,
-    AwsService,
     BrunoReqTab,
     BrunoResTab,
     BrunoView,
     CliOpenRequest,
     CliOpenResult,
     CliOpenTarget,
-    EcsLevel,
     FocusDir,
     PickerMode,
     PaneKind,
@@ -447,7 +443,7 @@ export function createSshSession(alias: string): void {
     });
 }
 
-function openSingletonPaneSession(kind: "aws" | PluginKind): void {
+function openSingletonPaneSession(kind: PluginKind): void {
     mutate((d) => {
         const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === kind);
         if (existing) {
@@ -455,13 +451,12 @@ function openSingletonPaneSession(kind: "aws" | PluginKind): void {
             d.zoomedPaneId = null;
             return;
         }
-        const title = fixedSessionName(kind) ?? pluginSurface(kind)?.title ?? kind;
-        const win = makeWindow("", kind === "aws" ? kind : title, { kind, role: kind, fixed: true });
+        const title = fixedSessionName(kind) ?? kind;
+        const win = makeWindow("", title, { kind, role: kind, fixed: true });
         attachSession(d as unknown as StoreState, makeSession(kind, title, "", win.id), [win]);
     });
 }
 
-export const openAwsSession = (): void => openSingletonPaneSession("aws");
 export const openPluginSession = (kind: PluginKind): void => openSingletonPaneSession(kind);
 
 export const setPluginManifests = (pluginManifests: readonly PluginManifest[]): void => setState({ pluginManifests });
@@ -1191,7 +1186,6 @@ function disposePaneState(d: StoreState, paneId: string): void {
     delete d.pendingEditorOpens[paneId];
     delete d.dirtyEditorPaths[paneId];
     delete d.gitViews[paneId];
-    delete d.ecsViews[paneId];
     delete d.brunoViews[paneId];
     dropBrowserPaneState(d, paneId);
     delete d.terminalTitles[paneId];
@@ -2014,7 +2008,7 @@ export function closeAgent(id: string): void {
 }
 
 export function focusAgents(): void {
-    // Agents only exist in project sessions. Other groups (bruno, aws, plugins,
+    // Agents only exist in project sessions. Other groups (bruno, plugins,
     // ssh, command) have no agents and no way back out of "agent" view, so the
     // The agent pane shortcut (⌥4) is a no-op there.
     if (getState().sessions[getState().activeSessionId]?.kind !== "project") return;
@@ -2518,20 +2512,6 @@ export function setProjectRootDepth(path: string, depth: number): void {
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
-export const setAwsProfile = (name: string | null): void => setState({ awsProfile: name });
-export const setAwsService = (s: AwsService): void => setState({ awsService: s });
-export const openAwsAuthModal = (profile: string, ssoStartUrl: string | null): void => setState({ awsAuthModal: { profile, ssoStartUrl } });
-export const closeAwsAuthModal = (): void => setState({ awsAuthModal: null });
-
-export async function runAwsSsoLogin(profile: string, operationId: string): Promise<boolean> {
-    const result = await awsApi.ssoLogin(profile, operationId);
-    if (result.success) {
-        invalidate((kind, args) => kind === awsIdentityR.kind && args[0] === profile);
-        await fetchResource(awsIdentityR, profile, true).catch(swallow("awsIdentityR refetch"));
-    }
-    return result.success;
-}
-
 export function openEditorTab(paneId: string, path: string, activate = true): void {
     mutate((d) => {
         const cur = d.editorViews[paneId] ?? { openTabs: [], activePath: null };
@@ -2562,18 +2542,6 @@ export function setGitView(paneId: string, patch: Partial<StoreState["gitViews"]
     mutate((d) => {
         const cur = (d.gitViews[paneId] ?? DEFAULT_GIT_VIEW) as StoreState["gitViews"][string];
         d.gitViews[paneId] = { ...cur, ...patch };
-    });
-}
-
-export function setEcsLevel(paneId: string, level: EcsLevel): void {
-    mutate((d) => {
-        d.ecsViews[paneId] = level;
-    });
-}
-
-export function setBillingExpandedMonth(profile: string, month: string | null): void {
-    mutate((d) => {
-        d.expandedBillingMonth[profile] = month;
     });
 }
 

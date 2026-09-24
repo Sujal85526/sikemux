@@ -1,5 +1,5 @@
-import type { AwsIdentity } from "../api/aws";
-import type { ResourceHandle } from "./resources";
+import type { ResourceHandle } from "../../plugin-api/resources";
+import type { AwsIdentity } from "./api";
 
 export type AwsAuthState =
     | { kind: "no-profile" }

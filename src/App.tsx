@@ -16,7 +16,6 @@ import { FilePalette } from "./components/FilePalette";
 import { NewTabPalette } from "./components/NewTabPalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
-import { AwsAuthModal } from "./components/aws/AwsAuthModal";
 import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
 import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
@@ -35,7 +34,7 @@ import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
 import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
-import { emit, subscribe } from "./state/bus";
+import { emit } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
@@ -664,7 +663,6 @@ export default function App() {
     }, [uiTextScale]);
     const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
     const commandPopup = useStore((s) => s.commandPopup);
-    const awsAuthModal = useStore((s) => s.awsAuthModal);
     const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
     const onboardingOpen = useStore((s) => s.onboardingOpen);
     const diagnosticsOpen = useStore((s) => s.diagnosticsOpen);
@@ -680,7 +678,6 @@ export default function App() {
             commandPaletteOpen ||
             sessionSwitcherOpen ||
             onboardingOpen ||
-            Boolean(awsAuthModal) ||
             Boolean(commandPopup),
     );
 
@@ -811,12 +808,6 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        return subscribe("aws-auth-expired", () => {
-            invalidate((kind) => kind.startsWith("aws."));
-        });
-    }, []);
-
-    useEffect(() => {
         if (import.meta.env.DEV) return;
         const firstCheck = window.setTimeout(() => void checkForUpdate(), 4000);
         const poll = window.setInterval(() => void checkForUpdate(), 30 * 60_000);
@@ -939,7 +930,6 @@ export default function App() {
             {installedPlugins.map(({ id, Overlay }) => (Overlay ? <Overlay key={id} /> : null))}
             {brunoReqPaletteOpen && <BrunoRequestPalette />}
             {brunoEnvPaletteOpen && <BrunoEnvPalette />}
-            {awsAuthModal && <AwsAuthModal />}
             {sessionSwitcherOpen && <SessionSwitcher />}
             {commandPaletteOpen && <ApplicationCommandPalette />}
             {commandPopup && (

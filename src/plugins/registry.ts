@@ -27,6 +27,8 @@ export interface FrontendPlugin {
     readonly surfaces: readonly PluginSurface[];
     readonly open: () => void;
     readonly openTitle: string;
+    /** A default shortcut for `open`, like "Alt+KeyA"; people can change it in Settings. */
+    readonly openShortcut?: string;
     /** Always mounted; it decides for itself when to show. */
     readonly Overlay?: ComponentType;
     readonly TopBarItem?: ComponentType<PluginTopBarProps>;

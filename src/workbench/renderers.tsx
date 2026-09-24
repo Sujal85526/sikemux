@@ -20,7 +20,6 @@ export interface WorkbenchItemRendererProps {
 const EditorPane = lazy(() => import("../components/EditorPane").then((module) => ({ default: module.EditorPane })));
 const GitPane = lazy(() => import("../components/GitPane").then((module) => ({ default: module.GitPane })));
 const DiffPane = lazy(() => import("../components/DiffPane").then((module) => ({ default: module.DiffPane })));
-const AwsPane = lazy(() => import("../components/aws/AwsPane").then((module) => ({ default: module.AwsPane })));
 const BrunoPane = lazy(() => import("../components/bruno/BrunoPane").then((module) => ({ default: module.BrunoPane })));
 const SearchPane = lazy(() => import("../components/SearchPane").then((module) => ({ default: module.SearchPane })));
 
@@ -61,11 +60,6 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
     diff: ({ pane, session, active }) => (
         <Suspense fallback={<ItemFallback />}>
             <DiffPane cwd={paneCwd(pane, session)} active={active} />
-        </Suspense>
-    ),
-    aws: ({ visible }) => (
-        <Suspense fallback={<ItemFallback />}>
-            <AwsPane active={visible} />
         </Suspense>
     ),
     bruno: ({ pane, session, visible }) => (

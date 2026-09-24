@@ -1,7 +1,7 @@
-import * as cmd from "../../state/commands";
-import { useResource, useResourceEnabled } from "../../state/resources";
-import { awsIdentityR, awsProfilesR } from "../../state/resources.defs";
-import { deriveAuthState } from "../../state/awsAuth";
+import { useResource, useResourceEnabled } from "../../../plugin-api/resources";
+import { deriveAuthState } from "../auth";
+import { awsIdentityR, awsProfilesR } from "../resources";
+import { openAwsAuthModal, setAwsProfile } from "../state";
 
 export function AwsAuthEmpty({ mode, profile }: { mode: "no-profile" | "unauthed"; profile?: string }) {
     const profilesR = useResource(awsProfilesR);
@@ -31,7 +31,7 @@ export function AwsAuthEmpty({ mode, profile }: { mode: "no-profile" | "unauthed
                                     key={p.name}
                                     className="aws-profile-row"
                                     onClick={() => {
-                                        cmd.setAwsProfile(p.name);
+                                        setAwsProfile(p.name);
                                     }}>
                                     <span className="aws-profile-name">{p.name}</span>
                                     <span className="aws-profile-meta">
@@ -72,13 +72,13 @@ export function AwsAuthEmpty({ mode, profile }: { mode: "no-profile" | "unauthed
                 </div>
                 {message && <pre className="aws-empty-err">{message.length > 320 ? message.slice(0, 320) + "…" : message}</pre>}
                 <div className="aws-empty-actions">
-                    <button className="aws-empty-btn primary" onClick={() => cmd.openAwsAuthModal(profile ?? "", ssoUrl)}>
+                    <button className="aws-empty-btn primary" onClick={() => openAwsAuthModal(profile ?? "", ssoUrl)}>
                         Sign in with SSO
                     </button>
                     <button className="aws-empty-btn" onClick={() => void identity.refresh()}>
                         Retry
                     </button>
-                    <button className="aws-empty-btn ghost" onClick={() => cmd.setAwsProfile(null)}>
+                    <button className="aws-empty-btn ghost" onClick={() => setAwsProfile(null)}>
                         Switch profile
                     </button>
                 </div>

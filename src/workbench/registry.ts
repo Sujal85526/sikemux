@@ -40,7 +40,6 @@ export interface BuiltinWorkbenchItemState {
     editor: EditorPaneView;
     git: null;
     diff: null;
-    aws: null;
     search: null;
     bruno: null;
     agent: null;
@@ -268,7 +267,6 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     editor: builtinDefinition("editor", "editor", EDITOR_CODEC),
     git: builtinDefinition("git", "git", NULL_CODEC),
     diff: builtinDefinition("diff", "diff", NULL_CODEC),
-    aws: builtinDefinition("aws", "aws", NULL_CODEC),
     search: builtinDefinition("search", "search", NULL_CODEC),
     bruno: builtinDefinition("bruno", "bruno", NULL_CODEC),
     agent: builtinDefinition("agent", "agent", NULL_CODEC),

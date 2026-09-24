@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { Channel } from "@tauri-apps/api/core";
-import { invokeCommand as invoke } from "../../api/invoke";
-import { awsApi } from "../../api/aws";
-import { reportError } from "../../state/toast";
-import { VirtualLogList } from "../VirtualLogList";
+import { reportError } from "../../../plugin-api/host";
+import { VirtualLogList } from "../../../plugin-api/ui";
+import { awsApi } from "../api";
 import { highlightLog } from "./logHighlight";
 
 const MAX_LINES = 5000;
@@ -19,7 +17,6 @@ interface Props {
 export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) {
     const [lines, setLines] = useState<string[]>([]);
     const [err, setErr] = useState<string | null>(null);
-    const [tailId, setTailId] = useState<number | null>(null);
     const [live, setLive] = useState(false);
     const [pinned, setPinned] = useState(true);
 
@@ -28,7 +25,6 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
         let cancelled = false;
         let flushTimer: number | undefined;
         const pending: string[] = [];
-        const ch = new Channel<string>();
         setLines([]);
         setErr(null);
         setLive(true);
@@ -41,43 +37,33 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
                 return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
             });
         };
-        ch.onmessage = (line) => {
+        const ended = () => {
             if (cancelled) return;
-            if (line === "") {
-                flushPending();
-                setLive(false);
-                return;
-            }
-            pending.push(line);
-            if (flushTimer === undefined) flushTimer = window.setTimeout(flushPending, FLUSH_MS);
+            flushPending();
+            setLive(false);
         };
-        let id: number | null = null;
-        invoke<number>("aws_logs_tail_start", {
-            profile,
-            logGroup,
-            logStream: logStream ?? null,
-            since: "5m",
-            onLine: ch,
-        })
-            .then((newId) => {
-                if (cancelled) {
-                    void awsApi.logsTailStop(newId);
-                    return;
-                }
-                id = newId;
-                setTailId(newId);
-            })
-            .catch((e) => {
-                if (cancelled) return;
-                setErr(String(e));
-                reportError("logs tail")(e);
-            });
+        const tail = awsApi.tailLogs(
+            { profile, logGroup, logStream: logStream ?? null, since: "5m" },
+            {
+                onLine: (line) => {
+                    if (cancelled) return;
+                    if (line === "") return ended();
+                    pending.push(line);
+                    if (flushTimer === undefined) flushTimer = window.setTimeout(flushPending, FLUSH_MS);
+                },
+                onEnd: ended,
+                onError: (message) => {
+                    if (cancelled) return;
+                    setErr(message);
+                    reportError("logs tail")(new Error(message));
+                },
+            },
+        );
         return () => {
             cancelled = true;
             if (flushTimer !== undefined) window.clearTimeout(flushTimer);
-            if (id !== null) void awsApi.logsTailStop(id);
+            tail.stop();
             setLive(false);
-            setTailId(null);
         };
     }, [profile, logGroup, logStream, active]);
 
@@ -101,7 +87,7 @@ export function AwsLogTailView({ profile, logGroup, logStream, active }: Props) 
                         <span className="aws-logs-value">{logStream}</span>
                     </span>
                 )}
-                <span className={`aws-logs-pill ${live ? "live" : "ended"}`} title={tailId ? `tail #${tailId}` : ""}>
+                <span className={`aws-logs-pill ${live ? "live" : "ended"}`}>
                     <span className="aws-logs-pill-dot" />
                     {live ? "tailing" : "ended"}
                 </span>

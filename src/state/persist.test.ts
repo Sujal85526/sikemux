@@ -1,3 +1,5 @@
+import "../plugins/builtin";
+import { AWS_CONSOLE } from "../plugins/aws/kinds";
 import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
 import { rundeckSettings } from "../plugins/rundeck/state";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -99,7 +101,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 13,
+                    version: 14,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -535,7 +537,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(12);
+        expect(saved.version).toBe(13);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -677,7 +679,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(12);
+        expect(JSON.parse(migrated).version).toBe(13);
     });
 
     /*
@@ -710,7 +712,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(12);
+        expect(saved.version).toBe(13);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
@@ -770,10 +772,7 @@ describe("frontend persistence", () => {
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
     });
 
-    it("folds v11 Bruno sessions, one per workspace, into a single session named Bruno, and names AWS", () => {
-        cmd.openAwsSession();
-        const aws = getState().sessions[getState().activeSessionId];
-        const awsWindow = getState().windows[aws.activeWindowId];
+    it("folds v11 Bruno sessions, one per workspace, into a single session named Bruno", () => {
         cmd.openBrunoSession("/ws/api-docs");
         const first = getState().sessions[getState().activeSessionId];
         const firstWindow = getState().windows[first.activeWindowId];
@@ -781,9 +780,9 @@ describe("frontend persistence", () => {
         applyHydrate(
             JSON.stringify({
                 version: 11,
-                sessions: [{ ...aws, name: "aws" }, { ...first, name: "api-docs" }, second],
-                windowsBySession: { [aws.id]: [awsWindow], [first.id]: [firstWindow], [second.id]: [{ ...firstWindow, id: "w-bruno-2" }] },
-                sessionOrder: [aws.id, first.id, second.id],
+                sessions: [{ ...first, name: "api-docs" }, second],
+                windowsBySession: { [first.id]: [firstWindow], [second.id]: [{ ...firstWindow, id: "w-bruno-2" }] },
+                sessionOrder: [first.id, second.id],
                 activeSessionId: second.id,
                 prefs: { brunoWorkspaces: ["/ws/old"] },
                 itemStates: {},
@@ -796,35 +795,58 @@ describe("frontend persistence", () => {
                 .filter((session) => session.kind === "bruno")
                 .map((session) => session.name),
         ).toEqual(["Bruno"]);
-        expect(st.sessions[aws.id].name).toBe("AWS");
         expect(st.activeSessionId).toBe(first.id);
         expect(st.brunoWorkspaces).toEqual(expect.arrayContaining(["/ws/old", "/ws/api-docs", "/ws/billing"]));
     });
 
-    it("names the AWS and Bruno sessions after their tools whatever name was saved", () => {
-        cmd.openAwsSession();
-        const aws = getState().sessions[getState().activeSessionId];
-        const awsWindow = getState().windows[aws.activeWindowId];
+    it("names one-of-a-kind sessions after their tools whatever name was saved", () => {
         cmd.openBrunoSession("/ws/api-docs");
         const bruno = getState().sessions[getState().activeSessionId];
         const brunoWindow = getState().windows[bruno.activeWindowId];
+        cmd.openPluginSession(AWS_CONSOLE);
+        const aws = getState().sessions[getState().activeSessionId];
+        const awsWindow = getState().windows[aws.activeWindowId];
         applyHydrate(
             JSON.stringify({
-                version: 12,
+                version: 13,
                 sessions: [
-                    { ...aws, name: "aws" },
                     { ...bruno, name: "bruno" },
+                    { ...aws, name: "aws" },
                 ],
-                windowsBySession: { [aws.id]: [awsWindow], [bruno.id]: [brunoWindow] },
-                sessionOrder: [aws.id, bruno.id],
-                activeSessionId: aws.id,
+                windowsBySession: { [bruno.id]: [brunoWindow], [aws.id]: [awsWindow] },
+                sessionOrder: [bruno.id, aws.id],
+                activeSessionId: bruno.id,
                 prefs: {},
                 itemStates: {},
             }),
         );
 
-        expect(getState().sessions[aws.id].name).toBe("AWS");
         expect(getState().sessions[bruno.id].name).toBe("Bruno");
+        expect(getState().sessions[aws.id].name).toBe("AWS");
+    });
+
+    it("moves v12 AWS sessions, settings and shortcut into the AWS plugin", () => {
+        cmd.openPluginSession(AWS_CONSOLE);
+        const aws = getState().sessions[getState().activeSessionId];
+        const awsWindow = getState().windows[aws.activeWindowId];
+        const legacyRoot = { ...awsWindow.root, kind: "aws" };
+        applyHydrate(
+            JSON.stringify({
+                version: 12,
+                sessions: [{ ...aws, kind: "aws", name: "aws" }],
+                windowsBySession: { [aws.id]: [{ ...awsWindow, role: "aws", root: legacyRoot }] },
+                sessionOrder: [aws.id],
+                activeSessionId: aws.id,
+                prefs: { awsProfile: "prod-admin", awsService: "billing", keybindingOverrides: { "aws.open": "Alt+Shift+KeyA" } },
+                itemStates: {},
+            }),
+        );
+
+        const st = getState();
+        expect(st.sessions[aws.id]).toMatchObject({ kind: AWS_CONSOLE, name: "AWS" });
+        expect(st.windows[awsWindow.id]).toMatchObject({ role: AWS_CONSOLE, root: { type: "pane", kind: AWS_CONSOLE } });
+        expect(st.pluginSettings["sikemux.aws"]).toEqual({ profile: "prod-admin", service: "billing" });
+        expect(st.keybindingOverrides).toEqual({ "plugin.open:sikemux.aws": "Alt+Shift+KeyA" });
     });
 
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {

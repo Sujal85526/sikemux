@@ -1,9 +1,8 @@
 import type { ComponentType } from "react";
-import { useResourceEnabled } from "../../state/resources";
-import { awsIdentityR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
-import type { AwsService } from "../../state/types";
-import { deriveAuthState, needsAuth } from "../../state/awsAuth";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { deriveAuthState, needsAuth } from "../auth";
+import { awsIdentityR } from "../resources";
+import { awsSettings, type AwsService } from "../state";
 import { AwsServiceNav } from "./AwsServiceNav";
 import { AwsEcsView } from "./AwsEcsView";
 import { AwsBillingView, AwsEc2View, AwsLambdaView, AwsS3View, AwsSqsView } from "./AwsListViews";
@@ -21,8 +20,8 @@ const AWS_VIEW: Record<AwsService, ComponentType<AwsViewProps>> = {
 };
 
 export function AwsPane({ active }: { active: boolean }) {
-    const profile = useStore((s) => s.awsProfile);
-    const service = useStore((s) => s.awsService);
+    const profile = awsSettings.useSelect((s) => s.profile);
+    const service = awsSettings.useSelect((s) => s.service);
     const identity = useResourceEnabled(active && !!profile, awsIdentityR, profile ?? "", false);
     const auth = deriveAuthState(profile, identity);
 

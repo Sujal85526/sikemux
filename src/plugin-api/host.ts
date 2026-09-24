@@ -13,6 +13,19 @@ export function openUrl(url: string): Promise<void> {
     return invokeCommand<void>("open_url", { url, app: null, shortcut: null });
 }
 
+/** Opens a sign-in page in the browser the person chose for single sign-on in Settings. */
+export function openSignInUrl(url: string): Promise<void> {
+    const { cloudBrowser, cloudBrowserShortcut } = getState();
+    return invokeCommand<void>("open_url", { url, app: cloudBrowser || null, shortcut: cloudBrowserShortcut || null });
+}
+
+/** Brings the single sign-on browser forward, for a CLI that opens its own sign-in page. */
+export function focusSignInBrowser(): Promise<void> {
+    const { cloudBrowser, cloudBrowserShortcut } = getState();
+    if (!cloudBrowser) return Promise.resolve();
+    return invokeCommand<void>("macos_focus_app", { app: cloudBrowser, shortcut: cloudBrowserShortcut || null });
+}
+
 /** The folder of the project in front of the person, or null when a project is not what they are looking at. */
 export function useActiveProjectCwd(): string | null {
     return useStore((s) => {
