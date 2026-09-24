@@ -77,7 +77,8 @@ sikemux-process = { path = "crates/sikemux-process" }
 agent-client-protocol = "2.0.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util", "net"] }
 tokio-tungstenite = "0.28"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "stream", "cookies", "multipart"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "stream", "cookies", "multipart"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 open = "5"
 trash = "5"
 

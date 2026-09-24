@@ -14,7 +14,7 @@ url = "2"
 tempfile = "3"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 tokio = { version = "1", features = ["macros", "rt", "time", "sync", "net"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "stream", "cookies"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "stream", "cookies", "query", "form"] }
 
 [lints]
 workspace = true

@@ -38,7 +38,14 @@ use pty::PtyManager;
 use sikemux_process as bounded_process;
 use tauri::Manager;
 
+// reqwest is built without a TLS crypto backend of its own, so every HTTP
+// client in the app and its plugins uses the one installed here.
+pub(crate) fn install_tls_crypto() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 pub fn run() {
+    install_tls_crypto();
     system::normalize_user_environment();
 
     // Raise our open-file-descriptor limit FIRST, before any subsystem
