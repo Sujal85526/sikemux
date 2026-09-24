@@ -23,15 +23,10 @@ import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
 import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
-import { frontendPlugin, pluginSurface } from "../plugins/registry";
+import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
+import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
 import { isPluginKind, pluginIdOf } from "../plugins/kinds";
-
-/** Something the plugins group can open that is not open yet. */
-interface Opener {
-    label: string;
-    open: () => void;
-}
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -340,9 +335,26 @@ function renderSession(s: Session) {
     return s.kind === "project" ? <ProjectBlock key={s.id} s={s} /> : <SimpleRow key={s.id} s={s} />;
 }
 
+/** A plugin that is enabled but not open yet: the same row its session will be, opening it on click. */
+function PluginLauncherRow({ plugin }: { plugin: FrontendPlugin }) {
+    const surface = plugin.surfaces[0];
+    if (!surface) return null;
+    return (
+        <div className="session-row-shell">
+            <button className="sess-row" onClick={plugin.open}>
+                <span className={`sess-icon ${surface.kind}`}>
+                    <span className="sess-icon-glyph">{kindIcon(surface.kind)}</span>
+                </span>
+                <span className="sess-name">{surface.title}</span>
+            </button>
+        </div>
+    );
+}
+
 function Group({
     label,
     list,
+    rows,
     add,
     addTitle,
     addKbd,
@@ -350,7 +362,6 @@ function Group({
     actionTitle,
     emptyText,
     singleton,
-    openers = [],
     className,
 }: {
     label: string;
@@ -362,7 +373,8 @@ function Group({
     actionTitle?: string;
     emptyText: string;
     singleton?: boolean;
-    openers?: readonly Opener[];
+    /** Rows drawn in place of `list`, for a group that is more than its sessions. */
+    rows?: ReactNode;
     className?: string;
 }) {
     return (
@@ -391,14 +403,12 @@ function Group({
                     )
                 }
             />
-            {list.length === 0 && openers.length === 0 ? (
-                <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
-            ) : (
-                list.map(renderSession)
-            )}
-            {openers.map((opener) => (
-                <EmptyState key={opener.label} variant="inline" message={opener.label} action={{ label: opener.label, onClick: opener.open }} />
-            ))}
+            {rows ??
+                (list.length === 0 ? (
+                    <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
+                ) : (
+                    list.map(renderSession)
+                ))}
         </Panel>
     );
 }
@@ -429,18 +439,18 @@ export const SideRail = memo(function SideRail() {
     const suppressProjectClickRef = useRef(false);
 
     const pluginManifests = useStore((s) => s.pluginManifests);
-    const inGroup = (group: RailGroup) => sessions.filter((s) => railGroupOf(s.kind, pluginManifests) === group);
+    const disabledPlugins = useStore((s) => s.disabledPlugins);
+    const inGroup = (group: RailGroup) => sessions.filter((s) => railGroupOf(s.kind, pluginManifests, disabledPlugins) === group);
     const projects = inGroup("project");
     const sshs = inGroup("ssh");
     const commands = inGroup("command");
     const plugins = inGroup("plugins");
-    const openers: Opener[] = [
-        ...pluginManifests.flatMap((manifest) => {
-            const plugin = frontendPlugin(manifest.id);
-            const open = plugins.some((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === manifest.id);
-            return plugin && !open ? [{ label: plugin.openTitle.toLowerCase(), open: plugin.open }] : [];
-        }),
-    ];
+    const enabledPlugins = useInstalledPlugins();
+    // Every enabled plugin always has a row; its session is only made on the first click.
+    const pluginRows = enabledPlugins.flatMap((plugin) => {
+        const opened = plugins.filter((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === plugin.id);
+        return opened.length > 0 ? opened.map(renderSession) : [<PluginLauncherRow key={plugin.id} plugin={plugin} />];
+    });
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {
         const ghost = projectGhostRef.current;
@@ -668,7 +678,7 @@ export const SideRail = memo(function SideRail() {
                         actionTitle="Edit ~/.ssh/config"
                         emptyText="no ssh hosts"
                     />
-                    <Group label="Plugins" list={plugins} emptyText="no plugins" openers={openers} className="rail-logos" />
+                    <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
                     <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
                 </div>
 

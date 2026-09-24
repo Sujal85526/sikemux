@@ -1,4 +1,5 @@
 import { IS_MACOS } from "./lib/platform";
+import { enabledFrontendPlugins } from "./plugins/enabled";
 import { frontendPlugin, frontendPlugins, type FrontendPlugin, type PluginShortcut } from "./plugins/registry";
 
 type CoreKeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser";
@@ -373,7 +374,7 @@ const CORE_KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", 
 export function keybindingCategories(): readonly KeybindingCategory[] {
     return [
         ...CORE_KEYBINDING_CATEGORIES,
-        ...frontendPlugins()
+        ...enabledFrontendPlugins()
             .filter((plugin) => plugin.shortcuts?.length)
             .map(pluginCategory),
     ];
@@ -406,31 +407,31 @@ export function pluginOpenedBy(id: string): string | null {
     return id.startsWith(PLUGIN_OPEN) ? id.slice(PLUGIN_OPEN.length) : null;
 }
 
-/** Core's actions, then one for each plugin that asks for a shortcut to open it. */
+/** Core's actions, then each enabled plugin's: one to open it if it asks, and its own. */
 export function keybindingActions(): readonly KeybindingAction[] {
-    const opens: KeybindingAction[] = frontendPlugins().flatMap((plugin) =>
-        plugin.openShortcut
-            ? [
-                  {
-                      id: pluginOpenAction(plugin.id),
-                      label: plugin.openTitle,
-                      detail: `${plugin.openTitle}, or bring it forward`,
-                      category: "Workspace",
-                      defaultBinding: plugin.openShortcut,
-                  },
-              ]
-            : [],
-    );
-    const own: KeybindingAction[] = frontendPlugins().flatMap((plugin) =>
-        (plugin.shortcuts ?? []).map((shortcut) => ({
-            id: pluginRunAction(plugin.id, shortcut.name),
-            label: shortcut.label,
-            detail: shortcut.detail,
-            category: pluginCategory(plugin),
-            defaultBinding: shortcut.defaultBinding,
-        })),
-    );
-    return [...coreKeybindingActions, ...opens, ...own];
+    return [...coreKeybindingActions, ...enabledFrontendPlugins().flatMap(pluginActions)];
+}
+
+function pluginActions(plugin: FrontendPlugin): KeybindingAction[] {
+    const opens: KeybindingAction[] = plugin.openShortcut
+        ? [
+              {
+                  id: pluginOpenAction(plugin.id),
+                  label: plugin.openTitle,
+                  detail: `${plugin.openTitle}, or bring it forward`,
+                  category: "Workspace",
+                  defaultBinding: plugin.openShortcut,
+              },
+          ]
+        : [];
+    const own: KeybindingAction[] = (plugin.shortcuts ?? []).map((shortcut) => ({
+        id: pluginRunAction(plugin.id, shortcut.name),
+        label: shortcut.label,
+        detail: shortcut.detail,
+        category: pluginCategory(plugin),
+        defaultBinding: shortcut.defaultBinding,
+    }));
+    return [...opens, ...own];
 }
 
 const MODIFIER_CODES = new Set(["MetaLeft", "MetaRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight"]);
@@ -566,7 +567,8 @@ export function keybindingLabelForAction(overrides: KeybindingOverrides, id: Key
 
 export function normaliseKeybindingOverrides(value: unknown): KeybindingOverrides {
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    const known = new Set(keybindingActions().map((action) => action.id));
+    // A switched-off plugin keeps its rebound keys for when it is switched back on.
+    const known = new Set([...coreKeybindingActions, ...frontendPlugins().flatMap(pluginActions)].map((action) => action.id));
     const out: KeybindingOverrides = {};
     for (const [id, binding] of Object.entries(value)) {
         if (!known.has(id)) continue;

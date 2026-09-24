@@ -98,6 +98,7 @@ const PERSISTED_KEYS = [
     "agentRailWidth",
     "zenMode",
     "pluginSettings",
+    "disabledPlugins",
     "restoreAgentTabs",
     "railDensity",
     "onboardingComplete",
@@ -146,6 +147,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         agentRailWidth: s.agentRailWidth,
         zenMode: s.zenMode,
         pluginSettings: s.pluginSettings,
+        disabledPlugins: [...s.disabledPlugins],
         restoreAgentTabs: s.restoreAgentTabs,
         railDensity: s.railDensity,
         onboardingComplete: s.onboardingComplete,
@@ -900,6 +902,7 @@ export function applyHydrate(raw: string): HydrationResult {
                 : cur.agentRailWidth,
         zenMode: typeof prefs.zenMode === "boolean" ? prefs.zenMode : cur.zenMode,
         pluginSettings: normalisePluginSettings(prefs.pluginSettings),
+        disabledPlugins: Array.isArray(prefs.disabledPlugins) ? [...new Set(prefs.disabledPlugins.filter(isPluginId))] : [],
         restoreAgentTabs,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         onboardingComplete:

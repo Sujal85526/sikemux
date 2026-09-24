@@ -21,6 +21,8 @@ export type PluginStreamEvent =
 export const pluginsApi = {
     manifests: () => invoke<PluginManifest[]>("plugin_manifests"),
 
+    setDisabled: (ids: readonly string[]) => invoke<void>("plugin_set_disabled", { ids }),
+
     call: <T>(plugin: string, method: string, params: unknown) => invoke<T>("plugin_call", { plugin, method, params }),
 
     streamStart: (plugin: string, method: string, params: unknown, onEvent: (event: PluginStreamEvent) => void) => {

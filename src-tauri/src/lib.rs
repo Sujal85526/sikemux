@@ -325,6 +325,7 @@ pub fn run() {
             external::run_background_command,
             transparency::set_window_blur,
             plugins::plugin_manifests,
+            plugins::plugin_set_disabled,
             plugins::plugin_call,
             plugins::plugin_stream_start,
             plugins::plugin_stream_stop,

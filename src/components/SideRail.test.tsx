@@ -101,29 +101,39 @@ describe("project tree", () => {
     });
 });
 
+const MANIFESTS = ["sikemux.aws", "sikemux.bruno", "sikemux.rundeck", "sikemux.signoz"].map((id) => ({
+    id,
+    name: id,
+    version: "0.1.0",
+    sikemux: ">=0.4",
+}));
+
 describe("plugins group", () => {
-    it("gathers Bruno and every plugin under one group, offering whatever is not open", () => {
+    it("always lists every enabled plugin, and opens one only when it is clicked", () => {
         setState({
-            sessions: { ...getState().sessions, aws: session("aws", "sikemux.aws:console"), signoz: session("signoz", "sikemux.signoz:explore") },
-            sessionOrder: [...getState().sessionOrder, "aws", "signoz"],
-            windowsBySession: { ...getState().windowsBySession, aws: [], signoz: [] },
-            pluginManifests: [
-                { id: "sikemux.aws", name: "AWS", version: "0.1.0", sikemux: ">=0.4" },
-                { id: "sikemux.bruno", name: "Bruno", version: "0.1.0", sikemux: ">=0.4" },
-                { id: "sikemux.rundeck", name: "Rundeck", version: "0.1.0", sikemux: ">=0.4" },
-                { id: "sikemux.signoz", name: "SigNoz", version: "0.1.0", sikemux: ">=0.4" },
-            ],
+            sessions: { ...getState().sessions, aws: session("aws", "sikemux.aws:console") },
+            sessionOrder: [...getState().sessionOrder, "aws"],
+            windowsBySession: { ...getState().windowsBySession, aws: [] },
+            pluginManifests: MANIFESTS,
         });
         render(<SideRail />);
 
         expect(screen.getByText("Plugins")).toBeTruthy();
-        for (const gone of ["Cloud", "CI/CD", "Observability"]) expect(screen.queryByText(gone)).toBeNull();
         expect(screen.getByRole("button", { name: "aws" })).toBeTruthy();
-        expect(screen.getByRole("button", { name: "signoz" })).toBeTruthy();
-        expect(screen.getByRole("button", { name: "open rundeck deploy center" })).toBeTruthy();
-        expect(screen.getByRole("button", { name: "open bruno" })).toBeTruthy();
-        expect(screen.queryByText("API")).toBeNull();
-        expect(screen.queryByRole("button", { name: "open aws" })).toBeNull();
-        expect(screen.queryByRole("button", { name: "open signoz" })).toBeNull();
+        for (const name of ["Bruno", "Rundeck", "SigNoz"]) expect(screen.getByRole("button", { name })).toBeTruthy();
+        expect(screen.queryByText(/^open /)).toBeNull();
+        const before = getState().sessionOrder.length;
+        expect(Object.values(getState().sessions).some((each) => each.kind === "sikemux.signoz:explore")).toBe(false);
+
+        fireEvent.click(screen.getByRole("button", { name: "SigNoz" }));
+        expect(getState().sessionOrder.length).toBe(before + 1);
+        expect(getState().sessions[getState().activeSessionId].kind).toBe("sikemux.signoz:explore");
+    });
+
+    it("leaves out a plugin that is switched off", () => {
+        setState({ pluginManifests: MANIFESTS, disabledPlugins: ["sikemux.rundeck"] });
+        render(<SideRail />);
+        expect(screen.getByRole("button", { name: "Bruno" })).toBeTruthy();
+        expect(screen.queryByRole("button", { name: "Rundeck" })).toBeNull();
     });
 });

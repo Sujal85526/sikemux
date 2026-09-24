@@ -652,6 +652,10 @@ export default function App() {
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
     const installedPlugins = useInstalledPlugins();
+    const disabledPlugins = useStore((s) => s.disabledPlugins);
+    useEffect(() => {
+        void pluginsApi.setDisabled(disabledPlugins).catch(swallow("switch plugins"));
+    }, [disabledPlugins]);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = useStore((s) => s.uiTextScale);
     useEffect(() => {

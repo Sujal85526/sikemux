@@ -32,6 +32,7 @@ import {
     IconEditor,
     IconFolder,
     IconGlobe,
+    IconPlug,
     IconInfo,
     IconPlus,
     IconRefresh,
@@ -56,6 +57,7 @@ import {
     type SettingsEntry,
     type SettingsPageId,
 } from "../settingsIndex";
+import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import "../styles/settings.css";
 
@@ -68,6 +70,7 @@ const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
     actions: <IconRun size={13} />,
     cli: <IconEditor size={13} />,
     cloud: <IconGlobe size={13} />,
+    plugins: <IconPlug size={13} />,
 };
 
 const FOCUSABLE = "button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])";
@@ -289,6 +292,7 @@ export function SettingsPanel() {
                                 {page === "cli" && <CliPage />}
 
                                 {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
+                                {page === "plugins" && <PluginsPage />}
                             </>
                         )}
                     </div>
@@ -1467,6 +1471,42 @@ function ThemePreview({ theme }: { theme: Theme }) {
 interface CloudPageProps {
     cloudBrowser: string;
     cloudBrowserShortcut: string;
+}
+
+function PluginsPage() {
+    const built = useBuiltPlugins();
+    const manifests = useStore((s) => s.pluginManifests);
+    const disabled = useStore((s) => s.disabledPlugins);
+    return (
+        <SettingsPage>
+            <SettingsSection
+                title="Built-in plugins"
+                sub="A plugin switched off leaves the rail, the top bar and agents' tools, and costs nothing until it is back on.">
+                <SettingsRows>
+                    {built.length === 0 && <div className="settings-empty">No plugins in this build.</div>}
+                    {built.map((plugin) => {
+                        const title = plugin.surfaces[0]?.title ?? plugin.id;
+                        const version = manifests.find((manifest) => manifest.id === plugin.id)?.version;
+                        return (
+                            <SettingsRow
+                                key={plugin.id}
+                                label={title}
+                                desc={`${plugin.id}${version ? ` · ${version}` : ""}`}
+                                asLabel
+                                control={
+                                    <Switch
+                                        checked={!disabled.includes(plugin.id)}
+                                        onChange={(enabled) => cmd.setPluginEnabled(plugin.id, enabled)}
+                                        label={title}
+                                    />
+                                }
+                            />
+                        );
+                    })}
+                </SettingsRows>
+            </SettingsSection>
+        </SettingsPage>
+    );
 }
 
 function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {

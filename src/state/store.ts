@@ -68,6 +68,8 @@ export interface DomainState {
     zenMode: boolean;
     /** Each plugin's own settings, by plugin id, in whatever shape the plugin decodes. */
     pluginSettings: Readonly<Record<string, unknown>>;
+    /** Plugins switched off in Settings; they are built in but act as if absent. */
+    disabledPlugins: readonly string[];
     restoreAgentTabs: boolean;
     railDensity: RailDensity;
     onboardingComplete: boolean;
@@ -209,6 +211,7 @@ export const useStore = create<StoreState>(() => {
         diffTarget: {},
         zenMode: false,
         pluginSettings: {},
+        disabledPlugins: [],
         restoreAgentTabs: true,
         railDensity: "comfortable",
         onboardingComplete: false,

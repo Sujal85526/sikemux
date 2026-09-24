@@ -71,6 +71,7 @@ export interface PersistedPrefs {
     agentRailWidth?: number;
     zenMode: boolean;
     pluginSettings?: Record<string, unknown>;
+    disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
     autoResumeAgents?: boolean;
     railDensity?: RailDensity;

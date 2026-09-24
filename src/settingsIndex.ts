@@ -1,10 +1,10 @@
 import { IS_MACOS } from "./lib/platform";
 
-export type SettingsPageId = "general" | "appearance" | "keybindings" | "about" | "agents" | "actions" | "cli" | "cloud";
+export type SettingsPageId = "general" | "appearance" | "keybindings" | "about" | "agents" | "actions" | "cli" | "cloud" | "plugins";
 
 export const SETTINGS_GROUPS: { label: string; pages: SettingsPageId[] }[] = [
     { label: "App", pages: ["general", "appearance", "keybindings", "about"] },
-    { label: "Tools", pages: ["agents", "actions", "cli", "cloud"] },
+    { label: "Tools", pages: ["agents", "actions", "cli", "cloud", "plugins"] },
 ];
 
 export const SETTINGS_PAGE_ORDER: SettingsPageId[] = SETTINGS_GROUPS.flatMap((group) => group.pages);
@@ -18,6 +18,7 @@ export const SETTINGS_PAGE_NAMES: Record<SettingsPageId, string> = {
     actions: "Actions",
     cli: "Command line",
     cloud: "Cloud",
+    plugins: "Plugins",
 };
 
 /**
@@ -49,6 +50,7 @@ const row = (page: SettingsPageId, sectionTitle: string, label: string, keywords
 });
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
+    section("plugins", "Built-in plugins", "aws bruno rundeck signoz enable disable switch off turn on extensions integrations"),
     section("general", "Project folders", "repos repositories directories roots scan depth index picker"),
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
 

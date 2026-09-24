@@ -13,7 +13,8 @@ import { reportError } from "../state/toast";
 import type { SshHost } from "../api/ssh";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { isPluginKind } from "../plugins/kinds";
-import { frontendPlugins, pluginSurface } from "../plugins/registry";
+import { enabledFrontendPlugins } from "../plugins/enabled";
+import { pluginSurface } from "../plugins/registry";
 import { IconClose, IconCommand, IconFolder, IconSearch } from "./Icons";
 
 type Item =
@@ -38,6 +39,7 @@ export function SeshPicker() {
     const home = useStore((s) => s.home);
     const projectRoots = useStore((s) => s.projectRoots);
     const pluginSettings = useStore((s) => s.pluginSettings);
+    const disabledPlugins = useStore((s) => s.disabledPlugins);
     const mode = useStore((s) => s.pickerMode);
 
     const [query, setQuery] = useState("");
@@ -97,7 +99,7 @@ export function SeshPicker() {
             : [];
 
         const pluginGroups: Item[][] = showPlugins
-            ? frontendPlugins().flatMap((plugin) =>
+            ? enabledFrontendPlugins().flatMap((plugin) =>
                   plugin.picker
                       ? [
                             plugin.picker.entries().map<Item>((entry) => ({
@@ -138,7 +140,7 @@ export function SeshPicker() {
         };
         return groups.flatMap(finalize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessions, projects, hosts, pluginSettings, query, home, mode, projectRoots]);
+    }, [sessions, projects, hosts, pluginSettings, disabledPlugins, query, home, mode, projectRoots]);
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));

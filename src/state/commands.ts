@@ -1,7 +1,7 @@
 import { pluginDocuments } from "../plugins/documents";
 import type { PluginManifest } from "../api/plugins";
 import { fixedSessionName } from "./sessionNames";
-import type { PluginKind } from "../plugins/kinds";
+import { isPluginKind, pluginIdOf, type PluginKind } from "../plugins/kinds";
 import { RAIL_GROUP_ORDER, railGroupOf } from "./railGroups";
 import { invokeCommand as invoke } from "../api/invoke";
 import type { AgentSession } from "../api/agents";
@@ -452,6 +452,18 @@ export const openPluginSession = (kind: PluginKind): void => openSingletonPaneSe
 
 export const setPluginManifests = (pluginManifests: readonly PluginManifest[]): void => setState({ pluginManifests });
 
+/** Switching a plugin off also closes whatever of it is open, since nothing can reach it any more. */
+export function setPluginEnabled(id: string, enabled: boolean): void {
+    if (!enabled) {
+        const st = getState();
+        for (const sessionId of st.sessionOrder) {
+            const kind = st.sessions[sessionId]?.kind;
+            if (kind && isPluginKind(kind) && pluginIdOf(kind) === id) closeSessionNow(sessionId);
+        }
+    }
+    setState((s) => ({ disabledPlugins: enabled ? s.disabledPlugins.filter((known) => known !== id) : [...new Set([...s.disabledPlugins, id])] }));
+}
+
 export function selectSession(id: string): void {
     mutate((d) => {
         if (!d.sessions[id]) return;
@@ -653,11 +665,11 @@ export function cycleSessionGroup(delta: number): void {
         if (!cur) return;
         const groupOf = (id: string) => {
             const session = d.sessions[id];
-            return session ? railGroupOf(session.kind, d.pluginManifests) : null;
+            return session ? railGroupOf(session.kind, d.pluginManifests, d.disabledPlugins) : null;
         };
         const populated = RAIL_GROUP_ORDER.filter((group) => d.sessionOrder.some((id) => groupOf(id) === group));
         if (populated.length < 2) return;
-        const curGroup = railGroupOf(cur.kind, d.pluginManifests);
+        const curGroup = railGroupOf(cur.kind, d.pluginManifests, d.disabledPlugins);
         const curIdx = curGroup ? populated.indexOf(curGroup) : -1;
         if (curIdx === -1) return;
         const nextGroup = populated[(curIdx + delta + populated.length) % populated.length];

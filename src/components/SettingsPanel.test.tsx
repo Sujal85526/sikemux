@@ -220,7 +220,7 @@ describe("SettingsPanel navigation", () => {
         expect(screen.getByRole("button", { name: "Appearance" })).toHaveFocus();
 
         await user.keyboard("{ArrowUp}{ArrowUp}");
-        expect(getState().settingsPage).toBe("cloud");
+        expect(getState().settingsPage).toBe("plugins");
 
         await user.keyboard("{Home}");
         expect(getState().settingsPage).toBe("general");

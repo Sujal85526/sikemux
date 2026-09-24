@@ -1,10 +1,10 @@
 pub mod agent;
 mod builtin;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -35,6 +35,8 @@ pub struct PluginHost {
     next_stream: AtomicU32,
     runtime: Option<Runtime>,
     spawner: Handle,
+    /// Switched off in Settings: still built in, but nothing reaches them.
+    disabled: RwLock<HashSet<String>>,
 }
 
 impl PluginHost {
@@ -89,14 +91,36 @@ impl PluginHost {
             next_stream: AtomicU32::new(1),
             spawner: runtime.handle().clone(),
             runtime: Some(runtime),
+            disabled: RwLock::default(),
         })
     }
 
     fn get(&self, id: &str) -> AppResult<&Loaded> {
+        if !self.is_enabled(id) {
+            return Err(AppError::Plugin {
+                plugin: id.to_owned(),
+                error: PluginError::new("disabled", format!("`{id}` is switched off in Settings")),
+            });
+        }
         self.plugins.get(id).ok_or_else(|| AppError::Plugin {
             plugin: id.to_owned(),
             error: PluginError::new("not-installed", format!("no plugin named `{id}`")),
         })
+    }
+
+    fn is_enabled(&self, id: &str) -> bool {
+        !self
+            .disabled
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(id)
+    }
+
+    pub fn set_disabled(&self, ids: Vec<String>) {
+        *self
+            .disabled
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = ids.into_iter().collect();
     }
 
     pub fn manifests(&self) -> Vec<Manifest> {
@@ -110,7 +134,7 @@ impl PluginHost {
     /// it. When two plugins name the same tool, the first keeps it.
     pub fn agent_tools(&self) -> Vec<(&str, &AgentTool)> {
         let mut offered: Vec<(&str, &AgentTool)> = Vec::new();
-        for (id, loaded) in &self.plugins {
+        for (id, loaded) in self.plugins.iter().filter(|(id, _)| self.is_enabled(id)) {
             for tool in &loaded.plugin.manifest().tools {
                 if offered.iter().all(|(_, kept)| kept.name != tool.name) {
                     offered.push((id.as_str(), tool));
@@ -229,6 +253,11 @@ pub enum StreamEvent {
     Item { value: Value },
     End,
     Error { error: PluginError },
+}
+
+#[tauri::command]
+pub fn plugin_set_disabled(host: tauri::State<'_, PluginHost>, ids: Vec<String>) {
+    host.set_disabled(ids);
 }
 
 #[tauri::command]
@@ -387,6 +416,34 @@ mod tests {
             Some(json!({ "a": 1 }))
         );
         assert!(host.call_agent_tool("fail", Value::Null).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_switched_off_plugin_answers_nothing_and_offers_no_tools() {
+        let manifest = Manifest::from_json(
+            &json!({
+                "id": "test.echo", "name": "Echo", "version": "1.0.0", "sikemux": "*",
+                "tools": [{ "name": "echo_back", "method": "echo", "description": "Echo." }],
+            })
+            .to_string(),
+        )
+        .expect("test manifest parses");
+        let host = host(vec![Arc::new(Echo(manifest))]);
+
+        host.set_disabled(vec!["test.echo".into()]);
+        let refused = host
+            .call("test.echo", "echo", Value::Null)
+            .await
+            .expect_err("switched off");
+        assert_eq!(
+            serde_json::to_value(&refused).expect("serializes")["category"],
+            "disabled"
+        );
+        assert!(host.agent_tools().is_empty());
+
+        host.set_disabled(Vec::new());
+        assert!(host.call("test.echo", "echo", Value::Null).await.is_ok());
+        assert_eq!(host.agent_tools().len(), 1);
     }
 
     #[test]

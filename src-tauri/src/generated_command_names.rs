@@ -156,6 +156,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "run_background_command",
     "set_window_blur",
     "plugin_manifests",
+    "plugin_set_disabled",
     "plugin_call",
     "plugin_stream_start",
     "plugin_stream_stop",

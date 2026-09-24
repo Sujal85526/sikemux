@@ -169,6 +169,7 @@
     "allow-run-background-command",
     "allow-set-window-blur",
     "allow-plugin-manifests",
+    "allow-plugin-set-disabled",
     "allow-plugin-call",
     "allow-plugin-stream-start",
     "allow-plugin-stream-stop",
