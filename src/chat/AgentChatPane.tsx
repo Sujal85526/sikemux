@@ -376,7 +376,7 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     );
 }
 
-const ChatAgentContext = createContext("");
+const ChatAgentContext = createContext<{ id: string; type: Agent["type"] }>({ id: "", type: "claude" });
 
 function openLink(href: string, agentId: string, external: boolean) {
     const path = localPath(href);
@@ -429,7 +429,7 @@ function ChatLink({ href, className, children }: { href?: string; className?: st
     const imagePath = localImagePath(href);
     const preview = useImagePreview(guessed.includes(PATH_CLASS) ? null : imagePath);
     const file = useFileRef(href);
-    const agentId = useContext(ChatAgentContext);
+    const agentId = useContext(ChatAgentContext).id;
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
     if (file)
         return (
@@ -774,6 +774,7 @@ function subagentActivity(subagent: AcpSubagent): string {
 /* A folded subagent keeps streaming into a transcript nobody is reading, so its
    body is only built once the reader opens it. */
 function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
+    const agentType = useContext(ChatAgentContext).type;
     const [open, setOpen] = useState(false);
     const parts = subagent.messages.flatMap((message) => message.parts);
     const calls = parts.filter((part) => part.kind === "tool").length;
@@ -782,7 +783,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
             <summary>
                 <IconChevron size={9} className="chat-subagent-chevron" />
                 <span className="chat-subagent-mark">
-                    <IconAgent size={11} />
+                    <AgentIcon type={agentType} size={13} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
                 <span className="chat-subagent-task" title={subagent.task || undefined}>
@@ -856,12 +857,13 @@ function runningSubagents(messages: ChatMessage[]): AcpSubagent[] {
    transcript is where its output went, which is not where you look to find out
    whether it is still going. */
 function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
+    const agentType = useContext(ChatAgentContext).type;
     if (subagents.length === 0) return null;
     return (
         <Group label="subagent" count={subagents.length}>
             {subagents.map((subagent) => (
                 <div className="chat-task chat-task-agent" key={subagent.sessionId}>
-                    <IconAgent size={12} />
+                    <AgentIcon type={agentType} size={13} />
                     <span className="chat-task-name">{subagent.name}</span>
                     <span className="chat-task-detail">{subagentActivity(subagent)}</span>
                     <span className="chat-task-spinner" aria-hidden="true" />
@@ -1820,6 +1822,7 @@ export function AgentChatPane({
             detectedExecutablePath: profile?.executablePath || agent.executablePath,
             cwd,
         });
+    const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
     const composerPlaceholder =
         state.connection === "ready"
             ? state.running
@@ -1837,7 +1840,7 @@ export function AgentChatPane({
 
     return (
         <PathRootsProvider cwd={cwd} home={home}>
-            <ChatAgentContext.Provider value={agent.id}>
+            <ChatAgentContext.Provider value={chatAgent}>
                 <div className="agent-chat-pane" ref={paneRef}>
                     <div
                         className="chat-scroll"
