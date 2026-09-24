@@ -71,8 +71,7 @@ export function SeshPicker() {
     };
 
     const items = useMemo<Item[]>(() => {
-        const wantKind = (k: SessionKind) =>
-            mode === "all" || (mode === "projects" && k === "project") || (mode === "ssh" && k === "ssh") || (mode === "bruno" && k === "bruno");
+        const wantKind = (k: SessionKind) => mode === "all" || (mode === "projects" && k === "project") || (mode === "ssh" && k === "ssh");
         const sessionItems: Item[] = sessions
             .filter((s) => wantKind(s.kind))
             .map((s) => ({
@@ -186,7 +185,7 @@ export function SeshPicker() {
             : mode === "ssh"
               ? "ssh — search hosts from ~/.ssh/config…"
               : mode === "bruno"
-                ? "open or pick a bruno workspace…"
+                ? "switch bruno workspace…"
                 : "jump to a session, project, or ssh host…";
 
     return (
@@ -222,7 +221,7 @@ export function SeshPicker() {
                         <button
                             className="picker-folder-btn"
                             onClick={() => void cmd.openBrunoFolder()}
-                            title="Import a Bruno workspace folder"
+                            title="Add a Bruno workspace folder"
                             type="button">
                             <IconFolder size={14} />
                         </button>
@@ -247,9 +246,9 @@ export function SeshPicker() {
                                 </>
                             ) : showSsh && hosts.length === 0 && mode === "ssh" ? (
                                 "no hosts in ~/.ssh/config"
-                            ) : mode === "bruno" && brunoWorkspaces.length === 0 ? (
+                            ) : mode === "bruno" && !query.trim() ? (
                                 <button className="picker-link" onClick={() => void cmd.openBrunoFolder()}>
-                                    import a Bruno workspace folder
+                                    add a Bruno workspace folder
                                 </button>
                             ) : (
                                 "no matches"
@@ -259,7 +258,7 @@ export function SeshPicker() {
                     {items.map((it, i) => {
                         const sessLabel = i === firstSessIdx && firstSessIdx >= 0 ? "Open" : null;
                         const dirLabel = i === firstDirIdx && firstDirIdx >= 0 ? "Projects" : null;
-                        const brunoLabel = i === firstBrunoIdx && firstBrunoIdx >= 0 ? "API" : null;
+                        const brunoLabel = i === firstBrunoIdx && firstBrunoIdx >= 0 ? "Bruno workspaces" : null;
                         const sshLabel = i === firstSshIdx && firstSshIdx >= 0 ? "SSH" : null;
                         const key =
                             it.kind === "session"

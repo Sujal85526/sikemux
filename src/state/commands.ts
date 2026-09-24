@@ -462,31 +462,36 @@ export const openPluginSession = (kind: PluginKind): void => openSingletonPaneSe
 
 export const setPluginManifests = (pluginManifests: readonly PluginManifest[]): void => setState({ pluginManifests });
 
-/** Prompt for a collection directory, then open it as a Bruno API workspace. */
+/** Prompt for a collection directory, then load it into the Bruno session. */
 export async function openBrunoFolder(): Promise<void> {
     try {
-        const dir = await openDialog({ directory: true, multiple: false, title: "Open Bruno workspace" });
+        const dir = await openDialog({ directory: true, multiple: false, title: "Add Bruno workspace" });
         if (typeof dir === "string") openBrunoSession(dir);
     } catch (e) {
-        reportError("open bruno workspace")(e);
+        reportError("add bruno workspace")(e);
     }
 }
 
-/** Open (or focus) a Bruno API workspace for a collection directory. */
-export function openBrunoSession(collectionPath: string): void {
-    registerBrunoWorkspace(collectionPath);
+/** Focus the one Bruno session, loading `collectionPath` into it when given. */
+export function openBrunoSession(collectionPath?: string): void {
+    if (collectionPath) registerBrunoWorkspace(collectionPath);
     mutate((d) => {
-        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === "bruno" && s.bruno?.collectionPath === collectionPath);
+        d.pickerOpen = false;
+        d.zoomedPaneId = null;
+        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === "bruno");
         if (existing) {
             d.activeSessionId = existing.id;
-            d.zoomedPaneId = null;
-            d.pickerOpen = false;
+            if (!collectionPath || existing.bruno?.collectionPath === collectionPath) return;
+            existing.cwd = collectionPath;
+            existing.bruno = { collectionPath, selectedEnvs: existing.bruno?.selectedEnvs ?? {} };
+            const paneId = brunoPaneId(d, existing.id);
+            if (paneId) delete d.brunoViews[paneId];
             return;
         }
-        const name = basename(collectionPath);
-        const win = makeWindow(collectionPath, name, { kind: "bruno", role: "bruno", fixed: true });
-        const session = makeSession("bruno", name, collectionPath, win.id);
-        session.bruno = { collectionPath, selectedEnvs: {} };
+        const path = collectionPath ?? d.brunoWorkspaces[0] ?? "";
+        const win = makeWindow(path, "bruno", { kind: "bruno", role: "bruno", fixed: true });
+        const session = makeSession("bruno", "bruno", path, win.id);
+        session.bruno = { collectionPath: path, selectedEnvs: {} };
         attachSession(d as unknown as StoreState, session, [win]);
     });
 }

@@ -174,7 +174,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.openAwsSession();
             return true;
         case "bruno.open":
-            cmd.openPicker("bruno");
+            cmd.openBrunoSession();
             return true;
         case "session.command":
             cmd.focusCommandSession();

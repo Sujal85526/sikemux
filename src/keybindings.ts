@@ -69,8 +69,8 @@ const keybindingActions = [
     },
     {
         id: "bruno.open",
-        label: "Open Bruno workspace",
-        detail: "Choose a Bruno collection",
+        label: "Open Bruno",
+        detail: "Open the Bruno API client",
         category: "Workspace",
         defaultBinding: "Alt+KeyB",
     },

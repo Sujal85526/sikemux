@@ -14,7 +14,8 @@ import { runRequest, type RunResult } from "../../bruno/run";
 import type { BruRequest, BruScope } from "../../bruno/types";
 import { basename } from "../../lib/paths";
 import { confirmDialog } from "../../state/dialog";
-import { IconBruno } from "../Icons";
+import { IconBruno, IconChevron } from "../Icons";
+import { EmptyState } from "../Panel";
 import { BrunoEnvSelect } from "./BrunoEnvSelect";
 import { BrunoTree } from "./BrunoTree";
 import { BrunoRequestView } from "./BrunoRequest";
@@ -42,6 +43,7 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
     const drafts = useBrunoDrafts(sessionId);
     const secretVars = useBrunoSecretVars(sessionId);
     const selectedEnvs = bruno?.selectedEnvs ?? {};
+    const knownWorkspaces = useStore((s) => s.brunoWorkspaces.length);
 
     const coll = useResourceEnabled(active && !!collectionPath, brunoCollectionR, collectionPath);
     const collection = coll.data;
@@ -183,15 +185,33 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
 
     if (!bruno) return <div className="bruno-pane bruno-empty">not a Bruno workspace</div>;
 
+    if (!collectionPath) {
+        return (
+            <div className="bruno-pane bruno-empty">
+                <EmptyState
+                    icon={<IconBruno size={20} />}
+                    title="No workspace loaded"
+                    message="Load a Bruno collection folder to browse and run its requests."
+                    action={
+                        knownWorkspaces > 0
+                            ? { label: "Choose workspace", onClick: () => cmd.openPicker("bruno") }
+                            : { label: "Add workspace", onClick: () => void cmd.openBrunoFolder() }
+                    }
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="bruno-pane" data-active={active ? "1" : "0"}>
             <header className="bruno-head">
                 <span className="bruno-head-mark">
                     <IconBruno size={15} />
                 </span>
-                <span className="bruno-coll-name" title={collectionPath}>
-                    {collection?.name || basename(collectionPath)}
-                </span>
+                <button type="button" className="dd-btn bruno-workspace-dd" title={collectionPath} onClick={() => cmd.openPicker("bruno")}>
+                    <span className="dd-val bruno-coll-name">{collection?.name || basename(collectionPath)}</span>
+                    <IconChevron size={9} className="dd-chev" />
+                </button>
                 <BrunoEnvSelect
                     sessionId={sessionId}
                     envs={visibleEnvs}
