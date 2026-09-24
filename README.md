@@ -288,7 +288,9 @@ Existing community installations can receive in-app updates. Fresh downloads are
 
 Both channels create a versioned GitHub release holding the build. A stable cut also attaches `latest.json`, which the default channel follows. A nightly cut requires a prerelease semantic version, publishes its release as a prerelease, and repoints the moving `nightly` release that the opt-in Nightly channel follows.
 
-Stable is cut from a `release/<major.minor>` branch and nightly from `main`, so a patch can ship while `main` runs ahead on the next minor. Nightly versions target that next minor, leaving the patch numbers free for hotfixes.
+Stable is cut from a `release/<major.minor>` branch and nightly from `main`. A nightly targets whichever version comes next, whether that is a patch, a minor or a major, and a stable release of that version overtakes its nightlies for nightly users too.
+
+A hotfix cut from a release branch claims a version as well. When it claims the one the nightlies are building toward, the Nightly channel moves onto the hotfix, because the updater takes the newest version across both feeds, and loses whatever `main` had that the hotfix did not until a later nightly passes it. Before cutting such a hotfix, publish a nightly at the version after it, so the hotfix lands below the nightlies instead of over them.
 
 ```bash
 ./scripts/release.sh 0.3.5 "Release notes"
