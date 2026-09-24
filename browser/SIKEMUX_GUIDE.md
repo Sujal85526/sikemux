@@ -120,6 +120,14 @@ Sikemux is in the background the page is told about the hover but CSS
 of the element and took the click instead. `browser_back` and
 `browser_forward` move through the current tab's history.
 
+Controls inside a frame from the same site are numbered with the rest of the
+page. A frame from another site, such as a card field or a sign-in widget,
+cannot be read from outside, so state lists it as a single element. Click its
+number, or better the field inside it by `x` and `y` from a screenshot, then
+`browser_type` without an index to type at the caret. The page's text,
+`browser_extract`, `browser_network` and `browser_console` cover only the
+top page.
+
 `browser_type` with an `index` focuses that element and replaces its value.
 Without one it types at the caret of whatever is focused, so it can add to
 text rather than replace it. `submit: true` presses Enter afterwards. The

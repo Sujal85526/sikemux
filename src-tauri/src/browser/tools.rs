@@ -184,6 +184,12 @@ async fn run(
                 return Ok(prepared);
             }
             let replacing = prepared.get("replacing").and_then(Value::as_bool) == Some(true);
+            if let Some(point) = prepared.get("clickFirst") {
+                let coordinate = |key: &str| point.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+                let (x, y) = (coordinate("x"), coordinate("y"));
+                native::mouse(&view, Mouse::Down, x, y, 1).await?;
+                native::mouse(&view, Mouse::Up, x, y, 1).await?;
+            }
             if !value.is_empty() {
                 native::insert_text(&view, &value).await?;
             } else if replacing {
