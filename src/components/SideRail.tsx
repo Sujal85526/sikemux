@@ -35,9 +35,9 @@ interface Opener {
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
-    if (kind === "aws") return <IconAws />;
+    if (kind === "aws") return <IconAws size={18} />;
     const surface = pluginSurface(kind);
-    if (surface) return surface.icon(14);
+    if (surface) return surface.icon(15);
     if (kind === "bruno") return <IconBruno size={20} />;
     return <IconCommand size={13} />;
 }
@@ -353,6 +353,7 @@ function Group({
     emptyText,
     singleton,
     openers = [],
+    className,
 }: {
     label: string;
     list: Session[];
@@ -364,9 +365,10 @@ function Group({
     emptyText: string;
     singleton?: boolean;
     openers?: readonly Opener[];
+    className?: string;
 }) {
     return (
-        <Panel variant="group">
+        <Panel variant="group" className={className}>
             <PanelHeader
                 label={label}
                 rule
@@ -670,7 +672,7 @@ export const SideRail = memo(function SideRail() {
                         actionTitle="Edit ~/.ssh/config"
                         emptyText="no ssh hosts"
                     />
-                    <Group label="Plugins" list={plugins} emptyText="no plugins" openers={openers} />
+                    <Group label="Plugins" list={plugins} emptyText="no plugins" openers={openers} className="rail-logos" />
                     <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
                 </div>
 
