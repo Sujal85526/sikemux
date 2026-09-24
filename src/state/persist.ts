@@ -37,8 +37,6 @@ import type {
     ProviderProfile,
     ProviderProfileSelection,
     RecentEntry,
-    ReleaseContributor,
-    ReleaseNotes,
     Session,
     Window,
     WindowRole,
@@ -166,28 +164,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
 }
 
 const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "ssh-config", "named", "agent"]);
-
-function releaseNotesFrom(value: unknown): ReleaseNotes | null {
-    if (!isRecord(value) || typeof value.version !== "string") return null;
-    const text = (field: unknown) => (typeof field === "string" ? field : null);
-    return {
-        version: value.version,
-        notes: text(value.notes),
-        date: text(value.date),
-        commits: typeof value.commits === "number" ? value.commits : null,
-        compare: text(value.compare),
-        contributors: Array.isArray(value.contributors)
-            ? value.contributors.filter(
-                  (person): person is ReleaseContributor =>
-                      isRecord(person) &&
-                      typeof person.login === "string" &&
-                      typeof person.name === "string" &&
-                      typeof person.commits === "number" &&
-                      typeof person.avatar === "string",
-              )
-            : [],
-    };
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -955,7 +931,14 @@ export function applyHydrate(raw: string): HydrationResult {
         lastSeenVersion: typeof prefs.lastSeenVersion === "string" ? prefs.lastSeenVersion : cur.lastSeenVersion,
         customCommands: normaliseCustomCommands(prefs.customCommands),
         updateChannel: prefs.updateChannel === "nightly" || prefs.updateChannel === "stable" ? prefs.updateChannel : cur.updateChannel,
-        lastReleaseNotes: releaseNotesFrom(prefs.lastReleaseNotes),
+        lastReleaseNotes:
+            isRecord(prefs.lastReleaseNotes) && typeof prefs.lastReleaseNotes.version === "string"
+                ? {
+                      version: prefs.lastReleaseNotes.version,
+                      notes: typeof prefs.lastReleaseNotes.notes === "string" ? prefs.lastReleaseNotes.notes : null,
+                      date: typeof prefs.lastReleaseNotes.date === "string" ? prefs.lastReleaseNotes.date : null,
+                  }
+                : null,
         recentCommandKeys: Array.isArray(prefs.recentCommandKeys)
             ? prefs.recentCommandKeys.filter((value): value is string => typeof value === "string").slice(0, 20)
             : [],

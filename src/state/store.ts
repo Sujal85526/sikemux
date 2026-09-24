@@ -10,7 +10,6 @@ import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
 import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
-import type { ReleaseNotes } from "./types";
 
 enableMapSet();
 import { makePane, newId } from "./layout";
@@ -77,7 +76,7 @@ export interface DomainState {
     lastSeenVersion: string;
     customCommands: CustomCommand[];
     updateChannel: "stable" | "nightly";
-    lastReleaseNotes: ReleaseNotes | null;
+    lastReleaseNotes: { version: string; notes: string | null; date: string | null } | null;
     recentCommandKeys: string[];
     /** Non-secret launch profiles and the per-agent defaults that reference them. */
     providerProfiles: ProviderProfile[];
@@ -87,8 +86,11 @@ export interface DomainState {
 
 export type UpdateOperationState = "available" | "preparing" | "downloading" | "installing" | "restarting" | "error";
 
-export interface PendingUpdate extends ReleaseNotes {
+export interface PendingUpdate {
+    version: string;
     currentVersion: string;
+    notes: string | null;
+    date: string | null;
     state: UpdateOperationState;
     error: string | null;
     downloadedBytes: number;

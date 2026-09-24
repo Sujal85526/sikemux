@@ -2,14 +2,13 @@ import { useEffect, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { getVersion } from "@tauri-apps/api/app";
 import { installPendingUpdate, isUpdateBusy, updateStatusLabel } from "../api/updater";
-import { openInBrowser, releasesApi } from "../api/releases";
+import { openInBrowser, releasesApi, type ReleaseContributor, type ReleaseNotes } from "../api/releases";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { errMessage, swallow } from "../state/toast";
-import type { ReleaseContributor, ReleaseNotes } from "../state/types";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { ExperienceBackdrop } from "./ExperienceOverlays";
-import { DitherSky } from "./DitherSky";
+import { ShaderField } from "./ShaderField";
 
 const FEATURED = 3;
 const WALL = 13;
@@ -32,7 +31,7 @@ function notesFor(version: string): Promise<ReleaseNotes> {
     return notes;
 }
 
-/** An update waiting to install, else the notes of the build that is running. */
+/** The update waiting to install, else the build that is running. Notes the app already holds show until GitHub answers. */
 function useShownRelease(open: boolean) {
     const pending = useStore((s) => s.pendingUpdate);
     const installed = useStore((s) => s.lastReleaseNotes);
@@ -42,20 +41,24 @@ function useShownRelease(open: boolean) {
     useEffect(() => {
         if (open) void getVersion().then(setRunning);
     }, [open]);
-    const stored = installed && installed.version === running ? installed : null;
+    const version = pending?.version ?? running;
     useEffect(() => {
-        if (!open || pending || !running || stored) return;
+        if (!open || !version) return;
         let live = true;
         setError("");
-        notesFor(running)
+        notesFor(version)
             .then((notes) => live && setFetched(notes))
             .catch((value) => live && setError(errMessage(value)));
         return () => {
             live = false;
         };
-    }, [open, pending, running, stored]);
-    const release = pending ?? stored ?? (fetched?.version === running ? fetched : null);
-    return { release, running, error };
+    }, [open, version]);
+    const held = pending ?? (installed?.version === version ? installed : null);
+    const release: ReleaseNotes | null =
+        fetched?.version === version
+            ? fetched
+            : held && { version, notes: held.notes, date: held.date, commits: null, compare: null, contributors: [] };
+    return { release, version, error };
 }
 
 function useAvatars(contributors: readonly ReleaseContributor[]): ReadonlyMap<string, string> {
@@ -85,6 +88,12 @@ function releaseDate(date: string | null): string | null {
     const parsed = new Date(date);
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** `0.4.0-nightly.10` is too long to set large, so the build rides under the release. */
+function splitVersion(version: string): [string, string] {
+    const dash = version.indexOf("-");
+    return dash < 0 ? [version, ""] : [version.slice(0, dash), version.slice(dash + 1)];
 }
 
 function highlightCount(notes: string | null): number {
@@ -169,9 +178,9 @@ export function WhatsNewOverlay() {
     const open = useStore((s) => s.whatsNewOpen);
     useOccludeNativeViews(open);
     const pending = useStore((s) => s.pendingUpdate);
-    const { release, running, error } = useShownRelease(open);
+    const { release, version, error } = useShownRelease(open);
     if (!open) return null;
-    const version = release?.version ?? running;
+    const [core, build] = splitVersion(version);
     const date = releaseDate(release?.date ?? null);
     const highlights = highlightCount(release?.notes ?? null);
     const people = release?.contributors ?? [];
@@ -179,11 +188,12 @@ export function WhatsNewOverlay() {
     return (
         <ExperienceBackdrop label="What’s new" className="whats-new" onClose={cmd.closeWhatsNew}>
             <aside className="wn-side">
-                <DitherSky className="wn-sky" />
+                <ShaderField preset="release" className="wn-sky" />
                 <span className="wn-channel">{pending ? "update ready" : version.includes("-") ? "nightly" : "stable"}</span>
                 <h1 className="wn-version">
                     <span>v</span>
-                    {version || "…"}
+                    {core || "…"}
+                    {build && <small>{build}</small>}
                 </h1>
                 {date && <span className="wn-date">{date}</span>}
                 <dl className="wn-stats">

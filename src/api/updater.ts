@@ -2,11 +2,13 @@ import { Channel } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invokeCommand as invoke } from "./invoke";
 import { getState, setState, type PendingUpdate, type UpdateCheckOutcome, type UpdateOperationState } from "../state/store";
-import type { ReleaseNotes } from "../state/types";
 import { errMessage, notify, reportError, swallow } from "../state/toast";
 
-interface UpdateInfo extends ReleaseNotes {
+interface UpdateInfo {
+    version: string;
     currentVersion: string;
+    notes: string | null;
+    date: string | null;
 }
 
 export interface UpdateInstallProgress {
@@ -115,7 +117,10 @@ async function runUpdateCheck(announce: boolean): Promise<void> {
         }
         setState({
             pendingUpdate: {
-                ...update,
+                version: update.version,
+                currentVersion: update.currentVersion,
+                notes: update.notes,
+                date: update.date,
                 state: "available",
                 error: null,
                 downloadedBytes: 0,
@@ -185,14 +190,7 @@ async function installPendingUpdateOnce(): Promise<void> {
                       downloadedBytes: state.pendingUpdate.totalBytes ?? state.pendingUpdate.downloadedBytes,
                   }
                 : null,
-            lastReleaseNotes: {
-                version: installed.version,
-                notes: installed.notes,
-                date: installed.date,
-                commits: installed.commits,
-                compare: installed.compare,
-                contributors: installed.contributors,
-            },
+            lastReleaseNotes: { version: installed.version, notes: installed.notes, date: installed.date },
         }));
         await relaunch();
     } catch (error) {

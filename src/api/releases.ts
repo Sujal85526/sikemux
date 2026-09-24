@@ -1,5 +1,20 @@
 import { invokeCommand as invoke } from "./invoke";
-import type { ReleaseNotes } from "../state/types";
+
+export interface ReleaseContributor {
+    login: string;
+    name: string;
+    commits: number;
+    avatar: string;
+}
+
+export interface ReleaseNotes {
+    version: string;
+    notes: string | null;
+    date: string | null;
+    commits: number | null;
+    compare: string | null;
+    contributors: ReleaseContributor[];
+}
 
 export const releasesApi = {
     notes: (version: string) => invoke<ReleaseNotes>("release_notes", { version }),

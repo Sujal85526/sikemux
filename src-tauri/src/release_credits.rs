@@ -1,6 +1,7 @@
-//! What a release says about itself: its notes and who made it. The release
-//! script writes both into the `latest.json` it attaches to every release, and
-//! avatars are fetched here because the window only draws `data:` images.
+//! What a release says about itself: its notes, read from the GitHub release,
+//! and who made it, read from the commits since the previous release on the
+//! same channel. Avatars are fetched here too, because the window only draws
+//! images handed to it as `data:` URLs.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -10,21 +11,25 @@ use base64::Engine;
 use futures::future::join_all;
 use futures::StreamExt;
 use reqwest::Client;
+use semver::Version;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
 
+const REPO_API: &str = "https://api.github.com/repos/nodelike/sikemux";
+const REPO_WEB: &str = "https://github.com/nodelike/sikemux";
 const AVATAR_ORIGIN: &str = "https://avatars.githubusercontent.com/";
-const COMPARE_PREFIX: &str = "https://github.com/nodelike/sikemux/compare/";
-const RELEASE_DOWNLOADS: &str = "https://github.com/nodelike/sikemux/releases/download/";
-const FETCH_TIMEOUT: Duration = Duration::from_secs(8);
+const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
+/// GitHub lists at most this many commits in one page of a comparison.
+const COMMITS_PER_PAGE: usize = 100;
+const MAX_COMMIT_PAGES: usize = 20;
 /// The modal draws avatars at 30 points, so 64 pixels stays sharp on a retina screen.
 const AVATAR_PIXELS: u32 = 64;
 const MAX_AVATAR_BYTES: usize = 64 * 1024;
 const MAX_AVATARS: usize = 64;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Contributor {
     login: String,
@@ -33,15 +38,7 @@ pub struct Contributor {
     avatar: String,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Credits {
-    pub date: Option<String>,
-    pub commits: Option<u32>,
-    pub compare: Option<String>,
-    pub contributors: Vec<Contributor>,
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseNotes {
     version: String,
@@ -52,82 +49,194 @@ pub struct ReleaseNotes {
     contributors: Vec<Contributor>,
 }
 
-#[derive(Default, Deserialize)]
-struct Feed {
-    #[serde(default)]
-    pub_date: Option<String>,
-    #[serde(default)]
-    commits: Option<u32>,
-    #[serde(default)]
-    compare: Option<String>,
-    #[serde(default)]
-    contributors: Vec<Value>,
+#[derive(Deserialize)]
+struct GithubRelease {
+    body: Option<String>,
+    published_at: Option<String>,
 }
 
-/// Reads the credits out of the whole update feed. A contributor the feed
-/// describes badly is dropped rather than failing the update check.
-pub fn from_feed(feed: &Value) -> Credits {
-    let feed: Feed = serde_json::from_value(feed.clone()).unwrap_or_default();
-    Credits {
-        date: feed.pub_date,
-        commits: feed.commits,
-        compare: feed.compare.filter(|url| url.starts_with(COMPARE_PREFIX)),
-        contributors: feed
-            .contributors
-            .into_iter()
-            .filter_map(|entry| serde_json::from_value::<Contributor>(entry).ok())
-            .filter(|person| valid_login(&person.login) && person.avatar.starts_with(AVATAR_ORIGIN))
-            .collect(),
-    }
+#[derive(Deserialize)]
+struct GithubRef {
+    #[serde(rename = "ref")]
+    name: String,
 }
 
-/// The notes of one published release, read from the feed attached to it.
+#[derive(Deserialize)]
+struct Comparison {
+    total_commits: u32,
+    #[serde(default)]
+    commits: Vec<ComparedCommit>,
+}
+
+#[derive(Deserialize)]
+struct ComparedCommit {
+    author: Option<Account>,
+    commit: CommitDetail,
+}
+
+#[derive(Deserialize)]
+struct Account {
+    login: String,
+    avatar_url: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Deserialize)]
+struct CommitDetail {
+    author: Option<CommitAuthor>,
+}
+
+#[derive(Deserialize)]
+struct CommitAuthor {
+    name: String,
+}
+
+struct Credits {
+    commits: u32,
+    compare: String,
+    people: Vec<Contributor>,
+}
+
+/// The notes of one published release, and everyone who committed to it.
+/// The notes are what matter, so a failed contributor lookup leaves the
+/// credits empty rather than failing the whole answer.
 #[tauri::command]
 pub async fn release_notes(version: String) -> AppResult<ReleaseNotes> {
-    if version.is_empty()
-        || !version
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'))
-    {
-        return Err(AppError::BadArg(
-            "a release version is digits, letters, dots and hyphens",
-        ));
+    let parsed = Version::parse(&version)
+        .map_err(|_| AppError::BadArg("a release version must be a semantic version"))?;
+    if let Some(known) = cached_notes(&version) {
+        return Ok(known);
     }
+    let tag = format!("v{version}");
+    let release: GithubRelease = get_json(&format!("{REPO_API}/releases/tags/{tag}"))
+        .await
+        .map_err(|error| AppError::Other(format!("GitHub has no release {tag}: {error}")))?;
+    let credits = match previous_tag(&parsed).await {
+        Some(previous) => credits_between(&previous, &tag).await,
+        None => None,
+    };
+    let notes = ReleaseNotes {
+        version: version.clone(),
+        notes: release.body.filter(|body| !body.trim().is_empty()),
+        date: release.published_at,
+        commits: credits.as_ref().map(|credits| credits.commits),
+        compare: credits.as_ref().map(|credits| credits.compare.clone()),
+        contributors: credits.map(|credits| credits.people).unwrap_or_default(),
+    };
+    if notes.compare.is_some() {
+        remember_notes(&version, notes.clone());
+    }
+    Ok(notes)
+}
+
+async fn previous_tag(version: &Version) -> Option<String> {
+    let refs: Vec<GithubRef> = get_json(&format!("{REPO_API}/git/matching-refs/tags/v"))
+        .await
+        .ok()?;
+    let tags = refs
+        .iter()
+        .filter_map(|reference| reference.name.strip_prefix("refs/tags/"));
+    previous_release(version, tags)
+}
+
+/// A nightly follows whatever shipped last; a stable release follows the last stable one.
+fn previous_release<'a>(version: &Version, tags: impl Iterator<Item = &'a str>) -> Option<String> {
+    tags.filter_map(|tag| {
+        let candidate = Version::parse(tag.strip_prefix('v')?).ok()?;
+        let comparable = !version.pre.is_empty() || candidate.pre.is_empty();
+        (comparable && candidate < *version).then_some((candidate, tag))
+    })
+    .max_by(|(a, _), (b, _)| a.cmp(b))
+    .map(|(_, tag)| tag.to_owned())
+}
+
+async fn credits_between(previous: &str, tag: &str) -> Option<Credits> {
+    let mut commits = Vec::new();
+    let mut total = 0;
+    for page in 1..=MAX_COMMIT_PAGES {
+        let comparison: Comparison = get_json(&format!(
+            "{REPO_API}/compare/{previous}...{tag}?per_page={COMMITS_PER_PAGE}&page={page}"
+        ))
+        .await
+        .ok()?;
+        total = comparison.total_commits;
+        let fetched = comparison.commits.len();
+        commits.extend(comparison.commits);
+        if fetched < COMMITS_PER_PAGE || commits.len() >= total as usize {
+            break;
+        }
+    }
+    Some(Credits {
+        commits: total,
+        compare: format!("{REPO_WEB}/compare/{previous}...{tag}"),
+        people: tally(commits),
+    })
+}
+
+/// People ordered by how many commits they made. Commits with no GitHub
+/// account behind them, and those made by bots, credit nobody.
+fn tally(commits: Vec<ComparedCommit>) -> Vec<Contributor> {
+    let mut people: Vec<Contributor> = Vec::new();
+    for commit in commits {
+        let Some(account) = commit.author.filter(|account| account.kind == "User") else {
+            continue;
+        };
+        match people
+            .iter_mut()
+            .find(|person| person.login == account.login)
+        {
+            Some(person) => person.commits += 1,
+            None => people.push(Contributor {
+                name: commit
+                    .commit
+                    .author
+                    .map(|author| author.name)
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or_else(|| account.login.clone()),
+                login: account.login,
+                commits: 1,
+                avatar: account.avatar_url,
+            }),
+        }
+    }
+    people.sort_by_key(|person| std::cmp::Reverse(person.commits));
+    people
+}
+
+async fn get_json<T: DeserializeOwned>(url: &str) -> AppResult<T> {
     let response = client()
-        .get(format!("{RELEASE_DOWNLOADS}v{version}/latest.json"))
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await?;
     if !response.status().is_success() {
-        return Err(AppError::Other(format!(
-            "GitHub has no release notes for v{version} ({})",
-            response.status()
-        )));
+        return Err(AppError::Other(response.status().to_string()));
     }
-    let feed: Value = response.json().await?;
-    Ok(notes_from_feed(&feed, version))
+    Ok(response.json().await?)
 }
 
-fn notes_from_feed(feed: &Value, version: String) -> ReleaseNotes {
-    let credits = from_feed(feed);
-    ReleaseNotes {
-        version,
-        notes: feed.get("notes").and_then(Value::as_str).map(str::to_owned),
-        date: credits.date,
-        commits: credits.commits,
-        compare: credits.compare,
-        contributors: credits.contributors,
-    }
+fn notes_cache() -> &'static Mutex<HashMap<String, ReleaseNotes>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, ReleaseNotes>>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
 }
 
-/// GitHub logins are letters, digits and single hyphens, at most 39 long.
-fn valid_login(login: &str) -> bool {
-    !login.is_empty()
-        && login.len() <= 39
-        && !login.starts_with('-')
-        && login.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+fn cached_notes(version: &str) -> Option<ReleaseNotes> {
+    notes_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(version)
+        .cloned()
 }
 
-/// Avatars keyed by the address the feed gave. One that fails to load is left
+fn remember_notes(version: &str, notes: ReleaseNotes) {
+    notes_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(version.to_owned(), notes);
+}
+
+/// Avatars keyed by the address GitHub gave. One that fails to load is left
 /// out, and the modal draws the contributor's initial instead.
 #[tauri::command]
 pub async fn release_avatars(urls: Vec<String>) -> HashMap<String, String> {
@@ -137,11 +246,11 @@ pub async fn release_avatars(urls: Vec<String>) -> HashMap<String, String> {
         .take(MAX_AVATARS)
         .collect();
     let fetched = join_all(wanted.into_iter().map(|url| async move {
-        if let Some(known) = cached(&url) {
+        if let Some(known) = cached_avatar(&url) {
             return (url, known);
         }
-        let data = fetch(&url).await;
-        remember(&url, data.clone());
+        let data = fetch_avatar(&url).await;
+        remember_avatar(&url, data.clone());
         (url, data)
     }))
     .await;
@@ -151,21 +260,21 @@ pub async fn release_avatars(urls: Vec<String>) -> HashMap<String, String> {
         .collect()
 }
 
-fn cache() -> &'static Mutex<HashMap<String, Option<String>>> {
+fn avatar_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
     CACHE.get_or_init(Default::default)
 }
 
-fn cached(url: &str) -> Option<Option<String>> {
-    cache()
+fn cached_avatar(url: &str) -> Option<Option<String>> {
+    avatar_cache()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .get(url)
         .cloned()
 }
 
-fn remember(url: &str, data: Option<String>) {
-    cache()
+fn remember_avatar(url: &str, data: Option<String>) {
+    avatar_cache()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .insert(url.to_owned(), data);
@@ -176,7 +285,7 @@ fn sized(url: &str) -> String {
     format!("{url}{separator}s={AVATAR_PIXELS}")
 }
 
-async fn fetch(url: &str) -> Option<String> {
+async fn fetch_avatar(url: &str) -> Option<String> {
     let response = client().get(sized(url)).send().await.ok()?;
     if !response.status().is_success()
         || response
@@ -222,6 +331,7 @@ fn client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()
             .timeout(FETCH_TIMEOUT)
+            .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_default()
     })
@@ -232,82 +342,73 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn person(login: &str, avatar: &str) -> Value {
-        json!({ "login": login, "name": login, "commits": 3, "avatar": avatar })
+    const TAGS: [&str; 7] = [
+        "v0.3.5",
+        "v0.4.0-nightly.8",
+        "v0.4.0-nightly.9",
+        "v0.4.0-nightly.10",
+        "v0.4.0",
+        "v0.4.1-nightly.1",
+        "nightly",
+    ];
+
+    fn previous(version: &str) -> Option<String> {
+        previous_release(&Version::parse(version).unwrap(), TAGS.into_iter())
     }
 
     #[test]
-    fn reads_the_credits_the_release_script_writes() {
-        let credits = from_feed(&json!({
-            "version": "0.4.0",
-            "notes": "# Sikemux v0.4.0",
-            "pub_date": "2026-09-22T12:45:39Z",
-            "commits": 442,
-            "compare": "https://github.com/nodelike/sikemux/compare/v0.3.5...v0.4.0",
-            "contributors": [{
-                "login": "nodelike",
-                "name": "NØDE",
-                "commits": 441,
-                "avatar": "https://avatars.githubusercontent.com/u/108696612?v=4"
-            }],
-            "platforms": {}
-        }));
-
-        assert_eq!(credits.date.as_deref(), Some("2026-09-22T12:45:39Z"));
-        assert_eq!(credits.commits, Some(442));
+    fn a_nightly_follows_whatever_shipped_last() {
         assert_eq!(
-            credits.compare.as_deref(),
-            Some("https://github.com/nodelike/sikemux/compare/v0.3.5...v0.4.0")
+            previous("0.4.0-nightly.10").as_deref(),
+            Some("v0.4.0-nightly.9")
         );
+        assert_eq!(previous("0.4.1-nightly.1").as_deref(), Some("v0.4.0"));
+    }
+
+    #[test]
+    fn a_stable_release_follows_the_last_stable_one() {
+        assert_eq!(previous("0.4.0").as_deref(), Some("v0.3.5"));
+        assert_eq!(previous("0.3.5"), None);
+    }
+
+    fn commit(login: Option<(&str, &str)>, name: &str) -> ComparedCommit {
+        serde_json::from_value(json!({
+            "author": login.map(|(login, kind)| json!({
+                "login": login,
+                "avatar_url": format!("https://avatars.githubusercontent.com/{login}"),
+                "type": kind
+            })),
+            "commit": { "author": { "name": name } }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn credits_people_by_commit_count_and_skips_bots_and_strangers() {
+        let people = tally(vec![
+            commit(Some(("octocat", "User")), "The Octocat"),
+            commit(Some(("nodelike", "User")), "NØDE"),
+            commit(Some(("nodelike", "User")), "nodelike"),
+            commit(Some(("dependabot[bot]", "Bot")), "dependabot"),
+            commit(None, "someone offline"),
+        ]);
         assert_eq!(
-            credits.contributors,
-            vec![Contributor {
-                login: "nodelike".into(),
-                name: "NØDE".into(),
-                commits: 441,
-                avatar: "https://avatars.githubusercontent.com/u/108696612?v=4".into(),
-            }]
-        );
-    }
-
-    #[test]
-    fn a_release_feed_carries_its_notes() {
-        let notes = notes_from_feed(
-            &json!({ "version": "0.4.0", "notes": "# Sikemux v0.4.0", "commits": 3 }),
-            "0.4.0".into(),
-        );
-        assert_eq!(notes.notes.as_deref(), Some("# Sikemux v0.4.0"));
-        assert_eq!(notes.commits, Some(3));
-    }
-
-    #[test]
-    fn a_feed_without_credits_still_reads() {
-        assert_eq!(
-            from_feed(&json!({ "version": "0.3.5", "notes": "" })),
-            Credits::default()
-        );
-    }
-
-    #[test]
-    fn drops_contributors_and_links_that_do_not_point_at_github() {
-        let credits = from_feed(&json!({
-            "compare": "https://example.com/compare/v1...v2",
-            "contributors": [
-                person("ok-name", "https://avatars.githubusercontent.com/u/1?v=4"),
-                person("evil", "https://example.com/tracker.png"),
-                person("../../settings", "https://avatars.githubusercontent.com/u/2?v=4"),
-                person("-leading", "https://avatars.githubusercontent.com/u/3?v=4"),
-                { "login": "no-avatar" }
+            people,
+            vec![
+                Contributor {
+                    login: "nodelike".into(),
+                    name: "NØDE".into(),
+                    commits: 2,
+                    avatar: "https://avatars.githubusercontent.com/nodelike".into(),
+                },
+                Contributor {
+                    login: "octocat".into(),
+                    name: "The Octocat".into(),
+                    commits: 1,
+                    avatar: "https://avatars.githubusercontent.com/octocat".into(),
+                },
             ]
-        }));
-
-        assert_eq!(credits.compare, None);
-        let logins: Vec<&str> = credits
-            .contributors
-            .iter()
-            .map(|c| c.login.as_str())
-            .collect();
-        assert_eq!(logins, ["ok-name"]);
+        );
     }
 
     #[test]
@@ -327,5 +428,23 @@ mod tests {
         assert_eq!(image_type(b"\x89PNG\r\n\x1a\nrest"), Some("image/png"));
         assert_eq!(image_type(b"\xff\xd8\xff\xe0"), Some("image/jpeg"));
         assert_eq!(image_type(b"<html>not found</html>"), None);
+    }
+
+    // Network check, excluded from the normal suite. Run with
+    // `cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored release_notes_reads_github`.
+    #[test]
+    #[ignore = "requires network access"]
+    fn release_notes_reads_github() {
+        crate::install_tls_crypto();
+        let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let notes = runtime
+            .block_on(release_notes("0.4.0-nightly.10".into()))
+            .expect("notes for a published nightly");
+        assert!(notes.notes.is_some_and(|body| body.contains("nightly")));
+        assert_eq!(notes.commits, Some(8));
+        assert!(notes
+            .contributors
+            .iter()
+            .any(|person| person.login == "nodelike"));
     }
 }

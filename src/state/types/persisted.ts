@@ -15,22 +15,6 @@ import type {
 import type { EditorPaneView } from "./view";
 import type { PersistedWorkbenchItemEnvelope } from "../../workbench/registry";
 
-export interface ReleaseContributor {
-    login: string;
-    name: string;
-    commits: number;
-    avatar: string;
-}
-
-export interface ReleaseNotes {
-    version: string;
-    notes: string | null;
-    date: string | null;
-    commits: number | null;
-    compare: string | null;
-    contributors: ReleaseContributor[];
-}
-
 export type PersistedSession = Session;
 
 /** Safe restart record. Startup commands and runtime evidence are never serialized. */
@@ -95,7 +79,7 @@ export interface PersistedPrefs {
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];
     updateChannel?: "stable" | "nightly";
-    lastReleaseNotes?: ReleaseNotes | null;
+    lastReleaseNotes?: { version: string; notes: string | null; date: string | null } | null;
     recentCommandKeys?: string[];
     /** Non-secret provider launch profiles. Credential values are never part of this shape. */
     providerProfiles?: ProviderProfile[];
