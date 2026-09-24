@@ -42,17 +42,17 @@ fn run() -> i32 {
 }
 
 fn agent_id() -> Result<String, String> {
-    validate_agent_id(&std::env::var("SIKEMUX_BROWSER_AGENT_ID").unwrap_or_default())
+    validate_agent_id(&std::env::var("SIKEMUX_TOOLS_AGENT_ID").unwrap_or_default())
 }
 
 fn validate_agent_id(value: &str) -> Result<String, String> {
     let agent_id = value.trim();
     if agent_id.is_empty() {
-        return Err("Missing SIKEMUX_BROWSER_AGENT_ID; launch this MCP through Sikemux".into());
+        return Err("Missing SIKEMUX_TOOLS_AGENT_ID; launch this MCP through Sikemux".into());
     }
     let allowed = |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-');
     if agent_id.len() > 128 || !agent_id.bytes().all(allowed) {
-        return Err("Invalid SIKEMUX_BROWSER_AGENT_ID".into());
+        return Err("Invalid SIKEMUX_TOOLS_AGENT_ID".into());
     }
     Ok(agent_id.to_owned())
 }
@@ -84,7 +84,7 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
             continue;
         }
         let Ok(message) = serde_json::from_str::<Value>(&line) else {
-            eprintln!("sikemux-browser-mcp: ignoring a line that is not JSON-RPC");
+            eprintln!("sikemux-tools-mcp: ignoring a line that is not JSON-RPC");
             continue;
         };
         let Some(method) = message.get("method").and_then(Value::as_str) else {
@@ -174,7 +174,7 @@ fn initialize(manifest: &Manifest, params: &Value) -> Value {
     json!({
         "protocolVersion": version,
         "capabilities": { "experimental": {}, "tools": { "listChanged": false } },
-        "serverInfo": { "name": "sikemux-browser", "version": env!("CARGO_PKG_VERSION") },
+        "serverInfo": { "name": "sikemux-tools", "version": env!("CARGO_PKG_VERSION") },
         "instructions": manifest.instructions(),
     })
 }

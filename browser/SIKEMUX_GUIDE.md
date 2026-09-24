@@ -14,13 +14,13 @@ tool descriptions leave out is here.
 
 ## Start by inspecting
 
-`sikemux_workspace_inspect` is the entry point. It returns the open project,
+`workspace_inspect` is the entry point. It returns the open project,
 its panes, the tasks configured in `sikemux.json`, the harness runs you already
 started, and an event cursor. Task ids come from there — do not guess one.
 
 ## Running a task
 
-`sikemux_task_start` takes a `taskId` and an `idempotencyKey` you choose.
+`task_start` takes a `taskId` and an `idempotencyKey` you choose.
 
 The key is what makes a retry safe. Reusing a key returns the original
 execution rather than starting a second one, and it keeps doing so after that
@@ -36,11 +36,11 @@ Two things can stop a launch:
   execution.
 
 Task terminals open in the background. To show one to the person, call
-`sikemux_ui_open` with `kind: "terminal"`, the `executionId`, and `focus: true`.
+`ui_open` with `kind: "terminal"`, the `executionId`, and `focus: true`.
 
 ## Reading output
 
-`sikemux_task_read` pages through a task's output by byte cursor.
+`task_read` pages through a task's output by byte cursor.
 
 Start at cursor `0`. Pass the returned `cursor` into the next call. Keep
 reading while `hasMore` is true. Pages are 8 KiB by default; `limit` accepts
@@ -58,11 +58,11 @@ when the app is under pressure. Read output you care about promptly.
 
 ## Waiting for something to happen
 
-`sikemux_events_wait` blocks for up to 30 seconds and returns task output,
+`events_wait` blocks for up to 30 seconds and returns task output,
 task lifecycle, and UI-open events.
 
 **Event cursors are not output cursors.** They are separate sequences. Get an
-event cursor from `sikemux_workspace_inspect`, pass it to `events_wait`, and
+event cursor from `workspace_inspect`, pass it to `events_wait`, and
 pass each returned cursor into the next wait. Passing an output cursor here is
 a mistake.
 
@@ -76,7 +76,7 @@ A wait does not schedule you a future turn. It only holds this call open.
 
 ## Opening things for the person
 
-`sikemux_ui_open` takes a `kind`:
+`ui_open` takes a `kind`:
 
 - `file` — with a `path` inside the project and an optional one-based `line`
 - `diff` — with a `path`
@@ -93,7 +93,7 @@ need to know the server is up, read the task output or navigate to it.
 
 ## Stopping
 
-`sikemux_task_stop` takes an `executionId` and stops that exact execution and
+`task_stop` takes an `executionId` and stops that exact execution and
 its process tree. It does not stop a task started from the command deck.
 
 ## The browser

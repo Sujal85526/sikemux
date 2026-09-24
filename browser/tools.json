@@ -2,7 +2,7 @@
   "comment": "Single source of truth for the agent tool surface. The sidecar compiles these in and serves them over MCP, scripts/generate-agent-tools.mjs emits the Rust method lists, and pnpm agent-tools:check proves every method still has a handler. Edit here, then run pnpm agent-tools:generate.",
   "guide": {
     "file": "SIKEMUX_GUIDE.md",
-    "name": "sikemux_guide",
+    "name": "guide",
     "description": "Read this before your first task launch or browser click: cursors, idempotency, UI opens, and the tab model.",
     "comment": "Served by the sidecar from its own bundle, so it has no harness method."
   },
@@ -195,14 +195,14 @@
       ]
     },
     {
-      "name": "sikemux_workspace_inspect",
+      "name": "workspace_inspect",
       "method": "workspace.inspect",
       "description": "Inspect this agent's open project, panes, configured tasks, runs, and event cursor.",
       "properties": {},
       "required": []
     },
     {
-      "name": "sikemux_task_start",
+      "name": "task_start",
       "method": "task.start",
       "description": "Start a configured project task in a managed terminal.",
       "properties": {
@@ -220,7 +220,7 @@
       ]
     },
     {
-      "name": "sikemux_task_read",
+      "name": "task_read",
       "method": "task.read",
       "description": "Read task status and new terminal output by byte cursor.",
       "properties": {
@@ -242,7 +242,7 @@
       ]
     },
     {
-      "name": "sikemux_task_stop",
+      "name": "task_stop",
       "method": "task.stop",
       "description": "Stop the exact managed task execution and its process tree.",
       "properties": {
@@ -255,7 +255,7 @@
       ]
     },
     {
-      "name": "sikemux_ui_open",
+      "name": "ui_open",
       "method": "ui.open",
       "description": "Open a project file, diff, task terminal, or the configured preview.",
       "properties": {
@@ -286,7 +286,7 @@
       ]
     },
     {
-      "name": "sikemux_events_wait",
+      "name": "events_wait",
       "method": "events.wait",
       "description": "Wait for project task or UI events after an event cursor.",
       "properties": {

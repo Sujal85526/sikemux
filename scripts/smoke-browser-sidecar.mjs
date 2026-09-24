@@ -21,8 +21,8 @@ const EXPECTED_TOOLS = [
   "browser_state",
   "browser_click",
   "browser_screenshot",
-  "sikemux_workspace_inspect",
-  "sikemux_guide",
+  "workspace_inspect",
+  "guide",
 ];
 
 function fakeSikemux(received) {
@@ -82,7 +82,7 @@ async function exercise(sidecar, environment, received) {
       capabilities: {},
       clientInfo: { name: "sikemux-smoke", version: "1" },
     });
-    if (start.serverInfo?.name !== "sikemux-browser")
+    if (start.serverInfo?.name !== "sikemux-tools")
       throw new Error(`unexpected server: ${JSON.stringify(start.serverInfo)}`);
     mcp.notify("notifications/initialized");
 
@@ -95,7 +95,7 @@ async function exercise(sidecar, environment, received) {
     }
 
     const guide = await mcp.request("tools/call", {
-      name: "sikemux_guide",
+      name: "guide",
       arguments: {},
     });
     if (
@@ -154,7 +154,7 @@ export async function smokeBrowserSidecar(sidecar) {
         ...process.env,
         SIKEMUX_CLI_ENDPOINT: endpoint,
         SIKEMUX_PROJECT: directory,
-        SIKEMUX_BROWSER_AGENT_ID: "agent-smoke",
+        SIKEMUX_TOOLS_AGENT_ID: "agent-smoke",
       },
       received,
     );

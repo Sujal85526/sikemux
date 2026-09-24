@@ -67,8 +67,8 @@ fn every_served_tool_comes_from_the_manifest() {
     let names: Vec<&str> = served.iter().map(|tool| field(tool, "name")).collect();
     for expected in [
         "browser_navigate",
-        "sikemux_workspace_inspect",
-        "sikemux_guide",
+        "workspace_inspect",
+        "guide",
     ] {
         assert!(names.contains(&expected), "{expected} is not served");
     }
@@ -99,11 +99,11 @@ fn tools_have_bounded_wait_and_required_idempotency() {
             .clone()
     };
     assert_eq!(
-        tool("sikemux_task_start")["inputSchema"]["required"],
+        tool("task_start")["inputSchema"]["required"],
         json!(["taskId", "idempotencyKey"])
     );
     assert_eq!(
-        tool("sikemux_events_wait")["inputSchema"]["properties"]["timeoutMs"]["maximum"],
+        tool("events_wait")["inputSchema"]["properties"]["timeoutMs"]["maximum"],
         json!(30000)
     );
 }
@@ -284,13 +284,13 @@ fn bad_arguments_are_named_the_way_the_agent_learned_them() {
     );
     assert_eq!(
         complaint(
-            "sikemux_events_wait",
+            "events_wait",
             json!({ "cursor": "a", "timeoutMs": 99999 })
         ),
         "99999 is greater than the maximum of 30000"
     );
     assert_eq!(
-        complaint("sikemux_ui_open", json!({ "kind": "nope" })),
+        complaint("ui_open", json!({ "kind": "nope" })),
         "'nope' is not one of ['file', 'diff', 'terminal', 'preview']"
     );
     assert_eq!(
@@ -355,7 +355,7 @@ fn a_host_is_answered_before_and_after_it_says_it_is_ready() {
     assert_eq!(start["result"]["protocolVersion"], json!("2025-06-18"));
     assert_eq!(
         start["result"]["serverInfo"]["name"],
-        json!("sikemux-browser")
+        json!("sikemux-tools")
     );
     assert_eq!(
         start["result"]["capabilities"],

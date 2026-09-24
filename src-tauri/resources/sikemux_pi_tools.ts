@@ -28,7 +28,7 @@ class McpClient {
     this.child.on("exit", (code, signal) =>
       this.fail(
         new Error(
-          `sikemux-browser exited with ${signal ?? code ?? "unknown status"}`,
+          `sikemux-tools exited with ${signal ?? code ?? "unknown status"}`,
         ),
       ),
     );
@@ -154,12 +154,12 @@ function contentFrom(
 }
 
 export default async function sikemuxBrowser(pi: ExtensionAPI): Promise<void> {
-  const command = process.env.SIKEMUX_BROWSER_MCP_COMMAND;
+  const command = process.env.SIKEMUX_TOOLS_MCP_COMMAND;
   if (!command) return;
   let args: string[];
   try {
     const parsed = JSON.parse(
-      process.env.SIKEMUX_BROWSER_MCP_ARGS ?? "[]",
+      process.env.SIKEMUX_TOOLS_MCP_ARGS ?? "[]",
     ) as unknown;
     if (
       !Array.isArray(parsed) ||
@@ -169,7 +169,7 @@ export default async function sikemuxBrowser(pi: ExtensionAPI): Promise<void> {
     args = parsed;
   } catch (error) {
     console.error(
-      `[sikemux-browser] ${error instanceof Error ? error.message : String(error)}`,
+      `[sikemux-tools] ${error instanceof Error ? error.message : String(error)}`,
     );
     return;
   }
@@ -221,7 +221,7 @@ export default async function sikemuxBrowser(pi: ExtensionAPI): Promise<void> {
           }
           return {
             content,
-            details: { server: "sikemux-browser", tool: name },
+            details: { server: "sikemux-tools", tool: name },
           };
         },
       });
@@ -229,7 +229,7 @@ export default async function sikemuxBrowser(pi: ExtensionAPI): Promise<void> {
   } catch (error) {
     client.stop();
     console.error(
-      `[sikemux-browser] ${error instanceof Error ? error.message : String(error)}`,
+      `[sikemux-tools] ${error instanceof Error ? error.message : String(error)}`,
     );
     return;
   }

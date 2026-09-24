@@ -680,7 +680,7 @@ impl BrowserManager {
     }
 
     pub fn mcp_launch(&self, app: &AppHandle) -> AppResult<BrowserMcpLaunch> {
-        if let Some(command) = std::env::var_os("SIKEMUX_BROWSER_MCP_EXECUTABLE") {
+        if let Some(command) = std::env::var_os("SIKEMUX_TOOLS_MCP_EXECUTABLE") {
             return Ok(BrowserMcpLaunch {
                 command: std::path::PathBuf::from(command)
                     .to_string_lossy()
@@ -689,9 +689,9 @@ impl BrowserManager {
             });
         }
         let executable_name = if cfg!(windows) {
-            "sikemux-browser-mcp.exe"
+            "sikemux-tools-mcp.exe"
         } else {
-            "sikemux-browser-mcp"
+            "sikemux-tools-mcp"
         };
         if let Ok(current) = std::env::current_exe() {
             if let Some(parent) = current.parent() {
