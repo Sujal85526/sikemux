@@ -16,6 +16,8 @@ const SETTLE: Duration = Duration::from_millis(250);
 const MAX_WAIT_MS: u64 = 30_000;
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_SCRIPT_RESULT: usize = 100_000;
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_UPLOAD_FILES: usize = 20;
 const DRAG_STEPS: u32 = 12;
 const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
 
@@ -132,6 +134,49 @@ async fn run(
             } else {
                 "clicked"
             });
+            settle(&manager, agent_id, &tab_id).await;
+            merge(result, state(&manager, agent_id).await?)
+        }
+        "browser.upload" => {
+            let paths = params
+                .get("paths")
+                .and_then(Value::as_array)
+                .ok_or("paths is required")?
+                .iter()
+                .map(|path| {
+                    let path =
+                        std::path::PathBuf::from(path.as_str().ok_or("paths must be strings")?);
+                    if !path.is_absolute() {
+                        return Err(format!("{} is not an absolute path", path.display()));
+                    }
+                    if !path.is_file() {
+                        return Err(format!("{} is not a file", path.display()));
+                    }
+                    Ok(path)
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            if paths.is_empty() || paths.len() > MAX_UPLOAD_FILES {
+                return Err(format!("pass between 1 and {MAX_UPLOAD_FILES} files"));
+            }
+            let (tab_id, view) = active(&manager, agent_id)?;
+            let (x, y, mut result) = target(&view, params, "index", "x", "y").await?;
+            let names: Vec<String> = paths
+                .iter()
+                .filter_map(|path| path.file_name())
+                .map(|name| name.to_string_lossy().into_owned())
+                .collect();
+            manager.offer_upload(&tab_id, paths);
+            native::mouse(&view, Mouse::Down, x, y, 1).await?;
+            native::mouse(&view, Mouse::Up, x, y, 1).await?;
+            let started = Instant::now();
+            while manager.upload_pending(&tab_id) {
+                if started.elapsed() >= UPLOAD_TIMEOUT {
+                    manager.take_upload(&tab_id);
+                    return Err("that did not open a file chooser; pass the number of a file input, or of the button that opens one".into());
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            result["uploaded"] = json!(names);
             settle(&manager, agent_id, &tab_id).await;
             merge(result, state(&manager, agent_id).await?)
         }

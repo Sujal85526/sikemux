@@ -74,19 +74,27 @@ fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
 /// Take over the tab's UI delegate so page dialogs get a sheet, watch where the
 /// page says it is, and remember the view so shortcuts can tell which tab has
 /// focus. `moved` hears the new address and whether history can go either way;
-/// `dialog` hears a page dialog open and close.
+/// `dialog` hears a page dialog open and close; `upload` hands over files the
+/// agent picked for the next file chooser, which then never shows.
 pub fn adopt(
     pointer: *mut c_void,
     agent_id: String,
     tab_id: String,
     moved: impl Fn(String, bool, bool) + 'static,
     dialog: impl Fn(Option<PageDialog>) + 'static,
+    upload: impl Fn() -> Option<Vec<std::path::PathBuf>> + 'static,
 ) {
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
         return;
     };
     let inner = unsafe { webview.UIDelegate() };
-    let delegate = TabUiDelegate::new(mtm, inner, tab_id.clone(), Rc::new(dialog));
+    let delegate = TabUiDelegate::new(
+        mtm,
+        inner,
+        tab_id.clone(),
+        Rc::new(dialog),
+        Box::new(upload),
+    );
     let address_observer = AddressObserver::new(mtm, Box::new(moved));
     unsafe {
         webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate)));
@@ -301,6 +309,7 @@ struct TabUiDelegateIvars {
     inner: Option<Retained<ProtocolObject<dyn WKUIDelegate>>>,
     tab_id: String,
     dialog: Rc<dyn Fn(Option<PageDialog>)>,
+    upload: Box<dyn Fn() -> Option<Vec<std::path::PathBuf>>>,
 }
 
 define_class!(
@@ -406,6 +415,22 @@ define_class!(
                 dyn Fn(*const objc2_foundation::NSArray<objc2_foundation::NSURL>),
             >,
         ) {
+            if let Some(mut paths) = (self.ivars().upload)() {
+                if !parameters.allowsMultipleSelection() {
+                    paths.truncate(1);
+                }
+                let urls: Vec<Retained<objc2_foundation::NSURL>> = paths
+                    .iter()
+                    .map(|path| {
+                        objc2_foundation::NSURL::fileURLWithPath(&NSString::from_str(
+                            &path.to_string_lossy(),
+                        ))
+                    })
+                    .collect();
+                let chosen = objc2_foundation::NSArray::from_retained_slice(&urls);
+                handler.call((Retained::as_ptr(&chosen),));
+                return;
+            }
             match &self.ivars().inner {
                 Some(inner) => {
                     let _: () = msg_send![
@@ -448,11 +473,13 @@ impl TabUiDelegate {
         inner: Option<Retained<ProtocolObject<dyn WKUIDelegate>>>,
         tab_id: String,
         dialog: Rc<dyn Fn(Option<PageDialog>)>,
+        upload: Box<dyn Fn() -> Option<Vec<std::path::PathBuf>>>,
     ) -> Retained<Self> {
         let delegate = mtm.alloc::<TabUiDelegate>().set_ivars(TabUiDelegateIvars {
             inner,
             tab_id,
             dialog,
+            upload,
         });
         unsafe { msg_send![super(delegate), init] }
     }

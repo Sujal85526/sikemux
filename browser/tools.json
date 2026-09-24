@@ -126,6 +126,38 @@
       "required": []
     },
     {
+      "name": "browser_upload",
+      "method": "browser.upload",
+      "description": "Give files to a file input, as if picked in the chooser its number or x,y opens.",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 1,
+          "maxItems": 20
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "x": {
+          "type": "number",
+          "minimum": 0
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "paths"
+      ]
+    },
+    {
       "name": "browser_dialog",
       "method": "browser.dialog",
       "description": "Answer the page's open alert, confirm or prompt.",

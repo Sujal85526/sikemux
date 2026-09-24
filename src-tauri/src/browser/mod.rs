@@ -242,6 +242,7 @@ pub struct BrowserManager {
     downloads: Mutex<HashMap<(String, String), PathBuf>>,
     icons: Mutex<favicon::IconCache>,
     dialogs: Mutex<HashMap<String, PageDialog>>,
+    uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
 }
 
 impl BrowserManager {
@@ -298,6 +299,7 @@ impl BrowserManager {
             let _ = webview.with_webview(move |platform| {
                 let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
                 let (dialog_app, dialog_tab) = (app_handle.clone(), tab.clone());
+                let (upload_app, upload_tab) = (app_handle.clone(), tab.clone());
                 macos::adopt(
                     platform.inner(),
                     agent,
@@ -317,6 +319,10 @@ impl BrowserManager {
                             Some(dialog) => dialogs.insert(dialog_tab.clone(), dialog),
                             None => dialogs.remove(&dialog_tab),
                         };
+                    },
+                    move || {
+                        let manager = upload_app.state::<BrowserManager>();
+                        manager.take_upload(&upload_tab)
                     },
                 );
             });
@@ -461,6 +467,26 @@ impl BrowserManager {
 
     pub fn dialog(&self, tab_id: &str) -> Option<PageDialog> {
         self.dialogs_lock().get(tab_id).cloned()
+    }
+
+    fn uploads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<PathBuf>>> {
+        self.uploads
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Files for the tab's next file chooser, answered in place of the person.
+    pub fn offer_upload(&self, tab_id: &str, paths: Vec<PathBuf>) {
+        self.uploads_lock().insert(tab_id.to_owned(), paths);
+    }
+
+    pub fn upload_pending(&self, tab_id: &str) -> bool {
+        self.uploads_lock().contains_key(tab_id)
+    }
+
+    /// `None` once the chooser took the files or the offer was withdrawn.
+    pub fn take_upload(&self, tab_id: &str) -> Option<Vec<PathBuf>> {
+        self.uploads_lock().remove(tab_id)
     }
 
     fn downloads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), PathBuf>> {

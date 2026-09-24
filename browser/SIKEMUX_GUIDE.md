@@ -144,6 +144,11 @@ a single character. Hold modifiers with `+`, as in `Meta+a` to select all or
 see a real pointer; items marked draggable get the page's own drag and drop
 events.
 
+`browser_upload` attaches files the way a person picking them would. Pass
+absolute `paths` and the number (or `x`, `y`) of the file input or of the
+button that opens its chooser. The chooser never shows; the page gets the
+files and its change events. Only one file is given when the input takes one.
+
 `browser_dialog` answers an alert, confirm or prompt. Page state reports an
 open one under `dialog`, and until it is answered the page is frozen: every
 other browser tool refuses rather than hang. `accept: true` presses OK and
