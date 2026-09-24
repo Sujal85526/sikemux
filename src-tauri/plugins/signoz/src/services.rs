@@ -5,23 +5,25 @@ use serde_json::{json, Value};
 
 use crate::client;
 use crate::error::SignozResult;
-use crate::query::{self, quote};
+use crate::filter::Scope;
+use crate::query;
 
-const MAX_SERVICES: u32 = 200;
+const MAX_ROWS: u32 = 500;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceQuery {
-    pub minutes: Option<u32>,
-    /// Only these services, when given.
-    #[serde(default)]
-    pub services: Vec<String>,
+    /// Narrows by environment and window. A service or filter here would
+    /// hide the very rows the list is for, so those are ignored.
+    #[serde(flatten)]
+    pub scope: Scope,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceHealth {
     pub service: String,
+    pub environment: Option<String>,
     pub calls: u64,
     pub errors: u64,
     pub error_rate: f64,
@@ -29,20 +31,15 @@ pub struct ServiceHealth {
 }
 
 /// Counted from entry spans rather than SigNoz's service map, which leaves out
-/// services that still send traces.
+/// services that still send traces. One row per service in each environment,
+/// since the same service often runs in several.
 pub async fn health(data_dir: &Path, request: ServiceQuery) -> SignozResult<Vec<ServiceHealth>> {
-    let only: Vec<String> = request
-        .services
-        .iter()
-        .map(|service| quote(service))
-        .collect();
+    let scope = Scope {
+        environment: request.scope.environment.clone(),
+        ..Scope::default()
+    };
     let expression = query::all_of(
-        [
-            Some("isRoot = true OR isEntryPoint = true".to_string()),
-            (!only.is_empty()).then(|| format!("service.name IN ({})", only.join(", "))),
-        ]
-        .into_iter()
-        .flatten(),
+        std::iter::once("isRoot = true OR isEntryPoint = true".to_string()).chain(scope.clauses()?),
     );
     let spec = json!({
         "signal": "traces",
@@ -51,15 +48,18 @@ pub async fn health(data_dir: &Path, request: ServiceQuery) -> SignozResult<Vec<
             { "expression": "countIf(hasError = true)" },
             { "expression": "p99(duration_nano)" },
         ],
-        "groupBy": [{ "name": "service.name", "fieldContext": "resource" }],
+        "groupBy": [
+            { "name": "service.name", "fieldContext": "resource" },
+            { "name": "deployment.environment", "fieldContext": "resource" },
+        ],
         "order": [{ "key": { "name": "count()" }, "direction": "desc" }],
-        "limit": MAX_SERVICES,
+        "limit": MAX_ROWS,
     });
     let result = client::query_range(
         data_dir,
         &query::builder(
             "scalar",
-            query::window(request.minutes),
+            request.scope.window(),
             query::with_filter(spec, expression),
         ),
     )
@@ -81,10 +81,17 @@ fn parse(result: &Value) -> Vec<ServiceHealth> {
         .filter_map(|row| {
             let row = row.as_array()?;
             let service = row.first()?.as_str()?.to_string();
-            let calls = number(row.get(1)).max(0.0) as u64;
-            let errors = number(row.get(2)).max(0.0) as u64;
+            let environment = row
+                .get(1)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|environment| !environment.is_empty())
+                .map(str::to_string);
+            let calls = number(row.get(2)).max(0.0) as u64;
+            let errors = number(row.get(3)).max(0.0) as u64;
             Some(ServiceHealth {
                 service,
+                environment,
                 calls,
                 errors,
                 error_rate: if calls == 0 {
@@ -92,7 +99,7 @@ fn parse(result: &Value) -> Vec<ServiceHealth> {
                 } else {
                     errors as f64 / calls as f64
                 },
-                p99_ms: number(row.get(3)) / 1_000_000.0,
+                p99_ms: number(row.get(4)) / 1_000_000.0,
             })
         })
         .collect()
@@ -103,15 +110,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_the_scalar_rows_signoz_returns() {
-        let result =
-            json!({ "data": [["reel-worker", 13861, 1, 1567176.99], ["idle", 0, 0, 0], ["bad"]] });
+    fn reads_one_row_per_service_and_environment() {
+        let result = json!({ "data": [
+            ["reel-worker", "production", 9066, 1, 1567176.99],
+            ["reel-worker", "dev", 4874, 0, 0],
+            ["no-env", "", 3, 0, 1000000],
+            ["bad"],
+        ] });
         let health = parse(&result);
-        assert_eq!(health.len(), 3);
-        assert_eq!(health[0].service, "reel-worker");
+        assert_eq!(health.len(), 4);
+        assert_eq!(health[0].environment.as_deref(), Some("production"));
         assert!((health[0].p99_ms - 1.567_176_99).abs() < 1e-9);
-        assert!((health[0].error_rate - 1.0 / 13861.0).abs() < 1e-12);
+        assert!((health[0].error_rate - 1.0 / 9066.0).abs() < 1e-12);
         assert_eq!(health[1].error_rate, 0.0);
-        assert_eq!(health[2].calls, 0);
+        assert_eq!(health[2].environment, None);
+        assert_eq!(health[3].calls, 0);
     }
 }

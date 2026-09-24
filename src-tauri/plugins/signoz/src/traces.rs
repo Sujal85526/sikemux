@@ -6,10 +6,140 @@ use serde_json::{json, Value};
 
 use crate::client;
 use crate::error::{SignozError, SignozResult};
+use crate::filter::Scope;
 use crate::query::{self, quote};
 
 const MAX_SPANS: u32 = 5_000;
 const DEFAULT_LOOKBACK_MINUTES: u32 = 24 * 60;
+const DEFAULT_TRACE_LIMIT: u32 = 100;
+const MAX_TRACE_LIMIT: u32 = 500;
+
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum TraceOrder {
+    #[default]
+    Slowest,
+    Recent,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceSearch {
+    #[serde(flatten)]
+    pub scope: Scope,
+    #[serde(default)]
+    pub errors_only: bool,
+    pub min_duration_ms: Option<f64>,
+    #[serde(default)]
+    pub order: TraceOrder,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceSummary {
+    pub trace_id: String,
+    pub timestamp: String,
+    pub service: String,
+    pub name: String,
+    pub duration_ms: f64,
+    pub error: bool,
+    pub status_code: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TracePage {
+    pub traces: Vec<TraceSummary>,
+    pub next_offset: Option<u32>,
+}
+
+fn search_expression(search: &TraceSearch) -> SignozResult<Option<String>> {
+    let own = [
+        Some("isRoot = true".to_string()),
+        search.errors_only.then(|| "hasError = true".to_string()),
+        search
+            .min_duration_ms
+            .filter(|ms| ms.is_finite() && *ms > 0.0)
+            .map(|ms| format!("duration_nano >= {}", (ms * 1_000_000.0) as u64)),
+    ];
+    Ok(query::all_of(
+        own.into_iter().flatten().chain(search.scope.clauses()?),
+    ))
+}
+
+fn summary_of(row: &Value) -> Option<TraceSummary> {
+    let data = row.get("data")?;
+    Some(TraceSummary {
+        trace_id: text(data, "trace_id")?,
+        timestamp: text(row, "timestamp")
+            .or_else(|| text(data, "timestamp"))
+            .unwrap_or_default(),
+        service: text(data, "service.name").unwrap_or_default(),
+        name: text(data, "name").unwrap_or_default(),
+        duration_ms: data
+            .get("duration_nano")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+            / 1_000_000.0,
+        error: data
+            .get("has_error")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        status_code: text(data, "response_status_code"),
+    })
+}
+
+/// A trace per row, read from its root span: where it started and how long the whole of it took.
+pub async fn search(data_dir: &Path, search: TraceSearch) -> SignozResult<TracePage> {
+    let limit = search
+        .limit
+        .unwrap_or(DEFAULT_TRACE_LIMIT)
+        .clamp(1, MAX_TRACE_LIMIT);
+    let offset = search.offset.unwrap_or(0);
+    let fields: Vec<Value> = [
+        "trace_id",
+        "name",
+        "duration_nano",
+        "has_error",
+        "response_status_code",
+        "timestamp",
+    ]
+    .iter()
+    .map(|name| json!({ "name": name }))
+    .chain(std::iter::once(
+        json!({ "name": "service.name", "fieldContext": "resource" }),
+    ))
+    .collect();
+    let order_by = match search.order {
+        TraceOrder::Slowest => "duration_nano",
+        TraceOrder::Recent => "timestamp",
+    };
+    let spec = json!({
+        "signal": "traces",
+        "selectFields": fields,
+        "order": [{ "key": { "name": order_by }, "direction": "desc" }],
+        "limit": limit,
+        "offset": offset,
+    });
+    let request = query::builder(
+        "raw",
+        search.scope.window(),
+        query::with_filter(spec, search_expression(&search)?),
+    );
+    let result = client::query_range(data_dir, &request).await?;
+    let traces: Vec<TraceSummary> = result
+        .get("rows")
+        .and_then(Value::as_array)
+        .map(|rows| rows.iter().filter_map(summary_of).collect())
+        .unwrap_or_default();
+    let next_offset = (traces.len() as u32 == limit).then(|| offset.saturating_add(limit));
+    Ok(TracePage {
+        traces,
+        next_offset,
+    })
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

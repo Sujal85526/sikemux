@@ -11,6 +11,8 @@ mod auth;
 mod client;
 mod config;
 mod error;
+mod fields;
+mod filter;
 mod logs;
 mod query;
 mod services;
@@ -142,6 +144,9 @@ impl Plugin for Signoz {
                 "searchLogs" => answer(logs::search(data_dir, params(input)?)).await,
                 "services" => answer(services::health(data_dir, params(input)?)).await,
                 "trace" => answer(traces::trace(data_dir, params(input)?)).await,
+                "searchTraces" => answer(traces::search(data_dir, params(input)?)).await,
+                "fieldKeys" => answer(fields::keys(data_dir, params(input)?)).await,
+                "fieldValues" => answer(fields::values(data_dir, params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -202,6 +207,68 @@ mod live {
             .as_str()
             .expect("a service")
             .to_string();
+        assert!(
+            services
+                .as_array()
+                .expect("rows")
+                .iter()
+                .any(|row| row["environment"].is_string()),
+            "services carry their environment"
+        );
+
+        let keys = plugin
+            .call(
+                ctx,
+                "fieldKeys",
+                json!({ "signal": "logs", "search": "sta" }),
+            )
+            .await
+            .expect("field keys");
+        assert!(keys.as_array().is_some_and(|keys| !keys.is_empty()));
+        let names = plugin
+            .call(
+                ctx,
+                "fieldValues",
+                json!({ "signal": "logs", "name": "service.name" }),
+            )
+            .await
+            .expect("field values");
+        assert!(names.as_array().is_some_and(|names| !names.is_empty()));
+
+        let traces = plugin
+            .call(
+                ctx,
+                "searchTraces",
+                json!({ "minutes": 15, "limit": 3, "order": "slowest" }),
+            )
+            .await
+            .expect("traces");
+        let slowest = traces["traces"].as_array().expect("trace rows");
+        assert!(slowest.len() <= 3);
+        if slowest.len() > 1 {
+            assert!(slowest[0]["durationMs"].as_f64() >= slowest[1]["durationMs"].as_f64());
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_millis() as u64;
+        let filtered = plugin
+            .call(
+                ctx,
+                "searchLogs",
+                json!({
+                    "filters": [{ "key": "status", "op": "equals", "value": "503" }, { "key": "path", "op": "exists" }],
+                    "start": now - 60 * 60_000,
+                    "end": now,
+                    "limit": 5,
+                }),
+            )
+            .await
+            .expect("filtered logs");
+        for line in filtered["lines"].as_array().expect("lines") {
+            assert_eq!(line["attributes"]["status"], json!(503), "{line}");
+        }
         let page = plugin
             .call(
                 ctx,

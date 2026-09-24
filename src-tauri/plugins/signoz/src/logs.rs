@@ -8,6 +8,7 @@ use sikemux_plugin_api::{reply, PluginResult, StreamSink};
 
 use crate::client;
 use crate::error::SignozResult;
+use crate::filter::Scope;
 use crate::query::{self, all_of, quote};
 
 const DEFAULT_LIMIT: u32 = 100;
@@ -20,14 +21,12 @@ const TAIL_REMEMBERED_IDS: usize = 4_000;
 #[derive(Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct LogSearch {
+    #[serde(flatten)]
+    pub scope: Scope,
     pub text: Option<String>,
-    pub service: Option<String>,
     #[serde(default)]
     pub severities: Vec<String>,
     pub trace_id: Option<String>,
-    /// A filter in SigNoz's own query syntax, for anything the fields above cannot say.
-    pub expression: Option<String>,
-    pub minutes: Option<u32>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
@@ -67,25 +66,21 @@ fn present(value: &Option<String>) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-fn expression(search: &LogSearch) -> Option<String> {
+fn expression(search: &LogSearch) -> SignozResult<Option<String>> {
     let severities: Vec<String> = search
         .severities
         .iter()
         .filter(|s| !s.trim().is_empty())
         .map(|s| quote(s.trim()))
         .collect();
-    all_of(
-        [
-            present(&search.text).map(|text| format!("body CONTAINS {}", quote(text))),
-            present(&search.service).map(|service| format!("service.name = {}", quote(service))),
-            (!severities.is_empty())
-                .then(|| format!("severity_text IN ({})", severities.join(", "))),
-            present(&search.trace_id).map(|trace| format!("trace_id = {}", quote(trace))),
-            present(&search.expression).map(str::to_string),
-        ]
-        .into_iter()
-        .flatten(),
-    )
+    let own = [
+        present(&search.text).map(|text| format!("body CONTAINS {}", quote(text))),
+        (!severities.is_empty()).then(|| format!("severity_text IN ({})", severities.join(", "))),
+        present(&search.trace_id).map(|trace| format!("trace_id = {}", quote(trace))),
+    ];
+    Ok(all_of(
+        own.into_iter().flatten().chain(search.scope.clauses()?),
+    ))
 }
 
 fn text_of(value: Option<&Value>) -> Option<String> {
@@ -135,7 +130,7 @@ fn list_query(
     limit: u32,
     offset: u32,
     newest_first: bool,
-) -> Value {
+) -> SignozResult<Value> {
     let direction = if newest_first { "desc" } else { "asc" };
     let spec = json!({
         "signal": "logs",
@@ -146,7 +141,11 @@ fn list_query(
             { "key": { "name": "id" }, "direction": direction },
         ],
     });
-    query::builder("raw", window, query::with_filter(spec, expression(search)))
+    Ok(query::builder(
+        "raw",
+        window,
+        query::with_filter(spec, expression(search)?),
+    ))
 }
 
 fn lines_of(result: &Value) -> Vec<LogLine> {
@@ -160,11 +159,8 @@ fn lines_of(result: &Value) -> Vec<LogLine> {
 pub async fn search(data_dir: &Path, search: LogSearch) -> SignozResult<LogPage> {
     let limit = search.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let offset = search.offset.unwrap_or(0);
-    let result = client::query_range(
-        data_dir,
-        &list_query(&search, query::window(search.minutes), limit, offset, true),
-    )
-    .await?;
+    let request = list_query(&search, search.scope.window(), limit, offset, true)?;
+    let result = client::query_range(data_dir, &request).await?;
     let lines = lines_of(&result);
     let next_offset = (lines.len() as u32 == limit).then(|| offset.saturating_add(limit));
     Ok(LogPage { lines, next_offset })
@@ -213,16 +209,16 @@ pub async fn tail(data_dir: &Path, mut search: LogSearch, sink: StreamSink) -> P
     let backlog = search.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     search.offset = None;
     let mut seen = Seen::new();
-    let mut since = query::window(search.minutes.or(Some(15))).0;
+    let mut since = query::window(search.scope.minutes.or(Some(15))).0;
     let mut first = true;
     let mut failures = 0u32;
     loop {
         let window = (since, query::now_ms());
         let outcome = async {
             let request = if first {
-                list_query(&search, window, backlog, 0, true)
+                list_query(&search, window, backlog, 0, true)?
             } else {
-                list_query(&search, window, MAX_LIMIT, 0, false)
+                list_query(&search, window, MAX_LIMIT, 0, false)?
             };
             client::query_range(data_dir, &request).await
         }
@@ -294,16 +290,19 @@ mod tests {
     #[test]
     fn builds_one_filter_from_the_fields_given() {
         let search = LogSearch {
+            scope: Scope {
+                service: Some("api".into()),
+                ..Scope::default()
+            },
             text: Some("can't".into()),
-            service: Some("api".into()),
             severities: vec!["ERROR".into(), "FATAL".into()],
             ..LogSearch::default()
         };
         assert_eq!(
-            expression(&search).unwrap(),
-            "(body CONTAINS 'can\\'t') AND (service.name = 'api') AND (severity_text IN ('ERROR', 'FATAL'))"
+            expression(&search).unwrap().unwrap(),
+            "(body CONTAINS 'can\\'t') AND (severity_text IN ('ERROR', 'FATAL')) AND (service.name = 'api')"
         );
-        assert_eq!(expression(&LogSearch::default()), None);
+        assert_eq!(expression(&LogSearch::default()).unwrap(), None);
     }
 
     #[test]
