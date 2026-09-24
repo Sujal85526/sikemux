@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { activityApi, type ActivityDay, type ActivityShare, type ActivitySummary, type ActivityTotals } from "../api/activity";
 import { calendarColumns, dayDate, levelOf, levelThresholds, localDay, streaks } from "../lib/activityCalendar";
 import { basename, prettyPath } from "../lib/paths";
@@ -11,10 +11,10 @@ import "../styles/activity.css";
 type Metric = "agentMs" | "sessions" | "tokens" | "commits";
 
 const METRICS: { id: Metric; label: string }[] = [
-    { id: "agentMs", label: "Agent time" },
-    { id: "sessions", label: "Sessions" },
     { id: "tokens", label: "Tokens" },
     { id: "commits", label: "Commits" },
+    { id: "agentMs", label: "Agent time" },
+    { id: "sessions", label: "Sessions" },
 ];
 
 const AGENT_NAMES: Record<AgentType, string> = {
@@ -141,7 +141,7 @@ function Stat({ label, value, detail, title }: { label: string; value: string; d
 }
 
 function Calendar({ days, loaded }: { days: ActivityDay[]; loaded: boolean }) {
-    const [metric, setMetric] = useState<Metric>("agentMs");
+    const [metric, setMetric] = useState<Metric>(METRICS[0].id);
     const [hovered, setHovered] = useState<number | null>(null);
     const today = localDay();
     const columns = useMemo(() => calendarColumns(today), [today]);
@@ -223,9 +223,6 @@ function ShareList({ shares, kind }: { shares?: ActivityShare[]; kind: "agent" |
     const home = useStore((state) => state.home);
     if (!shares) return null;
     if (shares.length === 0) return <div className="settings-empty">Nothing recorded yet.</div>;
-    const byTime = shares.some((share) => share.agentMs > 0);
-    const weight = (share: ActivityShare) => (byTime ? share.agentMs : share.sessions + share.commits);
-    const most = Math.max(1, ...shares.map(weight));
     return (
         <div className="activity-shares">
             {shares.map((share) => {
@@ -236,9 +233,9 @@ function ShareList({ shares, kind }: { shares?: ActivityShare[]; kind: "agent" |
                     share.commits > 0 && plural(share.commits, "commit"),
                 ].filter(Boolean);
                 return (
-                    <div key={share.name} className="activity-share" style={{ "--share": weight(share) / most } as CSSProperties}>
+                    <div key={share.name} className="activity-share">
                         <span className={`activity-share-mark${agent ? ` agent-glyph ${agent}` : ""}`} aria-hidden="true">
-                            {agent ? <AgentIcon type={agent} size={14} /> : <IconFolder size={13} />}
+                            {agent ? <AgentIcon type={agent} size={20} /> : <IconFolder size={16} />}
                         </span>
                         <span className="activity-share-name">
                             <span className="activity-share-title">{agent ? (AGENT_NAMES[agent] ?? share.name) : basename(share.name)}</span>
@@ -246,7 +243,6 @@ function ShareList({ shares, kind }: { shares?: ActivityShare[]; kind: "agent" |
                         </span>
                         <span className="activity-share-details">{details.join(" · ")}</span>
                         <span className="activity-share-value">{share.agentMs > 0 ? duration(share.agentMs) : "—"}</span>
-                        <span className="activity-share-bar" aria-hidden="true" />
                     </div>
                 );
             })}
