@@ -1156,6 +1156,7 @@ function ChatComposer({
         if (!visible) return;
         const held = document.activeElement;
         if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
+        if (held?.closest(".chat-picker-menu")) return;
         const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
         return () => window.cancelAnimationFrame(frame);
     }, [connection, paneRef, visible]);

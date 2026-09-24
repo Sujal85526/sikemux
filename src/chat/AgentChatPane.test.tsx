@@ -230,6 +230,20 @@ describe("AgentChatPane", () => {
         await waitFor(() => expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument());
     });
 
+    it("leaves focus in an open model menu when the session state changes", async () => {
+        const props = { agent, cwd: "/repo", active: true, visible: true, onBusyChange: () => {} };
+        const { rerender } = render(<AgentChatPane {...props} />);
+        await waitFor(() => expect(screen.getByRole("button", { name: "Model" })).toBeEnabled());
+        fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        const search = screen.getByRole("combobox", { name: "Search model" });
+        await waitFor(() => expect(search).toHaveFocus());
+        rerender(<AgentChatPane {...props} visible={false} />);
+        rerender(<AgentChatPane {...props} />);
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        expect(search).toHaveFocus();
+        expect(screen.getByRole("group", { name: "Agent" })).toBeInTheDocument();
+    });
+
     it("changes the model live and persists only the confirmed configuration", async () => {
         const configs = (model: string) => [
             {
