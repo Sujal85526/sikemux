@@ -451,9 +451,9 @@ function openSingletonPaneSession(kind: "aws" | PluginKind): void {
             d.zoomedPaneId = null;
             return;
         }
-        const name = kind === "aws" ? kind : (pluginSurface(kind)?.title ?? kind);
-        const win = makeWindow("", name, { kind, role: kind, fixed: true });
-        attachSession(d as unknown as StoreState, makeSession(kind, name, "", win.id), [win]);
+        const title = kind === "aws" ? "AWS" : (pluginSurface(kind)?.title ?? kind);
+        const win = makeWindow("", kind === "aws" ? kind : title, { kind, role: kind, fixed: true });
+        attachSession(d as unknown as StoreState, makeSession(kind, title, "", win.id), [win]);
     });
 }
 
@@ -490,7 +490,7 @@ export function openBrunoSession(collectionPath?: string): void {
         }
         const path = collectionPath ?? d.brunoWorkspaces[0] ?? "";
         const win = makeWindow(path, "bruno", { kind: "bruno", role: "bruno", fixed: true });
-        const session = makeSession("bruno", "bruno", path, win.id);
+        const session = makeSession("bruno", "Bruno", path, win.id);
         session.bruno = { collectionPath: path, selectedEnvs: {} };
         attachSession(d as unknown as StoreState, session, [win]);
     });

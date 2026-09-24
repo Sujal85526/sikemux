@@ -770,7 +770,10 @@ describe("frontend persistence", () => {
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
     });
 
-    it("folds v11 Bruno sessions, one per workspace, into a single session named bruno", () => {
+    it("folds v11 Bruno sessions, one per workspace, into a single session named Bruno, and names AWS", () => {
+        cmd.openAwsSession();
+        const aws = getState().sessions[getState().activeSessionId];
+        const awsWindow = getState().windows[aws.activeWindowId];
         cmd.openBrunoSession("/ws/api-docs");
         const first = getState().sessions[getState().activeSessionId];
         const firstWindow = getState().windows[first.activeWindowId];
@@ -778,9 +781,9 @@ describe("frontend persistence", () => {
         applyHydrate(
             JSON.stringify({
                 version: 11,
-                sessions: [{ ...first, name: "api-docs" }, second],
-                windowsBySession: { [first.id]: [firstWindow], [second.id]: [{ ...firstWindow, id: "w-bruno-2" }] },
-                sessionOrder: [first.id, second.id],
+                sessions: [{ ...aws, name: "aws" }, { ...first, name: "api-docs" }, second],
+                windowsBySession: { [aws.id]: [awsWindow], [first.id]: [firstWindow], [second.id]: [{ ...firstWindow, id: "w-bruno-2" }] },
+                sessionOrder: [aws.id, first.id, second.id],
                 activeSessionId: second.id,
                 prefs: { brunoWorkspaces: ["/ws/old"] },
                 itemStates: {},
@@ -788,7 +791,8 @@ describe("frontend persistence", () => {
         );
 
         const st = getState();
-        expect(Object.values(st.sessions).filter((session) => session.kind === "bruno").map((session) => session.name)).toEqual(["bruno"]);
+        expect(Object.values(st.sessions).filter((session) => session.kind === "bruno").map((session) => session.name)).toEqual(["Bruno"]);
+        expect(st.sessions[aws.id].name).toBe("AWS");
         expect(st.activeSessionId).toBe(first.id);
         expect(st.brunoWorkspaces).toEqual(expect.arrayContaining(["/ws/old", "/ws/api-docs", "/ws/billing"]));
     });

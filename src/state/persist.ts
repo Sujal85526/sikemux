@@ -591,11 +591,13 @@ function moveRundeckSettings(decoded: Record<string, unknown>): void {
 
 /**
  * Before v12 each Bruno workspace was its own session, named after its folder.
- * Now one session named bruno switches between them, so the first stays, the
- * rest close, and every folder stays on the list of workspaces.
+ * Now one session named Bruno switches between them, so the first stays, the
+ * rest close, and every folder stays on the list of workspaces. AWS gets its
+ * proper name at the same time.
  */
 function mergeBrunoSessions(decoded: Record<string, unknown>): void {
     const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
+    for (const row of sessions) if (isRecord(row) && row.kind === "aws") row.name = "AWS";
     const [kept, ...extra] = sessions.filter((row): row is Record<string, unknown> => isRecord(row) && row.kind === "bruno");
     if (!kept) return;
     const folders = [kept, ...extra].flatMap((row) => {
@@ -605,7 +607,7 @@ function mergeBrunoSessions(decoded: Record<string, unknown>): void {
     const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
     const saved = Array.isArray(prefs.brunoWorkspaces) ? prefs.brunoWorkspaces : [];
     decoded.prefs = { ...prefs, brunoWorkspaces: [...saved, ...folders] };
-    kept.name = "bruno";
+    kept.name = "Bruno";
 
     const closed = new Set(extra.map((row) => row.id));
     decoded.sessions = sessions.filter((row) => !isRecord(row) || !closed.has(row.id));
