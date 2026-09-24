@@ -71,7 +71,7 @@ fail() {
 # Every potentially failing prerequisite is checked before any version file is
 # changed. A failed build later also restores the original version metadata.
 [[ "$(uname -s)" == "Darwin" ]] || fail "macOS is required"
-for command in git node pnpm python3 cargo rustc; do
+for command in git gh node pnpm python3 cargo rustc; do
   command -v "$command" >/dev/null || fail "missing required command: $command"
 done
 for command in /usr/bin/codesign /usr/bin/hdiutil /usr/bin/lipo /usr/bin/plutil /usr/bin/security /usr/bin/tar; do
@@ -107,7 +107,7 @@ CARGO_VER="$(node -e '
 ' <<<"$CARGO_METADATA")" || fail "could not read the Cargo package version"
 [[ "$PKG_VER" == "$TAURI_VER" && "$PKG_VER" == "$CARGO_VER" ]] || \
   fail "current versions disagree (package=$PKG_VER tauri=$TAURI_VER cargo=$CARGO_VER)"
-CURRENT_VERSION="$PKG_VER" NEXT_VERSION="$VERSION" node - <<'NODE' || fail "version must not be less than $PKG_VER"
+SEMVER_JS="$(cat <<'NODE'
 const parse = (value) => {
   const [, major, minor, patch, prerelease] = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([^+]+))?(?:\+.*)?$/);
   return { core: [major, minor, patch].map(Number), pre: prerelease?.split(".") };
@@ -129,12 +129,61 @@ const compare = (a, b) => {
   }
   return 0;
 };
-process.exit(compare(parse(process.env.NEXT_VERSION), parse(process.env.CURRENT_VERSION)) >= 0 ? 0 : 1);
 NODE
+)"
+CURRENT_VERSION="$PKG_VER" NEXT_VERSION="$VERSION" node -e "$SEMVER_JS
+process.exit(compare(parse(process.env.NEXT_VERSION), parse(process.env.CURRENT_VERSION)) >= 0 ? 0 : 1);" \
+  || fail "version must not be less than $PKG_VER"
 # A pushed version tag is what starts a CI release, so only a tag elsewhere is a conflict.
 if TAG_SHA="$(git rev-parse -q --verify "refs/tags/v$VERSION^{commit}")"; then
   [[ "$TAG_SHA" == "$HEAD_SHA" ]] || fail "tag v$VERSION already exists on $TAG_SHA"
 fi
+
+# The notes credit everyone since the previous release on this channel. A
+# nightly follows whatever shipped last; a stable release follows the last stable.
+PREVIOUS_TAG="$(git tag --list 'v*' | CHANNEL="$CHANNEL" NEXT_VERSION="$VERSION" node -e "$SEMVER_JS
+const next = parse(process.env.NEXT_VERSION);
+const earlier = require('fs').readFileSync(0, 'utf8').split('\n')
+  .filter((tag) => /^v\d+\.\d+\.\d+(-[^+]+)?$/.test(tag))
+  .map((tag) => ({ tag, version: parse(tag.slice(1)) }))
+  .filter(({ version }) => compare(version, next) < 0 && (process.env.CHANNEL === 'nightly' || !version.pre))
+  .sort((a, b) => compare(b.version, a.version));
+if (!earlier.length) process.exit(1);
+process.stdout.write(earlier[0].tag);")" || fail "no earlier release tag to credit contributors against"
+# GitHub is what knows which account wrote each commit, so HEAD must already be pushed.
+CREDITS="$(PREVIOUS_TAG="$PREVIOUS_TAG" HEAD_SHA="$HEAD_SHA" VERSION="$VERSION" python3 - <<'PY'
+import collections, json, os, subprocess
+
+def gh(*args):
+    return subprocess.run(["gh", "api", *args], check=True, capture_output=True, text=True).stdout
+
+previous, head, version = os.environ["PREVIOUS_TAG"], os.environ["HEAD_SHA"], os.environ["VERSION"]
+commits = [
+    line.split("\t")
+    for line in gh(
+        f"repos/nodelike/sikemux/compare/{previous}...{head}?per_page=100",
+        "--paginate",
+        "--jq",
+        '.commits[] | [.author.login // "", .author.type // "", .author.avatar_url // ""] | @tsv',
+    ).splitlines()
+]
+counts = collections.Counter(login for login, kind, _ in commits if login and kind == "User")
+avatars = {login: avatar for login, _, avatar in commits if login}
+print(json.dumps({
+    "commits": len(commits),
+    "compare": f"https://github.com/nodelike/sikemux/compare/{previous}...v{version}",
+    "contributors": [
+        {
+            "login": login,
+            "name": gh(f"users/{login}", "--jq", ".name // .login").strip() or login,
+            "commits": count,
+            "avatar": avatars[login],
+        }
+        for login, count in counts.most_common()
+    ],
+}))
+PY
+)" || fail "could not read the commits since $PREVIOUS_TAG from GitHub; push $HEAD_SHA first"
 
 [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]] || fail "TAURI_SIGNING_PRIVATE_KEY is not set"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
@@ -328,7 +377,7 @@ if [[ "$CHANNEL" == "stable" ]]; then
 else
   MANIFEST="$BUNDLE/latest.json"
 fi
-PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" MANIFEST="$MANIFEST" python3 - <<'PY'
+PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" CREDITS="$CREDITS" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" MANIFEST="$MANIFEST" python3 - <<'PY'
 import json, os, pathlib
 entry = {
     "signature": pathlib.Path(os.environ["SIG"]).read_text().strip(),
@@ -338,6 +387,7 @@ manifest = {
     "version": os.environ["VERSION"],
     "notes": os.environ["NOTES"],
     "pub_date": os.environ["PUB_DATE"],
+    **json.loads(os.environ["CREDITS"]),
     "platforms": {platform: dict(entry) for platform in os.environ["PLATFORM_LIST"].split()},
 }
 pathlib.Path(os.environ["MANIFEST"]).write_text(json.dumps(manifest, indent=2) + "\n")
@@ -347,7 +397,7 @@ snapshot_expected
 
 [[ "$(git rev-parse HEAD)" == "$HEAD_SHA" ]] || fail "HEAD moved during the release; rebuild from a settled tree"
 STABLE_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$MANIFEST")
-NIGHTLY_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG")
+NIGHTLY_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$MANIFEST")
 POINTER_NOTES="Update feed for the nightly channel.
 
 The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).
