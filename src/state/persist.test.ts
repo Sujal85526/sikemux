@@ -99,7 +99,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 12,
+                    version: 13,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -535,7 +535,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(11);
+        expect(saved.version).toBe(12);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -677,7 +677,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(11);
+        expect(JSON.parse(migrated).version).toBe(12);
     });
 
     /*
@@ -710,7 +710,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(11);
+        expect(saved.version).toBe(12);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
@@ -768,6 +768,29 @@ describe("frontend persistence", () => {
             deployTargets: { "/repo/api": { project: "channeliq", folder: "production" } },
         });
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
+    });
+
+    it("folds v11 Bruno sessions, one per workspace, into a single session named bruno", () => {
+        cmd.openBrunoSession("/ws/api-docs");
+        const first = getState().sessions[getState().activeSessionId];
+        const firstWindow = getState().windows[first.activeWindowId];
+        const second = { ...first, id: "bruno-2", name: "billing", cwd: "/ws/billing", bruno: { collectionPath: "/ws/billing", selectedEnvs: {} } };
+        applyHydrate(
+            JSON.stringify({
+                version: 11,
+                sessions: [{ ...first, name: "api-docs" }, second],
+                windowsBySession: { [first.id]: [firstWindow], [second.id]: [{ ...firstWindow, id: "w-bruno-2" }] },
+                sessionOrder: [first.id, second.id],
+                activeSessionId: second.id,
+                prefs: { brunoWorkspaces: ["/ws/old"] },
+                itemStates: {},
+            }),
+        );
+
+        const st = getState();
+        expect(Object.values(st.sessions).filter((session) => session.kind === "bruno").map((session) => session.name)).toEqual(["bruno"]);
+        expect(st.activeSessionId).toBe(first.id);
+        expect(st.brunoWorkspaces).toEqual(expect.arrayContaining(["/ws/old", "/ws/api-docs", "/ws/billing"]));
     });
 
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {

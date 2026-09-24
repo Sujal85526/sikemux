@@ -48,12 +48,13 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 11;
+export const VERSION = 12;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
 const PLUGIN_KIND_MIGRATION_VERSION = 10;
 const PLUGIN_SETTINGS_MIGRATION_VERSION = 11;
+const ONE_BRUNO_SESSION_MIGRATION_VERSION = 12;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -588,6 +589,31 @@ function moveRundeckSettings(decoded: Record<string, unknown>): void {
     decoded.prefs = { ...prefs, pluginSettings: { ...pluginSettings, "sikemux.rundeck": { ...legacy, deployTargets } } };
 }
 
+/**
+ * Before v12 each Bruno workspace was its own session, named after its folder.
+ * Now one session named bruno switches between them, so the first stays, the
+ * rest close, and every folder stays on the list of workspaces.
+ */
+function mergeBrunoSessions(decoded: Record<string, unknown>): void {
+    const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
+    const [kept, ...extra] = sessions.filter((row): row is Record<string, unknown> => isRecord(row) && row.kind === "bruno");
+    if (!kept) return;
+    const folders = [kept, ...extra].flatMap((row) => {
+        const path = isRecord(row.bruno) ? row.bruno.collectionPath : row.cwd;
+        return typeof path === "string" && path ? [path] : [];
+    });
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    const saved = Array.isArray(prefs.brunoWorkspaces) ? prefs.brunoWorkspaces : [];
+    decoded.prefs = { ...prefs, brunoWorkspaces: [...saved, ...folders] };
+    kept.name = "bruno";
+
+    const closed = new Set(extra.map((row) => row.id));
+    decoded.sessions = sessions.filter((row) => !isRecord(row) || !closed.has(row.id));
+    if (Array.isArray(decoded.sessionOrder)) decoded.sessionOrder = decoded.sessionOrder.filter((id) => !closed.has(id));
+    if (isRecord(decoded.windowsBySession)) for (const id of closed) if (typeof id === "string") delete decoded.windowsBySession[id];
+    if (closed.has(decoded.activeSessionId)) decoded.activeSessionId = kept.id;
+}
+
 function normalisePluginSettings(value: unknown): Record<string, unknown> {
     if (!isRecord(value)) return {};
     return Object.fromEntries(Object.entries(value).filter(([id]) => isPluginId(id)));
@@ -613,6 +639,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (!Array.isArray(decoded.sessions)) return "invalid";
     if (decoded.version < PLUGIN_KIND_MIGRATION_VERSION) renameLegacyPluginKinds(decoded);
     if (decoded.version < PLUGIN_SETTINGS_MIGRATION_VERSION) moveRundeckSettings(decoded);
+    if (decoded.version < ONE_BRUNO_SESSION_MIGRATION_VERSION) mergeBrunoSessions(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
