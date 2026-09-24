@@ -122,6 +122,15 @@ pub enum DownloadState {
     Failed,
 }
 
+/// An alert, confirm or prompt the page is blocked on until someone answers.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PageDialog {
+    pub kind: &'static str,
+    pub message: String,
+    pub default_text: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TabPage {
     pub title: String,
@@ -232,6 +241,7 @@ pub struct BrowserManager {
     shortcuts_installed: AtomicBool,
     downloads: Mutex<HashMap<(String, String), PathBuf>>,
     icons: Mutex<favicon::IconCache>,
+    dialogs: Mutex<HashMap<String, PageDialog>>,
 }
 
 impl BrowserManager {
@@ -287,14 +297,28 @@ impl BrowserManager {
             let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.clone());
             let _ = webview.with_webview(move |platform| {
                 let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
-                macos::adopt(platform.inner(), agent, tab, move |url, back, forward| {
-                    let manager = app_handle.state::<BrowserManager>();
-                    manager.note_page(&app_handle, &moved_agent, &moved_tab, |page| {
-                        page.url = url;
-                        page.can_go_back = back;
-                        page.can_go_forward = forward;
-                    });
-                });
+                let (dialog_app, dialog_tab) = (app_handle.clone(), tab.clone());
+                macos::adopt(
+                    platform.inner(),
+                    agent,
+                    tab,
+                    move |url, back, forward| {
+                        let manager = app_handle.state::<BrowserManager>();
+                        manager.note_page(&app_handle, &moved_agent, &moved_tab, |page| {
+                            page.url = url;
+                            page.can_go_back = back;
+                            page.can_go_forward = forward;
+                        });
+                    },
+                    move |dialog| {
+                        let manager = dialog_app.state::<BrowserManager>();
+                        let mut dialogs = manager.dialogs_lock();
+                        match dialog {
+                            Some(dialog) => dialogs.insert(dialog_tab.clone(), dialog),
+                            None => dialogs.remove(&dialog_tab),
+                        };
+                    },
+                );
             });
         }
         self.install_shortcuts(app);
@@ -427,6 +451,16 @@ impl BrowserManager {
                 state,
             },
         );
+    }
+
+    fn dialogs_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, PageDialog>> {
+        self.dialogs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn dialog(&self, tab_id: &str) -> Option<PageDialog> {
+        self.dialogs_lock().get(tab_id).cloned()
     }
 
     fn downloads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), PathBuf>> {

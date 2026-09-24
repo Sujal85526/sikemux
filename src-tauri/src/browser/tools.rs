@@ -205,6 +205,19 @@ async fn run(
             settle(&manager, agent_id, &tab_id).await;
             merge(json!({ "pressed": key }), state(&manager, agent_id).await?)
         }
+        "browser.dialog" => {
+            let accept = params
+                .get("accept")
+                .and_then(Value::as_bool)
+                .ok_or("accept is required")?;
+            let (tab_id, view) = active_tab(&manager, agent_id)?;
+            if manager.dialog(&tab_id).is_none() {
+                return Err("no dialog is open in the current tab".into());
+            }
+            native::answer_dialog(&view, &tab_id, accept, text("text")).await?;
+            settle(&manager, agent_id, &tab_id).await;
+            state(&manager, agent_id).await
+        }
         "browser.scroll" => {
             let delta = params
                 .get("deltaY")
@@ -362,6 +375,19 @@ mod native {
             let text = text.to_owned();
             on_tab(view, move |tab| input::insert_text(tab, &text)).await
         }
+
+        pub async fn answer_dialog(
+            view: &Webview,
+            tab_id: &str,
+            accept: bool,
+            text: Option<String>,
+        ) -> Result<(), String> {
+            let tab_id = tab_id.to_owned();
+            on_tab(view, move |_| {
+                super::super::super::macos::answer_dialog(&tab_id, accept, text.as_deref())
+            })
+            .await
+        }
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -380,6 +406,15 @@ mod native {
         }
 
         pub async fn insert_text(_: &Webview, _: &str) -> Result<(), String> {
+            Err(UNSUPPORTED.into())
+        }
+
+        pub async fn answer_dialog(
+            _: &Webview,
+            _: &str,
+            _: bool,
+            _: Option<String>,
+        ) -> Result<(), String> {
             Err(UNSUPPORTED.into())
         }
     }
@@ -401,6 +436,15 @@ mod native {
     pub async fn insert_text(view: &Webview, text: &str) -> Result<(), String> {
         platform::insert_text(view, text).await
     }
+
+    pub async fn answer_dialog(
+        view: &Webview,
+        tab_id: &str,
+        accept: bool,
+        text: Option<String>,
+    ) -> Result<(), String> {
+        platform::answer_dialog(view, tab_id, accept, text).await
+    }
 }
 
 /// Runs `act` against the tab's native view on the main thread.
@@ -421,7 +465,20 @@ async fn on_tab<T: Send + 'static>(
     }
 }
 
+/// The tab the agent is on, unless a dialog has frozen its page: a page
+/// waiting on an alert answers nothing, so calling into it would only time out.
 fn active(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview), String> {
+    let (tab_id, view) = active_tab(manager, agent_id)?;
+    match manager.dialog(&tab_id) {
+        Some(dialog) => Err(format!(
+            "the page is waiting on a {} dialog saying \"{}\"; answer it with browser_dialog",
+            dialog.kind, dialog.message
+        )),
+        None => Ok((tab_id, view)),
+    }
+}
+
+fn active_tab(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview), String> {
     manager
         .active_view(agent_id)
         .map_err(|_| "no browser tab is open; call browser_navigate first".to_string())
@@ -447,9 +504,16 @@ fn tabs(manager: &BrowserManager, agent_id: &str) -> Value {
 }
 
 async fn state(manager: &BrowserManager, agent_id: &str) -> Result<Value, String> {
-    let (tab_id, view) = active(manager, agent_id)?;
+    let (tab_id, view) = active_tab(manager, agent_id)?;
     let page = manager.page(agent_id, &tab_id).unwrap_or_default();
-    let mut result = if page.url == BLANK_URL {
+    let mut result = if let Some(dialog) = manager.dialog(&tab_id) {
+        json!({
+            "url": page.url,
+            "title": page.title,
+            "dialog": dialog,
+            "note": "the page is frozen until this dialog is answered with browser_dialog",
+        })
+    } else if page.url == BLANK_URL {
         json!({ "url": BLANK_URL, "title": "", "elements": "", "text": "" })
     } else {
         call(&view, "state", &[]).await?

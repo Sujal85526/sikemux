@@ -126,6 +126,23 @@
       "required": []
     },
     {
+      "name": "browser_dialog",
+      "method": "browser.dialog",
+      "description": "Answer the page's open alert, confirm or prompt.",
+      "properties": {
+        "accept": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "accept"
+      ]
+    },
+    {
       "name": "browser_scroll",
       "method": "browser.scroll",
       "description": "Scroll the page, or a numbered element, by deltaY pixels; negative is up.",

@@ -136,6 +136,12 @@ a single character. Hold modifiers with `+`, as in `Meta+a` to select all or
 see a real pointer; items marked draggable get the page's own drag and drop
 events.
 
+`browser_dialog` answers an alert, confirm or prompt. Page state reports an
+open one under `dialog`, and until it is answered the page is frozen: every
+other browser tool refuses rather than hang. `accept: true` presses OK and
+`false` presses Cancel; `text` fills a prompt first. The person sees the same
+dialog and may answer it before you do.
+
 `browser_scroll` moves the page by `deltaY` pixels, default 600, negative for
 up. Pass an `index` to scroll inside a scrollable element instead.
 

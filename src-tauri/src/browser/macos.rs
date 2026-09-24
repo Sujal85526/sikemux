@@ -7,15 +7,16 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
+use std::rc::Rc;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, ProtocolObject};
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSBitmapImageFileType, NSBitmapImageRep, NSEvent,
-    NSEventMask, NSEventModifierFlags, NSImage, NSImageCompressionFactor, NSModalResponse,
-    NSTextField, NSView,
+    NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSBitmapImageFileType,
+    NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
+    NSImageCompressionFactor, NSModalResponse, NSTextField, NSView,
 };
 use objc2_foundation::{
     NSData, NSDictionary, NSError, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSNumber,
@@ -29,7 +30,7 @@ use objc2_web_kit::{
 };
 use tauri::{AppHandle, Emitter};
 
-use super::{BrowserShortcut, BROWSER_SHORTCUT_EVENT};
+use super::{BrowserShortcut, PageDialog, BROWSER_SHORTCUT_EVENT};
 
 /// The property the tab watches to hear about a page that moved on its own.
 const URL_KEY_PATH: &str = "URL";
@@ -57,6 +58,13 @@ impl Drop for NativeTab {
 thread_local! {
     static TABS: RefCell<HashMap<String, NativeTab>> = RefCell::new(HashMap::new());
     static SHORTCUT_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    static OPEN_DIALOGS: RefCell<HashMap<String, OpenDialog>> = RefCell::new(HashMap::new());
+}
+
+/// A page dialog showing as a sheet, kept so the agent can answer it too.
+struct OpenDialog {
+    alert: Retained<NSAlert>,
+    field: Option<Retained<NSTextField>>,
 }
 
 fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
@@ -65,18 +73,20 @@ fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
 
 /// Take over the tab's UI delegate so page dialogs get a sheet, watch where the
 /// page says it is, and remember the view so shortcuts can tell which tab has
-/// focus. `moved` hears the new address and whether history can go either way.
+/// focus. `moved` hears the new address and whether history can go either way;
+/// `dialog` hears a page dialog open and close.
 pub fn adopt(
     pointer: *mut c_void,
     agent_id: String,
     tab_id: String,
     moved: impl Fn(String, bool, bool) + 'static,
+    dialog: impl Fn(Option<PageDialog>) + 'static,
 ) {
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
         return;
     };
     let inner = unsafe { webview.UIDelegate() };
-    let delegate = TabUiDelegate::new(mtm, inner);
+    let delegate = TabUiDelegate::new(mtm, inner, tab_id.clone(), Rc::new(dialog));
     let address_observer = AddressObserver::new(mtm, Box::new(moved));
     unsafe {
         webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate)));
@@ -103,6 +113,7 @@ pub fn adopt(
 }
 
 pub fn forget(tab_id: &str) {
+    let _ = answer_dialog(tab_id, false, None);
     TABS.with(|tabs| {
         tabs.borrow_mut().remove(tab_id);
     });
@@ -241,6 +252,8 @@ fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {
 
 struct TabUiDelegateIvars {
     inner: Option<Retained<ProtocolObject<dyn WKUIDelegate>>>,
+    tab_id: String,
+    dialog: Rc<dyn Fn(Option<PageDialog>)>,
 }
 
 define_class!(
@@ -262,6 +275,7 @@ define_class!(
         ) {
             let done = handler.copy();
             present_sheet(
+                self.ivars(),
                 webview,
                 frame,
                 &message.to_string(),
@@ -282,6 +296,7 @@ define_class!(
         ) {
             let done = handler.copy();
             present_sheet(
+                self.ivars(),
                 webview,
                 frame,
                 &message.to_string(),
@@ -306,6 +321,7 @@ define_class!(
                 .map(|text| text.to_string())
                 .unwrap_or_default();
             present_sheet(
+                self.ivars(),
                 webview,
                 frame,
                 &prompt.to_string(),
@@ -383,10 +399,14 @@ impl TabUiDelegate {
     fn new(
         mtm: MainThreadMarker,
         inner: Option<Retained<ProtocolObject<dyn WKUIDelegate>>>,
+        tab_id: String,
+        dialog: Rc<dyn Fn(Option<PageDialog>)>,
     ) -> Retained<Self> {
-        let delegate = mtm
-            .alloc::<TabUiDelegate>()
-            .set_ivars(TabUiDelegateIvars { inner });
+        let delegate = mtm.alloc::<TabUiDelegate>().set_ivars(TabUiDelegateIvars {
+            inner,
+            tab_id,
+            dialog,
+        });
         unsafe { msg_send![super(delegate), init] }
     }
 }
@@ -398,8 +418,10 @@ enum Sheet {
 }
 
 /// A page dialog as a sheet on the app window, the way Safari shows them. The
-/// page waits on `answer`, so every path must call it exactly once.
+/// page waits on `answer`, so every path must call it exactly once. The agent
+/// answers through `answer_dialog`, which ends the same sheet.
 fn present_sheet(
+    tab: &TabUiDelegateIvars,
     webview: &WKWebView,
     frame: &WKFrameInfo,
     message: &str,
@@ -436,9 +458,32 @@ fn present_sheet(
         }
         _ => None,
     };
-    let kept = alert.clone();
+    let described = PageDialog {
+        kind: match &sheet {
+            Sheet::Alert => "alert",
+            Sheet::Confirm => "confirm",
+            Sheet::Prompt(_) => "prompt",
+        },
+        message: message.to_owned(),
+        default_text: match &sheet {
+            Sheet::Prompt(default) => Some(default.clone()),
+            _ => None,
+        },
+    };
+    OPEN_DIALOGS.with(|open| {
+        open.borrow_mut().insert(
+            tab.tab_id.clone(),
+            OpenDialog {
+                alert: alert.clone(),
+                field: field.clone(),
+            },
+        );
+    });
+    (tab.dialog)(Some(described));
+    let (tab_id, closed) = (tab.tab_id.clone(), tab.dialog.clone());
     let block = RcBlock::new(move |response: NSModalResponse| {
-        let _ = &kept;
+        OPEN_DIALOGS.with(|open| open.borrow_mut().remove(&tab_id));
+        closed(None);
         let accepted = response == NSAlertFirstButtonReturn;
         let text = field
             .as_ref()
@@ -447,6 +492,32 @@ fn present_sheet(
         answer(accepted, text);
     });
     alert.beginSheetModalForWindow_completionHandler(&window, Some(&block));
+}
+
+/// Ends the tab's open dialog as if the person pressed OK or Cancel, typing
+/// `text` into a prompt first.
+pub fn answer_dialog(tab_id: &str, accept: bool, text: Option<&str>) -> Result<(), String> {
+    let (alert, field) = OPEN_DIALOGS
+        .with(|open| {
+            open.borrow()
+                .get(tab_id)
+                .map(|dialog| (dialog.alert.clone(), dialog.field.clone()))
+        })
+        .ok_or("this tab has no open dialog")?;
+    if let (Some(field), Some(text)) = (field, text) {
+        field.setStringValue(&NSString::from_str(text));
+    }
+    let sheet = alert.window();
+    let parent = sheet.sheetParent().ok_or("the dialog is not showing")?;
+    parent.endSheet_returnCode(
+        &sheet,
+        if accept {
+            NSAlertFirstButtonReturn
+        } else {
+            NSAlertSecondButtonReturn
+        },
+    );
+    Ok(())
 }
 
 /// Command chords are the app's, not the page's, apart from the editing set
