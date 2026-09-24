@@ -50,7 +50,7 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 14;
+export const VERSION = 15;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
@@ -59,6 +59,7 @@ const PLUGIN_SETTINGS_MIGRATION_VERSION = 11;
 const ONE_BRUNO_SESSION_MIGRATION_VERSION = 12;
 const AWS_PLUGIN_MIGRATION_VERSION = 13;
 const BRUNO_PLUGIN_MIGRATION_VERSION = 14;
+const RUNDECK_GROUPS_MIGRATION_VERSION = 15;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -647,6 +648,20 @@ function moveRundeckSettings(decoded: Record<string, unknown>): void {
 }
 
 /**
+ * Before v15 Rundeck browsed one env folder and remembered a folder per project.
+ * Now it browses any group path and remembers a job, which a folder can't name, so those picks are dropped.
+ */
+function reshapeRundeckSettings(decoded: Record<string, unknown>): void {
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    const pluginSettings = isRecord(prefs.pluginSettings) ? prefs.pluginSettings : {};
+    const saved = pluginSettings["sikemux.rundeck"];
+    if (!isRecord(saved)) return;
+    const { activeEnvFolder, deployTargets: _folders, ...rest } = saved;
+    const activeGroup = typeof activeEnvFolder === "string" && activeEnvFolder ? activeEnvFolder : null;
+    decoded.prefs = { ...prefs, pluginSettings: { ...pluginSettings, "sikemux.rundeck": { ...rest, activeGroup } } };
+}
+
+/**
  * Before v12 each Bruno workspace was its own session. Now one session switches
  * between them, so the first stays, the rest close, and every folder stays on
  * the list of workspaces.
@@ -698,6 +713,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version < ONE_BRUNO_SESSION_MIGRATION_VERSION) mergeBrunoSessions(decoded);
     if (decoded.version < AWS_PLUGIN_MIGRATION_VERSION) moveAwsIntoItsPlugin(decoded);
     if (decoded.version < BRUNO_PLUGIN_MIGRATION_VERSION) moveBrunoIntoItsPlugin(decoded);
+    if (decoded.version < RUNDECK_GROUPS_MIGRATION_VERSION) reshapeRundeckSettings(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {

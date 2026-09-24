@@ -104,7 +104,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 15,
+                    version: 16,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -534,7 +534,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(14);
+        expect(saved.version).toBe(15);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -674,7 +674,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(14);
+        expect(JSON.parse(migrated).version).toBe(15);
     });
 
     /*
@@ -707,7 +707,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(14);
+        expect(saved.version).toBe(15);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
@@ -760,11 +760,40 @@ describe("frontend persistence", () => {
 
         expect(rundeckSettings.get()).toEqual({
             activeProject: "channeliq",
-            activeEnvFolder: "dev",
+            activeGroup: "dev",
             prodEnvs: ["prod"],
-            deployTargets: { "/repo/api": { project: "channeliq", folder: "production" } },
+            branchOptions: ["BRANCH", "GIT_BRANCH", "GIT_REF", "REF"],
+            deployTargets: {},
+            treeHidden: false,
         });
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
+    });
+
+    it("turns v14 Rundeck env folders into group paths and drops folder-based deploy picks", () => {
+        const project = getState().sessions[getState().activeSessionId];
+        const window = getState().windows[project.activeWindowId];
+        applyHydrate(
+            JSON.stringify({
+                version: 14,
+                sessions: [{ ...project, kind: "project" }],
+                windowsBySession: { [project.id]: [window] },
+                sessionOrder: [project.id],
+                activeSessionId: project.id,
+                prefs: {
+                    pluginSettings: {
+                        "sikemux.rundeck": {
+                            activeProject: "ops",
+                            activeEnvFolder: "Prod",
+                            prodEnvs: ["prod", "live"],
+                            deployTargets: { "/repo/api": { project: "ops", folder: "Prod" } },
+                        },
+                    },
+                },
+                itemStates: {},
+            }),
+        );
+
+        expect(rundeckSettings.get()).toMatchObject({ activeProject: "ops", activeGroup: "Prod", prodEnvs: ["prod", "live"], deployTargets: {} });
     });
 
     it("folds v11 Bruno sessions, one per workspace, into the one Bruno session and keeps every folder", () => {
