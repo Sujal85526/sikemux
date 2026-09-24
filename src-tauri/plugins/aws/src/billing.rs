@@ -11,9 +11,9 @@
 
 use serde::Serialize;
 
-use crate::error::AppResult;
+use crate::error::{AwsError, AwsResult};
 
-use super::common::aws_json_async;
+use crate::common::aws_json;
 
 #[derive(Serialize, Clone)]
 pub struct BillingMonth {
@@ -32,11 +32,10 @@ pub struct BillingService {
     unit: String,
 }
 
-#[tauri::command]
-pub async fn aws_billing_months(profile: String, months_back: u32) -> AppResult<Vec<BillingMonth>> {
+pub(crate) async fn months(profile: String, months_back: u32) -> AwsResult<Vec<BillingMonth>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| crate::error::AppError::Other(e.to_string()))?
+        .map_err(|e| AwsError::Aws(e.to_string()))?
         .as_secs();
     let (cy, cm, cd) = ymd_utc(now);
 
@@ -53,7 +52,7 @@ pub async fn aws_billing_months(profile: String, months_back: u32) -> AppResult<
     });
 
     let time_period = format!("Start={start},End={end}");
-    let resp_v: serde_json::Value = aws_json_async(
+    let resp_v: serde_json::Value = aws_json(
         &profile,
         &[
             "ce",

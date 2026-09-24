@@ -26,8 +26,9 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["rundeck", "signoz"]
+default = ["aws", "rundeck", "signoz"]
 ipc-command-tests = ["tauri/test"]
+aws = ["dep:sikemux-plugin-aws"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
 signoz = ["dep:sikemux-plugin-signoz"]
 
@@ -67,6 +68,7 @@ uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
 semver = "1"
 sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
+sikemux-plugin-aws = { path = "plugins/aws", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
 sikemux-process = { path = "crates/sikemux-process" }

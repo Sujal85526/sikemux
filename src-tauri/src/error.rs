@@ -21,18 +21,6 @@ pub enum AppError {
     #[error("git: {0}")]
     Git(String),
 
-    #[error("aws: {0}")]
-    Aws(String),
-
-    #[error("aws cli not on PATH: {0}")]
-    AwsCliMissing(String),
-
-    #[error("aws sso/session token expired")]
-    AwsTokenExpired,
-
-    #[error("aws: no credentials configured")]
-    AwsNoCredentials,
-
     #[error("lsp: {0}")]
     Lsp(String),
 
@@ -138,10 +126,6 @@ impl AppError {
             AppError::Io(_) => "io",
             AppError::Json(_) => "json",
             AppError::Git(_) => "git",
-            AppError::Aws(_) => "aws",
-            AppError::AwsCliMissing(_) => "aws-cli-missing",
-            AppError::AwsTokenExpired => "aws-token-expired",
-            AppError::AwsNoCredentials => "aws-no-credentials",
             AppError::Lsp(_) => "lsp",
             AppError::LspServerMissing { .. } => "lsp-server-missing",
             AppError::Http(_) => "http",
@@ -170,12 +154,6 @@ mod tests {
         // Spot-check categories the frontend branches on. If any of these
         // change, every `err.category === "..."` check in api/* must be
         // updated to match.
-        assert_eq!(AppError::AwsTokenExpired.category(), "aws-token-expired");
-        assert_eq!(AppError::AwsNoCredentials.category(), "aws-no-credentials");
-        assert_eq!(
-            AppError::AwsCliMissing("aws".into()).category(),
-            "aws-cli-missing"
-        );
         assert_eq!(
             AppError::LspServerMissing {
                 language: "go".into(),

@@ -1,8 +1,8 @@
 // Profile discovery and identity/SSO-login surface.
 //
-//   aws_profiles          — parse ~/.aws/{config,credentials}, classify
-//   aws_caller_identity   — `sts get-caller-identity`, 60s per-process cache
-//   aws_sso_login         — `aws sso login` (spawn-and-wait)
+//   profiles     — parse ~/.aws/{config,credentials}, classify
+//   identity     — `sts get-caller-identity`, 60s per-process cache
+//   sso_login    — `aws sso login` (spawn-and-wait)
 
 use std::collections::HashMap;
 use std::fs;
@@ -12,10 +12,8 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use crate::bounded_process::ProcessCancellation;
-use crate::error::AppResult;
-
-use super::common::{classify_cli_err, run_aws_cli_async, run_aws_cli_cancellable_async};
+use crate::common::{classify_cli_err, run_aws_cli_async};
+use crate::error::AwsError;
 
 // ============================================================
 // profile discovery
@@ -108,9 +106,8 @@ fn classify(p: &HashMap<String, String>) -> AwsKind {
     }
 }
 
-#[tauri::command]
-pub async fn aws_profiles() -> Vec<AwsProfile> {
-    tauri::async_runtime::spawn_blocking(read_aws_profiles)
+pub(crate) async fn profiles() -> Vec<AwsProfile> {
+    tokio::task::spawn_blocking(read_aws_profiles)
         .await
         .unwrap_or_default()
 }
@@ -198,8 +195,7 @@ fn id_cache() -> &'static Mutex<HashMap<String, (Instant, AwsIdentity)>> {
 const ID_TTL: Duration = Duration::from_secs(60);
 const ID_CACHE_CAPACITY: usize = 128;
 
-#[tauri::command]
-pub async fn aws_caller_identity(profile: String, force: bool) -> AwsIdentity {
+pub(crate) async fn identity(profile: String, force: bool) -> AwsIdentity {
     if !force {
         if let Some(cached) = id_cache()
             .lock()
@@ -218,7 +214,7 @@ pub async fn aws_caller_identity(profile: String, force: bool) -> AwsIdentity {
     )
     .await
     {
-        Err(crate::error::AppError::AwsCliMissing(msg)) => AwsIdentity {
+        Err(AwsError::CliMissing(msg)) => AwsIdentity {
             arn: None,
             account: None,
             user_id: None,
@@ -251,8 +247,8 @@ pub async fn aws_caller_identity(profile: String, force: bool) -> AwsIdentity {
         }
         Ok((false, _, stderr)) => {
             let status = match classify_cli_err(&stderr) {
-                crate::error::AppError::AwsTokenExpired => AwsStatus::Expired,
-                crate::error::AppError::AwsNoCredentials => AwsStatus::NoCredentials,
+                AwsError::TokenExpired => AwsStatus::Expired,
+                AwsError::NoCredentials => AwsStatus::NoCredentials,
                 _ => AwsStatus::Error,
             };
             AwsIdentity {
@@ -292,59 +288,23 @@ pub struct AwsLoginResult {
     stderr: String,
 }
 
-fn sso_operations() -> &'static Mutex<HashMap<String, ProcessCancellation>> {
-    static OPERATIONS: OnceLock<Mutex<HashMap<String, ProcessCancellation>>> = OnceLock::new();
-    OPERATIONS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-#[tauri::command]
-pub async fn aws_sso_login(profile: String, operation_id: String) -> AppResult<AwsLoginResult> {
-    if operation_id.is_empty() || operation_id.len() > 128 {
-        return Err(crate::error::AppError::BadArg("invalid AWS operation ID"));
-    }
-    let cancellation = ProcessCancellation::new();
-    {
-        let mut operations = sso_operations()
-            .lock()
-            .map_err(|_| crate::error::AppError::Other("AWS operation registry poisoned".into()))?;
-        if operations.contains_key(&operation_id) {
-            return Err(crate::error::AppError::BadArg("duplicate AWS operation ID"));
-        }
-        operations.insert(operation_id.clone(), cancellation.clone());
-    }
-    let r = run_aws_cli_cancellable_async(&["sso", "login"], Some(&profile), cancellation).await;
-    if let Ok(mut operations) = sso_operations().lock() {
-        operations.remove(&operation_id);
-    }
-    // Drop the cached "expired" identity so the next aws_caller_identity
-    // call doesn't lie about state.
+pub(crate) async fn sso_login(profile: String) -> AwsLoginResult {
+    let r = run_aws_cli_async(&["sso", "login"], Some(&profile)).await;
+    // Drop the cached "expired" identity so the next identity call doesn't
+    // lie about state.
     if let Ok(mut cache) = id_cache().lock() {
         cache.remove(&profile);
     }
     match r {
-        Ok((ok, out, err)) => Ok(AwsLoginResult {
+        Ok((ok, out, err)) => AwsLoginResult {
             success: ok,
             stdout: out,
             stderr: err,
-        }),
-        Err(e) => Ok(AwsLoginResult {
+        },
+        Err(e) => AwsLoginResult {
             success: false,
             stdout: String::new(),
             stderr: e.to_string(),
-        }),
-    }
-}
-
-#[tauri::command]
-pub fn aws_sso_cancel(operation_id: String) -> bool {
-    let cancellation = sso_operations()
-        .lock()
-        .ok()
-        .and_then(|operations| operations.get(&operation_id).cloned());
-    if let Some(cancellation) = cancellation {
-        cancellation.cancel();
-        true
-    } else {
-        false
+        },
     }
 }

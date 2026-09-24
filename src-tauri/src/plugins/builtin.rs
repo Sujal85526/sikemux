@@ -4,6 +4,8 @@ use sikemux_plugin_api::{Plugin, PluginError};
 
 pub fn plugins() -> Vec<Arc<dyn Plugin>> {
     let compiled_in: Vec<Result<Arc<dyn Plugin>, PluginError>> = vec![
+        #[cfg(feature = "aws")]
+        sikemux_plugin_aws::plugin(),
         #[cfg(feature = "rundeck")]
         sikemux_plugin_rundeck::plugin(),
         #[cfg(feature = "signoz")]

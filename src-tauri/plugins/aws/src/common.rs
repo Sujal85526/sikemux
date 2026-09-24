@@ -1,8 +1,8 @@
-// Shared CLI plumbing for every AWS submodule.
+// Shared CLI plumbing for every AWS module.
 //
 //   run_aws_cli         — spawn `aws ...` with PAGER/COLOR scrubbed
-//   aws_json            — run + parse stdout as JSON (sync)
-//   classify_cli_err    — map stderr text → typed AppError
+//   aws_json            — run + parse stdout as JSON
+//   classify_cli_err    — map stderr text → typed AwsError
 //   describe_in_chunks  — run N AWS calls in parallel, splitting `arns` into
 //                         chunks (AWS describe-* commands cap at 10/100/etc)
 
@@ -11,29 +11,26 @@ use std::time::Duration;
 
 use futures::future::try_join_all;
 use serde::de::DeserializeOwned;
+use sikemux_process::{ProcessCancellation, ProcessRunError};
 use tokio::task;
 
-use crate::bounded_process::{self, ProcessCancellation, ProcessRunError};
-use crate::error::{AppError, AppResult};
+use crate::error::{AwsError, AwsResult};
 
 const DESCRIBE_CHUNK_CONCURRENCY: usize = 4;
 const AWS_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 const AWS_SSO_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const AWS_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
-pub(super) fn run_aws_cli(
-    args: &[&str],
-    profile: Option<&str>,
-) -> AppResult<(bool, String, String)> {
-    run_aws_cli_with_cancel(args, profile, None)
+pub(crate) fn aws_bin() -> String {
+    std::env::var("AWS_CLI").unwrap_or_else(|_| "aws".to_string())
 }
 
-pub(super) fn run_aws_cli_with_cancel(
+fn run_aws_cli(
     args: &[&str],
     profile: Option<&str>,
-    cancellation: Option<&ProcessCancellation>,
-) -> AppResult<(bool, String, String)> {
-    let bin = std::env::var("AWS_CLI").unwrap_or_else(|_| "aws".to_string());
+    cancellation: &ProcessCancellation,
+) -> AwsResult<(bool, String, String)> {
+    let bin = aws_bin();
     let mut cmd = Command::new(&bin);
     if let Some(p) = profile {
         cmd.env("AWS_PROFILE", p);
@@ -45,11 +42,19 @@ pub(super) fn run_aws_cli_with_cancel(
     } else {
         AWS_COMMAND_TIMEOUT
     };
-    let out = bounded_process::run(&mut cmd, None, timeout, AWS_MAX_OUTPUT_BYTES, cancellation).map_err(|error| {
-        if matches!(&error, ProcessRunError::Spawn(cause) if cause.kind() == std::io::ErrorKind::NotFound) {
-            AppError::AwsCliMissing(bin.clone())
+    let out = sikemux_process::run(
+        &mut cmd,
+        None,
+        timeout,
+        AWS_MAX_OUTPUT_BYTES,
+        Some(cancellation),
+    )
+    .map_err(|error| {
+        if matches!(&error, ProcessRunError::Spawn(cause) if cause.kind() == std::io::ErrorKind::NotFound)
+        {
+            AwsError::CliMissing(bin.clone())
         } else {
-            AppError::Aws(error.to_string())
+            AwsError::Aws(error.to_string())
         }
     })?;
     Ok((
@@ -59,35 +64,40 @@ pub(super) fn run_aws_cli_with_cancel(
     ))
 }
 
-pub(super) async fn run_aws_cli_cancellable_async(
+/// The host stops a call or stream by dropping its future, and a blocking
+/// process run does not notice that on its own.
+struct CancelOnDrop(ProcessCancellation);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+pub(crate) async fn run_aws_cli_async(
     args: &[&str],
     profile: Option<&str>,
-    cancellation: ProcessCancellation,
-) -> AppResult<(bool, String, String)> {
+) -> AwsResult<(bool, String, String)> {
+    let cancellation = ProcessCancellation::new();
+    let _cancel_on_drop = CancelOnDrop(cancellation.clone());
     let profile = profile.map(String::from);
     let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
     task::spawn_blocking(move || {
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        run_aws_cli_with_cancel(&refs, profile.as_deref(), Some(&cancellation))
+        run_aws_cli(&refs, profile.as_deref(), &cancellation)
     })
     .await
-    .map_err(|e| AppError::Other(format!("join error: {e}")))?
+    .map_err(|e| AwsError::Aws(format!("join error: {e}")))?
 }
 
-/// Map AWS CLI stderr text into a typed AppError.
+/// Map AWS CLI stderr text into a typed AwsError.
 ///
 /// Prefers structured JSON when the CLI ran `--output json` and surfaced
 /// an error envelope (`{"Error": {"Code": "ExpiredToken", ...}}`). Falls
 /// back to substring matching the human stderr when no structured form is
 /// present — that's still the common case for client-side failures (e.g.
 /// "Unable to locate credentials" emitted before any API call).
-///
-/// Localized here so callers don't repeat the mapping; if AWS changes the
-/// wording, only this function moves.
-pub(super) fn classify_cli_err(stderr: &str) -> AppError {
-    // Structured form: AWS prints `An error occurred (Code) when calling
-    // ...` for most service errors, sometimes also as a JSON envelope.
-    // Try the latter first — it's stable across locales.
+pub(crate) fn classify_cli_err(stderr: &str) -> AwsError {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(stderr.trim()) {
         let code = v
             .get("Error")
@@ -96,10 +106,10 @@ pub(super) fn classify_cli_err(stderr: &str) -> AppError {
             .map(|s| s.to_ascii_lowercase());
         if let Some(c) = code {
             if c == "expiredtoken" || c == "expiredtokenexception" {
-                return AppError::AwsTokenExpired;
+                return AwsError::TokenExpired;
             }
             if c == "credentialsnotfound" || c.contains("nocredential") {
-                return AppError::AwsNoCredentials;
+                return AwsError::NoCredentials;
             }
         }
     }
@@ -109,55 +119,20 @@ pub(super) fn classify_cli_err(stderr: &str) -> AppError {
         || s.contains("sso session associated with this profile has expired")
         || s.contains("expiredtoken")
     {
-        AppError::AwsTokenExpired
+        AwsError::TokenExpired
     } else if s.contains("could not be found") || s.contains("unable to locate credentials") {
-        AppError::AwsNoCredentials
+        AwsError::NoCredentials
     } else {
-        AppError::Aws(stderr.trim().to_string())
+        AwsError::Aws(stderr.trim().to_string())
     }
 }
 
-/// Async wrapper around `run_aws_cli` for callers that already typed-match
-/// on the (ok, stdout, stderr) tuple (auth path). Same off-thread pattern
-/// as `aws_json_async`.
-pub(super) async fn run_aws_cli_async(
-    args: &[&str],
-    profile: Option<&str>,
-) -> AppResult<(bool, String, String)> {
-    let profile = profile.map(String::from);
-    let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
-    task::spawn_blocking(move || {
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        run_aws_cli(&refs, profile.as_deref())
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("join error: {e}")))?
-}
-
-pub(super) fn aws_json<T: DeserializeOwned>(profile: &str, args: &[&str]) -> AppResult<T> {
-    let (ok, stdout, stderr) = run_aws_cli(args, Some(profile))?;
+pub(crate) async fn aws_json<T: DeserializeOwned>(profile: &str, args: &[&str]) -> AwsResult<T> {
+    let (ok, stdout, stderr) = run_aws_cli_async(args, Some(profile)).await?;
     if !ok {
         return Err(classify_cli_err(&stderr));
     }
-    serde_json::from_str::<T>(&stdout).map_err(AppError::Json)
-}
-
-/// Async wrapper — keeps blocking process spawn off the Tauri worker pool.
-/// Every `#[tauri::command] pub async fn aws_*` should call this, not the
-/// sync `aws_json`. Sync variant is retained for the internal callers
-/// already running inside `task::spawn_blocking` (e.g. `describe_in_chunks`).
-pub(super) async fn aws_json_async<T: DeserializeOwned + Send + 'static>(
-    profile: &str,
-    args: &[&str],
-) -> AppResult<T> {
-    let profile = profile.to_string();
-    let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
-    task::spawn_blocking(move || {
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        aws_json::<T>(&profile, &refs)
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("join error: {e}")))?
+    Ok(serde_json::from_str::<T>(&stdout)?)
 }
 
 /// Run several `aws ... describe-X --<flag> <arns>` calls in parallel,
@@ -168,14 +143,14 @@ pub(super) async fn aws_json_async<T: DeserializeOwned + Send + 'static>(
 /// `["ecs", "describe-services", "--cluster", "<c>"]`).
 /// `arns_flag` is the flag the arns are appended after (e.g. `"--services"`).
 /// `tail_args` lands at the very end (typically `["--output", "json"]`).
-pub(super) async fn describe_in_chunks<R: DeserializeOwned + Send + 'static>(
+pub(crate) async fn describe_in_chunks<R: DeserializeOwned>(
     profile: String,
     base_args: Vec<String>,
     arns_flag: &'static str,
     arns: Vec<String>,
     chunk_size: usize,
     tail_args: Vec<String>,
-) -> AppResult<Vec<R>> {
+) -> AwsResult<Vec<R>> {
     if arns.is_empty() {
         return Ok(Vec::new());
     }
@@ -189,23 +164,17 @@ pub(super) async fn describe_in_chunks<R: DeserializeOwned + Send + 'static>(
             .by_ref()
             .take(DESCRIBE_CHUNK_CONCURRENCY)
             .map(|chunk| {
+                let mut args = base_args.clone();
+                args.push(arns_flag.to_string());
+                args.extend(chunk);
+                args.extend(tail_args.iter().cloned());
                 let profile = profile.clone();
-                let base = base_args.clone();
-                let tail = tail_args.clone();
-                task::spawn_blocking(move || {
-                    let mut args: Vec<String> = base;
-                    args.push(arns_flag.to_string());
-                    args.extend(chunk);
-                    args.extend(tail);
+                async move {
                     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-                    aws_json::<R>(&profile, &refs)
-                })
+                    aws_json::<R>(&profile, &refs).await
+                }
             });
-
-        let results = try_join_all(futs)
-            .await
-            .map_err(|e| AppError::Other(format!("join error: {e}")))?;
-        out.extend(results.into_iter().collect::<AppResult<Vec<R>>>()?);
+        out.extend(try_join_all(futs).await?);
     }
     Ok(out)
 }
@@ -217,25 +186,25 @@ mod tests {
     #[test]
     fn classify_substring_expired() {
         let e = classify_cli_err("An error occurred: token has expired blah");
-        matches!(e, AppError::AwsTokenExpired);
+        assert!(matches!(e, AwsError::TokenExpired));
     }
 
     #[test]
     fn classify_substring_no_credentials() {
         let e = classify_cli_err("Unable to locate credentials");
-        matches!(e, AppError::AwsNoCredentials);
+        assert!(matches!(e, AwsError::NoCredentials));
     }
 
     #[test]
     fn classify_structured_expired() {
         let body = r#"{"Error":{"Code":"ExpiredToken","Message":"x"}}"#;
-        matches!(classify_cli_err(body), AppError::AwsTokenExpired);
+        assert!(matches!(classify_cli_err(body), AwsError::TokenExpired));
     }
 
     #[test]
     fn classify_fallthrough() {
         match classify_cli_err("some weird error\n") {
-            AppError::Aws(msg) => assert_eq!(msg, "some weird error"),
+            AwsError::Aws(msg) => assert_eq!(msg, "some weird error"),
             _ => panic!("expected Aws variant"),
         }
     }

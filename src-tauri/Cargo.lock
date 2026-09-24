@@ -4291,6 +4291,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sikemux-plugin-api",
+ "sikemux-plugin-aws",
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-process",
@@ -4319,6 +4320,18 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "sikemux-plugin-aws"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "serde",
+ "serde_json",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tokio",
 ]
 
 [[package]]

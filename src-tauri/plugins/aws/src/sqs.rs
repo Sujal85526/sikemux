@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::AwsResult;
 
-use super::common::aws_json_async;
+use crate::common::aws_json;
 
 #[derive(Serialize, Clone)]
 pub struct SqsQueue {
@@ -13,14 +13,13 @@ pub struct SqsQueue {
     delayed: Option<String>,
 }
 
-#[tauri::command]
-pub async fn aws_sqs_queues(profile: String) -> AppResult<Vec<SqsQueue>> {
+pub(crate) async fn queues(profile: String) -> AwsResult<Vec<SqsQueue>> {
     #[derive(Deserialize)]
     struct Resp {
         #[serde(default, rename = "QueueUrls")]
         urls: Vec<String>,
     }
-    let resp: Resp = aws_json_async(&profile, &["sqs", "list-queues", "--output", "json"])
+    let resp: Resp = aws_json(&profile, &["sqs", "list-queues", "--output", "json"])
         .await
         .unwrap_or(Resp { urls: vec![] });
 

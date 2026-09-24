@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::AwsResult;
 
-use super::common::aws_json_async;
+use crate::common::aws_json;
 
 #[derive(Serialize, Clone)]
 pub struct LambdaFn {
@@ -14,8 +14,7 @@ pub struct LambdaFn {
     handler: Option<String>,
 }
 
-#[tauri::command]
-pub async fn aws_lambda_functions(profile: String) -> AppResult<Vec<LambdaFn>> {
+pub(crate) async fn functions(profile: String) -> AwsResult<Vec<LambdaFn>> {
     #[derive(Deserialize)]
     struct Resp {
         #[serde(rename = "Functions")]
@@ -36,8 +35,7 @@ pub async fn aws_lambda_functions(profile: String) -> AppResult<Vec<LambdaFn>> {
         #[serde(rename = "Handler")]
         handler: Option<String>,
     }
-    let resp: Resp =
-        aws_json_async(&profile, &["lambda", "list-functions", "--output", "json"]).await?;
+    let resp: Resp = aws_json(&profile, &["lambda", "list-functions", "--output", "json"]).await?;
     let mut out: Vec<LambdaFn> = resp
         .functions
         .into_iter()

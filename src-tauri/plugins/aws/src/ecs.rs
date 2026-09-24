@@ -3,9 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AwsError, AwsResult};
 
-use super::common::{aws_json_async, describe_in_chunks};
+use crate::common::{aws_json, describe_in_chunks};
 
 // AWS describe-services / describe-tasks accept at most this many ARNs.
 const ECS_DESCRIBE_CHUNK: usize = 10;
@@ -22,15 +22,13 @@ pub struct EcsCluster {
     status: Option<String>,
 }
 
-#[tauri::command]
-pub async fn aws_ecs_clusters(profile: String) -> AppResult<Vec<EcsCluster>> {
+pub(crate) async fn clusters(profile: String) -> AwsResult<Vec<EcsCluster>> {
     #[derive(Deserialize)]
     struct ArnList {
         #[serde(rename = "clusterArns")]
         cluster_arns: Vec<String>,
     }
-    let list: ArnList =
-        aws_json_async(&profile, &["ecs", "list-clusters", "--output", "json"]).await?;
+    let list: ArnList = aws_json(&profile, &["ecs", "list-clusters", "--output", "json"]).await?;
     if list.cluster_arns.is_empty() {
         return Ok(Vec::new());
     }
@@ -92,14 +90,13 @@ pub struct EcsService {
     primary_updated_at: Option<String>,
 }
 
-#[tauri::command]
-pub async fn aws_ecs_services(profile: String, cluster: String) -> AppResult<Vec<EcsService>> {
+pub(crate) async fn services(profile: String, cluster: String) -> AwsResult<Vec<EcsService>> {
     #[derive(Deserialize)]
     struct ArnList {
         #[serde(rename = "serviceArns")]
         arns: Vec<String>,
     }
-    let list: ArnList = aws_json_async(
+    let list: ArnList = aws_json(
         &profile,
         &[
             "ecs",
@@ -196,18 +193,17 @@ pub struct EcsTask {
     last_status_change: Option<String>,
 }
 
-#[tauri::command]
-pub async fn aws_ecs_tasks(
+pub(crate) async fn tasks(
     profile: String,
     cluster: String,
     service: String,
-) -> AppResult<Vec<EcsTask>> {
+) -> AwsResult<Vec<EcsTask>> {
     #[derive(Deserialize)]
     struct ArnList {
         #[serde(rename = "taskArns")]
         arns: Vec<String>,
     }
-    let list: ArnList = aws_json_async(
+    let list: ArnList = aws_json(
         &profile,
         &[
             "ecs",
@@ -307,13 +303,12 @@ pub struct EcsServiceLog {
     region: Option<String>,
 }
 
-#[tauri::command]
-pub async fn aws_ecs_service_log_config(
+pub(crate) async fn service_log_config(
     profile: String,
     cluster: String,
     service: String,
-) -> AppResult<EcsServiceLog> {
-    let svc_v: serde_json::Value = aws_json_async(
+) -> AwsResult<EcsServiceLog> {
+    let svc_v: serde_json::Value = aws_json(
         &profile,
         &[
             "ecs",
@@ -333,10 +328,10 @@ pub async fn aws_ecs_service_log_config(
         .and_then(|a| a.first())
         .and_then(|s| s.get("taskDefinition"))
         .and_then(|v| v.as_str())
-        .ok_or(AppError::BadArg("service has no taskDefinition"))?
+        .ok_or(AwsError::BadArg("service has no taskDefinition"))?
         .to_string();
 
-    let td_v: serde_json::Value = aws_json_async(
+    let td_v: serde_json::Value = aws_json(
         &profile,
         &[
             "ecs",
@@ -352,7 +347,7 @@ pub async fn aws_ecs_service_log_config(
         .get("taskDefinition")
         .and_then(|t| t.get("containerDefinitions"))
         .and_then(|c| c.as_array())
-        .ok_or(AppError::BadArg("no containerDefinitions"))?;
+        .ok_or(AwsError::BadArg("no containerDefinitions"))?;
 
     containers
         .iter()
@@ -381,16 +376,15 @@ pub async fn aws_ecs_service_log_config(
                 region,
             })
         })
-        .ok_or(AppError::BadArg("no container with awslogs driver"))
+        .ok_or(AwsError::BadArg("no container with awslogs driver"))
 }
 
-#[tauri::command]
-pub async fn aws_ecs_task_log_config(
+pub(crate) async fn task_log_config(
     profile: String,
     cluster: String,
     task_arn: String,
-) -> AppResult<EcsTaskLog> {
-    let task_v: serde_json::Value = aws_json_async(
+) -> AwsResult<EcsTaskLog> {
+    let task_v: serde_json::Value = aws_json(
         &profile,
         &[
             "ecs",
@@ -409,14 +403,14 @@ pub async fn aws_ecs_task_log_config(
         .get("tasks")
         .and_then(|t| t.as_array())
         .and_then(|a| a.first())
-        .ok_or(AppError::BadArg("task not found"))?;
+        .ok_or(AwsError::BadArg("task not found"))?;
     let td_arn = task
         .get("taskDefinitionArn")
         .and_then(|v| v.as_str())
-        .ok_or(AppError::BadArg("no taskDefinitionArn"))?;
+        .ok_or(AwsError::BadArg("no taskDefinitionArn"))?;
     let task_id = task_arn.rsplit('/').next().unwrap_or(&task_arn).to_string();
 
-    let td_v: serde_json::Value = aws_json_async(
+    let td_v: serde_json::Value = aws_json(
         &profile,
         &[
             "ecs",
@@ -432,7 +426,7 @@ pub async fn aws_ecs_task_log_config(
         .get("taskDefinition")
         .and_then(|t| t.get("containerDefinitions"))
         .and_then(|c| c.as_array())
-        .ok_or(AppError::BadArg("no containerDefinitions"))?;
+        .ok_or(AwsError::BadArg("no containerDefinitions"))?;
 
     containers
         .iter()
@@ -471,5 +465,5 @@ pub async fn aws_ecs_task_log_config(
                 region,
             })
         })
-        .ok_or(AppError::BadArg("no container with awslogs driver"))
+        .ok_or(AwsError::BadArg("no container with awslogs driver"))
 }

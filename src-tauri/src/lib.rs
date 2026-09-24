@@ -2,7 +2,6 @@ mod acp;
 mod agent_detection;
 mod agents;
 mod autopsy;
-mod aws;
 mod browser;
 mod bruno;
 pub mod cli_client;
@@ -33,7 +32,6 @@ mod wallpaper;
 mod wheel;
 
 use acp::AcpManager;
-use aws::LogsTailManager;
 use browser::BrowserManager;
 use observability::UiWatchdogState;
 use plugins::PluginHost;
@@ -81,7 +79,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(LogsTailManager::default())
         .on_window_event(|window, event| {
             // Drain every live PTY on close so we don't leave orphan
             // shells, agents, or `tail`s alive after the user quits.
@@ -324,22 +321,6 @@ pub fn run() {
             search::read_file_window,
             ssh::ssh_hosts,
             ssh::ssh_config_ensure,
-            aws::auth::aws_profiles,
-            aws::auth::aws_caller_identity,
-            aws::auth::aws_sso_login,
-            aws::auth::aws_sso_cancel,
-            aws::ecs::aws_ecs_clusters,
-            aws::ecs::aws_ecs_services,
-            aws::ecs::aws_ecs_tasks,
-            aws::ecs::aws_ecs_service_log_config,
-            aws::ecs::aws_ecs_task_log_config,
-            aws::ec2::aws_ec2_instances,
-            aws::lambda::aws_lambda_functions,
-            aws::sqs::aws_sqs_queues,
-            aws::billing::aws_billing_months,
-            aws::s3::aws_s3_buckets,
-            aws::logs::aws_logs_tail_start,
-            aws::logs::aws_logs_tail_stop,
             external::open_url,
             external::macos_focus_app,
             external::run_background_command,

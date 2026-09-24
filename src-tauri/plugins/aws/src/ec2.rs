@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::AwsResult;
 
-use super::common::aws_json_async;
+use crate::common::aws_json;
 
 #[derive(Serialize, Clone)]
 pub struct Ec2Instance {
@@ -15,8 +15,7 @@ pub struct Ec2Instance {
     launch_time: Option<String>,
 }
 
-#[tauri::command]
-pub async fn aws_ec2_instances(profile: String) -> AppResult<Vec<Ec2Instance>> {
+pub(crate) async fn instances(profile: String) -> AwsResult<Vec<Ec2Instance>> {
     #[derive(Deserialize)]
     struct Resp {
         #[serde(rename = "Reservations")]
@@ -57,8 +56,7 @@ pub async fn aws_ec2_instances(profile: String) -> AppResult<Vec<Ec2Instance>> {
         value: String,
     }
 
-    let resp: Resp =
-        aws_json_async(&profile, &["ec2", "describe-instances", "--output", "json"]).await?;
+    let resp: Resp = aws_json(&profile, &["ec2", "describe-instances", "--output", "json"]).await?;
     let mut out = Vec::new();
     for r in resp.reservations {
         for i in r.instances {
