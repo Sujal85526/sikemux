@@ -557,7 +557,7 @@ fn current_fd_limit() -> (Option<u64>, Option<u64>) {
         if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
             return (None, None);
         }
-        (Some(lim.rlim_cur as u64), Some(lim.rlim_max as u64))
+        (Some(lim.rlim_cur), Some(lim.rlim_max))
     }
 }
 

@@ -183,20 +183,24 @@ pub(super) async fn describe_in_chunks<R: DeserializeOwned + Send + 'static>(
     let chunks: Vec<Vec<String>> = arns.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
     let mut out = Vec::with_capacity(chunks.len());
-    for batch in chunks.chunks(DESCRIBE_CHUNK_CONCURRENCY) {
-        let futs = batch.iter().cloned().map(|chunk| {
-            let profile = profile.clone();
-            let base = base_args.clone();
-            let tail = tail_args.clone();
-            task::spawn_blocking(move || {
-                let mut args: Vec<String> = base;
-                args.push(arns_flag.to_string());
-                args.extend(chunk);
-                args.extend(tail);
-                let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-                aws_json::<R>(&profile, &refs)
-            })
-        });
+    let mut pending = chunks.into_iter().peekable();
+    while pending.peek().is_some() {
+        let futs = pending
+            .by_ref()
+            .take(DESCRIBE_CHUNK_CONCURRENCY)
+            .map(|chunk| {
+                let profile = profile.clone();
+                let base = base_args.clone();
+                let tail = tail_args.clone();
+                task::spawn_blocking(move || {
+                    let mut args: Vec<String> = base;
+                    args.push(arns_flag.to_string());
+                    args.extend(chunk);
+                    args.extend(tail);
+                    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                    aws_json::<R>(&profile, &refs)
+                })
+            });
 
         let results = try_join_all(futs)
             .await
