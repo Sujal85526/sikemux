@@ -1007,7 +1007,7 @@ describe("frontend persistence", () => {
         );
 
         const restored = getState().windows[window.id];
-        expect(restored).toMatchObject({ name: "1", role: "term" });
+        expect(restored).toMatchObject({ name: "Terminal", role: "term" });
         expect(restored.fixed).toBeUndefined();
     });
 });

@@ -168,7 +168,7 @@ function initialSession(): {
     const pane = makePane("", { kind: "terminal" });
     const win: Window = {
         id: newId("win"),
-        name: "1",
+        name: "Terminal",
         role: "term",
         root: pane,
         activePaneId: pane.id,

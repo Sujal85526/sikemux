@@ -730,7 +730,6 @@ export function applyHydrate(raw: string): HydrationResult {
     for (const sid of Object.keys(sessions)) {
         const rows = Array.isArray(rawWindows[sid]) ? rawWindows[sid] : [];
         windowsBySession[sid] = [];
-        let projectTerminalNumber = 0;
         for (const row of rows) {
             if (!isWindow(row) || windows[row.id]) continue;
             const ids = layoutIds(row.root);
@@ -743,7 +742,7 @@ export function applyHydrate(raw: string): HydrationResult {
                 activePaneId: ids.panes.includes(row.activePaneId) ? row.activePaneId : ids.panes[0],
             };
             if (sessions[sid].kind === "project" && restored.role === "term") {
-                restored.name = String(++projectTerminalNumber);
+                restored.name = "Terminal";
                 delete restored.fixed;
             }
             windows[row.id] = restored;

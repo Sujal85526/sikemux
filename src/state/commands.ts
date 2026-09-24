@@ -143,7 +143,7 @@ function makeSession(kind: SessionKind, name: string, cwd: string, activeWindowI
 }
 
 function projectWindows(cwd: string): Window[] {
-    return [makeWindow(cwd, "1", { role: "term" })];
+    return [makeWindow(cwd, "Terminal", { role: "term" })];
 }
 
 /**
@@ -1135,13 +1135,7 @@ export function setSplitSizes(windowId: string, splitId: string, sizes: number[]
 export function newWindow(): void {
     withActiveSession((d, session) => {
         const winIds = d.windowsBySession[session.id] ?? [];
-        const terminalNumbers = winIds
-            .map((id) => d.windows[id])
-            .filter((win) => win?.role === "term")
-            .map((win) => Number.parseInt(win.name, 10))
-            .filter((n) => Number.isFinite(n) && n > 0);
-        const nextTerminalNumber = terminalNumbers.length === 0 ? 1 : Math.max(...terminalNumbers) + 1;
-        const w = makeWindow(session.cwd, String(nextTerminalNumber));
+        const w = makeWindow(session.cwd, "Terminal");
         d.windows[w.id] = w;
         d.windowsBySession[session.id] = [...winIds, w.id];
         const sess = d.sessions[session.id];
