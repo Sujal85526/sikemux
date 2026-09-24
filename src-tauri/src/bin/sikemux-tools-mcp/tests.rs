@@ -505,3 +505,81 @@ fn an_app_that_cannot_list_plugin_tools_is_asked_again_next_time() {
     });
     assert_eq!(app.received()["request"]["method"], json!("plugins.tools"));
 }
+
+fn filtered_tool() -> Tool {
+    serde_json::from_value(json!({
+        "name": "signoz_search_logs",
+        "method": "searchLogs",
+        "description": "Search logs.",
+        "properties": {
+            "filters": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": { "type": "string", "minLength": 1 },
+                        "op": { "type": "string", "enum": ["equals", "exists"] },
+                        "value": { "type": ["string", "number", "boolean"] },
+                    },
+                    "required": ["key", "op"],
+                    "additionalProperties": false,
+                },
+            },
+            "variables": {
+                "type": "object",
+                "additionalProperties": { "type": ["string", "number", "boolean"] },
+            },
+        },
+        "required": [],
+    }))
+    .expect("a plugin tool")
+}
+
+#[test]
+fn nested_arguments_are_checked_and_named_by_where_they_went_wrong() {
+    let tool = filtered_tool();
+    let refused = |arguments: Value| tool.validate(&arguments).expect_err("refused");
+    assert!(tool
+        .validate(&json!({ "filters": [{ "key": "status", "op": "equals", "value": 503 }] }))
+        .is_ok());
+    assert_eq!(
+        refused(json!({ "filters": [{ "key": "status", "op": "is" }] })),
+        "filters[0].op: 'is' is not one of ['equals', 'exists']"
+    );
+    assert_eq!(
+        refused(json!({ "filters": [{ "op": "exists" }] })),
+        "filters[0]: 'key' is a required property"
+    );
+    assert_eq!(
+        refused(json!({ "filters": [{ "key": "a", "op": "exists", "extra": 1 }] })),
+        "filters[0].extra: is not allowed here"
+    );
+    assert_eq!(
+        refused(json!({ "filters": ["status=503"] })),
+        "filters[0]: 'status=503' is not of type 'object'"
+    );
+    assert_eq!(
+        refused(json!({ "variables": { "env": ["dev"] } })),
+        "variables.env: [\"dev\"] is not of type 'string', 'number', 'boolean'"
+    );
+}
+
+#[test]
+fn a_tool_this_server_cannot_read_does_not_hide_the_others() {
+    let manifest = Manifest::load();
+    let answer = json!([
+        { "name": "broken" },
+        {
+            "name": "signoz_trace",
+            "method": "trace",
+            "description": "One trace.",
+            "properties": {},
+            "required": [],
+        },
+    ]);
+    let names: Vec<String> = plugin_tools(&manifest, answer)
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect();
+    assert_eq!(names, ["signoz_trace"]);
+}

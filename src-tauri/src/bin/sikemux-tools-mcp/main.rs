@@ -82,19 +82,25 @@ struct PluginTools(Mutex<Option<Arc<Vec<Tool>>>>);
 
 impl PluginTools {
     fn get(&self, manifest: &Manifest, relay: &Relay<'_>) -> Arc<Vec<Tool>> {
-        let mut cached = self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(tools) = cached.as_ref() {
-            return Arc::clone(tools);
+        if let Some(tools) = self.cached() {
+            return tools;
         }
         let Ok(answer) = relay("plugins.tools", &json!({})) else {
             return Arc::default();
         };
         let tools = Arc::new(plugin_tools(manifest, answer));
-        *cached = Some(Arc::clone(&tools));
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&tools));
         tools
+    }
+
+    fn cached(&self) -> Option<Arc<Vec<Tool>>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     #[cfg(test)]
@@ -103,11 +109,15 @@ impl PluginTools {
     }
 }
 
-/// A plugin tool that reuses a built-in name is dropped rather than shadowing it.
+/// A plugin tool that reuses a built-in name, or that this server cannot read,
+/// is left out; the rest are still offered.
 fn plugin_tools(manifest: &Manifest, answer: Value) -> Vec<Tool> {
-    serde_json::from_value::<Vec<Tool>>(answer)
-        .unwrap_or_default()
+    let Value::Array(offered) = answer else {
+        return Vec::new();
+    };
+    offered
         .into_iter()
+        .filter_map(|tool| serde_json::from_value::<Tool>(tool).ok())
         .filter(|tool| !manifest.declares(&tool.name))
         .collect()
 }

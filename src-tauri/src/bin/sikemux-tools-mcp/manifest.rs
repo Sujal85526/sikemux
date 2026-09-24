@@ -114,7 +114,7 @@ impl Tool {
         };
         for (name, schema) in &self.properties {
             if let Some(value) = object.get(name) {
-                check(value, schema)?;
+                check(value, schema, name, false)?;
             }
         }
         for name in &self.required {
@@ -138,37 +138,65 @@ impl Tool {
     }
 }
 
-fn check(value: &Value, schema: &Value) -> Result<(), String> {
-    if let Some(expected) = schema.get("type").and_then(Value::as_str) {
-        if !has_type(value, expected) {
-            return Err(format!("{} is not of type '{expected}'", describe(value)));
+/// `label` names the value for nested errors; the top level keeps the wording
+/// agents already know, so it is `shown` only once inside an array or object.
+fn check(value: &Value, schema: &Value, label: &str, shown: bool) -> Result<(), String> {
+    let fail = |message: String| {
+        if shown {
+            format!("{label}: {message}")
+        } else {
+            message
         }
+    };
+    let types: Vec<&str> = match schema.get("type") {
+        Some(Value::String(expected)) => vec![expected.as_str()],
+        Some(Value::Array(expected)) => expected.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
+    };
+    if !types.is_empty() && !types.iter().any(|expected| has_type(value, expected)) {
+        let listed: Vec<String> = types
+            .iter()
+            .map(|expected| format!("'{expected}'"))
+            .collect();
+        return Err(fail(format!(
+            "{} is not of type {}",
+            describe(value),
+            listed.join(", ")
+        )));
+    }
+    if let (Some(items), Some(values)) = (schema.get("items"), value.as_array()) {
+        for (index, item) in values.iter().enumerate() {
+            check(item, items, &format!("{label}[{index}]"), true)?;
+        }
+    }
+    if let Some(object) = value.as_object() {
+        check_object(object, schema, label, shown)?;
     }
     if let Some(choices) = schema.get("enum").and_then(Value::as_array) {
         if !choices.contains(value) {
             let listed: Vec<String> = choices.iter().map(describe).collect();
-            return Err(format!(
+            return Err(fail(format!(
                 "{} is not one of [{}]",
                 describe(value),
                 listed.join(", ")
-            ));
+            )));
         }
     }
     if let Some(number) = value.as_f64() {
         if let Some(limit) = schema.get("minimum") {
             if limit.as_f64().is_some_and(|bound| number < bound) {
-                return Err(format!(
+                return Err(fail(format!(
                     "{} is less than the minimum of {limit}",
                     describe(value)
-                ));
+                )));
             }
         }
         if let Some(limit) = schema.get("maximum") {
             if limit.as_f64().is_some_and(|bound| number > bound) {
-                return Err(format!(
+                return Err(fail(format!(
                     "{} is greater than the maximum of {limit}",
                     describe(value)
-                ));
+                )));
             }
         }
     }
@@ -179,7 +207,7 @@ fn check(value: &Value, schema: &Value) -> Result<(), String> {
             .and_then(Value::as_u64)
             .is_some_and(|most| length > most)
         {
-            return Err(format!("{} is too long", describe(value)));
+            return Err(fail(format!("{} is too long", describe(value))));
         }
         if let Some(least) = schema.get("minLength").and_then(Value::as_u64) {
             if length < least {
@@ -188,8 +216,49 @@ fn check(value: &Value, schema: &Value) -> Result<(), String> {
                 } else {
                     "is too short"
                 };
-                return Err(format!("{} {complaint}", describe(value)));
+                return Err(fail(format!("{} {complaint}", describe(value))));
             }
+        }
+    }
+    Ok(())
+}
+
+/// The fields inside an object argument, when the schema describes them.
+fn check_object(
+    object: &Map<String, Value>,
+    schema: &Value,
+    label: &str,
+    shown: bool,
+) -> Result<(), String> {
+    let properties = schema.get("properties").and_then(Value::as_object);
+    for (name, value) in object {
+        let field = format!("{label}.{name}");
+        match (
+            properties.and_then(|properties| properties.get(name)),
+            schema.get("additionalProperties"),
+        ) {
+            (Some(described), _) => check(value, described, &field, true)?,
+            (None, Some(Value::Bool(false))) => {
+                return Err(format!("{field}: is not allowed here"))
+            }
+            (None, Some(rest)) if rest.is_object() => check(value, rest, &field, true)?,
+            _ => {}
+        }
+    }
+    for name in schema
+        .get("required")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        if !object.contains_key(name) {
+            let message = format!("'{name}' is a required property");
+            return Err(if shown {
+                format!("{label}: {message}")
+            } else {
+                message
+            });
         }
     }
     Ok(())

@@ -97,16 +97,18 @@ impl PluginHost {
             .collect()
     }
 
-    /// Every tool the loaded plugins offer agents, beside the plugin that answers it.
-    pub fn agent_tools(&self) -> impl Iterator<Item = (&str, &AgentTool)> {
-        self.plugins.iter().flat_map(|(id, loaded)| {
-            loaded
-                .plugin
-                .manifest()
-                .tools
-                .iter()
-                .map(move |tool| (id.as_str(), tool))
-        })
+    /// Every tool the loaded plugins offer agents, beside the plugin that answers
+    /// it. When two plugins name the same tool, the first keeps it.
+    pub fn agent_tools(&self) -> Vec<(&str, &AgentTool)> {
+        let mut offered: Vec<(&str, &AgentTool)> = Vec::new();
+        for (id, loaded) in &self.plugins {
+            for tool in &loaded.plugin.manifest().tools {
+                if offered.iter().all(|(_, kept)| kept.name != tool.name) {
+                    offered.push((id.as_str(), tool));
+                }
+            }
+        }
+        offered
     }
 
     /// Runs a tool by the name an agent knows it by. A plugin method that no
@@ -114,6 +116,7 @@ impl PluginHost {
     pub async fn call_agent_tool(&self, name: &str, arguments: Value) -> AppResult<Value> {
         let (plugin, method) = self
             .agent_tools()
+            .into_iter()
             .find(|(_, tool)| tool.name == name)
             .map(|(plugin, tool)| (plugin.to_owned(), tool.method.clone()))
             .ok_or_else(|| AppError::Other(format!("no plugin offers the tool `{name}`")))?;
@@ -363,6 +366,7 @@ mod tests {
 
         let offered: Vec<(&str, &str)> = host
             .agent_tools()
+            .into_iter()
             .map(|(plugin, tool)| (plugin, tool.name.as_str()))
             .collect();
         assert_eq!(offered, [("test.echo", "echo_back")]);
@@ -373,6 +377,28 @@ mod tests {
             Some(json!({ "a": 1 }))
         );
         assert!(host.call_agent_tool("fail", Value::Null).await.is_err());
+    }
+
+    #[test]
+    fn the_first_plugin_keeps_a_tool_name_two_plugins_claim() {
+        let claiming = |id: &str| -> Arc<dyn Plugin> {
+            let manifest = Manifest::from_json(
+                &json!({
+                    "id": id, "name": "Echo", "version": "1.0.0", "sikemux": "*",
+                    "tools": [{ "name": "echo_back", "method": "echo", "description": "Echo." }],
+                })
+                .to_string(),
+            )
+            .expect("test manifest parses");
+            Arc::new(Echo(manifest))
+        };
+        let host = host(vec![claiming("test.b"), claiming("test.a")]);
+        let offered: Vec<&str> = host
+            .agent_tools()
+            .into_iter()
+            .map(|(plugin, _)| plugin)
+            .collect();
+        assert_eq!(offered, ["test.a"]);
     }
 
     #[tokio::test]
