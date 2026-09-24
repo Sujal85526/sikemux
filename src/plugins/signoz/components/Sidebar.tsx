@@ -26,7 +26,12 @@ function Pins({ paneId, active }: { paneId: string; active: boolean }) {
     const dashboards = useResourceEnabled(active && wantsDashboards, signozDashboardsR);
     const health = useResourceEnabled(active, signozServicesR, { minutes });
     const failing = useMemo(
-        () => new Set(mergeByService(health.data ?? [], environment).filter((row) => row.errorRate >= FAILING_RATE).map((row) => row.service)),
+        () =>
+            new Set(
+                mergeByService(health.data ?? [], environment)
+                    .filter((row) => row.errorRate >= FAILING_RATE)
+                    .map((row) => row.service),
+            ),
         [environment, health.data],
     );
     if (pins.length === 0) return null;

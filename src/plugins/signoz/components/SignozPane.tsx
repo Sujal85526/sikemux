@@ -103,7 +103,10 @@ function ServiceBadge({ service, active }: { service: string; active: boolean })
     const minutes = signozSettings.useSelect((settings) => settings.minutes);
     const environment = signozSettings.useSelect((settings) => settings.environment);
     const health = useResourceEnabled(active, signozServicesR, { minutes });
-    const row = useMemo(() => mergeByService(health.data ?? [], environment).find((candidate) => candidate.service === service), [environment, health.data, service]);
+    const row = useMemo(
+        () => mergeByService(health.data ?? [], environment).find((candidate) => candidate.service === service),
+        [environment, health.data, service],
+    );
     if (!row || row.errors === 0) return null;
     return <span className="sgz-badge bad">{percent(row.errorRate)} errors</span>;
 }

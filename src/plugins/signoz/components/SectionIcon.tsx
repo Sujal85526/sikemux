@@ -9,7 +9,15 @@ const PATHS: Record<Section, string> = {
 
 export function SectionIcon({ section }: { section: Section }) {
     return (
-        <svg className="sgz-nav-icon" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden="true">
+        <svg
+            className="sgz-nav-icon"
+            width={14}
+            height={14}
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.4}
+            aria-hidden="true">
             <path d={PATHS[section]} />
         </svg>
     );

@@ -791,7 +791,11 @@ describe("frontend persistence", () => {
         );
 
         const st = getState();
-        expect(Object.values(st.sessions).filter((session) => session.kind === "bruno").map((session) => session.name)).toEqual(["Bruno"]);
+        expect(
+            Object.values(st.sessions)
+                .filter((session) => session.kind === "bruno")
+                .map((session) => session.name),
+        ).toEqual(["Bruno"]);
         expect(st.sessions[aws.id].name).toBe("AWS");
         expect(st.activeSessionId).toBe(first.id);
         expect(st.brunoWorkspaces).toEqual(expect.arrayContaining(["/ws/old", "/ws/api-docs", "/ws/billing"]));
