@@ -273,13 +273,7 @@ async fn prepare_grok_home(
         "config.toml",
         "",
     )?;
-    let mut args = vec![
-        "mcp",
-        "add",
-        "sikemux_tools",
-        "--",
-        launch.command.as_str(),
-    ];
+    let mut args = vec!["mcp", "add", "sikemux_tools", "--", launch.command.as_str()];
     args.extend(launch.args.iter().map(String::as_str));
     run_config_command(agent_program, &args, ("GROK_HOME", &home), "Grok").await?;
     Ok(home)
@@ -498,8 +492,7 @@ mod tests {
 
     #[test]
     fn claude_is_handed_a_stdio_server_named_for_sikemux() {
-        let document =
-            json!({ "mcpServers": { "sikemux-tools": mcp_server_document(&launch()) } });
+        let document = json!({ "mcpServers": { "sikemux-tools": mcp_server_document(&launch()) } });
         let server = &document["mcpServers"]["sikemux-tools"];
         assert_eq!(server["type"], "stdio");
         assert_eq!(server["command"], "/Apps/Sikemux.app/sikemux-tools-mcp");
