@@ -156,6 +156,96 @@ fn lines_of(result: &Value) -> Vec<LogLine> {
         .unwrap_or_default()
 }
 
+const DEFAULT_BUCKETS: u32 = 60;
+const MAX_BUCKETS: u32 = 240;
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeQuery {
+    #[serde(flatten)]
+    pub search: LogSearch,
+    pub buckets: Option<u32>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeBucket {
+    /// Unix milliseconds at the start of the bucket.
+    pub start: u64,
+    pub counts: BTreeMap<String, u64>,
+}
+
+/// How many lines of each level arrived in each slice of the window. The
+/// severity toggles are left out on purpose: the chart shows the whole shape
+/// of the traffic, and the reader's choice only dims part of it.
+pub async fn volume(data_dir: &Path, request: VolumeQuery) -> SignozResult<Vec<VolumeBucket>> {
+    let search = LogSearch {
+        severities: Vec::new(),
+        ..request.search
+    };
+    let (start, end) = search.scope.window();
+    let buckets = request
+        .buckets
+        .unwrap_or(DEFAULT_BUCKETS)
+        .clamp(1, MAX_BUCKETS);
+    let step_seconds = ((end - start) / 1_000 / u64::from(buckets)).max(1);
+    let spec = json!({
+        "signal": "logs",
+        "stepInterval": step_seconds,
+        "aggregations": [{ "expression": "count()" }],
+        "groupBy": [{ "name": "severity_text", "fieldContext": "log" }],
+    });
+    let request = query::builder(
+        "time_series",
+        (start, end),
+        query::with_filter(spec, expression(&search)?),
+    );
+    let result = client::query_range(data_dir, &request).await?;
+    Ok(bucket(&result, start, end, step_seconds * 1_000))
+}
+
+fn bucket(result: &Value, start: u64, end: u64, step_ms: u64) -> Vec<VolumeBucket> {
+    let first = start - start % step_ms;
+    let count = ((end.saturating_sub(first)) / step_ms + 1) as usize;
+    let mut buckets: Vec<VolumeBucket> = (0..count)
+        .map(|index| VolumeBucket {
+            start: first + index as u64 * step_ms,
+            counts: BTreeMap::new(),
+        })
+        .collect();
+    let series = result
+        .pointer("/aggregations/0/series")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for serie in &series {
+        let level = serie
+            .pointer("/labels/0/value")
+            .and_then(Value::as_str)
+            .map(|level| level.trim().to_uppercase())
+            .filter(|level| !level.is_empty())
+            .unwrap_or_else(|| "OTHER".into());
+        for point in serie
+            .get("values")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let (Some(at), Some(value)) = (
+                point.get("timestamp").and_then(Value::as_u64),
+                point.get("value").and_then(Value::as_f64),
+            ) else {
+                continue;
+            };
+            let index = (at.saturating_sub(first) / step_ms) as usize;
+            if let Some(slot) = buckets.get_mut(index) {
+                *slot.counts.entry(level.clone()).or_default() += value.max(0.0) as u64;
+            }
+        }
+    }
+    buckets
+}
+
 pub async fn search(data_dir: &Path, search: LogSearch) -> SignozResult<LogPage> {
     let limit = search.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let offset = search.offset.unwrap_or(0);
@@ -303,6 +393,22 @@ mod tests {
             "(body CONTAINS 'can\\'t') AND (severity_text IN ('ERROR', 'FATAL')) AND (service.name = 'api')"
         );
         assert_eq!(expression(&LogSearch::default()).unwrap(), None);
+    }
+
+    #[test]
+    fn buckets_every_level_and_leaves_quiet_slices_empty() {
+        let result = json!({ "aggregations": [{ "series": [
+            { "labels": [{ "value": "error" }], "values": [{ "timestamp": 60_000, "value": 2 }, { "timestamp": 180_000, "value": 1 }] },
+            { "labels": [{ "value": "INFO" }], "values": [{ "timestamp": 60_000, "value": 40 }] },
+            { "labels": [{ "value": "" }], "values": [{ "timestamp": 120_000, "value": 3 }] },
+        ] }] });
+        let buckets = bucket(&result, 60_000, 240_000, 60_000);
+        assert_eq!(buckets.len(), 4);
+        assert_eq!(buckets[0].counts.get("ERROR"), Some(&2));
+        assert_eq!(buckets[0].counts.get("INFO"), Some(&40));
+        assert_eq!(buckets[1].counts.get("OTHER"), Some(&3));
+        assert_eq!(buckets[2].counts.get("ERROR"), Some(&1));
+        assert!(buckets[3].counts.is_empty());
     }
 
     #[test]

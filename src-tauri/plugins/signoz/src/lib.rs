@@ -10,6 +10,7 @@
 mod auth;
 mod client;
 mod config;
+mod dashboards;
 mod error;
 mod fields;
 mod filter;
@@ -142,6 +143,10 @@ impl Plugin for Signoz {
                 }
                 "signOut" => answer(auth::sign_out(data_dir)).await,
                 "searchLogs" => answer(logs::search(data_dir, params(input)?)).await,
+                "logVolume" => answer(logs::volume(data_dir, params(input)?)).await,
+                "dashboards" => answer(dashboards::list(data_dir)).await,
+                "dashboard" => answer(dashboards::get(data_dir, params(input)?)).await,
+                "panel" => answer(dashboards::panel(data_dir, params(input)?)).await,
                 "services" => answer(services::health(data_dir, params(input)?)).await,
                 "trace" => answer(traces::trace(data_dir, params(input)?)).await,
                 "searchTraces" => answer(traces::search(data_dir, params(input)?)).await,
@@ -253,6 +258,53 @@ mod live {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("clock")
             .as_millis() as u64;
+
+        let volume = plugin
+            .call(ctx, "logVolume", json!({ "minutes": 15, "buckets": 30 }))
+            .await
+            .expect("log volume");
+        assert!(volume.as_array().is_some_and(|buckets| buckets.len() >= 30));
+
+        let dashboards = plugin
+            .call(ctx, "dashboards", Value::Null)
+            .await
+            .expect("dashboards");
+        let mut drawn = 0;
+        for summary in dashboards.as_array().expect("dashboard list") {
+            let dashboard = plugin
+                .call(ctx, "dashboard", json!({ "id": summary["id"] }))
+                .await
+                .expect("dashboard");
+            let variables: serde_json::Map<String, Value> = dashboard["variables"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|variable| {
+                    (
+                        variable["name"].as_str().unwrap_or_default().to_string(),
+                        variable["selected"].clone(),
+                    )
+                })
+                .collect();
+            for panel in dashboard["panels"].as_array().expect("panels") {
+                if panel["drawable"] != true {
+                    continue;
+                }
+                let data = plugin
+                    .call(ctx, "panel", json!({ "kind": panel["kind"], "query": panel["query"], "variables": variables, "minutes": 60 }))
+                    .await;
+                assert!(
+                    data.is_ok(),
+                    "{} / {}: {:?}",
+                    summary["title"],
+                    panel["title"],
+                    data.err()
+                );
+                drawn += 1;
+            }
+        }
+        eprintln!("live: drew {drawn} dashboard panels");
+
         let filtered = plugin
             .call(
                 ctx,
