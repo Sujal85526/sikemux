@@ -1,3 +1,4 @@
+import { pluginDocuments } from "../plugins/documents";
 import type { PaneKind, Session, TabRef, Window } from "./types";
 import type { StoreState } from "./store";
 import { collectPanes } from "./layout";
@@ -138,7 +139,7 @@ export function documentsOf(
         const view = brunoViews[win.activePaneId];
         return { ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
     }
-    return null;
+    return pluginDocuments(win.role)?.list(win.activePaneId) ?? null;
 }
 
 /**

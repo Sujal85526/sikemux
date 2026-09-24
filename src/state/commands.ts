@@ -1,3 +1,4 @@
+import { pluginDocuments } from "../plugins/documents";
 import type { PluginManifest } from "../api/plugins";
 import { FIXED_SESSION_NAMES, fixedSessionName } from "./sessionNames";
 import type { PluginKind } from "../plugins/kinds";
@@ -730,6 +731,8 @@ export function reorderDocumentTab(windowId: string, sourceDoc: string, targetDo
                   : undefined;
         if (list) moveBeside(list, sourceDoc, targetDoc, placement);
     });
+    const win = getState().windows[windowId];
+    if (win) pluginDocuments(win.role)?.reorder?.(win.activePaneId, sourceDoc, targetDoc, placement);
 }
 
 export function closeSession(id: string): void {
@@ -1268,6 +1271,14 @@ export function closeActiveFocusTarget(): void {
         return;
     }
 
+    const documents = win ? pluginDocuments(win.role) : undefined;
+    if (win && documents) {
+        // ⌥W closes the document in front, not the plugin holding it.
+        const { activeId } = documents.list(win.activePaneId);
+        if (activeId) documents.close(win.activePaneId, activeId);
+        return;
+    }
+
     if (session.kind === "bruno") {
         // ⌥W closes the active request tab, not the whole Bruno workspace.
         const path = st.brunoViews[brunoPaneId(st, session.id) ?? ""]?.activeRequestPath;
@@ -1452,6 +1463,7 @@ export function selectWindowId(id: string): void {
 function selectDocument(win: Window, doc: string): void {
     if (win.role === "files") setEditorView(win.activePaneId, { activePath: doc });
     if (win.role === "bruno") brunoSelectRequest(getState().activeSessionId, doc);
+    pluginDocuments(win.role)?.select(win.activePaneId, doc);
 }
 
 function closeDocument(win: Window, doc: string): void {
@@ -1459,6 +1471,7 @@ function closeDocument(win: Window, doc: string): void {
     // each document, so closing goes through it rather than around it.
     if (win.role === "files") emit({ type: "close-file", paneId: win.activePaneId, path: doc });
     if (win.role === "bruno") brunoCloseTab(getState().activeSessionId, doc);
+    pluginDocuments(win.role)?.close(win.activePaneId, doc);
 }
 
 export function selectTab(ref: TabRef): void {
@@ -1539,6 +1552,14 @@ export function cycleTabs(delta: number): void {
     if (win.role === "agent") {
         const next = nextTabIn({ kind: "agents", sessionId: session.id }, delta);
         if (next) selectWindowId(next);
+        return;
+    }
+
+    const documents = pluginDocuments(win.role);
+    if (documents) {
+        const order = documents.list(win.activePaneId);
+        const next = nextInCycle(order, delta);
+        if (next && next !== order.activeId) documents.select(win.activePaneId, next);
         return;
     }
 

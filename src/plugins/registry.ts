@@ -1,9 +1,33 @@
 import type { ComponentType, ReactNode } from "react";
+import type { CtxItem } from "../components/FileTree";
 import { isPluginKind, pluginIdOf, type PluginKind } from "./kinds";
 
 export interface PluginSurfaceProps {
     readonly paneId: string;
     readonly visible: boolean;
+}
+
+/** What a document tab in the workspace strip shows. */
+export interface PluginDocumentTab {
+    readonly label: string;
+    readonly title?: string;
+    readonly icon?: ReactNode;
+    readonly dirty?: boolean;
+}
+
+/**
+ * A surface that holds documents, each shown as a tab in the workspace strip
+ * the way an editor's files are. Reads are plain functions of plugin state so
+ * core can walk tabs outside React; `subscribe` says when to read again.
+ */
+export interface PluginDocuments {
+    list(paneId: string): { readonly ids: readonly string[]; readonly activeId: string | null };
+    describe(paneId: string, id: string): PluginDocumentTab;
+    select(paneId: string, id: string): void;
+    close(paneId: string, id: string): void;
+    reorder?(paneId: string, sourceId: string, targetId: string, placement: "before" | "after"): void;
+    menu?(paneId: string, id: string): readonly CtxItem[];
+    subscribe(listener: () => void): () => void;
 }
 
 export interface PluginSurface {
@@ -13,6 +37,7 @@ export interface PluginSurface {
     readonly render: (props: PluginSurfaceProps) => ReactNode;
     /** What ⌘P does while this surface is in front, in place of the file finder. */
     readonly quickOpen?: () => void;
+    readonly documents?: PluginDocuments;
 }
 
 export interface PluginTopBarProps {
