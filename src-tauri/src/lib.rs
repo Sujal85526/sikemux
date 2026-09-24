@@ -3,7 +3,6 @@ mod agent_detection;
 mod agents;
 mod autopsy;
 mod browser;
-mod bruno;
 pub mod cli_client;
 mod cli_install;
 mod cli_protocol;
@@ -325,7 +324,6 @@ pub fn run() {
             external::macos_focus_app,
             external::run_background_command,
             transparency::set_window_blur,
-            bruno::bru_send,
             plugins::plugin_manifests,
             plugins::plugin_call,
             plugins::plugin_stream_start,

@@ -5,6 +5,7 @@ export {
     type FrontendPlugin,
     type PluginDocuments,
     type PluginDocumentTab,
+    type PluginPickerEntry,
     type PluginShortcut,
     type PluginSurface,
     type PluginTopBarProps,

@@ -9,7 +9,7 @@ import { useTabReorder, type TabDropRule, type TabReorderHandler } from "./useTa
 
 /**
  * One normalized tab. Every tab strip in the app (editor files, agents,
- * terminals, Bruno requests) describes its tabs as these, so selection,
+ * terminals, plugin documents) describes its tabs as these, so selection,
  * closing, the dirty dot, accessories and the right-click menu all behave
  * identically. A new group only has to map its state into `TabDescriptor[]`.
  */

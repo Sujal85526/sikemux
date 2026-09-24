@@ -3,7 +3,6 @@ import { browserApi } from "./api/browser";
 import { actionForEvent, pluginOpenedBy, pluginShortcutFor, type KeybindingActionId } from "./keybindings";
 import * as cmd from "./state/commands";
 import { activeAgentId } from "./state/selectors";
-import { emit } from "./state/bus";
 import { getState, type StoreState } from "./state/store";
 import type { KeyModifier } from "./state/types";
 import { runMeasuredAction } from "./lib/instrumentation";
@@ -44,8 +43,6 @@ function hasOpenModal(st: StoreState): boolean {
         st.pickerOpen ||
         st.agentPaletteOpen ||
         st.filePaletteOpen ||
-        st.brunoReqPaletteOpen ||
-        st.brunoEnvPaletteOpen ||
         st.commandPaletteOpen ||
         st.commandPopup !== null ||
         st.onboardingOpen ||
@@ -92,9 +89,6 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             const quickOpen = active ? pluginSurface(active.kind)?.quickOpen : undefined;
             if (quickOpen) {
                 quickOpen();
-            } else if (active?.kind === "bruno") {
-                if (st.brunoReqPaletteOpen) cmd.closeBrunoReqPalette();
-                else cmd.openBrunoReqPalette();
             } else if (st.filePaletteOpen) {
                 cmd.closeFilePalette();
             } else {
@@ -109,14 +103,6 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         }
         case "settings.toggle":
             cmd.toggleSettings();
-            return true;
-        case "bruno.save":
-            if (active?.kind !== "bruno") return false;
-            cmd.brunoSaveActive();
-            return true;
-        case "bruno.send":
-            if (active?.kind !== "bruno") return false;
-            emit({ type: "bruno-run", sessionId: active.id });
             return true;
         case "pane.splitRow":
             cmd.splitActivePane("row");
@@ -183,7 +169,6 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             else if (active?.kind === "command") cmd.createCommandSession();
             else if (active?.kind === "ssh") cmd.openPicker("ssh");
             else if (active && isPluginKind(active.kind)) cmd.openPluginSession(active.kind);
-            else if (active?.kind === "bruno") cmd.openPicker("bruno");
             else return false;
             return true;
         case "window.next":
@@ -207,15 +192,8 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "ssh.open":
             cmd.openPicker("ssh");
             return true;
-        case "bruno.open":
-            cmd.openBrunoSession();
-            return true;
         case "session.command":
             cmd.focusCommandSession();
-            return true;
-        case "bruno.environment":
-            if (active?.kind !== "bruno") return false;
-            cmd.openBrunoEnvPalette();
             return true;
         case "session.close":
             cmd.closeActiveSession();

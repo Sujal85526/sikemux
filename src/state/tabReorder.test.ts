@@ -15,10 +15,8 @@ beforeEach(() => {
             term: win("term", "term", "p1"),
             files: win("files", "files", "p2"),
             git: win("git", "git", "p3"),
-            api: win("api", "bruno", "p4"),
         },
         editorViews: { p2: { openTabs: ["a.ts", "b.ts", "c.ts"], activePath: "a.ts" } },
-        brunoViews: { p4: { openPaths: ["get.bru", "post.bru"] } as never },
     });
 });
 
@@ -34,11 +32,6 @@ describe("reordering workspace tabs", () => {
     it("moves a file among the files of its editor", () => {
         reorderDocumentTab("files", "c.ts", "a.ts", "before");
         expect(getState().editorViews.p2.openTabs).toEqual(["c.ts", "a.ts", "b.ts"]);
-    });
-
-    it("moves a request among the requests of its Bruno workspace", () => {
-        reorderDocumentTab("api", "get.bru", "post.bru", "after");
-        expect(getState().brunoViews.p4.openPaths).toEqual(["post.bru", "get.bru"]);
     });
 
     it("changes nothing for an unknown tab or a drop onto itself", () => {

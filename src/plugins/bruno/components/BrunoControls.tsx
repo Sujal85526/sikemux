@@ -1,5 +1,4 @@
-import { IconCheck } from "../Icons";
-import { Dropdown, type DropdownOption } from "../Dropdown";
+import { Dropdown, IconCheck, type DropdownOption } from "../../../plugin-api/ui";
 
 export type BrunoOption = DropdownOption;
 

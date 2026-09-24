@@ -341,7 +341,7 @@ function SearchResults({ query, results, active, onHover, onOpen }: SearchResult
     );
 }
 
-const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh", "bruno"];
+const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh"];
 const COMMAND_PLACEMENTS: CustomCommandPlacement[] = ["terminal", "split", "popup", "background", "replace"];
 
 function blankCommand(): CustomCommand {

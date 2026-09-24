@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 const { readDir, readFile } = vi.hoisted(() => ({ readDir: vi.fn(), readFile: vi.fn() }));
-vi.mock("../api/fs", () => ({ fsapi: { readDir, readFile } }));
+vi.mock("../../../plugin-api/host", () => ({ files: { readDir, readFile } }));
 
 const { loadCollection } = await import("./collection");
 

@@ -15,7 +15,7 @@ import {
     type WorkbenchItemDefinition,
 } from "./registry";
 
-const BUILTIN_KINDS = ["terminal", "editor", "git", "diff", "search", "bruno", "agent", "browser"] as const satisfies readonly CorePaneKind[];
+const BUILTIN_KINDS = ["terminal", "editor", "git", "diff", "search", "agent", "browser"] as const satisfies readonly CorePaneKind[];
 
 function nullEnvelope(itemId: string, kind: PaneKind, overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return { itemId, kind, version: 1, state: null, ...overrides };

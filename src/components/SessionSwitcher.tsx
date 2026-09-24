@@ -4,13 +4,12 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import type { KeyModifier, SessionKind } from "../state/types";
 import { pluginSurface } from "../plugins/registry";
-import { IconBruno, IconCommand, IconFolder } from "./Icons";
+import { IconCommand, IconFolder } from "./Icons";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={16} />;
     const surface = pluginSurface(kind);
     if (surface) return surface.icon(16);
-    if (kind === "bruno") return <IconBruno size={16} />;
     return <IconCommand size={16} />;
 }
 

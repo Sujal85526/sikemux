@@ -7,12 +7,10 @@ import { isPluginKind, type PluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
-import { useBrunoDrafts } from "../state/brunoRuntime";
 import { getState, useStore } from "../state/store";
 import {
     activeTabRef,
     agentPaneId,
-    brunoPaneId,
     documentsOf,
     expandTabRefs,
     selectSwipeOrder,
@@ -29,10 +27,7 @@ import { AgentStateIndicator } from "./AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { FileIcon } from "./FileIcon";
 import { fsapi } from "../api/fs";
-import { useResourceEnabled } from "../state/resources";
 import { useStageMotion } from "../state/nativeViews";
-import { brunoCollectionR } from "../state/resources.defs";
-import { findRequest } from "../bruno/resolve";
 import { basename, relativePath } from "../lib/paths";
 import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
@@ -51,7 +46,6 @@ const CORE_PANE_ROLE: Record<CorePaneKind, WindowRole> = {
     git: "git",
     diff: "diff",
     search: "search",
-    bruno: "bruno",
     agent: "agent",
     /* A browser is a pane, not a window role of its own. */
     browser: "named",
@@ -104,14 +98,13 @@ export const Workspace = memo(function Workspace() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const activeSessionId = useStore((s) => s.activeSessionId);
     const editorViews = useStore((s) => s.editorViews);
-    const brunoViews = useStore((s) => s.brunoViews);
     usePluginDocumentsVersion();
     const areaRef = useRef<HTMLDivElement>(null);
     const mountedWorkbenchWindows = useRef(new Set<string>());
 
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const activeSession = sessionsById[activeSessionId];
-    const liveWindow = activeSession ? windowsById[activeTabRef(activeSession, windowsById, editorViews, brunoViews)?.id ?? ""] : undefined;
+    const liveWindow = activeSession ? windowsById[activeTabRef(activeSession, windowsById, editorViews)?.id ?? ""] : undefined;
     const liveWorkbenchId =
         liveWindow && (liveWindow.role === "git" || liveWindow.role === "files" || liveWindow.role === "term") ? liveWindow.id : null;
     const retained = retainWorkbenchWindows(mountedWorkbenchWindows.current, liveWorkbenchId, (id) => id in windowsById);
@@ -124,7 +117,7 @@ export const Workspace = memo(function Workspace() {
     useStageMotion(pan.panning);
     // Counts what the strip would actually show, by asking the list the strip
     // renders: a project holding only rail-driven surfaces has no tabs, and no
-    // strip, while an editor or Bruno workspace counts its open documents.
+    // strip, while an editor or a plugin holding documents counts its open ones.
     const tabCount = useStore((state) => (state.sessions[state.activeSessionId] ? selectTabRefs(state, state.activeSessionId).length : 0));
 
     // The strip is what the screens start below, so its absence is what the
@@ -136,7 +129,7 @@ export const Workspace = memo(function Workspace() {
             {strip}
             {sessions.map((session) => {
                 const isActive = session.id === activeSessionId;
-                const active = activeTabRef(session, windowsById, editorViews, brunoViews);
+                const active = activeTabRef(session, windowsById, editorViews);
                 const activeWindowId = active?.id ?? null;
                 const order = windowsBySession[session.id] ?? EMPTY_IDS;
                 return (
@@ -207,7 +200,6 @@ const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
     git: "Git",
     diff: "Diff",
     search: "Search",
-    bruno: "Bruno",
     "ssh-config": "SSH config",
     named: "Window",
     agent: "Agent",
@@ -226,22 +218,15 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const windowIds = useStore((s) => s.windowsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
-    const brunoViews = useStore((s) => s.brunoViews);
-    const brunoView = brunoViews[useStore((s) => brunoPaneId(s, session.id)) ?? ""];
-    const collectionPath = session.bruno?.collectionPath ?? "";
-    const drafts = useBrunoDrafts(session.id);
-    // A request's name and method live in the collection on disk, not the store,
-    // so the strip reads the same resource the Bruno pane does.
-    const collection = useResourceEnabled(!!collectionPath, brunoCollectionR, collectionPath).data;
     const documentsVersion = usePluginDocumentsVersion();
     // Shared with cycleTab through selectTabRefs, so the strip and the keyboard
     // can never disagree about what the tabs are.
     const refs = useMemo(
-        () => expandTabRefs(windowIds ?? EMPTY_IDS, windowsById, editorViews, brunoViews),
+        () => expandTabRefs(windowIds ?? EMPTY_IDS, windowsById, editorViews),
         // eslint-disable-next-line react-hooks/exhaustive-deps -- a plugin's documents live outside the store
-        [windowIds, windowsById, editorViews, brunoViews, documentsVersion],
+        [windowIds, windowsById, editorViews, documentsVersion],
     );
-    const active = activeTabRef(session, windowsById, editorViews, brunoViews);
+    const active = activeTabRef(session, windowsById, editorViews);
     const activeKey = active ? tabRefKey(active) : null;
 
     /*
@@ -293,30 +278,6 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         ];
     };
 
-    const requestMenu = (win: WindowT, doc: string): CtxItem[] => {
-        const open = brunoView?.openPaths ?? [];
-        const index = open.indexOf(doc);
-        const close = (paths: string[]) => paths.forEach((path) => cmd.closeTab({ id: win.id, doc: path }));
-        const others = open.filter((path) => path !== doc);
-        const toLeft = index > 0 ? open.slice(0, index) : [];
-        const toRight = index >= 0 ? open.slice(index + 1) : [];
-        return [
-            { label: "Close", hint: "⌥W", run: () => close([doc]) },
-            { label: "Close Others", disabled: others.length === 0, run: () => close(others) },
-            { label: "Close to the Left", disabled: toLeft.length === 0, run: () => close(toLeft) },
-            { label: "Close to the Right", disabled: toRight.length === 0, run: () => close(toRight) },
-            { label: "Close All", run: () => close(open) },
-            { sep: true },
-            { label: "Copy Path", run: () => void copyPath(doc, doc, "path") },
-            {
-                label: "Copy Relative Path",
-                run: () => void copyPath(doc, relativePath(doc, collectionPath) ?? basename(doc), "relative path"),
-            },
-            { sep: true },
-            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(doc).catch(reportError("reveal")) },
-        ];
-    };
-
     const agentMenu = (agent: Agent): CtxItem[] => {
         const agents = refs
             .flatMap((ref) => {
@@ -357,20 +318,6 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             if (ref.doc !== undefined && pluginDocs) {
                 const tab = pluginDocs.describe(win.activePaneId, ref.doc);
                 return [{ id: key, label: tab.label, title: tab.title ?? tab.label, active: key === activeKey, dirty: tab.dirty, icon: tab.icon }];
-            }
-            if (ref.doc !== undefined && win.role === "bruno") {
-                const located = collection ? findRequest(collection.tree, ref.doc) : null;
-                const method = located?.request.method ?? "get";
-                return [
-                    {
-                        id: key,
-                        label: located?.request.meta.name || basename(ref.doc).replace(/\.bru$/, ""),
-                        title: ref.doc,
-                        active: key === activeKey,
-                        dirty: drafts?.[ref.doc] != null,
-                        icon: <span className={`bruno-method m-${method}`}>{method.toUpperCase()}</span>,
-                    },
-                ];
             }
             if (ref.doc !== undefined) {
                 const name = basename(ref.doc);
@@ -429,20 +376,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             })),
         );
         // eslint-disable-next-line react-hooks/exhaustive-deps -- a plugin's documents live outside the store
-    }, [
-        refs,
-        windowsById,
-        agentsById,
-        activity,
-        backgroundWork,
-        termTitles,
-        dirtyEditorPaths,
-        collection,
-        drafts,
-        activeKey,
-        session.id,
-        documentsVersion,
-    ]);
+    }, [refs, windowsById, agentsById, activity, backgroundWork, termTitles, dirtyEditorPaths, activeKey, session.id, documentsVersion]);
 
     const refByKey = new Map(refs.map((ref) => [tabRefKey(ref), ref]));
 
@@ -468,7 +402,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     const doc = ref.doc;
                     return pluginDocs.menu ? [...pluginDocs.menu(win.activePaneId, doc)] : [{ label: "Close", run: () => cmd.closeTab(ref) }];
                 }
-                if (ref.doc !== undefined) return win.role === "bruno" ? requestMenu(win, ref.doc) : fileMenu(win, ref.doc);
+                if (ref.doc !== undefined) return fileMenu(win, ref.doc);
                 if (win.role === "agent") {
                     const agent = agentsById[agentPaneId(win) ?? ""];
                     return agent ? agentMenu(agent) : [];
@@ -514,12 +448,10 @@ const WindowLayer = memo(function WindowLayer({
     areaRef: RefObject<HTMLDivElement | null>;
 }) {
     const editorView = useStore((s) => s.editorViews[win.activePaneId]);
-    const brunoView = useStore((s) => s.brunoViews[win.activePaneId]);
     usePluginDocumentsVersion();
     const editorViews = editorView ? { [win.activePaneId]: editorView } : {};
-    const brunoViews = brunoView ? { [win.activePaneId]: brunoView } : {};
-    const active = activeTabRef(session, { [win.id]: win }, editorViews, brunoViews);
-    const documents = documentsOf(win, editorViews, brunoViews);
+    const active = activeTabRef(session, { [win.id]: win }, editorViews);
+    const documents = documentsOf(win, editorViews);
     const layerRef = useRef<HTMLDivElement>(null);
     useDocumentSlide(layerRef, live ? win.activePaneId : null, documents?.activeId ?? null, documents?.ids ?? EMPTY_IDS);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);

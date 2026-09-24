@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
-import { emptyRequest } from "../../bruno/types";
+import { emptyRequest } from "../lib/types";
 import { BrunoTree } from "./BrunoTree";
 
 it("activates request rows and expands folders from the keyboard", async () => {
@@ -9,7 +9,7 @@ it("activates request rows and expands folders from the keyboard", async () => {
     const onSelect = vi.fn();
     render(
         <BrunoTree
-            sessionId="session"
+            paneId="pane"
             collectionPath="/api"
             tree={[
                 {

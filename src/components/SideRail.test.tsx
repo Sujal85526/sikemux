@@ -109,6 +109,7 @@ describe("plugins group", () => {
             windowsBySession: { ...getState().windowsBySession, aws: [], signoz: [] },
             pluginManifests: [
                 { id: "sikemux.aws", name: "AWS", version: "0.1.0", sikemux: ">=0.4" },
+                { id: "sikemux.bruno", name: "Bruno", version: "0.1.0", sikemux: ">=0.4" },
                 { id: "sikemux.rundeck", name: "Rundeck", version: "0.1.0", sikemux: ">=0.4" },
                 { id: "sikemux.signoz", name: "SigNoz", version: "0.1.0", sikemux: ">=0.4" },
             ],

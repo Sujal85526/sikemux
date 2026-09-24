@@ -57,6 +57,17 @@ export interface PluginShortcut {
     readonly run: () => boolean;
 }
 
+/** Something a plugin can open from the app's session switcher. */
+export interface PluginPickerEntry {
+    readonly id: string;
+    readonly name: string;
+    readonly sub: string;
+    readonly icon: ReactNode;
+    open(): void;
+    /** Removes it from the list, where that means something. */
+    forget?(): void;
+}
+
 export interface FrontendPlugin {
     readonly id: string;
     readonly surfaces: readonly PluginSurface[];
@@ -65,6 +76,8 @@ export interface FrontendPlugin {
     /** A default shortcut for `open`, like "Alt+KeyA"; people can change it in Settings. */
     readonly openShortcut?: string;
     readonly shortcuts?: readonly PluginShortcut[];
+    /** Entries for the session switcher, under this heading. Read from plugin settings, so the switcher follows them. */
+    readonly picker?: { readonly heading: string; entries(): readonly PluginPickerEntry[] };
     /** Always mounted; it decides for itself when to show. */
     readonly Overlay?: ComponentType;
     readonly TopBarItem?: ComponentType<PluginTopBarProps>;

@@ -3,8 +3,6 @@ import { activeTabRef, expandTabRefs, nextInCycle, roleHasTab, selectSwipeOrder,
 import type { StoreState } from "./store";
 
 const win = (id: string, role: string) => ({ id, role, activePaneId: `${id}-pane` }) as unknown as StoreState["windows"][string];
-const brunoViews = (paneId: string, openPaths: string[], activeRequestPath: string | null = null) =>
-    ({ [paneId]: { openPaths, activeRequestPath } }) as StoreState["brunoViews"];
 
 describe("roleHasTab", () => {
     /*
@@ -82,21 +80,6 @@ describe("expandTabRefs", () => {
         expect(refs.map(tabRefKey)).toEqual(["t1", "e1:/a.ts", "a1"]);
     });
 
-    it("expands a Bruno workspace into one tab per open request, in their open order", () => {
-        const refs = expandTabRefs(["b1"], { b1: win("b1", "bruno") }, {}, brunoViews("b1-pane", ["/a.bru", "/b.bru"]));
-
-        expect(refs.map(tabRefKey)).toEqual(["b1:/a.bru", "b1:/b.bru"]);
-    });
-
-    /*
-     * The Bruno pane's own tree is how you open the first request, so an empty
-     * workspace needs no tab — the same rule the editor follows.
-     */
-    it("gives a Bruno workspace holding nothing no tab at all", () => {
-        expect(expandTabRefs(["b1"], { b1: win("b1", "bruno") }, {}, brunoViews("b1-pane", []))).toEqual([]);
-        expect(expandTabRefs(["b1"], { b1: win("b1", "bruno") })).toEqual([]);
-    });
-
     it("drops ids with no record", () => {
         const refs = expandTabRefs(["t1", "gone"], { t1: win("t1", "term") });
 
@@ -127,23 +110,6 @@ describe("activeTabRef", () => {
         const ref = activeTabRef(session(), { e1: win("e1", "files") }, { "e1-pane": { openTabs: [], activePath: null } });
 
         expect(ref && tabRefKey(ref)).toBe("e1");
-    });
-
-    it("resolves an active Bruno workspace to the request it is showing", () => {
-        const ref = activeTabRef(
-            session({ kind: "bruno", activeWindowId: "b1" }),
-            { b1: win("b1", "bruno") },
-            {},
-            brunoViews("b1-pane", ["/a.bru"], "/a.bru"),
-        );
-
-        expect(ref && tabRefKey(ref)).toBe("b1:/a.bru");
-    });
-
-    it("keeps an empty Bruno workspace a window ref so its layer still renders", () => {
-        const ref = activeTabRef(session({ kind: "bruno", activeWindowId: "b1" }), { b1: win("b1", "bruno") }, {}, brunoViews("b1-pane", []));
-
-        expect(ref && tabRefKey(ref)).toBe("b1");
     });
 
     it("still names the window itself for every other role", () => {
@@ -228,14 +194,12 @@ describe("stripOrder", () => {
         expect(stripOrder(state, { kind: "terminals", sessionId: "s1" })).toEqual({ ids: ["t1", "t2"], activeId: null });
     });
 
-    it("reads an editor pane's documents and a Bruno session's requests", () => {
+    it("reads an editor pane's documents", () => {
         const state = storeState({
             editorViews: { p1: { openTabs: ["/a.ts", "/b.ts"], activePath: "/b.ts" } },
-            brunoViews: { p2: { openPaths: ["/a.bru"], activeRequestPath: "/a.bru" } },
         } as unknown as Partial<StoreState>);
 
         expect(stripOrder(state, { kind: "documents", paneId: "p1" })).toEqual({ ids: ["/a.ts", "/b.ts"], activeId: "/b.ts" });
-        expect(stripOrder(state, { kind: "requests", paneId: "p2" })).toEqual({ ids: ["/a.bru"], activeId: "/a.bru" });
     });
 
     it("reads an absent list as empty rather than throwing", () => {

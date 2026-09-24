@@ -9,7 +9,10 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { applyHydrate, flushPersist, hydrationAllowsPersistence, resetPersistenceForTests, subscribePersist } from "./persist";
 import * as cmd from "./commands";
-import { flushBrunoDrafts, setBrunoDraft, setBrunoSecret } from "./brunoRuntime";
+import { flushBrunoDrafts, setBrunoDraft, setBrunoSecret } from "../plugins/bruno/runtime";
+import { brunoSettings } from "../plugins/bruno/state";
+import { basename } from "../lib/paths";
+import { BRUNO_CLIENT } from "../plugins/bruno/kinds";
 import { getState, setState } from "./store";
 import { activeAgentId, agentIdsOf, agentWindowId } from "./selectors";
 import { collectPanes } from "./layout";
@@ -101,7 +104,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 14,
+                    version: 15,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -112,26 +115,21 @@ describe("frontend persistence", () => {
         expect(invoke).not.toHaveBeenCalled();
     });
 
-    it("omits Bruno secrets and drafts while preserving non-secret Bruno state and plugin settings", async () => {
-        const sid = getState().activeSessionId;
-        setState((s) => ({
-            sessions: {
-                ...s.sessions,
-                [sid]: {
-                    ...s.sessions[sid],
-                    kind: "bruno",
-                    bruno: {
-                        collectionPath: "/collections/demo",
-                        selectedEnvs: { "/collections/demo": "staging" },
-                    },
-                },
+    it("omits Bruno secrets and drafts while preserving its settings and other plugins'", async () => {
+        const brunoState = {
+            collectionPath: "/collections/demo",
+            selectedEnvs: { "/collections/demo": "staging" },
+            workspaces: ["/collections/demo"],
+        };
+        setState({
+            pluginSettings: {
+                "sikemux.bruno": brunoState,
+                "sikemux.rundeck": { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] },
             },
-            pluginSettings: { "sikemux.rundeck": { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] } },
-        }));
-        // These live outside the persisted store entirely now; the snapshot must
-        // still come back without them.
-        setBrunoSecret(sid, "token", "do-not-persist");
-        setBrunoDraft(sid, "/collections/demo/login.bru", "Authorization: Bearer do-not-persist");
+        });
+        // These live outside the persisted store entirely; the snapshot must come back without them.
+        setBrunoSecret("pane-bruno", "token", "do-not-persist");
+        setBrunoDraft("pane-bruno", "/collections/demo/login.bru", "Authorization: Bearer do-not-persist");
         flushBrunoDrafts();
         invoke.mockResolvedValue(undefined);
 
@@ -139,11 +137,10 @@ describe("frontend persistence", () => {
         const raw = invoke.mock.calls[0][1].data as string;
         expect(raw).not.toContain("do-not-persist");
         const saved = JSON.parse(raw);
-        expect(saved.sessions[0].bruno).toEqual({
-            collectionPath: "/collections/demo",
-            selectedEnvs: { "/collections/demo": "staging" },
+        expect(saved.prefs.pluginSettings).toEqual({
+            "sikemux.bruno": brunoState,
+            "sikemux.rundeck": { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] },
         });
-        expect(saved.prefs.pluginSettings).toEqual({ "sikemux.rundeck": { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] } });
     });
 
     it("persists and safely hydrates keybinding overrides", async () => {
@@ -537,7 +534,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(13);
+        expect(saved.version).toBe(14);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -663,10 +660,8 @@ describe("frontend persistence", () => {
             }),
         );
 
-        expect(getState().sessions[sid].bruno).toEqual({
-            collectionPath: "/legacy",
-            selectedEnvs: { "/legacy": "dev" },
-        });
+        expect(getState().sessions[sid].kind).toBe(BRUNO_CLIENT);
+        expect(brunoSettings.get()).toEqual({ collectionPath: "/legacy", selectedEnvs: { "/legacy": "dev" }, workspaces: ["/legacy"] });
         expect(getState().sessionOrder).toEqual([sid]);
         expect(getState().recent).toEqual([]);
         expect(rundeckSettings.get().activeProject).toBe("");
@@ -679,7 +674,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(13);
+        expect(JSON.parse(migrated).version).toBe(14);
     });
 
     /*
@@ -712,7 +707,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(13);
+        expect(saved.version).toBe(14);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
@@ -772,35 +767,41 @@ describe("frontend persistence", () => {
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
     });
 
-    it("folds v11 Bruno sessions, one per workspace, into a single session named Bruno", () => {
-        cmd.openBrunoSession("/ws/api-docs");
-        const first = getState().sessions[getState().activeSessionId];
-        const firstWindow = getState().windows[first.activeWindowId];
-        const second = { ...first, id: "bruno-2", name: "billing", cwd: "/ws/billing", bruno: { collectionPath: "/ws/billing", selectedEnvs: {} } };
+    it("folds v11 Bruno sessions, one per workspace, into the one Bruno session and keeps every folder", () => {
+        const project = getState().sessions[getState().activeSessionId];
+        const window = getState().windows[project.activeWindowId];
+        const legacy = (id: string, folder: string) => ({
+            ...project,
+            id,
+            name: basename(folder),
+            kind: "bruno",
+            cwd: folder,
+            bruno: { collectionPath: folder, selectedEnvs: {} },
+        });
         applyHydrate(
             JSON.stringify({
                 version: 11,
-                sessions: [{ ...first, name: "api-docs" }, second],
-                windowsBySession: { [first.id]: [firstWindow], [second.id]: [{ ...firstWindow, id: "w-bruno-2" }] },
-                sessionOrder: [first.id, second.id],
-                activeSessionId: second.id,
+                sessions: [legacy("bruno-1", "/ws/api-docs"), legacy("bruno-2", "/ws/billing")],
+                windowsBySession: {
+                    "bruno-1": [{ ...window, id: "w-bruno-1", name: "bruno", role: "bruno" }],
+                    "bruno-2": [{ ...window, id: "w-bruno-2", name: "bruno", role: "bruno" }],
+                },
+                sessionOrder: ["bruno-1", "bruno-2"],
+                activeSessionId: "bruno-2",
                 prefs: { brunoWorkspaces: ["/ws/old"] },
                 itemStates: {},
             }),
         );
 
         const st = getState();
-        expect(
-            Object.values(st.sessions)
-                .filter((session) => session.kind === "bruno")
-                .map((session) => session.name),
-        ).toEqual(["Bruno"]);
-        expect(st.activeSessionId).toBe(first.id);
-        expect(st.brunoWorkspaces).toEqual(expect.arrayContaining(["/ws/old", "/ws/api-docs", "/ws/billing"]));
+        expect(Object.values(st.sessions).map((session) => [session.kind, session.name])).toEqual([[BRUNO_CLIENT, "Bruno"]]);
+        expect(st.activeSessionId).toBe("bruno-1");
+        expect(brunoSettings.get().collectionPath).toBe("/ws/api-docs");
+        expect(brunoSettings.get().workspaces).toEqual(expect.arrayContaining(["/ws/old", "/ws/api-docs", "/ws/billing"]));
     });
 
     it("names one-of-a-kind sessions after their tools whatever name was saved", () => {
-        cmd.openBrunoSession("/ws/api-docs");
+        cmd.openPluginSession(BRUNO_CLIENT);
         const bruno = getState().sessions[getState().activeSessionId];
         const brunoWindow = getState().windows[bruno.activeWindowId];
         cmd.openPluginSession(AWS_CONSOLE);
@@ -808,7 +809,7 @@ describe("frontend persistence", () => {
         const awsWindow = getState().windows[aws.activeWindowId];
         applyHydrate(
             JSON.stringify({
-                version: 13,
+                version: 14,
                 sessions: [
                     { ...bruno, name: "bruno" },
                     { ...aws, name: "aws" },
@@ -823,6 +824,53 @@ describe("frontend persistence", () => {
 
         expect(getState().sessions[bruno.id].name).toBe("Bruno");
         expect(getState().sessions[aws.id].name).toBe("AWS");
+    });
+
+    it("moves a v13 Bruno session, workspaces and shortcuts into the Bruno plugin", () => {
+        const project = getState().sessions[getState().activeSessionId];
+        const window = getState().windows[project.activeWindowId];
+        const legacyRoot = { ...window.root, kind: "bruno" };
+        applyHydrate(
+            JSON.stringify({
+                version: 13,
+                sessions: [
+                    {
+                        ...project,
+                        id: "s-bruno",
+                        name: "Bruno",
+                        kind: "bruno",
+                        cwd: "/ws/api-docs",
+                        activeWindowId: "w-bruno",
+                        bruno: { collectionPath: "/ws/api-docs", selectedEnvs: { "/ws/api-docs": "staging" } },
+                    },
+                ],
+                windowsBySession: { "s-bruno": [{ ...window, id: "w-bruno", name: "bruno", role: "bruno", root: legacyRoot }] },
+                sessionOrder: ["s-bruno"],
+                activeSessionId: "s-bruno",
+                prefs: {
+                    brunoWorkspaces: ["/ws/api-docs", "/ws/billing"],
+                    keybindingOverrides: { "bruno.send": "Alt+Enter", "bruno.open": null, "pane.zoom": "Alt+KeyZ" },
+                    customCommands: [{ id: "c1", title: "curl", command: "curl", contexts: ["bruno"], placement: "terminal" }],
+                },
+                itemStates: {},
+            }),
+        );
+
+        const st = getState();
+        expect(st.sessions["s-bruno"]).toMatchObject({ kind: BRUNO_CLIENT, name: "Bruno" });
+        expect(st.sessions["s-bruno"]).not.toHaveProperty("bruno");
+        expect(st.windows["w-bruno"]).toMatchObject({ role: BRUNO_CLIENT, root: { type: "pane", kind: BRUNO_CLIENT } });
+        expect(brunoSettings.get()).toEqual({
+            collectionPath: "/ws/api-docs",
+            selectedEnvs: { "/ws/api-docs": "staging" },
+            workspaces: ["/ws/api-docs", "/ws/billing"],
+        });
+        expect(st.keybindingOverrides).toEqual({
+            "plugin.run:sikemux.bruno/send": "Alt+Enter",
+            "plugin.open:sikemux.bruno": null,
+            "pane.zoom": "Alt+KeyZ",
+        });
+        expect(st.customCommands[0]?.contexts).toEqual([BRUNO_CLIENT]);
     });
 
     it("moves v12 AWS sessions, settings and shortcut into the AWS plugin", () => {

@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as cmd from "../../state/commands";
-import { rankBy } from "../../lib/fuzzy";
-import { useResourceEnabled } from "../../state/resources";
-import { brunoCollectionR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
-import { useMouseActive } from "../../hooks/useMouseActive";
-import type { BruTreeNode, HttpMethod } from "../../bruno/types";
-import { IconSearch } from "../Icons";
+import { useActiveSurfacePane } from "../../../plugin-api/host";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
+import { BRUNO_CLIENT } from "../kinds";
+import type { BruTreeNode, HttpMethod } from "../lib/types";
+import { brunoCollectionR, brunoSelectRequest, brunoSettings, closePalettes } from "../state";
 
 const MAX_RESULTS = 300;
 
@@ -27,9 +25,8 @@ function flatten(nodes: BruTreeNode[], trail: string[] = [], acc: ReqRow[] = [])
 }
 
 export function BrunoRequestPalette() {
-    const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const sessionId = session?.id ?? "";
-    const collectionPath = session?.kind === "bruno" ? (session.bruno?.collectionPath ?? "") : "";
+    const paneId = useActiveSurfacePane(BRUNO_CLIENT);
+    const collectionPath = brunoSettings.useSelect((settings) => settings.collectionPath);
 
     const [query, setQuery] = useState("");
     const [sel, setSel] = useState(0);
@@ -61,13 +58,13 @@ export function BrunoRequestPalette() {
 
     const activate = (row: ReqRow | undefined) => {
         if (!row) return;
-        cmd.brunoSelectRequest(sessionId, row.path);
-        cmd.closeBrunoReqPalette();
+        if (paneId) brunoSelectRequest(paneId, row.path);
+        closePalettes();
     };
 
     const onKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === "Escape") {
-            cmd.closeBrunoReqPalette();
+            closePalettes();
         } else if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
             e.preventDefault();
             setSel((s) => (items.length ? (s + 1) % items.length : 0));
@@ -81,7 +78,7 @@ export function BrunoRequestPalette() {
     };
 
     return (
-        <div className="picker-backdrop" onMouseDown={cmd.closeBrunoReqPalette}>
+        <div className="picker-backdrop" onMouseDown={closePalettes}>
             <div className="picker" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="picker-input-wrap">
                     <IconSearch size={15} className="picker-search-icon" />

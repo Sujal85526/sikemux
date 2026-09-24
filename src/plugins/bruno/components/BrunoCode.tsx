@@ -1,15 +1,25 @@
 import { useEffect, useRef } from "react";
-import { EditorState, RangeSetBuilder, StateEffect, type Extension } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, placeholder as cmPlaceholder, type DecorationSet, type ViewUpdate } from "@codemirror/view";
-import { json } from "@codemirror/lang-json";
-import { javascript } from "@codemirror/lang-javascript";
-import { markdown } from "@codemirror/lang-markdown";
-import { html } from "@codemirror/lang-html";
-import { basicSetup } from "codemirror";
-import { auraExtensions } from "../../editor/codemirror";
-import { registerView } from "../../themes/bus";
+import {
+    Decoration,
+    EditorState,
+    EditorView,
+    RangeSetBuilder,
+    StateEffect,
+    ViewPlugin,
+    auraExtensions,
+    basicSetup,
+    placeholder as cmPlaceholder,
+    registerView,
+    html,
+    javascript,
+    json,
+    markdown,
+    type DecorationSet,
+    type Extension,
+    type ViewUpdate,
+} from "../../../plugin-api/editor";
 
-import type { Scope } from "../../bruno/interpolate";
+import type { Scope } from "../lib/interpolate";
 
 export type BrunoLang = "json" | "javascript" | "xml" | "markdown" | "text";
 

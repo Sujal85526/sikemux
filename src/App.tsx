@@ -16,8 +16,6 @@ import { FilePalette } from "./components/FilePalette";
 import { NewTabPalette } from "./components/NewTabPalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
-import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
-import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
@@ -653,9 +651,7 @@ export default function App() {
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
-    const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
     const installedPlugins = useInstalledPlugins();
-    const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = useStore((s) => s.uiTextScale);
     useEffect(() => {
@@ -672,8 +668,6 @@ export default function App() {
             agentPaletteOpen ||
             filePaletteOpen ||
             newTabPaletteOpen ||
-            brunoReqPaletteOpen ||
-            brunoEnvPaletteOpen ||
             settingsOpen ||
             commandPaletteOpen ||
             sessionSwitcherOpen ||
@@ -928,8 +922,6 @@ export default function App() {
             {filePaletteOpen && <FilePalette />}
             {newTabPaletteOpen && <NewTabPalette />}
             {installedPlugins.map(({ id, Overlay }) => (Overlay ? <Overlay key={id} /> : null))}
-            {brunoReqPaletteOpen && <BrunoRequestPalette />}
-            {brunoEnvPaletteOpen && <BrunoEnvPalette />}
             {sessionSwitcherOpen && <SessionSwitcher />}
             {commandPaletteOpen && <ApplicationCommandPalette />}
             {commandPopup && (

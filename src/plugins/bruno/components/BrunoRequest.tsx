@@ -1,10 +1,9 @@
-import type { BrunoReqTab } from "../../state/types";
-import { interpolate, type Scope } from "../../bruno/interpolate";
-import { HTTP_METHODS, type AuthMode, type BodyMode, type BruRequest, type KeyVal } from "../../bruno/types";
-import { IconRun, IconSave, IconTrash, IconPlus } from "../Icons";
+import { IconPlus, IconRun, IconSave, IconTrash, PRIMARY_SHORTCUT } from "../../../plugin-api/ui";
+import { interpolate, type Scope } from "../lib/interpolate";
+import { HTTP_METHODS, type AuthMode, type BodyMode, type BruRequest, type KeyVal } from "../lib/types";
+import type { BrunoReqTab } from "../state";
 import { VarInput } from "./VarText";
 import { BrunoSelect, BrunoCheck, type BrunoOption } from "./BrunoControls";
-import { PRIMARY_SHORTCUT } from "../../lib/platform";
 import { BrunoCode, type BrunoLang } from "./BrunoCode";
 
 interface Props {

@@ -12,6 +12,5 @@ export function railGroupOf(kind: SessionKind, manifests: readonly PluginManifes
         const id = pluginIdOf(kind);
         return manifests.some((manifest) => manifest.id === id) ? "plugins" : null;
     }
-    if (kind === "bruno") return "plugins";
     return kind;
 }

@@ -64,6 +64,7 @@ describe("a plugin's documents in the workspace strip", () => {
 
         pads.setState({ open: [], active: null });
         expect(selectTabRefs(getState(), session.id)).toEqual([]);
+        expect(activeTabRef(getState().sessions[session.id], getState().windows)).toEqual({ id: windowId });
     });
 
     it("select, cycle and close through the plugin", () => {

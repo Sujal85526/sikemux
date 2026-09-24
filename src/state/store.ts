@@ -22,7 +22,6 @@ import type {
     EditorPaneView,
     CliPendingEditorOpen,
     GitPaneView,
-    BrunoView,
     GlobalSearchView,
     PickerMode,
     ProjectRoot,
@@ -49,8 +48,6 @@ export interface DomainState {
     recent: RecentEntry[];
 
     projectRoots: ProjectRoot[];
-    /** Imported Bruno (API) workspace collection paths, most-recent-first. Survive session close so they stay reopenable. */
-    brunoWorkspaces: string[];
     themeId: string;
     /** User-defined themes, derived from a built-in or another custom theme via the theme editor. */
     customThemes: Theme[];
@@ -116,8 +113,6 @@ export interface ViewState {
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     newTabPaletteOpen: boolean;
-    brunoReqPaletteOpen: boolean;
-    brunoEnvPaletteOpen: boolean;
     settingsOpen: boolean;
     settingsPage: SettingsPageId;
     zoomedPaneId: string | null;
@@ -135,7 +130,6 @@ export interface ViewState {
     pendingEditorOpens: Record<string, CliPendingEditorOpen[]>;
     dirtyEditorPaths: Record<string, string[]>;
     gitViews: Record<string, GitPaneView>;
-    brunoViews: Record<string, BrunoView>;
 
     gitModal: GitModal | null;
     gitCmdLog: GitCmdEntry[];
@@ -197,7 +191,6 @@ export const useStore = create<StoreState>(() => {
         activeSessionId: session.id,
         recent: [],
         projectRoots: [],
-        brunoWorkspaces: [],
         themeId: DEFAULT_THEME_ID,
         customThemes: [],
         uiTextScale: 1,
@@ -235,8 +228,6 @@ export const useStore = create<StoreState>(() => {
         agentPaletteOpen: false,
         filePaletteOpen: false,
         newTabPaletteOpen: false,
-        brunoReqPaletteOpen: false,
-        brunoEnvPaletteOpen: false,
         settingsOpen: false,
         settingsPage: "general",
         zoomedPaneId: null,
@@ -248,7 +239,6 @@ export const useStore = create<StoreState>(() => {
         pendingEditorOpens: {},
         dirtyEditorPaths: {},
         gitViews: {},
-        brunoViews: {},
         gitModal: null,
         gitCmdLog: [],
         gitCmdLogOpen: false,

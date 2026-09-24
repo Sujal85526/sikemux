@@ -3,8 +3,6 @@ import type { AgentRuntimeProfile } from "../agentProfiles";
 import { filesApi } from "../api/files";
 import { git, type DiscoveredRepo, type GitOverview, type GitRemote, type GitRemoteBranch, type GitStash } from "../api/git";
 import { settingsApi, type ProjectEntry } from "../api/settings";
-import { loadCollection } from "../bruno/collection";
-import type { BruCollection } from "../bruno/types";
 import { sshApi, type SshHost } from "../api/ssh";
 import type { AgentType, ProjectRoot } from "./types";
 import { resource } from "./resources";
@@ -79,11 +77,5 @@ export const projectRootsScanR = resource({
 export const sshHostsR = resource({
     kind: "ssh.hosts",
     fetch: (): Promise<SshHost[]> => sshApi.hosts(),
-    staleAfterMs: 5 * 60_000,
-});
-
-export const brunoCollectionR = resource({
-    kind: "bruno.collection",
-    fetch: (rootPath: string): Promise<BruCollection> => loadCollection(rootPath),
     staleAfterMs: 5 * 60_000,
 });

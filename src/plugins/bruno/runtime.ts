@@ -11,9 +11,9 @@ import { create } from "zustand";
  * has ever needed to see either one.
  */
 interface BrunoRuntimeState {
-    /** Unsaved request text, by session and then by file path. */
+    /** Unsaved request text, by pane and then by file path. */
     drafts: Record<string, Record<string, string>>;
-    /** Secret environment values, by session and then by name. */
+    /** Secret environment values, by pane and then by name. */
     secretVars: Record<string, Record<string, string>>;
 }
 
@@ -28,19 +28,19 @@ export const useBrunoRuntime = create<BrunoRuntimeState>(() => ({ drafts: {}, se
  */
 const DRAFT_WRITE_DELAY_MS = 150;
 
-let pendingDraft: { sessionId: string; path: string; text: string | null } | null = null;
+let pendingDraft: { paneId: string; path: string; text: string | null } | null = null;
 let draftTimer: number | null = null;
 
-function commitDraft({ sessionId, path, text }: { sessionId: string; path: string; text: string | null }): void {
+function commitDraft({ paneId, path, text }: { paneId: string; path: string; text: string | null }): void {
     useBrunoRuntime.setState((state) => {
-        const current = state.drafts[sessionId] ?? EMPTY;
+        const current = state.drafts[paneId] ?? EMPTY;
         if (text === null) {
             if (!(path in current)) return state;
             const { [path]: _removed, ...rest } = current;
-            return { drafts: { ...state.drafts, [sessionId]: rest } };
+            return { drafts: { ...state.drafts, [paneId]: rest } };
         }
         if (current[path] === text) return state;
-        return { drafts: { ...state.drafts, [sessionId]: { ...current, [path]: text } } };
+        return { drafts: { ...state.drafts, [paneId]: { ...current, [path]: text } } };
     });
 }
 
@@ -56,27 +56,27 @@ export function flushBrunoDrafts(): void {
 }
 
 /** Stash edited request text by file path; pass null to clear the draft. */
-export function setBrunoDraft(sessionId: string, path: string, text: string | null): void {
-    if (pendingDraft && (pendingDraft.sessionId !== sessionId || pendingDraft.path !== path)) flushBrunoDrafts();
-    pendingDraft = { sessionId, path, text };
+export function setBrunoDraft(paneId: string, path: string, text: string | null): void {
+    if (pendingDraft && (pendingDraft.paneId !== paneId || pendingDraft.path !== path)) flushBrunoDrafts();
+    pendingDraft = { paneId, path, text };
     if (draftTimer === null) draftTimer = window.setTimeout(flushBrunoDrafts, DRAFT_WRITE_DELAY_MS);
 }
 
-export function brunoDrafts(sessionId: string): Record<string, string> {
+export function brunoDrafts(paneId: string): Record<string, string> {
     flushBrunoDrafts();
-    return useBrunoRuntime.getState().drafts[sessionId] ?? EMPTY;
+    return useBrunoRuntime.getState().drafts[paneId] ?? EMPTY;
 }
 
-export function setBrunoSecret(sessionId: string, name: string, value: string): void {
+export function setBrunoSecret(paneId: string, name: string, value: string): void {
     useBrunoRuntime.setState((state) => {
-        const current = state.secretVars[sessionId] ?? EMPTY;
+        const current = state.secretVars[paneId] ?? EMPTY;
         if (current[name] === value) return state;
-        return { secretVars: { ...state.secretVars, [sessionId]: { ...current, [name]: value } } };
+        return { secretVars: { ...state.secretVars, [paneId]: { ...current, [name]: value } } };
     });
 }
 
-export function forgetBrunoSession(sessionId: string): void {
-    if (pendingDraft?.sessionId === sessionId) {
+export function forgetBrunoPane(paneId: string): void {
+    if (pendingDraft?.paneId === paneId) {
         pendingDraft = null;
         if (draftTimer !== null) {
             window.clearTimeout(draftTimer);
@@ -84,17 +84,17 @@ export function forgetBrunoSession(sessionId: string): void {
         }
     }
     useBrunoRuntime.setState((state) => {
-        if (!(sessionId in state.drafts) && !(sessionId in state.secretVars)) return state;
-        const { [sessionId]: _drafts, ...drafts } = state.drafts;
-        const { [sessionId]: _secrets, ...secretVars } = state.secretVars;
+        if (!(paneId in state.drafts) && !(paneId in state.secretVars)) return state;
+        const { [paneId]: _drafts, ...drafts } = state.drafts;
+        const { [paneId]: _secrets, ...secretVars } = state.secretVars;
         return { drafts, secretVars };
     });
 }
 
-export function useBrunoDrafts(sessionId: string): Record<string, string> {
-    return useBrunoRuntime((state) => state.drafts[sessionId] ?? EMPTY);
+export function useBrunoDrafts(paneId: string): Record<string, string> {
+    return useBrunoRuntime((state) => state.drafts[paneId] ?? EMPTY);
 }
 
-export function useBrunoSecretVars(sessionId: string): Record<string, string> {
-    return useBrunoRuntime((state) => state.secretVars[sessionId] ?? EMPTY);
+export function useBrunoSecretVars(paneId: string): Record<string, string> {
+    return useBrunoRuntime((state) => state.secretVars[paneId] ?? EMPTY);
 }

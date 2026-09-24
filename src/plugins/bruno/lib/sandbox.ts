@@ -2,7 +2,7 @@
 // disposable workers. The parent owns all privileged bridges and re-applies
 // the user-approved trust policy to every worker-originated network request.
 
-import { brunoApi, type BruSendRequest } from "../api/bruno";
+import { brunoApi, type BruSendRequest } from "../api";
 import type { Scope } from "./interpolate";
 
 export interface ScriptLog {

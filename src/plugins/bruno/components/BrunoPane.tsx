@@ -1,21 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import * as cmd from "../../state/commands";
-import { subscribe } from "../../state/bus";
-import { useBrunoDrafts, useBrunoSecretVars } from "../../state/brunoRuntime";
-import { useResourceEnabled } from "../../state/resources";
-import { brunoCollectionR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
-import { DEFAULT_BRUNO_VIEW } from "../../state/types";
-import { parseRequest } from "../../bruno/parse";
-import { serializeRequest } from "../../bruno/serialize";
-import { buildScope, findRequest, requestVars, selectedEnvOf } from "../../bruno/resolve";
-import { mergeScope, type Scope } from "../../bruno/interpolate";
-import { runRequest, type RunResult } from "../../bruno/run";
-import type { BruRequest, BruScope } from "../../bruno/types";
-import { basename } from "../../lib/paths";
-import { confirmDialog } from "../../state/dialog";
-import { IconBruno, IconChevron } from "../Icons";
-import { EmptyState } from "../Panel";
+import { basename, confirmDialog } from "../../../plugin-api/host";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { EmptyState, IconBruno, IconChevron } from "../../../plugin-api/ui";
+import { mergeScope, type Scope } from "../lib/interpolate";
+import { parseRequest } from "../lib/parse";
+import { buildScope, findRequest, requestVars, selectedEnvOf } from "../lib/resolve";
+import { runRequest, type RunResult } from "../lib/run";
+import { serializeRequest } from "../lib/serialize";
+import type { BruRequest, BruScope } from "../lib/types";
+import { useBrunoDrafts, useBrunoSecretVars } from "../runtime";
+import {
+    DEFAULT_BRUNO_VIEW,
+    brunoCollectionR,
+    brunoSaveRequest,
+    brunoSelectRequest,
+    brunoSetDraft,
+    brunoSetReqPanePct,
+    brunoSetReqTab,
+    brunoSetResTab,
+    brunoSetSecret,
+    brunoSettings,
+    onRunRequested,
+    openBrunoFolder,
+    openPalette,
+    rememberCollection,
+    useBrunoView,
+} from "../state";
 import { BrunoEnvSelect } from "./BrunoEnvSelect";
 import { BrunoTree } from "./BrunoTree";
 import { BrunoRequestView } from "./BrunoRequest";
@@ -23,7 +33,6 @@ import { BrunoResponseView } from "./BrunoResponse";
 
 interface Props {
     paneId: string;
-    sessionId: string;
     active: boolean;
 }
 
@@ -35,18 +44,17 @@ function safeParse(text: string, fallback: BruRequest | null): BruRequest | null
     }
 }
 
-export function BrunoPane({ paneId, sessionId, active }: Props) {
-    const session = useStore((s) => s.sessions[sessionId]);
-    const bruno = session?.bruno ?? null;
-    const collectionPath = bruno?.collectionPath ?? "";
-    const view = useStore((s) => s.brunoViews[paneId] ?? DEFAULT_BRUNO_VIEW);
-    const drafts = useBrunoDrafts(sessionId);
-    const secretVars = useBrunoSecretVars(sessionId);
-    const selectedEnvs = bruno?.selectedEnvs ?? {};
-    const knownWorkspaces = useStore((s) => s.brunoWorkspaces.length);
+export function BrunoPane({ paneId, active }: Props) {
+    const collectionPath = brunoSettings.useSelect((settings) => settings.collectionPath);
+    const selectedEnvs = brunoSettings.useSelect((settings) => settings.selectedEnvs);
+    const knownWorkspaces = brunoSettings.useSelect((settings) => settings.workspaces.length);
+    const view = useBrunoView(paneId);
+    const drafts = useBrunoDrafts(paneId);
+    const secretVars = useBrunoSecretVars(paneId);
 
     const coll = useResourceEnabled(active && !!collectionPath, brunoCollectionR, collectionPath);
     const collection = coll.data;
+    useEffect(() => rememberCollection(collection ?? null), [collection]);
 
     const [results, setResults] = useState<Record<string, RunResult>>({});
     const [running, setRunning] = useState<Record<string, boolean>>({});
@@ -92,9 +100,9 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
             if (!path) return;
             setEditing({ path, req: next });
             const serialized = serializeRequest(next);
-            cmd.brunoSetDraft(sessionId, path, serialized === diskSerialized ? null : serialized);
+            brunoSetDraft(paneId, path, serialized === diskSerialized ? null : serialized);
         },
-        [path, diskSerialized, sessionId],
+        [path, diskSerialized, paneId],
     );
 
     const onSend = useCallback(async () => {
@@ -118,18 +126,18 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
                 setRuntime((prev) => ({ ...prev, ...result.envUpdates }));
                 // persist any script-updated secret values (e.g. a refreshed token)
                 for (const [k, v] of Object.entries(result.envUpdates)) {
-                    if (secretNames.includes(k)) cmd.brunoSetSecret(sessionId, k, v);
+                    if (secretNames.includes(k)) brunoSetSecret(paneId, k, v);
                 }
             }
         } finally {
             setRunning((r) => ({ ...r, [path]: false }));
         }
-    }, [path, effectiveRequest, collection, located, scope, secretNames, sessionId, trustedCollection, collectionPath]);
+    }, [path, effectiveRequest, collection, located, scope, secretNames, paneId, trustedCollection, collectionPath]);
 
     const onSave = useCallback(() => {
         if (!path) return;
-        void cmd.brunoSaveRequest(sessionId, path).then(() => setEditing(null));
-    }, [path, sessionId]);
+        void brunoSaveRequest(paneId, path).then(() => setEditing(null));
+    }, [path, paneId]);
 
     const onSplitPointerDown = useCallback(
         (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -148,7 +156,7 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
             const move = (ev: PointerEvent) => {
                 const raw = ((ev.clientX - rect.left) / rect.width) * 100;
                 const next = Math.max(minPct, Math.min(maxPct, raw));
-                cmd.brunoSetReqPanePct(sessionId, Math.round(next * 10) / 10);
+                brunoSetReqPanePct(paneId, Math.round(next * 10) / 10);
             };
             const up = () => {
                 document.body.classList.remove("bruno-resizing");
@@ -160,7 +168,7 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
             handle.addEventListener("pointermove", move);
             handle.addEventListener("pointerup", up);
         },
-        [sessionId],
+        [paneId],
     );
 
     const onSplitKeyDown = useCallback(
@@ -169,21 +177,20 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
             event.preventDefault();
             const step = event.shiftKey ? 5 : 2;
             const next = Math.max(20, Math.min(80, reqPanePct + (event.key === "ArrowRight" ? step : -step)));
-            cmd.brunoSetReqPanePct(sessionId, next);
+            brunoSetReqPanePct(paneId, next);
         },
-        [reqPanePct, sessionId],
+        [reqPanePct, paneId],
     );
 
     useEffect(() => () => document.body.classList.remove("bruno-resizing"), []);
 
-    // ⌘↵ from anywhere in the pane: the keymap emits, we run.
-    useEffect(() => {
-        return subscribe("bruno-run", (e) => {
-            if (e.sessionId === sessionId) void onSend();
-        });
-    }, [sessionId, onSend]);
-
-    if (!bruno) return <div className="bruno-pane bruno-empty">not a Bruno workspace</div>;
+    useEffect(
+        () =>
+            onRunRequested((requested) => {
+                if (requested === paneId) void onSend();
+            }),
+        [paneId, onSend],
+    );
 
     if (!collectionPath) {
         return (
@@ -194,8 +201,8 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
                     message="Load a Bruno collection folder to browse and run its requests."
                     action={
                         knownWorkspaces > 0
-                            ? { label: "Choose workspace", onClick: () => cmd.openPicker("bruno") }
-                            : { label: "Add workspace", onClick: () => void cmd.openBrunoFolder() }
+                            ? { label: "Choose workspace", onClick: () => openPalette("workspacePalette") }
+                            : { label: "Add workspace", onClick: () => void openBrunoFolder() }
                     }
                 />
             </div>
@@ -208,12 +215,12 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
                 <span className="bruno-head-mark">
                     <IconBruno size={15} />
                 </span>
-                <button type="button" className="dd-btn bruno-workspace-dd" title={collectionPath} onClick={() => cmd.openPicker("bruno")}>
+                <button type="button" className="dd-btn bruno-workspace-dd" title={collectionPath} onClick={() => openPalette("workspacePalette")}>
                     <span className="dd-val bruno-coll-name">{collection?.name || basename(collectionPath)}</span>
                     <IconChevron size={9} className="dd-chev" />
                 </button>
                 <BrunoEnvSelect
-                    sessionId={sessionId}
+                    paneId={paneId}
                     envs={visibleEnvs}
                     showCollection={showEnvCollection}
                     selected={selectedEnvId}
@@ -224,7 +231,7 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
             </header>
             <div className="bruno-cols">
                 <BrunoTree
-                    sessionId={sessionId}
+                    paneId={paneId}
                     collectionPath={collectionPath}
                     tree={collection?.tree ?? []}
                     activePath={path}
@@ -232,12 +239,16 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
                     running={running}
                     loading={coll.status === "loading" && !collection}
                     error={coll.error ?? null}
-                    onSelect={(p) => cmd.brunoSelectRequest(sessionId, p)}
+                    onSelect={(p) => brunoSelectRequest(paneId, p)}
                     onReload={() => void coll.refresh()}
                 />
                 <div className="bruno-main">
                     {effectiveRequest && path ? (
-                        <div className="bruno-workbench" ref={splitRef} style={{ "--bruno-req-pct": `${reqPanePct}%` } as CSSProperties}>
+                        <div
+                            className="bruno-workbench"
+                            data-document-host
+                            ref={splitRef}
+                            style={{ "--bruno-req-pct": `${reqPanePct}%` } as CSSProperties}>
                             <BrunoRequestView
                                 request={effectiveRequest}
                                 tab={view.reqTab}
@@ -247,7 +258,7 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
                                 onChange={onChange}
                                 onSend={() => void onSend()}
                                 onSave={onSave}
-                                onTab={(t) => cmd.brunoSetReqTab(sessionId, t)}
+                                onTab={(t) => brunoSetReqTab(paneId, t)}
                             />
                             <div
                                 className="bruno-splitter"
@@ -265,7 +276,7 @@ export function BrunoPane({ paneId, sessionId, active }: Props) {
                                 result={results[path] ?? null}
                                 running={!!running[path]}
                                 tab={view.resTab}
-                                onTab={(t) => cmd.brunoSetResTab(sessionId, t)}
+                                onTab={(t) => brunoSetResTab(paneId, t)}
                             />
                         </div>
                     ) : (

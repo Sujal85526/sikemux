@@ -1,11 +1,11 @@
 import { useState } from "react";
-import * as cmd from "../../state/commands";
-import { confirmDialog, promptDialog } from "../../state/dialog";
-import type { BruTreeNode } from "../../bruno/types";
-import { IconChevron, IconFolder, IconPlus, IconFolderPlus, IconRefresh, IconPencil, IconTrash } from "../Icons";
+import { confirmDialog, promptDialog } from "../../../plugin-api/host";
+import { IconChevron, IconFolder, IconFolderPlus, IconPencil, IconPlus, IconRefresh, IconTrash } from "../../../plugin-api/ui";
+import type { BruTreeNode } from "../lib/types";
+import { brunoDeleteRequest, brunoNewFolder, brunoNewRequest, brunoRenameRequest } from "../state";
 
 interface Props {
-    sessionId: string;
+    paneId: string;
     collectionPath: string;
     tree: BruTreeNode[];
     activePath: string | null;
@@ -19,26 +19,26 @@ interface Props {
 
 const methodClass = (m: string): string => `bruno-method m-${m.toLowerCase()}`;
 
-export function BrunoTree({ sessionId, collectionPath, tree, activePath, drafts, running, loading, error, onSelect, onReload }: Props) {
+export function BrunoTree({ paneId, collectionPath, tree, activePath, drafts, running, loading, error, onSelect, onReload }: Props) {
     // Folders start collapsed; expand on demand.
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const toggle = (p: string) => setExpanded((c) => ({ ...c, [p]: !c[p] }));
 
     const newRequest = async (dir: string) => {
         const name = await promptDialog({ title: "New request", label: "Name", placeholder: "get-users", confirmLabel: "Create" });
-        if (name) void cmd.brunoNewRequest(sessionId, dir, name);
+        if (name) void brunoNewRequest(paneId, dir, name);
     };
     const newFolder = async (parent: string) => {
         const name = await promptDialog({ title: "New folder", label: "Name", placeholder: "auth", confirmLabel: "Create" });
-        if (name) void cmd.brunoNewFolder(sessionId, parent, name);
+        if (name) void brunoNewFolder(parent, name);
     };
     const rename = async (path: string, current: string) => {
         const name = await promptDialog({ title: "Rename request", label: "Name", initial: current, confirmLabel: "Rename" });
-        if (name && name !== current) void cmd.brunoRenameRequest(sessionId, path, name);
+        if (name && name !== current) void brunoRenameRequest(paneId, path, name);
     };
     const del = async (path: string, name: string) => {
         const ok = await confirmDialog({ title: `Delete request "${name}"?`, body: path, confirmLabel: "Delete", destructive: true });
-        if (ok) void cmd.brunoDeleteRequest(sessionId, path);
+        if (ok) void brunoDeleteRequest(paneId, path);
     };
 
     const activateOnKey = (e: React.KeyboardEvent, action: () => void) => {

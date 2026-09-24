@@ -24,7 +24,7 @@ const coreKeybindingActions = [
     {
         id: "palette.files",
         label: "Open file or request palette",
-        detail: "Files in projects, requests in Bruno",
+        detail: "Files in projects, or what the plugin in front offers",
         category: "Workspace",
         defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyP`,
     },
@@ -62,13 +62,6 @@ const coreKeybindingActions = [
         detail: "Open the SSH host picker",
         category: "Workspace",
         defaultBinding: "Alt+Shift+KeyS",
-    },
-    {
-        id: "bruno.open",
-        label: "Open Bruno",
-        detail: "Open the Bruno API client",
-        category: "Workspace",
-        defaultBinding: "Alt+KeyB",
     },
     {
         id: "session.newContextual",
@@ -364,27 +357,6 @@ const coreKeybindingActions = [
         category: "Browser",
         defaultBinding: "Ctrl+Shift+Tab",
     },
-    {
-        id: "bruno.save",
-        label: "Save request",
-        detail: "Save the active Bruno request",
-        category: "Bruno",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyS`,
-    },
-    {
-        id: "bruno.send",
-        label: "Send request",
-        detail: "Run the active Bruno request",
-        category: "Bruno",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Enter`,
-    },
-    {
-        id: "bruno.environment",
-        label: "Choose environment",
-        detail: "Open the Bruno environment picker",
-        category: "Bruno",
-        defaultBinding: "Alt+KeyE",
-    },
 ] as const satisfies readonly KeybindingAction[];
 
 export type CoreKeybindingActionId = (typeof coreKeybindingActions)[number]["id"];
@@ -399,7 +371,12 @@ const CORE_KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", 
 
 /** Core's sections, then one for each plugin with shortcuts of its own. */
 export function keybindingCategories(): readonly KeybindingCategory[] {
-    return [...CORE_KEYBINDING_CATEGORIES, ...frontendPlugins().filter((plugin) => plugin.shortcuts?.length).map(pluginCategory)];
+    return [
+        ...CORE_KEYBINDING_CATEGORIES,
+        ...frontendPlugins()
+            .filter((plugin) => plugin.shortcuts?.length)
+            .map(pluginCategory),
+    ];
 }
 
 const PLUGIN_OPEN = "plugin.open:";

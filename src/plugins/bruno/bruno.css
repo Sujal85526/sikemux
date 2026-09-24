@@ -1012,3 +1012,15 @@ html.is-transparent .bruno-icon-btn,
 html.is-transparent .bruno-secrets-btn:not(.active) {
     background: transparent;
 }
+
+.bruno-env-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--acc);
+}
+.bruno-env-dot.none {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--text-tertiary);
+}

@@ -1,9 +1,9 @@
-import * as cmd from "../../state/commands";
-import type { BruEnv } from "../../bruno/types";
-import { IconChevron, IconShield } from "../Icons";
+import { IconChevron, IconShield } from "../../../plugin-api/ui";
+import type { BruEnv } from "../lib/types";
+import { brunoSetSecret, brunoToggleSecrets, openPalette } from "../state";
 
 interface Props {
-    sessionId: string;
+    paneId: string;
     envs: BruEnv[];
     showCollection: boolean;
     selected: string | null;
@@ -12,13 +12,13 @@ interface Props {
     secretsOpen: boolean;
 }
 
-export function BrunoEnvSelect({ sessionId, envs, showCollection, selected, secretNames, secretVars, secretsOpen }: Props) {
+export function BrunoEnvSelect({ paneId, envs, showCollection, selected, secretNames, secretVars, secretsOpen }: Props) {
     const active = selected ? envs.find((e) => e.id === selected) : undefined;
     const label = active ? (showCollection ? `${active.collectionName}/${active.name}` : active.name) : "No environment";
 
     return (
         <div className="bruno-env">
-            <button type="button" className="dd-btn bruno-env-dd" title="Environment (⌥E)" onClick={() => cmd.openBrunoEnvPalette()}>
+            <button type="button" className="dd-btn bruno-env-dd" title="Environment (⌥E)" onClick={() => openPalette("environmentPalette")}>
                 <span className="dd-val">{label}</span>
                 <IconChevron size={9} className="dd-chev" />
             </button>
@@ -26,7 +26,7 @@ export function BrunoEnvSelect({ sessionId, envs, showCollection, selected, secr
                 <button
                     className={`bruno-secrets-btn${secretsOpen ? " active" : ""}`}
                     title="Secret variables"
-                    onClick={() => cmd.brunoToggleSecrets(sessionId)}>
+                    onClick={() => brunoToggleSecrets(paneId)}>
                     <IconShield size={12} />
                     secrets
                 </button>
@@ -44,7 +44,7 @@ export function BrunoEnvSelect({ sessionId, envs, showCollection, selected, secr
                                 placeholder="not set"
                                 autoComplete="off"
                                 spellCheck={false}
-                                onChange={(e) => cmd.brunoSetSecret(sessionId, name, e.target.value)}
+                                onChange={(e) => brunoSetSecret(paneId, name, e.target.value)}
                             />
                         </label>
                     ))}

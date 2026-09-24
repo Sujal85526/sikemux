@@ -16,7 +16,7 @@ use reqwest::header::{
 use reqwest::{Client, Method, Url};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{AppError, AppResult};
+use crate::error::{BrunoError, BrunoResult};
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TIMEOUT_MS: u64 = 120_000;
@@ -130,62 +130,62 @@ fn is_private_host(url: &Url) -> bool {
     host.parse::<IpAddr>().is_ok_and(is_non_public_ip)
 }
 
-async fn resolve_target(url: &Url, trust: &BruTrust) -> AppResult<Vec<SocketAddr>> {
+async fn resolve_target(url: &Url, trust: &BruTrust) -> BrunoResult<Vec<SocketAddr>> {
     let host = url
         .host_str()
-        .ok_or(AppError::BadArg("URL host is required"))?;
+        .ok_or(BrunoError::BadArg("URL host is required"))?;
     let port = url
         .port_or_known_default()
-        .ok_or(AppError::BadArg("URL port is required"))?;
+        .ok_or(BrunoError::BadArg("URL port is required"))?;
     let addrs: Vec<_> = tokio::net::lookup_host((host, port))
         .await
-        .map_err(|e| AppError::Http(format!("failed to resolve request host: {e}")))?
+        .map_err(|e| BrunoError::Http(format!("failed to resolve request host: {e}")))?
         .collect();
     if addrs.is_empty() {
-        return Err(AppError::Http("request host did not resolve".into()));
+        return Err(BrunoError::Http("request host did not resolve".into()));
     }
     if !trust.allow_private_network && addrs.iter().any(|addr| is_non_public_ip(addr.ip())) {
-        return Err(AppError::BadArg(
+        return Err(BrunoError::BadArg(
             "host resolves to a local/private address and requires trusting this Bruno collection",
         ));
     }
     Ok(addrs)
 }
 
-fn validate_url(raw: &str, trust: &BruTrust) -> AppResult<Url> {
-    let url = Url::parse(raw.trim()).map_err(|_| AppError::BadArg("invalid URL"))?;
+fn validate_url(raw: &str, trust: &BruTrust) -> BrunoResult<Url> {
+    let url = Url::parse(raw.trim()).map_err(|_| BrunoError::BadArg("invalid URL"))?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(AppError::BadArg("only http(s) URLs are supported"));
+        return Err(BrunoError::BadArg("only http(s) URLs are supported"));
     }
     if !url.username().is_empty() || url.password().is_some() {
-        return Err(AppError::BadArg(
+        return Err(BrunoError::BadArg(
             "credentials in URLs are not allowed; use an Authorization header",
         ));
     }
     if is_private_host(&url) && !trust.allow_private_network {
-        return Err(AppError::BadArg(
+        return Err(BrunoError::BadArg(
             "local/private endpoint requires trusting this Bruno collection",
         ));
     }
     Ok(url)
 }
 
-fn build_headers(pairs: &[(String, String)], url: &Url) -> AppResult<HeaderMap> {
+fn build_headers(pairs: &[(String, String)], url: &Url) -> BrunoResult<HeaderMap> {
     if pairs.len() > MAX_HEADERS {
-        return Err(AppError::BadArg("too many request headers"));
+        return Err(BrunoError::BadArg("too many request headers"));
     }
     let total_bytes = pairs.iter().try_fold(0_usize, |total, (name, value)| {
         total.checked_add(name.len())?.checked_add(value.len())
     });
     if total_bytes.is_none_or(|total| total > MAX_HEADER_BYTES) {
-        return Err(AppError::BadArg("request headers exceed 1 MiB limit"));
+        return Err(BrunoError::BadArg("request headers exceed 1 MiB limit"));
     }
     let mut map = HeaderMap::new();
     for (k, v) in pairs {
         let name = HeaderName::from_bytes(k.as_bytes())
-            .map_err(|_| AppError::BadArg("invalid request header name"))?;
+            .map_err(|_| BrunoError::BadArg("invalid request header name"))?;
         let val = HeaderValue::from_str(v)
-            .map_err(|_| AppError::BadArg("invalid request header value"))?;
+            .map_err(|_| BrunoError::BadArg("invalid request header value"))?;
         map.append(name, val);
     }
     if url.scheme() == "http"
@@ -194,40 +194,40 @@ fn build_headers(pairs: &[(String, String)], url: &Url) -> AppResult<HeaderMap> 
             || map.contains_key(COOKIE))
         && !is_private_host(url)
     {
-        return Err(AppError::BadArg(
+        return Err(BrunoError::BadArg(
             "refusing to send credentials over plaintext HTTP",
         ));
     }
     Ok(map)
 }
 
-fn canonical_upload(path: &str, trust: &BruTrust) -> AppResult<PathBuf> {
+fn canonical_upload(path: &str, trust: &BruTrust) -> BrunoResult<PathBuf> {
     if !trust.allow_file_read {
-        return Err(AppError::BadArg(
+        return Err(BrunoError::BadArg(
             "file upload requires trusting this Bruno collection",
         ));
     }
     let root = trust
         .file_root
         .as_deref()
-        .ok_or(AppError::BadArg("trusted collection root missing"))?;
+        .ok_or(BrunoError::BadArg("trusted collection root missing"))?;
     let root =
-        std::fs::canonicalize(root).map_err(|_| AppError::BadArg("invalid collection root"))?;
-    let file =
-        std::fs::canonicalize(path).map_err(|_| AppError::BadArg("upload file does not exist"))?;
+        std::fs::canonicalize(root).map_err(|_| BrunoError::BadArg("invalid collection root"))?;
+    let file = std::fs::canonicalize(path)
+        .map_err(|_| BrunoError::BadArg("upload file does not exist"))?;
     if !file.starts_with(&root) || !Path::new(&file).is_file() {
-        return Err(AppError::BadArg(
+        return Err(BrunoError::BadArg(
             "upload file must be a regular file inside the collection",
         ));
     }
     let len = std::fs::metadata(&file)?.len();
     if len > MAX_BODY_BYTES {
-        return Err(AppError::BadArg("upload file exceeds 32 MiB limit"));
+        return Err(BrunoError::BadArg("upload file exceeds 32 MiB limit"));
     }
     Ok(file)
 }
 
-fn read_upload(path: &str, trust: &BruTrust) -> AppResult<(PathBuf, Vec<u8>)> {
+fn read_upload(path: &str, trust: &BruTrust) -> BrunoResult<(PathBuf, Vec<u8>)> {
     let path = canonical_upload(path, trust)?;
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
@@ -239,12 +239,12 @@ fn read_upload(path: &str, trust: &BruTrust) -> AppResult<(PathBuf, Vec<u8>)> {
     let file = options.open(&path)?;
     let metadata = file.metadata()?;
     if !metadata.is_file() || metadata.len() > MAX_BODY_BYTES {
-        return Err(AppError::BadArg("upload file exceeds 32 MiB limit"));
+        return Err(BrunoError::BadArg("upload file exceeds 32 MiB limit"));
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     file.take(MAX_BODY_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_BODY_BYTES {
-        return Err(AppError::BadArg("upload file exceeds 32 MiB limit"));
+        return Err(BrunoError::BadArg("upload file exceeds 32 MiB limit"));
     }
     Ok((path, bytes))
 }
@@ -269,15 +269,15 @@ fn client(
     skip_tls_verify: bool,
     url: &Url,
     addrs: &[SocketAddr],
-) -> AppResult<Client> {
+) -> BrunoResult<Client> {
     if skip_tls_verify && !trust.allow_insecure_tls {
-        return Err(AppError::BadArg(
+        return Err(BrunoError::BadArg(
             "invalid TLS certificates require explicit trust",
         ));
     }
     let host = url
         .host_str()
-        .ok_or(AppError::BadArg("URL host is required"))?;
+        .ok_or(BrunoError::BadArg("URL host is required"))?;
 
     let mut pinned: Vec<String> = addrs.iter().map(SocketAddr::to_string).collect();
     pinned.sort();
@@ -308,10 +308,9 @@ fn client(
     Ok(client)
 }
 
-#[tauri::command]
-pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
+pub async fn send(req: BruSendRequest) -> BrunoResult<BruSendResponse> {
     let method = Method::from_bytes(req.method.to_uppercase().as_bytes())
-        .map_err(|_| AppError::BadArg("invalid HTTP method"))?;
+        .map_err(|_| BrunoError::BadArg("invalid HTTP method"))?;
     let url = validate_url(&req.url, &req.trust)?;
     let mut headers = build_headers(&req.headers, &url)?;
     let addrs = resolve_target(&url, &req.trust).await?;
@@ -329,7 +328,7 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
         BruBodyWire::None => {}
         BruBodyWire::Raw { content_type, data } => {
             if data.len() as u64 > MAX_BODY_BYTES {
-                return Err(AppError::BadArg("request body exceeds 32 MiB limit"));
+                return Err(BrunoError::BadArg("request body exceeds 32 MiB limit"));
             }
             set_content_type(&mut headers, content_type);
             builder = builder.body(data);
@@ -341,7 +340,7 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
         }
         BruBodyWire::Form { fields } => {
             if fields.len() > 10_000 {
-                return Err(AppError::BadArg("too many form fields"));
+                return Err(BrunoError::BadArg("too many form fields"));
             }
             let encoded = url::form_urlencoded::Serializer::new(String::new())
                 .extend_pairs(
@@ -351,7 +350,7 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
                 )
                 .finish();
             if encoded.len() as u64 > MAX_BODY_BYTES {
-                return Err(AppError::BadArg("form body exceeds 32 MiB limit"));
+                return Err(BrunoError::BadArg("form body exceeds 32 MiB limit"));
             }
             set_content_type(
                 &mut headers,
@@ -361,7 +360,7 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
         }
         BruBodyWire::Multipart { fields } => {
             if fields.len() > 1_000 {
-                return Err(AppError::BadArg("too many multipart fields"));
+                return Err(BrunoError::BadArg("too many multipart fields"));
             }
             let mut form = reqwest::multipart::Form::new();
             let mut total = 0_u64;
@@ -371,9 +370,9 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
                     total = total
                         .checked_add(f.name.len() as u64)
                         .and_then(|n| n.checked_add(bytes.len() as u64))
-                        .ok_or(AppError::BadArg("multipart body exceeds 32 MiB limit"))?;
+                        .ok_or(BrunoError::BadArg("multipart body exceeds 32 MiB limit"))?;
                     if total > MAX_BODY_BYTES {
-                        return Err(AppError::BadArg("multipart body exceeds 32 MiB limit"));
+                        return Err(BrunoError::BadArg("multipart body exceeds 32 MiB limit"));
                     }
                     let filename = path
                         .file_name()
@@ -388,9 +387,9 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
                     total = total
                         .checked_add(f.name.len() as u64)
                         .and_then(|n| n.checked_add(f.value.len() as u64))
-                        .ok_or(AppError::BadArg("multipart body exceeds 32 MiB limit"))?;
+                        .ok_or(BrunoError::BadArg("multipart body exceeds 32 MiB limit"))?;
                     if total > MAX_BODY_BYTES {
-                        return Err(AppError::BadArg("multipart body exceeds 32 MiB limit"));
+                        return Err(BrunoError::BadArg("multipart body exceeds 32 MiB limit"));
                     }
                     form = form.text(f.name, f.value);
                 }
@@ -404,12 +403,12 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
     let resp = builder
         .send()
         .await
-        .map_err(|e| AppError::Http(e.to_string()))?;
+        .map_err(|e| BrunoError::Http(e.to_string()))?;
     if resp
         .content_length()
         .is_some_and(|n| n > MAX_RESPONSE_BYTES)
     {
-        return Err(AppError::Http("response exceeds 32 MiB limit".into()));
+        return Err(BrunoError::Http("response exceeds 32 MiB limit".into()));
     }
     let status = resp.status();
     let status_text = status.canonical_reason().unwrap_or("").to_string();
@@ -422,7 +421,9 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
                 .checked_add(value.as_bytes().len())
         });
     if response_header_bytes.is_none_or(|total| total > MAX_HEADER_BYTES) {
-        return Err(AppError::Http("response headers exceed 1 MiB limit".into()));
+        return Err(BrunoError::Http(
+            "response headers exceed 1 MiB limit".into(),
+        ));
     }
     let resp_headers = resp
         .headers()
@@ -432,9 +433,9 @@ pub async fn bru_send(req: BruSendRequest) -> AppResult<BruSendResponse> {
     let mut stream = resp.bytes_stream();
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| AppError::Http(e.to_string()))?;
+        let chunk = chunk.map_err(|e| BrunoError::Http(e.to_string()))?;
         if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES as usize {
-            return Err(AppError::Http("response exceeds 32 MiB limit".into()));
+            return Err(BrunoError::Http("response exceeds 32 MiB limit".into()));
         }
         bytes.extend_from_slice(&chunk);
     }

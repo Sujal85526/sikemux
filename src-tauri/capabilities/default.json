@@ -168,7 +168,6 @@
     "allow-macos-focus-app",
     "allow-run-background-command",
     "allow-set-window-blur",
-    "allow-bru-send",
     "allow-plugin-manifests",
     "allow-plugin-call",
     "allow-plugin-stream-start",

@@ -41,7 +41,6 @@ export interface BuiltinWorkbenchItemState {
     git: null;
     diff: null;
     search: null;
-    bruno: null;
     agent: null;
     /* The agent it belongs to is held in `browserPanes`, keyed by pane id,
        the same way an editor keeps its view. */
@@ -268,7 +267,6 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     git: builtinDefinition("git", "git", NULL_CODEC),
     diff: builtinDefinition("diff", "diff", NULL_CODEC),
     search: builtinDefinition("search", "search", NULL_CODEC),
-    bruno: builtinDefinition("bruno", "bruno", NULL_CODEC),
     agent: builtinDefinition("agent", "agent", NULL_CODEC),
     browser: builtinDefinition("browser", "browser", BROWSER_CODEC),
 }) satisfies BuiltinDefinitionMap;

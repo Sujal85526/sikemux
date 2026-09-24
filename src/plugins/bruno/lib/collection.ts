@@ -8,7 +8,7 @@
 // when nested), and a nested `collection.bru` participates in scope inheritance
 // just like a `folder.bru`, so per-collection auth / token-refresh scripts apply.
 
-import { fsapi, type DirEntry } from "../api/fs";
+import { files as fsapi, type DirEntry } from "../../../plugin-api/host";
 import { parseEnv, parseRequest, parseScope } from "./parse";
 import type { BruCollection, BruEnv, BruTreeNode } from "./types";
 

@@ -4,7 +4,7 @@
 // accent colour; vars missing from the active scope render red, like Bruno.
 
 import { useRef } from "react";
-import type { Scope } from "../../bruno/interpolate";
+import type { Scope } from "../lib/interpolate";
 
 function tokens(text: string, scope: Scope): React.ReactNode[] {
     const out: React.ReactNode[] = [];

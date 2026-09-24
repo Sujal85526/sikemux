@@ -126,18 +126,10 @@ export function roleHasTab(role: string): boolean {
  * document and where each keeps its list, so a new document-holding kind is
  * a case here and nowhere else.
  */
-export function documentsOf(
-    win: Window,
-    editorViews: StoreState["editorViews"],
-    brunoViews: StoreState["brunoViews"],
-): { ids: readonly string[]; activeId: string | null } | null {
+export function documentsOf(win: Window, editorViews: StoreState["editorViews"]): { ids: readonly string[]; activeId: string | null } | null {
     if (win.role === "files") {
         const view = editorViews[win.activePaneId];
         return { ids: view?.openTabs ?? EMPTY_IDS, activeId: view?.activePath ?? null };
-    }
-    if (win.role === "bruno") {
-        const view = brunoViews[win.activePaneId];
-        return { ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
     }
     return pluginDocuments(win.role)?.list(win.activePaneId) ?? null;
 }
@@ -146,23 +138,18 @@ export function documentsOf(
  * Expand one session's windows into strip entries.
  *
  * Rail-driven roles contribute nothing: the rail reaches them and the stage
- * renders them, so a tab would be a second handle on one surface. An editor
- * contributes one entry per open document and a Bruno workspace one per open
- * request, which is what puts them in this strip rather than a second bar
+ * renders them, so a tab would be a second handle on one surface. An editor,
+ * and any plugin surface that holds documents, contributes one entry per open
+ * document, which is what puts them in this strip rather than a second bar
  * inside the pane; with nothing open they contribute nothing, because an empty
  * one is not worth a tab. Everything else gets exactly one entry, and the list
  * is derived rather than stored, so a window can never exist without its tab.
  */
-export function expandTabRefs(
-    windowIds: readonly string[],
-    windows: StoreState["windows"],
-    editorViews: StoreState["editorViews"] = {},
-    brunoViews: StoreState["brunoViews"] = {},
-): TabRef[] {
+export function expandTabRefs(windowIds: readonly string[], windows: StoreState["windows"], editorViews: StoreState["editorViews"] = {}): TabRef[] {
     return windowIds.flatMap((id): TabRef[] => {
         const win = windows[id];
         if (!win) return [];
-        const documents = documentsOf(win, editorViews, brunoViews);
+        const documents = documentsOf(win, editorViews);
         if (documents) return documents.ids.map((doc): TabRef => ({ id, doc }));
         return roleHasTab(win.role) ? [{ id }] : [];
     });
@@ -170,14 +157,12 @@ export function expandTabRefs(
 
 /** The session's tabs as one ordered list. */
 export function selectTabRefs(state: StoreState, sessionId: string): TabRef[] {
-    return expandTabRefs(state.windowsBySession[sessionId] ?? EMPTY_IDS, state.windows, state.editorViews, state.brunoViews);
+    return expandTabRefs(state.windowsBySession[sessionId] ?? EMPTY_IDS, state.windows, state.editorViews);
 }
 
 /** The windows a swipe walks through: only the ones the strip has a tab for. */
 export function selectSwipeOrder(state: StoreState, sessionId: string): string[] {
-    return (state.windowsBySession[sessionId] ?? EMPTY_IDS).filter(
-        (id) => expandTabRefs([id], state.windows, state.editorViews, state.brunoViews).length > 0,
-    );
+    return (state.windowsBySession[sessionId] ?? EMPTY_IDS).filter((id) => expandTabRefs([id], state.windows, state.editorViews).length > 0);
 }
 
 /**
@@ -190,11 +175,10 @@ export function activeTabRef(
     session: Pick<Session, "activeWindowId">,
     windows: StoreState["windows"] = {},
     editorViews: StoreState["editorViews"] = {},
-    brunoViews: StoreState["brunoViews"] = {},
 ): TabRef | null {
     if (!session.activeWindowId) return null;
     const win = windows[session.activeWindowId];
-    const documents = win ? documentsOf(win, editorViews, brunoViews) : null;
+    const documents = win ? documentsOf(win, editorViews) : null;
     // A window showing nothing stays a window ref: it has no document tab to
     // point at, but its layer still has to render the empty state.
     if (documents?.activeId) return { id: session.activeWindowId, doc: documents.activeId };
@@ -231,8 +215,7 @@ export type TabSource =
     | { kind: "workspace"; sessionId: string }
     | { kind: "agents"; sessionId: string }
     | { kind: "terminals"; sessionId: string }
-    | { kind: "documents"; paneId: string }
-    | { kind: "requests"; paneId: string };
+    | { kind: "documents"; paneId: string };
 
 export interface StripOrder {
     ids: readonly string[];
@@ -250,7 +233,7 @@ export function stripOrder(state: StoreState, source: TabSource): StripOrder {
     switch (source.kind) {
         case "workspace": {
             const session = state.sessions[source.sessionId];
-            const active = session ? activeTabRef(session, state.windows, state.editorViews, state.brunoViews) : null;
+            const active = session ? activeTabRef(session, state.windows, state.editorViews) : null;
             return {
                 ids: selectTabRefs(state, source.sessionId).map(tabRefKey),
                 activeId: active ? tabRefKey(active) : null,
@@ -270,10 +253,6 @@ export function stripOrder(state: StoreState, source: TabSource): StripOrder {
             const view = state.editorViews[source.paneId];
             return { ids: view?.openTabs ?? EMPTY_IDS, activeId: view?.activePath ?? null };
         }
-        case "requests": {
-            const view = state.brunoViews[source.paneId];
-            return { ids: view?.openPaths ?? EMPTY_IDS, activeId: view?.activeRequestPath ?? null };
-        }
     }
 }
 
@@ -291,26 +270,13 @@ export function nextInCycle(order: StripOrder, delta: number): string | null {
     return ids[(base + delta + ids.length) % ids.length] ?? null;
 }
 
-/** The pane a Bruno session keeps its request view in. A Bruno session has exactly one. */
-export function brunoPaneId(state: StoreState, sessionId: string): string | null {
-    for (const id of state.windowsBySession[sessionId] ?? EMPTY_IDS) {
-        const win = state.windows[id];
-        if (win?.role === "bruno") return win.activePaneId;
-    }
-    return null;
-}
-
 export const selectActiveWindow = (state: StoreState): Window | undefined => {
     const session = selectActiveSession(state);
     return session ? state.windows[session.activeWindowId] : undefined;
 };
 
 export type WorkbenchItemState =
-    | StoreState["editorViews"][string]
-    | StoreState["gitViews"][string]
-    | StoreState["brunoViews"][string]
-    | StoreState["globalSearchBySession"][string]
-    | undefined;
+    StoreState["editorViews"][string] | StoreState["gitViews"][string] | StoreState["globalSearchBySession"][string] | undefined;
 
 /** Migration adapter until every item owns its runtime state in a controller. */
 export function selectItemState(state: StoreState, kind: PaneKind, itemId: string, sessionId?: string): WorkbenchItemState {
@@ -319,8 +285,6 @@ export function selectItemState(state: StoreState, kind: PaneKind, itemId: strin
             return state.editorViews[itemId];
         case "git":
             return state.gitViews[itemId];
-        case "bruno":
-            return state.brunoViews[itemId];
         case "search":
             return sessionId ? state.globalSearchBySession[sessionId] : undefined;
         case "terminal":

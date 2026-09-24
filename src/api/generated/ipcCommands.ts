@@ -155,7 +155,6 @@ export const IPC_COMMANDS = [
     "macos_focus_app",
     "run_background_command",
     "set_window_blur",
-    "bru_send",
     "plugin_manifests",
     "plugin_call",
     "plugin_stream_start",

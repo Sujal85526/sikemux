@@ -1,6 +1,6 @@
-import type { BrunoResTab } from "../../state/types";
-import type { RunResult } from "../../bruno/run";
-import { IconCheck, IconClose } from "../Icons";
+import { IconCheck, IconClose } from "../../../plugin-api/ui";
+import type { RunResult } from "../lib/run";
+import type { BrunoResTab } from "../state";
 import { BrunoCode, type BrunoLang } from "./BrunoCode";
 
 interface Props {

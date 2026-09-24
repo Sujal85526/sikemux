@@ -46,12 +46,11 @@ function deriveRole(w: Window): WindowRole {
     if (WINDOW_ROLES.has(w.role) || isPluginKind(w.role)) return w.role;
     if (w.name === "files") return "files";
     if (w.name === "git") return "git";
-    if (w.name === "bruno") return "bruno";
     if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
     return "named";
 }
 
-export const VERSION = 13;
+export const VERSION = 14;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
@@ -59,6 +58,7 @@ const PLUGIN_KIND_MIGRATION_VERSION = 10;
 const PLUGIN_SETTINGS_MIGRATION_VERSION = 11;
 const ONE_BRUNO_SESSION_MIGRATION_VERSION = 12;
 const AWS_PLUGIN_MIGRATION_VERSION = 13;
+const BRUNO_PLUGIN_MIGRATION_VERSION = 14;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -81,7 +81,6 @@ const PERSISTED_KEYS = [
     "browserStrips",
     "browserRestores",
     "projectRoots",
-    "brunoWorkspaces",
     "themeId",
     "customThemes",
     "uiTextScale",
@@ -130,7 +129,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
     const providerProfiles = normaliseProviderProfiles(s.providerProfiles, []);
     return {
         projectRoots: s.projectRoots,
-        brunoWorkspaces: s.brunoWorkspaces,
         themeId: s.themeId,
         customThemes: s.customThemes,
         uiTextScale: s.uiTextScale,
@@ -162,15 +160,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
     };
 }
 
-/** Union of the persisted registry with any currently-open Bruno collection paths, deduped, most-recent-first. */
-function mergeBrunoWorkspaces(saved: string[] | undefined, sessions: Session[]): string[] {
-    const open = sessions.filter((s) => s.kind === "bruno").map((s) => s.bruno?.collectionPath);
-    const out: string[] = [];
-    for (const p of [...(saved ?? []), ...open]) if (typeof p === "string" && p && !out.includes(p)) out.push(p);
-    return out;
-}
-
-const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "bruno", "ssh-config", "named", "agent"]);
+const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "ssh-config", "named", "agent"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -199,10 +189,6 @@ function normaliseCustomCommands(value: unknown): CustomCommand[] {
         if (commands.length >= 100) break;
     }
     return commands;
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-    return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
 }
 
 function isLayout(value: unknown): value is Window["root"] {
@@ -261,15 +247,6 @@ function toSession(value: unknown): Session | null {
         pinned: value.pinned,
         activeWindowId: value.activeWindowId,
     };
-    if (session.kind === "bruno") {
-        const bruno = isRecord(value.bruno) ? value.bruno : {};
-        session.bruno = {
-            collectionPath: typeof bruno.collectionPath === "string" ? bruno.collectionPath : session.cwd,
-            selectedEnvs: isStringRecord(bruno.selectedEnvs) ? bruno.selectedEnvs : {},
-        };
-    } else {
-        delete session.bruno;
-    }
     return session;
 }
 
@@ -371,9 +348,7 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
 }
 
 function persistedSession(sess: Session): PersistedSession {
-    const { bruno, ...base } = sess;
-    if (sess.kind !== "bruno" || !bruno) return base;
-    return { ...base, bruno: { collectionPath: bruno.collectionPath, selectedEnvs: bruno.selectedEnvs } };
+    return sess;
 }
 
 /** Startup commands are rebuilt from the type and resume id on restore, never saved. */
@@ -608,6 +583,55 @@ function moveAwsIntoItsPlugin(decoded: Record<string, unknown>): void {
     };
 }
 
+const LEGACY_BRUNO_SHORTCUTS: Readonly<Record<string, string>> = {
+    "bruno.open": "plugin.open:sikemux.bruno",
+    "bruno.save": "plugin.run:sikemux.bruno/save",
+    "bruno.send": "plugin.run:sikemux.bruno/send",
+    "bruno.environment": "plugin.run:sikemux.bruno/environment",
+};
+
+/**
+ * Before v14 Bruno was built in. Its session kept the loaded collection and the
+ * chosen environments, the workspace list sat among core's settings, and its
+ * shortcuts were core's.
+ */
+function moveBrunoIntoItsPlugin(decoded: Record<string, unknown>): void {
+    const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
+    const session = sessions.find((row): row is Record<string, unknown> => isRecord(row) && row.kind === "bruno");
+    const saved = session && isRecord(session.bruno) ? session.bruno : {};
+    const collectionPath = typeof saved.collectionPath === "string" ? saved.collectionPath : typeof session?.cwd === "string" ? session.cwd : "";
+    for (const row of sessions) if (isRecord(row)) delete row.bruno;
+
+    const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
+    for (const rows of Object.values(windowsBySession)) {
+        for (const row of Array.isArray(rows) ? rows : []) {
+            if (isRecord(row) && row.role === undefined && row.name === "bruno") row.role = "bruno";
+        }
+    }
+    renameLegacyPluginKinds(decoded, new Map([["bruno", "sikemux.bruno:client"]]));
+
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    const workspaces = Array.isArray(prefs.brunoWorkspaces) ? prefs.brunoWorkspaces : [];
+    const keybindingOverrides: Record<string, unknown> = {};
+    for (const [id, binding] of Object.entries(isRecord(prefs.keybindingOverrides) ? prefs.keybindingOverrides : {})) {
+        keybindingOverrides[LEGACY_BRUNO_SHORTCUTS[id] ?? id] = binding;
+    }
+    const { brunoWorkspaces: _moved, ...rest } = prefs;
+    const pluginSettings = isRecord(prefs.pluginSettings) ? prefs.pluginSettings : {};
+    decoded.prefs = {
+        ...rest,
+        keybindingOverrides,
+        pluginSettings: {
+            ...pluginSettings,
+            "sikemux.bruno": {
+                collectionPath,
+                selectedEnvs: saved.selectedEnvs,
+                workspaces: collectionPath ? [collectionPath, ...workspaces] : workspaces,
+            },
+        },
+    };
+}
+
 /** Before v11 Rundeck's settings sat among core's, and each session kept the deploy location picked for its folder. */
 function moveRundeckSettings(decoded: Record<string, unknown>): void {
     const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
@@ -671,6 +695,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version < PLUGIN_SETTINGS_MIGRATION_VERSION) moveRundeckSettings(decoded);
     if (decoded.version < ONE_BRUNO_SESSION_MIGRATION_VERSION) mergeBrunoSessions(decoded);
     if (decoded.version < AWS_PLUGIN_MIGRATION_VERSION) moveAwsIntoItsPlugin(decoded);
+    if (decoded.version < BRUNO_PLUGIN_MIGRATION_VERSION) moveBrunoIntoItsPlugin(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
@@ -851,10 +876,6 @@ export function applyHydrate(raw: string): HydrationResult {
         projectRoots: mergePinnedIntoRoots(
             Array.isArray(prefs.projectRoots) ? normaliseProjectRoots(prefs.projectRoots) : cur.projectRoots,
             prefs.pinnedProjects,
-        ),
-        brunoWorkspaces: mergeBrunoWorkspaces(
-            Array.isArray(prefs.brunoWorkspaces) ? prefs.brunoWorkspaces.filter((v): v is string => typeof v === "string") : undefined,
-            Object.values(sessions),
         ),
         themeId: typeof prefs.themeId === "string" ? prefs.themeId : cur.themeId,
         customThemes: Array.isArray(prefs.customThemes) ? prefs.customThemes.filter(isTheme) : cur.customThemes,

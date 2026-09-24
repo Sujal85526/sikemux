@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as cmd from "../../state/commands";
-import { rankBy } from "../../lib/fuzzy";
-import { findRequest } from "../../bruno/resolve";
-import { useResourceEnabled } from "../../state/resources";
-import { brunoCollectionR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
-import { brunoPaneId } from "../../state/selectors";
-import { DEFAULT_BRUNO_VIEW } from "../../state/types";
-import { useMouseActive } from "../../hooks/useMouseActive";
-import { IconCheck, IconSearch } from "../Icons";
+import { useActiveSurfacePane } from "../../../plugin-api/host";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { IconCheck, IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
+import { BRUNO_CLIENT } from "../kinds";
+import { findRequest } from "../lib/resolve";
+import { brunoCollectionR, brunoSelectEnv, brunoSettings, closePalettes, useBrunoView } from "../state";
 
 const NO_ENV = "__none__";
 
@@ -21,11 +17,10 @@ interface EnvRow {
 }
 
 export function BrunoEnvPalette() {
-    const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const sessionId = session?.id ?? "";
-    const collectionPath = session?.kind === "bruno" ? (session.bruno?.collectionPath ?? "") : "";
-    const selectedEnvs = session?.kind === "bruno" ? (session.bruno?.selectedEnvs ?? {}) : {};
-    const view = useStore((s) => s.brunoViews[brunoPaneId(s, sessionId) ?? ""] ?? DEFAULT_BRUNO_VIEW);
+    const paneId = useActiveSurfacePane(BRUNO_CLIENT);
+    const collectionPath = brunoSettings.useSelect((settings) => settings.collectionPath);
+    const selectedEnvs = brunoSettings.useSelect((settings) => settings.selectedEnvs);
+    const view = useBrunoView(paneId ?? "");
 
     const [query, setQuery] = useState("");
     const [sel, setSel] = useState(0);
@@ -78,13 +73,13 @@ export function BrunoEnvPalette() {
 
     const activate = (row: EnvRow | undefined) => {
         if (!row) return;
-        cmd.brunoSelectEnv(sessionId, reqCollPath, row.id);
-        cmd.closeBrunoEnvPalette();
+        brunoSelectEnv(reqCollPath, row.id);
+        closePalettes();
     };
 
     const onKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === "Escape") {
-            cmd.closeBrunoEnvPalette();
+            closePalettes();
         } else if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
             e.preventDefault();
             setSel((s) => (items.length ? (s + 1) % items.length : 0));
@@ -98,7 +93,7 @@ export function BrunoEnvPalette() {
     };
 
     return (
-        <div className="picker-backdrop" onMouseDown={cmd.closeBrunoEnvPalette}>
+        <div className="picker-backdrop" onMouseDown={closePalettes}>
             <div className="picker" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="picker-input-wrap">
                     <IconSearch size={15} className="picker-search-icon" />

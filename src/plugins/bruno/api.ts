@@ -1,4 +1,7 @@
-import { invokeCommand as invoke } from "./invoke";
+import { createPluginBackend, isPluginFailure } from "../../plugin-api/backend";
+import { BRUNO_PLUGIN_ID } from "./kinds";
+
+const backend = createPluginBackend(BRUNO_PLUGIN_ID);
 
 export type BruBodyWire =
     | { kind: "none" }
@@ -33,5 +36,13 @@ export interface BruSendResponse {
 }
 
 export const brunoApi = {
-    send: (req: BruSendRequest) => invoke<BruSendResponse>("bru_send", { req }),
+    /** The host names the plugin in front of every error; a request's error reads better without it. */
+    async send(req: BruSendRequest): Promise<BruSendResponse> {
+        try {
+            return await backend.call<BruSendResponse>("send", { req });
+        } catch (error) {
+            if (!isPluginFailure(error)) throw error;
+            throw new Error(error.message.replace(`${BRUNO_PLUGIN_ID}: `, ""), { cause: error });
+        }
+    },
 };

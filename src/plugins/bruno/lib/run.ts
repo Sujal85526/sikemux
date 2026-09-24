@@ -3,7 +3,7 @@
 // merges headers, builds the query string and body, interpolates {{vars}}, and runs
 // pre/post-request scripts + assertions through the sandbox.
 
-import { brunoApi, type BruBodyWire, type BruSendResponse } from "../api/bruno";
+import { brunoApi, type BruBodyWire, type BruSendResponse } from "../api";
 import { interpolate, type Scope } from "./interpolate";
 import { evaluateAssertions, evaluateExpression, runScript, type ReqView, type ResView, type ScriptLog, type TestResult } from "./sandbox";
 import type { BruAuth, BruRequest, BruScope, KeyVal } from "./types";

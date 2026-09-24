@@ -31,9 +31,13 @@ describe("keybindings", () => {
         expect(binding).toBe("Ctrl+Shift+KeyF");
         expect(keybindingLabel(binding)).toMatch(/F$/);
         expect(keybindingLabel("Alt+Backslash")).toMatch(/\\$/);
-        const sendBinding = getKeybindingAction("bruno.send").defaultBinding;
-        expect(actionForEvent(key("NumpadEnter", { metaKey: sendBinding.startsWith("Meta"), ctrlKey: sendBinding.startsWith("Ctrl") }), {})).toBe(
-            "bruno.send",
+    });
+
+    it("answers a shortcut on Enter from the numpad Enter too", async () => {
+        await import("./plugins/builtin");
+        const send = getKeybindingAction("plugin.run:sikemux.bruno/send")?.defaultBinding ?? "";
+        expect(actionForEvent(key("NumpadEnter", { metaKey: send.startsWith("Meta"), ctrlKey: send.startsWith("Ctrl") }), {})).toBe(
+            "plugin.run:sikemux.bruno/send",
         );
     });
 
@@ -130,4 +134,3 @@ describe("a plugin's own shortcuts", () => {
         expect(pluginShortcutFor("plugin.run:test.shortcuts/missing")).toBeNull();
     });
 });
-
