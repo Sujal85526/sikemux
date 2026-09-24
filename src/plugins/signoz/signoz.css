@@ -309,11 +309,13 @@
     flex-direction: column;
     gap: 1px;
 }
+/* WebKit clips a border that touches the edge of a scrolling box, so the rows sit a ring's width in. */
 .sgz-side-scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding-bottom: var(--space-2);
+    margin: 0 calc(-1 * var(--space-1));
+    padding: 2px var(--space-1) var(--space-2);
 }
 .sgz-side-note {
     padding: var(--space-1) var(--space-2);
