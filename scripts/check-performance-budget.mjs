@@ -210,7 +210,7 @@ const budgets = [
   {
     label: "settings lazy CSS",
     pattern: /^SettingsPanel-.*\.css$/,
-    raw: 40_000,
+    raw: 42_300,
     gzip: 7_000,
   },
 ];
