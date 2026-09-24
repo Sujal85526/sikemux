@@ -273,11 +273,13 @@
     width: 100%;
 }
 
+/* Size stays uncontained: the virtualizer measures each row's real height. */
 .chat-virtual-row {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
+    contain: layout style;
 }
 
 .chat-message {
@@ -2019,4 +2021,24 @@ button.chat-tool:hover,
         bottom: 120px;
         width: auto;
     }
+}
+
+.chat-show-rest {
+    display: block;
+    margin-top: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--ink-faint);
+    font-family: var(--ui);
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    transition:
+        color 100ms,
+        border-color 100ms;
+}
+.chat-show-rest:hover {
+    border-color: var(--acc-line);
+    color: var(--ink);
 }
