@@ -26,9 +26,10 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["rundeck"]
+default = ["rundeck", "signoz"]
 ipc-command-tests = ["tauri/test"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
+signoz = ["dep:sikemux-plugin-signoz"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -67,6 +68,7 @@ futures = "0.3"
 semver = "1"
 sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
+sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
 sikemux-process = { path = "crates/sikemux-process" }
 agent-client-protocol = "2.0.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util", "net"] }

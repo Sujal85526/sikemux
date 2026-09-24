@@ -6,6 +6,8 @@ pub fn plugins() -> Vec<Arc<dyn Plugin>> {
     let compiled_in: Vec<Result<Arc<dyn Plugin>, PluginError>> = vec![
         #[cfg(feature = "rundeck")]
         sikemux_plugin_rundeck::plugin(),
+        #[cfg(feature = "signoz")]
+        sikemux_plugin_signoz::plugin(),
     ];
     compiled_in
         .into_iter()

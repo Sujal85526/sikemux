@@ -4223,6 +4223,7 @@ dependencies = [
  "sha2",
  "sikemux-plugin-api",
  "sikemux-plugin-rundeck",
+ "sikemux-plugin-signoz",
  "sikemux-process",
  "similar",
  "tauri",
@@ -4263,6 +4264,20 @@ dependencies = [
  "sikemux-plugin-api",
  "sikemux-process",
  "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "sikemux-plugin-signoz"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sikemux-plugin-api",
+ "sikemux-process",
  "tokio",
  "url",
 ]
