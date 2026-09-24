@@ -622,11 +622,15 @@ describe("AgentChatPane", () => {
             update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Found the pane" } },
         });
 
-        const head = await screen.findByRole("button", { name: /Explorer/ });
-        expect(head).toHaveAttribute("aria-expanded", "false");
-        expect(document.querySelector(".chat-subagent-body")).toBeNull();
+        await waitFor(() => expect(document.querySelector("details.chat-subagent")).not.toBeNull());
+        const folded = document.querySelector("details.chat-subagent") as HTMLDetailsElement;
+        expect(folded.querySelector(".chat-subagent-body")).toBeNull();
+        expect(folded.textContent).toContain("Explorer");
 
-        fireEvent.click(head);
+        act(() => {
+            folded.open = true;
+            fireEvent(folded, new Event("toggle"));
+        });
         expect(await screen.findByText("Found the pane")).toBeInTheDocument();
     });
 

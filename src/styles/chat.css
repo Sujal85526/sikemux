@@ -935,12 +935,14 @@ button.chat-tool:hover,
 /* ── a subagent's own thread ──────────────────────────────────────── */
 
 /* The card is the record of what a subagent did, so it keeps to itself until
-   it is opened: one line, and a chip saying how it ended. What it said goes
-   underneath the card rather than inside it. What it is doing right now lives
-   over the composer instead. */
+   it is opened: one line, and a chip saying how it ended. What it is doing
+   right now lives over the composer instead. */
 .chat-subagent {
     --chat-agent: color-mix(in srgb, var(--acc) 62%, var(--ink-faint));
     margin: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--s-raised);
 }
 
 .chat-subagent.state-completed {
@@ -956,25 +958,28 @@ button.chat-tool:hover,
     --chat-agent: var(--ink-faint);
 }
 
-.chat-subagent-head {
+.chat-subagent summary {
     display: flex;
     align-items: center;
     gap: 7px;
-    width: 100%;
     min-height: 24px;
     padding: 3px 9px 3px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--s-raised);
-    color: inherit;
-    font: inherit;
+    border-radius: calc(var(--radius-2) - 1px);
     font-size: var(--text-2xs);
-    text-align: left;
+    list-style: none;
     cursor: pointer;
 }
 
-.chat-subagent-head:hover {
-    background: color-mix(in srgb, var(--ink) 5%, var(--s-raised));
+.chat-subagent summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-subagent[open] summary {
+    border-radius: calc(var(--radius-2) - 1px) calc(var(--radius-2) - 1px) 0 0;
+}
+
+.chat-subagent summary:hover {
+    background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
 
 .chat-subagent-chevron {
@@ -983,7 +988,7 @@ button.chat-tool:hover,
     transition: transform 120ms;
 }
 
-.chat-subagent-head[aria-expanded="true"] .chat-subagent-chevron {
+.chat-subagent[open] .chat-subagent-chevron {
     transform: rotate(90deg);
     opacity: 1;
 }
@@ -1033,7 +1038,7 @@ button.chat-tool:hover,
 }
 
 .chat-subagent-body {
-    padding: 6px 10px 2px 24px;
+    padding: 2px 10px 8px 22px;
 }
 
 .chat-subagent-empty {
