@@ -234,6 +234,25 @@ textarea:focus,
  */
 .shell {
     --mark: 16px;
+    --row-inset: var(--space-1);
+    --row-slot: 20px;
+}
+
+/* The leading mark sits in a column the same width and inset as the trailing
+   close, so a row's two ends mirror each other. */
+.sess-row,
+.proj-row,
+.agent-row {
+    padding-left: calc(var(--row-inset) + (var(--row-slot) - var(--mark, 16px)) / 2);
+}
+
+.proj-row {
+    padding-right: var(--row-inset);
+}
+
+.side-rail .panel-group > .panel-head,
+.workspace-rail .panel-group > .panel-head {
+    padding-left: calc(var(--row-inset) + var(--space-1));
 }
 
 .agent-row,
@@ -286,13 +305,13 @@ textarea:focus,
     position: absolute;
     z-index: 3;
     top: 50%;
-    right: var(--space-1);
+    right: var(--row-inset);
     transform: translateY(-50%);
 }
 
 .session-row-shell > .sess-row,
 .agent-row-wrap > .agent-row {
-    padding-right: calc(var(--space-2) + 20px + var(--space-1));
+    padding-right: calc(var(--row-inset) + var(--row-slot) + var(--space-1));
 }
 
 /*
@@ -333,7 +352,7 @@ textarea:focus,
     position: absolute;
     z-index: 2;
     top: 50%;
-    right: var(--space-1);
+    right: var(--row-inset);
     transform: translateY(-50%);
 }
 
