@@ -115,29 +115,25 @@
 .sgz-segmented {
     display: inline-flex;
     flex: none;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
+    gap: var(--space-1);
 }
 .sgz-segmented button {
     height: 26px;
     padding: 0 var(--space-2);
-    border: 0;
-    border-left: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
     background: none;
     color: var(--text-tertiary);
     font-family: var(--mono);
     font-size: var(--text-2xs);
     cursor: pointer;
 }
-.sgz-segmented button:first-child {
-    border-left: 0;
-}
 .sgz-segmented button:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
 }
 .sgz-segmented button.on {
+    border-color: var(--border-selected);
     background: var(--surface-selected);
     color: var(--text-primary);
 }
@@ -556,29 +552,25 @@
 .sgz-severities {
     display: inline-flex;
     flex: none;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
+    gap: var(--space-1);
 }
 .sgz-severity {
     height: 26px;
     padding: 0 var(--space-2);
-    border: 0;
-    border-left: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
     background: none;
     color: var(--text-tertiary);
     font-family: var(--mono);
     font-size: var(--text-2xs);
     cursor: pointer;
 }
-.sgz-severity:first-child {
-    border-left: 0;
-}
 .sgz-severity:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
 }
 .sgz-severity.on {
+    border-color: var(--border-selected);
     background: var(--surface-selected);
     color: var(--text-primary);
 }
