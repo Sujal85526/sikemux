@@ -46,7 +46,7 @@ export function SubagentCount({ count }: { count: number }) {
     const label = `${count} ${count === 1 ? "subagent" : "subagents"} running`;
     return (
         <span className="subagent-count" title={label} aria-label={label} role="img">
-            <IconAgent size={13} />
+            <IconAgent size={16} />
             <span className="subagent-count-dot" aria-hidden="true">
                 {count}
             </span>
