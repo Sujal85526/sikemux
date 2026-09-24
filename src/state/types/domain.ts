@@ -141,6 +141,7 @@ export interface AgentRuntimeState {
     backendState: AgentBackendState;
     unread: boolean;
     updatedAt: number;
+    lastWorkedAt?: number;
     sequence: number;
     source: "screen" | "activity" | "process" | "fallback" | "acp";
     confidence: "high" | "medium" | "low";

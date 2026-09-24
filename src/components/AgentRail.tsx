@@ -11,6 +11,7 @@ import { activeAgentId, agentIdsOf } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
 import { AgentStateIndicator } from "./AgentStateIndicator";
+import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "./Tooltip";
 import { Panel, PanelHeader } from "./Panel";
 
@@ -144,11 +145,15 @@ export function AgentRailBody() {
 
     if (!session) return null;
 
-    const opens = (
-        agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
-            .map((id) => agentsById[id])
-            .filter(Boolean) as Agent[]
-    ).filter((a) => availableTypes.has(a.type));
+    const opens = sortByAttention(
+        (
+            agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
+                .map((id) => agentsById[id])
+                .filter(Boolean) as Agent[]
+        ).filter((a) => availableTypes.has(a.type)),
+        activityById,
+        backgroundById,
+    );
 
     const activeOpenKeys = new Set(opens.map((a) => sessionKey(a.type, persistedSessionIdOf(a))));
     const needle = query.trim().toLowerCase();
