@@ -1806,11 +1806,14 @@ button.chat-tool:hover,
     margin-left: 3px;
     background: var(--ink);
     color: var(--void);
-    transition: background-color 120ms;
+    transition:
+        background-color 120ms,
+        color 120ms;
 }
 
 .chat-send:hover:not(:disabled) {
     background: var(--acc);
+    color: var(--ink);
 }
 
 .chat-send:disabled {
