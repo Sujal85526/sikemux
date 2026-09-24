@@ -732,7 +732,14 @@ export default function App() {
             .finally(() => {
                 const writable = hydrationResult !== null && hydrationAllowsPersistence(hydrationResult);
                 if (!disposed && writable) {
-                    workbenchRuntime.start();
+                    try {
+                        workbenchRuntime.start();
+                    } catch (error) {
+                        setBootIssue("Sikemux could not open the saved workspace. Nothing has been written; reload to retry.");
+                        finishBoot("error");
+                        swallow("workbench start")(error);
+                        return;
+                    }
                     unsub = subscribePersist();
                     setBootReady(true);
                 }

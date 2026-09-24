@@ -385,8 +385,21 @@ export class WorkbenchItemRegistry {
     }
 
     get(kind: string): ErasedDefinition {
-        const definition = this.definitions.get(kind);
+        const definition = this.definitions.get(kind) ?? this.pluginDefinition(kind);
         if (!definition) throw new UnknownWorkbenchItemKindError(kind);
+        return definition;
+    }
+
+    /** A plugin's pane keeps its state in the plugin, so here it is an item with nothing to save. */
+    private pluginDefinition(kind: string): ErasedDefinition | undefined {
+        if (!isPluginKind(kind)) return undefined;
+        const definition = eraseDefinition({
+            kind,
+            defaultTitle: pluginSurface(kind)?.title ?? kind,
+            persisted: NULL_CODEC,
+            create: () => createNoopWorkbenchItemController(),
+        });
+        this.definitions.set(kind, definition);
         return definition;
     }
 
