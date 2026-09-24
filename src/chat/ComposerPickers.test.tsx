@@ -67,6 +67,28 @@ describe("composer pickers", () => {
         expect(mocks.onAgent).toHaveBeenCalledWith("claude", "work");
     });
 
+    it("keeps the menu open through an agent switch and fills in the new agent's models", () => {
+        const codex = { id: "a", type: "codex" as const, title: "Codex", startup: "codex" };
+        const claude = { ...codex, type: "claude" as const, title: "Claude" };
+        const models = (value: string, name: string) => ({
+            configOptions: [{ id: "model", type: "select", currentValue: value, options: [{ value, name }] }],
+        });
+        const codexSetup = models("astra", "GPT-6 Astra");
+        const props = { onAgent: mocks.onAgent, onConfig: () => {} };
+        const { rerender } = render(<ComposerPickers {...props} agent={codex} setup={codexSetup} disabled={false} />);
+        fireEvent.click(screen.getByRole("button", { name: "Model" }));
+        fireEvent.click(screen.getByRole("button", { name: /Claude/ }));
+        expect(mocks.onAgent).toHaveBeenCalledWith("claude", expect.anything());
+        rerender(<ComposerPickers {...props} agent={claude} setup={codexSetup} disabled={false} />);
+        expect(screen.getByText("Loading models…")).toBeInTheDocument();
+        rerender(<ComposerPickers {...props} agent={claude} setup={{}} disabled />);
+        expect(screen.getByText("Loading models…")).toBeInTheDocument();
+        rerender(<ComposerPickers {...props} agent={claude} setup={models("opus", "Opus")} disabled={false} />);
+        expect(screen.queryByText("Loading models…")).not.toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /Opus/ })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Claude/ })).toHaveAttribute("aria-pressed", "true");
+    });
+
     it("lists a harness once when its built-in profile is the default", () => {
         render(
             <ComposerPickers
