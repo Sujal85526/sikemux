@@ -699,6 +699,44 @@ export function reorderSession(sourceId: string, targetId: string, placement: "b
     });
 }
 
+/** Moves `source` next to `target` in `list`; false when either is missing or nothing would change. */
+function moveBeside<T>(list: T[], source: T, target: T, placement: "before" | "after"): boolean {
+    if (source === target) return false;
+    const from = list.indexOf(source);
+    if (from < 0 || !list.includes(target)) return false;
+    const next = list.filter((item) => item !== source);
+    next.splice(next.indexOf(target) + (placement === "after" ? 1 : 0), 0, source);
+    if (next.every((item, index) => item === list[index])) return false;
+    list.splice(0, list.length, ...next);
+    return true;
+}
+
+/* The strip's order is the session's window order, so moving a tab moves its
+   window. It is saved with the rest of the workspace and so survives a restart. */
+export function reorderWindowTab(sessionId: string, sourceWindowId: string, targetWindowId: string, placement: "before" | "after"): void {
+    mutate((d) => {
+        const order = d.windowsBySession[sessionId];
+        if (order) moveBeside(order, sourceWindowId, targetWindowId, placement);
+    });
+}
+
+/* A document tab only moves among the documents of its own window: they sit
+   together in the strip because one window holds them all. Which list a window
+   keeps them in mirrors `documentsOf`. */
+export function reorderDocumentTab(windowId: string, sourceDoc: string, targetDoc: string, placement: "before" | "after"): void {
+    mutate((d) => {
+        const win = d.windows[windowId];
+        if (!win) return;
+        const list =
+            win.role === "files"
+                ? d.editorViews[win.activePaneId]?.openTabs
+                : win.role === "bruno"
+                  ? d.brunoViews[win.activePaneId]?.openPaths
+                  : undefined;
+        if (list) moveBeside(list, sourceDoc, targetDoc, placement);
+    });
+}
+
 export function closeSession(id: string): void {
     guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id));
 }

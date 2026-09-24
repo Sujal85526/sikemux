@@ -8,7 +8,17 @@ import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layou
 import * as cmd from "../state/commands";
 import { useBrunoDrafts } from "../state/brunoRuntime";
 import { getState, useStore } from "../state/store";
-import { activeTabRef, agentPaneId, brunoPaneId, documentsOf, expandTabRefs, selectSwipeOrder, selectTabRefs, tabRefKey } from "../state/selectors";
+import {
+    activeTabRef,
+    agentPaneId,
+    brunoPaneId,
+    documentsOf,
+    expandTabRefs,
+    selectSwipeOrder,
+    selectTabRefs,
+    tabRefKey,
+    workspaceTabDropAllowed,
+} from "../state/selectors";
 import { type CtxItem } from "./FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ShaderField } from "./ShaderField";
@@ -442,6 +452,19 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             onAdd={() => cmd.openNewTabPalette()}
             addIcon={<IconPlus size={13} />}
             addTitle="New tab"
+            canReorder={(sourceKey, targetKey, placement) => {
+                const source = refByKey.get(sourceKey);
+                const target = refByKey.get(targetKey);
+                return !!source && !!target && workspaceTabDropAllowed(refs, source, target, placement);
+            }}
+            onReorder={(sourceKey, targetKey, placement) => {
+                const source = refByKey.get(sourceKey);
+                const target = refByKey.get(targetKey);
+                if (!source || !target) return;
+                // Beside another window's documents means beside that window.
+                if (source.doc !== undefined && target.doc !== undefined) cmd.reorderDocumentTab(source.id, source.doc, target.doc, placement);
+                else cmd.reorderWindowTab(session.id, source.id, target.id, placement);
+            }}
         />
     );
 });

@@ -204,6 +204,21 @@ export function activeTabRef(
 export const tabRefKey = (ref: TabRef): string => (ref.doc === undefined ? ref.id : `${ref.id}:${ref.doc}`);
 
 /**
+ * Whether one workspace tab may be dropped beside another. A window's tab can
+ * go anywhere between windows but not into the middle of another window's
+ * documents, since those always sit together; a document tab stays among the
+ * documents of its own window.
+ */
+export function workspaceTabDropAllowed(refs: readonly TabRef[], source: TabRef, target: TabRef, placement: "before" | "after"): boolean {
+    if (source.doc !== undefined) return target.id === source.id && target.doc !== undefined;
+    if (target.id === source.id) return false;
+    if (target.doc === undefined) return true;
+    const group = refs.filter((ref) => ref.id === target.id);
+    const edge = placement === "before" ? group[0] : group[group.length - 1];
+    return edge?.doc === target.doc;
+}
+
+/**
  * Which ordered list of tabs a cycle acts on.
  *
  * `workspace` is the session's own strip; `agents` and `terminals` are the
