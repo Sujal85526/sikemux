@@ -953,7 +953,7 @@ function ChatActivity({ label, agentType }: { label: string; agentType: Agent["t
     return (
         <div className="chat-activity" role="status">
             <span className={`chat-activity-mark agent-glyph ${agentType}`} aria-hidden="true">
-                <AgentIcon type={agentType} size={18} />
+                <AgentIcon type={agentType} size={21} />
             </span>
             <span className="chat-activity-label">{label}</span>
             {seconds > 0 && (
