@@ -1365,7 +1365,11 @@ button.chat-tool:hover,
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    animation: chat-activity-breathe 1.9s ease-in-out infinite;
+    background: linear-gradient(90deg, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%) 100% 0 / 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: chat-activity-shimmer 2.2s linear infinite;
 }
 
 .chat-activity-elapsed {
@@ -1399,6 +1403,12 @@ button.chat-tool:hover,
 @keyframes chat-activity-spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@keyframes chat-activity-shimmer {
+    to {
+        background-position: 0 0;
     }
 }
 
