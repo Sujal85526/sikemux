@@ -1160,6 +1160,7 @@ interface ThemeEdit {
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = useStore((state) => state.uiTextScale);
+    const paneShader = useStore((state) => state.paneShader);
     const customThemes = useStore((s) => s.customThemes);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -1265,6 +1266,12 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                             onChange={(value) => cmd.setUiTextScale(Number(value))}
                         />
                     </SettingsRow>
+                    <SettingsRow
+                        label="Pane texture"
+                        desc="The dithered grain behind each pane."
+                        asLabel
+                        control={<Switch checked={paneShader} onChange={cmd.setPaneShader} label="Pane texture" />}
+                    />
                 </SettingsRows>
             </SettingsSection>
 

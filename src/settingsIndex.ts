@@ -58,6 +58,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("appearance", "Theme", "colours colors palette dark light custom fork editor"),
     section("appearance", "Interface"),
     row("appearance", "Interface", "Text size", "font zoom scale larger smaller accessibility"),
+    row("appearance", "Interface", "Pane texture", "dither dithering shader grain noise background effect"),
     ...(IS_MACOS
         ? [
               section("appearance", "Window"),

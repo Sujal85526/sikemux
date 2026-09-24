@@ -57,6 +57,7 @@ export interface PersistedPrefs {
     themeId: string;
     customThemes?: Theme[];
     uiTextScale?: number;
+    paneShader?: boolean;
     terminalFontSize?: number;
     chatTextScale?: number;
     editorTextScale?: number;

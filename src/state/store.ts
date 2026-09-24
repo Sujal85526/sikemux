@@ -52,6 +52,7 @@ export interface DomainState {
     /** User-defined themes, derived from a built-in or another custom theme via the theme editor. */
     customThemes: Theme[];
     uiTextScale: number;
+    paneShader: boolean;
     terminalFontSize: number;
     chatTextScale: number;
     editorTextScale: number;
@@ -198,6 +199,7 @@ export const useStore = create<StoreState>(() => {
         themeId: DEFAULT_THEME_ID,
         customThemes: [],
         uiTextScale: 1,
+        paneShader: true,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
         editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,

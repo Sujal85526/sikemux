@@ -470,6 +470,7 @@ const WindowLayer = memo(function WindowLayer({
     const layerRef = useRef<HTMLDivElement>(null);
     useDocumentSlide(layerRef, live ? win.activePaneId : null, documents?.activeId ?? null, documents?.ids ?? EMPTY_IDS);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
+    const paneShader = useStore((s) => s.paneShader);
     const { panes, dividers, stacked, stacks, inStack } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
     /*
      * Only the panes stacked behind a strip show a shell's own title, so only
@@ -523,7 +524,7 @@ const WindowLayer = memo(function WindowLayer({
                             {/* The pane is a surface, so it carries its own texture — and only
                                 while it is the one being read, so a screen off stage spends no
                                 WebGL context on a field nobody is looking at. */}
-                            <ShaderField preset="ambient" className="pane-field" enabled={live && shown} />
+                            <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>
