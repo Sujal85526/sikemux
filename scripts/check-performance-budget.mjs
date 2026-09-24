@@ -140,14 +140,14 @@ const budgets = [
     gzip: 26_700,
   },
   {
-    // Shiki, its two engines and vscode-textmate, with no grammars and no
-    // themes (both are stubbed or dynamic). Fetched on demand the first time
+    // Shiki, its JavaScript regex engine and vscode-textmate, with no
+    // grammars and no themes (both are stubbed or dynamic). Fetched on demand the first time
     // a diff is opened or a chat fence with a grammar we have settles, and
     // shared by both from then on.
-    label: "Highlighter lazy chunk (shiki core + engines, no grammars)",
+    label: "Highlighter lazy chunk (shiki core + JS engine, no grammars)",
     pattern: /^highlighter-.*\.js$/,
-    raw: 1_400_000,
-    gzip: 450_000,
+    raw: 680_000,
+    gzip: 190_000,
   },
   {
     label: "Diffs lazy chunk (pierre/diffs, no highlighter)",
@@ -198,14 +198,14 @@ const budgets = [
     gzip: 7_300,
   },
   {
-    // Includes the JetBrainsMono Nerd Font @font-face rules: eight faces
-    // (base + icons per weight/style), each carrying an explicit
-    // unicode-range so the ~930 KB icon face per weight only downloads once
-    // a PUA glyph is actually rendered.
+    // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
+    // weight/style plus an icons face, each carrying an explicit
+    // unicode-range so the ~930 KB icons file only downloads once a PUA
+    // glyph is actually rendered. Plugin panes bring their own sheets.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 281_000,
-    gzip: 48_100,
+    raw: 206_000,
+    gzip: 36_000,
   },
   {
     label: "settings lazy CSS",
