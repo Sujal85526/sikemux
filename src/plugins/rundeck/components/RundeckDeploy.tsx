@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { git } from "../../api/git";
-import { rundeckApi, type BranchRelation, type PlanResult, type PushAction } from "../../api/rundeck";
-import * as cmd from "../../state/commands";
-import { useResourceEnabled } from "../../state/resources";
-import { rndPlanR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
+import { git } from "../../../plugin-api/host";
+import { rundeckApi, type BranchRelation, type PlanResult, type PushAction } from "../api";
+import * as cmd from "../state";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { rndPlanR } from "../resources";
 
 interface Props {
     paneId: string;
@@ -52,11 +51,8 @@ const PUSH_LABEL: Record<PushAction, string> = {
 };
 
 export function RundeckDeploy({ paneId, level, active }: Props) {
-    const settings = useStore((s) => s.rundeck);
-    const isProd = settings.prodEnvs.includes(level.env);
-
-    const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const repoPath = level.repoPath ?? session?.cwd ?? "";
+    const isProd = cmd.rundeckSettings.useSelect((s) => s.prodEnvs.includes(level.env));
+    const repoPath = level.repoPath ?? "";
 
     const [branch, setBranch] = useState(level.branch);
     const [busy, setBusy] = useState(false);

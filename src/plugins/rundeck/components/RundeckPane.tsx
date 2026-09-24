@@ -1,11 +1,9 @@
-import { useEffect, useMemo } from "react";
-import * as cmd from "../../state/commands";
-import { useResourceEnabled } from "../../state/resources";
-import { rndStatusR } from "../../state/resources.defs";
-import { useStore } from "../../state/store";
-import type { RundeckView } from "../../state/types";
-import { EmptyState } from "../Panel";
-import { IconWarning } from "../Icons";
+import { useMemo } from "react";
+import * as cmd from "../state";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { rndStatusR } from "../resources";
+import { EmptyState } from "../../../plugin-api/ui";
+import { IconWarning } from "../../../plugin-api/ui";
 import { RundeckBreadcrumb } from "./RundeckBreadcrumb";
 import { RundeckLogin } from "./RundeckLogin";
 import { RundeckMatrix } from "./RundeckMatrix";
@@ -19,16 +17,9 @@ interface Props {
     active: boolean;
 }
 
-const HOME: RundeckView = { stack: [{ kind: "matrix" }] };
-
 export function RundeckPane({ paneId, active }: Props) {
-    const view = useStore((s) => s.rundeckViews[paneId] ?? HOME);
+    const view = cmd.useRundeckView(paneId);
     const status = useResourceEnabled(active, rndStatusR);
-
-    useEffect(() => {
-        if (!view) cmd.rundeckHome(paneId);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [paneId]);
 
     const top = useMemo(() => view.stack[view.stack.length - 1] ?? { kind: "matrix" as const }, [view.stack]);
 

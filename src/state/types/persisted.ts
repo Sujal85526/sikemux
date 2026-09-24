@@ -10,7 +10,6 @@ import type {
     ProviderProfileSelection,
     RailDensity,
     RecentEntry,
-    RundeckSettings,
     Session,
     Window,
 } from "./domain";
@@ -74,7 +73,7 @@ export interface PersistedPrefs {
     sideRailWidth?: number;
     agentRailWidth?: number;
     zenMode: boolean;
-    rundeck?: RundeckSettings;
+    pluginSettings?: Record<string, unknown>;
     restoreAgentTabs?: boolean;
     autoResumeAgents?: boolean;
     railDensity?: RailDensity;

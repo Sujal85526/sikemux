@@ -10,7 +10,8 @@ import { runMeasuredAction } from "./lib/instrumentation";
 import { applicationActionContext, executeApplicationAction, matchApplicationActionKeybinding } from "./actions/bridge";
 import { reportError } from "./state/toast";
 import { isPluginKind } from "./plugins/kinds";
-import { RUNDECK_DEPLOY } from "./plugins/rundeck/kinds";
+import { pluginOverlayOpen } from "./plugins/overlays";
+import { pluginSurface } from "./plugins/registry";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
@@ -27,7 +28,6 @@ function hasOpenModal(st: StoreState): boolean {
         st.pickerOpen ||
         st.agentPaletteOpen ||
         st.filePaletteOpen ||
-        st.rundeckJobPaletteOpen ||
         st.brunoReqPaletteOpen ||
         st.brunoEnvPaletteOpen ||
         st.commandPaletteOpen ||
@@ -36,7 +36,8 @@ function hasOpenModal(st: StoreState): boolean {
         st.diagnosticsOpen ||
         st.whatsNewOpen ||
         st.settingsOpen ||
-        st.awsAuthModal !== null
+        st.awsAuthModal !== null ||
+        pluginOverlayOpen()
     );
 }
 
@@ -64,10 +65,10 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "palette.commands":
             cmd.toggleCommandPalette();
             return true;
-        case "palette.files":
-            if (active?.kind === RUNDECK_DEPLOY) {
-                if (st.rundeckJobPaletteOpen) cmd.closeRundeckJobPalette();
-                else cmd.openRundeckJobPalette();
+        case "palette.files": {
+            const quickOpen = active ? pluginSurface(active.kind)?.quickOpen : undefined;
+            if (quickOpen) {
+                quickOpen();
             } else if (active?.kind === "bruno") {
                 if (st.brunoReqPaletteOpen) cmd.closeBrunoReqPalette();
                 else cmd.openBrunoReqPalette();
@@ -77,6 +78,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
                 cmd.openFilePalette();
             }
             return true;
+        }
         case "search.global": {
             const selection = window.getSelection()?.toString() ?? "";
             cmd.focusGlobalSearch(selection.trim() ? selection : undefined);

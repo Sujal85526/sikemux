@@ -7,10 +7,10 @@ const { watchStart, watchStop, logsStart, logsStop } = vi.hoisted(() => ({
     logsStart: vi.fn(),
     logsStop: vi.fn(() => Promise.resolve()),
 }));
-vi.mock("../../api/rundeck", () => ({
+vi.mock("../api", () => ({
     rundeckApi: { watchStart, watchStop, logsStart, logsStop, abort: vi.fn() },
 }));
-vi.mock("../VirtualLogList", () => ({ VirtualLogList: () => null }));
+vi.mock("../../../plugin-api/ui", async (importOriginal) => ({ ...(await importOriginal<object>()), VirtualLogList: () => null }));
 
 import { RundeckExecution } from "./RundeckExecution";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RundeckExecution, RundeckStep, RundeckWorkflowState } from "../../api/rundeck";
+import type { RundeckExecution, RundeckStep, RundeckWorkflowState } from "../api";
 import { executionProgress, newestExecutions } from "./executionProgress";
 
 function step(executionState: string): RundeckStep {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { envFolderOf, inferEnv } from "./rundeckShape";
+import { envFolderOf, inferEnv } from "./shape";
 
 describe("Rundeck shape helpers", () => {
     it("extracts env folder from grouped jobs", () => {

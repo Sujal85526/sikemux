@@ -17,7 +17,6 @@ import { NewTabPalette } from "./components/NewTabPalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
 import { AwsAuthModal } from "./components/aws/AwsAuthModal";
-import { RundeckJobPalette } from "./components/rundeck/RundeckJobPalette";
 import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
 import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
@@ -83,6 +82,7 @@ import { projectControllerBridge } from "./projects/controllerBridge";
 import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
 import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
+import { useInstalledPlugins } from "./plugins/installed";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -651,8 +651,8 @@ export default function App() {
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
-    const rundeckJobPaletteOpen = useStore((s) => s.rundeckJobPaletteOpen);
     const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
+    const installedPlugins = useInstalledPlugins();
     const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = useStore((s) => s.uiTextScale);
@@ -671,7 +671,6 @@ export default function App() {
             agentPaletteOpen ||
             filePaletteOpen ||
             newTabPaletteOpen ||
-            rundeckJobPaletteOpen ||
             brunoReqPaletteOpen ||
             brunoEnvPaletteOpen ||
             settingsOpen ||
@@ -806,12 +805,6 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        return subscribe("rnd-auth-expired", () => {
-            invalidate((kind) => kind.startsWith("rnd."));
-        });
-    }, []);
-
-    useEffect(() => {
         return subscribe("aws-auth-expired", () => {
             invalidate((kind) => kind.startsWith("aws."));
         });
@@ -937,7 +930,7 @@ export default function App() {
             {agentPaletteOpen && <AgentPalette />}
             {filePaletteOpen && <FilePalette />}
             {newTabPaletteOpen && <NewTabPalette />}
-            {rundeckJobPaletteOpen && <RundeckJobPalette />}
+            {installedPlugins.map(({ id, Overlay }) => (Overlay ? <Overlay key={id} /> : null))}
             {brunoReqPaletteOpen && <BrunoRequestPalette />}
             {brunoEnvPaletteOpen && <BrunoEnvPalette />}
             {awsAuthModal && <AwsAuthModal />}

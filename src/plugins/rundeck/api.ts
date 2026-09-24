@@ -1,30 +1,25 @@
-import { pluginsApi, type PluginStreamEvent } from "./plugins";
-import { emit } from "../state/bus";
+import { createPluginBackend, isPluginFailure } from "../../plugin-api/backend";
+import { invalidate } from "../../plugin-api/resources";
+import { RUNDECK_PLUGIN_ID } from "./kinds";
 
-const RUNDECK = "sikemux.rundeck";
+const backend = createPluginBackend(RUNDECK_PLUGIN_ID);
 
-const call = <T>(method: string, params: unknown = null) => pluginsApi.call<T>(RUNDECK, method, params);
-
-function stream<T>(method: string, params: unknown, onItem: (item: T) => void): Promise<number> {
-    return pluginsApi.streamStart(RUNDECK, method, params, (event: PluginStreamEvent) => {
-        if (event.kind === "item") onItem(event.value as T);
-    });
+function isAuthFailure(error: unknown): boolean {
+    if (!isPluginFailure(error)) return false;
+    return (
+        error.category === "auth" ||
+        error.category === "unconfigured" ||
+        (error.category === "http" && (error.status === 401 || error.status === 403))
+    );
 }
 
+/** A lapsed sign-in makes every cached answer stale, so the next read asks again and lands on the login form. */
 async function rndInvoke<T>(method: string, params?: unknown): Promise<T> {
     try {
-        return await call<T>(method, params);
-    } catch (e) {
-        const err = e as { category?: string; status?: number; message?: string };
-        const cat = err?.category ?? "";
-        const isAuth = cat === "auth" || cat === "unconfigured" || (cat === "http" && (err?.status === 401 || err?.status === 403));
-        if (isAuth) {
-            emit({
-                type: "rnd-auth-expired",
-                reason: err?.message ?? cat ?? "auth",
-            });
-        }
-        throw e;
+        return await backend.call<T>(method, params);
+    } catch (error) {
+        if (isAuthFailure(error)) invalidate((kind) => kind.startsWith("rnd."));
+        throw error;
     }
 }
 
@@ -199,9 +194,9 @@ export interface PlanResult {
 }
 
 export const rundeckApi = {
-    status: () => call<RundeckStatus>("status"),
+    status: () => backend.call<RundeckStatus>("status"),
     login: (req: RundeckLoginRequest) => rndInvoke<RundeckLoginResult>("login", req),
-    logout: () => call<void>("logout"),
+    logout: () => backend.call<void>("logout"),
 
     projects: () => rndInvoke<RundeckProject[]>("projects"),
     jobs: (project: string) => rndInvoke<RundeckJob[]>("jobs", { project }),
@@ -226,11 +221,12 @@ export const rundeckApi = {
         }),
     abort: (executionId: number) => rndInvoke<AbortResult>("abort", { executionId }),
 
-    watchStart: (executionId: number, onUpdate: (u: WatchUpdate) => void) => stream("watch", { executionId }, onUpdate),
-    watchStop: (id: number) => pluginsApi.streamStop(id),
+    watchStart: (executionId: number, onUpdate: (u: WatchUpdate) => void) => backend.openStream("watch", { executionId }, onUpdate),
+    watchStop: (id: number) => backend.closeStream(id),
 
-    logsStart: (executionId: number, backlog: number | null, onChunk: (c: LogTick) => void) => stream("logs", { executionId, backlog }, onChunk),
-    logsStop: (id: number) => pluginsApi.streamStop(id),
+    logsStart: (executionId: number, backlog: number | null, onChunk: (c: LogTick) => void) =>
+        backend.openStream("logs", { executionId, backlog }, onChunk),
+    logsStop: (id: number) => backend.closeStream(id),
 
     plan: (project: string, service: string, targetBranch: string, repoPath: string) =>
         rndInvoke<PlanResult>("plan", {

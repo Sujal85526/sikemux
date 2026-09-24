@@ -1,8 +1,7 @@
-import { type RundeckStatus } from "../../api/rundeck";
-import * as cmd from "../../state/commands";
-import { useStore } from "../../state/store";
-import type { RundeckLevel } from "../../state/types";
-import { IconChevron } from "../Icons";
+import { type RundeckStatus } from "../api";
+import * as cmd from "../state";
+import type { RundeckLevel } from "../state";
+import { IconChevron } from "../../../plugin-api/ui";
 
 interface Props {
     paneId: string;
@@ -10,10 +9,9 @@ interface Props {
 }
 
 export function RundeckBreadcrumb({ paneId, status }: Props) {
-    const view = useStore((s) => s.rundeckViews[paneId]);
-    const activeProject = useStore((s) => s.rundeck.activeProject);
-    const activeEnvFolder = useStore((s) => s.rundeck.activeEnvFolder);
-    const stack = view?.stack ?? [{ kind: "matrix" as const }];
+    const { stack } = cmd.useRundeckView(paneId);
+    const activeProject = cmd.rundeckSettings.useSelect((s) => s.activeProject);
+    const activeEnvFolder = cmd.rundeckSettings.useSelect((s) => s.activeEnvFolder);
 
     const labels = breadcrumbLabels(paneId, stack, activeProject, activeEnvFolder);
 

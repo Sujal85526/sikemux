@@ -1,4 +1,5 @@
 import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
+import { rundeckSettings } from "../plugins/rundeck/state";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -98,7 +99,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 11,
+                    version: 12,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -109,7 +110,7 @@ describe("frontend persistence", () => {
         expect(invoke).not.toHaveBeenCalled();
     });
 
-    it("omits Bruno secrets and drafts while preserving non-secret Bruno and Rundeck state", async () => {
+    it("omits Bruno secrets and drafts while preserving non-secret Bruno state and plugin settings", async () => {
         const sid = getState().activeSessionId;
         setState((s) => ({
             sessions: {
@@ -123,7 +124,7 @@ describe("frontend persistence", () => {
                     },
                 },
             },
-            rundeck: { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] },
+            pluginSettings: { "sikemux.rundeck": { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] } },
         }));
         // These live outside the persisted store entirely now; the snapshot must
         // still come back without them.
@@ -140,7 +141,7 @@ describe("frontend persistence", () => {
             collectionPath: "/collections/demo",
             selectedEnvs: { "/collections/demo": "staging" },
         });
-        expect(saved.prefs.rundeck).toEqual({ activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] });
+        expect(saved.prefs.pluginSettings).toEqual({ "sikemux.rundeck": { activeProject: "ops", activeEnvFolder: "prod", prodEnvs: ["prod"] } });
     });
 
     it("persists and safely hydrates keybinding overrides", async () => {
@@ -534,7 +535,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(10);
+        expect(saved.version).toBe(11);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -666,8 +667,8 @@ describe("frontend persistence", () => {
         });
         expect(getState().sessionOrder).toEqual([sid]);
         expect(getState().recent).toEqual([]);
-        expect(getState().rundeck.activeProject).toBe("");
-        expect(getState().rundeck.prodEnvs).toEqual(["prod"]);
+        expect(rundeckSettings.get().activeProject).toBe("");
+        expect(rundeckSettings.get().prodEnvs).toEqual(["prod"]);
 
         invoke.mockResolvedValue(undefined);
         const unsubscribe = subscribePersist();
@@ -676,7 +677,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(10);
+        expect(JSON.parse(migrated).version).toBe(11);
     });
 
     /*
@@ -709,7 +710,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(10);
+        expect(saved.version).toBe(11);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
@@ -743,6 +744,30 @@ describe("frontend persistence", () => {
         expect(st.windows["w-rundeck"].role).toBe(RUNDECK_DEPLOY);
         expect(st.windows["w-rundeck"].root).toMatchObject({ type: "pane", kind: RUNDECK_DEPLOY });
         expect(st.customCommands[0].contexts).toEqual([RUNDECK_DEPLOY, "project"]);
+    });
+
+    it("moves v10 Rundeck settings and each session's deploy location into the plugin's settings", () => {
+        const project = getState().sessions[getState().activeSessionId];
+        const window = getState().windows[project.activeWindowId];
+        applyHydrate(
+            JSON.stringify({
+                version: 10,
+                sessions: [{ ...project, kind: "project", cwd: "/repo/api", deploy: { project: "channeliq", folder: "production" } }],
+                windowsBySession: { [project.id]: [window] },
+                sessionOrder: [project.id],
+                activeSessionId: project.id,
+                prefs: { rundeck: { activeProject: "channeliq", activeEnvFolder: "dev", prodEnvs: ["prod"] } },
+                itemStates: {},
+            }),
+        );
+
+        expect(rundeckSettings.get()).toEqual({
+            activeProject: "channeliq",
+            activeEnvFolder: "dev",
+            prodEnvs: ["prod"],
+            deployTargets: { "/repo/api": { project: "channeliq", folder: "production" } },
+        });
+        expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
     });
 
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {

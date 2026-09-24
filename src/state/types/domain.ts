@@ -170,12 +170,6 @@ export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; 
 
 /** Which panel the workspace rail is showing. */
 
-/** A resolved Rundeck deploy location for a service: a project plus an env subfolder. */
-export interface DeployRef {
-    project: string;
-    folder: string | null;
-}
-
 /**
  * Durable per-session state for a Bruno (API) workspace. Lives on the Session so
  * it persists with the existing `sessions` slice — no persist version bump.
@@ -193,8 +187,6 @@ export interface Session {
     name: string;
     kind: SessionKind;
     cwd: string;
-    /** Selected Rundeck deploy location for this session's service, when picked. */
-    deploy?: DeployRef | null;
     /** Bruno (API) workspace state — present only when kind === "bruno". */
     bruno?: BrunoSessionState | null;
     pinned: boolean;
@@ -224,12 +216,6 @@ export interface RecentEntry {
 
 export type AwsService = "ecs" | "ec2" | "lambda" | "sqs" | "billing" | "s3";
 export const AWS_SERVICES: AwsService[] = ["ecs", "ec2", "lambda", "sqs", "billing", "s3"];
-
-export interface RundeckSettings {
-    activeProject: string;
-    activeEnvFolder: string | null;
-    prodEnvs: string[];
-}
 
 export interface ProjectRoot {
     path: string;

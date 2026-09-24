@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { invokeCommand as invoke } from "../../api/invoke";
-import { rundeckApi, type LogEntry, type RundeckExecution as Execution, type RundeckStep, type RundeckWorkflowState } from "../../api/rundeck";
-import * as cmd from "../../state/commands";
+import { rundeckApi, type LogEntry, type RundeckExecution as Execution, type RundeckStep, type RundeckWorkflowState } from "../api";
+import * as cmd from "../state";
 import { statusKind } from "./branchStyle";
-import { swallow } from "../../state/toast";
-import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../Icons";
-import { VirtualLogList } from "../VirtualLogList";
-import { Switch } from "../Controls";
-import { EmptyState } from "../Panel";
+import { openUrl, swallow } from "../../../plugin-api/host";
+import { IconClock, IconGit, IconRun, IconTimer, IconUser } from "../../../plugin-api/ui";
+import { VirtualLogList } from "../../../plugin-api/ui";
+import { Switch } from "../../../plugin-api/ui";
+import { EmptyState } from "../../../plugin-api/ui";
 import { executionProgress } from "./executionProgress";
 
 interface Props {
@@ -247,9 +246,9 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                         <button
                             type="button"
                             className="rnd-btn-sm"
-                            onClick={() =>
-                                void invoke("open_url", { url: execution.permalink, app: null, shortcut: null }).catch(swallow("open Rundeck URL"))
-                            }
+                            onClick={() => {
+                                if (execution.permalink) void openUrl(execution.permalink).catch(swallow("open Rundeck URL"));
+                            }}
                             title="Open in Rundeck UI">
                             open ↗
                         </button>

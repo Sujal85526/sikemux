@@ -13,6 +13,9 @@ export interface PluginStream {
 export interface PluginBackend {
     call<Result>(method: string, params?: unknown): Promise<Result>;
     stream<Item>(method: string, params: unknown, handlers: PluginStreamHandlers<Item>): PluginStream;
+    /** For a caller that keeps its own start and stop bookkeeping by stream id. */
+    openStream<Item>(method: string, params: unknown, onItem: (item: Item) => void): Promise<number>;
+    closeStream(streamId: number): Promise<void>;
 }
 
 export function isPluginFailure(error: unknown, category?: string): error is PluginFailure {
@@ -25,6 +28,13 @@ export function isPluginFailure(error: unknown, category?: string): error is Plu
 export function createPluginBackend(pluginId: string): PluginBackend {
     return {
         call: <Result>(method: string, params: unknown = null) => pluginsApi.call<Result>(pluginId, method, params),
+
+        openStream: <Item>(method: string, params: unknown, onItem: (item: Item) => void) =>
+            pluginsApi.streamStart(pluginId, method, params, (event) => {
+                if (event.kind === "item") onItem(event.value as Item);
+            }),
+
+        closeStream: (streamId: number) => pluginsApi.streamStop(streamId),
 
         stream<Item>(method: string, params: unknown, handlers: PluginStreamHandlers<Item>): PluginStream {
             let finished = false;

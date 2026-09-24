@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type MatrixCell, type RundeckEnvSpec } from "../../api/rundeck";
-import { useMouseActive } from "../../hooks/useMouseActive";
-import { rankBy } from "../../lib/fuzzy";
-import * as cmd from "../../state/commands";
-import { useResource, useResourceEnabled } from "../../state/resources";
-import { rndMatrixR, rndProjectsR } from "../../state/resources.defs";
-import { inferEnv } from "../../state/rundeckShape";
-import { useStore } from "../../state/store";
-import { IconCommand, IconSearch } from "../Icons";
-import { RUNDECK_DEPLOY } from "../../plugins/rundeck/kinds";
+import { type MatrixCell, type RundeckEnvSpec } from "../api";
+import { useMouseActive } from "../../../plugin-api/ui";
+import { rankBy } from "../../../plugin-api/ui";
+import * as cmd from "../state";
+import { useResource, useResourceEnabled } from "../../../plugin-api/resources";
+import { rndMatrixR, rndProjectsR } from "../resources";
+import { inferEnv } from "../shape";
+import { IconCommand, IconSearch } from "../../../plugin-api/ui";
+import { RUNDECK_DEPLOY } from "../kinds";
+import { useActiveSurfacePane } from "../../../plugin-api/host";
 
 const MAX_RESULTS = 400;
 
@@ -18,11 +18,7 @@ interface JobRow {
 }
 
 export function RundeckJobPalette() {
-    const paneId = useStore((s) => {
-        const sess = s.sessions[s.activeSessionId];
-        if (!sess || sess.kind !== RUNDECK_DEPLOY) return null;
-        return s.windows[sess.activeWindowId]?.activePaneId ?? null;
-    });
+    const paneId = useActiveSurfacePane(RUNDECK_DEPLOY);
 
     const [query, setQuery] = useState("");
     const [sel, setSel] = useState(0);

@@ -12,7 +12,6 @@ function session(id: string, kind: SessionKind): Session {
         name: id,
         kind,
         cwd: `/${id}`,
-        deploy: null,
         pinned: false,
         activeWindowId: "",
     };

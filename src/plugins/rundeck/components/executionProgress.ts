@@ -1,4 +1,4 @@
-import type { RundeckExecution, RundeckWorkflowState } from "../../api/rundeck";
+import type { RundeckExecution, RundeckWorkflowState } from "../api";
 
 const FINISHED_STATES = new Set(["SUCCEEDED", "FAILED", "ABORTED", "NOT_ELIGIBLE", "SKIPPED"]);
 

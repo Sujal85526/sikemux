@@ -28,10 +28,8 @@ import type {
     ProviderProfile,
     ProviderProfileSelection,
     RecentEntry,
-    RundeckSettings,
     RailDensity,
     DiffTarget,
-    RundeckView,
     Session,
     SessionSwitcherView,
     Window,
@@ -69,7 +67,8 @@ export interface DomainState {
     agentRailWidth: number;
     diffTarget: Record<string, DiffTarget | null>;
     zenMode: boolean;
-    rundeck: RundeckSettings;
+    /** Each plugin's own settings, by plugin id, in whatever shape the plugin decodes. */
+    pluginSettings: Readonly<Record<string, unknown>>;
     restoreAgentTabs: boolean;
     railDensity: RailDensity;
     onboardingComplete: boolean;
@@ -115,7 +114,6 @@ export interface ViewState {
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     newTabPaletteOpen: boolean;
-    rundeckJobPaletteOpen: boolean;
     brunoReqPaletteOpen: boolean;
     brunoEnvPaletteOpen: boolean;
     settingsOpen: boolean;
@@ -137,7 +135,6 @@ export interface ViewState {
     dirtyEditorPaths: Record<string, string[]>;
     gitViews: Record<string, GitPaneView>;
     ecsViews: Record<string, EcsLevel>;
-    rundeckViews: Record<string, RundeckView>;
     brunoViews: Record<string, BrunoView>;
     expandedBillingMonth: Record<string, string | null>;
 
@@ -184,7 +181,6 @@ function initialSession(): {
         name: "main",
         kind: "command",
         cwd: "",
-        deploy: null,
         pinned: false,
         activeWindowId: win.id,
     };
@@ -219,11 +215,7 @@ export const useStore = create<StoreState>(() => {
         agentRailWidth: RAIL_WIDTH.end.initial,
         diffTarget: {},
         zenMode: false,
-        rundeck: {
-            activeProject: "",
-            activeEnvFolder: null,
-            prodEnvs: ["prod", "production"],
-        },
+        pluginSettings: {},
         restoreAgentTabs: true,
         railDensity: "comfortable",
         onboardingComplete: false,
@@ -243,7 +235,6 @@ export const useStore = create<StoreState>(() => {
         agentPaletteOpen: false,
         filePaletteOpen: false,
         newTabPaletteOpen: false,
-        rundeckJobPaletteOpen: false,
         brunoReqPaletteOpen: false,
         brunoEnvPaletteOpen: false,
         settingsOpen: false,
@@ -259,7 +250,6 @@ export const useStore = create<StoreState>(() => {
         dirtyEditorPaths: {},
         gitViews: {},
         ecsViews: {},
-        rundeckViews: {},
         brunoViews: {},
         expandedBillingMonth: {},
         gitModal: null,

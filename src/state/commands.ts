@@ -1,7 +1,6 @@
 import type { PluginManifest } from "../api/plugins";
 import type { PluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
-import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
 import { RAIL_GROUP_ORDER, railGroupOf } from "./railGroups";
 import { invokeCommand as invoke } from "../api/invoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -28,7 +27,6 @@ import { emit } from "./bus";
 import { reduceAgentState } from "./agentStatus";
 import { fetchResource, invalidate, peekResource } from "./resources";
 import { agentSessionsR, awsIdentityR, projectRootsScanR } from "./resources.defs";
-import { envFolderOf, inferEnv } from "./rundeckShape";
 import { getState, mutate, setState, type StoreState } from "./store";
 import { notify, reportError, swallow } from "./toast";
 import { agentIdsWithLiveSessions } from "./agentLiveSessions";
@@ -79,14 +77,11 @@ import type {
     CliOpenRequest,
     CliOpenResult,
     CliOpenTarget,
-    DeployRef,
     EcsLevel,
     FocusDir,
     PickerMode,
     PaneKind,
     ProviderProfile,
-    RundeckLevel,
-    RundeckView,
     Session,
     SessionKind,
     SplitDir,
@@ -99,13 +94,6 @@ import type {
 export { agentSupportsSkipPermissions } from "./commands/agentLogic";
 export { agentDirectCommand, agentStartup } from "./commands/agentLaunchCommand";
 export { mergePinnedIntoRoots, normaliseProjectRoots } from "./commands/settingsLogic";
-
-const patchSession = (id: string, fn: (s: Session) => Session): void =>
-    mutate((d) => {
-        const cur = d.sessions[id];
-        if (!cur) return;
-        d.sessions[id] = fn(cur as Session);
-    });
 
 const patchWindow = (id: string, fn: (w: Window) => Window): void =>
     mutate((d) => {
@@ -158,7 +146,6 @@ function makeSession(kind: SessionKind, name: string, cwd: string, activeWindowI
         name,
         kind,
         cwd,
-        deploy: null,
         pinned: false,
         activeWindowId,
     };
@@ -472,7 +459,6 @@ function openSingletonPaneSession(kind: "aws" | PluginKind): void {
 
 export const openAwsSession = (): void => openSingletonPaneSession("aws");
 export const openPluginSession = (kind: PluginKind): void => openSingletonPaneSession(kind);
-export const openRundeckSession = (): void => openPluginSession(RUNDECK_DEPLOY);
 
 export const setPluginManifests = (pluginManifests: readonly PluginManifest[]): void => setState({ pluginManifests });
 
@@ -669,113 +655,6 @@ export async function brunoDeleteRequest(sessionId: string, path: string): Promi
     }
 }
 
-const rundeckView = (st: StoreState, paneId: string): RundeckView => st.rundeckViews[paneId] ?? { stack: [{ kind: "matrix" }] };
-
-export function rundeckPush(paneId: string, level: RundeckLevel): void {
-    mutate((d) => {
-        const cur = rundeckView(d as unknown as StoreState, paneId);
-        d.rundeckViews[paneId] = { stack: [...cur.stack, level] };
-    });
-}
-
-export function rundeckReplace(paneId: string, level: RundeckLevel): void {
-    mutate((d) => {
-        const cur = rundeckView(d as unknown as StoreState, paneId);
-        const stack = cur.stack.slice(0, -1);
-        stack.push(level);
-        d.rundeckViews[paneId] = { stack };
-    });
-}
-
-export function rundeckPop(paneId: string): void {
-    mutate((d) => {
-        const cur = rundeckView(d as unknown as StoreState, paneId);
-        if (cur.stack.length <= 1) return;
-        d.rundeckViews[paneId] = { stack: cur.stack.slice(0, -1) };
-    });
-}
-
-export function rundeckPopTo(paneId: string, index: number): void {
-    mutate((d) => {
-        const cur = rundeckView(d as unknown as StoreState, paneId);
-        const target = Math.max(0, Math.min(index, cur.stack.length - 1));
-        d.rundeckViews[paneId] = { stack: cur.stack.slice(0, target + 1) };
-    });
-}
-
-export function rundeckHome(paneId: string): void {
-    mutate((d) => {
-        d.rundeckViews[paneId] = { stack: [{ kind: "matrix" }] };
-    });
-}
-
-function setRundeckProject(project: string, envFolder: string | null = null): void {
-    mutate((d) => {
-        d.rundeck.activeProject = project;
-        d.rundeck.activeEnvFolder = envFolder;
-    });
-}
-
-export function selectRundeckProject(paneId: string, project: string, envFolder: string | null = null): void {
-    setRundeckProject(project, envFolder);
-    rundeckHome(paneId);
-}
-
-/** Open the Rundeck session straight to a known service deploy (project + env folder). */
-export function openRundeckService(target: { project: string; service: string; jobId: string; group: string | null }): void {
-    openRundeckTarget(target);
-}
-
-export function openRundeckDeploy(target: { project: string; service: string; jobId: string; group: string | null; branch: string }): void {
-    openRundeckTarget(target, target.branch);
-}
-
-function openRundeckTarget(target: { project: string; service: string; jobId: string; group: string | null }, branch?: string): void {
-    const before = getState();
-    const sourceSession = before.sessions[before.activeSessionId];
-    const sourceRepoPath = sourceSession?.kind === "project" ? sourceSession.cwd : "";
-    const env = inferEnv(target.project, target.group);
-    const serviceLevel: RundeckLevel = {
-        kind: "service",
-        env,
-        project: target.project,
-        service: target.service,
-        jobId: target.jobId,
-        repoPath: sourceRepoPath,
-    };
-    openRundeckSession();
-    const after = getState();
-    const sess = Object.values(after.sessions).find((s) => s.kind === RUNDECK_DEPLOY);
-    if (!sess) return;
-    const win = after.windows[sess.activeWindowId];
-    if (!win || win.root.type !== "pane") return;
-    const paneId = win.root.id;
-    setRundeckProject(target.project, envFolderOf(target.group));
-    rundeckReplaceStack(paneId, [
-        { kind: "matrix" },
-        serviceLevel,
-        ...(branch !== undefined
-            ? [
-                  {
-                      kind: "deploy" as const,
-                      env,
-                      project: target.project,
-                      service: target.service,
-                      jobId: target.jobId,
-                      branch,
-                      repoPath: sourceRepoPath,
-                  },
-              ]
-            : []),
-    ]);
-}
-
-function rundeckReplaceStack(paneId: string, stack: RundeckLevel[]): void {
-    mutate((d) => {
-        d.rundeckViews[paneId] = { stack };
-    });
-}
-
 export function selectSession(id: string): void {
     mutate((d) => {
         if (!d.sessions[id]) return;
@@ -846,7 +725,6 @@ function closeSessionNow(id: string): void {
             delete d.windows[wid];
         }
         delete d.windowsBySession[id];
-        delete d.rundeckViews[id];
         delete d.globalSearchBySession[id];
         delete d.sessions[id];
         d.sessionOrder = d.sessionOrder.filter((x) => x !== id);
@@ -957,10 +835,6 @@ export function cycleSessionGroup(delta: number): void {
         d.activeSessionId = nextId;
         d.zoomedPaneId = null;
     });
-}
-
-export function setDeployTarget(target: DeployRef | null): void {
-    patchSession(getState().activeSessionId, (s) => ({ ...s, deploy: target }));
 }
 
 export function splitActivePane(dir: SplitDir): void {
@@ -1194,7 +1068,6 @@ export async function importSessionFromClipboard(): Promise<void> {
             kind: sourceKind,
             cwd: sourceCwd,
             pinned: false,
-            deploy: null,
             activeWindowId: importedWindows[0].id,
         };
         if (sourceKind === "bruno") session.bruno = { collectionPath: sourceCwd, selectedEnvs: {} };
@@ -1265,13 +1138,13 @@ function dropBrowserPaneState(d: StoreState, paneId: string): void {
 }
 
 function disposePaneState(d: StoreState, paneId: string): void {
+    emit({ type: "pane-closed", paneId });
     if (d.gitModal?.ownerPaneId === paneId) d.gitModal = null;
     delete d.editorViews[paneId];
     delete d.pendingEditorOpens[paneId];
     delete d.dirtyEditorPaths[paneId];
     delete d.gitViews[paneId];
     delete d.ecsViews[paneId];
-    delete d.rundeckViews[paneId];
     delete d.brunoViews[paneId];
     dropBrowserPaneState(d, paneId);
     delete d.terminalTitles[paneId];
@@ -2104,7 +1977,7 @@ export const setHome = (home: string): void => setState({ home });
 export const setLastSessionId = (id: string): void => setState({ lastSessionId: id });
 export const setTerminalTitle = (paneId: string, title: string): void =>
     setState((s) => ({ terminalTitles: { ...s.terminalTitles, [paneId]: title } }));
-export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, rundeckJobPaletteOpen: false });
+export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode });
 export const closePicker = (): void => setState({ pickerOpen: false });
 // The agent picker is project-scoped and opens over the agent view.
 export const openAgentPalette = (): void => {
@@ -2113,7 +1986,6 @@ export const openAgentPalette = (): void => {
         const session = d.sessions[d.activeSessionId];
         if (session?.kind !== "project") return;
         d.agentPaletteOpen = true;
-        d.rundeckJobPaletteOpen = false;
         d.zoomedPaneId = null;
     });
 };
@@ -2139,11 +2011,8 @@ export const openNewTabPalette = (): void =>
     setState({ newTabPaletteOpen: true, filePaletteOpen: false, agentPaletteOpen: false, pickerOpen: false });
 export const closeNewTabPalette = (): void => setState({ newTabPaletteOpen: false });
 
-export const openFilePalette = (): void => setState({ filePaletteOpen: true, rundeckJobPaletteOpen: false });
+export const openFilePalette = (): void => setState({ filePaletteOpen: true });
 export const closeFilePalette = (): void => setState({ filePaletteOpen: false });
-export const openRundeckJobPalette = (): void =>
-    setState({ rundeckJobPaletteOpen: true, pickerOpen: false, filePaletteOpen: false, agentPaletteOpen: false });
-export const closeRundeckJobPalette = (): void => setState({ rundeckJobPaletteOpen: false });
 export const openBrunoReqPalette = (): void =>
     setState({ brunoReqPaletteOpen: true, brunoEnvPaletteOpen: false, filePaletteOpen: false, agentPaletteOpen: false, pickerOpen: false });
 export const closeBrunoReqPalette = (): void => setState({ brunoReqPaletteOpen: false });

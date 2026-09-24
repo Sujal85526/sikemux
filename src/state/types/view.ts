@@ -117,24 +117,6 @@ export type EcsLevel =
           taskFilter?: { taskId: string; stream: string };
       };
 
-export type RundeckLevel =
-    | { kind: "matrix" }
-    | { kind: "service"; env: string; project: string; service: string; jobId: string; repoPath?: string }
-    | {
-          kind: "deploy";
-          env: string;
-          project: string;
-          service: string;
-          jobId: string;
-          branch: string;
-          repoPath?: string;
-      }
-    | { kind: "execution"; executionId: number; service: string; project: string; env?: string; jobId?: string; repoPath?: string };
-
-export interface RundeckView {
-    stack: RundeckLevel[];
-}
-
 export type BrunoReqTab = "params" | "body" | "headers" | "auth" | "vars" | "script" | "docs";
 export type BrunoResTab = "body" | "headers" | "timeline" | "tests";
 

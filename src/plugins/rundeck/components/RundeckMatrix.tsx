@@ -1,15 +1,14 @@
 import { useMemo } from "react";
-import { type MatrixCell, type RundeckEnvSpec } from "../../api/rundeck";
-import * as cmd from "../../state/commands";
-import { useResourceEnabled } from "../../state/resources";
-import { rndMatrixR } from "../../state/resources.defs";
-import { envFolderOf, inferEnv } from "../../state/rundeckShape";
-import { useStore } from "../../state/store";
-import { IconSearch } from "../Icons";
+import { type MatrixCell, type RundeckEnvSpec } from "../api";
+import * as cmd from "../state";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { rndMatrixR } from "../resources";
+import { envFolderOf, inferEnv } from "../shape";
+import { IconSearch } from "../../../plugin-api/ui";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
-import { PRIMARY_SHORTCUT } from "../../lib/platform";
-import { EmptyState } from "../Panel";
-import { IconWarning, IconRundeck } from "../Icons";
+import { PRIMARY_SHORTCUT } from "../../../plugin-api/ui";
+import { EmptyState } from "../../../plugin-api/ui";
+import { IconWarning, IconRundeck } from "../../../plugin-api/ui";
 
 interface Props {
     paneId: string;
@@ -17,8 +16,8 @@ interface Props {
 }
 
 export function RundeckMatrix({ paneId, active }: Props) {
-    const project = useStore((s) => s.rundeck.activeProject);
-    const envFolder = useStore((s) => s.rundeck.activeEnvFolder);
+    const project = cmd.rundeckSettings.useSelect((s) => s.activeProject);
+    const envFolder = cmd.rundeckSettings.useSelect((s) => s.activeEnvFolder);
 
     const specs = useMemo<RundeckEnvSpec[]>(() => (project ? [{ label: project, project, only_succeeded: true }] : []), [project]);
 

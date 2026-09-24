@@ -1,4 +1,3 @@
-import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
 import type { PaneKind, Session, TabRef, Window } from "./types";
 import type { StoreState } from "./store";
 import { collectPanes } from "./layout";
@@ -263,7 +262,6 @@ export const selectActiveWindow = (state: StoreState): Window | undefined => {
 export type WorkbenchItemState =
     | StoreState["editorViews"][string]
     | StoreState["gitViews"][string]
-    | StoreState["rundeckViews"][string]
     | StoreState["brunoViews"][string]
     | StoreState["globalSearchBySession"][string]
     | undefined;
@@ -284,7 +282,7 @@ export function selectItemState(state: StoreState, kind: PaneKind, itemId: strin
         case "agent":
             return undefined;
         default:
-            return kind === RUNDECK_DEPLOY ? state.rundeckViews[itemId] : undefined;
+            return undefined;
     }
 }
 

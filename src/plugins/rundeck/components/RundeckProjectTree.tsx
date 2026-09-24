@@ -1,15 +1,14 @@
 import { useMemo } from "react";
-import * as cmd from "../../state/commands";
-import { useResourceEnabled } from "../../state/resources";
-import { rndJobsR, rndProjectsR } from "../../state/resources.defs";
-import { envFolderOf } from "../../state/rundeckShape";
-import { useStore } from "../../state/store";
-import { IconChevron, IconFolder } from "../Icons";
+import * as cmd from "../state";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { rndJobsR, rndProjectsR } from "../resources";
+import { envFolderOf } from "../shape";
+import { IconChevron, IconFolder } from "../../../plugin-api/ui";
 
 export function RundeckProjectTree({ paneId, active }: { paneId: string; active: boolean }) {
     const projects = useResourceEnabled(active, rndProjectsR);
-    const activeProject = useStore((s) => s.rundeck.activeProject);
-    const activeEnvFolder = useStore((s) => s.rundeck.activeEnvFolder);
+    const activeProject = cmd.rundeckSettings.useSelect((s) => s.activeProject);
+    const activeEnvFolder = cmd.rundeckSettings.useSelect((s) => s.activeEnvFolder);
 
     const list = projects.data ?? [];
 

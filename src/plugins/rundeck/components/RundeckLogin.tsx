@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { rundeckApi } from "../../api/rundeck";
-import { Checkbox } from "../Controls";
+import { rundeckApi } from "../api";
+import { Checkbox } from "../../../plugin-api/ui";
 
 interface Props {
     paneId: string;

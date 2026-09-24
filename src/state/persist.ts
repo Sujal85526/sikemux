@@ -15,8 +15,8 @@ import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { isSessionKind, validatePersistedLayout } from "./persistValidation";
-import { isPluginKind } from "../plugins/kinds";
-import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
+import { isPluginId, isPluginKind } from "../plugins/kinds";
+import { RUNDECK_DEPLOY, RUNDECK_PLUGIN_ID } from "../plugins/rundeck/kinds";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
@@ -49,11 +49,12 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 10;
+export const VERSION = 11;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
 const PLUGIN_KIND_MIGRATION_VERSION = 10;
+const PLUGIN_SETTINGS_MIGRATION_VERSION = 11;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -92,7 +93,7 @@ const PERSISTED_KEYS = [
     "sideRailWidth",
     "agentRailWidth",
     "zenMode",
-    "rundeck",
+    "pluginSettings",
     "restoreAgentTabs",
     "railDensity",
     "onboardingComplete",
@@ -140,7 +141,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         sideRailWidth: s.sideRailWidth,
         agentRailWidth: s.agentRailWidth,
         zenMode: s.zenMode,
-        rundeck: s.rundeck,
+        pluginSettings: s.pluginSettings,
         restoreAgentTabs: s.restoreAgentTabs,
         railDensity: s.railDensity,
         onboardingComplete: s.onboardingComplete,
@@ -247,18 +248,11 @@ function toSession(value: unknown): Session | null {
     ) {
         return null;
     }
-    const deploy =
-        isRecord(value.deploy) &&
-        typeof value.deploy.project === "string" &&
-        (value.deploy.folder === null || typeof value.deploy.folder === "string")
-            ? { project: value.deploy.project, folder: value.deploy.folder }
-            : null;
     const session: Session = {
         id: value.id,
         name: value.name,
         kind: value.kind as Session["kind"],
         cwd: value.cwd,
-        deploy,
         pinned: value.pinned,
         activeWindowId: value.activeWindowId,
     };
@@ -583,6 +577,23 @@ function renameLegacyPluginKinds(decoded: Record<string, unknown>): void {
     }
 }
 
+/** Before v11 Rundeck's settings sat among core's, and each session kept the deploy location picked for its folder. */
+function moveRundeckSettings(decoded: Record<string, unknown>): void {
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    const deployTargets: Record<string, unknown> = {};
+    for (const row of Array.isArray(decoded.sessions) ? decoded.sessions : []) {
+        if (isRecord(row) && typeof row.cwd === "string" && row.cwd && isRecord(row.deploy)) deployTargets[row.cwd] = row.deploy;
+    }
+    const legacy = isRecord(prefs.rundeck) ? prefs.rundeck : {};
+    const pluginSettings = isRecord(prefs.pluginSettings) ? prefs.pluginSettings : {};
+    decoded.prefs = { ...prefs, pluginSettings: { ...pluginSettings, [RUNDECK_PLUGIN_ID]: { ...legacy, deployTargets } } };
+}
+
+function normalisePluginSettings(value: unknown): Record<string, unknown> {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([id]) => isPluginId(id)));
+}
+
 export type HydrationResult = "empty" | "applied" | "invalid" | "unsupported-future";
 
 export function hydrationAllowsPersistence(result: HydrationResult): boolean {
@@ -602,6 +613,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version < MIN_SUPPORTED_VERSION) return "invalid";
     if (!Array.isArray(decoded.sessions)) return "invalid";
     if (decoded.version < PLUGIN_KIND_MIGRATION_VERSION) renameLegacyPluginKinds(decoded);
+    if (decoded.version < PLUGIN_SETTINGS_MIGRATION_VERSION) moveRundeckSettings(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
@@ -762,8 +774,6 @@ export function applyHydrate(raw: string): HydrationResult {
     for (const sid of Object.keys(sessions)) if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     const requestedActive = typeof decoded.activeSessionId === "string" ? decoded.activeSessionId : "";
     const activeSessionId = sessions[requestedActive] ? requestedActive : sessionOrder[0];
-    const rundeck = isRecord(prefs.rundeck) ? prefs.rundeck : {};
-    const prodEnvs = Array.isArray(rundeck.prodEnvs) ? rundeck.prodEnvs.filter((v): v is string => typeof v === "string") : cur.rundeck.prodEnvs;
 
     setState({
         sessions,
@@ -810,11 +820,7 @@ export function applyHydrate(raw: string): HydrationResult {
                 ? clampRailWidth("end", prefs.agentRailWidth)
                 : cur.agentRailWidth,
         zenMode: typeof prefs.zenMode === "boolean" ? prefs.zenMode : cur.zenMode,
-        rundeck: {
-            activeProject: typeof rundeck.activeProject === "string" ? rundeck.activeProject : "",
-            activeEnvFolder: rundeck.activeEnvFolder === null || typeof rundeck.activeEnvFolder === "string" ? rundeck.activeEnvFolder : null,
-            prodEnvs,
-        },
+        pluginSettings: normalisePluginSettings(prefs.pluginSettings),
         restoreAgentTabs,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         onboardingComplete:

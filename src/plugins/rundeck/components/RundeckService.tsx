@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { git } from "../../api/git";
-import { rundeckApi, type RundeckExecution } from "../../api/rundeck";
-import * as cmd from "../../state/commands";
-import { useResourceEnabled } from "../../state/resources";
-import { rndExecutionsR } from "../../state/resources.defs";
-import { IconFetch, IconGit, IconRefresh, IconRun } from "../Icons";
-import { EmptyState } from "../Panel";
-import { SkeletonRows } from "../Skeleton";
+import { git } from "../../../plugin-api/host";
+import { rundeckApi, type RundeckExecution } from "../api";
+import * as cmd from "../state";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { rndExecutionsR } from "../resources";
+import { IconFetch, IconGit, IconRefresh, IconRun } from "../../../plugin-api/ui";
+import { EmptyState } from "../../../plugin-api/ui";
+import { SkeletonRows } from "../../../plugin-api/ui";
 import { BRANCH_GLYPH, branchKind, statusKind } from "./branchStyle";
 import { executionProgress, newestExecutions } from "./executionProgress";
 
