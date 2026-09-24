@@ -63,6 +63,8 @@ import { agentApi } from "../api/agents";
 import { safeWebUrl } from "../terminal/interactions";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
 import { remarkHtmlAsText } from "./remarkHtmlAsText";
+import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
+import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -593,11 +595,24 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
 
+function FoldedMarkdown({ id, text, live, typed = false }: { id: string; text: string; live: boolean; typed?: boolean }) {
+    const { cut, expand } = useLongTextFold(id, text, live);
+    if (!cut) return <LiveMarkdown text={text} live={live} typed={typed} />;
+    return (
+        <>
+            <LiveMarkdown text={cut.head} live={false} typed={typed} />
+            <button type="button" className="chat-show-rest" onClick={expand}>
+                Show the rest — {Math.round(cut.hidden / 1000)}k more characters
+            </button>
+        </>
+    );
+}
+
 const MessagePart = memo(function MessagePart({ part, live, typed }: { part: ChatPart; live: boolean; typed: boolean }) {
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <LiveMarkdown text={part.text} live={live} typed={typed} />
+                <FoldedMarkdown id={part.id} text={part.text} live={live} typed={typed} />
             </div>
         );
     }
@@ -605,7 +620,7 @@ const MessagePart = memo(function MessagePart({ part, live, typed }: { part: Cha
         return (
             <div className="chat-thought">
                 <div className="chat-markdown">
-                    <LiveMarkdown text={part.text} live={live} />
+                    <FoldedMarkdown id={part.id} text={part.text} live={live} />
                 </div>
             </div>
         );
@@ -1225,6 +1240,16 @@ function ChatComposer({
                         onError(null);
                     }}
                     onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                    onPaste={(event) => {
+                        if (imagesInClipboard(event.clipboardData).length > 0) event.preventDefault();
+                        void savePastedClipboard(event.clipboardData)
+                            .then((paths) => {
+                                if (paths.length === 0) return;
+                                setAttachments((current) => mergePaths(current, paths));
+                                onError(null);
+                            })
+                            .catch((failure) => onError(failure instanceof Error ? failure.message : String(failure)));
+                    }}
                     onKeyDown={(event) => {
                         if (slashCommands.length > 0) {
                             if (event.key === "ArrowDown") {
@@ -1334,6 +1359,7 @@ export function AgentChatPane({
 }) {
     const home = useStore((s) => s.home);
     const [state, dispatch] = useReducer(chatReducer, initialChatState);
+    const [foldMemory] = useState(newFoldMemory);
     const displayStateRef = useRef(state);
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
@@ -1433,7 +1459,12 @@ export function AgentChatPane({
         if (!active) return;
         const controller = new AbortController();
         let mounted = true;
-        dispatch({ type: "reset", hold: Boolean(agentRef.current.resumeId) });
+        const hold = Boolean(agentRef.current.resumeId);
+        dispatch({ type: "reset", hold });
+        if (!hold) {
+            foldMemory.streamed.clear();
+            foldMemory.expanded.clear();
+        }
         setAppliedPermissionMode(null);
         setChangingPermissions(false);
         sessionIdRef.current = null;
@@ -1552,6 +1583,7 @@ export function AgentChatPane({
         profile?.executablePath,
         environmentKeys,
         restartKey,
+        foldMemory,
     ]);
 
     useEffect(() => {
@@ -1852,27 +1884,29 @@ export function AgentChatPane({
                                     )}
                                 </div>
                             )}
-                            <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-                                {virtualizer.getVirtualItems().map((item) => {
-                                    const message = displayState.messages[item.index];
-                                    const meta = rowMeta(displayState.messages, item.index);
-                                    return (
-                                        <div
-                                            key={message.id}
-                                            data-index={item.index}
-                                            ref={virtualizer.measureElement}
-                                            className="chat-virtual-row"
-                                            style={{ transform: `translateY(${item.start}px)` }}>
-                                            <ChatMessageRow
-                                                message={message}
-                                                live={displayState.running && item.index === displayState.messages.length - 1}
-                                                copyable={meta.text}
-                                                rate={meta.rate}
-                                            />
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            <FoldMemoryContext value={foldMemory}>
+                                <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+                                    {virtualizer.getVirtualItems().map((item) => {
+                                        const message = displayState.messages[item.index];
+                                        const meta = rowMeta(displayState.messages, item.index);
+                                        return (
+                                            <div
+                                                key={message.id}
+                                                data-index={item.index}
+                                                ref={virtualizer.measureElement}
+                                                className="chat-virtual-row"
+                                                style={{ transform: `translateY(${item.start}px)` }}>
+                                                <ChatMessageRow
+                                                    message={message}
+                                                    live={displayState.running && item.index === displayState.messages.length - 1}
+                                                    copyable={meta.text}
+                                                    rate={meta.rate}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </FoldMemoryContext>
                             {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} agentType={agent.type} />}
                             {plan !== null && (
                                 <details className="chat-plan">
