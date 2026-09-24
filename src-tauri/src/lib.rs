@@ -230,6 +230,8 @@ pub fn run() {
             fs::create_dir,
             fs::copy_into_dir,
             fs::downloads_dir,
+            fs::chat_attachment_dir,
+            fs::save_clipboard_image,
             fs::save_base64_into_dir,
             fs::rename_path,
             fs::reveal_in_finder,

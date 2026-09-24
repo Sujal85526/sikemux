@@ -56,6 +56,7 @@ import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
 import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
+import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -1223,6 +1224,16 @@ function ChatComposer({
                         onError(null);
                     }}
                     onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                    onPaste={(event) => {
+                        if (imagesInClipboard(event.clipboardData).length > 0) event.preventDefault();
+                        void savePastedClipboard(event.clipboardData)
+                            .then((paths) => {
+                                if (paths.length === 0) return;
+                                setAttachments((current) => mergePaths(current, paths));
+                                onError(null);
+                            })
+                            .catch((failure) => onError(failure instanceof Error ? failure.message : String(failure)));
+                    }}
                     onKeyDown={(event) => {
                         if (slashCommands.length > 0) {
                             if (event.key === "ArrowDown") {
