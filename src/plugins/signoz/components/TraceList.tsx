@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, SkeletonRows, Switch } from "../../../plugin-api/ui";
-import { failureMessage, signozApi, type TraceOrder, type TraceSummary } from "../api";
+import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
+import { failureMessage, signozApi, type TraceSummary } from "../api";
 import { signozTracesR } from "../resources";
 import { scopeOf, signozSettings, updateView, useExploreView } from "../state";
 import { logTime } from "./LogRow";
@@ -22,6 +22,7 @@ export function TraceList({ paneId, active }: { paneId: string; active: boolean 
     const key = JSON.stringify(search);
     const extra = more.key === key ? more : { key, traces: [], next: first.data?.nextOffset ?? null };
     const traces = [...(first.data?.traces ?? []), ...extra.traces];
+    const slowest = Math.max(1, ...traces.map((trace) => trace.durationMs));
 
     const loadMore = () => {
         if (extra.next === null) return;
@@ -32,23 +33,12 @@ export function TraceList({ paneId, active }: { paneId: string; active: boolean 
 
     return (
         <div className="sgz-traces">
-            <div className="sgz-filter-row sgz-trace-controls">
-                <div className="sgz-segmented" role="group" aria-label="Order">
-                    {(["slowest", "recent"] as TraceOrder[]).map((order) => (
-                        <button
-                            key={order}
-                            type="button"
-                            aria-pressed={view.traceOrder === order}
-                            className={view.traceOrder === order ? "on" : ""}
-                            onClick={() => updateView(paneId, { traceOrder: order })}>
-                            {order}
-                        </button>
-                    ))}
-                </div>
-                <label className="sgz-toggle">
-                    <Switch checked={view.tracesErrorsOnly} onChange={(tracesErrorsOnly) => updateView(paneId, { tracesErrorsOnly })} />
-                    failed only
-                </label>
+            <div className="sgz-columns sgz-trace-columns" aria-hidden="true">
+                <span>Time</span>
+                <span>Status</span>
+                <span>Service</span>
+                <span>Operation</span>
+                <span>Duration</span>
             </div>
             <div className="sgz-trace-rows" role="list">
                 {first.status === "loading" && !first.data && <SkeletonRows rows={8} label="Loading traces" />}
@@ -65,7 +55,10 @@ export function TraceList({ paneId, active }: { paneId: string; active: boolean 
                         <span className={`sgz-sev ${trace.error ? "danger" : "quiet"}`}>{trace.error ? "ERROR" : (trace.statusCode ?? "")}</span>
                         <span className="sgz-log-service">{trace.service}</span>
                         <span className="sgz-trace-name">{trace.name}</span>
-                        <span className="sgz-trace-duration">{formatMs(trace.durationMs)}</span>
+                        <span className="sgz-trace-duration">
+                            <span className="sgz-trace-bar" style={{ width: `${Math.max(2, (trace.durationMs / slowest) * 100)}%` }} />
+                            <span className="sgz-trace-ms">{formatMs(trace.durationMs)}</span>
+                        </span>
                     </button>
                 ))}
                 {extra.next !== null && traces.length > 0 && (

@@ -1,6 +1,11 @@
 import { resource } from "../../plugin-api/resources";
 import {
     signozApi,
+    type Dashboard,
+    type DashboardSummary,
+    type PanelData,
+    type PanelRequest,
+    type VolumeBucket,
     type FieldKey,
     type LogPage,
     type LogSearch,
@@ -53,4 +58,28 @@ export const signozFieldValuesR = resource({
     kind: "signoz.fieldValues",
     fetch: (signal: Signal, name: string, search: string): Promise<string[]> => signozApi.fieldValues(signal, name, search),
     staleAfterMs: 60_000,
+});
+
+export const signozVolumeR = resource({
+    kind: "signoz.volume",
+    fetch: (search: LogSearch & { buckets?: number }): Promise<VolumeBucket[]> => signozApi.logVolume(search),
+    staleAfterMs: 15_000,
+});
+
+export const signozDashboardsR = resource({
+    kind: "signoz.dashboards",
+    fetch: (): Promise<DashboardSummary[]> => signozApi.dashboards(),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const signozDashboardR = resource({
+    kind: "signoz.dashboard",
+    fetch: (id: string): Promise<Dashboard> => signozApi.dashboard(id),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const signozPanelR = resource({
+    kind: "signoz.panel",
+    fetch: (request: PanelRequest): Promise<PanelData> => signozApi.panel(request),
+    staleAfterMs: 30_000,
 });

@@ -2,12 +2,13 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LogLine, TailTick } from "../api";
 
-const { tailStart, tailStop, searchLogs } = vi.hoisted(() => ({
+const { tailStart, tailStop, searchLogs, logVolume } = vi.hoisted(() => ({
     tailStart: vi.fn(),
     tailStop: vi.fn(() => Promise.resolve()),
     searchLogs: vi.fn(),
+    logVolume: vi.fn(() => Promise.resolve([])),
 }));
-vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), signozApi: { tailStart, tailStop, searchLogs } }));
+vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), signozApi: { tailStart, tailStop, searchLogs, logVolume } }));
 vi.mock("../../../plugin-api/ui", async (importOriginal) => ({
     ...(await importOriginal<object>()),
     VirtualLogList: ({ items, renderRow }: { items: unknown[]; renderRow: (item: unknown, index: number) => unknown }) => (

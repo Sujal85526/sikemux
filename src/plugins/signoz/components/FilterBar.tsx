@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { IconSearch } from "../../../plugin-api/ui";
-import type { Filter, FilterOp, Signal } from "../api";
+import { IconSearch, Switch } from "../../../plugin-api/ui";
+import type { Filter, FilterOp, Signal, TraceOrder } from "../api";
 import { signozFieldKeysR, signozFieldValuesR } from "../resources";
 import { SEVERITIES, addFilter, removeFilter, updateView, useExploreView } from "../state";
 
@@ -129,11 +129,11 @@ export function FilterBar({ paneId, signal }: { paneId: string; signal: Signal }
                             <IconSearch size={12} />
                             <input
                                 className="sgz-input"
-                                placeholder="text in the log line"
+                                placeholder="Search log messages"
                                 value={text}
                                 onChange={(event) => setText(event.target.value)}
                                 spellCheck={false}
-                                aria-label="Text in the log line"
+                                aria-label="Search log messages"
                             />
                         </label>
                         <div className="sgz-severities" role="group" aria-label="Severity">
@@ -150,8 +150,26 @@ export function FilterBar({ paneId, signal }: { paneId: string; signal: Signal }
                         </div>
                     </>
                 )}
-            </div>
-            <div className="sgz-filter-row">
+                {signal === "traces" && (
+                    <>
+                        <div className="sgz-segmented" role="group" aria-label="Order">
+                            {(["slowest", "recent"] as TraceOrder[]).map((order) => (
+                                <button
+                                    key={order}
+                                    type="button"
+                                    aria-pressed={view.traceOrder === order}
+                                    className={view.traceOrder === order ? "on" : ""}
+                                    onClick={() => updateView(paneId, { traceOrder: order })}>
+                                    {order}
+                                </button>
+                            ))}
+                        </div>
+                        <label className="sgz-toggle">
+                            <Switch checked={view.tracesErrorsOnly} onChange={(tracesErrorsOnly) => updateView(paneId, { tracesErrorsOnly })} />
+                            failed only
+                        </label>
+                    </>
+                )}
                 {view.filters.map((filter, index) => (
                     <span key={`${filter.key}:${filter.op}`} className="sgz-chip">
                         <span className="sgz-chip-key">{filter.key}</span>
@@ -170,7 +188,7 @@ export function FilterBar({ paneId, signal }: { paneId: string; signal: Signal }
                     <FilterEditor signal={signal} onAdd={(filter) => addFilter(paneId, filter)} onClose={() => setAdding(false)} />
                 ) : (
                     <button type="button" className="sgz-add-filter" onClick={() => setAdding(true)}>
-                        + filter
+                        + Filter
                     </button>
                 )}
                 <button

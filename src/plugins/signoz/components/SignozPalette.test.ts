@@ -22,4 +22,11 @@ describe("paletteItems", () => {
         expect(labels.indexOf("Show traces")).toBeLessThan(labels.indexOf("api-gateway"));
         expect(labels).not.toContain(expect.stringMatching(/^Open trace/));
     });
+
+    it("opens a dashboard by its title", () => {
+        const items = paletteItems("render", ["reel-worker"], [{ id: "d1", title: "Render farm" }]);
+        expect(items[0].label).toBe("Render farm");
+        items[0].run("pane-palette-dashboard");
+        expect(viewOf("pane-palette-dashboard").dashboard).toBe("d1");
+    });
 });

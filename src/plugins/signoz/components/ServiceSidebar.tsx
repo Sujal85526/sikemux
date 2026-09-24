@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { useResourceEnabled } from "../../../plugin-api/resources";
+import { openUrl, reportError, swallow } from "../../../plugin-api/host";
+import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { IconSearch, rankBy } from "../../../plugin-api/ui";
-import { failureMessage, type ServiceHealth } from "../api";
-import { signozServicesR } from "../resources";
-import { SERVICE_SORTS, signozSettings, updateSettings, updateView, useExploreView, type ServiceSort } from "../state";
-import { formatMs } from "./TraceView";
+import { failureMessage, signozApi, type ServiceHealth, type SignozStatus } from "../api";
+import { signozDashboardsR, signozServicesR } from "../resources";
+import { SERVICE_SORTS, openDashboard, signozSettings, updateSettings, updateView, useExploreView, type ServiceSort } from "../state";
+import { formatValue } from "./charts";
 
 interface ServiceRow {
     service: string;
@@ -39,32 +40,145 @@ const SORTERS: Record<ServiceSort, (left: ServiceRow, right: ServiceRow) => numb
     name: (left, right) => left.service.localeCompare(right.service),
 };
 
-function percent(rate: number): string {
-    if (rate === 0) return "0%";
+/** A zero error rate is the ordinary case, so it steps back instead of printing "0%". */
+function errorRate(rate: number): string {
+    if (rate === 0) return "";
+    if (rate < 0.001) return "<0.1%";
     return `${(rate * 100).toFixed(rate >= 0.1 ? 0 : 1)}%`;
 }
 
-export function ServiceSidebar({ paneId, active }: { paneId: string; active: boolean }) {
+function Section({ title, extra, children }: { title: string; extra?: React.ReactNode; children: React.ReactNode }) {
+    return (
+        <section className="sgz-side-section">
+            <header className="sgz-side-head">
+                <span>{title}</span>
+                {extra}
+            </header>
+            {children}
+        </section>
+    );
+}
+
+function Dashboards({ paneId, active }: { paneId: string; active: boolean }) {
+    const view = useExploreView(paneId);
+    const dashboards = useResourceEnabled(active, signozDashboardsR);
+    if (dashboards.error) return <div className="sgz-muted sgz-side-note">{failureMessage(dashboards.error)}</div>;
+    if (!dashboards.data) return <div className="sgz-muted sgz-side-note">reading dashboards…</div>;
+    if (dashboards.data.length === 0) return <div className="sgz-muted sgz-side-note">no dashboards</div>;
+    return (
+        <div className="sgz-side-rows" role="listbox" aria-label="Dashboards">
+            {dashboards.data.map((dashboard) => {
+                const selected = view.dashboard === dashboard.id;
+                return (
+                    <button
+                        key={dashboard.id}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        className={`sgz-side-row${selected ? " selected" : ""}`}
+                        title={dashboard.description || dashboard.title}
+                        onClick={() => openDashboard(paneId, dashboard.id)}>
+                        <span className="sgz-side-name">{dashboard.title}</span>
+                        <span className="sgz-side-meta">{dashboard.panels}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+function Services({ paneId, active }: { paneId: string; active: boolean }) {
     const minutes = signozSettings.useSelect((settings) => settings.minutes);
     const environment = signozSettings.useSelect((settings) => settings.environment);
     const sort = signozSettings.useSelect((settings) => settings.serviceSort);
-    const selected = useExploreView(paneId).service;
+    const view = useExploreView(paneId);
     const [query, setQuery] = useState("");
     const health = useResourceEnabled(active, signozServicesR, { minutes });
 
-    const environments = useMemo(
-        () => [...new Set((health.data ?? []).map((row) => row.environment).filter((name): name is string => !!name))].sort(),
-        [health.data],
-    );
     const rows = useMemo(() => {
         const merged = mergeByService(health.data ?? [], environment).sort(SORTERS[sort]);
         return query.trim() ? rankBy(query.trim(), merged, (row) => row.service) : merged;
     }, [environment, health.data, query, sort]);
-
-    const pick = (service: string | null) => updateView(paneId, { service, trace: null });
+    const selected = view.dashboard ? undefined : view.service;
+    const pick = (service: string | null) => updateView(paneId, { service, trace: null, dashboard: null });
 
     return (
-        <aside className="sgz-side" aria-label="Services">
+        <Section
+            title="Services"
+            extra={
+                <select
+                    className="sgz-side-sort"
+                    value={sort}
+                    onChange={(event) => updateSettings({ serviceSort: event.target.value as ServiceSort })}
+                    aria-label="Sort services">
+                    {SERVICE_SORTS.map((option) => (
+                        <option key={option} value={option}>
+                            by {option}
+                        </option>
+                    ))}
+                </select>
+            }>
+            <label className="sgz-search sgz-side-search">
+                <IconSearch size={12} />
+                <input
+                    className="sgz-input"
+                    placeholder="Find a service"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    spellCheck={false}
+                    aria-label="Find a service"
+                />
+            </label>
+            <div className="sgz-side-rows sgz-side-scroll" role="listbox" aria-label="Services">
+                <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected === null}
+                    className={`sgz-side-row${selected === null ? " selected" : ""}`}
+                    onClick={() => pick(null)}>
+                    <span className="sgz-side-name">All services</span>
+                </button>
+                {health.status === "loading" && !health.data && <div className="sgz-muted sgz-side-note">reading services…</div>}
+                {health.error && <div className="sgz-error sgz-side-note">{failureMessage(health.error)}</div>}
+                {health.data && rows.length === 0 && (
+                    <div className="sgz-muted sgz-side-note">{query ? "no service matches" : "no traced services"}</div>
+                )}
+                {rows.map((row) => (
+                    <button
+                        key={row.service}
+                        type="button"
+                        role="option"
+                        aria-selected={selected === row.service}
+                        className={`sgz-side-row${selected === row.service ? " selected" : ""}`}
+                        onClick={() => pick(selected === row.service ? null : row.service)}
+                        title={`${row.calls.toLocaleString()} calls · ${row.errors.toLocaleString()} errors · p99 ${formatValue(row.p99Ms, "ms")}`}>
+                        <span className="sgz-side-name">{row.service}</span>
+                        <span className={`sgz-side-rate${row.errors > 0 ? " bad" : ""}`}>{errorRate(row.errorRate)}</span>
+                        <span className="sgz-side-meta">{formatValue(row.p99Ms, "ms")}</span>
+                    </button>
+                ))}
+            </div>
+        </Section>
+    );
+}
+
+export function ServiceSidebar({ paneId, active, status }: { paneId: string; active: boolean; status: SignozStatus }) {
+    const minutes = signozSettings.useSelect((settings) => settings.minutes);
+    const environment = signozSettings.useSelect((settings) => settings.environment);
+    const health = useResourceEnabled(active, signozServicesR, { minutes });
+    const environments = useMemo(
+        () => [...new Set((health.data ?? []).map((row) => row.environment).filter((name): name is string => !!name))].sort(),
+        [health.data],
+    );
+    const host = status.url.replace(/^https?:\/\//, "");
+    const signOut = () =>
+        void signozApi
+            .signOut()
+            .then(() => invalidate((kind) => kind.startsWith("signoz.")))
+            .catch(reportError("sign out of SigNoz"));
+
+    return (
+        <aside className="sgz-side" aria-label="SigNoz">
             <select
                 className="sgz-input sgz-side-env"
                 value={environment ?? ""}
@@ -77,58 +191,22 @@ export function ServiceSidebar({ paneId, active }: { paneId: string; active: boo
                     </option>
                 ))}
             </select>
-            <label className="sgz-search">
-                <IconSearch size={12} />
-                <input
-                    className="sgz-input"
-                    placeholder="services"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    spellCheck={false}
-                    aria-label="Filter services"
-                />
-            </label>
-            <div className="sgz-side-head">
-                <span>Services</span>
-                <select
-                    className="sgz-side-sort"
-                    value={sort}
-                    onChange={(event) => updateSettings({ serviceSort: event.target.value as ServiceSort })}
-                    aria-label="Sort services">
-                    {SERVICE_SORTS.map((option) => (
-                        <option key={option} value={option}>
-                            {option}
-                        </option>
-                    ))}
-                </select>
-            </div>
-            <div className="sgz-side-list" role="listbox" aria-label="Services">
-                <button
-                    type="button"
-                    role="option"
-                    aria-selected={selected === null}
-                    className={`sgz-side-row${selected === null ? " selected" : ""}`}
-                    onClick={() => pick(null)}>
-                    <span className="sgz-side-name">All services</span>
+            <Section title="Dashboards">
+                <Dashboards paneId={paneId} active={active} />
+            </Section>
+            <Services paneId={paneId} active={active} />
+            <footer className="sgz-side-foot">
+                <div className="sgz-side-who" title={status.url}>
+                    <span className="sgz-side-host">{host}</span>
+                    <span className="sgz-side-account">{status.email || "API key"}</span>
+                </div>
+                <button type="button" className="sgz-foot-button" onClick={() => void openUrl(status.url).catch(swallow("open SigNoz"))}>
+                    Open
                 </button>
-                {health.status === "loading" && !health.data && <div className="sgz-muted sgz-side-note">reading services…</div>}
-                {health.error && <div className="sgz-error sgz-side-note">{failureMessage(health.error)}</div>}
-                {health.data && rows.length === 0 && <div className="sgz-muted sgz-side-note">no traced services</div>}
-                {rows.map((row) => (
-                    <button
-                        key={row.service}
-                        type="button"
-                        role="option"
-                        aria-selected={selected === row.service}
-                        className={`sgz-side-row${selected === row.service ? " selected" : ""}`}
-                        onClick={() => pick(selected === row.service ? null : row.service)}
-                        title={`${row.calls} calls, ${row.errors} errors, p99 ${formatMs(row.p99Ms)}`}>
-                        <span className="sgz-side-name">{row.service}</span>
-                        <span className={`sgz-side-rate${row.errors > 0 ? " bad" : ""}`}>{percent(row.errorRate)}</span>
-                        <span className="sgz-side-p99">{formatMs(row.p99Ms)}</span>
-                    </button>
-                ))}
-            </div>
+                <button type="button" className="sgz-foot-button" onClick={signOut}>
+                    Sign out
+                </button>
+            </footer>
         </aside>
     );
 }

@@ -16,6 +16,8 @@ export interface SignozSettings {
     serviceSort: ServiceSort;
     /** The service each project folder reports as, when it is not the folder's own name. */
     serviceByProject: Record<string, string>;
+    /** The values chosen for each dashboard's variables, by dashboard id. */
+    dashboardVariables: Record<string, Record<string, string>>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -26,7 +28,15 @@ function decodeSettings(saved: unknown): SignozSettings {
     for (const [cwd, service] of Object.entries(isRecord(raw.serviceByProject) ? raw.serviceByProject : {})) {
         if (typeof service === "string" && service) serviceByProject[cwd] = service;
     }
+    const dashboardVariables: Record<string, Record<string, string>> = {};
+    for (const [id, values] of Object.entries(isRecord(raw.dashboardVariables) ? raw.dashboardVariables : {})) {
+        if (!isRecord(values)) continue;
+        dashboardVariables[id] = Object.fromEntries(
+            Object.entries(values).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        );
+    }
     return {
+        dashboardVariables,
         minutes: typeof raw.minutes === "number" && (WINDOWS as readonly number[]).includes(raw.minutes) ? raw.minutes : 15,
         environment: typeof raw.environment === "string" && raw.environment ? raw.environment : null,
         serviceSort: (SERVICE_SORTS as readonly unknown[]).includes(raw.serviceSort) ? (raw.serviceSort as ServiceSort) : "errors",
@@ -42,6 +52,11 @@ export function updateSettings(patch: Partial<SignozSettings>): void {
 
 export type ExploreTab = "logs" | "traces";
 
+export interface TimeRange {
+    start: number;
+    end: number;
+}
+
 export interface ExploreView {
     tab: ExploreTab;
     service: string | null;
@@ -53,6 +68,10 @@ export interface ExploreView {
     live: boolean;
     fixedEnd: number | null;
     trace: string | null;
+    /** A dashboard shown in place of logs and traces. */
+    dashboard: string | null;
+    /** A moment picked out of a chart, which holds the view still on it. */
+    range: TimeRange | null;
     traceOrder: TraceOrder;
     tracesErrorsOnly: boolean;
 }
@@ -67,6 +86,8 @@ const FRESH: ExploreView = {
     live: true,
     fixedEnd: null,
     trace: null,
+    dashboard: null,
+    range: null,
     traceOrder: "slowest",
     tracesErrorsOnly: false,
 };
@@ -113,15 +134,31 @@ export function removeFilter(paneId: string, index: number): void {
 }
 
 export function setLive(paneId: string, live: boolean): void {
-    updateView(paneId, { live, fixedEnd: live ? null : Date.now() });
+    updateView(paneId, { live, fixedEnd: live ? null : Date.now(), range: null });
+}
+
+export function zoomTo(paneId: string, range: TimeRange): void {
+    updateView(paneId, { live: false, range, fixedEnd: range.end });
+}
+
+export function openDashboard(paneId: string, dashboard: string | null): void {
+    updateView(paneId, { dashboard, trace: null });
+}
+
+export function setDashboardVariable(dashboard: string, name: string, value: string): void {
+    signozSettings.update((settings) => ({
+        ...settings,
+        dashboardVariables: { ...settings.dashboardVariables, [dashboard]: { ...settings.dashboardVariables[dashboard], [name]: value } },
+    }));
 }
 
 /** What the view narrows every query by, in the shape the backend reads. */
 export function scopeOf(view: ExploreView, settings: Pick<SignozSettings, "minutes" | "environment">): Scope {
-    const range =
-        view.live || view.fixedEnd === null
-            ? { minutes: settings.minutes }
-            : { start: view.fixedEnd - settings.minutes * 60_000, end: view.fixedEnd };
+    const range = view.range
+        ? { start: view.range.start, end: view.range.end }
+        : view.live || view.fixedEnd === null
+          ? { minutes: settings.minutes }
+          : { start: view.fixedEnd - settings.minutes * 60_000, end: view.fixedEnd };
     return {
         ...range,
         service: view.service ?? undefined,
@@ -143,5 +180,5 @@ export function openTrace(traceId: string): void {
 
 export function openService(service: string): void {
     const paneId = openSurface(SIGNOZ_EXPLORE);
-    if (paneId) updateView(paneId, { service, trace: null });
+    if (paneId) updateView(paneId, { service, trace: null, dashboard: null });
 }

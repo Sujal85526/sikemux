@@ -3,7 +3,7 @@ import { useActiveSurfacePane } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import { SIGNOZ_EXPLORE } from "../kinds";
-import { signozServicesR } from "../resources";
+import { signozDashboardsR, signozServicesR } from "../resources";
 import { closePalette, setLive, signozSettings, updateView, viewOf } from "../state";
 import { mergeByService } from "./ServiceSidebar";
 import { SignozIcon } from "./SignozIcon";
@@ -18,7 +18,7 @@ interface Item {
 }
 
 /** Everything the palette can do for a pane, before the query narrows it. */
-export function paletteItems(query: string, services: readonly string[]): Item[] {
+export function paletteItems(query: string, services: readonly string[], dashboards: readonly { id: string; title: string }[] = []): Item[] {
     const typed = query.trim();
     const actions: Item[] = [
         { id: "tab:logs", label: "Show logs", run: (paneId) => updateView(paneId, { tab: "logs", trace: null }) },
@@ -31,9 +31,16 @@ export function paletteItems(query: string, services: readonly string[]): Item[]
         id: `service:${service}`,
         label: service,
         hint: "service",
-        run: (paneId) => updateView(paneId, { service, trace: null }),
+        run: (paneId) => updateView(paneId, { service, trace: null, dashboard: null }),
     }));
-    const ranked = typed ? rankBy(typed, [...serviceItems, ...actions], (item) => item.label) : [...actions, ...serviceItems];
+    const dashboardItems: Item[] = dashboards.map((dashboard) => ({
+        id: `dashboard:${dashboard.id}`,
+        label: dashboard.title,
+        hint: "dashboard",
+        run: (paneId) => updateView(paneId, { dashboard: dashboard.id, trace: null }),
+    }));
+    const everything = [...dashboardItems, ...serviceItems];
+    const ranked = typed ? rankBy(typed, [...everything, ...actions], (item) => item.label) : [...actions, ...everything];
     if (!TRACE_ID.test(typed)) return ranked;
     const trace: Item = {
         id: `trace:${typed}`,
@@ -49,13 +56,14 @@ export function Palette() {
     const minutes = signozSettings.useSelect((settings) => settings.minutes);
     const environment = signozSettings.useSelect((settings) => settings.environment);
     const health = useResourceEnabled(true, signozServicesR, { minutes });
+    const dashboards = useResourceEnabled(true, signozDashboardsR);
     const [query, setQuery] = useState("");
     const [selected, setSelected] = useState(0);
     const mouseActive = useMouseActive();
     const listRef = useRef<HTMLDivElement>(null);
 
     const services = useMemo(() => mergeByService(health.data ?? [], environment).map((row) => row.service), [environment, health.data]);
-    const items = useMemo(() => paletteItems(query, services), [query, services]);
+    const items = useMemo(() => paletteItems(query, services, dashboards.data ?? []), [dashboards.data, query, services]);
 
     useEffect(() => {
         listRef.current?.querySelector<HTMLElement>(`.picker-item:nth-child(${selected + 1})`)?.scrollIntoView({ block: "nearest" });
@@ -88,7 +96,7 @@ export function Palette() {
                     <IconSearch size={15} className="picker-search-icon" />
                     <input
                         className="picker-input"
-                        placeholder="services, actions, or paste a trace id…"
+                        placeholder="Dashboards, services, actions, or paste a trace id…"
                         value={query}
                         onChange={(event) => {
                             setQuery(event.target.value);

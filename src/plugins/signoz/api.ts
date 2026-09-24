@@ -151,6 +151,65 @@ export interface FieldKey {
     dataType: string;
 }
 
+export interface VolumeBucket {
+    start: number;
+    counts: Record<string, number>;
+}
+
+export interface DashboardSummary {
+    id: string;
+    title: string;
+    description: string;
+    tags: string[];
+    panels: number;
+}
+
+export interface DashboardVariable {
+    name: string;
+    options: string[];
+    selected: string;
+}
+
+export interface PanelLayout {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
+export interface DashboardPanel {
+    id: string;
+    title: string;
+    kind: string;
+    unit: string;
+    layout: PanelLayout;
+    drawable: boolean;
+    query: unknown;
+}
+
+export interface Dashboard {
+    id: string;
+    title: string;
+    variables: DashboardVariable[];
+    panels: DashboardPanel[];
+}
+
+export interface Series {
+    label: string;
+    points: [number, number][];
+}
+
+export type PanelData =
+    | { shape: "series"; series: Series[] }
+    | { shape: "table"; columns: { name: string; aggregation: boolean }[]; rows: unknown[][] }
+    | { shape: "value"; value: number | null };
+
+export interface PanelRequest extends Scope {
+    kind: string;
+    query: unknown;
+    variables: Record<string, string>;
+}
+
 export function failureMessage(error: unknown): string {
     return isPluginFailure(error) ? error.message : String(error);
 }
@@ -185,6 +244,10 @@ export const signozApi = {
     searchLogs: (search: LogSearch) => read<LogPage>("searchLogs", search),
     searchTraces: (search: TraceSearch) => read<TracePage>("searchTraces", search),
     trace: (traceId: string) => read<Trace>("trace", { traceId }),
+    logVolume: (search: LogSearch & { buckets?: number }) => read<VolumeBucket[]>("logVolume", search),
+    dashboards: () => read<DashboardSummary[]>("dashboards"),
+    dashboard: (id: string) => read<Dashboard>("dashboard", { id }),
+    panel: (request: PanelRequest) => read<PanelData>("panel", request),
     fieldKeys: (signal: Signal, search: string) => read<FieldKey[]>("fieldKeys", { signal, search }),
     fieldValues: (signal: Signal, name: string, search: string) => read<string[]>("fieldValues", { signal, name, search }),
 

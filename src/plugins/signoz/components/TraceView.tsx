@@ -33,16 +33,22 @@ export function TraceView({ traceId, onBack }: { traceId: string; onBack: () => 
     return (
         <div className="sgz-trace">
             <div className="sgz-trace-head">
-                <button type="button" className="sgz-back" onClick={onBack} aria-label="Back to logs">
+                <button type="button" className="sgz-back" onClick={onBack}>
                     <IconChevron size={11} className="sgz-back-chev" />
-                    logs
+                    Back
                 </button>
                 <span className="sgz-trace-id">{traceId}</span>
                 {data && (
-                    <span className="sgz-trace-meta">
-                        {formatMs(data.durationMs)} · {data.spans.length} spans
-                        {data.errorCount > 0 && <span className="sgz-sev danger"> {data.errorCount} errors</span>} · {data.services.join(", ")}
-                    </span>
+                    <>
+                        {data.errorCount > 0 && (
+                            <span className="sgz-sev danger">
+                                {data.errorCount} {data.errorCount === 1 ? "error" : "errors"}
+                            </span>
+                        )}
+                        <span className="sgz-trace-meta">
+                            {formatMs(data.durationMs)} · {data.spans.length} spans · {data.services.join(", ")}
+                        </span>
+                    </>
                 )}
             </div>
             {data?.truncated && <div className="sgz-banner">This trace has more spans than Sikemux reads at once; the latest ones are missing.</div>}
@@ -70,6 +76,7 @@ export function TraceView({ traceId, onBack }: { traceId: string; onBack: () => 
                     ))}
                 </section>
                 <section className="sgz-trace-logs" aria-label="Log lines in this trace">
+                    <h3 className="sgz-section-label">Log lines in this trace</h3>
                     {logs.status === "loading" && !logs.data && <SkeletonRows rows={4} label="Loading log lines" />}
                     {logs.error && <EmptyState tone="error" message={failureMessage(logs.error)} />}
                     {logs.data && traceLines.length === 0 && <EmptyState message="No log lines carry this trace id." />}

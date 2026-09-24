@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mergeByService } from "./components/ServiceSidebar";
-import { addFilter, removeFilter, scopeOf, setLive, signozSettings, viewOf, type SignozSettings } from "./state";
+import { addFilter, removeFilter, scopeOf, setLive, signozSettings, viewOf, zoomTo, type SignozSettings } from "./state";
 
 describe("signozSettings", () => {
     it("falls back to usable settings whatever was saved", () => {
@@ -11,7 +11,13 @@ describe("signozSettings", () => {
             serviceByProject: { "/repo": "api", "/bad": 3 },
         } as unknown as SignozSettings;
         signozSettings.update(() => saved);
-        expect(signozSettings.get()).toEqual({ minutes: 15, environment: null, serviceSort: "errors", serviceByProject: { "/repo": "api" } });
+        expect(signozSettings.get()).toEqual({
+            minutes: 15,
+            environment: null,
+            serviceSort: "errors",
+            serviceByProject: { "/repo": "api" },
+            dashboardVariables: {},
+        });
     });
 });
 
@@ -38,6 +44,13 @@ describe("scopeOf", () => {
         const held = scopeOf(viewOf("pane-held"), settings);
         expect(held.minutes).toBeUndefined();
         expect(held.end! - held.start!).toBe(15 * 60_000);
+    });
+
+    it("holds a moment picked out of a chart until live is back on", () => {
+        zoomTo("pane-zoom", { start: 1_000, end: 5_000 });
+        expect(scopeOf(viewOf("pane-zoom"), { minutes: 15, environment: null })).toMatchObject({ start: 1_000, end: 5_000 });
+        setLive("pane-zoom", true);
+        expect(scopeOf(viewOf("pane-zoom"), { minutes: 15, environment: null })).toMatchObject({ minutes: 15 });
     });
 });
 

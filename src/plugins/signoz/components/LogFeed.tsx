@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { swallow } from "../../../plugin-api/host";
 import { EmptyState, VirtualLogList } from "../../../plugin-api/ui";
 import { failureMessage, signozApi, type LogLine, type LogSearch } from "../api";
-import { addFilter, scopeOf, signozSettings, updateView, useExploreView } from "../state";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { signozVolumeR } from "../resources";
+import { addFilter, scopeOf, setLive, signozSettings, updateView, useExploreView, zoomTo } from "../state";
+import { VolumeChart } from "./charts";
 import { LogRow } from "./LogRow";
 
 const KEPT_LINES = 3_000;
@@ -84,6 +87,28 @@ function useLines(paneId: string, active: boolean, search: LogSearch, live: bool
     return { lines, error, canLoadOlder: olderAt !== null, loadingOlder, loadOlder };
 }
 
+const VOLUME_BUCKETS = 90;
+
+function LogVolume({ paneId, active, search }: { paneId: string; active: boolean; search: LogSearch }) {
+    const volume = useResourceEnabled(active, signozVolumeR, { ...search, buckets: VOLUME_BUCKETS });
+    const range = useExploreView(paneId).range;
+    const buckets = volume.data;
+    return (
+        <div className="sgz-volume-wrap">
+            {buckets ? (
+                <VolumeChart buckets={buckets} onZoom={(start, end) => zoomTo(paneId, { start, end })} />
+            ) : (
+                <div className="sgz-volume-placeholder" />
+            )}
+            {range && (
+                <button type="button" className="sgz-zoom-out" onClick={() => setLive(paneId, true)}>
+                    Back to live
+                </button>
+            )}
+        </div>
+    );
+}
+
 export function LogFeed({ paneId, active }: { paneId: string; active: boolean }) {
     const view = useExploreView(paneId);
     const search = useLogSearch(paneId);
@@ -102,8 +127,16 @@ export function LogFeed({ paneId, active }: { paneId: string; active: boolean })
         });
 
     const quiet = view.severities.length > 0 && view.severities.every((severity) => severity === "ERROR" || severity === "FATAL");
+    const showService = !view.service;
     return (
         <div className="sgz-feed">
+            <LogVolume paneId={paneId} active={active} search={search} />
+            <div className={`sgz-columns${showService ? "" : " no-service"}`} aria-hidden="true">
+                <span>Time</span>
+                <span>Level</span>
+                {showService && <span>Service</span>}
+                <span>Message</span>
+            </div>
             {error && <div className="sgz-banner">{error}</div>}
             {!view.live && canLoadOlder && (
                 <button type="button" className="sgz-older" onClick={loadOlder} disabled={loadingOlder}>
@@ -127,6 +160,7 @@ export function LogFeed({ paneId, active }: { paneId: string; active: boolean })
                 renderRow={(line) => (
                     <LogRow
                         line={line}
+                        showService={showService}
                         expanded={expanded.has(line.id)}
                         onToggle={() => toggle(line.id)}
                         onOpenTrace={(trace) => updateView(paneId, { trace })}
