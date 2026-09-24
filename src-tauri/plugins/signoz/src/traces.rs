@@ -125,7 +125,7 @@ pub async fn search(data_dir: &Path, search: TraceSearch) -> SignozResult<TraceP
     });
     let request = query::builder(
         "raw",
-        search.scope.window(),
+        search.scope.window()?,
         query::with_filter(spec, search_expression(&search)?),
     );
     let result = client::query_range(data_dir, &request).await?;
@@ -312,7 +312,8 @@ pub async fn trace(data_dir: &Path, request: TraceRequest) -> SignozResult<Trace
         "order": [{ "key": { "name": "timestamp" }, "direction": "asc" }],
         "limit": MAX_SPANS,
     });
-    let window = query::window(Some(request.minutes.unwrap_or(DEFAULT_LOOKBACK_MINUTES)));
+    let lookback = request.minutes.unwrap_or(DEFAULT_LOOKBACK_MINUTES);
+    let window = query::window(Some(lookback));
     let result = client::query_range(
         data_dir,
         &query::builder(
@@ -327,6 +328,12 @@ pub async fn trace(data_dir: &Path, request: TraceRequest) -> SignozResult<Trace
         .and_then(Value::as_array)
         .map(|rows| rows.iter().filter_map(parse_span).collect())
         .unwrap_or_default();
+    if raw.is_empty() {
+        return Err(SignozError::NotFound(format!(
+            "no spans for trace {trace_id} in the last {}; it may be older, or was never traced",
+            query::minutes_label(lookback)
+        )));
+    }
     let truncated = raw.len() as u32 >= MAX_SPANS;
     let start_ns = raw.iter().map(|span| span.start_ns).min().unwrap_or(0);
     let end_ns = raw

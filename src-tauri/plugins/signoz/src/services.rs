@@ -63,7 +63,7 @@ pub async fn health(data_dir: &Path, request: ServiceQuery) -> SignozResult<Vec<
         data_dir,
         &query::builder(
             "scalar",
-            request.scope.window(),
+            request.scope.window()?,
             query::with_filter(spec, expression),
         ),
     )
@@ -169,7 +169,7 @@ fn aggregations() -> Value {
 /// same four over time for its charts.
 pub async fn overview(data_dir: &Path, request: ServiceRequest) -> SignozResult<Overview> {
     let expression = request.expression(ENTRY_SPANS)?;
-    let (start, end) = request.scope.window();
+    let (start, end) = request.scope.window()?;
     let step_seconds = ((end - start) / 1_000 / CHART_POINTS).max(60);
     let totals = query::builder(
         "scalar",
@@ -195,10 +195,16 @@ pub async fn overview(data_dir: &Path, request: ServiceRequest) -> SignozResult<
 }
 
 /// Points in time order, leaving out the half-filled buckets at either end,
-/// which would otherwise read as a sudden drop.
+/// which would otherwise read as a sudden drop. SigNoz lists a time series'
+/// aggregations in no fixed order, so each is found by the index it carries.
 fn points(result: &Value, index: usize, scale: f64) -> Vec<Point> {
     let mut points: Vec<Point> = result
-        .pointer(&format!("/aggregations/{index}/series/0/values"))
+        .get("aggregations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|aggregation| aggregation.get("index").and_then(Value::as_u64) == Some(index as u64))
+        .and_then(|aggregation| aggregation.pointer("/series/0/values"))
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -261,7 +267,7 @@ pub async fn operations(data_dir: &Path, request: ServiceRequest) -> SignozResul
         data_dir,
         &query::builder(
             "scalar",
-            request.scope.window(),
+            request.scope.window()?,
             query::with_filter(spec, request.expression(ENTRY_SPANS)?),
         ),
     )
@@ -324,7 +330,7 @@ pub async fn errors(data_dir: &Path, request: ServiceRequest) -> SignozResult<Ve
         data_dir,
         &query::builder(
             "scalar",
-            request.scope.window(),
+            request.scope.window()?,
             query::with_filter(
                 spec,
                 request.expression("severity_text IN ('ERROR', 'FATAL')")?,
@@ -466,10 +472,11 @@ mod tests {
     }
 
     #[test]
-    fn charts_leave_out_half_filled_buckets_and_run_in_time_order() {
+    fn charts_find_each_series_by_its_index_and_leave_out_half_filled_buckets() {
         let totals = json!({ "data": [[600, 6, 2_000_000_000.0, 40_000_000.0]] });
         let series = json!({ "aggregations": [
-            { "series": [{ "values": [
+            { "index": 1, "series": [{ "values": [{ "timestamp": 60_000, "value": 7 }] }] },
+            { "index": 0, "series": [{ "values": [
                 { "timestamp": 180_000, "value": 30, "partial": true },
                 { "timestamp": 120_000, "value": 200 },
                 { "timestamp": 60_000, "value": 100 },
@@ -480,7 +487,8 @@ mod tests {
         assert!((overview.per_minute - 60.0).abs() < 1e-9);
         assert!((overview.error_rate - 0.01).abs() < 1e-12);
         assert!((overview.p99_ms - 2_000.0).abs() < 1e-9);
-        assert!(overview.failures.is_empty());
+        assert_eq!(overview.failures, vec![(60_000, 3.5)]);
+        assert!(overview.p99.is_empty());
     }
 
     #[test]

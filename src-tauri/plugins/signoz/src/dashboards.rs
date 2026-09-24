@@ -411,7 +411,7 @@ fn request_type(kind: &str) -> SignozResult<&'static str> {
 pub struct SavedPanelRequest {
     pub dashboard_id: String,
     pub panel_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::filter::plain_values")]
     pub variables: BTreeMap<String, String>,
     #[serde(flatten)]
     pub scope: Scope,
@@ -471,7 +471,7 @@ pub async fn saved_panel(data_dir: &Path, request: SavedPanelRequest) -> SignozR
 
 pub async fn panel(data_dir: &Path, request: PanelRequest) -> SignozResult<PanelData> {
     let request_type = request_type(&request.kind)?;
-    let (start, end) = request.scope.window();
+    let (start, end) = request.scope.window()?;
     let variables: Map<String, Value> = request
         .variables
         .iter()

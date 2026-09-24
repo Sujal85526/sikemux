@@ -71,7 +71,7 @@ fn expression(search: &LogSearch) -> SignozResult<Option<String>> {
         .severities
         .iter()
         .filter(|s| !s.trim().is_empty())
-        .map(|s| quote(s.trim()))
+        .map(|s| quote(&s.trim().to_uppercase()))
         .collect();
     let own = [
         present(&search.text).map(|text| format!("body CONTAINS {}", quote(text))),
@@ -183,7 +183,7 @@ pub async fn volume(data_dir: &Path, request: VolumeQuery) -> SignozResult<Vec<V
         severities: Vec::new(),
         ..request.search
     };
-    let (start, end) = search.scope.window();
+    let (start, end) = search.scope.window()?;
     let buckets = request
         .buckets
         .unwrap_or(DEFAULT_BUCKETS)
@@ -249,7 +249,7 @@ fn bucket(result: &Value, start: u64, end: u64, step_ms: u64) -> Vec<VolumeBucke
 pub async fn search(data_dir: &Path, search: LogSearch) -> SignozResult<LogPage> {
     let limit = search.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let offset = search.offset.unwrap_or(0);
-    let request = list_query(&search, search.scope.window(), limit, offset, true)?;
+    let request = list_query(&search, search.scope.window()?, limit, offset, true)?;
     let result = client::query_range(data_dir, &request).await?;
     let lines = lines_of(&result);
     let next_offset = (lines.len() as u32 == limit).then(|| offset.saturating_add(limit));

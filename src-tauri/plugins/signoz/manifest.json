@@ -64,11 +64,43 @@
         },
         "filters": {
           "type": "array",
-          "description": "Attribute filters: [{key, op, value}], op one of equals, not-equals, contains, not-contains, exists, not-exists."
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "equals",
+                  "not-equals",
+                  "contains",
+                  "not-contains",
+                  "exists",
+                  "not-exists"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "op"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'."
+          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
         }
       },
       "required": [
@@ -107,11 +139,43 @@
         },
         "filters": {
           "type": "array",
-          "description": "Attribute filters: [{key, op, value}], op one of equals, not-equals, contains, not-contains, exists, not-exists."
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "equals",
+                  "not-equals",
+                  "contains",
+                  "not-contains",
+                  "exists",
+                  "not-exists"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "op"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'."
+          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
         }
       },
       "required": [
@@ -150,11 +214,43 @@
         },
         "filters": {
           "type": "array",
-          "description": "Attribute filters: [{key, op, value}], op one of equals, not-equals, contains, not-contains, exists, not-exists."
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "equals",
+                  "not-equals",
+                  "contains",
+                  "not-contains",
+                  "exists",
+                  "not-exists"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "op"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'."
+          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
         }
       },
       "required": [
@@ -175,7 +271,10 @@
         },
         "severities": {
           "type": "array",
-          "description": "Only these levels, e.g. [\"ERROR\", \"FATAL\"]."
+          "items": {
+            "type": "string"
+          },
+          "description": "Only these levels, e.g. [\"ERROR\", \"FATAL\"]; any case."
         },
         "traceId": {
           "type": "string",
@@ -213,11 +312,43 @@
         },
         "filters": {
           "type": "array",
-          "description": "Attribute filters: [{key, op, value}], op one of equals, not-equals, contains, not-contains, exists, not-exists."
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "equals",
+                  "not-equals",
+                  "contains",
+                  "not-contains",
+                  "exists",
+                  "not-exists"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "op"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'."
+          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
         }
       },
       "required": []
@@ -231,7 +362,8 @@
           "type": "string"
         },
         "errorsOnly": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Only traces whose root span failed."
         },
         "minDurationMs": {
           "type": "number",
@@ -276,11 +408,43 @@
         },
         "filters": {
           "type": "array",
-          "description": "Attribute filters: [{key, op, value}], op one of equals, not-equals, contains, not-contains, exists, not-exists."
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "equals",
+                  "not-equals",
+                  "contains",
+                  "not-contains",
+                  "exists",
+                  "not-exists"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "op"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'."
+          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
         }
       },
       "required": []
@@ -293,6 +457,12 @@
         "traceId": {
           "type": "string",
           "minLength": 1
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10080,
+          "description": "How far back to look for the trace. Default 1440 (24 hours)."
         }
       },
       "required": [
@@ -335,11 +505,14 @@
         },
         "variables": {
           "type": "object",
-          "description": "Dashboard variable values by name; the rest keep the dashboard's choice."
-        },
-        "environment": {
-          "type": "string",
-          "description": "deployment.environment, e.g. production. Omit for every environment."
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          "description": "Dashboard variable values by name, e.g. {\"environment\": \"production\"}; the rest keep the dashboard's choice."
         },
         "minutes": {
           "type": "integer",

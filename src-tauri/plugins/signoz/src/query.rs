@@ -19,6 +19,18 @@ pub fn window(minutes: Option<u32>) -> (u64, u64) {
     (end.saturating_sub(u64::from(minutes) * 60_000), end)
 }
 
+/// "30 minutes", "24 hours", "7 days": a look-back as a person would say it.
+pub fn minutes_label(minutes: u32) -> String {
+    let (count, unit) = if minutes.is_multiple_of(24 * 60) {
+        (minutes / (24 * 60), "day")
+    } else if minutes.is_multiple_of(60) {
+        (minutes / 60, "hour")
+    } else {
+        (minutes, "minute")
+    };
+    format!("{count} {unit}{}", if count == 1 { "" } else { "s" })
+}
+
 /// A value inside a filter expression, quoted so it can only ever be a value.
 pub fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
@@ -102,6 +114,14 @@ mod tests {
         assert_eq!(quote("api"), "'api'");
         assert_eq!(quote("can't"), "'can\\'t'");
         assert_eq!(quote("a\\' OR 1=1"), "'a\\\\\\' OR 1=1'");
+    }
+
+    #[test]
+    fn says_a_look_back_the_way_a_person_would() {
+        assert_eq!(minutes_label(1), "1 minute");
+        assert_eq!(minutes_label(90), "90 minutes");
+        assert_eq!(minutes_label(24 * 60), "1 day");
+        assert_eq!(minutes_label(120), "2 hours");
     }
 
     #[test]

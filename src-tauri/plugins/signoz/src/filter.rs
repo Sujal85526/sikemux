@@ -1,4 +1,7 @@
-use serde::Deserialize;
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 
 use crate::error::{SignozError, SignozResult};
 use crate::query::{self, quote};
@@ -20,8 +23,37 @@ pub enum FilterOp {
 pub struct Filter {
     pub key: String,
     pub op: FilterOp,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "plain_value")]
     pub value: String,
+}
+
+/// A value as written in a filter or a dashboard variable. Numbers and booleans
+/// are read as their text, since SigNoz compares `status = '503'` and `status = 503` alike.
+fn text_of(value: Value) -> Result<String, String> {
+    match value {
+        Value::String(text) => Ok(text),
+        Value::Number(number) => Ok(number.to_string()),
+        Value::Bool(flag) => Ok(flag.to_string()),
+        Value::Null => Ok(String::new()),
+        other => Err(format!("expected text or a number, not {other}")),
+    }
+}
+
+pub fn plain_value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    text_of(Value::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+}
+
+pub fn plain_values<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, String>, D::Error> {
+    BTreeMap::<String, Value>::deserialize(deserializer)?
+        .into_iter()
+        .map(|(name, value)| {
+            text_of(value)
+                .map(|text| (name.clone(), text))
+                .map_err(|problem| serde::de::Error::custom(format!("`{name}`: {problem}")))
+        })
+        .collect()
 }
 
 /// What every query narrows by, whichever signal it reads.
@@ -38,6 +70,43 @@ pub struct Scope {
     pub start: Option<u64>,
     pub end: Option<u64>,
     pub minutes: Option<u32>,
+}
+
+/// Each part of a query is bracketed and joined with AND, so an expression with
+/// a stray closing bracket could step outside its own part and undo the rest.
+fn balanced(expression: &str) -> SignozResult<&str> {
+    let mut depth = 0_i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for c in expression.chars() {
+        if let Some(open) = quote {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == open {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' => quote = Some(c),
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 || quote.is_some() {
+        return Err(SignozError::BadArg(
+            "the expression's brackets or quotes do not balance".into(),
+        ));
+    }
+    Ok(expression)
 }
 
 /// Attribute names are written into the expression as they are, so only
@@ -91,17 +160,26 @@ impl Scope {
             clauses.push(clause(filter)?);
         }
         if let Some(expression) = present(&self.expression) {
-            clauses.push(expression.to_string());
+            clauses.push(balanced(expression)?.to_string());
         }
         Ok(clauses)
     }
 
-    pub fn window(&self) -> (u64, u64) {
+    /// A fixed range, or the last `minutes`. A range that runs backwards, has
+    /// only one end, or spans more than a week is refused rather than replaced.
+    pub fn window(&self) -> SignozResult<(u64, u64)> {
         match (self.start, self.end) {
-            (Some(start), Some(end)) if start < end => {
-                (start.max(end.saturating_sub(MAX_WINDOW_MS)), end)
-            }
-            _ => query::window(self.minutes),
+            (None, None) => Ok(query::window(self.minutes)),
+            (Some(start), Some(end)) if start >= end => Err(SignozError::BadArg(
+                "the window's start must come before its end".into(),
+            )),
+            (Some(start), Some(end)) if end - start > MAX_WINDOW_MS => Err(SignozError::BadArg(
+                "a window can span at most 7 days".into(),
+            )),
+            (Some(start), Some(end)) => Ok((start, end)),
+            _ => Err(SignozError::BadArg(
+                "give both start and end, or neither".into(),
+            )),
         }
     }
 }
@@ -173,27 +251,47 @@ mod tests {
     }
 
     #[test]
-    fn keeps_a_fixed_range_but_never_more_than_a_week() {
-        let week = MAX_WINDOW_MS;
-        let fixed = Scope {
-            start: Some(1_000),
-            end: Some(5_000),
-            ..Scope::default()
-        };
-        assert_eq!(fixed.window(), (1_000, 5_000));
-        let huge = Scope {
-            start: Some(0),
-            end: Some(week * 3),
-            ..Scope::default()
-        };
-        assert_eq!(huge.window(), (week * 2, week * 3));
-        let backwards = Scope {
-            start: Some(5_000),
-            end: Some(1_000),
+    fn keeps_a_fixed_range_and_refuses_one_it_cannot_honour() {
+        let range = |start: Option<u64>, end: Option<u64>| Scope {
+            start,
+            end,
             minutes: Some(5),
             ..Scope::default()
         };
-        let (start, end) = backwards.window();
+        assert_eq!(
+            range(Some(1_000), Some(5_000)).window().unwrap(),
+            (1_000, 5_000)
+        );
+        let (start, end) = range(None, None).window().unwrap();
         assert_eq!(end - start, 5 * 60_000);
+        assert!(range(Some(5_000), Some(1_000)).window().is_err());
+        assert!(range(Some(1_000), None).window().is_err());
+        assert!(range(None, Some(1_000)).window().is_err());
+        assert!(range(Some(0), Some(MAX_WINDOW_MS + 1)).window().is_err());
+    }
+
+    #[test]
+    fn an_expression_cannot_close_the_bracket_around_it() {
+        let scope = |expression: &str| Scope {
+            service: Some("api".into()),
+            expression: Some(expression.into()),
+            ..Scope::default()
+        };
+        assert!(scope("x = 1) OR (1 = 1").clauses().is_err());
+        assert!(scope("(a = 1").clauses().is_err());
+        assert!(scope("path = 'it''s").clauses().is_err());
+        assert!(scope("path = ')' AND (a = 1 OR b = 2)").clauses().is_ok());
+    }
+
+    #[test]
+    fn reads_numbers_and_booleans_as_filter_values() {
+        let filters: Vec<Filter> = serde_json::from_value(serde_json::json!([
+            { "key": "status", "op": "equals", "value": 503 },
+            { "key": "cached", "op": "equals", "value": true },
+            { "key": "path", "op": "exists" },
+        ]))
+        .unwrap();
+        let values: Vec<&str> = filters.iter().map(|filter| filter.value.as_str()).collect();
+        assert_eq!(values, ["503", "true", ""]);
     }
 }
