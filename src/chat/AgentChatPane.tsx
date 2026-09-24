@@ -1360,7 +1360,7 @@ function ChatComposer({
                         }
                         disabled={blocked || !drafted}
                         onClick={() => send()}>
-                        <IconArrowUp size={18} />
+                        <IconArrowUp size={15} />
                     </button>
                 )}
             </div>

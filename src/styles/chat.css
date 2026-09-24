@@ -1801,8 +1801,8 @@ button.chat-tool:hover,
 }
 
 .chat-send {
-    width: 37px;
-    height: 37px;
+    width: 30px;
+    height: 30px;
     margin-left: 3px;
     background: var(--ink);
     color: var(--void);
@@ -1818,8 +1818,8 @@ button.chat-tool:hover,
 }
 
 .chat-send.stop span {
-    width: 11px;
-    height: 11px;
+    width: 9px;
+    height: 9px;
     border-radius: 2px;
     background: currentColor;
 }
