@@ -1,6 +1,9 @@
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
+import { clampTerminalFontSize } from "../terminal/fontSize";
+import { clampChatTextScale } from "../chat/textScale";
+import { clampEditorTextScale } from "../editor/textScale";
 import { isTheme } from "../themes";
 import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
@@ -82,6 +85,9 @@ const PERSISTED_KEYS = [
     "themeId",
     "customThemes",
     "uiTextScale",
+    "terminalFontSize",
+    "chatTextScale",
+    "editorTextScale",
     "windowOpacity",
     "windowBlur",
     "cloudBrowser",
@@ -130,6 +136,9 @@ function packPrefs(s: StoreState): PersistedPrefs {
         themeId: s.themeId,
         customThemes: s.customThemes,
         uiTextScale: s.uiTextScale,
+        terminalFontSize: s.terminalFontSize,
+        chatTextScale: s.chatTextScale,
+        editorTextScale: s.editorTextScale,
         windowOpacity: s.windowOpacity,
         windowBlur: s.windowBlur,
         cloudBrowser: s.cloudBrowser,
@@ -828,6 +837,9 @@ export function applyHydrate(raw: string): HydrationResult {
         themeId: typeof prefs.themeId === "string" ? prefs.themeId : cur.themeId,
         customThemes: Array.isArray(prefs.customThemes) ? prefs.customThemes.filter(isTheme) : cur.customThemes,
         uiTextScale: typeof prefs.uiTextScale === "number" && [1, 1.1, 1.25].includes(prefs.uiTextScale) ? prefs.uiTextScale : cur.uiTextScale,
+        terminalFontSize: typeof prefs.terminalFontSize === "number" ? clampTerminalFontSize(prefs.terminalFontSize) : cur.terminalFontSize,
+        chatTextScale: typeof prefs.chatTextScale === "number" ? clampChatTextScale(prefs.chatTextScale) : cur.chatTextScale,
+        editorTextScale: typeof prefs.editorTextScale === "number" ? clampEditorTextScale(prefs.editorTextScale) : cur.editorTextScale,
         windowOpacity: typeof prefs.windowOpacity === "number" && Number.isFinite(prefs.windowOpacity) ? prefs.windowOpacity : cur.windowOpacity,
         windowBlur: typeof prefs.windowBlur === "number" && Number.isFinite(prefs.windowBlur) ? prefs.windowBlur : cur.windowBlur,
         cloudBrowser: typeof prefs.cloudBrowser === "string" ? prefs.cloudBrowser : cur.cloudBrowser,

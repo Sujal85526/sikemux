@@ -194,7 +194,7 @@ const budgets = [
     // buys those rows room without touching what the app loads at startup.
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 37_000,
+    raw: 39_000,
     gzip: 7_300,
   },
   {

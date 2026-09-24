@@ -18,6 +18,22 @@ function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     return !!target?.closest?.(".xterm");
 }
 
+const TEXT_SCALE_STEP = 0.1;
+
+function isChatKeyTarget(e: KeyboardEvent): boolean {
+    return keyTargetIn(e, ".agent-chat-pane");
+}
+
+function isEditorKeyTarget(e: KeyboardEvent): boolean {
+    return keyTargetIn(e, ".cm-editor");
+}
+
+// The command deck sends a synthetic event with no target, so the focused element stands in.
+function keyTargetIn(e: KeyboardEvent, selector: string): boolean {
+    const target = e.target instanceof Element ? e.target : document.activeElement;
+    return !!target?.closest?.(selector);
+}
+
 function isBrowserKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
     return !!target?.closest?.("[data-browser-pane]");
@@ -138,6 +154,21 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             return true;
         case "pane.close":
             cmd.closeActiveFocusTarget();
+            return true;
+        case "text.sizeIncrease":
+            if (isChatKeyTarget(event)) cmd.adjustChatTextScale(TEXT_SCALE_STEP);
+            else if (isEditorKeyTarget(event)) cmd.adjustEditorTextScale(TEXT_SCALE_STEP);
+            else cmd.adjustTerminalFontSize(1);
+            return true;
+        case "text.sizeDecrease":
+            if (isChatKeyTarget(event)) cmd.adjustChatTextScale(-TEXT_SCALE_STEP);
+            else if (isEditorKeyTarget(event)) cmd.adjustEditorTextScale(-TEXT_SCALE_STEP);
+            else cmd.adjustTerminalFontSize(-1);
+            return true;
+        case "text.sizeReset":
+            if (isChatKeyTarget(event)) cmd.resetChatTextScale();
+            else if (isEditorKeyTarget(event)) cmd.resetEditorTextScale();
+            else cmd.resetTerminalFontSize();
             return true;
         case "session.newContextual":
             if (active?.kind === "project" && activeAgentId(st, active)) cmd.openAgentPalette();

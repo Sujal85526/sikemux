@@ -187,6 +187,27 @@ const keybindingActions = [
         defaultBinding: "Alt+KeyW",
     },
     {
+        id: "text.sizeIncrease",
+        label: "Increase text size",
+        detail: "Larger text in the focused editor or chat, or in every terminal",
+        category: "Workspace",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Equal`,
+    },
+    {
+        id: "text.sizeDecrease",
+        label: "Decrease text size",
+        detail: "Smaller text in the focused editor or chat, or in every terminal",
+        category: "Workspace",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Minus`,
+    },
+    {
+        id: "text.sizeReset",
+        label: "Reset text size",
+        detail: "Return the focused editor or chat, or every terminal, to its default size",
+        category: "Workspace",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Digit0`,
+    },
+    {
         id: "window.previous",
         label: "Previous window",
         detail: "Move to the previous workspace window",
@@ -447,6 +468,8 @@ export function actionForEvent(
     if (direct) return direct;
     // The main and numpad Enter keys are interchangeable for command shortcuts.
     if (event.code === "NumpadEnter") return index.get(pressed.replace(/\+NumpadEnter$/, "+Enter")) ?? null;
+    // "+" is Shift and the "=" key, so a binding on plain Equal has to answer for both.
+    if (event.shiftKey && event.code === "Equal") return index.get(pressed.replace(/\+Shift\+Equal$/, "+Equal")) ?? null;
     return null;
 }
 

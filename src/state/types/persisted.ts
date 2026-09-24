@@ -61,6 +61,9 @@ export interface PersistedPrefs {
     themeId: string;
     customThemes?: Theme[];
     uiTextScale?: number;
+    terminalFontSize?: number;
+    chatTextScale?: number;
+    editorTextScale?: number;
     windowOpacity: number;
     windowBlur: number;
     cloudBrowser: string;
