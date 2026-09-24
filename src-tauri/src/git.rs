@@ -1944,6 +1944,7 @@ fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
     let out =
         run_command_with_timeout(&mut command, Some(message.as_bytes()), GIT_COMMAND_TIMEOUT)?;
     if out.status.success() {
+        crate::activity::record_commit(repo);
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
         Err(String::from_utf8_lossy(&out.stderr).into_owned())

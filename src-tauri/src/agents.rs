@@ -147,7 +147,7 @@ pub enum AgentKind {
 }
 
 impl AgentKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             AgentKind::Claude => "claude",
             AgentKind::Codex => "codex",
@@ -2530,6 +2530,22 @@ fn read_session_context(
     session_id: &str,
     config_path: Option<&str>,
 ) -> Option<SessionContext> {
+    let path = session_transcript_path(agent, cwd, session_id, config_path)?;
+    match agent {
+        AgentKind::Claude => last_line_matching(&path, claude_context_line),
+        AgentKind::Codex => last_line_matching(&path, codex_context_line),
+        _ => None,
+    }
+}
+
+/// Where Claude or Codex writes a session's transcript. Other agents keep
+/// their history in shapes Sikemux does not read line by line.
+pub(crate) fn session_transcript_path(
+    agent: AgentKind,
+    cwd: &str,
+    session_id: &str,
+    config_path: Option<&str>,
+) -> Option<PathBuf> {
     let safe_id = !session_id.is_empty()
         && session_id
             .chars()
@@ -2540,23 +2556,22 @@ fn read_session_context(
     match agent {
         AgentKind::Claude => {
             let root = agent_config_root("claude", config_path)?;
-            let path = root
-                .join("projects")
-                .join(cwd.replace('/', "-"))
-                .join(format!("{session_id}.jsonl"));
-            last_line_matching(&path, claude_context_line)
+            Some(
+                root.join("projects")
+                    .join(cwd.replace('/', "-"))
+                    .join(format!("{session_id}.jsonl")),
+            )
         }
         AgentKind::Codex => {
             let root = agent_config_root("codex", config_path)?;
             let mut paths = Vec::new();
             collect_jsonl(&root.join("sessions"), &mut paths, 0);
             let suffix = format!("-{session_id}.jsonl");
-            let path = paths.into_iter().find(|path| {
+            paths.into_iter().find(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| name.ends_with(&suffix))
-            })?;
-            last_line_matching(&path, codex_context_line)
+            })
         }
         _ => None,
     }

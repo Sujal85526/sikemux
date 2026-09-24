@@ -1,4 +1,5 @@
 mod acp;
+mod activity;
 mod agent_detection;
 mod agents;
 mod autopsy;
@@ -229,6 +230,9 @@ pub fn run() {
             agents::live_agent_sessions,
             agents::agent_sessions_watch_start,
             agents::agent_sessions_watch_stop,
+            activity::activity_turn_started,
+            activity::activity_turn_ended,
+            activity::activity_summary,
             fs::read_dir,
             fs::read_dirs,
             fs::path_kinds,

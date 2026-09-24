@@ -82,6 +82,7 @@ import { projectControllerBridge } from "./projects/controllerBridge";
 import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
 import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
+import { recordAgentTurns } from "./state/activityRecorder";
 import { useInstalledPlugins } from "./plugins/installed";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
@@ -762,6 +763,8 @@ export default function App() {
             }),
         [],
     );
+
+    useEffect(() => recordAgentTurns(), []);
 
     useEffect(() => {
         let disposed = false;

@@ -675,6 +675,7 @@ async fn run_connection(
                             Vec::new()
                         }
                     };
+                let resumed = resume_id.is_some();
                 let (session_id, mut setup) = if let Some(existing) = resume_id {
                     if !initialize.agent_capabilities.load_session {
                         return Err(agent_client_protocol::Error::invalid_params()
@@ -729,6 +730,22 @@ async fn run_connection(
                             .await?;
                         setup["configOptions"] = serde_json::to_value(response.config_options)?;
                     }
+                }
+
+                {
+                    let provider = provider.clone();
+                    let cwd = cwd.to_string_lossy().into_owned();
+                    let session_id = session_id.clone();
+                    let config_path = config_path.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        crate::activity::record_launch(
+                            &provider,
+                            &cwd,
+                            "chat",
+                            resumed.then_some(session_id.as_str()),
+                            config_path.as_deref(),
+                        )
+                    });
                 }
 
                 let start = AcpStartResponse {
