@@ -1808,8 +1808,12 @@ button.chat-tool:hover,
     color: var(--void);
 }
 
+.chat-send {
+    transition: background-color 120ms;
+}
+
 .chat-send:hover:not(:disabled) {
-    filter: brightness(1.08);
+    background: var(--acc);
 }
 
 .chat-send:disabled {
