@@ -32,6 +32,9 @@ function availableUpdate(overrides: Partial<PendingUpdate> = {}): PendingUpdate 
         currentVersion: "0.2.0",
         notes: "Fix updater progress",
         date: "2026-08-14T00:00:00Z",
+        commits: null,
+        compare: null,
+        contributors: [],
         state: "available",
         error: null,
         downloadedBytes: 0,
@@ -126,6 +129,9 @@ describe("updater progress", () => {
                 currentVersion: "0.2.0",
                 notes: "Fix updater progress",
                 date: "2026-08-14T00:00:00Z",
+                commits: 12,
+                compare: "https://github.com/nodelike/sikemux/compare/v0.2.0...v0.2.1",
+                contributors: [{ login: "nodelike", name: "NØDE", commits: 12, avatar: "https://avatars.githubusercontent.com/u/1?v=4" }],
             };
         });
         transport.register("update_install", installHandler);
@@ -139,6 +145,9 @@ describe("updater progress", () => {
             version: "0.2.1",
             notes: "Fix updater progress",
             date: "2026-08-14T00:00:00Z",
+            commits: 12,
+            compare: "https://github.com/nodelike/sikemux/compare/v0.2.0...v0.2.1",
+            contributors: [{ login: "nodelike", name: "NØDE", commits: 12, avatar: "https://avatars.githubusercontent.com/u/1?v=4" }],
         });
     });
 

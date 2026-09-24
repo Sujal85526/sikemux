@@ -95,7 +95,7 @@ const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((modu
  */
 const Onboarding = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.Onboarding })));
 const DiagnosticsOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.DiagnosticsOverlay })));
-const WhatsNewOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.WhatsNewOverlay })));
+const WhatsNewOverlay = lazy(() => import("./components/WhatsNewOverlay").then((module) => ({ default: module.WhatsNewOverlay })));
 
 interface BootInfo {
     home: string;

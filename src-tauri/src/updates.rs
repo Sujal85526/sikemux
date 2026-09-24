@@ -7,6 +7,7 @@ use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
 use crate::error::{AppError, AppResult};
 use crate::observability::{global_observability, Metadata, ScalarValue, SpanContext, SpanOutcome};
+use crate::release_credits::{self, Contributor};
 
 const STABLE_ENDPOINT: &str =
     "https://github.com/nodelike/sikemux/releases/latest/download/latest.json";
@@ -29,6 +30,24 @@ pub struct UpdateInfo {
     current_version: String,
     notes: Option<String>,
     date: Option<String>,
+    commits: Option<u32>,
+    compare: Option<String>,
+    contributors: Vec<Contributor>,
+}
+
+impl UpdateInfo {
+    fn of(update: &Update) -> Self {
+        let credits = release_credits::from_feed(&update.raw_json);
+        Self {
+            version: update.version.clone(),
+            current_version: update.current_version.clone(),
+            notes: update.body.clone(),
+            date: credits.date,
+            commits: credits.commits,
+            compare: credits.compare,
+            contributors: credits.contributors,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
@@ -164,12 +183,7 @@ fn feed_updater(app: &AppHandle, endpoint: &str, timeout: Duration) -> AppResult
 pub async fn update_check(app: AppHandle, channel: String) -> AppResult<Option<UpdateInfo>> {
     Ok(newest_update(&app, &channel, UPDATE_CHECK_TIMEOUT)
         .await?
-        .map(|update| UpdateInfo {
-            version: update.version,
-            current_version: update.current_version,
-            notes: update.body,
-            date: update.date.map(|date| date.to_string()),
-        }))
+        .map(|update| UpdateInfo::of(&update)))
 }
 
 #[tauri::command]
@@ -205,12 +219,7 @@ async fn update_install_inner(
     let update = newest_update(app, channel, UPDATE_INSTALL_TIMEOUT)
         .await?
         .ok_or_else(|| AppError::Other("no update is available".into()))?;
-    let installed = UpdateInfo {
-        version: update.version.clone(),
-        current_version: update.current_version.clone(),
-        notes: update.body.clone(),
-        date: update.date.map(|date| date.to_string()),
-    };
+    let installed = UpdateInfo::of(&update);
 
     let observer = global_observability();
     let mut download_metadata = Metadata::new();

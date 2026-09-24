@@ -21,6 +21,7 @@ mod lsp;
 pub mod observability;
 mod plugins;
 mod pty;
+mod release_credits;
 mod search;
 mod settings;
 mod ssh;
@@ -220,6 +221,8 @@ pub fn run() {
             autopsy::hang_reports,
             updates::update_check,
             updates::update_install,
+            release_credits::release_avatars,
+            release_credits::release_notes,
             state::state_load,
             state::state_save,
             agents::available_agents,
