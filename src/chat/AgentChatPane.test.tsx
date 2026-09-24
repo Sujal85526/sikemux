@@ -244,6 +244,34 @@ describe("AgentChatPane", () => {
         expect(screen.getByRole("group", { name: "Agent" })).toBeInTheDocument();
     });
 
+    it("keeps the model menu's focus from a refocus queued before it opened", async () => {
+        const frames = new Map<number, FrameRequestCallback>();
+        let nextFrame = 0;
+        const request = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+            frames.set(++nextFrame, callback);
+            return nextFrame;
+        });
+        const cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+        try {
+            render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
+            await waitFor(() => expect(screen.getByRole("button", { name: "Model" })).toBeEnabled());
+            fireEvent.click(screen.getByRole("button", { name: "Model" }));
+            const search = screen.getByRole("combobox", { name: "Search model" });
+            expect(search).toHaveFocus();
+
+            act(() => {
+                const queued = [...frames.values()];
+                frames.clear();
+                queued.forEach((callback) => callback(performance.now()));
+            });
+
+            expect(search).toHaveFocus();
+        } finally {
+            request.mockRestore();
+            cancel.mockRestore();
+        }
+    });
+
     it("changes the model live and persists only the confirmed configuration", async () => {
         const configs = (model: string) => [
             {

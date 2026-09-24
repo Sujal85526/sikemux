@@ -1185,10 +1185,16 @@ function ChatComposer({
        keep the caret wherever it was. */
     useEffect(() => {
         if (!visible) return;
-        const held = document.activeElement;
-        if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
-        if (held?.closest(".chat-picker-menu")) return;
-        const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
+        const focusIsElsewhere = () => {
+            const held = document.activeElement;
+            if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return true;
+            return Boolean(held?.closest(".chat-picker-menu"));
+        };
+        if (focusIsElsewhere()) return;
+        // Asked again when the frame runs: a menu opened since this was queued keeps its focus.
+        const frame = window.requestAnimationFrame(() => {
+            if (!focusIsElsewhere()) editorRef.current?.focus();
+        });
         return () => window.cancelAnimationFrame(frame);
     }, [connection, paneRef, visible]);
 
