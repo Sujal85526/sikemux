@@ -16,7 +16,6 @@ import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { isSessionKind, validatePersistedLayout } from "./persistValidation";
 import { isPluginId, isPluginKind } from "../plugins/kinds";
-import { RUNDECK_DEPLOY, RUNDECK_PLUGIN_ID } from "../plugins/rundeck/kinds";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
@@ -553,7 +552,7 @@ export function flushPersist(): Promise<boolean> {
 }
 
 /** Before v10 Rundeck was built in, and its sessions, windows, panes and command contexts were plain "rundeck". */
-const LEGACY_PLUGIN_KINDS: ReadonlyMap<unknown, string> = new Map([["rundeck", RUNDECK_DEPLOY]]);
+const LEGACY_PLUGIN_KINDS: ReadonlyMap<unknown, string> = new Map([["rundeck", "sikemux.rundeck:deploy"]]);
 
 function renameLegacyPluginKinds(decoded: Record<string, unknown>): void {
     const rename = (value: unknown) => LEGACY_PLUGIN_KINDS.get(value) ?? value;
@@ -586,7 +585,7 @@ function moveRundeckSettings(decoded: Record<string, unknown>): void {
     }
     const legacy = isRecord(prefs.rundeck) ? prefs.rundeck : {};
     const pluginSettings = isRecord(prefs.pluginSettings) ? prefs.pluginSettings : {};
-    decoded.prefs = { ...prefs, pluginSettings: { ...pluginSettings, [RUNDECK_PLUGIN_ID]: { ...legacy, deployTargets } } };
+    decoded.prefs = { ...prefs, pluginSettings: { ...pluginSettings, "sikemux.rundeck": { ...legacy, deployTargets } } };
 }
 
 function normalisePluginSettings(value: unknown): Record<string, unknown> {

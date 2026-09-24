@@ -89,7 +89,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("actions", "New action", "Description", "detail"),
     row("actions", "New action", "Command", "shell script"),
     row("actions", "New action", "Where output lands", "placement terminal split popup background"),
-    row("actions", "New action", "Contexts", "project ssh aws rundeck bruno"),
+    row("actions", "New action", "Contexts", "project ssh aws bruno plugin"),
 
     section("cli", "Shell integration", "install terminal path sikemux-editor"),
     section("cli", "Usage", "editor git commit open"),

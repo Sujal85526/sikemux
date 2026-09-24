@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",
-    "lint": "eslint --max-warnings=0 \"src/**/*.{ts,tsx}\" vite.config.ts",
+    "lint": "eslint --max-warnings=0 \"src/**/*.{ts,tsx}\" vite.config.ts && node scripts/check-plugin-boundaries.mjs",
     "test": "NODE_ENV=test vitest run",
     "test:watch": "NODE_ENV=test vitest",
     "test:coverage": "NODE_ENV=test vitest run --coverage",
