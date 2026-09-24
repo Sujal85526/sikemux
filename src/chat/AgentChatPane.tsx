@@ -803,7 +803,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
             <summary>
                 <IconChevron size={9} className="chat-subagent-chevron" />
                 <span className="chat-subagent-mark">
-                    <AgentIcon type={agentType} size={20} className={`agent-glyph ${agentType}`} />
+                    <AgentIcon type={agentType} size={18} className={`agent-glyph ${agentType}`} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
                 <span className="chat-subagent-task" title={subagent.task || undefined}>
