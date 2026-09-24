@@ -21,7 +21,7 @@ import { AgentIcon, IconAgent, IconAws, IconBruno, IconClose, IconCommand, IconF
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
-import { AgentStateIndicator } from "./AgentStateIndicator";
+import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { PLUGIN_GROUP_LABELS, railGroupOf, type RailGroup } from "../state/railGroups";
@@ -198,7 +198,7 @@ function ProjectBlock({ s }: { s: Session }) {
                                 {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                             </span>
                         )}
-                        {(rollup || rollupBackground) && (
+                        {showsAgentState(rollup ?? "idle", rollupBackground) && (
                             <span className="proj-row-status">
                                 <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
                             </span>
