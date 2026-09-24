@@ -106,15 +106,35 @@ acting, so you rarely need a separate read.
 state, act on a number from that read, and treat the numbers in the result as
 the new set. Never reuse a number across two reads.
 
-`browser_click` takes a number from the latest state. `browser_back` and
+Clicks, keys and typing arrive as real input, the same as the person's, so
+pages that check for a trusted event and editors that keep their own model of
+the text both respond to them.
+
+`browser_click` takes a number from the latest state, or `x` and `y` in CSS
+pixels from the top left of the viewport, which is where a screenshot's pixels
+sit too. Coordinates reach things that have no number, such as a canvas or a
+field inside a frame from another site. `double: true` double-clicks.
+`hover: true` only moves the pointer there, to open a hover menu; while
+Sikemux is in the background the page is told about the hover but CSS
+`:hover` styles do not apply. A result with `covered` names what was on top
+of the element and took the click instead. `browser_back` and
 `browser_forward` move through the current tab's history.
 
-`browser_type` replaces an element's value rather than appending. With `index`
-omitted it types into whatever is focused. `submit: true` presses Enter
-afterwards.
+`browser_type` with an `index` focuses that element and replaces its value.
+Without one it types at the caret of whatever is focused, so it can add to
+text rather than replace it. `submit: true` presses Enter afterwards. The
+result carries the field's `value` afterwards, so you can check it took. A
+`<select>` picks the option whose value or label matches the text.
 
-`browser_press` sends one key to the focused element — `Enter`, `Tab`,
-`Escape`, `ArrowDown`, or a single character.
+`browser_press` sends one key to the focused element: `Enter`, `Tab`,
+`Escape`, `Backspace`, `Delete`, `ArrowDown`, `Home`, `PageDown`, `Space`, or
+a single character. Hold modifiers with `+`, as in `Meta+a` to select all or
+`Shift+Tab` to go back a field. `Meta` is the Command key.
+
+`browser_drag` presses on `fromIndex` (or `fromX`, `fromY`), moves to
+`toIndex` (or `toX`, `toY`) and releases there. Sliders and sortable lists
+see a real pointer; items marked draggable get the page's own drag and drop
+events.
 
 `browser_scroll` moves the page by `deltaY` pixels, default 600, negative for
 up. Pass an `index` to scroll inside a scrollable element instead.

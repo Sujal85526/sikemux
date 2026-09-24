@@ -14,8 +14,11 @@ const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
 const MAX_WAIT_MS: u64 = 30_000;
+const DRAG_STEPS: u32 = 12;
+const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
 
 use crate::generated_agent_tools::BROWSER_METHODS as METHODS;
+use native::Mouse;
 
 pub fn is_browser_method(method: &str) -> bool {
     METHODS.contains(&method)
@@ -102,11 +105,67 @@ async fn run(
         }
         "browser.state" => state(&manager, agent_id).await,
         "browser.click" => {
-            let index = index("index").ok_or("index is required")?;
             let (tab_id, view) = active(&manager, agent_id)?;
-            let clicked = call(&view, "click", &[json!(index)]).await?;
+            let (x, y, mut result) = target(&view, params, "index", "x", "y").await?;
+            let hover = params.get("hover").and_then(Value::as_bool) == Some(true);
+            let clicks = if params.get("double").and_then(Value::as_bool) == Some(true) {
+                2
+            } else {
+                1
+            };
+            native::mouse(&view, Mouse::Move, x, y, 0).await?;
+            if hover {
+                result["hover"] = call(&view, "hover", &[json!(x), json!(y)]).await?;
+            }
+            if !hover {
+                for count in 1..=clicks {
+                    native::mouse(&view, Mouse::Down, x, y, count).await?;
+                    native::mouse(&view, Mouse::Up, x, y, count).await?;
+                }
+            }
+            result["action"] = json!(if hover {
+                "hovered"
+            } else if clicks == 2 {
+                "double-clicked"
+            } else {
+                "clicked"
+            });
             settle(&manager, agent_id, &tab_id).await;
-            merge(clicked, state(&manager, agent_id).await?)
+            merge(result, state(&manager, agent_id).await?)
+        }
+        "browser.drag" => {
+            let (tab_id, view) = active(&manager, agent_id)?;
+            let (from_x, from_y, from) =
+                target(&view, params, "fromIndex", "fromX", "fromY").await?;
+            let (to_x, to_y, to) = target(&view, params, "toIndex", "toX", "toY").await?;
+            let dragged = call(
+                &view,
+                "html5Drag",
+                &[json!(from_x), json!(from_y), json!(to_x), json!(to_y)],
+            )
+            .await?;
+            if dragged.get("dropped").is_none() {
+                native::mouse(&view, Mouse::Move, from_x, from_y, 0).await?;
+                native::mouse(&view, Mouse::Down, from_x, from_y, 1).await?;
+                for step in 1..=DRAG_STEPS {
+                    let progress = f64::from(step) / f64::from(DRAG_STEPS);
+                    tokio::time::sleep(DRAG_STEP_DELAY).await;
+                    native::mouse(
+                        &view,
+                        Mouse::Drag,
+                        from_x + (to_x - from_x) * progress,
+                        from_y + (to_y - from_y) * progress,
+                        1,
+                    )
+                    .await?;
+                }
+                native::mouse(&view, Mouse::Up, to_x, to_y, 1).await?;
+            }
+            settle(&manager, agent_id, &tab_id).await;
+            merge(
+                json!({ "from": from, "to": to, "dragged": dragged }),
+                state(&manager, agent_id).await?,
+            )
         }
         "browser.type" => {
             let value = text("text").ok_or("text is required")?;
@@ -115,19 +174,25 @@ async fn run(
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             let (tab_id, view) = active(&manager, agent_id)?;
-            let typed = call(
-                &view,
-                "type",
-                &[
-                    index("index")
-                        .map(|value| json!(value))
-                        .unwrap_or(Value::Null),
-                    json!(value),
-                    json!(submit),
-                ],
-            )
-            .await?;
+            let at = index("index")
+                .map(|value| json!(value))
+                .unwrap_or(Value::Null);
+            let prepared = call(&view, "focus", &[at.clone(), json!(value)]).await?;
+            if prepared.get("selected").is_some() {
+                return Ok(prepared);
+            }
+            let replacing = prepared.get("replacing").and_then(Value::as_bool) == Some(true);
+            if !value.is_empty() {
+                native::insert_text(&view, &value).await?;
+            } else if replacing {
+                native::key(&view, "Backspace").await?;
+            }
+            let typed = merge(
+                json!({ "typed": value.chars().count(), "replaced": replacing, "submitted": submit }),
+                call(&view, "valueOf", &[at]).await?,
+            )?;
             if submit {
+                native::key(&view, "Enter").await?;
                 settle(&manager, agent_id, &tab_id).await;
                 return merge(typed, state(&manager, agent_id).await?);
             }
@@ -136,9 +201,9 @@ async fn run(
         "browser.press" => {
             let key = text("key").ok_or("key is required")?;
             let (tab_id, view) = active(&manager, agent_id)?;
-            let pressed = call(&view, "press", &[json!(key)]).await?;
+            native::key(&view, &key).await?;
             settle(&manager, agent_id, &tab_id).await;
-            merge(pressed, state(&manager, agent_id).await?)
+            merge(json!({ "pressed": key }), state(&manager, agent_id).await?)
         }
         "browser.scroll" => {
             let delta = params
@@ -222,6 +287,137 @@ async fn run(
             state(&manager, agent_id).await
         }
         _ => Err("unknown browser method".into()),
+    }
+}
+
+/// Where to point: the centre of a numbered element, scrolled into view, or
+/// CSS pixel coordinates in the tab's viewport.
+async fn target(
+    view: &Webview,
+    params: &Value,
+    index_key: &str,
+    x_key: &str,
+    y_key: &str,
+) -> Result<(f64, f64, Value), String> {
+    if let Some(index) = params.get(index_key).and_then(Value::as_u64) {
+        let point = call(view, "point", &[json!(index)]).await?;
+        let coordinate = |key: &str| {
+            point
+                .get(key)
+                .and_then(Value::as_f64)
+                .ok_or_else(|| "the page returned no position".to_string())
+        };
+        return Ok((coordinate("x")?, coordinate("y")?, point));
+    }
+    match (
+        params.get(x_key).and_then(Value::as_f64),
+        params.get(y_key).and_then(Value::as_f64),
+    ) {
+        (Some(x), Some(y)) => Ok((x, y, json!({ "x": x, "y": y }))),
+        _ => Err(format!("pass {index_key}, or both {x_key} and {y_key}")),
+    }
+}
+
+/// Input that reaches the page the way a person's does, as trusted events.
+mod native {
+    use tauri::Webview;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Mouse {
+        Move,
+        Down,
+        Drag,
+        Up,
+    }
+
+    #[cfg(target_os = "macos")]
+    mod platform {
+        use super::super::super::input;
+        use super::super::on_tab;
+        use super::Mouse;
+        use tauri::Webview;
+
+        pub async fn mouse(
+            view: &Webview,
+            kind: Mouse,
+            x: f64,
+            y: f64,
+            clicks: isize,
+        ) -> Result<(), String> {
+            let kind = match kind {
+                Mouse::Move => input::Mouse::Move,
+                Mouse::Down => input::Mouse::Down,
+                Mouse::Drag => input::Mouse::Drag,
+                Mouse::Up => input::Mouse::Up,
+            };
+            on_tab(view, move |tab| input::mouse(tab, kind, x, y, clicks)).await
+        }
+
+        pub async fn key(view: &Webview, name: &str) -> Result<(), String> {
+            let stroke = input::parse_key(name)?;
+            on_tab(view, move |tab| input::key(tab, &stroke)).await
+        }
+
+        pub async fn insert_text(view: &Webview, text: &str) -> Result<(), String> {
+            let text = text.to_owned();
+            on_tab(view, move |tab| input::insert_text(tab, &text)).await
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    mod platform {
+        use super::Mouse;
+        use tauri::Webview;
+
+        const UNSUPPORTED: &str = "browser input is not available on this platform yet";
+
+        pub async fn mouse(_: &Webview, _: Mouse, _: f64, _: f64, _: isize) -> Result<(), String> {
+            Err(UNSUPPORTED.into())
+        }
+
+        pub async fn key(_: &Webview, _: &str) -> Result<(), String> {
+            Err(UNSUPPORTED.into())
+        }
+
+        pub async fn insert_text(_: &Webview, _: &str) -> Result<(), String> {
+            Err(UNSUPPORTED.into())
+        }
+    }
+
+    pub async fn mouse(
+        view: &Webview,
+        kind: Mouse,
+        x: f64,
+        y: f64,
+        clicks: isize,
+    ) -> Result<(), String> {
+        platform::mouse(view, kind, x, y, clicks).await
+    }
+
+    pub async fn key(view: &Webview, name: &str) -> Result<(), String> {
+        platform::key(view, name).await
+    }
+
+    pub async fn insert_text(view: &Webview, text: &str) -> Result<(), String> {
+        platform::insert_text(view, text).await
+    }
+}
+
+/// Runs `act` against the tab's native view on the main thread.
+#[cfg(target_os = "macos")]
+async fn on_tab<T: Send + 'static>(
+    view: &Webview,
+    act: impl FnOnce(*mut std::ffi::c_void) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    view.with_webview(move |platform| {
+        let _ = sender.send(act(platform.inner()));
+    })
+    .map_err(|error| error.to_string())?;
+    match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("the tab went away".into()),
+        Err(_) => Err("the tab took too long to answer".into()),
     }
 }
 
@@ -411,12 +607,15 @@ mod tests {
         assert_eq!(merged["title"], "Next");
     }
 
-    /// The topmost element under an icon button is its `<svg>`, and only an
-    /// HTML element has a `click()` method.
+    /// A dispatched click is untrusted, and pages that check refuse it.
     #[test]
-    fn a_click_is_dispatched_so_it_reaches_an_element_that_is_not_html() {
-        assert!(!PAGE_SCRIPT.contains("actual.click()"));
-        assert!(PAGE_SCRIPT.contains(r#"mouse(actual, "click", point)"#));
+    fn clicks_and_keys_are_never_played_by_the_page_script() {
+        for synthetic in [r#""click""#, r#""mousedown""#, r#""keydown""#] {
+            assert!(
+                !PAGE_SCRIPT.contains(synthetic),
+                "page.js dispatches {synthetic}"
+            );
+        }
     }
 
     #[test]

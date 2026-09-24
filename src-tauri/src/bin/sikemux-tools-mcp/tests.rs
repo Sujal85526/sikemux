@@ -296,8 +296,8 @@ fn bad_arguments_are_named_the_way_the_agent_learned_them() {
         "'nope' is not of type 'integer'"
     );
     assert_eq!(
-        complaint("browser_click", json!({})),
-        "'index' is a required property"
+        complaint("browser_navigate", json!({})),
+        "'url' is a required property"
     );
     assert_eq!(
         complaint("browser_click", json!({ "index": 1, "extra": true })),

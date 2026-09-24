@@ -5,6 +5,7 @@ pub const BROWSER_METHODS: &[&str] = &[
     "browser.click",
     "browser.type",
     "browser.press",
+    "browser.drag",
     "browser.scroll",
     "browser.extract",
     "browser.network",

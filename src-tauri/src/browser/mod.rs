@@ -10,6 +10,8 @@
 pub mod agents;
 mod favicon;
 #[cfg(target_os = "macos")]
+mod input;
+#[cfg(target_os = "macos")]
 mod macos;
 pub mod tools;
 

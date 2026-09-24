@@ -44,25 +44,17 @@
         const rect = element.getBoundingClientRect();
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     };
-    const mouse = (element, type, point) =>
-        element.dispatchEvent(
-            new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: point.x, clientY: point.y, button: 0, buttons: type === "mouseup" || type === "click" ? 0 : 1 }),
-        );
-    const pointer = (element, type, point) =>
-        element.dispatchEvent(
-            new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: point.x, clientY: point.y, pointerId: 1, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1 }),
-        );
-    const keyInit = (key) => {
-        const named = { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, Delete: 46, ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Home: 36, End: 35, PageUp: 33, PageDown: 34, " ": 32 };
-        const code = named[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
-        return { key, code: key === " " ? "Space" : key.length === 1 ? `Key${key.toUpperCase()}` : key, keyCode: code, which: code, bubbles: true, cancelable: true, composed: true };
-    };
-    const setValue = (element, text) => {
-        const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLInputElement ? HTMLInputElement.prototype : null;
-        const setter = proto && Object.getOwnPropertyDescriptor(proto, "value")?.set;
-        if (setter) setter.call(element, text);
-        else if (element.isContentEditable) element.textContent = text;
-        else element.value = text;
+    const selectContents = (element) => {
+        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+            element.select();
+            return element.value.length > 0;
+        }
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const selection = getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return compact(element.textContent).length > 0;
     };
 
     window.__sikemux = {
@@ -92,28 +84,17 @@
                 scroll: { y: Math.round(scrollY), height: document.documentElement.scrollHeight, viewport: innerHeight },
             };
         },
-        click(index) {
+        point(index) {
             const element = pick(index);
             element.scrollIntoView({ block: "center", inline: "center" });
             const point = centre(element);
-            const target = document.elementFromPoint(point.x, point.y) || element;
-            const actual = target.contains(element) || element.contains(target) ? target : element;
-            pointer(actual, "pointerdown", point);
-            mouse(actual, "mousedown", point);
-            if (typeof element.focus === "function") element.focus({ preventScroll: true });
-            pointer(actual, "pointerup", point);
-            mouse(actual, "mouseup", point);
-            // Dispatched, not called as a method: the topmost thing under an
-            // icon button is its <svg>, and only an HTML element has that
-            // method. A dispatched click still activates the button or link
-            // around it.
-            mouse(actual, "click", point);
-            return { clicked: label(element), url: location.href };
+            const top = document.elementFromPoint(point.x, point.y);
+            const covered = top && !element.contains(top) && !top.contains(element) ? label(top) || top.tagName.toLowerCase() : null;
+            return { x: point.x, y: point.y, label: label(element), covered };
         },
-        type(index, text, submit) {
+        focus(index, text) {
             const element = index == null ? document.activeElement : pick(index);
-            if (!element || element === document.body) throw new Error("nothing is focused; pass an element index");
-            element.focus({ preventScroll: true });
+            if (!element || (element === document.body && !element.isContentEditable)) throw new Error("nothing is focused; pass an element index");
             if (element instanceof HTMLSelectElement) {
                 const option = [...element.options].find((option) => option.value === text || compact(option.textContent) === compact(text));
                 if (!option) throw new Error(`no option matching "${text}"`);
@@ -122,28 +103,58 @@
                 element.dispatchEvent(new Event("change", { bubbles: true }));
                 return { selected: option.value };
             }
-            element.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: text }));
-            setValue(element, text);
-            element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
-            element.dispatchEvent(new Event("change", { bubbles: true }));
-            if (submit) this.press("Enter");
-            return { typed: text.length, submitted: Boolean(submit) };
+            if (index == null) return { replacing: false };
+            element.scrollIntoView({ block: "center", inline: "center" });
+            element.focus({ preventScroll: true });
+            return { replacing: selectContents(element) };
         },
-        press(key) {
-            const element = document.activeElement || document.body;
-            const init = keyInit(key);
-            const down = element.dispatchEvent(new KeyboardEvent("keydown", init));
-            const pressed = key.length === 1 || key === "Enter" ? element.dispatchEvent(new KeyboardEvent("keypress", init)) : true;
-            element.dispatchEvent(new KeyboardEvent("keyup", init));
-            if (key === "Enter" && down && pressed) {
-                const form = element.form || element.closest?.("form");
-                if (form && !(element instanceof HTMLTextAreaElement)) {
-                    if (typeof form.requestSubmit === "function") form.requestSubmit();
-                    else form.submit();
-                    return { pressed: key, submitted: true };
-                }
+        // WebKit only acts on a bare pointer move while its page is active, so
+        // when the real move left nothing hovered the page is told by hand.
+        hover(x, y) {
+            const target = document.elementFromPoint(x, y);
+            if (!target) return { hovered: null };
+            if (target.matches(":hover")) return { hovered: label(target) || target.tagName.toLowerCase() };
+            const init = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, view: window };
+            const entered = { ...init, bubbles: false, cancelable: false };
+            const path = [];
+            for (let node = target; node; node = node.parentElement) path.unshift(node);
+            target.dispatchEvent(new PointerEvent("pointerover", init));
+            target.dispatchEvent(new MouseEvent("mouseover", init));
+            for (const node of path) {
+                node.dispatchEvent(new PointerEvent("pointerenter", entered));
+                node.dispatchEvent(new MouseEvent("mouseenter", entered));
             }
-            return { pressed: key, submitted: false };
+            target.dispatchEvent(new PointerEvent("pointermove", init));
+            target.dispatchEvent(new MouseEvent("mousemove", init));
+            return { hovered: label(target) || target.tagName.toLowerCase(), note: "Sikemux is in the background, so the page got hover events but CSS :hover styles do not apply" };
+        },
+        valueOf(index) {
+            const element = index == null ? document.activeElement : pick(index);
+            if (!element) return { value: null };
+            const value = "value" in element && typeof element.value === "string" ? element.value : element.innerText;
+            return { value: compact(value).slice(0, 400) };
+        },
+        // A draggable element hands its drag to the system, which a synthesized
+        // mouse cannot steer, so these drags are played out as DOM events.
+        html5Drag(fromX, fromY, toX, toY) {
+            const grabbed = document.elementFromPoint(fromX, fromY);
+            const source = grabbed && grabbed.closest('[draggable="true"], a[href]:not([draggable="false"]), img:not([draggable="false"])');
+            if (!source) return { html5: false };
+            const target = document.elementFromPoint(toX, toY);
+            if (!target) throw new Error("nothing is under the drop point");
+            const data = new DataTransfer();
+            const fire = (element, type, x, y) => {
+                const init = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, dataTransfer: data };
+                const event = typeof DragEvent === "function" ? new DragEvent(type, init) : new MouseEvent(type, init);
+                if (!event.dataTransfer) Object.defineProperty(event, "dataTransfer", { value: data });
+                return element.dispatchEvent(event);
+            };
+            if (!fire(source, "dragstart", fromX, fromY)) return { html5: true, dropped: false, note: "the page cancelled the drag" };
+            fire(target, "dragenter", toX, toY);
+            const refused = fire(target, "dragover", toX, toY);
+            if (!refused) fire(target, "drop", toX, toY);
+            fire(source, "dragend", toX, toY);
+            return { html5: true, dropped: !refused, onto: label(target) || target.tagName.toLowerCase() };
         },
         scroll(deltaY, index) {
             const target = index == null ? null : pick(index);
