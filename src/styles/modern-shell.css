@@ -291,7 +291,7 @@ textarea:focus,
 }
 
 .session-row-shell > .sess-row,
-.session-row-shell > .proj-row,
+.session-row-shell:has(> .row-status) > .proj-row,
 .agent-row-wrap > .agent-row {
     padding-right: calc(var(--space-2) + 20px + var(--space-1));
 }
