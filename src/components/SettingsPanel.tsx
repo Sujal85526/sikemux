@@ -30,6 +30,7 @@ import {
     IconCheck,
     IconClose,
     IconCommand,
+    IconContrast,
     IconEditor,
     IconFolder,
     IconGlobe,
@@ -41,7 +42,6 @@ import {
     IconSave,
     IconSearch,
     IconTrash,
-    IconWindow,
 } from "./Icons";
 import { Dropdown } from "./Dropdown";
 import { Checkbox, Slider, Switch } from "./Controls";
@@ -66,7 +66,7 @@ import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
     general: <IconFolder size={13} />,
-    appearance: <IconWindow size={13} />,
+    appearance: <IconContrast size={13} />,
     keybindings: <IconCommand size={13} />,
     activity: <IconActivity size={13} />,
     about: <IconInfo size={13} />,

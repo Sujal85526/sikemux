@@ -135,6 +135,12 @@ export const IconTimer = makeSvgIcon(
 );
 export const IconAgent = makeSvgIcon(<path d="M8 1.8c.5 3.3 2.9 5.7 6.2 6.2-3.3.5-5.7 2.9-6.2 6.2-.5-3.3-2.9-5.7-6.2-6.2C5.1 7.5 7.5 5.1 8 1.8Z" />);
 export const IconWindow = makeSvgIcon(<rect x="2.2" y="2.8" width="11.6" height="10.4" rx="0" />);
+export const IconContrast = makeSvgIcon(
+    <>
+        <circle cx="8" cy="8" r="5.8" />
+        <path d="M8 2.2a5.8 5.8 0 0 1 0 11.6z" fill="currentColor" stroke="none" />
+    </>,
+);
 export const IconCommand = makeSvgIcon(<path d="M3 4.6 6 8l-3 3.4M7.6 11.4H13" />);
 export const IconFolder = makeSvgIcon(<path d="M2 4.4h4l1.6 2H14v7.2H2z" />);
 export const IconPlug = makeSvgIcon(
