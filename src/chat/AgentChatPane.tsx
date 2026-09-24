@@ -779,8 +779,8 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
     const parts = subagent.messages.flatMap((message) => message.parts);
     const calls = parts.filter((part) => part.kind === "tool").length;
     return (
-        <details className={`chat-subagent state-${subagent.state}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-            <summary>
+        <div className={`chat-subagent state-${subagent.state}`}>
+            <button type="button" className="chat-subagent-head" aria-expanded={open} onClick={() => setOpen(!open)}>
                 <IconChevron size={9} className="chat-subagent-chevron" />
                 <span className="chat-subagent-mark">
                     <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
@@ -797,7 +797,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                     )}
                     <span className="chat-subagent-state">{SUBAGENT_WORDS[subagent.state]}</span>
                 </span>
-            </summary>
+            </button>
             {open && (
                 <div className="chat-subagent-body">
                     {parts.length > 0 ? (
@@ -807,7 +807,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                     )}
                 </div>
             )}
-        </details>
+        </div>
     );
 }
 
