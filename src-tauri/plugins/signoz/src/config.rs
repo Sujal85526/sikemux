@@ -69,13 +69,6 @@ pub fn save(data_dir: &Path, config: &SignozConfig) -> SignozResult<()> {
     std::fs::rename(&staged, &path).map_err(io_error)
 }
 
-pub fn forget(data_dir: &Path) -> SignozResult<()> {
-    match std::fs::remove_file(config_path(data_dir)) {
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(io_error(error)),
-        _ => Ok(()),
-    }
-}
-
 pub fn validate_url(raw: &str) -> SignozResult<String> {
     let trimmed = raw.trim().trim_end_matches('/');
     let url = url::Url::parse(trimmed)
@@ -231,8 +224,7 @@ mod tests {
         };
         save(&dir, &config).unwrap();
         assert_eq!(load(&dir).auth, AuthMode::ApiKey);
-        forget(&dir).unwrap();
-        assert_eq!(load(&dir).url, "");
         std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(load(&dir).url, "");
     }
 }

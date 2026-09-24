@@ -131,7 +131,7 @@ impl Plugin for Signoz {
             let data_dir = ctx.data_dir();
             match method {
                 "status" => reply(status(data_dir).await),
-                "inspect" => answer(auth::inspect(params(input)?)).await,
+                "inspect" => answer(auth::inspect(data_dir, params(input)?)).await,
                 "signIn" => {
                     signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await
                 }

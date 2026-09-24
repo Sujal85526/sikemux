@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { Checkbox } from "../../../plugin-api/ui";
 import { failureMessage, signozApi, type Inspection, type SignozStatus } from "../api";
 
 type Method = "password" | "apiKey";
+
+function hostOf(url: string): string {
+    try {
+        return new URL(url).host;
+    } catch {
+        return url;
+    }
+}
 
 interface Props {
     status: SignozStatus;
@@ -27,22 +35,33 @@ export function SignozSignIn({ status, onSignedIn }: Props) {
     const [orgId, setOrgId] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(status.authFailed ? status.message : null);
+    const [editingUrl, setEditingUrl] = useState(!status.url);
 
-    const look = (withEmail: boolean) => {
+    const look = (withEmail: boolean, settle = false) => {
         if (!url.trim()) return;
         setError(null);
         signozApi
             .inspect(url.trim(), withEmail ? email.trim() || undefined : undefined)
             .then((found) => {
                 setInspection(found);
+                setUrl(found.url);
+                if (settle) setEditingUrl(false);
                 const passwordOrgs = found.orgs.filter((org) => org.password);
                 if (passwordOrgs.length === 1) setOrgId(passwordOrgs[0].id);
             })
             .catch((failure: unknown) => {
                 setInspection(null);
+                setEditingUrl(true);
                 setError(failureMessage(failure));
             });
     };
+
+    // A remembered address is checked straight away, so the version and how
+    // this email signs in are already on screen.
+    useEffect(() => {
+        if (status.url) look(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const passwordOrgs = inspection?.orgs.filter((org) => org.password) ?? [];
     const ssoOnly = inspection !== null && inspection.orgs.length > 0 && passwordOrgs.length === 0;
@@ -80,21 +99,34 @@ export function SignozSignIn({ status, onSignedIn }: Props) {
             <div className="sgz-card">
                 <h2 className="sgz-card-title">Connect to SigNoz</h2>
 
-                <label className="sgz-field">
-                    <span>SigNoz URL</span>
-                    <input
-                        className="sgz-input mono"
-                        type="url"
-                        placeholder="https://signoz.example.com"
-                        value={url}
-                        onChange={(event) => setUrl(event.target.value)}
-                        onBlur={() => look(false)}
-                        spellCheck={false}
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                    />
-                    {inspection?.version && <small className="sgz-ok">SigNoz {inspection.version}</small>}
-                </label>
+                {editingUrl ? (
+                    <label className="sgz-field">
+                        <span>SigNoz URL</span>
+                        <input
+                            className="sgz-input mono"
+                            type="url"
+                            placeholder="https://signoz.example.com"
+                            value={url}
+                            onChange={(event) => setUrl(event.target.value)}
+                            onBlur={() => look(!!email.trim(), true)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") look(!!email.trim(), true);
+                            }}
+                            autoFocus={!status.url}
+                            spellCheck={false}
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                        />
+                    </label>
+                ) : (
+                    <div className="sgz-address">
+                        <span className="sgz-address-host">{hostOf(url)}</span>
+                        {inspection?.version && <span className="sgz-ok">SigNoz {inspection.version}</span>}
+                        <button type="button" className="sgz-link" onClick={() => setEditingUrl(true)}>
+                            change
+                        </button>
+                    </div>
+                )}
 
                 {status.keyFromEnvironment && <div className="sgz-note">SIGNOZ_API_KEY is set in your shell, so Sikemux uses that key.</div>}
 
@@ -142,6 +174,7 @@ export function SignozSignIn({ status, onSignedIn }: Props) {
                                     value={password}
                                     onChange={(event) => setPassword(event.target.value)}
                                     onKeyDown={onEnter}
+                                    autoFocus={!!status.url && !!status.email}
                                 />
                                 <small className="sgz-hint">Sent once to SigNoz. Sikemux keeps only the session, in your Keychain.</small>
                             </label>

@@ -76,6 +76,9 @@ pub async fn credentials(data_dir: &Path) -> SignozResult<Credentials> {
             auth: Auth::ApiKey(key),
         });
     }
+    if config.account.is_empty() {
+        return Err(SignozError::Unconfigured);
+    }
     match config.auth {
         AuthMode::ApiKey => api_key(config).await,
         AuthMode::Session => session(config).await,
@@ -252,7 +255,8 @@ fn orgs_of(context: &Value) -> Vec<OrgSignIn> {
 }
 
 /// Everything the sign-in screen can learn before anyone has a credential.
-pub async fn inspect(request: Inspect) -> SignozResult<Inspection> {
+/// An address that answers is remembered, and so is the email typed for it.
+pub async fn inspect(data_dir: &Path, request: Inspect) -> SignozResult<Inspection> {
     let url = config::validate_url(&request.url)?;
     let anonymous = Credentials::anonymous(&url);
     let version = client::send(&anonymous, Method::GET, "/api/v1/version", None)
@@ -260,6 +264,7 @@ pub async fn inspect(request: Inspect) -> SignozResult<Inspection> {
         .get("version")
         .and_then(Value::as_str)
         .map(str::to_string);
+    remember_address(data_dir, &url, None).await?;
     let Some(email) = request
         .email
         .as_deref()
@@ -284,6 +289,7 @@ pub async fn inspect(request: Inspect) -> SignozResult<Inspection> {
         None,
     )
     .await?;
+    remember_address(data_dir, &url, Some(email)).await?;
     Ok(Inspection {
         account_exists: context.pointer("/data/exists").and_then(Value::as_bool),
         orgs: orgs_of(&context),
@@ -308,10 +314,13 @@ pub async fn sign_in(data_dir: &Path, request: SignIn) -> SignozResult<()> {
     let org_id = match request.org_id.filter(|id| !id.is_empty()) {
         Some(id) => id,
         None => {
-            let inspection = inspect(Inspect {
-                url: url.clone(),
-                email: Some(email.clone()),
-            })
+            let inspection = inspect(
+                data_dir,
+                Inspect {
+                    url: url.clone(),
+                    email: Some(email.clone()),
+                },
+            )
             .await?;
             let mut password_orgs = inspection.orgs.into_iter().filter(|org| org.password);
             match (password_orgs.next(), password_orgs.next()) {
@@ -444,9 +453,35 @@ pub async fn sign_out(data_dir: &Path) -> SignozResult<()> {
             }
             _ => {}
         }
-        config::forget(&data_dir)
+        config::save(&data_dir, &signed_out(config))
     })
     .await
+}
+
+/// Where SigNoz is and who last signed in outlive the credential, so the
+/// next sign-in starts from them instead of a blank form.
+fn signed_out(config: SignozConfig) -> SignozConfig {
+    SignozConfig {
+        account: String::new(),
+        owns_key: false,
+        ..config
+    }
+}
+
+/// Keeps an address that answered, and the email typed for it. A new
+/// address drops the old credential, which belongs to the old address.
+async fn remember_address(data_dir: &Path, url: &str, email: Option<&str>) -> SignozResult<()> {
+    let mut config = load(data_dir).await?;
+    if config.url != url {
+        config = signed_out(SignozConfig {
+            url: url.to_string(),
+            ..config
+        });
+    }
+    if let Some(email) = email {
+        config.email = email.to_string();
+    }
+    save(data_dir, config).await
 }
 
 #[cfg(test)]
@@ -472,5 +507,44 @@ mod tests {
         let bare = json!({ "accessToken": "a", "refreshToken": "r" });
         assert_eq!(Tokens::from_answer(&wrapped).unwrap().expires_in, 3600);
         assert_eq!(Tokens::from_answer(&bare).unwrap().expires_in, 0);
+    }
+
+    #[tokio::test]
+    async fn keeps_the_address_but_never_carries_a_credential_to_another() {
+        let dir =
+            std::env::temp_dir().join(format!("sikemux-signoz-address-{}", std::process::id()));
+        let signed_in = SignozConfig {
+            url: "https://a.example.com".into(),
+            auth: AuthMode::Session,
+            account: "a.example.com".into(),
+            email: "me@example.com".into(),
+            owns_key: false,
+        };
+        config::save(&dir, &signed_in).unwrap();
+
+        remember_address(&dir, "https://a.example.com", None)
+            .await
+            .unwrap();
+        assert_eq!(config::load(&dir).account, "a.example.com");
+
+        remember_address(&dir, "https://b.example.com", Some("other@example.com"))
+            .await
+            .unwrap();
+        let moved = config::load(&dir);
+        assert_eq!(moved.url, "https://b.example.com");
+        assert_eq!(moved.email, "other@example.com");
+        assert_eq!(moved.account, "");
+        assert!(matches!(
+            credentials(&dir).await,
+            Err(SignozError::Unconfigured)
+        ));
+
+        config::save(&dir, &signed_out(signed_in)).unwrap();
+        let after_sign_out = config::load(&dir);
+        assert_eq!(
+            (after_sign_out.url.as_str(), after_sign_out.email.as_str()),
+            ("https://a.example.com", "me@example.com")
+        );
+        std::fs::remove_dir_all(dir).ok();
     }
 }
