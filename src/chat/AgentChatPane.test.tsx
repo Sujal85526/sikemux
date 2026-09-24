@@ -167,11 +167,11 @@ afterEach(cleanup);
 
 /* The virtualizer keeps a row out of the DOM until the scroller has a size,
    and jsdom measures everything as nothing. */
-async function openTranscript(): Promise<void> {
+async function openTranscript(prompt = "Look at the styles"): Promise<void> {
     render(<AgentChatPane agent={{ ...agent, model: "gpt-6-astra" }} cwd="/repo" active visible onBusyChange={() => {}} />);
     const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
     await waitFor(() => expect(editor.placeholder).toContain("Ask about this project"));
-    fireEvent.change(editor, { target: { value: "Look at the styles" } });
+    fireEvent.change(editor, { target: { value: prompt } });
     fireEvent.keyDown(editor, { key: "Enter" });
     const scroller = document.querySelector(".chat-scroll") as HTMLElement;
     fakeScroller(scroller, 400);
@@ -795,6 +795,20 @@ describe("AgentChatPane", () => {
         expect(cell.tagName).toBe("TD");
         expect(screen.getByText("approach").tagName).toBe("TH");
         expect(cell.closest(".chat-table")).not.toBeNull();
+    });
+
+    it("shows markup the person pasted, and still drops markup the agent wrote", async () => {
+        await openTranscript('Use this: “<svg viewBox="0 0 16 16"><path d="M0 0h16"/></svg>”\n\n<div>own line</div>');
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done <b>quietly</b>" } },
+        });
+
+        const typed = await screen.findByText(/Use this:/);
+        expect(typed.textContent).toBe('Use this: “<svg viewBox="0 0 16 16"><path d="M0 0h16"/></svg>”');
+        expect(screen.getByText("<div>own line</div>")).toBeInTheDocument();
+        expect(document.querySelector(".chat-message.user .chat-markdown svg")).toBeNull();
+        expect(await screen.findByText(/Done/)).toHaveTextContent(/^Done quietly$/);
     });
 
     it("leaves out the header band when the table has no column labels", async () => {

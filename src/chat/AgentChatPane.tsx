@@ -61,6 +61,7 @@ import { guessClaudeWindow } from "./contextWindow";
 import { agentApi } from "../api/agents";
 import { safeWebUrl } from "../terminal/interactions";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
+import { remarkHtmlAsText } from "./remarkHtmlAsText";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -517,10 +518,11 @@ function ChatTable({ children }: { children?: ReactNode }) {
 
 const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
 const remarkPlugins = [remarkGfm, remarkFilePaths];
+const typedRemarkPlugins = [remarkGfm, remarkHtmlAsText, remarkFilePaths];
 
-const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
+const MarkdownBody = memo(function MarkdownBody({ text, typed }: { text: string; typed: boolean }) {
     return (
-        <Markdown remarkPlugins={remarkPlugins} urlTransform={chatUrlTransform} skipHtml components={markdownComponents}>
+        <Markdown remarkPlugins={typed ? typedRemarkPlugins : remarkPlugins} urlTransform={chatUrlTransform} skipHtml components={markdownComponents}>
             {text}
         </Markdown>
     );
@@ -532,7 +534,7 @@ const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
    is read once more in full. */
 const LIVE_PARSE_MS = 100;
 
-function LiveMarkdown({ text, live }: { text: string; live: boolean }) {
+function LiveMarkdown({ text, live, typed = false }: { text: string; live: boolean; typed?: boolean }) {
     const [shown, setShown] = useState(text);
     const parsedAt = useRef(0);
     useEffect(() => {
@@ -552,7 +554,7 @@ function LiveMarkdown({ text, live }: { text: string; live: boolean }) {
         }, wait);
         return () => window.clearTimeout(timer);
     }, [live, text]);
-    return <MarkdownBody text={shown} />;
+    return <MarkdownBody text={shown} typed={typed} />;
 }
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
@@ -590,11 +592,11 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
 
-const MessagePart = memo(function MessagePart({ part, live }: { part: ChatPart; live: boolean }) {
+const MessagePart = memo(function MessagePart({ part, live, typed }: { part: ChatPart; live: boolean; typed: boolean }) {
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <LiveMarkdown text={part.text} live={live} />
+                <LiveMarkdown text={part.text} live={live} typed={typed} />
             </div>
         );
     }
@@ -703,13 +705,13 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
     );
 }
 
-function PartGroups({ parts, live }: { parts: ChatPart[]; live: boolean }) {
+function PartGroups({ parts, live, typed = false }: { parts: ChatPart[]; live: boolean; typed?: boolean }) {
     const groups = groupParts(parts);
     return groups.map((group, index) =>
         "tools" in group ? (
             <ToolGroup key={group.id} tools={group.tools} live={live && index === groups.length - 1} />
         ) : (
-            <MessagePart key={group.id} part={group.part} live={live && index === groups.length - 1} />
+            <MessagePart key={group.id} part={group.part} live={live && index === groups.length - 1} typed={typed} />
         ),
     );
 }
@@ -981,7 +983,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
                         ))}
                     </div>
                 )}
-                <PartGroups parts={message.parts} live={live} />
+                <PartGroups parts={message.parts} live={live} typed={message.role === "user"} />
                 {copyable && (
                     <div className="chat-message-meta">
                         <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
