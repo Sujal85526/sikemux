@@ -4,7 +4,7 @@
 //   client    — the HTTP client, size limits, and SigNoz's error shapes
 //   query     — v5 query_range builders, filter quoting, and time windows
 //   logs      — search, and a tail that polls for new lines
-//   services  — calls, errors and p99 per service, from entry spans
+//   services  — health per service, and one service's charts, endpoints and errors
 //   traces    — every span of one trace, ordered for a waterfall
 
 mod auth;
@@ -148,6 +148,9 @@ impl Plugin for Signoz {
                 "dashboard" => answer(dashboards::get(data_dir, params(input)?)).await,
                 "panel" => answer(dashboards::panel(data_dir, params(input)?)).await,
                 "services" => answer(services::health(data_dir, params(input)?)).await,
+                "serviceOverview" => answer(services::overview(data_dir, params(input)?)).await,
+                "operations" => answer(services::operations(data_dir, params(input)?)).await,
+                "errorGroups" => answer(services::errors(data_dir, params(input)?)).await,
                 "trace" => answer(traces::trace(data_dir, params(input)?)).await,
                 "searchTraces" => answer(traces::search(data_dir, params(input)?)).await,
                 "fieldKeys" => answer(fields::keys(data_dir, params(input)?)).await,
