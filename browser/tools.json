@@ -170,6 +170,21 @@
       "required": []
     },
     {
+      "name": "browser_evaluate",
+      "method": "browser.evaluate",
+      "description": "Run JavaScript in the page; the result comes back as JSON.",
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        }
+      },
+      "required": [
+        "script"
+      ]
+    },
+    {
       "name": "browser_network",
       "method": "browser.network",
       "description": "List the page's fetch and XHR calls with status, timing and body.",

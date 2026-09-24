@@ -24,7 +24,7 @@ use objc2_foundation::{
     NSString,
 };
 use objc2_web_kit::{
-    WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
+    WKContentWorld, WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
     WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration, WKUIDelegate, WKWebView,
     WKWebViewConfiguration, WKWindowFeatures,
 };
@@ -237,6 +237,53 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
     unsafe {
         webview.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &block)
     };
+}
+
+/// Runs `body` as the body of an async function in the page, awaiting any
+/// promise it returns. The body must return a string.
+pub fn call_async(
+    pointer: *mut c_void,
+    body: &str,
+    done: Box<dyn FnOnce(Result<String, String>) + Send>,
+) {
+    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+        done(Err("the tab is gone".into()));
+        return;
+    };
+    let done = std::sync::Mutex::new(Some(done));
+    let block = RcBlock::new(move |value: *mut AnyObject, error: *mut NSError| {
+        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+            return;
+        };
+        if let Some(error) = unsafe { Retained::retain(error) } {
+            done(Err(script_error(&error)));
+            return;
+        }
+        let text = unsafe { value.as_ref() }
+            .and_then(|value| value.downcast_ref::<NSString>())
+            .map(|text| text.to_string());
+        done(text.ok_or_else(|| "the script returned nothing readable".into()));
+    });
+    unsafe {
+        webview.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
+            &NSString::from_str(body),
+            None,
+            None,
+            &WKContentWorld::pageWorld(mtm),
+            Some(&block),
+        );
+    }
+}
+
+/// WebKit's own description of a thrown exception is only "A JavaScript
+/// exception occurred"; the page's message sits in the error's details.
+fn script_error(error: &NSError) -> String {
+    let details = error.userInfo();
+    let message = details
+        .objectForKey(&NSString::from_str("WKJavaScriptExceptionMessage"))
+        .and_then(|value| value.downcast::<NSString>().ok())
+        .map(|text| text.to_string());
+    message.unwrap_or_else(|| error.localizedDescription().to_string())
 }
 
 fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {

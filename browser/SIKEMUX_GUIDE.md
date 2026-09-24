@@ -142,6 +142,12 @@ other browser tool refuses rather than hang. `accept: true` presses OK and
 `false` presses Cancel; `text` fills a prompt first. The person sees the same
 dialog and may answer it before you do.
 
+`browser_evaluate` runs JavaScript in the page and returns the result as
+JSON. Pass an expression such as `document.title`, or a function body that
+uses `return`. Promises are awaited for up to 30 seconds, and elements come
+back as their markup. Reach for it when no other tool reads what you need;
+prefer the other tools for acting, since they send real input.
+
 `browser_scroll` moves the page by `deltaY` pixels, default 600, negative for
 up. Pass an `index` to scroll inside a scrollable element instead.
 

@@ -14,6 +14,8 @@ const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
 const MAX_WAIT_MS: u64 = 30_000;
+const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_SCRIPT_RESULT: usize = 100_000;
 const DRAG_STEPS: u32 = 12;
 const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
 
@@ -255,6 +257,29 @@ async fn run(
             )
             .await
         }
+        "browser.evaluate" => {
+            let script = text("script").ok_or("script is required")?;
+            let (_, view) = active(&manager, agent_id)?;
+            let answer =
+                match native::run_script(&view, &script_body(&format!("return ({script}\n);")))
+                    .await
+                {
+                    Err(error) if error.contains("SyntaxError") => {
+                        native::run_script(&view, &script_body(&script)).await
+                    }
+                    other => other,
+                }?;
+            if answer.len() > MAX_SCRIPT_RESULT {
+                let cut = (0..=MAX_SCRIPT_RESULT)
+                    .rev()
+                    .find(|at| answer.is_char_boundary(*at))
+                    .unwrap_or(0);
+                return Ok(json!({ "result": answer.get(..cut), "truncated": true }));
+            }
+            Ok(json!({
+                "result": serde_json::from_str::<Value>(&answer).unwrap_or(Value::String(answer)),
+            }))
+        }
         "browser.extract" => {
             let (_, view) = active(&manager, agent_id)?;
             call(
@@ -301,6 +326,30 @@ async fn run(
         }
         _ => Err("unknown browser method".into()),
     }
+}
+
+/// Wraps an agent's script so whatever it returns, awaited, comes back as JSON.
+/// Elements become their markup, since JSON has no way to spell a node.
+fn script_body(script: &str) -> String {
+    format!(
+        r#"const value = await (async () => {{
+{script}
+}})();
+const seen = new WeakSet();
+try {{
+    return JSON.stringify(value === undefined ? null : value, (key, item) => {{
+    if (typeof Node === "function" && item instanceof Node) return String(item.outerHTML ?? item.textContent ?? "").slice(0, 2000);
+    if (typeof item === "bigint" || typeof item === "function" || typeof item === "symbol") return String(item);
+    if (typeof item === "object" && item !== null) {{
+        if (seen.has(item)) return "[circular]";
+        seen.add(item);
+    }}
+    return item;
+    }}) ?? "null";
+}} catch {{
+    return JSON.stringify(String(value));
+}}"#
+    )
 }
 
 /// Where to point: the centre of a numbered element, scrolled into view, or
@@ -376,6 +425,26 @@ mod native {
             on_tab(view, move |tab| input::insert_text(tab, &text)).await
         }
 
+        pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            let body = body.to_owned();
+            view.with_webview(move |platform| {
+                super::super::super::macos::call_async(
+                    platform.inner(),
+                    &body,
+                    Box::new(move |result| {
+                        let _ = sender.send(result);
+                    }),
+                );
+            })
+            .map_err(|error| error.to_string())?;
+            match tokio::time::timeout(super::super::SCRIPT_TIMEOUT, receiver).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(_)) => Err("the tab went away".into()),
+                Err(_) => Err("the script did not finish within 30 seconds".into()),
+            }
+        }
+
         pub async fn answer_dialog(
             view: &Webview,
             tab_id: &str,
@@ -409,6 +478,10 @@ mod native {
             Err(UNSUPPORTED.into())
         }
 
+        pub async fn run_script(_: &Webview, _: &str) -> Result<String, String> {
+            Err(UNSUPPORTED.into())
+        }
+
         pub async fn answer_dialog(
             _: &Webview,
             _: &str,
@@ -435,6 +508,10 @@ mod native {
 
     pub async fn insert_text(view: &Webview, text: &str) -> Result<(), String> {
         platform::insert_text(view, text).await
+    }
+
+    pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
+        platform::run_script(view, body).await
     }
 
     pub async fn answer_dialog(

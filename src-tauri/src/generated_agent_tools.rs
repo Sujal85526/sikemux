@@ -9,6 +9,7 @@ pub const BROWSER_METHODS: &[&str] = &[
     "browser.dialog",
     "browser.scroll",
     "browser.extract",
+    "browser.evaluate",
     "browser.network",
     "browser.screenshot",
     "browser.wait",
