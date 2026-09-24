@@ -1577,7 +1577,7 @@ button.chat-tool:hover,
 .chat-composer-wrap {
     /* The composer and the jump button float over the same transcript, so they
        share one fill and fade together with the window. */
-    --chat-composer-fill: var(--s-sunken);
+    --chat-composer-fill: color-mix(in srgb, var(--s-raised) 55%, var(--s-sunken));
     /* The gap the field keeps from the box, and how far the stack above tucks
        behind the composer's top edge. */
     --chat-inset: 8px;
