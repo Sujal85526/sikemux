@@ -1151,7 +1151,8 @@ textarea,
         .aws-logs-pill,
         .aws-logs-pill-dot,
         .rnd-exec-pill,
-        .rnd-pill-x
+        .rnd-pill-x,
+        .chat-send
     ) {
     border-radius: var(--radius-full) !important;
 }
