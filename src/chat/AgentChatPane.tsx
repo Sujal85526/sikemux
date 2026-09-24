@@ -1103,6 +1103,7 @@ function ChatComposer({
     onError,
     onSend,
     onSteerQueued,
+    onStop,
     queuedCount,
     usage,
     onConfig,
@@ -1126,6 +1127,7 @@ function ChatComposer({
     onError: (message: string | null) => void;
     onSend: (text: string, paths: string[], steerNow: boolean) => boolean;
     onSteerQueued: () => void;
+    onStop: () => void;
     queuedCount: number;
     usage: ContextUsage | null;
     onConfig: (config: SessionConfig, value: string) => void;
@@ -1309,15 +1311,7 @@ function ChatComposer({
                 <ContextMeter usage={usage} agent={agent.type} />
                 <span className="chat-composer-spacer" />
                 {running && !drafted ? (
-                    <button
-                        type="button"
-                        className="chat-send stop"
-                        aria-label="Stop agent"
-                        onClick={() =>
-                            void acpApi
-                                .cancel(agent.id)
-                                .catch((failure: unknown) => onError(failure instanceof Error ? failure.message : String(failure)))
-                        }>
+                    <button type="button" className="chat-send stop" aria-label="Stop agent" onClick={onStop}>
                         <span />
                     </button>
                 ) : (
@@ -1696,6 +1690,18 @@ export function AgentChatPane({
 
     const steerable = state.capabilities.steering === true;
 
+    /* A turn the agent started on its own may end without the report that
+       closes it, so stopping one ends it here too. */
+    const stop = () => {
+        const unprompted = state.unprompted;
+        void acpApi
+            .cancel(agent.id)
+            .then(() => {
+                if (unprompted) dispatch({ type: "turn_completed", stopReason: "cancelled" });
+            })
+            .catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
+    };
+
     /* Steering stops whatever the agent has in flight so it reads this message
        now, so a message only goes this way when it is asked to. */
     const steer = async (message: QueuedMessage) => {
@@ -1998,6 +2004,7 @@ export function AgentChatPane({
                                 const head = queued[0];
                                 if (head) void steer(head);
                             }}
+                            onStop={stop}
                             queuedCount={queued.length}
                             usage={state.usage}
                             onConfig={changeConfig}
