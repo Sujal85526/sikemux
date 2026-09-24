@@ -23,7 +23,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { ShaderField } from "./ShaderField";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { AgentIcon, IconPlus, WindowIcon } from "./Icons";
-import { AgentStateIndicator } from "./AgentStateIndicator";
+import { AgentStateIndicator, SubagentCount } from "./AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { FileIcon } from "./FileIcon";
 import { fsapi } from "../api/fs";
@@ -215,6 +215,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const agentsById = useStore((s) => s.agents);
     const activity = useStore((s) => s.agentActivity);
     const backgroundWork = useStore((s) => s.agentBackgroundWork);
+    const subagentCounts = useStore((s) => s.agentSubagents);
     const windowIds = useStore((s) => s.windowsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
@@ -337,6 +338,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 if (!agent) return [];
                 const state = activity[agent.id];
                 const background = (backgroundWork[agent.id] ?? 0) > 0;
+                const subagents = subagentCounts[agent.id] ?? 0;
                 return [
                     {
                         id: key,
@@ -348,6 +350,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                                 <AgentIcon type={agent.type} size={19} />
                             </span>
                         ),
+                        badge: subagents > 0 ? <SubagentCount count={subagents} /> : undefined,
                         accessory: state || background ? <AgentStateIndicator state={state?.state ?? "idle"} background={background} /> : undefined,
                     },
                 ];
@@ -376,7 +379,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             })),
         );
         // eslint-disable-next-line react-hooks/exhaustive-deps -- a plugin's documents live outside the store
-    }, [refs, windowsById, agentsById, activity, backgroundWork, termTitles, dirtyEditorPaths, activeKey, session.id, documentsVersion]);
+    }, [refs, windowsById, agentsById, activity, backgroundWork, subagentCounts, termTitles, dirtyEditorPaths, activeKey, session.id, documentsVersion]);
 
     const refByKey = new Map(refs.map((ref) => [tabRefKey(ref), ref]));
 

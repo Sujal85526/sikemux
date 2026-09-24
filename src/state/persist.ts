@@ -867,6 +867,7 @@ export function applyHydrate(raw: string): HydrationResult {
         windowsBySession,
         agentActivity: {},
         agentBackgroundWork: {},
+        agentSubagents: {},
         activeSessionId,
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
         editorViews,

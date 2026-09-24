@@ -112,6 +112,33 @@
 .agent-activity.state-stopped {
     color: var(--text-tertiary);
 }
+.subagent-count {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    margin-right: 5px;
+    color: color-mix(in srgb, var(--live) 58%, var(--ink-faint));
+}
+.subagent-count-dot {
+    position: absolute;
+    top: -3px;
+    right: -5px;
+    display: grid;
+    place-items: center;
+    min-width: 11px;
+    height: 11px;
+    padding: 0 2px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--live);
+    color: var(--surface-sunken);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
 @keyframes agent-activity-spin {
     to {
         transform: rotate(360deg);

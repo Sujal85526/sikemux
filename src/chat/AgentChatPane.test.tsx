@@ -993,13 +993,13 @@ describe("AgentChatPane", () => {
                 description: "Push 20 commits through pre-push gates",
             },
         });
-        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenCalledWith("agent-1", 1));
+        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenCalledWith("agent-1", 1, 0));
 
         emit("session_update", {
             sessionId: "session-1",
             update: { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "completed" },
         });
-        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenLastCalledWith("agent-1", 0));
+        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenLastCalledWith("agent-1", 0, 0));
     });
 
     it("says a background task's name once when its description repeats it", async () => {

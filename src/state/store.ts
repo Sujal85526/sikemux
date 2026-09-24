@@ -143,6 +143,8 @@ export interface ViewState {
     agentActivity: Record<string, import("./types").AgentRuntimeState>;
     /** How many background shells, monitors and subagents each agent still has going. */
     agentBackgroundWork: Record<string, number>;
+    /** How many of those are subagents, counted on their own so a tab can show them. */
+    agentSubagents: Record<string, number>;
 
     commandPaletteOpen: boolean;
     onboardingOpen: boolean;
@@ -248,6 +250,7 @@ export const useStore = create<StoreState>(() => {
         globalSearchBySession: {},
         agentActivity: {},
         agentBackgroundWork: {},
+        agentSubagents: {},
         commandPaletteOpen: false,
         onboardingOpen: false,
         diagnosticsOpen: false,

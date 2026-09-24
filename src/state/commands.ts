@@ -987,6 +987,7 @@ function disposePaneState(d: StoreState, paneId: string): void {
     delete d.agents[paneId];
     delete d.agentActivity[paneId];
     delete d.agentBackgroundWork[paneId];
+    delete d.agentSubagents[paneId];
 }
 
 function pruneWindowViews(d: StoreState, win: Window): void {
@@ -1694,11 +1695,14 @@ export function resumeAgent(id: string): void {
 /* A turn is over long before the work it started is. Shells, monitors and
    subagents outlive the answer that launched them, and ending the agent ends
    them too, so the count of what is still going decides whether it can sleep. */
-export function noteAgentBackgroundWork(id: string, count: number): void {
+export function noteAgentBackgroundWork(id: string, tasks: number, subagents: number): void {
     mutate((d) => {
         if (!d.agents[id]) return;
+        const count = tasks + subagents;
         if (count > 0) d.agentBackgroundWork[id] = count;
         else delete d.agentBackgroundWork[id];
+        if (subagents > 0) d.agentSubagents[id] = subagents;
+        else delete d.agentSubagents[id];
     });
 }
 
@@ -1715,6 +1719,7 @@ export function sleepAgents(ids: readonly string[]): string[] {
             if (!agent?.resumeId || agent.launchState === "dormant") continue;
             agent.launchState = "dormant";
             delete d.agentBackgroundWork[id];
+            delete d.agentSubagents[id];
             slept.push(id);
         }
     });

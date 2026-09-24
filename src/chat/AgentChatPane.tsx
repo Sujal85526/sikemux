@@ -1421,8 +1421,8 @@ export function AgentChatPane({
        what is still running is what says the agent is still in use. */
     const liveTasks = useMemo(() => state.tasks.filter((task) => task.state === "running").length, [state.tasks]);
     const liveSubagents = useMemo(() => runningSubagents(state.messages).length, [state.messages]);
-    useEffect(() => cmd.noteAgentBackgroundWork(agent.id, liveTasks + liveSubagents), [agent.id, liveTasks, liveSubagents]);
-    useEffect(() => () => cmd.noteAgentBackgroundWork(agent.id, 0), [agent.id]);
+    useEffect(() => cmd.noteAgentBackgroundWork(agent.id, liveTasks, liveSubagents), [agent.id, liveTasks, liveSubagents]);
+    useEffect(() => () => cmd.noteAgentBackgroundWork(agent.id, 0, 0), [agent.id]);
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 

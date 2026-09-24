@@ -1,6 +1,6 @@
 import { AGENT_STATE_META } from "../state/agentStatus";
 import type { AgentPresentationState } from "../state/types";
-import { IconCommand } from "./Icons";
+import { IconAgent, IconCommand } from "./Icons";
 
 const BACKGROUND_LABEL = "Shells or monitors still running";
 
@@ -38,6 +38,18 @@ export function AgentStateIndicator({
     return (
         <span className={`agent-activity state-${tone}${unread ? " unread" : ""}`} title={label} aria-label={label} role="img">
             {tone === "background" ? <IconCommand size={11} className="agent-state-icon" /> : <span className="agent-state-dot" aria-hidden="true" />}
+        </span>
+    );
+}
+
+export function SubagentCount({ count }: { count: number }) {
+    const label = `${count} ${count === 1 ? "subagent" : "subagents"} running`;
+    return (
+        <span className="subagent-count" title={label} aria-label={label} role="img">
+            <IconAgent size={13} />
+            <span className="subagent-count-dot" aria-hidden="true">
+                {count}
+            </span>
         </span>
     );
 }
