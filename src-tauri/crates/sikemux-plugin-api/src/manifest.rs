@@ -12,16 +12,6 @@ pub struct Manifest {
     pub name: String,
     pub version: Version,
     pub sikemux: VersionReq,
-    pub group: Group,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Group {
-    Cloud,
-    CiCd,
-    Apis,
-    Observability,
 }
 
 impl Manifest {
@@ -66,7 +56,7 @@ mod tests {
 
     fn manifest(sikemux: &str) -> Result<Manifest, PluginError> {
         Manifest::from_json(&format!(
-            r#"{{"id":"sikemux.rundeck","name":"Rundeck","version":"1.0.0","sikemux":"{sikemux}","group":"ci-cd"}}"#
+            r#"{{"id":"sikemux.rundeck","name":"Rundeck","version":"1.0.0","sikemux":"{sikemux}"}}"#
         ))
     }
 
@@ -74,7 +64,6 @@ mod tests {
     fn parses_a_manifest() -> Result<(), PluginError> {
         let manifest = manifest(">=0.4")?;
         assert_eq!(manifest.id, "sikemux.rundeck");
-        assert_eq!(manifest.group, Group::CiCd);
         Ok(())
     }
 
@@ -106,7 +95,7 @@ mod tests {
     #[test]
     fn rejects_unknown_fields() {
         let result = Manifest::from_json(
-            r#"{"id":"a.b","name":"B","version":"1.0.0","sikemux":"*","group":"apis","extra":1}"#,
+            r#"{"id":"a.b","name":"B","version":"1.0.0","sikemux":"*","extra":1}"#,
         );
         assert!(result.is_err());
     }

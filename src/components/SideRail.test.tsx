@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getState, setState } from "../state/store";
 import type { Session, SessionKind } from "../state/types";
+import "../plugins/builtin";
 import { SideRail } from "./SideRail";
 
 const initial = getState();
@@ -97,5 +98,28 @@ describe("project tree", () => {
         for (const row of rows) {
             expect(row.parentElement).toBe(children);
         }
+    });
+});
+
+describe("plugins group", () => {
+    it("gathers AWS and every plugin under one group, offering whatever is not open", () => {
+        setState({
+            sessions: { ...getState().sessions, aws: session("aws", "aws"), signoz: session("signoz", "sikemux.signoz:explore") },
+            sessionOrder: [...getState().sessionOrder, "aws", "signoz"],
+            windowsBySession: { ...getState().windowsBySession, aws: [], signoz: [] },
+            pluginManifests: [
+                { id: "sikemux.rundeck", name: "Rundeck", version: "0.1.0", sikemux: ">=0.4" },
+                { id: "sikemux.signoz", name: "SigNoz", version: "0.1.0", sikemux: ">=0.4" },
+            ],
+        });
+        render(<SideRail />);
+
+        expect(screen.getByText("Plugins")).toBeTruthy();
+        for (const gone of ["Cloud", "CI/CD", "Observability"]) expect(screen.queryByText(gone)).toBeNull();
+        expect(screen.getByRole("button", { name: "aws" })).toBeTruthy();
+        expect(screen.getByRole("button", { name: "signoz" })).toBeTruthy();
+        expect(screen.getByRole("button", { name: "open rundeck deploy center" })).toBeTruthy();
+        expect(screen.queryByRole("button", { name: "open aws" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "open signoz" })).toBeNull();
     });
 });

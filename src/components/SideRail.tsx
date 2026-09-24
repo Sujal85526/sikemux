@@ -24,15 +24,13 @@ import { UpdateChip, VersionChip } from "./TopBar";
 import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
-import { PLUGIN_GROUP_LABELS, railGroupOf, type RailGroup } from "../state/railGroups";
-import type { PluginGroup } from "../api/plugins";
+import { railGroupOf, type RailGroup } from "../state/railGroups";
+import { isPluginKind, pluginIdOf } from "../plugins/kinds";
 
-interface GroupAction {
-    add: () => void;
-    addTitle: string;
-    addKbd?: string;
-    emptyText: string;
-    singleton?: boolean;
+/** Something the plugins group can open that is not open yet. */
+interface Opener {
+    label: string;
+    open: () => void;
 }
 
 function kindIcon(kind: SessionKind): ReactNode {
@@ -354,6 +352,7 @@ function Group({
     actionTitle,
     emptyText,
     singleton,
+    openers = [],
 }: {
     label: string;
     list: Session[];
@@ -364,6 +363,7 @@ function Group({
     actionTitle?: string;
     emptyText: string;
     singleton?: boolean;
+    openers?: readonly Opener[];
 }) {
     return (
         <Panel variant="group">
@@ -391,11 +391,14 @@ function Group({
                     )
                 }
             />
-            {list.length === 0 ? (
+            {list.length === 0 && openers.length === 0 ? (
                 <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
             ) : (
                 list.map(renderSession)
             )}
+            {openers.map((opener) => (
+                <EmptyState key={opener.label} variant="inline" message={opener.label} action={{ label: opener.label, onClick: opener.open }} />
+            ))}
         </Panel>
     );
 }
@@ -430,25 +433,16 @@ export const SideRail = memo(function SideRail() {
     const projects = inGroup("project");
     const sshs = inGroup("ssh");
     const commands = inGroup("command");
-    const coreGroupActions: Partial<Record<PluginGroup, GroupAction>> = {
-        cloud: { add: cmd.openAwsSession, addTitle: "Open AWS", emptyText: "open aws", singleton: true },
-        apis: {
-            add: () => cmd.openPicker("bruno"),
-            addTitle: `Open Bruno workspace — ${kb("bruno.open")}`,
-            addKbd: kb("bruno.open"),
-            emptyText: "open a bruno workspace",
-        },
-    };
-    const pluginGroups = (Object.keys(PLUGIN_GROUP_LABELS) as PluginGroup[]).flatMap((group) => {
-        const plugin = pluginManifests
-            .filter((manifest) => manifest.group === group)
-            .map((manifest) => frontendPlugin(manifest.id))
-            .find((found) => found !== undefined);
-        const action =
-            coreGroupActions[group] ??
-            (plugin && { add: plugin.open, addTitle: plugin.openTitle, emptyText: plugin.openTitle.toLowerCase(), singleton: true });
-        return action ? [{ group, action }] : [];
-    });
+    const plugins = inGroup("plugins");
+    const apis = inGroup("apis");
+    const openers: Opener[] = [
+        ...(plugins.some((session) => session.kind === "aws") ? [] : [{ label: "open aws", open: cmd.openAwsSession }]),
+        ...pluginManifests.flatMap((manifest) => {
+            const plugin = frontendPlugin(manifest.id);
+            const open = plugins.some((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === manifest.id);
+            return plugin && !open ? [{ label: plugin.openTitle.toLowerCase(), open: plugin.open }] : [];
+        }),
+    ];
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {
         const ghost = projectGhostRef.current;
@@ -676,9 +670,15 @@ export const SideRail = memo(function SideRail() {
                         actionTitle="Edit ~/.ssh/config"
                         emptyText="no ssh hosts"
                     />
-                    {pluginGroups.map(({ group, action }) => (
-                        <Group key={group} label={PLUGIN_GROUP_LABELS[group]} list={inGroup(group)} {...action} />
-                    ))}
+                    <Group label="Plugins" list={plugins} emptyText="no plugins" openers={openers} />
+                    <Group
+                        label="API"
+                        list={apis}
+                        add={() => cmd.openPicker("bruno")}
+                        addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
+                        addKbd={kb("bruno.open")}
+                        emptyText="open a bruno workspace"
+                    />
                     <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
                 </div>
 

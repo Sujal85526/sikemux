@@ -240,7 +240,7 @@ mod tests {
     impl Echo {
         fn plugin(id: &str, sikemux: &str) -> Arc<dyn Plugin> {
             let manifest = Manifest::from_json(
-                &json!({ "id": id, "name": "Echo", "version": "1.0.0", "sikemux": sikemux, "group": "apis" }).to_string(),
+                &json!({ "id": id, "name": "Echo", "version": "1.0.0", "sikemux": sikemux }).to_string(),
             )
             .expect("test manifest parses");
             Arc::new(Self(manifest))

@@ -1,14 +1,11 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "./invoke";
 
-export type PluginGroup = "cloud" | "ci-cd" | "apis" | "observability";
-
 export interface PluginManifest {
     readonly id: string;
     readonly name: string;
     readonly version: string;
     readonly sikemux: string;
-    readonly group: PluginGroup;
 }
 
 export interface PluginFailure {
