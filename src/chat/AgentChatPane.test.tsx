@@ -885,7 +885,7 @@ describe("AgentChatPane", () => {
         expect(strip).toHaveTextContent("search usePty");
 
         const card = document.querySelector(".chat-subagent") as HTMLElement;
-        expect(card).toHaveTextContent("working");
+        expect(card.querySelector('[role="img"][aria-label="working"]')).not.toBeNull();
         expect(card).toHaveTextContent("1 call");
         // The task is a whole prompt, so the row shows its first line only.
         expect(card).toHaveTextContent("You are implementing performance fixes");
@@ -894,7 +894,7 @@ describe("AgentChatPane", () => {
         emit("turn_completed", { stopReason: "cancelled" });
 
         await waitFor(() => expect(screen.queryByLabelText("1 subagent")).not.toBeInTheDocument());
-        expect(document.querySelector(".chat-subagent")).toHaveTextContent("stopped");
+        expect(document.querySelector('.chat-subagent [role="img"][aria-label="stopped"]')).not.toBeNull();
         expect(document.querySelector(".chat-tool-spinner")).toBeNull();
     });
 

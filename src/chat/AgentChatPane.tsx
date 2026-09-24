@@ -36,6 +36,7 @@ import {
     IconAgent,
     IconArrowDown,
     IconArrowUp,
+    IconCheck,
     IconChevron,
     IconClock,
     IconClose,
@@ -751,6 +752,25 @@ const SUBAGENT_WORDS: Record<AcpSubagent["state"], string> = {
     disconnected: "lost",
 };
 
+function SubagentStateMark({ state }: { state: AcpSubagent["state"] }) {
+    const word = SUBAGENT_WORDS[state];
+    return (
+        <span className="chat-subagent-state" role="img" aria-label={word} title={word}>
+            {state === "running" ? (
+                <span className="chat-subagent-spinner" aria-hidden="true" />
+            ) : state === "completed" ? (
+                <IconCheck size={13} />
+            ) : state === "failed" ? (
+                <IconWarning size={12} />
+            ) : state === "disconnected" ? (
+                <IconPlug size={12} />
+            ) : (
+                <IconClose size={11} />
+            )}
+        </span>
+    );
+}
+
 /* A subagent is handed a whole prompt as its task, and a prompt is paragraphs.
    The row is one line, so it opens with the first line and the tooltip keeps
    the rest. */
@@ -795,7 +815,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                             {calls} {calls === 1 ? "call" : "calls"}
                         </span>
                     )}
-                    <span className="chat-subagent-state">{SUBAGENT_WORDS[subagent.state]}</span>
+                    <SubagentStateMark state={subagent.state} />
                 </span>
             </summary>
             {open && (

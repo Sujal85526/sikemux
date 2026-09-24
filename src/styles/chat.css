@@ -1028,10 +1028,23 @@ button.chat-tool:hover,
 }
 
 .chat-subagent-state {
-    padding: 1px 5px;
-    border-radius: var(--radius-chip);
-    background: color-mix(in srgb, var(--chat-agent) 14%, transparent);
+    display: grid;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    place-items: center;
     color: var(--chat-agent);
+}
+
+.chat-subagent-spinner {
+    box-sizing: border-box;
+    width: 10px;
+    height: 10px;
+    border: 1.4px solid color-mix(in oklab, currentcolor 26%, transparent);
+    border-top-color: currentcolor;
+    border-right-color: currentcolor;
+    border-radius: 50%;
+    animation: chat-activity-spin 0.72s linear infinite;
 }
 
 .chat-subagent-body {
@@ -1929,7 +1942,8 @@ button.chat-tool:hover,
     .chat-activity-label,
     .chat-activity-loader,
     .chat-activity-mark,
-    .chat-tool-spinner {
+    .chat-tool-spinner,
+    .chat-subagent-spinner {
         animation: none;
     }
 
