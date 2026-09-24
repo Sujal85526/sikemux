@@ -14,7 +14,7 @@ registerFrontendPlugin({
         {
             kind: RUNDECK_DEPLOY,
             title: "Rundeck",
-            icon: (size) => <IconRundeck size={size} />,
+            icon: (size) => <IconRundeck size={Math.round(size * 0.87)} />,
             render: ({ paneId, visible }) => <RundeckPane paneId={paneId} active={visible} />,
             quickOpen: toggleRundeckJobPalette,
         },
