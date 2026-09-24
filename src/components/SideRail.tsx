@@ -43,7 +43,7 @@ function kindIcon(kind: SessionKind): ReactNode {
     return <IconCommand size={13} />;
 }
 
-const MAX_BADGE_ICONS = 3;
+const MAX_BADGE_ICONS = 5;
 type ProjectDropPlacement = "before" | "after";
 
 interface ProjectDragSession {

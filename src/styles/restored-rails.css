@@ -111,6 +111,11 @@
     flex-shrink: 0;
 }
 
+/* Agent glyphs are drawn with room around them inside the 20px box; pull them together. */
+.proj-pip + .proj-pip {
+    margin-left: -6px;
+}
+
 .side-rail .proj-child:hover .proj-child-kbd {
     opacity: 1;
     color: var(--ink);
