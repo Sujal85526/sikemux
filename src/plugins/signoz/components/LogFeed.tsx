@@ -127,7 +127,7 @@ export function LogFeed({ paneId, active }: { paneId: string; active: boolean })
         });
 
     const quiet = view.severities.length > 0 && view.severities.every((severity) => severity === "ERROR" || severity === "FATAL");
-    const showService = !view.service;
+    const showService = !search.service;
     return (
         <div className="sgz-feed">
             <LogVolume paneId={paneId} active={active} search={search} />

@@ -2,6 +2,9 @@ import { resource } from "../../plugin-api/resources";
 import {
     signozApi,
     type Dashboard,
+    type ErrorGroup,
+    type Operation,
+    type ServiceOverview,
     type DashboardSummary,
     type PanelData,
     type PanelRequest,
@@ -27,6 +30,24 @@ export const signozStatusR = resource({
 export const signozServicesR = resource({
     kind: "signoz.services",
     fetch: (scope: Scope): Promise<ServiceHealth[]> => signozApi.services(scope),
+    staleAfterMs: 30_000,
+});
+
+export const signozOverviewR = resource({
+    kind: "signoz.overview",
+    fetch: (scope: Scope): Promise<ServiceOverview> => signozApi.serviceOverview(scope),
+    staleAfterMs: 30_000,
+});
+
+export const signozOperationsR = resource({
+    kind: "signoz.operations",
+    fetch: (scope: Scope): Promise<Operation[]> => signozApi.operations(scope),
+    staleAfterMs: 30_000,
+});
+
+export const signozErrorGroupsR = resource({
+    kind: "signoz.errorGroups",
+    fetch: (scope: Scope): Promise<ErrorGroup[]> => signozApi.errorGroups(scope),
     staleAfterMs: 30_000,
 });
 

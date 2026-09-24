@@ -95,6 +95,37 @@ export interface ServiceHealth {
     p99Ms: number;
 }
 
+export type Point = [number, number];
+
+export interface ServiceOverview {
+    calls: number;
+    errors: number;
+    errorRate: number;
+    perMinute: number;
+    p99Ms: number;
+    p50Ms: number;
+    requests: Point[];
+    failures: Point[];
+    p99: Point[];
+}
+
+export interface Operation {
+    name: string;
+    calls: number;
+    errors: number;
+    errorRate: number;
+    p99Ms: number;
+    p50Ms: number;
+}
+
+export interface ErrorGroup {
+    pattern: string;
+    sample: string;
+    count: number;
+    firstSeen: number;
+    lastSeen: number;
+}
+
 export type TraceOrder = "slowest" | "recent";
 
 export interface TraceSearch extends Scope {
@@ -196,7 +227,7 @@ export interface Dashboard {
 
 export interface Series {
     label: string;
-    points: [number, number][];
+    points: Point[];
 }
 
 export type PanelData =
@@ -241,6 +272,9 @@ export const signozApi = {
     signOut: () => backend.call<void>("signOut"),
 
     services: (scope: Scope) => read<ServiceHealth[]>("services", scope),
+    serviceOverview: (scope: Scope) => read<ServiceOverview>("serviceOverview", scope),
+    operations: (scope: Scope) => read<Operation[]>("operations", scope),
+    errorGroups: (scope: Scope) => read<ErrorGroup[]>("errorGroups", scope),
     searchLogs: (search: LogSearch) => read<LogPage>("searchLogs", search),
     searchTraces: (search: TraceSearch) => read<TracePage>("searchTraces", search),
     trace: (traceId: string) => read<Trace>("trace", { traceId }),

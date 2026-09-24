@@ -14,12 +14,12 @@ describe("paletteItems", () => {
         const items = paletteItems("gatew", ["reel-worker", "api-gateway"]);
         expect(items[0].label).toBe("api-gateway");
         items[0].run("pane-palette-service");
-        expect(viewOf("pane-palette-service").service).toBe("api-gateway");
+        expect(viewOf("pane-palette-service")).toMatchObject({ section: "services", service: "api-gateway", serviceTab: "overview" });
     });
 
     it("lists actions before services when nothing is typed", () => {
         const labels = paletteItems("", ["api-gateway"]).map((item) => item.label);
-        expect(labels.indexOf("Show traces")).toBeLessThan(labels.indexOf("api-gateway"));
+        expect(labels.indexOf("Search traces")).toBeLessThan(labels.indexOf("api-gateway"));
         expect(labels).not.toContain(expect.stringMatching(/^Open trace/));
     });
 
@@ -27,6 +27,6 @@ describe("paletteItems", () => {
         const items = paletteItems("render", ["reel-worker"], [{ id: "d1", title: "Render farm" }]);
         expect(items[0].label).toBe("Render farm");
         items[0].run("pane-palette-dashboard");
-        expect(viewOf("pane-palette-dashboard").dashboard).toBe("d1");
+        expect(viewOf("pane-palette-dashboard")).toMatchObject({ section: "dashboards", dashboard: "d1" });
     });
 });

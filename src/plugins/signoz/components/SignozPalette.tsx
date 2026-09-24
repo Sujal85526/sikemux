@@ -4,8 +4,8 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import { SIGNOZ_EXPLORE } from "../kinds";
 import { signozDashboardsR, signozServicesR } from "../resources";
-import { closePalette, setLive, signozSettings, updateView, viewOf } from "../state";
-import { mergeByService } from "./ServiceSidebar";
+import { closePalette, openDashboard, setLive, showSection, showService, signozSettings, updateView, viewOf } from "../state";
+import { mergeByService } from "../health";
 import { SignozIcon } from "./SignozIcon";
 
 const TRACE_ID = /^[0-9a-f]{16,32}$/i;
@@ -21,23 +21,24 @@ interface Item {
 export function paletteItems(query: string, services: readonly string[], dashboards: readonly { id: string; title: string }[] = []): Item[] {
     const typed = query.trim();
     const actions: Item[] = [
-        { id: "tab:logs", label: "Show logs", run: (paneId) => updateView(paneId, { tab: "logs", trace: null }) },
-        { id: "tab:traces", label: "Show traces", run: (paneId) => updateView(paneId, { tab: "traces", trace: null }) },
+        { id: "section:services", label: "All services", run: (paneId) => showSection(paneId, "services") },
+        { id: "section:logs", label: "Search logs", run: (paneId) => showSection(paneId, "logs") },
+        { id: "section:traces", label: "Search traces", run: (paneId) => showSection(paneId, "traces") },
+        { id: "section:dashboards", label: "All dashboards", run: (paneId) => showSection(paneId, "dashboards") },
         { id: "live", label: "Follow live / pause", run: (paneId) => setLive(paneId, !viewOf(paneId).live) },
         { id: "clear", label: "Clear filters", run: (paneId) => updateView(paneId, { filters: [], expression: "", text: "" }) },
-        { id: "service:*", label: "All services", run: (paneId) => updateView(paneId, { service: null, trace: null }) },
     ];
     const serviceItems: Item[] = services.map((service) => ({
         id: `service:${service}`,
         label: service,
         hint: "service",
-        run: (paneId) => updateView(paneId, { service, trace: null, dashboard: null }),
+        run: (paneId) => showService(paneId, service),
     }));
     const dashboardItems: Item[] = dashboards.map((dashboard) => ({
         id: `dashboard:${dashboard.id}`,
         label: dashboard.title,
         hint: "dashboard",
-        run: (paneId) => updateView(paneId, { dashboard: dashboard.id, trace: null }),
+        run: (paneId) => openDashboard(paneId, dashboard.id),
     }));
     const everything = [...dashboardItems, ...serviceItems];
     const ranked = typed ? rankBy(typed, [...everything, ...actions], (item) => item.label) : [...actions, ...everything];

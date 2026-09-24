@@ -9,6 +9,10 @@ export const SEVERITIES = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"] as const;
 export const SERVICE_SORTS = ["errors", "calls", "p99", "name"] as const;
 export type ServiceSort = (typeof SERVICE_SORTS)[number];
 
+/** Something kept at hand in the sidebar: `service:<name>` or `dashboard:<id>`. */
+export type Pin = `service:${string}` | `dashboard:${string}`;
+const isPin = (value: unknown): value is Pin => typeof value === "string" && /^(service|dashboard):./.test(value);
+
 export interface SignozSettings {
     minutes: number;
     /** Which deployment.environment every view reads, or all of them. */
@@ -18,6 +22,7 @@ export interface SignozSettings {
     serviceByProject: Record<string, string>;
     /** The values chosen for each dashboard's variables, by dashboard id. */
     dashboardVariables: Record<string, Record<string, string>>;
+    pins: Pin[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -41,6 +46,7 @@ function decodeSettings(saved: unknown): SignozSettings {
         environment: typeof raw.environment === "string" && raw.environment ? raw.environment : null,
         serviceSort: (SERVICE_SORTS as readonly unknown[]).includes(raw.serviceSort) ? (raw.serviceSort as ServiceSort) : "errors",
         serviceByProject,
+        pins: Array.isArray(raw.pins) ? [...new Set(raw.pins.filter(isPin))] : [],
     };
 }
 
@@ -50,7 +56,8 @@ export function updateSettings(patch: Partial<SignozSettings>): void {
     signozSettings.update((settings) => ({ ...settings, ...patch }));
 }
 
-export type ExploreTab = "logs" | "traces";
+export type Section = "services" | "logs" | "traces" | "dashboards";
+export type ServiceTab = "overview" | "logs" | "traces";
 
 export interface TimeRange {
     start: number;
@@ -58,8 +65,10 @@ export interface TimeRange {
 }
 
 export interface ExploreView {
-    tab: ExploreTab;
+    section: Section;
+    /** The service whose page is open, in the services section. */
     service: string | null;
+    serviceTab: ServiceTab;
     filters: Filter[];
     severities: string[];
     text: string;
@@ -68,7 +77,7 @@ export interface ExploreView {
     live: boolean;
     fixedEnd: number | null;
     trace: string | null;
-    /** A dashboard shown in place of logs and traces. */
+    /** The dashboard open in the dashboards section. */
     dashboard: string | null;
     /** A moment picked out of a chart, which holds the view still on it. */
     range: TimeRange | null;
@@ -77,8 +86,9 @@ export interface ExploreView {
 }
 
 const FRESH: ExploreView = {
-    tab: "logs",
+    section: "services",
     service: null,
+    serviceTab: "overview",
     filters: [],
     severities: ["FATAL", "ERROR"],
     text: "",
@@ -141,8 +151,30 @@ export function zoomTo(paneId: string, range: TimeRange): void {
     updateView(paneId, { live: false, range, fixedEnd: range.end });
 }
 
-export function openDashboard(paneId: string, dashboard: string | null): void {
-    updateView(paneId, { dashboard, trace: null });
+export function showSection(paneId: string, section: Section): void {
+    updateView(paneId, { section, service: null, dashboard: null, trace: null });
+}
+
+export function showService(paneId: string, service: string, serviceTab: ServiceTab = "overview"): void {
+    updateView(paneId, { section: "services", service, serviceTab, trace: null });
+}
+
+export function openDashboard(paneId: string, dashboard: string): void {
+    updateView(paneId, { section: "dashboards", dashboard, trace: null });
+}
+
+/** Which signal the logs-or-traces part of the view is reading, if it is reading one. */
+export function signalOf(view: ExploreView): "logs" | "traces" | null {
+    if (view.section === "logs" || view.section === "traces") return view.section;
+    if (view.section === "services" && view.service && view.serviceTab !== "overview") return view.serviceTab;
+    return null;
+}
+
+export function togglePin(pin: Pin): void {
+    signozSettings.update((settings) => ({
+        ...settings,
+        pins: settings.pins.includes(pin) ? settings.pins.filter((kept) => kept !== pin) : [...settings.pins, pin],
+    }));
 }
 
 export function setDashboardVariable(dashboard: string, name: string, value: string): void {
@@ -161,7 +193,7 @@ export function scopeOf(view: ExploreView, settings: Pick<SignozSettings, "minut
           : { start: view.fixedEnd - settings.minutes * 60_000, end: view.fixedEnd };
     return {
         ...range,
-        service: view.service ?? undefined,
+        service: (view.section === "services" && view.service) || undefined,
         environment: settings.environment ?? undefined,
         filters: view.filters,
         expression: view.expression.trim() || undefined,
@@ -180,5 +212,5 @@ export function openTrace(traceId: string): void {
 
 export function openService(service: string): void {
     const paneId = openSurface(SIGNOZ_EXPLORE);
-    if (paneId) updateView(paneId, { service, trace: null, dashboard: null });
+    if (paneId) showService(paneId, service);
 }

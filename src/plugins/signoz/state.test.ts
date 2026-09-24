@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { mergeByService } from "./components/ServiceSidebar";
-import { addFilter, removeFilter, scopeOf, setLive, signozSettings, viewOf, zoomTo, type SignozSettings } from "./state";
+import { mergeByService } from "./health";
+import {
+    addFilter,
+    removeFilter,
+    scopeOf,
+    setLive,
+    showSection,
+    showService,
+    signalOf,
+    signozSettings,
+    togglePin,
+    viewOf,
+    zoomTo,
+    type SignozSettings,
+} from "./state";
 
 describe("signozSettings", () => {
     it("falls back to usable settings whatever was saved", () => {
@@ -17,6 +30,7 @@ describe("signozSettings", () => {
             serviceSort: "errors",
             serviceByProject: { "/repo": "api" },
             dashboardVariables: {},
+            pins: [],
         });
     });
 });
@@ -74,5 +88,31 @@ describe("mergeByService", () => {
 
     it("keeps only the chosen environment", () => {
         expect(mergeByService(rows, "production").map((row) => row.service)).toEqual(["reel-worker"]);
+    });
+});
+
+describe("service pages", () => {
+    it("scope the view to the service only while its page is open", () => {
+        const settings = { minutes: 15, environment: null };
+        showService("pane-service", "api-gateway", "logs");
+        expect(scopeOf(viewOf("pane-service"), settings).service).toBe("api-gateway");
+        expect(signalOf(viewOf("pane-service"))).toBe("logs");
+        showSection("pane-service", "logs");
+        expect(scopeOf(viewOf("pane-service"), settings).service).toBeUndefined();
+    });
+
+    it("read no signal on the overview", () => {
+        showService("pane-overview", "api-gateway");
+        expect(signalOf(viewOf("pane-overview"))).toBeNull();
+    });
+});
+
+describe("pins", () => {
+    it("toggle, and drop anything saved that is not a pin", () => {
+        signozSettings.update((settings) => ({ ...settings, pins: ["service:api", "nonsense", 3] as unknown as SignozSettings["pins"] }));
+        expect(signozSettings.get().pins).toEqual(["service:api"]);
+        togglePin("dashboard:d1");
+        togglePin("service:api");
+        expect(signozSettings.get().pins).toEqual(["dashboard:d1"]);
     });
 });

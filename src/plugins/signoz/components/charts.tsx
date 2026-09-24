@@ -133,13 +133,13 @@ function Tooltip({ tip, width }: { tip: Tip | null; width: number }) {
     );
 }
 
-export function Legend({ series }: { series: readonly Series[] }) {
+export function Legend({ series, colors }: { series: readonly Series[]; colors?: readonly string[] }) {
     if (series.length < 2) return null;
     return (
         <ul className="sgz-legend">
             {series.map((serie, index) => (
                 <li key={`${serie.label}:${index}`}>
-                    <span className="sgz-swatch" style={{ background: seriesColor(index, serie.label) }} />
+                    <span className="sgz-swatch" style={{ background: colors?.[index] ?? seriesColor(index, serie.label) }} />
                     {serie.label || "series"}
                 </li>
             ))}
@@ -150,10 +150,25 @@ export function Legend({ series }: { series: readonly Series[] }) {
 const LEGEND_ALLOWANCE = 22;
 
 /** Lines, or stacked bars, over time on one axis, filling the space it is given. */
-export function TimeChart({ series, unit, bars = false }: { series: readonly Series[]; unit: string; bars?: boolean }) {
+export function TimeChart({
+    series,
+    unit,
+    bars = false,
+    area = false,
+    colors,
+}: {
+    series: readonly Series[];
+    unit: string;
+    bars?: boolean;
+    /** Shades under a single line, for a chart that shows one quantity. */
+    area?: boolean;
+    /** Colours that carry meaning, like red for errors, in place of the series order. */
+    colors?: readonly string[];
+}) {
     const [ref, width, space] = useSize<HTMLDivElement>();
     const [tip, setTip] = useState<Tip | null>(null);
     const folded = useMemo(() => foldSeries(series), [series]);
+    const colorOf = (position: number, label: string) => colors?.[position] ?? seriesColor(position, label);
     const height = Math.max(60, space - (folded.length > 1 ? LEGEND_ALLOWANCE : 0));
     const times = useMemo(
         () => [...new Set(folded.flatMap((serie) => serie.points.map(([at]) => at)))].sort((left, right) => left - right),
@@ -194,7 +209,7 @@ export function TimeChart({ series, unit, bars = false }: { series: readonly Ser
                     <div className="sgz-tip-time">{timeLabel(at, span)}</div>
                     {rows.map((row) => (
                         <div key={row.position} className="sgz-tip-row">
-                            <span className="sgz-swatch" style={{ background: seriesColor(row.position, row.serie.label) }} />
+                            <span className="sgz-swatch" style={{ background: colorOf(row.position, row.serie.label) }} />
                             <span className="sgz-tip-label">{row.serie.label || "value"}</span>
                             <span className="sgz-tip-value">{formatValue(row.value, unit)}</span>
                         </div>
@@ -244,24 +259,34 @@ export function TimeChart({ series, unit, bars = false }: { series: readonly Ser
                                           width={barWidth}
                                           height={Math.max(0, bottom - top - (position > 0 ? 1 : 0))}
                                           rx={1}
-                                          fill={seriesColor(position, serie.label)}
+                                          fill={colorOf(position, serie.label)}
                                       />
                                   );
                               });
                           })
-                        : folded.map((serie, position) => (
-                              <polyline
-                                  key={position}
-                                  className="sgz-line"
-                                  points={serie.points.map(([at, value]) => `${x(at)},${y(value)}`).join(" ")}
-                                  stroke={seriesColor(position, serie.label)}
-                              />
-                          ))}
+                        : folded.map((serie, position) => {
+                              const line = serie.points.map(([at, value]) => `${x(at)},${y(value)}`).join(" ");
+                              const shade = area && folded.length === 1 && serie.points.length > 1;
+                              const firstAt = serie.points[0]?.[0] ?? first;
+                              const lastAt = serie.points[serie.points.length - 1]?.[0] ?? last;
+                              return (
+                                  <g key={position}>
+                                      {shade && (
+                                          <polygon
+                                              className="sgz-area"
+                                              points={`${x(firstAt)},${y(0)} ${line} ${x(lastAt)},${y(0)}`}
+                                              fill={colorOf(position, serie.label)}
+                                          />
+                                      )}
+                                      <polyline className="sgz-line" points={line} stroke={colorOf(position, serie.label)} />
+                                  </g>
+                              );
+                          })}
                     {tip && <line className="sgz-crosshair" x1={tip.x} x2={tip.x} y1={PAD.top} y2={PAD.top + plotHeight} />}
                 </svg>
             )}
             <Tooltip tip={tip} width={width} />
-            <Legend series={folded} />
+            <Legend series={folded} colors={colors} />
         </div>
     );
 }
