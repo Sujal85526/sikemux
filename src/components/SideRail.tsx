@@ -40,7 +40,7 @@ function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "aws") return <IconAws />;
     const surface = pluginSurface(kind);
     if (surface) return surface.icon(14);
-    if (kind === "bruno") return <IconBruno size={14} />;
+    if (kind === "bruno") return <IconBruno size={20} />;
     return <IconCommand size={13} />;
 }
 

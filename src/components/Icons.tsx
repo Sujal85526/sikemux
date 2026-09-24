@@ -1,5 +1,6 @@
 import type { AgentType } from "../state/types";
 
+const brunoLogo = new URL("../assets/bruno.svg", import.meta.url).href;
 const codexLogo = new URL("../assets/agent-logos/codex.svg", import.meta.url).href;
 const ompLogo = new URL("../assets/agent-logos/omp.svg", import.meta.url).href;
 
@@ -368,24 +369,7 @@ export function IconRundeck({ size = 14, className }: IconProps) {
 }
 
 export function IconBruno({ size = 14, className }: IconProps) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.8}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={className}
-            aria-hidden="true">
-            <path d="M3.5 11h17a8.5 8.5 0 0 1-17 0Z" />
-            <path d="M2.5 11h19" />
-            <path d="M9 3.2c-.9 1.1.9 2.1 0 3.2M14.5 2.8c-.9 1.1.9 2.1 0 3.2" />
-        </svg>
-    );
+    return <img src={brunoLogo} width={size} height={size} className={className} alt="" aria-hidden="true" />;
 }
 
 function Svg24({ size = 14, children }: { size?: number; children: React.ReactNode }) {
