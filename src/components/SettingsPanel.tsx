@@ -55,6 +55,7 @@ import {
     type SettingsEntry,
     type SettingsPageId,
 } from "../settingsIndex";
+import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
@@ -339,7 +340,7 @@ function SearchResults({ query, results, active, onHover, onOpen }: SearchResult
     );
 }
 
-const COMMAND_CONTEXT_OPTIONS: CommandContext[] = ["project", "command", "ssh", "aws", "rundeck", "bruno"];
+const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh", "aws", "bruno"];
 const COMMAND_PLACEMENTS: CustomCommandPlacement[] = ["terminal", "split", "popup", "background", "replace"];
 
 function blankCommand(): CustomCommand {
@@ -348,6 +349,14 @@ function blankCommand(): CustomCommand {
 
 function ActionsPage() {
     const commands = useStore((s) => s.customCommands);
+    const pluginManifests = useStore((s) => s.pluginManifests);
+    const contextOptions = useMemo(
+        () => [
+            ...CORE_COMMAND_CONTEXTS,
+            ...pluginManifests.flatMap((manifest) => frontendPlugin(manifest.id)?.surfaces.map((surface) => surface.kind) ?? []),
+        ],
+        [pluginManifests],
+    );
     const [draft, setDraft] = useState<CustomCommand>(() => blankCommand());
     const editing = commands.some((item) => item.id === draft.id);
     const save = () => {
@@ -418,7 +427,7 @@ function ActionsPage() {
                     </SettingsRow>
                     <SettingsRow label="Contexts" desc="Leave all unticked to offer it everywhere." stack>
                         <div className="command-contexts">
-                            {COMMAND_CONTEXT_OPTIONS.map((context) => (
+                            {contextOptions.map((context) => (
                                 <Checkbox
                                     key={context}
                                     checked={draft.contexts.includes(context)}
@@ -428,7 +437,7 @@ function ActionsPage() {
                                             contexts: on ? [...draft.contexts, context] : draft.contexts.filter((item) => item !== context),
                                         })
                                     }>
-                                    {context}
+                                    {pluginSurface(context)?.title ?? context}
                                 </Checkbox>
                             ))}
                         </div>

@@ -14,7 +14,9 @@ import { agentDirectCommand, agentStartup } from "./commands";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
-import { validatePersistedLayout } from "./persistValidation";
+import { isSessionKind, validatePersistedLayout } from "./persistValidation";
+import { isPluginKind } from "../plugins/kinds";
+import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
@@ -22,9 +24,9 @@ import type {
     AgentProvider,
     AgentType,
     BrowserPaneView,
+    CorePaneKind,
     EditorPaneView,
     LayoutNode,
-    PaneKind,
     PersistedAgent,
     PersistedPrefs,
     PersistedSession,
@@ -38,20 +40,20 @@ import type {
 } from "./types";
 
 function deriveRole(w: Window): WindowRole {
-    if (WINDOW_ROLES.has(w.role)) return w.role;
+    if (WINDOW_ROLES.has(w.role) || isPluginKind(w.role)) return w.role;
     if (w.name === "files") return "files";
     if (w.name === "git") return "git";
     if (w.name === "aws") return "aws";
-    if (w.name === "rundeck") return "rundeck";
     if (w.name === "bruno") return "bruno";
     if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
     return "named";
 }
 
-export const VERSION = 9;
+export const VERSION = 10;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
+const PLUGIN_KIND_MIGRATION_VERSION = 10;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -161,15 +163,13 @@ function mergeBrunoWorkspaces(saved: string[] | undefined, sessions: Session[]):
     return out;
 }
 
-const SESSION_KINDS = new Set<Session["kind"]>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
-const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "aws", "rundeck", "bruno", "ssh-config", "named", "agent"]);
+const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "aws", "bruno", "ssh-config", "named", "agent"]);
 const AWS_SERVICES = new Set<StoreState["awsService"]>(["ecs", "ec2", "lambda", "sqs", "billing", "s3"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-const COMMAND_CONTEXTS = new Set<CommandContext>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
 const COMMAND_PLACEMENTS = new Set<CustomCommandPlacement>(["background", "terminal", "split", "popup", "replace"]);
 
 function normaliseCustomCommands(value: unknown): CustomCommand[] {
@@ -180,9 +180,7 @@ function normaliseCustomCommands(value: unknown): CustomCommand[] {
         if (!isRecord(row) || typeof row.id !== "string" || !row.id || seen.has(row.id)) continue;
         if (typeof row.title !== "string" || !row.title.trim() || typeof row.command !== "string" || !row.command.trim()) continue;
         if (!COMMAND_PLACEMENTS.has(row.placement as CustomCommandPlacement)) continue;
-        const contexts = Array.isArray(row.contexts)
-            ? row.contexts.filter((v): v is CommandContext => COMMAND_CONTEXTS.has(v as CommandContext))
-            : [];
+        const contexts = Array.isArray(row.contexts) ? row.contexts.filter((v): v is CommandContext => isSessionKind(v)) : [];
         seen.add(row.id);
         commands.push({
             id: row.id.slice(0, 100),
@@ -242,7 +240,7 @@ function toSession(value: unknown): Session | null {
     if (
         typeof value.id !== "string" ||
         typeof value.name !== "string" ||
-        !SESSION_KINDS.has(value.kind as Session["kind"]) ||
+        !isSessionKind(value.kind) ||
         typeof value.cwd !== "string" ||
         typeof value.pinned !== "boolean" ||
         typeof value.activeWindowId !== "string"
@@ -277,7 +275,7 @@ function toSession(value: unknown): Session | null {
 }
 
 function isRecent(value: unknown): value is RecentEntry {
-    return isRecord(value) && SESSION_KINDS.has(value.kind as Session["kind"]) && typeof value.name === "string" && typeof value.cwd === "string";
+    return isRecord(value) && isSessionKind(value.kind) && typeof value.name === "string" && typeof value.cwd === "string";
 }
 
 const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode", "omp", "grok"]);
@@ -429,7 +427,7 @@ function durableWindow(s: StoreState, id: string): Window | null {
 }
 
 /** One malformed item must not cost every other item, or the layout, its save. */
-function encodeItemState<Kind extends PaneKind>(
+function encodeItemState<Kind extends CorePaneKind>(
     itemStates: NonNullable<PersistedSnapshot["itemStates"]>,
     itemId: string,
     kind: Kind,
@@ -560,6 +558,31 @@ export function flushPersist(): Promise<boolean> {
     return startSaveLoop();
 }
 
+/** Before v10 Rundeck was built in, and its sessions, windows, panes and command contexts were plain "rundeck". */
+const LEGACY_PLUGIN_KINDS: ReadonlyMap<unknown, string> = new Map([["rundeck", RUNDECK_DEPLOY]]);
+
+function renameLegacyPluginKinds(decoded: Record<string, unknown>): void {
+    const rename = (value: unknown) => LEGACY_PLUGIN_KINDS.get(value) ?? value;
+    for (const row of Array.isArray(decoded.sessions) ? decoded.sessions : []) if (isRecord(row)) row.kind = rename(row.kind);
+    const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
+    for (const rows of Object.values(windowsBySession)) {
+        for (const row of Array.isArray(rows) ? rows : []) {
+            if (!isRecord(row)) continue;
+            row.role = rename(row.role);
+            const pending: unknown[] = [row.root];
+            for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+                if (!isRecord(node)) continue;
+                if (node.type === "pane") node.kind = rename(node.kind);
+                else if (Array.isArray(node.children)) for (const child of node.children) pending.push(child);
+            }
+        }
+    }
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    for (const command of Array.isArray(prefs.customCommands) ? prefs.customCommands : []) {
+        if (isRecord(command) && Array.isArray(command.contexts)) command.contexts = command.contexts.map(rename);
+    }
+}
+
 export type HydrationResult = "empty" | "applied" | "invalid" | "unsupported-future";
 
 export function hydrationAllowsPersistence(result: HydrationResult): boolean {
@@ -578,6 +601,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version > VERSION) return "unsupported-future";
     if (decoded.version < MIN_SUPPORTED_VERSION) return "invalid";
     if (!Array.isArray(decoded.sessions)) return "invalid";
+    if (decoded.version < PLUGIN_KIND_MIGRATION_VERSION) renameLegacyPluginKinds(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {

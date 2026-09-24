@@ -5,8 +5,9 @@ import {
     type KeybindingCategory,
     type KeybindingOverrides,
 } from "../keybindings";
+import type { SessionKind } from "../state/types";
 
-export type CommandContext = "project" | "command" | "ssh" | "aws" | "rundeck" | "bruno";
+export type CommandContext = SessionKind;
 
 export type CustomCommandPlacement = "background" | "terminal" | "split" | "popup" | "replace";
 

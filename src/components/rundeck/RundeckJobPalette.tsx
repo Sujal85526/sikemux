@@ -8,6 +8,7 @@ import { rndMatrixR, rndProjectsR } from "../../state/resources.defs";
 import { inferEnv } from "../../state/rundeckShape";
 import { useStore } from "../../state/store";
 import { IconCommand, IconSearch } from "../Icons";
+import { RUNDECK_DEPLOY } from "../../plugins/rundeck/kinds";
 
 const MAX_RESULTS = 400;
 
@@ -19,7 +20,7 @@ interface JobRow {
 export function RundeckJobPalette() {
     const paneId = useStore((s) => {
         const sess = s.sessions[s.activeSessionId];
-        if (!sess || sess.kind !== "rundeck") return null;
+        if (!sess || sess.kind !== RUNDECK_DEPLOY) return null;
         return s.windows[sess.activeWindowId]?.activePaneId ?? null;
     });
 

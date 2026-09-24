@@ -327,6 +327,7 @@ export function AgentIcon({ type, size, className }: { type: AgentType; size?: n
 }
 
 import type { WindowRole } from "../state/types";
+import { pluginSurface } from "../plugins/registry";
 export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) {
     if (role === "files") return <IconEditor size={size} />;
     if (role === "term") return <IconCommand size={size} />;
@@ -336,7 +337,8 @@ export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) 
     if (role === "agent") return <IconAgent size={size} />;
     // The aws mark is a wordmark, so it keeps its own width instead of the square glyph size.
     if (role === "aws") return <IconAws className="icon-aws" />;
-    if (role === "rundeck") return <IconRundeck size={size} />;
+    const surface = pluginSurface(role);
+    if (surface) return surface.icon(size ?? 14);
     return <IconWindow size={size} />;
 }
 

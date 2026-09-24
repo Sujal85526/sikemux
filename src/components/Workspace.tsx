@@ -1,7 +1,9 @@
 import { memo, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, Divider, PaneKind, Rect, Session, TabRef, Window as WindowT, WindowRole } from "../state/types";
+import type { Agent, CorePaneKind, Divider, PaneKind, Rect, Session, TabRef, Window as WindowT, WindowRole } from "../state/types";
+import { isPluginKind, type PluginKind } from "../plugins/kinds";
+import { pluginSurface } from "../plugins/registry";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC } from "../state/layout";
 import * as cmd from "../state/commands";
 import { useBrunoDrafts } from "../state/brunoRuntime";
@@ -32,19 +34,20 @@ const copyPath = (_path: string, text: string, label: string) => copyText(text).
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 
-const PANE_ROLE: Record<PaneKind, WindowRole> = {
+const CORE_PANE_ROLE: Record<CorePaneKind, WindowRole> = {
     terminal: "term",
     editor: "files",
     git: "git",
     diff: "diff",
     aws: "aws",
     search: "search",
-    rundeck: "rundeck",
     bruno: "bruno",
     agent: "agent",
     /* A browser is a pane, not a window role of its own. */
     browser: "named",
 };
+
+const paneRole = (kind: PaneKind): WindowRole => (isPluginKind(kind) ? kind : CORE_PANE_ROLE[kind]);
 const pct = (n: number) => `${n * 100}%`;
 
 /*
@@ -187,19 +190,20 @@ function WindowScrollIndicator({ count, index, ms }: { count: number; index: num
 
 const EMPTY_IDS: readonly string[] = [];
 
-const ROLE_LABEL: Record<WindowRole, string> = {
+const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
     term: "Terminal",
     files: "Editor",
     git: "Git",
     diff: "Diff",
     search: "Search",
     aws: "AWS",
-    rundeck: "Rundeck",
     bruno: "Bruno",
     "ssh-config": "SSH config",
     named: "Window",
     agent: "Agent",
 };
+
+const roleLabel = (role: WindowRole): string => (isPluginKind(role) ? (pluginSurface(role)?.title ?? role) : CORE_ROLE_LABEL[role]);
 
 /** A workspace tab, already carrying the ids the strip and the live layer pair up with. */
 type WorkspaceTab = TabDescriptor & { tabId: string; panelId: string };
@@ -384,7 +388,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     },
                 ];
             }
-            const label = win.role === "term" ? termTitles.get(win.activePaneId) || win.name : ROLE_LABEL[win.role];
+            const label = win.role === "term" ? termTitles.get(win.activePaneId) || win.name : roleLabel(win.role);
             return [
                 {
                     id: key,
@@ -515,7 +519,10 @@ const WindowLayer = memo(function WindowLayer({
                             visibility: shown ? undefined : "hidden",
                             zIndex: isZoomed ? 2 : 1,
                         }}>
-                        <div className={`pane pane-${p.kind}`} data-pane-id={p.id} onMouseDown={() => live && cmd.focusPane(p.id)}>
+                        <div
+                            className={`pane pane-${isPluginKind(p.kind) ? "plugin" : p.kind}`}
+                            data-pane-id={p.id}
+                            onMouseDown={() => live && cmd.focusPane(p.id)}>
                             {/* The pane is a surface, so it carries its own texture — and only
                                 while it is the one being read, so a screen off stage spends no
                                 WebGL context on a field nobody is looking at. */}
@@ -543,7 +550,7 @@ const WindowLayer = memo(function WindowLayer({
                                 active: pane.id === stack.activePaneId,
                                 icon: (
                                     <span className="agent-glyph">
-                                        <WindowIcon role={PANE_ROLE[pane.kind]} size={12} />
+                                        <WindowIcon role={paneRole(pane.kind)} size={12} />
                                     </span>
                                 ),
                                 closable: false,

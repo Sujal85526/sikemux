@@ -1,3 +1,4 @@
+import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -97,7 +98,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 10,
+                    version: 11,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -533,7 +534,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(9);
+        expect(saved.version).toBe(10);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -675,7 +676,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(9);
+        expect(JSON.parse(migrated).version).toBe(10);
     });
 
     /*
@@ -708,10 +709,40 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(9);
+        expect(saved.version).toBe(10);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
+    });
+
+    it("moves v9 Rundeck sessions, windows, panes and command contexts onto the plugin's kind", () => {
+        const project = getState().sessions[getState().activeSessionId];
+        const rundeckPane = { type: "pane", id: "pane-rundeck", cwd: "", kind: "rundeck", title: "rundeck" };
+        applyHydrate(
+            JSON.stringify({
+                version: 9,
+                sessions: [{ ...project, id: "s-rundeck", name: "rundeck", kind: "rundeck", cwd: "", activeWindowId: "w-rundeck" }],
+                windowsBySession: {
+                    "s-rundeck": [
+                        { id: "w-rundeck", name: "rundeck", role: "rundeck", root: rundeckPane, activePaneId: "pane-rundeck", fixed: true },
+                    ],
+                },
+                sessionOrder: ["s-rundeck"],
+                activeSessionId: "s-rundeck",
+                prefs: {
+                    customCommands: [
+                        { id: "deploy", title: "Deploy", detail: "", command: "rnd run", contexts: ["rundeck", "project"], placement: "terminal" },
+                    ],
+                },
+                itemStates: {},
+            }),
+        );
+
+        const st = getState();
+        expect(st.sessions["s-rundeck"].kind).toBe(RUNDECK_DEPLOY);
+        expect(st.windows["w-rundeck"].role).toBe(RUNDECK_DEPLOY);
+        expect(st.windows["w-rundeck"].root).toMatchObject({ type: "pane", kind: RUNDECK_DEPLOY });
+        expect(st.customCommands[0].contexts).toEqual([RUNDECK_DEPLOY, "project"]);
     });
 
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {

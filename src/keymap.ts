@@ -9,6 +9,8 @@ import type { KeyModifier } from "./state/types";
 import { runMeasuredAction } from "./lib/instrumentation";
 import { applicationActionContext, executeApplicationAction, matchApplicationActionKeybinding } from "./actions/bridge";
 import { reportError } from "./state/toast";
+import { isPluginKind } from "./plugins/kinds";
+import { RUNDECK_DEPLOY } from "./plugins/rundeck/kinds";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
@@ -63,7 +65,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.toggleCommandPalette();
             return true;
         case "palette.files":
-            if (active?.kind === "rundeck") {
+            if (active?.kind === RUNDECK_DEPLOY) {
                 if (st.rundeckJobPaletteOpen) cmd.closeRundeckJobPalette();
                 else cmd.openRundeckJobPalette();
             } else if (active?.kind === "bruno") {
@@ -141,7 +143,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             else if (active?.kind === "command") cmd.createCommandSession();
             else if (active?.kind === "ssh") cmd.openPicker("ssh");
             else if (active?.kind === "aws") cmd.openAwsSession();
-            else if (active?.kind === "rundeck") cmd.openRundeckSession();
+            else if (active && isPluginKind(active.kind)) cmd.openPluginSession(active.kind);
             else if (active?.kind === "bruno") cmd.openPicker("bruno");
             else return false;
             return true;

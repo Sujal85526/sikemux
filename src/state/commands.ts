@@ -1,3 +1,8 @@
+import type { PluginManifest } from "../api/plugins";
+import type { PluginKind } from "../plugins/kinds";
+import { pluginSurface } from "../plugins/registry";
+import { RUNDECK_DEPLOY } from "../plugins/rundeck/kinds";
+import { RAIL_GROUP_ORDER, railGroupOf } from "./railGroups";
 import { invokeCommand as invoke } from "../api/invoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { AgentSession } from "../api/agents";
@@ -451,7 +456,7 @@ export function createSshSession(alias: string): void {
     });
 }
 
-function openSingletonPaneSession(kind: "aws" | "rundeck"): void {
+function openSingletonPaneSession(kind: "aws" | PluginKind): void {
     mutate((d) => {
         const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.kind === kind);
         if (existing) {
@@ -459,13 +464,17 @@ function openSingletonPaneSession(kind: "aws" | "rundeck"): void {
             d.zoomedPaneId = null;
             return;
         }
-        const win = makeWindow("", kind, { kind, role: kind, fixed: true });
-        attachSession(d as unknown as StoreState, makeSession(kind, kind, "", win.id), [win]);
+        const name = kind === "aws" ? kind : (pluginSurface(kind)?.title ?? kind);
+        const win = makeWindow("", name, { kind, role: kind, fixed: true });
+        attachSession(d as unknown as StoreState, makeSession(kind, name, "", win.id), [win]);
     });
 }
 
 export const openAwsSession = (): void => openSingletonPaneSession("aws");
-export const openRundeckSession = (): void => openSingletonPaneSession("rundeck");
+export const openPluginSession = (kind: PluginKind): void => openSingletonPaneSession(kind);
+export const openRundeckSession = (): void => openPluginSession(RUNDECK_DEPLOY);
+
+export const setPluginManifests = (pluginManifests: readonly PluginManifest[]): void => setState({ pluginManifests });
 
 /** Prompt for a collection directory, then open it as a Bruno API workspace. */
 export async function openBrunoFolder(): Promise<void> {
@@ -736,7 +745,7 @@ function openRundeckTarget(target: { project: string; service: string; jobId: st
     };
     openRundeckSession();
     const after = getState();
-    const sess = Object.values(after.sessions).find((s) => s.kind === "rundeck");
+    const sess = Object.values(after.sessions).find((s) => s.kind === RUNDECK_DEPLOY);
     if (!sess) return;
     const win = after.windows[sess.activeWindowId];
     if (!win || win.root.type !== "pane") return;
@@ -929,18 +938,21 @@ export function cancelSessionSwitch(): void {
     });
 }
 
-const GROUP_ORDER: SessionKind[] = ["project", "ssh", "aws", "rundeck", "bruno", "command"];
-
 export function cycleSessionGroup(delta: number): void {
     mutate((d) => {
         const cur = d.sessions[d.activeSessionId];
         if (!cur) return;
-        const populated = GROUP_ORDER.filter((kind) => d.sessionOrder.some((id) => d.sessions[id]?.kind === kind));
+        const groupOf = (id: string) => {
+            const session = d.sessions[id];
+            return session ? railGroupOf(session.kind, d.pluginManifests) : null;
+        };
+        const populated = RAIL_GROUP_ORDER.filter((group) => d.sessionOrder.some((id) => groupOf(id) === group));
         if (populated.length < 2) return;
-        const curIdx = populated.indexOf(cur.kind);
+        const curGroup = railGroupOf(cur.kind, d.pluginManifests);
+        const curIdx = curGroup ? populated.indexOf(curGroup) : -1;
         if (curIdx === -1) return;
-        const nextKind = populated[(curIdx + delta + populated.length) % populated.length];
-        const nextId = d.sessionOrder.find((id) => d.sessions[id]?.kind === nextKind);
+        const nextGroup = populated[(curIdx + delta + populated.length) % populated.length];
+        const nextId = d.sessionOrder.find((id) => groupOf(id) === nextGroup);
         if (!nextId) return;
         d.activeSessionId = nextId;
         d.zoomedPaneId = null;

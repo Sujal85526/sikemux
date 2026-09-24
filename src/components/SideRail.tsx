@@ -17,30 +17,28 @@ import * as cmd from "../state/commands";
 import { prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import {
-    AgentIcon,
-    IconAgent,
-    IconAws,
-    IconBruno,
-    IconClose,
-    IconCommand,
-    IconFolder,
-    IconPencil,
-    IconPlus,
-    IconRundeck,
-    Logo,
-    WindowIcon,
-} from "./Icons";
+import { AgentIcon, IconAgent, IconAws, IconBruno, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, Logo, WindowIcon } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
 import { AgentStateIndicator } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
+import { frontendPlugin, pluginSurface } from "../plugins/registry";
+import { PLUGIN_GROUP_LABELS, railGroupOf, type RailGroup } from "../state/railGroups";
+import type { PluginGroup } from "../api/plugins";
+
+interface GroupAction {
+    add: () => void;
+    addTitle: string;
+    addKbd?: string;
+    emptyText: string;
+}
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
     if (kind === "aws") return <IconAws />;
-    if (kind === "rundeck") return <IconRundeck size={14} />;
+    const surface = pluginSurface(kind);
+    if (surface) return surface.icon(14);
     if (kind === "bruno") return <IconBruno size={14} />;
     return <IconCommand size={13} />;
 }
@@ -422,12 +420,29 @@ export const SideRail = memo(function SideRail() {
     const projectDragSequenceRef = useRef(0);
     const suppressProjectClickRef = useRef(false);
 
-    const projects = sessions.filter((s) => s.kind === "project");
-    const sshs = sessions.filter((s) => s.kind === "ssh");
-    const cloud = sessions.filter((s) => s.kind === "aws");
-    const cicd = sessions.filter((s) => s.kind === "rundeck");
-    const apis = sessions.filter((s) => s.kind === "bruno");
-    const commands = sessions.filter((s) => s.kind === "command");
+    const pluginManifests = useStore((s) => s.pluginManifests);
+    const inGroup = (group: RailGroup) => sessions.filter((s) => railGroupOf(s.kind, pluginManifests) === group);
+    const projects = inGroup("project");
+    const sshs = inGroup("ssh");
+    const commands = inGroup("command");
+    const coreGroupActions: Partial<Record<PluginGroup, GroupAction>> = {
+        cloud: { add: cmd.openAwsSession, addTitle: `Open AWS — ${kb("aws.open")}`, addKbd: kb("aws.open"), emptyText: "no cloud sessions" },
+        apis: {
+            add: () => cmd.openPicker("bruno"),
+            addTitle: `Open Bruno workspace — ${kb("bruno.open")}`,
+            addKbd: kb("bruno.open"),
+            emptyText: "open a bruno workspace",
+        },
+    };
+    const pluginGroups = (Object.keys(PLUGIN_GROUP_LABELS) as PluginGroup[]).flatMap((group) => {
+        const plugin = pluginManifests
+            .filter((manifest) => manifest.group === group)
+            .map((manifest) => frontendPlugin(manifest.id))
+            .find((found) => found !== undefined);
+        const action =
+            coreGroupActions[group] ?? (plugin && { add: plugin.open, addTitle: plugin.openTitle, emptyText: plugin.openTitle.toLowerCase() });
+        return action ? [{ group, action }] : [];
+    });
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {
         const ghost = projectGhostRef.current;
@@ -655,29 +670,9 @@ export const SideRail = memo(function SideRail() {
                         actionTitle="Edit ~/.ssh/config"
                         emptyText="no ssh hosts"
                     />
-                    <Group
-                        label="Cloud"
-                        list={cloud}
-                        add={cmd.openAwsSession}
-                        addTitle={`Open AWS — ${kb("aws.open")}`}
-                        addKbd={kb("aws.open")}
-                        emptyText="no cloud sessions"
-                    />
-                    <Group
-                        label="CI/CD"
-                        list={cicd}
-                        add={cmd.openRundeckSession}
-                        addTitle="Open Rundeck deploy center"
-                        emptyText="open rundeck deploy center"
-                    />
-                    <Group
-                        label="API"
-                        list={apis}
-                        add={() => cmd.openPicker("bruno")}
-                        addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
-                        addKbd={kb("bruno.open")}
-                        emptyText="open a bruno workspace"
-                    />
+                    {pluginGroups.map(({ group, action }) => (
+                        <Group key={group} label={PLUGIN_GROUP_LABELS[group]} list={inGroup(group)} {...action} />
+                    ))}
                     <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
                 </div>
 

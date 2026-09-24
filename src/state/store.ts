@@ -1,3 +1,4 @@
+import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID, type Theme } from "../themes";
@@ -106,6 +107,8 @@ export interface UpdateCheckOutcome {
 
 export interface ViewState {
     home: string;
+    /** Plugins compiled into this build, as the native host reports them. */
+    pluginManifests: readonly PluginManifest[];
 
     pickerOpen: boolean;
     pickerMode: PickerMode;
@@ -234,6 +237,7 @@ export const useStore = create<StoreState>(() => {
         defaultAgentPermissionMode: "bypass",
 
         home: "",
+        pluginManifests: [],
         pickerOpen: false,
         pickerMode: "all",
         agentPaletteOpen: false,

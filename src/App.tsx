@@ -81,6 +81,8 @@ import {
 } from "./actions/bridge";
 import { projectControllerBridge } from "./projects/controllerBridge";
 import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
+import { pluginsApi } from "./api/plugins";
+import "./plugins/builtin";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -692,6 +694,7 @@ export default function App() {
             const recorded = performanceTelemetry.endSpan(bootSpan, { outcome });
             if (recorded) performanceTelemetry.recordLatency("startup.boot", recorded.durationMs);
         };
+        void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
         invoke<BootInfo>("boot_init")
             .then((boot) => {
                 if (disposed) return;
