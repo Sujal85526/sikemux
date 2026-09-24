@@ -6,8 +6,9 @@ use futures::StreamExt;
 use reqwest::{Client, Method, Response};
 use serde_json::Value;
 
-use crate::config::{self, Credentials};
+use crate::auth::{self, Auth, Credentials};
 use crate::error::{SignozError, SignozResult};
+use crate::query;
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -25,13 +26,6 @@ fn http() -> SignozResult<&'static Client> {
         })
         .as_ref()
         .ok_or_else(|| SignozError::Transport("could not start the HTTP client".into()))
-}
-
-pub async fn credentials(data_dir: &Path) -> SignozResult<Credentials> {
-    let data_dir = data_dir.to_path_buf();
-    tokio::task::spawn_blocking(move || config::credentials(&data_dir))
-        .await
-        .map_err(|error| SignozError::Keychain(error.to_string()))?
 }
 
 async fn read_limited(response: Response) -> SignozResult<Vec<u8>> {
@@ -66,7 +60,8 @@ fn error_message(body: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-pub async fn request(
+/// One request with exactly the credentials given.
+pub async fn send(
     credentials: &Credentials,
     method: Method,
     path: &str,
@@ -74,8 +69,12 @@ pub async fn request(
 ) -> SignozResult<Value> {
     let mut request = http()?
         .request(method, format!("{}{path}", credentials.url))
-        .header("SIGNOZ-API-KEY", &credentials.api_key)
         .header("Accept", "application/json");
+    request = match &credentials.auth {
+        Auth::None => request,
+        Auth::ApiKey(key) => request.header("SIGNOZ-API-KEY", key),
+        Auth::Bearer(token) => request.bearer_auth(token),
+    };
     if let Some(body) = body {
         request = request.json(body);
     }
@@ -83,8 +82,8 @@ pub async fn request(
     let status = response.status();
     let bytes = read_limited(response).await?;
     let parsed: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    if status.as_u16() == 401 || status.as_u16() == 403 {
-        config::forget_cached_key();
+    if matches!(status.as_u16(), 401 | 403) && matches!(credentials.auth, Auth::ApiKey(_)) {
+        auth::forget_api_key();
     }
     if !status.is_success() {
         let message = error_message(&parsed)
@@ -106,16 +105,49 @@ pub async fn request(
     Ok(parsed)
 }
 
-/// The rows and columns of the one query in `query`, which is always named "A".
-pub async fn query_range(credentials: &Credentials, query: &Value) -> SignozResult<Value> {
-    let body = request(
-        credentials,
-        Method::POST,
-        "/api/v5/query_range",
-        Some(query),
-    )
-    .await?;
+/// A request as whoever is signed in. A session token SigNoz turns down is
+/// renewed and the request tried once more.
+pub async fn request(
+    data_dir: &Path,
+    method: Method,
+    path: &str,
+    body: Option<&Value>,
+) -> SignozResult<Value> {
+    let credentials = auth::credentials(data_dir).await?;
+    match send(&credentials, method.clone(), path, body).await {
+        Err(SignozError::Http { status: 401, .. }) if credentials.is_session() => {
+            auth::forget_access().await;
+            let renewed = auth::credentials(data_dir).await?;
+            send(&renewed, method, path, body).await
+        }
+        answer => answer,
+    }
+}
+
+fn first_result(body: Value) -> SignozResult<Value> {
     body.pointer("/data/data/results/0")
         .cloned()
         .ok_or_else(|| SignozError::Response("no results in the answer".into()))
+}
+
+/// The rows and columns of the one query in `query`, which is always named "A".
+pub async fn query_range(data_dir: &Path, query: &Value) -> SignozResult<Value> {
+    first_result(request(data_dir, Method::POST, "/api/v5/query_range", Some(query)).await?)
+}
+
+/// Proves the credentials can read, with the smallest query there is.
+pub async fn check(credentials: &Credentials) -> SignozResult<()> {
+    let probe = query::builder(
+        "raw",
+        query::window(Some(1)),
+        serde_json::json!({ "signal": "logs", "limit": 1 }),
+    );
+    send(
+        credentials,
+        Method::POST,
+        "/api/v5/query_range",
+        Some(&probe),
+    )
+    .await
+    .map(|_| ())
 }

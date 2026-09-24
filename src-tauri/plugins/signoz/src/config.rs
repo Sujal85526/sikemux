@@ -1,35 +1,44 @@
-// Where SigNoz lives and where its key is kept. The key sits in the macOS
-// Keychain under the same service the `signoz` shell CLI reads, and the same
-// SIGNOZ_URL / SIGNOZ_API_KEY variables win over it, so signing in from
-// either place signs in both.
+// Where SigNoz lives, how this machine signs in to it, and the Keychain
+// entries that hold the secret. An API key sits under the same Keychain
+// service the `signoz` shell CLI reads, so either can use a key the other
+// saved. A signed-in session keeps only its refresh token there.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{SignozError, SignozResult};
 
-const KEYCHAIN_SERVICE: &str = "signoz-api";
+pub const API_KEY_SERVICE: &str = "signoz-api";
+pub const SESSION_SERVICE: &str = "sikemux-signoz-session";
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(10);
 const KEYCHAIN_OUTPUT_LIMIT: usize = 64 * 1024;
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthMode {
+    #[default]
+    Session,
+    ApiKey,
+}
 
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SignozConfig {
     pub url: String,
+    #[serde(default)]
+    pub auth: AuthMode,
+    /// The Keychain account the secret is saved under.
+    #[serde(default)]
     pub account: String,
+    #[serde(default)]
+    pub email: String,
+    /// Whether Sikemux saved the API key, and so may delete it on sign-out.
+    #[serde(default)]
+    pub owns_key: bool,
 }
-
-#[derive(Clone)]
-pub struct Credentials {
-    pub url: String,
-    pub api_key: String,
-}
-
-static CACHED_KEY: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 fn config_path(data_dir: &Path) -> PathBuf {
     data_dir.join("config.json")
@@ -48,14 +57,23 @@ pub fn load(data_dir: &Path) -> SignozConfig {
     config
 }
 
+fn io_error(error: std::io::Error) -> SignozError {
+    SignozError::Transport(format!("saving settings: {error}"))
+}
+
 pub fn save(data_dir: &Path, config: &SignozConfig) -> SignozResult<()> {
-    let transport =
-        |error: std::io::Error| SignozError::Transport(format!("saving settings: {error}"));
-    std::fs::create_dir_all(data_dir).map_err(transport)?;
+    std::fs::create_dir_all(data_dir).map_err(io_error)?;
     let path = config_path(data_dir);
     let staged = path.with_extension("json.tmp");
-    std::fs::write(&staged, serde_json::to_vec_pretty(config)?).map_err(transport)?;
-    std::fs::rename(&staged, &path).map_err(transport)
+    std::fs::write(&staged, serde_json::to_vec_pretty(config)?).map_err(io_error)?;
+    std::fs::rename(&staged, &path).map_err(io_error)
+}
+
+pub fn forget(data_dir: &Path) -> SignozResult<()> {
+    match std::fs::remove_file(config_path(data_dir)) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(io_error(error)),
+        _ => Ok(()),
+    }
 }
 
 pub fn validate_url(raw: &str) -> SignozResult<String> {
@@ -64,7 +82,7 @@ pub fn validate_url(raw: &str) -> SignozResult<String> {
         .map_err(|_| SignozError::BadArg("the SigNoz URL is not a URL".into()))?;
     if !url.username().is_empty() || url.password().is_some() {
         return Err(SignozError::BadArg(
-            "put the API key in the key field, not the URL".into(),
+            "leave credentials out of the URL".into(),
         ));
     }
     let local = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
@@ -80,10 +98,19 @@ pub fn validate_url(raw: &str) -> SignozResult<String> {
     Ok(trimmed.to_string())
 }
 
+/// Keychain entries are named after the host, so two SigNoz instances never
+/// share one and nobody has to choose a name.
+pub fn account_for(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| "signoz".into())
+}
+
 pub fn validate_account(raw: &str) -> SignozResult<String> {
     let account = raw.trim();
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-');
-    if account.is_empty() || account.len() > 64 || !account.chars().all(allowed) {
+    if account.is_empty() || account.len() > 128 || !account.chars().all(allowed) {
         return Err(SignozError::BadArg(
             "the Keychain account is letters, digits, dots, dashes and underscores".into(),
         ));
@@ -91,16 +118,18 @@ pub fn validate_account(raw: &str) -> SignozResult<String> {
     Ok(account.to_string())
 }
 
-fn validate_key(raw: &str) -> SignozResult<String> {
-    let key = raw.trim();
+/// Secrets reach `security -i` on a command line it splits on spaces, so
+/// anything that could end the value early is refused rather than escaped.
+fn validate_secret(raw: &str) -> SignozResult<String> {
+    let secret = raw.trim();
     let allowed =
-        |c: char| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-' | '.');
-    if key.is_empty() || key.len() > 256 || !key.chars().all(allowed) {
+        |c: char| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-' | '.' | '~');
+    if secret.is_empty() || secret.len() > 4096 || !secret.chars().all(allowed) {
         return Err(SignozError::BadArg(
-            "that does not look like a SigNoz API key".into(),
+            "that does not look like a SigNoz key or token".into(),
         ));
     }
-    Ok(key.to_string())
+    Ok(secret.to_string())
 }
 
 fn run_security(args: &[&str], input: Option<&[u8]>) -> SignozResult<std::process::Output> {
@@ -116,83 +145,46 @@ fn run_security(args: &[&str], input: Option<&[u8]>) -> SignozResult<std::proces
     .map_err(|error| SignozError::Keychain(error.to_string()))
 }
 
-fn keychain_read(account: &str) -> SignozResult<Option<String>> {
+pub fn keychain_read(service: &str, account: &str) -> SignozResult<Option<String>> {
     let output = run_security(
-        &[
-            "find-generic-password",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            account,
-            "-w",
-        ],
+        &["find-generic-password", "-s", service, "-a", account, "-w"],
         None,
     )?;
     if !output.status.success() {
         return Ok(None);
     }
-    let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!key.is_empty()).then_some(key))
+    let secret = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok((!secret.is_empty()).then_some(secret))
 }
 
-/// `security -i` reads the command from stdin, so the key never shows up in
-/// the process list the way an argument would.
-pub fn keychain_write(account: &str, key: &str) -> SignozResult<()> {
-    let key = validate_key(key)?;
-    let line = format!("add-generic-password -U -s {KEYCHAIN_SERVICE} -a {account} -w {key}\n");
+/// `security -i` reads the command from stdin, so the secret never shows up
+/// in the process list the way an argument would.
+pub fn keychain_write(service: &str, account: &str, secret: &str) -> SignozResult<()> {
+    let account = validate_account(account)?;
+    let secret = validate_secret(secret)?;
+    let line = format!("add-generic-password -U -s {service} -a {account} -w {secret}\n");
     let output = run_security(&["-i"], Some(line.as_bytes()))?;
     if !output.status.success() {
-        return Err(SignozError::Keychain("the Keychain refused the key".into()));
+        return Err(SignozError::Keychain(
+            "the Keychain refused to save it".into(),
+        ));
     }
-    forget_cached_key();
     Ok(())
 }
 
-pub fn has_env_key() -> bool {
-    std::env::var("SIGNOZ_API_KEY").is_ok_and(|key| !key.trim().is_empty())
+pub fn keychain_delete(service: &str, account: &str) -> SignozResult<()> {
+    run_security(
+        &["delete-generic-password", "-s", service, "-a", account],
+        None,
+    )?;
+    Ok(())
 }
 
-/// Reading the Keychain starts a process, so the key is kept after the first
-/// read and dropped when SigNoz turns it down.
-pub fn credentials(data_dir: &Path) -> SignozResult<Credentials> {
-    let config = load(data_dir);
-    if config.url.is_empty() {
-        return Err(SignozError::Unconfigured);
-    }
-    if let Ok(key) = std::env::var("SIGNOZ_API_KEY") {
-        if !key.trim().is_empty() {
-            return Ok(Credentials {
-                url: config.url,
-                api_key: key.trim().to_string(),
-            });
-        }
-    }
-    if config.account.is_empty() {
-        return Err(SignozError::Unconfigured);
-    }
-    let mut cached = CACHED_KEY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some((account, key)) = cached.as_ref() {
-        if account == &config.account {
-            return Ok(Credentials {
-                url: config.url,
-                api_key: key.clone(),
-            });
-        }
-    }
-    let key = keychain_read(&config.account)?.ok_or(SignozError::Unconfigured)?;
-    *cached = Some((config.account.clone(), key.clone()));
-    Ok(Credentials {
-        url: config.url,
-        api_key: key,
-    })
-}
-
-pub fn forget_cached_key() {
-    *CACHED_KEY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+pub fn env_api_key() -> Option<String> {
+    std::env::var("SIGNOZ_API_KEY")
+        .ok()
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
 }
 
 #[cfg(test)]
@@ -212,12 +204,19 @@ mod tests {
     }
 
     #[test]
+    fn names_keychain_entries_after_the_host() {
+        assert_eq!(account_for("https://logs.example.com"), "logs.example.com");
+        assert_eq!(account_for("http://localhost:3301"), "localhost");
+    }
+
+    #[test]
     fn keeps_keychain_arguments_to_safe_characters() {
         assert!(validate_account("work").is_ok());
         assert!(validate_account("a b").is_err());
-        assert!(validate_key("abc+/=_-.").is_ok());
-        assert!(validate_key("abc def").is_err());
-        assert!(validate_key("abc\n-a other").is_err());
+        assert!(validate_secret("eyJhbGciOi.J9-_~+/=").is_ok());
+        assert!(validate_secret("abc def").is_err());
+        assert!(validate_secret("abc\n-a other").is_err());
+        assert!(validate_secret("a\"b").is_err());
     }
 
     #[test]
@@ -225,10 +224,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sikemux-signoz-{}", std::process::id()));
         let config = SignozConfig {
             url: "https://logs.example.com".into(),
+            auth: AuthMode::ApiKey,
             account: "work".into(),
+            email: String::new(),
+            owns_key: false,
         };
         save(&dir, &config).unwrap();
-        assert_eq!(load(&dir).url, config.url);
+        assert_eq!(load(&dir).auth, AuthMode::ApiKey);
+        forget(&dir).unwrap();
+        assert_eq!(load(&dir).url, "");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

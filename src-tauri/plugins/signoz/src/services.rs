@@ -31,7 +31,6 @@ pub struct ServiceHealth {
 /// Counted from entry spans rather than SigNoz's service map, which leaves out
 /// services that still send traces.
 pub async fn health(data_dir: &Path, request: ServiceQuery) -> SignozResult<Vec<ServiceHealth>> {
-    let credentials = client::credentials(data_dir).await?;
     let only: Vec<String> = request
         .services
         .iter()
@@ -57,7 +56,7 @@ pub async fn health(data_dir: &Path, request: ServiceQuery) -> SignozResult<Vec<
         "limit": MAX_SERVICES,
     });
     let result = client::query_range(
-        &credentials,
+        data_dir,
         &query::builder(
             "scalar",
             query::window(request.minutes),

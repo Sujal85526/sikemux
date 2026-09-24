@@ -158,11 +158,10 @@ fn lines_of(result: &Value) -> Vec<LogLine> {
 }
 
 pub async fn search(data_dir: &Path, search: LogSearch) -> SignozResult<LogPage> {
-    let credentials = client::credentials(data_dir).await?;
     let limit = search.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let offset = search.offset.unwrap_or(0);
     let result = client::query_range(
-        &credentials,
+        data_dir,
         &list_query(&search, query::window(search.minutes), limit, offset, true),
     )
     .await?;
@@ -220,13 +219,12 @@ pub async fn tail(data_dir: &Path, mut search: LogSearch, sink: StreamSink) -> P
     loop {
         let window = (since, query::now_ms());
         let outcome = async {
-            let credentials = client::credentials(data_dir).await?;
             let request = if first {
                 list_query(&search, window, backlog, 0, true)
             } else {
                 list_query(&search, window, MAX_LIMIT, 0, false)
             };
-            client::query_range(&credentials, &request).await
+            client::query_range(data_dir, &request).await
         }
         .await;
         let wait = match outcome {

@@ -160,7 +160,6 @@ pub async fn trace(data_dir: &Path, request: TraceRequest) -> SignozResult<Trace
     if trace_id.is_empty() || !trace_id.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(SignozError::BadArg("a trace id is hexadecimal".into()));
     }
-    let credentials = client::credentials(data_dir).await?;
     let fields: Vec<Value> = [
         "span_id",
         "parent_span_id",
@@ -185,7 +184,7 @@ pub async fn trace(data_dir: &Path, request: TraceRequest) -> SignozResult<Trace
     });
     let window = query::window(Some(request.minutes.unwrap_or(DEFAULT_LOOKBACK_MINUTES)));
     let result = client::query_range(
-        &credentials,
+        data_dir,
         &query::builder(
             "raw",
             window,
