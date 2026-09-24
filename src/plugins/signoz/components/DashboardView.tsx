@@ -35,6 +35,22 @@ function PanelBody({ panel, data }: { panel: DashboardPanel; data: PanelData }) 
     return <DataTable columns={data.columns} rows={data.rows} unit={panel.unit} />;
 }
 
+/** A panel one row tall has no room for a chart; dashboards use them as section headings. */
+export function isHeading(panel: DashboardPanel): boolean {
+    return panel.layout.h <= 1;
+}
+
+/** Where SigNoz saved the panel, on its twelve-column grid, at exactly the height it was given. */
+export function placement(panel: DashboardPanel): React.CSSProperties {
+    const x = Math.min(Math.max(0, panel.layout.x), 11);
+    const width = Math.max(1, Math.min(panel.layout.w, 12 - x));
+    const height = Math.max(1, panel.layout.h);
+    return {
+        gridColumn: `${x + 1} / span ${width}`,
+        gridRow: panel.layout.y < 10_000 ? `${panel.layout.y + 1} / span ${height}` : `span ${height}`,
+    };
+}
+
 function PanelCard({
     panel,
     scope,
@@ -48,16 +64,23 @@ function PanelCard({
     active: boolean;
     openInSignoz: () => void;
 }) {
-    const data = useResourceEnabled(active && panel.drawable, signozPanelR, { ...scope, kind: panel.kind, query: panel.query, variables });
+    const heading = isHeading(panel);
+    const data = useResourceEnabled(active && panel.drawable && !heading, signozPanelR, {
+        ...scope,
+        kind: panel.kind,
+        query: panel.query,
+        variables,
+    });
+    const place = placement(panel);
+    if (heading) {
+        return (
+            <h3 className="sgz-section" style={place}>
+                {panel.title}
+            </h3>
+        );
+    }
     return (
-        <section
-            className={`sgz-panel kind-${panel.kind}`}
-            style={{
-                gridColumn: `${Math.min(panel.layout.x, 11) + 1} / span ${Math.max(1, Math.min(panel.layout.w, 12 - Math.min(panel.layout.x, 11)))}`,
-                gridRow:
-                    panel.layout.y < 10_000 ? `${panel.layout.y + 1} / span ${Math.max(2, panel.layout.h)}` : `span ${Math.max(2, panel.layout.h)}`,
-            }}
-            aria-label={panel.title}>
+        <section className={`sgz-panel kind-${panel.kind}`} style={place} aria-label={panel.title}>
             <header className="sgz-panel-head">
                 <h3>{panel.title || "Untitled panel"}</h3>
             </header>

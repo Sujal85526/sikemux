@@ -1215,6 +1215,19 @@
     gap: var(--space-2);
     padding: var(--space-3) var(--gutter-pane);
 }
+.sgz-section {
+    display: flex;
+    align-items: flex-end;
+    margin: 0;
+    padding: 0 var(--space-1) var(--space-1);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    white-space: pre;
+}
 .sgz-panel {
     display: flex;
     flex-direction: column;

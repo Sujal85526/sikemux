@@ -33,7 +33,7 @@ function compact(value: number): string {
     if (magnitude >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
     if (magnitude >= 1e4) return `${(value / 1e3).toFixed(1)}k`;
     if (magnitude >= 100 || Number.isInteger(value)) return String(Math.round(value));
-    return value.toFixed(magnitude >= 1 ? 2 : 3);
+    return String(Number(value.toPrecision(magnitude >= 1 ? 3 : 2)));
 }
 
 function duration(value: number, perSecond: number): string {
