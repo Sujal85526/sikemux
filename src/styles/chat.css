@@ -1806,9 +1806,6 @@ button.chat-tool:hover,
     margin-left: 3px;
     background: var(--ink);
     color: var(--void);
-}
-
-.chat-send {
     transition: background-color 120ms;
 }
 
