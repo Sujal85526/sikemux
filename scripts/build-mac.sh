@@ -65,6 +65,19 @@ fail() {
   exit 1
 }
 
+# Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller. The
+# conversion drops the DMG's signature, so a real identity signs it again.
+shopt -s nullglob
+for DMG in "$BUNDLE"/dmg/*.dmg; do
+  PACKED="${DMG%.dmg}.lzma.dmg"
+  /usr/bin/hdiutil convert "$DMG" -format ULMO -o "$PACKED" -quiet -ov || fail "could not repack $DMG"
+  mv -f "$PACKED" "$DMG"
+  if [[ -n "${APPLE_SIGNING_IDENTITY:-}" && "$APPLE_SIGNING_IDENTITY" != "-" ]]; then
+    /usr/bin/codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG" || fail "could not sign $DMG"
+  fi
+done
+shopt -u nullglob
+
 [[ -d "$APP_PATH" ]] || fail "missing app at $APP_PATH"
 [[ -f "$PLIST" ]] || fail "missing $PLIST"
 [[ -s "$APP_PATH/Contents/Resources/Assets.car" ]] || fail "missing or empty Assets.car"
