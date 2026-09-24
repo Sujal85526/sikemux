@@ -1636,7 +1636,7 @@ button.chat-tool:hover,
     display: flex;
     flex-wrap: wrap;
     gap: 7px;
-    padding: 6px 12px 0;
+    padding: 6px 6px 0;
 }
 
 .chat-attachments > span {
