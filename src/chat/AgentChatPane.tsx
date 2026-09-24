@@ -783,7 +783,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
             <summary>
                 <IconChevron size={9} className="chat-subagent-chevron" />
                 <span className="chat-subagent-mark">
-                    <AgentIcon type={agentType} size={13} className={`agent-glyph ${agentType}`} />
+                    <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
                 <span className="chat-subagent-task" title={subagent.task || undefined}>
@@ -863,7 +863,7 @@ function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
         <Group label="subagent" count={subagents.length}>
             {subagents.map((subagent) => (
                 <div className="chat-task chat-task-agent" key={subagent.sessionId}>
-                    <AgentIcon type={agentType} size={13} className={`agent-glyph ${agentType}`} />
+                    <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
                     <span className="chat-task-name">{subagent.name}</span>
                     <span className="chat-task-detail">{subagentActivity(subagent)}</span>
                     <span className="chat-task-spinner" aria-hidden="true" />
