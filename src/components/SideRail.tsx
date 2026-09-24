@@ -32,6 +32,7 @@ interface GroupAction {
     addTitle: string;
     addKbd?: string;
     emptyText: string;
+    singleton?: boolean;
 }
 
 function kindIcon(kind: SessionKind): ReactNode {
@@ -352,6 +353,7 @@ function Group({
     action,
     actionTitle,
     emptyText,
+    singleton,
 }: {
     label: string;
     list: Session[];
@@ -361,6 +363,7 @@ function Group({
     action?: () => void;
     actionTitle?: string;
     emptyText: string;
+    singleton?: boolean;
 }) {
     return (
         <Panel variant="group">
@@ -368,7 +371,8 @@ function Group({
                 label={label}
                 rule
                 extra={
-                    add && (
+                    add &&
+                    !singleton && (
                         <span className="rail-group-actions">
                             {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
                             {action && (
@@ -427,7 +431,7 @@ export const SideRail = memo(function SideRail() {
     const sshs = inGroup("ssh");
     const commands = inGroup("command");
     const coreGroupActions: Partial<Record<PluginGroup, GroupAction>> = {
-        cloud: { add: cmd.openAwsSession, addTitle: `Open AWS — ${kb("aws.open")}`, addKbd: kb("aws.open"), emptyText: "no cloud sessions" },
+        cloud: { add: cmd.openAwsSession, addTitle: "Open AWS", emptyText: "open aws", singleton: true },
         apis: {
             add: () => cmd.openPicker("bruno"),
             addTitle: `Open Bruno workspace — ${kb("bruno.open")}`,
@@ -441,7 +445,8 @@ export const SideRail = memo(function SideRail() {
             .map((manifest) => frontendPlugin(manifest.id))
             .find((found) => found !== undefined);
         const action =
-            coreGroupActions[group] ?? (plugin && { add: plugin.open, addTitle: plugin.openTitle, emptyText: plugin.openTitle.toLowerCase() });
+            coreGroupActions[group] ??
+            (plugin && { add: plugin.open, addTitle: plugin.openTitle, emptyText: plugin.openTitle.toLowerCase(), singleton: true });
         return action ? [{ group, action }] : [];
     });
 
