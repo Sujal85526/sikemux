@@ -37,6 +37,7 @@ pub const BLANK_URL: &str = "about:blank";
 /// Injected into every document before its own scripts, so a page's calls are
 /// already recorded by the time an agent asks about them.
 const RECORDER_SCRIPT: &str = include_str!("recorder.js");
+const PAGE_DIALOGS_SCRIPT: &str = include_str!("page-dialogs.js");
 const MAX_URL_LEN: usize = 8192;
 const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
     x: 0.0,
@@ -324,7 +325,8 @@ impl BrowserManager {
             .accept_first_mouse(true)
             .focused(false)
             .zoom_hotkeys_enabled(true)
-            .initialization_script(RECORDER_SCRIPT);
+            .initialization_script(RECORDER_SCRIPT)
+            .initialization_script(PAGE_DIALOGS_SCRIPT);
         #[cfg(target_os = "macos")]
         let builder = builder.user_agent(USER_AGENT);
 
