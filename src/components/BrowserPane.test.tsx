@@ -168,6 +168,7 @@ describe("BrowserPaneHost", () => {
 
         const working = screen.getByRole("img", { name: "codex is working in this tab" });
         expect(working.closest(".tab-wrap")).toHaveClass("acting");
+        expect(working.closest(".tab-tail")?.querySelector(".tab-x")).not.toBeNull();
         expect(screen.getByRole("tab", { name: /Second/ }).closest(".tab-wrap")).not.toHaveClass("acting");
     });
 

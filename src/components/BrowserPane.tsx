@@ -237,12 +237,11 @@ function BrowserPane({
                     active: tab.id === snapshot.activeTabId,
                     className: tab.acting ? "acting" : undefined,
                     icon: <SiteIcon src={tab.favicon} />,
-                    badge: tab.acting ? (
+                    accessory: tab.acting ? (
                         <span className={`agent-glyph ${agentType}`} role="img" aria-label={`${agentType} is working in this tab`}>
                             <AgentIcon type={agentType} size={16} />
                         </span>
-                    ) : undefined,
-                    accessory: tab.loading ? (
+                    ) : tab.loading ? (
                         <span className="agent-activity state-working" role="img" aria-label="Loading">
                             <span className="agent-state-loader" aria-hidden="true" />
                         </span>
