@@ -43,9 +43,12 @@ pub const BLANK_URL: &str = "about:blank";
 const RECORDER_SCRIPT: &str = include_str!("recorder.js");
 const PAGE_DIALOGS_SCRIPT: &str = include_str!("page-dialogs.js");
 const MAX_URL_LEN: usize = 8192;
+// Hiding a page is not enough on macOS: a hidden view still takes file drops
+// over the spot it last covered, so parked pages also sit outside the window.
+const PARKED_ORIGIN: f64 = -100_000.0;
 const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
-    x: 0.0,
-    y: 0.0,
+    x: PARKED_ORIGIN,
+    y: PARKED_ORIGIN,
     width: 1200.0,
     height: 800.0,
 };
@@ -682,6 +685,7 @@ impl BrowserManager {
                 }
                 None => {
                     let _ = view.hide();
+                    let _ = view.set_position(LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN));
                 }
             }
         }
