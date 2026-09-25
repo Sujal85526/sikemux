@@ -1,4 +1,3 @@
-import { useModalFocus } from "../hooks/useModalFocus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
@@ -94,8 +93,6 @@ function isFindShortcut(event: KeyboardEvent): boolean {
 }
 
 export function SettingsPanel() {
-    const modalRef = useRef<HTMLDivElement>(null);
-    useModalFocus(modalRef);
     const projectRoots = useStore((s) => s.projectRoots);
     const themeId = useStore((s) => s.themeId);
     const windowOpacity = useStore((s) => s.windowOpacity);
@@ -208,7 +205,7 @@ export function SettingsPanel() {
     const pretty = (p: string) => prettyPath(p, home);
 
     return (
-        <div ref={modalRef} tabIndex={-1} className="settings-pane" role="dialog" aria-modal="true" aria-label="Settings">
+        <div tabIndex={-1} className="settings-pane" role="dialog" aria-label="Settings">
             <div className="settings-frame">
                 <aside className="settings-rail">
                     <label className="settings-search">

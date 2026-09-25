@@ -658,7 +658,7 @@ export const SideRail = memo(function SideRail() {
 
     return (
         <RailContext.Provider value={rail}>
-            <aside className="side-rail">
+            <aside className="side-rail" onClickCapture={settingsOpen ? cmd.closeSettings : undefined}>
                 <div className="rail-scroll">
                     <Group
                         label="Projects"
