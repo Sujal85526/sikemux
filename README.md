@@ -263,10 +263,10 @@ Releases publish from the **Release** GitHub Actions workflow, never from a lapt
 
 ```bash
 git tag v0.4.1 && git push origin v0.4.1
-gh workflow run release.yml --ref release/0.4
+gh workflow run release.yml --ref release/0.4 -f version=0.4.1
 ```
 
-The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
+A run is titled with the version it releases, so the approval names what it will publish. Run by hand, it takes that version as an input and stops if `package.json` disagrees. The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
 
 The workflow takes its signing material from the `release` environment:
 
