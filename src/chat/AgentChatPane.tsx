@@ -227,8 +227,37 @@ function ToolKindIcon({ tool, kind }: { tool: AcpToolCall; kind?: string }) {
    keeps the rest in the tooltip. A command is not a path and stays as typed. */
 function toolTarget(tool: AcpToolCall): string {
     const line = toolLabel(tool.title).name.split("\n")[0].trim();
-    if (!line.includes("/") || /\s/.test(line)) return line;
+    if (!line.includes("/") || /\s/.test(line) || safeWebUrl(line)) return line;
     return basename(line) || line;
+}
+
+function toolUrl(target: string): { before: string; raw: string; url: string; after: string } | null {
+    const match = /https?:\/\/[^\s<>"'`]+/.exec(target);
+    if (!match) return null;
+    const raw = match[0].replace(/[.,;:!?)\]]+$/, "");
+    const url = safeWebUrl(raw);
+    return url ? { before: target.slice(0, match.index), raw, url, after: target.slice(match.index + raw.length) } : null;
+}
+
+function ToolTarget({ text }: { text: string }) {
+    const agentId = useContext(ChatAgentContext).id;
+    const link = toolUrl(text);
+    if (!link) return <>{text}</>;
+    return (
+        <>
+            {link.before}
+            <a
+                className="chat-tool-link"
+                href={link.url}
+                onClick={(event) => {
+                    event.preventDefault();
+                    openLink(link.url, agentId, hasPrimaryModifier(event));
+                }}>
+                {link.raw}
+            </a>
+            {link.after}
+        </>
+    );
 }
 
 /* Which file a call was about: the one it reported touching, or the one its
@@ -241,7 +270,7 @@ function toolPath(tool: AcpToolCall): string | null {
         if (typeof path === "string" && path) return typeof line === "number" ? `${path}:${line}` : path;
     }
     const named = toolLabel(tool.title).name.split("\n")[0].trim();
-    return named.includes("/") && !/\s/.test(named) ? named : null;
+    return named.includes("/") && !/\s/.test(named) && !safeWebUrl(named) ? named : null;
 }
 
 export function durationLabel(ms: number): string {
@@ -314,6 +343,8 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const detail = diff ?? failure;
     const status = tool.status ?? "pending";
     const file = useFileRef(toolPath(tool));
+    const target = toolTarget(tool);
+    const linked = !file && toolUrl(target) !== null;
     /* A call the turn cut off has a duration, but printing it would read as a
        call that ran that long and then finished. It says why it stopped. */
     const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
@@ -327,7 +358,7 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
             <span className="chat-tool-target">
-                {file ? <ChatFileRef refers={file.ref} state={file.state} label={toolTarget(tool)} size={17} /> : toolTarget(tool)}
+                {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
             </span>
         </>
     );
@@ -346,9 +377,9 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const rowProps = { className: `chat-tool status-${status}`, "data-kind": rowKind, title: tool.title };
     return (
         <div className="chat-tool-node">
-            {/* A row whose target opens a file cannot itself be a button, so
-                what is left of it opens the detail instead. */}
-            {detail && !file ? (
+            {/* A row whose target opens a file or a page cannot itself be a
+                button, so what is left of it opens the detail instead. */}
+            {detail && !file && !linked ? (
                 <button type="button" {...rowProps} aria-expanded={open} onClick={toggle}>
                     {lead}
                     <span className="chat-tool-end">{end}</span>

@@ -782,6 +782,15 @@ button.chat-tool:hover,
     white-space: nowrap;
 }
 
+.chat-tool-link {
+    color: var(--acc);
+    text-decoration: none;
+}
+
+.chat-tool-link:hover {
+    text-decoration: underline;
+}
+
 .chat-tool-end {
     display: flex;
     align-items: center;

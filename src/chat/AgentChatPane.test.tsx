@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     pathKinds: vi.fn(async (paths: string[]): Promise<(string | null)[]> => paths.map(() => null)),
     revealInFinder: vi.fn(async () => {}),
     requestOpenFile: vi.fn(),
+    openUrlInBrowserPane: vi.fn(),
     sessionContext: vi.fn(async (): Promise<{ used: number; size: number | null } | null> => null),
 }));
 
@@ -61,6 +62,7 @@ vi.mock("../api/acp", () => ({
 
 vi.mock("../state/commands", () => ({
     requestOpenFile: mocks.requestOpenFile,
+    openUrlInBrowserPane: mocks.openUrlInBrowserPane,
     attachAgentSession: mocks.attachAgentSession,
     setAgentPermissionMode: mocks.setAgentPermissionMode,
     setAgentModelPreferences: mocks.setAgentModelPreferences,
@@ -637,6 +639,24 @@ describe("AgentChatPane", () => {
         fireEvent.click(finished);
         expect(finished).toHaveAttribute("aria-expanded", "true");
         expect(document.querySelectorAll(".chat-tool")).toHaveLength(2);
+    });
+
+    it("opens the page a fetch names from its row", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-1",
+                kind: "fetch",
+                title: "Fetch https://docs.livekit.io/home/self-hosting/deployment/",
+                status: "in_progress",
+            },
+        });
+
+        const link = await screen.findByRole("link", { name: "https://docs.livekit.io/home/self-hosting/deployment/" });
+        fireEvent.click(link);
+        expect(mocks.openUrlInBrowserPane).toHaveBeenCalledWith(agent.id, "https://docs.livekit.io/home/self-hosting/deployment/");
     });
 
     it("builds a subagent's transcript only once it is opened", async () => {
