@@ -822,7 +822,7 @@ export function openTaskTerminal(request: TaskTerminalPresentationRequest): stri
             return;
         }
 
-        const created = makeWindow(cwd, label, { role: "named" });
+        const created = makeWindow(cwd, label, { role: "term" });
         created.transient = true;
         if (created.root.type !== "pane") return;
         created.root.title = label;
@@ -1012,9 +1012,13 @@ function replaceWithFreshTerminalTab(d: StoreState, session: Session, closing: W
 }
 
 function closeActiveTerminalTab(): void {
+    let taskPaneIds: string[] = [];
     withActiveSession((d, session) => {
         const closing = d.windows[session.activeWindowId];
         if (!closing || closing.role !== "term") return;
+        taskPaneIds = collectPanes(closing.root)
+            .filter((pane) => pane.externalPty)
+            .map((pane) => pane.id);
 
         const winIds = d.windowsBySession[session.id] ?? [];
         const termIds = winIds.filter((id) => d.windows[id]?.role === "term");
@@ -1039,6 +1043,7 @@ function closeActiveTerminalTab(): void {
         sess.activeWindowId = nextId;
         d.zoomedPaneId = null;
     });
+    for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
 }
 
 export function closeActiveFocusTarget(): void {
