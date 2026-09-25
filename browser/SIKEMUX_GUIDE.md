@@ -18,6 +18,32 @@ tool descriptions leave out is here.
 its panes, the tasks configured in `sikemux.json`, the harness runs you already
 started, and an event cursor. Task ids come from there — do not guess one.
 
+`configStatus` is `absent` when the project has no `sikemux.json`, and
+`invalid` when it has one that failed to load; `configErrors` then lists each
+problem by path. Neither state offers any tasks.
+
+## Writing sikemux.json
+
+The file sits at the project root. Tasks are what `task_start` launches:
+
+```json
+{
+  "version": 1,
+  "tasks": [
+    { "id": "web", "label": "Web", "command": "pnpm dev", "cwd": "apps/web" },
+    { "id": "api", "label": "API", "command": "uv run main.py", "env": { "PORT": "8000" } }
+  ],
+  "preview": { "url": "http://localhost:5173" }
+}
+```
+
+`version` is required and must be `1`. A task needs `id`, `label` and
+`command`; `cwd` is relative to the project and defaults to `.`, and `env`
+holds string values. Ids use letters, numbers, `.`, `_` and `-`. Unknown fields
+are rejected. If the project already describes its processes elsewhere, such
+as `.claude/launch.json` or a Procfile, carry those commands over rather than
+inventing new ones. Inspect again after writing to see `configErrors`.
+
 ## Running a task
 
 `task_start` takes a `taskId` and an `idempotencyKey` you choose.
