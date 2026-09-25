@@ -4,8 +4,12 @@ The first nightly on the 0.4.2 line. Nightlies are signed and delivered exactly 
 
 ## New since 0.4.1
 
+- Pinch the trackpad to resize text in the chat, the editor and the terminal.
 - Terminal tabs are named Terminal instead of being numbered.
 - The pane texture can be switched off.
+- Picking anything in the side rail leaves Settings.
+
+Thanks to Ankit Patidar for #32 and #33.
 
 ## Everything in 0.4.1
 
