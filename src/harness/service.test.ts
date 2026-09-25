@@ -75,6 +75,19 @@ describe("harness command service", () => {
         );
         expect(start).not.toHaveBeenCalled();
     });
+    it("tells a missing configuration apart from an invalid one", async () => {
+        const errors = [{ path: "$.tasks[0].cwd", code: "missing-field" as const, message: "is required" }];
+        vi.mocked(loadProjectConfig).mockResolvedValue({ status: "absent", path: "/one/sikemux.json" });
+        await expect(handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "absent" }))).rejects.toThrow(
+            "has no sikemux.json",
+        );
+        expect(await handleHarnessRequest(request("workspace.inspect"))).toMatchObject({ configStatus: "absent", configErrors: undefined });
+        vi.mocked(loadProjectConfig).mockResolvedValue({ status: "invalid", path: "/one/sikemux.json", errors });
+        await expect(handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "invalid" }))).rejects.toThrow(
+            "$.tasks[0].cwd is required",
+        );
+        expect(await handleHarnessRequest(request("workspace.inspect"))).toMatchObject({ configStatus: "invalid", configErrors: errors });
+    });
     it("passes exact configured launch data and leaves focus in the other project", async () => {
         const start = vi.spyOn(harnessTasks, "start").mockResolvedValue({ executionId: "run", taskId: "test", project: "/one", status: "running" });
         await handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "new" }));

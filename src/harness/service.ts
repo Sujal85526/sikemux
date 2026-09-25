@@ -102,6 +102,7 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                     })),
                 tasks: config.status === "valid" ? config.config.tasks.map(({ id, label, command, cwd }) => ({ id, label, command, cwd })) : [],
                 configStatus: config.status,
+                configErrors: config.status === "invalid" ? config.errors : undefined,
                 runs: harnessTasks.list(project),
                 userTask: (() => {
                     const task = appTaskRuntime.getSnapshot(project);
@@ -117,7 +118,9 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
             const existing = harnessTasks.existing(project, taskId, key);
             if (existing) return existing;
             const config = await loadProjectConfig(project);
-            if (config.status !== "valid") throw new Error("Project needs a valid sikemux.json with tasks");
+            if (config.status === "absent") throw new Error("Project has no sikemux.json; add one that defines tasks");
+            if (config.status === "invalid")
+                throw new Error(`sikemux.json is invalid: ${config.errors.map((error) => `${error.path} ${error.message}`).join(" · ")}`);
             const task = config.config.tasks.find((task) => task.id === taskId);
             if (!task) throw new Error("Task is not defined in sikemux.json");
             if (!(await trustProjectConfig(config))) throw new Error("Project configuration was not approved");
