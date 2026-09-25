@@ -933,9 +933,12 @@ textarea:focus,
 }
 
 /* The stage draws no edge and no corner of its own — the strip and the screen
-   each carry theirs — so this only clips the screens waiting off to the side. */
+   each carry theirs — so this only clips the screens waiting off to the side.
+   Clipped rather than hidden: the window area reaches a gutter past the stage,
+   and a hidden box would scroll by that much whenever something inside it
+   takes focus, leaving the screen shifted left until a restart. */
 .stage {
-    overflow: hidden;
+    overflow: clip;
 }
 
 .pane {
