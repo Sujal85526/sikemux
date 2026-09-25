@@ -21,6 +21,9 @@ const REPO_API: &str = "https://api.github.com/repos/nodelike/sikemux";
 const REPO_WEB: &str = "https://github.com/nodelike/sikemux";
 const AVATAR_ORIGIN: &str = "https://avatars.githubusercontent.com/";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
+/// GitHub serves from several addresses and a network can silently drop one.
+/// Without this the request waits on that address until FETCH_TIMEOUT instead of trying the next.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// GitHub lists at most this many commits in one page of a comparison.
 const COMMITS_PER_PAGE: usize = 100;
 const MAX_COMMIT_PAGES: usize = 20;
@@ -247,10 +250,12 @@ pub async fn release_avatars(urls: Vec<String>) -> HashMap<String, String> {
         .collect();
     let fetched = join_all(wanted.into_iter().map(|url| async move {
         if let Some(known) = cached_avatar(&url) {
-            return (url, known);
+            return (url, Some(known));
         }
         let data = fetch_avatar(&url).await;
-        remember_avatar(&url, data.clone());
+        if let Some(data) = &data {
+            remember_avatar(&url, data.clone());
+        }
         (url, data)
     }))
     .await;
@@ -260,12 +265,12 @@ pub async fn release_avatars(urls: Vec<String>) -> HashMap<String, String> {
         .collect()
 }
 
-fn avatar_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+fn avatar_cache() -> &'static Mutex<HashMap<String, String>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
     CACHE.get_or_init(Default::default)
 }
 
-fn cached_avatar(url: &str) -> Option<Option<String>> {
+fn cached_avatar(url: &str) -> Option<String> {
     avatar_cache()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -273,7 +278,7 @@ fn cached_avatar(url: &str) -> Option<Option<String>> {
         .cloned()
 }
 
-fn remember_avatar(url: &str, data: Option<String>) {
+fn remember_avatar(url: &str, data: String) {
     avatar_cache()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -331,6 +336,7 @@ fn client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()
             .timeout(FETCH_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
             .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_default()
@@ -428,6 +434,26 @@ mod tests {
         assert_eq!(image_type(b"\x89PNG\r\n\x1a\nrest"), Some("image/png"));
         assert_eq!(image_type(b"\xff\xd8\xff\xe0"), Some("image/jpeg"));
         assert_eq!(image_type(b"<html>not found</html>"), None);
+    }
+
+    #[test]
+    #[ignore = "requires network access"]
+    fn release_avatars_reads_github() {
+        crate::install_tls_crypto();
+        let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let urls = vec![
+            "https://avatars.githubusercontent.com/u/95223229?v=4".to_owned(),
+            "https://avatars.githubusercontent.com/u/108696612?v=4".to_owned(),
+        ];
+        let found = runtime.block_on(release_avatars(urls.clone()));
+        for url in &urls {
+            assert!(
+                found
+                    .get(url)
+                    .is_some_and(|data| data.starts_with("data:image/")),
+                "{url}"
+            );
+        }
     }
 
     // Network check, excluded from the normal suite. Run with
