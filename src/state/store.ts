@@ -15,6 +15,7 @@ enableMapSet();
 import { makePane, newId } from "./layout";
 import type { GitCmdEntry, GitModal } from "./gitTypes";
 import type { BrowserSnapshot } from "../api/browser";
+import type { HeldRelease, ReleaseCredits } from "../api/releases";
 import type {
     Agent,
     AgentPermissionMode,
@@ -79,7 +80,7 @@ export interface DomainState {
     lastSeenVersion: string;
     customCommands: CustomCommand[];
     updateChannel: "stable" | "nightly";
-    lastReleaseNotes: { version: string; notes: string | null; date: string | null } | null;
+    lastReleaseNotes: HeldRelease | null;
     recentCommandKeys: string[];
     /** Non-secret launch profiles and the per-agent defaults that reference them. */
     providerProfiles: ProviderProfile[];
@@ -94,6 +95,7 @@ export interface PendingUpdate {
     currentVersion: string;
     notes: string | null;
     date: string | null;
+    credits: ReleaseCredits | null;
     state: UpdateOperationState;
     error: string | null;
     downloadedBytes: number;

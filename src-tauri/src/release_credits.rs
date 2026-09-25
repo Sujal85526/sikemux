@@ -32,7 +32,7 @@ const AVATAR_PIXELS: u32 = 64;
 const MAX_AVATAR_BYTES: usize = 64 * 1024;
 const MAX_AVATARS: usize = 64;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Contributor {
     login: String,
@@ -95,10 +95,33 @@ struct CommitAuthor {
     name: String,
 }
 
-struct Credits {
+/// Credits a release carries in its update manifest, so they show without asking GitHub.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseCredits {
     commits: u32,
     compare: String,
-    people: Vec<Contributor>,
+    contributors: Vec<Contributor>,
+    /// `data:` URLs keyed by each contributor's avatar address.
+    avatars: HashMap<String, String>,
+}
+
+/// The manifest is not signed, so only links back to this repository and inline images are kept.
+pub fn bundled_credits(manifest: &serde_json::Value) -> Option<ReleaseCredits> {
+    let mut credits = ReleaseCredits::deserialize(manifest.get("credits")?).ok()?;
+    if !credits.compare.starts_with(&format!("{REPO_WEB}/compare/")) {
+        return None;
+    }
+    credits
+        .contributors
+        .retain(|person| person.avatar.starts_with(AVATAR_ORIGIN));
+    credits.avatars.retain(|url, data| {
+        url.starts_with(AVATAR_ORIGIN)
+            && ["png", "jpeg", "gif", "webp"]
+                .iter()
+                .any(|kind| data.starts_with(&format!("data:image/{kind};base64,")))
+    });
+    Some(credits)
 }
 
 /// The notes of one published release, and everyone who committed to it.
@@ -125,7 +148,9 @@ pub async fn release_notes(version: String) -> AppResult<ReleaseNotes> {
         date: release.published_at,
         commits: credits.as_ref().map(|credits| credits.commits),
         compare: credits.as_ref().map(|credits| credits.compare.clone()),
-        contributors: credits.map(|credits| credits.people).unwrap_or_default(),
+        contributors: credits
+            .map(|credits| credits.contributors)
+            .unwrap_or_default(),
     };
     if notes.compare.is_some() {
         remember_notes(&version, notes.clone());
@@ -154,7 +179,7 @@ fn previous_release<'a>(version: &Version, tags: impl Iterator<Item = &'a str>) 
     .map(|(_, tag)| tag.to_owned())
 }
 
-async fn credits_between(previous: &str, tag: &str) -> Option<Credits> {
+async fn credits_between(previous: &str, tag: &str) -> Option<ReleaseCredits> {
     let mut commits = Vec::new();
     let mut total = 0;
     for page in 1..=MAX_COMMIT_PAGES {
@@ -170,10 +195,11 @@ async fn credits_between(previous: &str, tag: &str) -> Option<Credits> {
             break;
         }
     }
-    Some(Credits {
+    Some(ReleaseCredits {
         commits: total,
         compare: format!("{REPO_WEB}/compare/{previous}...{tag}"),
-        people: tally(commits),
+        contributors: tally(commits),
+        avatars: HashMap::new(),
     })
 }
 
@@ -415,6 +441,41 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn keeps_only_repository_links_and_inline_avatars_from_a_manifest() {
+        let avatar = "https://avatars.githubusercontent.com/u/1?v=4";
+        let manifest = json!({
+            "credits": {
+                "commits": 3,
+                "compare": "https://github.com/nodelike/sikemux/compare/v0.4.1...v0.4.2",
+                "contributors": [
+                    { "login": "nodelike", "name": "NØDE", "commits": 2, "avatar": avatar },
+                    { "login": "stranger", "name": "Stranger", "commits": 1, "avatar": "https://example.com/a.png" }
+                ],
+                "avatars": {
+                    avatar: "data:image/png;base64,AAAA",
+                    "https://avatars.githubusercontent.com/u/2": "https://example.com/tracker.png"
+                }
+            }
+        });
+        let credits = bundled_credits(&manifest).expect("credits");
+        assert_eq!(credits.commits, 3);
+        assert_eq!(
+            credits
+                .contributors
+                .iter()
+                .map(|person| person.login.as_str())
+                .collect::<Vec<_>>(),
+            ["nodelike"]
+        );
+        assert_eq!(credits.avatars.keys().collect::<Vec<_>>(), [avatar]);
+
+        let mut elsewhere = manifest.clone();
+        elsewhere["credits"]["compare"] = json!("https://example.com/compare/a...b");
+        assert_eq!(bundled_credits(&elsewhere), None);
+        assert_eq!(bundled_credits(&json!({ "version": "0.4.2" })), None);
     }
 
     #[test]

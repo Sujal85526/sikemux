@@ -1,6 +1,7 @@
 import type { Theme } from "../../themes";
 import type { CustomCommand } from "../../commands/registry";
 import type { KeybindingOverrides } from "../../keybindings";
+import type { HeldRelease } from "../../api/releases";
 import type {
     Agent,
     AgentPermissionMode,
@@ -82,7 +83,7 @@ export interface PersistedPrefs {
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];
     updateChannel?: "stable" | "nightly";
-    lastReleaseNotes?: { version: string; notes: string | null; date: string | null } | null;
+    lastReleaseNotes?: HeldRelease | null;
     recentCommandKeys?: string[];
     /** Non-secret provider launch profiles. Credential values are never part of this shape. */
     providerProfiles?: ProviderProfile[];

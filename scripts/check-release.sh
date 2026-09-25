@@ -14,6 +14,7 @@ fi
 
 bash -n scripts/build-mac.sh scripts/release.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
+node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
 node --check scripts/smoke-browser-sidecar.mjs
 /usr/bin/plutil -lint src-tauri/Info.plist >/dev/null

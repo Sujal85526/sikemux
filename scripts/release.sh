@@ -331,7 +331,12 @@ if [[ "$CHANNEL" == "stable" ]]; then
 else
   MANIFEST="$BUNDLE/latest.json"
 fi
-PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" MANIFEST="$MANIFEST" python3 - <<'PY'
+# Credits are a nicety. Without them the What's new modal asks GitHub itself.
+CREDITS="$(node scripts/release-credits.mjs "$VERSION" "$HEAD_SHA")" || {
+  echo "! Could not gather release credits; latest.json ships without them." >&2
+  CREDITS=""
+}
+PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" MANIFEST="$MANIFEST" CREDITS="$CREDITS" python3 - <<'PY'
 import json, os, pathlib
 entry = {
     "signature": pathlib.Path(os.environ["SIG"]).read_text().strip(),
@@ -343,6 +348,8 @@ manifest = {
     "pub_date": os.environ["PUB_DATE"],
     "platforms": {platform: dict(entry) for platform in os.environ["PLATFORM_LIST"].split()},
 }
+if os.environ["CREDITS"]:
+    manifest["credits"] = json.loads(os.environ["CREDITS"])
 pathlib.Path(os.environ["MANIFEST"]).write_text(json.dumps(manifest, indent=2) + "\n")
 PY
 python3 -m json.tool "$MANIFEST" >/dev/null

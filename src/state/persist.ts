@@ -5,6 +5,7 @@ import { clampTerminalFontSize } from "../terminal/fontSize";
 import { clampChatTextScale } from "../chat/textScale";
 import { clampEditorTextScale } from "../editor/textScale";
 import { isTheme } from "../themes";
+import { parseReleaseCredits } from "../api/releases";
 import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
@@ -945,6 +946,7 @@ export function applyHydrate(raw: string): HydrationResult {
                       version: prefs.lastReleaseNotes.version,
                       notes: typeof prefs.lastReleaseNotes.notes === "string" ? prefs.lastReleaseNotes.notes : null,
                       date: typeof prefs.lastReleaseNotes.date === "string" ? prefs.lastReleaseNotes.date : null,
+                      credits: parseReleaseCredits(prefs.lastReleaseNotes.credits),
                   }
                 : null,
         recentCommandKeys: Array.isArray(prefs.recentCommandKeys)
