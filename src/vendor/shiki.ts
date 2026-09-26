@@ -3,6 +3,7 @@ import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { createOnigurumaEngine } from "./oniguruma";
 
 export const bundledLanguages = {
+    astro: () => import("@shikijs/langs/astro"),
     c: () => import("@shikijs/langs/c"),
     css: () => import("@shikijs/langs/css"),
     go: () => import("@shikijs/langs/go"),

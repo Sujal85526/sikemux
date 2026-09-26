@@ -12,6 +12,9 @@ describe("FileIcon", () => {
         rerender(<FileIcon name="App.tsx" />);
         expect(container.querySelector(".file-glyph")).toHaveTextContent("");
 
+        rerender(<FileIcon name="index.astro" />);
+        expect(container.querySelector(".file-glyph")).toHaveTextContent("");
+
         rerender(<FileIcon name="unknownfile" />);
         expect(container.querySelector(".file-glyph")).toHaveTextContent("");
     });

@@ -9,6 +9,7 @@ import type { DiffLine } from "./diff";
    or the extension of the file it names. Anything else stays plain text rather
    than loading a grammar we do not have. */
 const GRAMMARS: Record<string, string> = {
+    astro: "astro",
     c: "c",
     h: "c",
     css: "css",

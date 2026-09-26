@@ -82,6 +82,25 @@ describe("editor languages", () => {
         );
     });
 
+    it("reads an Astro frontmatter as TypeScript and the rest as HTML", async () => {
+        const doc = '---\nconst title: string = "Home";\n---\n<h1 class="big">{title}</h1>\n';
+        const state = EditorState.create({ doc, extensions: await loadLanguage("src/pages/index.astro") });
+        const tree = ensureSyntaxTree(state, state.doc.length, 1000);
+        const spans: Array<{ text: string; classes: string }> = [];
+
+        expect(tree).not.toBeNull();
+        highlightTree(tree!, classHighlighter, (from, to, classes) => spans.push({ text: state.sliceDoc(from, to), classes }));
+
+        expect(spans).toEqual(
+            expect.arrayContaining([
+                { text: "const", classes: expect.stringContaining("tok-keyword") },
+                { text: "string", classes: expect.stringContaining("tok-typeName") },
+                { text: "h1", classes: expect.stringContaining("tok-typeName") },
+                { text: "class", classes: expect.stringContaining("tok-propertyName") },
+            ]),
+        );
+    });
+
     it("maps SSH tokens to the active editor theme", async () => {
         const state = EditorState.create({
             doc: "Host production",

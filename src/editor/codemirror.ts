@@ -48,6 +48,7 @@ const LANGUAGE_LOADERS: Record<string, () => Promise<Extension[]>> = {
     css: async () => [(await import("@codemirror/lang-css")).css()],
     html: async () => [(await import("@codemirror/lang-html")).html()],
     markdown: async () => [(await import("@codemirror/lang-markdown")).markdown()],
+    astro: async () => [(await import("./astro")).astro()],
 };
 
 const loadedLanguages = new Map<string, Extension[]>();
@@ -123,6 +124,8 @@ export function languageIdFor(path: string, hint?: EditorLanguageHint): string |
         case "html":
         case "htm":
             return "html";
+        case "astro":
+            return "astro";
         case "md":
         case "markdown":
             return "markdown";

@@ -317,6 +317,7 @@ function diffLanguage(path: string): NonNullable<FileContents["lang"]> {
     if (extension === "go") return "go";
     if (extension === "java") return "java";
     if (extension === "sql") return "sql";
+    if (extension === "astro") return "astro";
     return "text";
 }
 

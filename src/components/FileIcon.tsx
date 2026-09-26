@@ -41,6 +41,7 @@ const BY_EXT: Record<string, GlyphInfo> = {
     jsonc: { char: "", color: "#fbbf24" },
     html: { char: "", color: "#e34f26" },
     htm: { char: "", color: "#e34f26" },
+    astro: { char: "", color: "#e23f67" },
     css: { char: "", color: "#1572b6" },
     scss: { char: "", color: "#cf649a" },
     sass: { char: "", color: "#cf649a" },
