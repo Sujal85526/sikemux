@@ -52,9 +52,9 @@ export const AGENTS = {
   hero: {
     id: "agent-hero",
     type: "claude",
-    title: "Hero copy pass",
+    title: "Show each board's palette",
     resumeId: "91d2e7b4-hero",
-    cwd: FRONT,
+    cwd: MOODBOARD,
   },
   palette: {
     id: "agent-palette",
@@ -74,7 +74,10 @@ export const AGENTS = {
 
 const agents: PersistedAgent[] = Object.values(AGENTS).map((agent) => ({
   ...agent,
-  permissionMode: agent.id === "agent-replay" ? "bypass" : "workspace-write",
+  permissionMode:
+    agent.id === "agent-replay" || agent.id === "agent-hero"
+      ? "bypass"
+      : "workspace-write",
   keepAlive: true,
 }));
 
@@ -102,7 +105,7 @@ export function demoSnapshot(): PersistedSnapshot {
         kind: "project",
         cwd: FRONT,
         pinned: false,
-        activeWindowId: `w-${AGENTS.hero.id}`,
+        activeWindowId: "w-front-term",
       },
       {
         id: "s-mood",
@@ -199,7 +202,6 @@ export function demoSnapshot(): PersistedSnapshot {
           pane("t-front", FRONT, "terminal", "dev"),
           "t-front",
         ),
-        agentWindow(AGENTS.hero),
       ],
       "s-mood": [
         terminalWindow(
@@ -207,6 +209,7 @@ export function demoSnapshot(): PersistedSnapshot {
           pane("t-mood", MOODBOARD, "terminal", "bench"),
           "t-mood",
         ),
+        agentWindow(AGENTS.hero),
         agentWindow(AGENTS.palette),
         agentWindow(AGENTS.notes),
       ],

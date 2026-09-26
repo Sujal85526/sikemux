@@ -19,24 +19,24 @@ export const BROWSER_TABS: Record<
   [AGENTS.hero.id]: {
     tabs: [
       tab(
-        "tab-site",
-        "http://localhost:4321/",
-        "Sikemux: one window for the whole project",
+        "tab-boards",
+        "http://localhost:5173/boards",
+        "Boards · Moodboard Studio",
         true,
       ),
       tab(
-        "tab-docs",
-        "https://docs.astro.build/en/guides/images/",
-        "Images | Docs",
+        "tab-oklab",
+        "https://bottosson.github.io/posts/oklab/",
+        "A perceptual color space",
         false,
       ),
     ],
-    activeTabId: "tab-site",
+    activeTabId: "tab-boards",
   },
 };
 
 const PAGES: Record<string, string> = {
-  [AGENTS.hero.id]: "/__site/index.html",
+  [AGENTS.hero.id]: "/showcase/pages/moodboard.html",
 };
 const frames = new Map<string, HTMLIFrameElement>();
 

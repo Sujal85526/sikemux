@@ -1,5 +1,5 @@
 import { AGENTS } from "./workspace";
-import { FRONT, SIKEMUX } from "./projects";
+import { MOODBOARD, SIKEMUX } from "./projects";
 
 type Update = Record<string, unknown>;
 
@@ -183,29 +183,31 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
     usage: { used: 22_000, size: 200_000 },
     history: [
       user(
-        "Tighten the hero copy. It should say what Sikemux is in one sentence a sceptical engineer can accept or reject.",
+        "Now that the benchmark picked k-means in OKLab, show each board's extracted palette under its cover on the boards page.",
       ),
-      tool("read", "src/components/Hero.astro", {
-        locations: [{ path: `${FRONT}/src/components/Hero.astro` }],
+      tool("search", 'rg "extract_palette" -g "*.py" -g "*.tsx"', {
+        rawOutput: "moodboard/palette.py:41\nweb/src/Board.tsx:12",
+      }),
+      tool("read", "web/src/Board.tsx", {
+        locations: [{ path: `${MOODBOARD}/web/src/Board.tsx` }],
       }),
       edit(
-        `${FRONT}/src/components/Hero.astro`,
-        "Sikemux is an all-in-one AI developer workspace.",
-        "Sikemux is a tiling workspace for macOS. Files, terminals, Git, your coding agents and a real browser all open on the same folder.",
+        `${MOODBOARD}/web/src/Board.tsx`,
+        "<strong>{board.name}</strong>",
+        "<strong>{board.name}</strong>\n<Palette colours={board.palette} />",
       ),
       say(
-        'Rewrote the lede around what it does, not what it is. "All-in-one AI workspace" is the phrase that makes people close the tab.',
+        "Each board now renders its eight swatches in the order the clusters were found, lightest first, so neighbouring boards are easy to compare.",
       ),
-      user(
-        "Check it in the browser. Does the download button still read as the one action on the page?",
-      ),
+      user("Check it in the browser before I look."),
     ],
     live: [
       think(
-        "Opening the dev server in my tab to look at the hero at desktop width.",
+        "Opening the dev server in my tab to check the swatches line up under every cover.",
       ),
       tool("fetch", "mcp__sikemux-tools__browser_navigate", {
-        rawInput: { url: "http://localhost:4321/" },
+        rawInput: { url: "http://localhost:5173/boards" },
+        durationMs: 1_100,
       }),
       tool(
         "fetch",

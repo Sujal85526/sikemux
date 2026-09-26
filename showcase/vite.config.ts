@@ -166,54 +166,6 @@ function send(response: ServerResponse, status: number, value: unknown) {
   response.end(JSON.stringify(value));
 }
 
-const SITE_TYPES: Record<string, string> = {
-  html: "text/html",
-  css: "text/css",
-  js: "text/javascript",
-  svg: "image/svg+xml",
-  png: "image/png",
-  webp: "image/webp",
-  woff2: "font/woff2",
-  json: "application/json",
-};
-
-const SITE_ROOT_FILES = new Set(["/codex.svg", "/bruno.svg", "/favicon.svg"]);
-
-// The landing page stands in for whatever an agent's browser tab has open.
-function landingPage(): PluginOption {
-  const dist = join(LOCAL_ROOTS["sikemux-front"], "dist");
-  return {
-    name: "sikemux-showcase-site",
-    configureServer(server) {
-      server.middlewares.use((request, response, next) => {
-        const url = decodeURIComponent((request.url ?? "/").split("?")[0]);
-        const sitePath = url.startsWith("/__site/")
-          ? url.slice("/__site".length)
-          : url.startsWith("/_astro/") || SITE_ROOT_FILES.has(url)
-            ? url
-            : null;
-        if (sitePath === null) return next();
-        const path = resolve(dist, `.${sitePath}`);
-        if (!path.startsWith(dist))
-          return send(response, 403, { error: "outside the site" });
-        try {
-          const file = statSync(path).isDirectory()
-            ? join(path, "index.html")
-            : path;
-          response.setHeader(
-            "Content-Type",
-            SITE_TYPES[file.split(".").pop() ?? ""] ??
-              "application/octet-stream",
-          );
-          response.end(readFileSync(file));
-        } catch {
-          send(response, 404, { error: "not in the site build" });
-        }
-      });
-    },
-  };
-}
-
 function demoFileSystem(): PluginOption {
   return {
     name: "sikemux-showcase-fs",
@@ -264,7 +216,7 @@ function demoFileSystem(): PluginOption {
 }
 
 export default mergeConfig(base, {
-  plugins: [demoFileSystem(), landingPage()],
+  plugins: [demoFileSystem()],
   server: { port: 1471, strictPort: true },
   // Headless Chrome's WebGL context scales xterm's glyphs twice at 2x; the DOM renderer draws the same cells.
   define: { "import.meta.env.VITE_TERMINAL_WEBGL": JSON.stringify("0") },
