@@ -4,7 +4,7 @@ import type {
 } from "../../src/state/types/persisted";
 import type { LayoutNode, Window } from "../../src/state/types";
 import { VERSION } from "../../src/state/persist";
-import { ADMIN, DEMO_HOME, FRONT, MOODBOARD, SIKEMUX } from "./projects";
+import { DEMO_HOME, FRONT, MOODBOARD, SIKEMUX } from "./projects";
 
 const pane = (
   id: string,
@@ -52,9 +52,9 @@ export const AGENTS = {
   hero: {
     id: "agent-hero",
     type: "claude",
-    title: "Add a refund column to orders",
+    title: "Fix Hermes going missing",
     resumeId: "91d2e7b4-hero",
-    cwd: ADMIN,
+    cwd: SIKEMUX,
   },
   palette: {
     id: "agent-palette",
@@ -98,14 +98,6 @@ export function demoSnapshot(): PersistedSnapshot {
         cwd: SIKEMUX,
         pinned: false,
         activeWindowId: `w-${AGENTS.rail.id}`,
-      },
-      {
-        id: "s-admin",
-        name: "acme-admin",
-        kind: "project",
-        cwd: ADMIN,
-        pinned: false,
-        activeWindowId: `w-${AGENTS.hero.id}`,
       },
       {
         id: "s-front",
@@ -203,6 +195,7 @@ export function demoSnapshot(): PersistedSnapshot {
         },
         agentWindow(AGENTS.rail),
         agentWindow(AGENTS.replay),
+        agentWindow(AGENTS.hero),
       ],
       "s-front": [
         terminalWindow(
@@ -210,14 +203,6 @@ export function demoSnapshot(): PersistedSnapshot {
           pane("t-front", FRONT, "terminal", "dev"),
           "t-front",
         ),
-      ],
-      "s-admin": [
-        terminalWindow(
-          "w-admin-term",
-          pane("t-admin", ADMIN, "terminal", "dev"),
-          "t-admin",
-        ),
-        agentWindow(AGENTS.hero),
       ],
       "s-mood": [
         terminalWindow(
@@ -299,7 +284,6 @@ export function demoSnapshot(): PersistedSnapshot {
     agents,
     sessionOrder: [
       "s-sikemux",
-      "s-admin",
       "s-front",
       "s-mood",
       "s-gpu",

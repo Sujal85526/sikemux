@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright-core";
 import { createServer } from "vite";
+import { PAGES } from "./pages.mjs";
 import { README_SCREENSHOTS, SCENES } from "./scenes.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -19,6 +20,7 @@ const { values: options, positionals: only } = parseArgs({
     width: { type: "string", default: "1728" },
     height: { type: "string", default: "1080" },
     publish: { type: "boolean", default: false },
+    "refresh-pages": { type: "boolean", default: false },
     site: { type: "string" },
   },
 });
@@ -46,6 +48,25 @@ const context = await browser.newContext({
   colorScheme: "dark",
 });
 await mkdir(options.out, { recursive: true });
+
+if (options["refresh-pages"]) {
+  const pages = await browser.newContext({
+    deviceScaleFactor: 2,
+    colorScheme: "dark",
+    userAgent: MAC_USER_AGENT,
+  });
+  for (const { name, url, width, height } of PAGES) {
+    const page = await pages.newPage();
+    await page.setViewportSize({ width, height });
+    await page.goto(url, { waitUntil: "networkidle" });
+    await page.screenshot({
+      path: resolve(root, "showcase/pages", `${name}.png`),
+    });
+    await page.close();
+    console.log(`snapshotted ${url}`);
+  }
+  await pages.close();
+}
 
 const scenes = SCENES.filter(
   (scene) => only.length === 0 || only.includes(scene.name),

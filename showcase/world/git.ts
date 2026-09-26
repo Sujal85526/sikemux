@@ -1,5 +1,5 @@
 import type { GitFile, GitStatus } from "../../src/api/git";
-import { ADMIN, FRONT, MOODBOARD, SIKEMUX } from "./projects";
+import { FRONT, MOODBOARD, SIKEMUX } from "./projects";
 
 const staged = (path: string, index = "M"): GitFile => ({
   path,
@@ -32,17 +32,6 @@ export const GIT_STATUS: Record<string, GitStatus> = {
       untracked("src/components/AgentRailDensity.tsx"),
     ],
   },
-  [ADMIN]: {
-    branch: "refund-column",
-    upstream: "origin/refund-column",
-    ahead: 1,
-    behind: 0,
-    files: [
-      modified("src/orders/OrdersTable.tsx"),
-      modified("src/orders/OrdersTable.test.tsx"),
-      untracked("src/orders/RefundPill.tsx"),
-    ],
-  },
   [FRONT]: {
     branch: "main",
     upstream: "origin/main",
@@ -69,7 +58,6 @@ export const COMMIT_DRAFT: Record<string, string> = {
 
 export const BRANCHES: Record<string, string[]> = {
   [SIKEMUX]: ["main", "release/0.4", "rail-density"],
-  [ADMIN]: ["main", "refund-column"],
   [FRONT]: ["main"],
   [MOODBOARD]: ["main", "palette-kmeans"],
 };

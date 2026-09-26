@@ -19,26 +19,26 @@ export const BROWSER_TABS: Record<
   [AGENTS.hero.id]: {
     tabs: [
       tab(
-        "tab-orders",
-        "http://localhost:5173/orders",
-        "Orders · Acme Admin",
+        "tab-pr",
+        "https://github.com/nodelike/sikemux/pull/14",
+        "fix(agents): probe Hermes with --help, not --version · Pull Request #14",
         true,
       ),
       tab(
-        "tab-api",
-        "http://localhost:5173/api/docs",
-        "API reference · Acme",
+        "tab-actions",
+        "https://github.com/nodelike/sikemux/actions",
+        "Actions · nodelike/sikemux",
         false,
       ),
     ],
-    activeTabId: "tab-orders",
+    activeTabId: "tab-pr",
   },
 };
 
-const PAGES: Record<string, string> = {
-  [AGENTS.hero.id]: "/showcase/pages/admin.html",
+const SNAPSHOTS: Record<string, string> = {
+  [AGENTS.hero.id]: "/showcase/pages/github-pr.png",
 };
-const frames = new Map<string, HTMLIFrameElement>();
+const frames = new Map<string, HTMLImageElement>();
 
 // The real browser is a native view laid over the pane, so its stand-in floats over the page the same way.
 export function placeBrowserPage(
@@ -51,14 +51,16 @@ export function placeBrowserPage(
     return;
   }
   if (!frame) {
-    frame = document.createElement("iframe");
-    frame.src = PAGES[agentId] ?? "about:blank";
+    frame = document.createElement("img");
+    frame.src = SNAPSHOTS[agentId] ?? "";
+    frame.alt = "";
     frame.dataset.showcaseBrowser = agentId;
     Object.assign(frame.style, {
       position: "fixed",
-      border: "0",
       zIndex: "5",
-      background: "#100e16",
+      objectFit: "cover",
+      objectPosition: "top left",
+      background: "#0d1117",
     });
     document.body.append(frame);
     frames.set(agentId, frame);

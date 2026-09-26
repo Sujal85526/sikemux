@@ -1,5 +1,5 @@
 import { AGENTS } from "./workspace";
-import { ADMIN, SIKEMUX } from "./projects";
+import { SIKEMUX } from "./projects";
 
 type Update = Record<string, unknown>;
 
@@ -180,37 +180,52 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
     ],
   },
   [AGENTS.hero.id]: {
-    usage: { used: 22_000, size: 200_000 },
+    usage: { used: 44_000, size: 200_000 },
     history: [
       user(
-        "Support keeps asking which orders have a refund in flight. Add a Refund column to the orders table, between Payment and Total.",
+        "Hermes shows as unavailable every time it updates, then comes back later on its own. Find out why, fix it, and open a PR.",
       ),
-      tool("search", 'rg "PaymentPill" src', {
-        rawOutput: "src/orders/OrdersTable.tsx:8\nsrc/orders/PaymentPill.tsx:1",
+      tool("read", "src-tauri/src/agents.rs", {
+        locations: [{ path: `${SIKEMUX}/src-tauri/src/agents.rs` }],
       }),
-      tool("read", "src/orders/OrdersTable.tsx", {
-        locations: [{ path: `${ADMIN}/src/orders/OrdersTable.tsx` }],
-      }),
-      edit(
-        `${ADMIN}/src/orders/OrdersTable.tsx`,
-        "<td><PaymentPill status={order.payment} /></td>",
-        "<td><PaymentPill status={order.payment} /></td>\n<td><RefundPill refund={order.refund} /></td>",
-      ),
-      tool("execute", "pnpm test src/orders", {
-        rawOutput: " ✓ src/orders/OrdersTable.test.tsx (14 tests) 204ms",
+      tool("execute", "time hermes --version", {
+        rawOutput: "hermes 0.9.4\nreal 0m9.84s",
       }),
       say(
-        "Added the column with a `RefundPill` that shows Requested or Refunded, and a dash when there is none. The tests cover all three states.",
+        "`hermes --version` runs an update check that fetches from upstream, bounded by a 10s timeout and cached for six hours. Our probe gives up after 2s and retries for 8s, so every cache expiry made an installed Hermes look unavailable.",
       ),
-      user("Check it in the browser before I look."),
+      edit(
+        `${SIKEMUX}/src-tauri/src/agents.rs`,
+        'let probe = ["--version"];',
+        'let probe = ["--help"];',
+      ),
+      tool(
+        "execute",
+        "cargo test --manifest-path src-tauri/Cargo.toml agents",
+        {
+          rawOutput: "test result: ok. 38 passed; 0 failed",
+        },
+      ),
+      tool(
+        "execute",
+        'gh pr create --title "fix(agents): probe Hermes with --help, not --version" --fill',
+        {
+          rawOutput: "https://github.com/nodelike/sikemux/pull/14",
+        },
+      ),
+      tool("execute", "gh pr merge 14 --squash --delete-branch", {
+        rawOutput: "✓ Squashed and merged pull request nodelike/sikemux#14",
+      }),
+      say(
+        "`--help` takes Hermes' fast path: no network, exits 0, and still runs the same wrapper and interpreter that launching the agent does. Opened and merged #14.",
+      ),
+      user("Show me the PR."),
     ],
     live: [
-      think(
-        "Opening the orders page in my tab to check the new column against real rows.",
-      ),
+      think("Opening the pull request in my tab."),
       tool("fetch", "mcp__sikemux-tools__browser_navigate", {
-        rawInput: { url: "http://localhost:5173/orders" },
-        durationMs: 1_100,
+        rawInput: { url: "https://github.com/nodelike/sikemux/pull/14" },
+        durationMs: 1_400,
       }),
       tool(
         "fetch",
