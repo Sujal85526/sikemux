@@ -10,6 +10,19 @@ const openWindow = (page, sessionId, windowId) =>
     [sessionId, windowId],
   );
 
+export const README_SCREENSHOTS = {
+  "hero-framed": "sikemux-hero.png",
+  files: "project-editor-view.png",
+  terminals: "project-term-view.png",
+  git: "project-git-view.png",
+  agents: "project-agents-view.png",
+  "aws-billing": "cloud-aws-billing-view.png",
+  "aws-ecs-logs": "cloud-aws-ecs-tasks-logs-view.png",
+  "rundeck-deploy": "cicd-rundeck-deploy-view.png",
+  "signoz-dashboard": "observability-signoz-view.png",
+  bruno: "api-bruno-pane-view.png",
+};
+
 export const SCENES = [
   {
     name: "hero",
@@ -106,6 +119,68 @@ export const SCENES = [
         const signoz = await import("/src/plugins/signoz/state.ts");
         signoz.openDashboard("p-signoz", "dash-api");
       });
+    },
+    crops: { stage: ".stage" },
+  },
+  {
+    name: "aws-ecs-logs",
+    settle: 1500,
+    setup: (page) =>
+      run(page, async () => {
+        const aws = await import("/src/plugins/aws/state.ts");
+        aws.setAwsProfile("acme-prod");
+        aws.setAwsService("ecs");
+        aws.setEcsLevel("acme-prod", {
+          kind: "service",
+          cluster: "prod",
+          service: "api-gateway",
+          tab: "logs",
+        });
+        aws.openAwsSession();
+      }),
+    crops: { stage: ".stage" },
+  },
+  {
+    name: "aws-billing",
+    settle: 1500,
+    setup: (page) =>
+      run(page, async () => {
+        const aws = await import("/src/plugins/aws/state.ts");
+        aws.setAwsProfile("acme-prod");
+        aws.setAwsService("billing");
+        aws.openAwsSession();
+      }),
+    crops: { stage: ".stage" },
+  },
+  {
+    name: "bruno",
+    settle: 1500,
+    setup: async (page) => {
+      await run(page, async () => {
+        const bruno = await import("/src/plugins/bruno/state.ts");
+        const collection = "/Users/edon/api/acme-store";
+        bruno.brunoSettings.update((settings) => ({
+          ...settings,
+          selectedEnvs: { [collection]: "production" },
+        }));
+        bruno.openBrunoSession(collection);
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const state = showcase.store.getState();
+        const paneId =
+          state.windows[state.sessions[state.activeSessionId].activeWindowId]
+            .activePaneId;
+        for (const request of [
+          "catalog/search.bru",
+          "users/me.bru",
+          "checkout/create.bru",
+        ]) {
+          bruno.brunoSelectRequest(paneId, `${collection}/${request}`);
+        }
+      });
+      await page.waitForTimeout(500);
+      await page.keyboard.press("Meta+Enter");
+      await page.getByRole("button", { name: "Trust collection" }).click();
+      await page.locator(".bruno-tab", { hasText: /^body/i }).first().click();
     },
     crops: { stage: ".stage" },
   },

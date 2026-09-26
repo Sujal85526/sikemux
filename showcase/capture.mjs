@@ -1,9 +1,15 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright-core";
 import { createServer } from "vite";
-import { SCENES } from "./scenes.mjs";
+import { README_SCREENSHOTS, SCENES } from "./scenes.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const { values: options, positionals: only } = parseArgs({
@@ -12,6 +18,8 @@ const { values: options, positionals: only } = parseArgs({
     out: { type: "string", default: resolve(root, "showcase/out") },
     width: { type: "string", default: "1440" },
     height: { type: "string", default: "900" },
+    publish: { type: "boolean", default: false },
+    site: { type: "string" },
   },
 });
 
@@ -56,7 +64,15 @@ for (const scene of scenes) {
     () => window.showcase && document.querySelector(".shell"),
   );
   await page.waitForTimeout(600);
-  await scene.setup(page);
+  try {
+    await scene.setup(page);
+  } catch (error) {
+    problems.push(
+      `${scene.name}: setup failed, ${error.message.split("\n")[0]}`,
+    );
+    await page.close();
+    continue;
+  }
   await page.waitForTimeout(scene.settle ?? 900);
 
   const full = resolve(options.out, `${scene.name}.png`);
@@ -100,6 +116,27 @@ async function frame(source, target) {
 
 await browser.close();
 await server.close();
+
+if (options.publish) {
+  for (const [capture, screenshot] of Object.entries(README_SCREENSHOTS)) {
+    await copyFile(
+      resolve(options.out, `${capture}.png`),
+      resolve(root, "public/screenshots", screenshot),
+    );
+  }
+  console.log(
+    `published ${Object.keys(README_SCREENSHOTS).length} README screenshots`,
+  );
+}
+if (options.site) {
+  await mkdir(options.site, { recursive: true });
+  const captures = (await readdir(options.out)).filter((name) =>
+    name.endsWith(".png"),
+  );
+  for (const name of captures)
+    await copyFile(resolve(options.out, name), resolve(options.site, name));
+  console.log(`copied ${captures.length} captures to ${options.site}`);
+}
 if (problems.length) {
   await writeFile(resolve(options.out, "problems.txt"), problems.join("\n"));
   console.log(`\n${problems.length} problem(s):\n${problems.join("\n")}`);

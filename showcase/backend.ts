@@ -14,6 +14,13 @@ import {
 import { BRANCHES, GIT_STATUS } from "./world/git";
 import { RUNDECK, rundeckStream } from "./world/rundeck";
 import { SIGNOZ, signozTail } from "./world/signoz";
+import { AWS, awsLogLines } from "./world/aws";
+import {
+  BRUNO_COLLECTION,
+  BRUNO_FILES,
+  CHECKOUT_RESPONSE,
+  brunoDir,
+} from "./world/bruno";
 import { BROWSER_TABS, placeBrowserPage } from "./browserPage";
 import { DEMO_HOME, DEMO_PROJECTS } from "./world/projects";
 import { terminalReplay } from "./world/terminals";
@@ -149,7 +156,16 @@ export class ShowcaseBackend implements IpcTransport {
     );
 
     this.on("read_dirs", ({ paths }) => server("read_dirs", { paths }));
-    this.on("read_file", ({ path }) => server("read_file", { path }));
+    this.on(
+      "read_file",
+      ({ path }) =>
+        BRUNO_FILES[path as string] ?? server("read_file", { path }),
+    );
+    this.on("read_dir", ({ path }) =>
+      (path as string).startsWith(BRUNO_COLLECTION)
+        ? brunoDir(path as string)
+        : [],
+    );
     this.on("read_file_versioned", async ({ path }) => ({
       content: await server<string>("read_file", { path }),
       version: "showcase",
@@ -233,6 +249,8 @@ export class ShowcaseBackend implements IpcTransport {
     const plugins: Record<string, Record<string, (params: Args) => unknown>> = {
       "sikemux.rundeck": RUNDECK,
       "sikemux.signoz": SIGNOZ,
+      "sikemux.aws": AWS,
+      "sikemux.bruno": { send: () => CHECKOUT_RESPONSE },
     };
     this.on("plugin_call", ({ plugin, method, params }) => {
       const answer = plugins[plugin as string]?.[method as string];
@@ -249,6 +267,8 @@ export class ShowcaseBackend implements IpcTransport {
       const emit = (value: unknown) =>
         setTimeout(() => channel.onmessage({ kind: "item", value }), 30);
       if (plugin === "sikemux.rundeck") rundeckStream(method as string, emit);
+      if (plugin === "sikemux.aws" && method === "tailLogs")
+        for (const line of awsLogLines()) emit(line);
       if (plugin === "sikemux.signoz" && method === "tailLogs")
         emit(signozTail());
       return nextStream++;

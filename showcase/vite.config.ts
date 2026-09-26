@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -49,19 +49,23 @@ function projectFiles(name: string): ProjectFiles {
   const cached = indexed.get(name);
   if (cached) return cached;
   const root = LOCAL_ROOTS[name];
-  const listed = execFileSync("git", ["ls-files", "--cached"], {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 64 << 20,
-  })
-    .split("\n")
-    .filter(
-      (path) =>
-        path &&
-        !path
-          .split("/")
-          .some((part) => part.startsWith(".env") || HIDDEN_FOLDERS.has(part)),
-    );
+  const listed = !existsSync(root)
+    ? ""
+    : execFileSync("git", ["ls-files", "--cached"], {
+        cwd: root,
+        encoding: "utf8",
+        maxBuffer: 64 << 20,
+      })
+        .split("\n")
+        .filter(
+          (path) =>
+            path &&
+            !path
+              .split("/")
+              .some(
+                (part) => part.startsWith(".env") || HIDDEN_FOLDERS.has(part),
+              ),
+        );
   const files = new Set(listed);
   const dirs = new Map<string, { name: string; isDir: boolean }[]>();
   const add = (dir: string, entry: string, isDir: boolean) => {
@@ -116,6 +120,7 @@ function shortAge(relative: string): string {
 }
 
 function gitLog(name: string, count: number) {
+  if (!existsSync(LOCAL_ROOTS[name])) return [];
   const format = ["%H", "%P", "%an", "%ar", "%s", "%D"].join("%x1f");
   const out = execFileSync("git", ["log", `-n${count}`, `--format=${format}`], {
     cwd: LOCAL_ROOTS[name],
