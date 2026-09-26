@@ -37,7 +37,7 @@ export const SCENES = [
   },
   {
     name: "agents",
-    setup: (page) => openWindow(page, "s-sikemux", "w-agent-rail"),
+    setup: (page) => openWindow(page, "s-sikemux", "w-agent-replay"),
     crops: { chat: ".stage", rail: ".workspace-rail" },
   },
   {

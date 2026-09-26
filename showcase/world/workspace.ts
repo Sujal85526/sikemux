@@ -74,7 +74,7 @@ export const AGENTS = {
 
 const agents: PersistedAgent[] = Object.values(AGENTS).map((agent) => ({
   ...agent,
-  permissionMode: "workspace-write",
+  permissionMode: agent.id === "agent-replay" ? "bypass" : "workspace-write",
   keepAlive: true,
 }));
 

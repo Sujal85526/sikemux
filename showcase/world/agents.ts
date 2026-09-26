@@ -154,6 +154,29 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       say(
         "The channel could deliver bytes that were already inside the attach snapshot. The controller now drops channel output until the snapshot has been written, which passes 100 out of 100 runs.",
       ),
+      user(
+        "Good. Run the whole terminal suite, then commit it with a message that explains the race.",
+      ),
+    ],
+    live: [
+      think(
+        "Running every terminal test before the commit, since the controller change touches attach and detach.",
+      ),
+      tool("execute", "pnpm vitest run src/terminal", {
+        rawOutput: " Test Files  14 passed (14)\n      Tests  212 passed (212)",
+        durationMs: 6_400,
+      }),
+      tool(
+        "execute",
+        "git add src/terminal/ptyController.ts src/terminal/usePty.test.tsx",
+        { durationMs: 300 },
+      ),
+      tool(
+        "execute",
+        'git commit -m "fix(pty): drop channel bytes the attach snapshot already holds"',
+        {},
+        "in_progress",
+      ),
     ],
   },
   [AGENTS.hero.id]: {

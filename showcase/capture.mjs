@@ -72,6 +72,21 @@ for (const scene of scenes) {
     await page.close();
     continue;
   }
+  const nextFrame = () =>
+    page.evaluate(
+      () =>
+        new Promise((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(done)),
+        ),
+    );
+  let now = FIXED_TIME.getTime();
+  for (;;) {
+    const hold = await page.evaluate(() => window.showcase.backend.stepLive());
+    if (hold < 0) break;
+    await nextFrame();
+    now += hold;
+    await page.clock.setFixedTime(now);
+  }
   await page.waitForTimeout(scene.settle ?? 900);
 
   const full = resolve(options.out, `${scene.name}.png`);

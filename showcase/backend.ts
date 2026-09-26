@@ -284,6 +284,63 @@ export class ShowcaseBackend implements IpcTransport {
     );
   }
 
+  private readonly liveSteps: { run: () => void; holdMs: number }[] = [];
+
+  // A live turn plays one step at a time so the capture can move the clock between tool calls.
+  stepLive(): number {
+    const step = this.liveSteps.shift();
+    if (!step) return -1;
+    step.run();
+    return step.holdMs;
+  }
+
+  private queueLiveTurn(
+    agentId: string,
+    live: Record<string, unknown>[],
+    batch: (updates: Record<string, unknown>[]) => unknown,
+  ) {
+    const send = (updates: Record<string, unknown>[]) =>
+      this.emit("acp_event", {
+        agentId,
+        kind: "session_update",
+        payload: batch(updates),
+      });
+    const strip = ({
+      durationMs: _durationMs,
+      ...update
+    }: Record<string, unknown>) => update;
+    this.liveSteps.push({
+      run: () =>
+        this.emit("acp_event", { agentId, kind: "turn_started", payload: {} }),
+      holdMs: 400,
+    });
+    let finishing: Record<string, unknown> | null = null;
+    for (const update of live) {
+      const isTool = update.sessionUpdate === "tool_call";
+      const previous = finishing;
+      finishing = isTool && update.status === "completed" ? update : null;
+      const shown = isTool
+        ? { ...strip(update), status: "in_progress" }
+        : strip(update);
+      this.liveSteps.push({
+        run: () =>
+          send([
+            ...(previous
+              ? [
+                  {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: previous.toolCallId,
+                    status: "completed",
+                  },
+                ]
+              : []),
+            shown,
+          ]),
+        holdMs: isTool ? Number(update.durationMs ?? 1200) : 600,
+      });
+    }
+  }
+
   private startAgent(agentId: string, provider: string) {
     const script = AGENT_SCRIPTS[agentId];
     const setup = { configOptions: MODEL_OPTIONS[provider] ?? [] };
@@ -306,17 +363,7 @@ export class ShowcaseBackend implements IpcTransport {
       kind: "ready",
       payload: { capabilities: {}, setup },
     });
-    if (script?.live) {
-      const live = script.live;
-      setTimeout(() => {
-        this.emit("acp_event", { agentId, kind: "turn_started", payload: {} });
-        this.emit("acp_event", {
-          agentId,
-          kind: "session_update",
-          payload: batch(live),
-        });
-      }, 50);
-    }
+    if (script?.live) this.queueLiveTurn(agentId, script.live, batch);
     return { sessionId, capabilities: {}, setup };
   }
 }
