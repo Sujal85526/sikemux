@@ -4,7 +4,7 @@
 
 **A desktop workspace for terminals, code, Git, coding agents, cloud tools, deployments, and API collections. Built with Tauri, Rust, and React.**
 
-![Sikemux editor](public/screenshots/project-editor-view.png)
+![Sikemux with a Claude Code agent and its browser tab](public/screenshots/sikemux-hero.png)
 
 [![macOS](https://img.shields.io/badge/macOS-11%2B%20Apple%20Silicon-000?logo=apple&logoColor=white)](#installation)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
@@ -27,6 +27,8 @@ Each project has five views named `Files`, `Term`, `Git`, `Agents`, and `Search`
 The editor uses CodeMirror 6 and supports JavaScript, TypeScript, JSX, Python, Rust, Go, HTML, CSS, JSON, YAML, Markdown, and legacy modes. LSP support covers hover, go to definition, and peek. The editor also has project-wide Problems and Outline panels, a Git gutter, find and replace, indentation guides, and virtualized rendering for large files.
 
 Sikemux includes a side-by-side diff editor and a three-way merge view for resolving conflicts. The file tree watches the filesystem for changes. You can create, rename, delete, and move files, or drop files in from Finder.
+
+![Files view](public/screenshots/project-editor-view.png)
 
 <table>
 <tr>
@@ -148,7 +150,13 @@ The Rundeck panel lets you browse projects, start jobs from a palette, and follo
 
 Sikemux uses HTTPS by default. You can allow HTTP when signing in to a Rundeck installation on a private subnet. Sikemux accepts it only if every resolved address is private, loopback, or link-local. It pins those verified addresses in the credential and token client to block DNS rebinding. Sikemux stores the acknowledgement beside the token configuration and saves that file with mode `600`.
 
-![Rundeck](public/screenshots/cicd-rundeck-projects-view.png)
+![Rundeck](public/screenshots/cicd-rundeck-deploy-view.png)
+
+### SigNoz
+
+The SigNoz panel shows service health, logs, traces, and dashboards from a SigNoz instance. Sign in with your SigNoz account or an API key.
+
+![SigNoz](public/screenshots/observability-signoz-view.png)
 
 ### Bruno
 
