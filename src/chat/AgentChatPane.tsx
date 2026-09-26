@@ -66,6 +66,7 @@ import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "
 import { remarkHtmlAsText } from "./remarkHtmlAsText";
 import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
+import { caretAtEdge, recallPrompt, sentPrompts, type HistoryPosition } from "./promptHistory";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -1160,6 +1161,7 @@ function ChatComposer({
     queuedCount,
     usage,
     onConfig,
+    history,
 }: {
     agent: Agent;
     profile?: ProviderProfile;
@@ -1184,8 +1186,11 @@ function ChatComposer({
     queuedCount: number;
     usage: ContextUsage | null;
     onConfig: (config: SessionConfig, value: string) => void;
+    history: readonly string[];
 }) {
     const [draft, setDraft] = useState("");
+    const [historyPosition, setHistoryPosition] = useState<HistoryPosition | null>(null);
+    const recalledCaret = useRef<"start" | "end" | null>(null);
     const [caret, setCaret] = useState(0);
     const [attachments, setAttachments] = useState<string[]>([]);
     const [slashSelection, setSlashSelection] = useState(0);
@@ -1199,6 +1204,13 @@ function ChatComposer({
         if (!editor) return;
         editor.style.height = "auto";
         editor.style.height = `${editor.scrollHeight}px`;
+        // A recalled message opens with the caret where the next arrow press keeps browsing.
+        if (recalledCaret.current) {
+            const at = recalledCaret.current === "start" ? 0 : draft.length;
+            editor.setSelectionRange(at, at);
+            setCaret(at);
+            recalledCaret.current = null;
+        }
     }, [draft]);
 
     useEffect(() => {
@@ -1269,6 +1281,7 @@ function ChatComposer({
         setSlashSelection(0);
         setAttachments([]);
         setSlashDismissed(false);
+        setHistoryPosition(null);
     };
 
     const chooseFiles = async () => {
@@ -1340,6 +1353,22 @@ function ChatComposer({
                             }
                             if (event.key === "Escape") {
                                 event.preventDefault();
+                                setSlashDismissed(true);
+                                return;
+                            }
+                        }
+                        const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
+                        const plainArrow = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
+                        if (direction && plainArrow) {
+                            const { value, selectionStart, selectionEnd } = event.currentTarget;
+                            const recalled = caretAtEdge(value, selectionStart, selectionEnd, direction)
+                                ? recallPrompt(history, historyPosition, value, direction)
+                                : null;
+                            if (recalled) {
+                                event.preventDefault();
+                                recalledCaret.current = direction === "older" ? "start" : "end";
+                                setHistoryPosition(recalled.position);
+                                setDraft(recalled.draft);
                                 setSlashDismissed(true);
                                 return;
                             }
@@ -1427,6 +1456,14 @@ export function AgentChatPane({
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
     const [queued, setQueued] = useState<QueuedMessage[]>([]);
+    const sentHistory = useMemo(
+        () =>
+            sentPrompts(
+                state.messages,
+                queued.map((message) => message.text),
+            ),
+        [state.messages, queued],
+    );
     const queuedCount = useRef(0);
     const [composerError, setComposerError] = useState<string | null>(null);
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
@@ -2078,6 +2115,7 @@ export function AgentChatPane({
                             queuedCount={queued.length}
                             usage={state.usage}
                             onConfig={changeConfig}
+                            history={sentHistory}
                         />
                     </div>
                     <div className="chat-drop-target" aria-hidden="true">
