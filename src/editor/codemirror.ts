@@ -48,7 +48,7 @@ const LANGUAGE_LOADERS: Record<string, () => Promise<Extension[]>> = {
     css: async () => [(await import("@codemirror/lang-css")).css()],
     html: async () => [(await import("@codemirror/lang-html")).html()],
     markdown: async () => [(await import("@codemirror/lang-markdown")).markdown()],
-    astro: async () => [(await import("./astro")).astro()],
+    astro: async () => [(await import("./astroLanguage")).astro()],
 };
 
 const loadedLanguages = new Map<string, Extension[]>();

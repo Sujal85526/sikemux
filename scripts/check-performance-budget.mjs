@@ -81,11 +81,13 @@ async function computeEagerJsSet() {
 // a missing-chunk failure below instead of silently vanishing into the
 // "default-path JavaScript" catch-all.
 const diffLanguageChunkNames = [
+  "astro",
   "c",
   "css",
   "go",
   "html",
   "java",
+  "javascript",
   "json",
   "jsonc",
   "markdown",
@@ -158,8 +160,8 @@ const budgets = [
   {
     label: "Diffs language grammar chunks (one per language, loaded on demand)",
     pattern: diffLanguageChunkPattern,
-    raw: 950_000,
-    gzip: 130_000,
+    raw: 1_170_000,
+    gzip: 155_000,
   },
   {
     label: "Diffs worker chunks",
