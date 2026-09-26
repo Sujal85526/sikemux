@@ -113,7 +113,9 @@ for (const scene of scenes) {
   const full = resolve(options.out, `${scene.name}.png`);
   await page.screenshot({ path: full });
   await frame(full, resolve(options.out, `${scene.name}-framed.png`));
-  for (const [name, selector] of Object.entries(scene.crops ?? {})) {
+  for (const [name, crop] of Object.entries(scene.crops ?? {})) {
+    const { selector, region } =
+      typeof crop === "string" ? { selector: crop } : crop;
     const target = page.locator(selector).first();
     if ((await target.count()) === 0) {
       problems.push(
@@ -121,8 +123,21 @@ for (const scene of scenes) {
       );
       continue;
     }
-    await target.screenshot({
-      path: resolve(options.out, `${scene.name}-${name}.png`),
+    const path = resolve(options.out, `${scene.name}-${name}.png`);
+    if (!region) {
+      await target.screenshot({ path });
+      continue;
+    }
+    // A region is a fraction of the element's box, so a crop keeps its framing when the layout shifts.
+    const box = await target.boundingBox();
+    await page.screenshot({
+      path,
+      clip: {
+        x: box.x + box.width * region.left,
+        y: box.y + box.height * region.top,
+        width: box.width * region.width,
+        height: box.height * region.height,
+      },
     });
   }
   const unhandled = await page.evaluate(() => [

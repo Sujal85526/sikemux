@@ -94,7 +94,13 @@ export const SCENES = [
         });
       });
     },
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      card: {
+        selector: ".stage",
+        region: { left: 0.142, top: 0.03, width: 0.7, height: 0.42 },
+      },
+    },
   },
   {
     name: "signoz",
@@ -120,7 +126,13 @@ export const SCENES = [
         signoz.openDashboard("p-signoz", "dash-api");
       });
     },
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      card: {
+        selector: ".stage",
+        region: { left: 0.184, top: 0.03, width: 0.81, height: 0.52 },
+      },
+    },
   },
   {
     name: "aws-ecs-logs",
@@ -138,7 +150,13 @@ export const SCENES = [
         });
         aws.openAwsSession();
       }),
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      card: {
+        selector: ".stage",
+        region: { left: 0.145, top: 0.03, width: 0.64, height: 0.37 },
+      },
+    },
   },
   {
     name: "aws-billing",
@@ -182,7 +200,13 @@ export const SCENES = [
       await page.getByRole("button", { name: "Trust collection" }).click();
       await page.locator(".bruno-tab", { hasText: /^body/i }).first().click();
     },
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      card: {
+        selector: ".stage",
+        region: { left: 0.219, top: 0.03, width: 0.78, height: 0.4 },
+      },
+    },
   },
   {
     name: "projects-rail",
