@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { grammarFor } from ".";
+import { grammarFor, languageOf } from ".";
 
 describe("grammarFor", () => {
     it("reads a language by name, alias or file", () => {
@@ -10,6 +10,8 @@ describe("grammarFor", () => {
         expect(grammarFor("Main.kt")).toBe("kotlin");
         expect(grammarFor("src/lib.rs:12:4")).toBe("rust");
         expect(grammarFor("C:\\repo\\include\\util.H")).toBe("c");
+        expect(grammarFor("script.pl")).toBe("perl");
+        expect(grammarFor("paper.tex")).toBe("latex");
     });
 
     it("knows files by their whole name", () => {
@@ -20,7 +22,8 @@ describe("grammarFor", () => {
         expect(grammarFor("CMakeLists.txt")).toBe("cmake");
     });
 
-    it("reads JavaScript with the TypeScript grammar the app ships", () => {
+    it("reads JavaScript with the TypeScript grammar the app ships, though the file is still JavaScript", () => {
+        expect(languageOf("index.js")).toBe("javascript");
         expect(grammarFor("index.js")).toBe("typescript");
         expect(grammarFor("App.tsx")).toBe("typescript");
         expect(grammarFor("jsx")).toBe("typescript");

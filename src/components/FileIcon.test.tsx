@@ -15,6 +15,12 @@ describe("FileIcon", () => {
         rerender(<FileIcon name="index.astro" />);
         expect(container.querySelector(".file-glyph")).toHaveTextContent("");
 
+        rerender(<FileIcon name="Main.kt" />);
+        expect(container.querySelector(".file-glyph")).toHaveTextContent("");
+
+        rerender(<FileIcon name="Justfile" />);
+        expect(container.querySelector(".file-glyph")).toHaveTextContent("");
+
         rerender(<FileIcon name="unknownfile" />);
         expect(container.querySelector(".file-glyph")).toHaveTextContent("");
     });
