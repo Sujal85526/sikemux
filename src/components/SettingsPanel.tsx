@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { sendTestNotification } from "../agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
 import {
@@ -478,6 +479,7 @@ function ActionsPage() {
 
 function AgentsPage() {
     const restore = useStore((s) => s.restoreAgentTabs);
+    const notifications = useStore((s) => s.agentNotifications);
     const density = useStore((s) => s.railDensity);
     const profiles = useStore((s) => s.providerProfiles);
     const selectedProfiles = useStore((s) => s.selectedProviderProfileIds);
@@ -646,6 +648,21 @@ function AgentsPage() {
                         desc="Resumable tabs come back asleep and start only when selected."
                         asLabel
                         control={<Switch checked={restore} onChange={cmd.setRestoreAgentTabs} label="Restore agent tabs" />}
+                    />
+                    <SettingsRow
+                        label="Notify when an agent needs you"
+                        desc="While Sikemux is in the background, a notification says when an agent asks for input or finishes."
+                        asLabel
+                        control={<Switch checked={notifications} onChange={cmd.setAgentNotifications} label="Notify when an agent needs you" />}
+                    />
+                    <SettingsRow
+                        label="Test notification"
+                        desc="Sends one now, with its sound. The first one also has macOS ask whether Sikemux may notify you."
+                        control={
+                            <button className="settings-btn" type="button" onClick={sendTestNotification}>
+                                Send test
+                            </button>
+                        }
                     />
                     <SettingsRow label="Rail density" desc="Compact fits more sessions while keeping every state symbol visible." wide>
                         <Dropdown

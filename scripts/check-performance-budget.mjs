@@ -172,8 +172,8 @@ const budgets = [
     pattern: new RegExp(
       `^(?!(?:diffs|highlighter|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_120_000,
-    gzip: 1_000_000,
+    raw: 3_210_000,
+    gzip: 1_027_000,
   },
   {
     label: "opt-in shader renderer",

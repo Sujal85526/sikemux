@@ -89,6 +89,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("agents", "Provider profiles", "Codex default", "profile"),
     section("agents", "Sessions"),
     row("agents", "Sessions", "Restore agent tabs", "resume reopen startup"),
+    row("agents", "Sessions", "Notify when an agent needs you", "notification alert badge dock permission finished"),
+    row("agents", "Sessions", "Test notification", "notification sound permission send try"),
     row("agents", "Sessions", "Rail density", "compact comfortable sidebar"),
     row("agents", "Sessions", "Idle agents", "sleep memory process"),
 

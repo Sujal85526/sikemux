@@ -72,6 +72,8 @@ export interface DomainState {
     /** Plugins switched off in Settings; they are built in but act as if absent. */
     disabledPlugins: readonly string[];
     restoreAgentTabs: boolean;
+    agentNotifications: boolean;
+    notificationsIntroduced: boolean;
     railDensity: RailDensity;
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -217,6 +219,8 @@ export const useStore = create<StoreState>(() => {
         pluginSettings: {},
         disabledPlugins: [],
         restoreAgentTabs: true,
+        agentNotifications: true,
+        notificationsIntroduced: false,
         railDensity: "comfortable",
         onboardingComplete: false,
         lastSeenVersion: "",

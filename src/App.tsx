@@ -28,6 +28,7 @@ import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
 import { usePinchZoom } from "./pinchZoom";
+import { introduceNotifications, useAgentNotifications } from "./agentNotifications";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
@@ -638,6 +639,7 @@ function ShellBackdrop() {
 export default function App() {
     useKeymap();
     usePinchZoom();
+    useAgentNotifications();
     useBrowserDownloads();
     useBrowserReveal();
     useBrowserStrips();
@@ -745,6 +747,7 @@ export default function App() {
                     }
                     unsub = subscribePersist();
                     setBootReady(true);
+                    introduceNotifications();
                 }
                 finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
             });

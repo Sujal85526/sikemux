@@ -47,10 +47,13 @@ const capability = {
     "core:default",
     "core:window:allow-start-dragging",
     "dialog:default",
+    "notification:default",
     "process:allow-restart",
     "core:window:allow-show",
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",
+    "core:window:allow-set-badge-count",
+    "core:window:allow-request-user-attention",
     ...commands.map((command) => `allow-${command.replaceAll("_", "-")}`),
   ],
 };

@@ -102,6 +102,8 @@ const PERSISTED_KEYS = [
     "pluginSettings",
     "disabledPlugins",
     "restoreAgentTabs",
+    "agentNotifications",
+    "notificationsIntroduced",
     "railDensity",
     "onboardingComplete",
     "lastSeenVersion",
@@ -152,6 +154,8 @@ function packPrefs(s: StoreState): PersistedPrefs {
         pluginSettings: s.pluginSettings,
         disabledPlugins: [...s.disabledPlugins],
         restoreAgentTabs: s.restoreAgentTabs,
+        agentNotifications: s.agentNotifications,
+        notificationsIntroduced: s.notificationsIntroduced,
         railDensity: s.railDensity,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
@@ -923,6 +927,8 @@ export function applyHydrate(raw: string): HydrationResult {
         pluginSettings: normalisePluginSettings(prefs.pluginSettings),
         disabledPlugins: Array.isArray(prefs.disabledPlugins) ? [...new Set(prefs.disabledPlugins.filter(isPluginId))] : [],
         restoreAgentTabs,
+        agentNotifications: typeof prefs.agentNotifications === "boolean" ? prefs.agentNotifications : cur.agentNotifications,
+        notificationsIntroduced: prefs.notificationsIntroduced === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"

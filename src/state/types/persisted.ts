@@ -74,6 +74,8 @@ export interface PersistedPrefs {
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
+    agentNotifications?: boolean;
+    notificationsIntroduced?: boolean;
     autoResumeAgents?: boolean;
     railDensity?: RailDensity;
     onboardingComplete?: boolean;
