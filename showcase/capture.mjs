@@ -16,8 +16,8 @@ const { values: options, positionals: only } = parseArgs({
   allowPositionals: true,
   options: {
     out: { type: "string", default: resolve(root, "showcase/out") },
-    width: { type: "string", default: "1440" },
-    height: { type: "string", default: "900" },
+    width: { type: "string", default: "1728" },
+    height: { type: "string", default: "1080" },
     publish: { type: "boolean", default: false },
     site: { type: "string" },
   },
@@ -43,7 +43,6 @@ const context = await browser.newContext({
   viewport,
   deviceScaleFactor: 2,
   userAgent: MAC_USER_AGENT,
-  reducedMotion: "reduce",
   colorScheme: "dark",
 });
 await mkdir(options.out, { recursive: true });

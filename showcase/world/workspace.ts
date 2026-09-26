@@ -294,7 +294,10 @@ export function demoSnapshot(): PersistedSnapshot {
     prefs: {
       projectRoots: [{ path: `${DEMO_HOME}/code`, depth: 1 }],
       themeId: "aura",
-      windowOpacity: 1,
+      windowOpacity: 0.81,
+      paneShader: true,
+      sideRailWidth: 258,
+      agentRailWidth: 256,
       windowBlur: 0,
       cloudBrowser: "",
       cloudBrowserShortcut: "",
