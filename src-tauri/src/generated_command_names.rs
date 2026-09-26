@@ -45,6 +45,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "update_install",
     "release_avatars",
     "release_notes",
+    "grammar_load",
     "state_load",
     "state_save",
     "available_agents",

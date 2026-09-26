@@ -16,6 +16,7 @@ mod fs;
 mod fs_watch;
 mod generated_agent_tools;
 mod git;
+mod grammars;
 mod harness;
 mod lsp;
 pub mod observability;
@@ -224,6 +225,7 @@ pub fn run() {
             updates::update_install,
             release_credits::release_avatars,
             release_credits::release_notes,
+            grammars::grammar_load,
             state::state_load,
             state::state_save,
             agents::available_agents,

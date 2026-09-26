@@ -9,6 +9,7 @@ import { currentTheme, subscribeTheme } from "../themes/bus";
 import { diffsThemeName } from "../themes/diffs";
 import { errMessage, swallow } from "../state/toast";
 import { joinPath } from "../lib/paths";
+import { grammarFor } from "../languages";
 import { subscribe } from "../state/bus";
 
 /*
@@ -68,6 +69,8 @@ const revisionReads = new Map<string, CachedDiffRead>();
 const DIFF_READ_CACHE_MAX_ENTRIES = 192;
 const DIFF_READ_CACHE_MAX_CHARS = 32 * 1024 * 1024;
 let revisionReadChars = 0;
+/** Grammars the renderer has loaded, so a diff reopened in one paints coloured from the start. */
+const readyLanguages = new Set<string>(["text"]);
 
 function pruneRevisionReads(): void {
     if (revisionReads.size <= DIFF_READ_CACHE_MAX_ENTRIES && revisionReadChars <= DIFF_READ_CACHE_MAX_CHARS) return;
@@ -159,9 +162,27 @@ export function DiffEditor({
 
     useEffect(() => subscribeTheme((theme) => setDiffTheme(resolveDiffTheme(theme))), []);
 
+    const wantedLang = grammarFor(path) ?? "text";
+    const [lang, setLang] = useState(() => (readyLanguages.has(wantedLang) ? wantedLang : "text"));
+
     useEffect(() => {
-        void preloadHighlighter({ themes: [diffTheme.name], langs: [diffLanguage(path)] }).catch(swallow("diff renderer preload"));
-    }, [diffTheme.name, path]);
+        let current = true;
+        setLang(readyLanguages.has(wantedLang) ? wantedLang : "text");
+        preloadHighlighter({ themes: [diffTheme.name], langs: [wantedLang] })
+            .then(() => {
+                readyLanguages.add(wantedLang);
+                if (current) setLang(wantedLang);
+            })
+            .catch((err: unknown) => {
+                swallow("diff renderer preload")(err);
+                if (current) setLang("text");
+                return preloadHighlighter({ themes: [diffTheme.name], langs: ["text"] });
+            })
+            .catch(swallow("diff renderer preload"));
+        return () => {
+            current = false;
+        };
+    }, [diffTheme.name, wantedLang]);
 
     useEffect(() => {
         let cancelled = false;
@@ -192,12 +213,11 @@ export function DiffEditor({
         if (!content) return null;
         const baseKey = `${repo}:${baseRev}:${path}:${diffTheme.name}:${contentHash(content.base)}`;
         const headKey = `${repo}:${headRev ?? "worktree"}:${path}:${diffTheme.name}:${contentHash(content.head)}`;
-        const lang = diffLanguage(path);
         return {
             oldFile: { name: path, contents: content.base, cacheKey: baseKey, lang } satisfies FileContents,
             newFile: { name: path, contents: content.head, cacheKey: headKey, lang } satisfies FileContents,
         };
-    }, [content, repo, path, baseRev, headRev, diffTheme.name]);
+    }, [content, repo, path, baseRev, headRev, diffTheme.name, lang]);
 
     const options = useMemo<FileDiffOptions<undefined>>(
         () => ({
@@ -297,28 +317,6 @@ function contentHash(value: string): string {
         result = Math.imul(result, 16777619);
     }
     return (result >>> 0).toString(36);
-}
-
-function diffLanguage(path: string): NonNullable<FileContents["lang"]> {
-    const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
-    if (name === "dockerfile") return "shellscript";
-    if (name === "makefile") return "shellscript";
-    const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
-    if (["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts"].includes(extension)) return "typescript";
-    if (["css", "scss", "sass", "less"].includes(extension)) return "css";
-    if (["html", "htm", "vue", "svelte"].includes(extension)) return "html";
-    if (["json", "json5", "jsonc", "jsonl"].includes(extension)) return "jsonc";
-    if (["md", "mdx", "markdown"].includes(extension)) return "markdown";
-    if (["sh", "bash", "zsh", "fish"].includes(extension)) return "shellscript";
-    if (["yaml", "yml"].includes(extension)) return "yaml";
-    if (["py", "pyi", "pyw"].includes(extension)) return "python";
-    if (["c", "h"].includes(extension)) return "c";
-    if (extension === "rs") return "rust";
-    if (extension === "go") return "go";
-    if (extension === "java") return "java";
-    if (extension === "sql") return "sql";
-    if (extension === "astro") return "astro";
-    return "text";
 }
 
 async function readWorkingFile(repo: string, path: string, absPath: string): Promise<string> {

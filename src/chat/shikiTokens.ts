@@ -1,5 +1,5 @@
 import { bundledLanguages, createHighlighter, createJavaScriptRegexEngine } from "../vendor/shiki";
-import type { HighlighterCore } from "shiki/core";
+import type { Grammar, HighlighterCore } from "shiki/core";
 import { createCodeTheme } from "../themes/codeTheme";
 import type { Theme } from "../themes";
 import type { CodeLine, CodeToken } from "./types";
@@ -25,21 +25,35 @@ const FONT_ITALIC = 1;
 const FONT_BOLD = 2;
 const FONT_UNDERLINE = 4;
 
+/** Loads a grammar into the shared highlighter; false when there is no such grammar. */
+async function loadGrammar(shiki: HighlighterCore, lang: string): Promise<boolean> {
+    const grammar = Object.hasOwn(bundledLanguages, lang) ? bundledLanguages[lang] : undefined;
+    if (!grammar) return false;
+    let loading = grammars.get(lang);
+    if (!loading) {
+        loading = grammar().then((module) => shiki.loadLanguage(module.default));
+        grammars.set(lang, loading);
+        loading.catch(() => grammars.delete(lang));
+    }
+    await loading;
+    return true;
+}
+
+/** The grammar itself, for reading a file one line at a time. */
+export async function textMateGrammar(lang: string): Promise<Grammar | null> {
+    const shiki = await highlighter();
+    return (await loadGrammar(shiki, lang)) ? shiki.getLanguage(lang) : null;
+}
+
 export async function tokenizeCode(text: string, lang: string, theme: Theme, themeName: string): Promise<CodeLine[]> {
-    const grammar = bundledLanguages[lang as keyof typeof bundledLanguages];
-    if (!grammar) return [];
     const shiki = await highlighter();
     let loadingTheme = themes.get(themeName);
     if (!loadingTheme) {
         loadingTheme = shiki.loadTheme(createCodeTheme(theme, themeName));
         themes.set(themeName, loadingTheme);
     }
-    let loadingGrammar = grammars.get(lang);
-    if (!loadingGrammar) {
-        loadingGrammar = grammar().then((module) => shiki.loadLanguage(module.default));
-        grammars.set(lang, loadingGrammar);
-    }
-    await Promise.all([loadingTheme, loadingGrammar]);
+    const [, found] = await Promise.all([loadingTheme, loadGrammar(shiki, lang)]);
+    if (!found) return [];
     const highlighted = shiki.codeToTokens(text, { lang, theme: themeName });
     const plain = highlighted.fg?.toLowerCase();
     return highlighted.tokens.map((line) => {

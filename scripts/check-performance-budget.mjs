@@ -74,27 +74,20 @@ async function computeEagerJsSet() {
 }
 
 // Grammar chunks load one at a time, on demand, keyed by the language of
-// the file being diffed or of the code fence being coloured in a chat
-// (src/vendor/shiki.ts's bundledLanguages map). This
-// list mirrors those keys (minus "zsh", which shares the "shellscript"
-// loader) so a regression that re-folds them into one big chunk shows up as
-// a missing-chunk failure below instead of silently vanishing into the
-// "default-path JavaScript" catch-all.
+// the file being diffed or of the code fence being coloured in a chat. This
+// list mirrors the grammars src/vendor/shiki.ts ships (every other grammar is
+// downloaded, not bundled) so a regression that re-folds them into one big
+// chunk shows up as a missing-chunk failure below instead of silently
+// vanishing into the "default-path JavaScript" catch-all.
 const diffLanguageChunkNames = [
-  "astro",
-  "c",
   "css",
-  "go",
   "html",
-  "java",
-  "javascript",
   "json",
   "jsonc",
   "markdown",
   "python",
   "rust",
   "shellscript",
-  "sql",
   "typescript",
   "yaml",
 ];
@@ -160,8 +153,8 @@ const budgets = [
   {
     label: "Diffs language grammar chunks (one per language, loaded on demand)",
     pattern: diffLanguageChunkPattern,
-    raw: 1_170_000,
-    gzip: 155_000,
+    raw: 950_000,
+    gzip: 130_000,
   },
   {
     label: "Diffs worker chunks",

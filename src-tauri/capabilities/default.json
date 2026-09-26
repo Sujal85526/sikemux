@@ -61,6 +61,7 @@
     "allow-update-install",
     "allow-release-avatars",
     "allow-release-notes",
+    "allow-grammar-load",
     "allow-state-load",
     "allow-state-save",
     "allow-available-agents",

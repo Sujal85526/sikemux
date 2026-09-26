@@ -148,6 +148,25 @@ describe("DiffEditor", () => {
         });
     });
 
+    it("colours a diff once its grammar has loaded", async () => {
+        const { getByTestId } = render(<DiffEditor repo="/repo" path="src/pages/index.astro" baseRev="HEAD" headRev=":index" editable={false} />);
+
+        await waitFor(() => expect(getByTestId("pierre-diff")).toBeInTheDocument());
+        expect(mocks.preloadHighlighter).toHaveBeenCalledWith(expect.objectContaining({ langs: ["astro"] }));
+        await waitFor(() => expect(mocks.diffProps?.newFile.lang).toBe("astro"));
+    });
+
+    it("shows a diff as plain text when its grammar cannot be fetched", async () => {
+        mocks.preloadHighlighter.mockImplementation(({ langs }: { langs: string[] }) =>
+            langs.includes("zig") ? Promise.reject(new Error("offline")) : Promise.resolve(),
+        );
+        const { getByTestId } = render(<DiffEditor repo="/repo" path="src/main.zig" baseRev="HEAD" headRev=":index" editable={false} />);
+
+        await waitFor(() => expect(getByTestId("pierre-diff")).toBeInTheDocument());
+        await waitFor(() => expect(mocks.preloadHighlighter).toHaveBeenCalledWith(expect.objectContaining({ langs: ["text"] })));
+        expect(mocks.diffProps?.newFile.lang).toBe("text");
+    });
+
     it("reuses completed reads across virtualized remounts and invalidates them by repository", async () => {
         const first = render(<DiffEditor repo="/repo" path="src/revisit.ts" baseRev="HEAD" headRev=":index" editable={false} />);
         await waitFor(() => expect(first.getByTestId("pierre-diff")).toBeInTheDocument());

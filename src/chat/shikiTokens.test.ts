@@ -1,7 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { tokenizeCode } from "./shikiTokens";
 import { codeThemeName } from "../themes/codeTheme";
 import { DEFAULT_THEME_ID, themeById } from "../themes";
+
+const invokeCommand = vi.hoisted(() => vi.fn());
+vi.mock("../api/invoke", () => ({ invokeCommand }));
+
+/** Answers the way the native side does: the grammar's own JSON, fetched once and kept. */
+async function nativeGrammar(_command: string, args: { id: string }): Promise<string> {
+    const module = (await import(/* @vite-ignore */ `@shikijs/langs/${args.id}`)) as { default: Array<{ name: string }> };
+    return JSON.stringify(module.default.find((grammar) => grammar.name === args.id));
+}
 
 const theme = themeById(DEFAULT_THEME_ID);
 const name = codeThemeName(theme);
@@ -28,7 +37,25 @@ describe("tokenizeCode", () => {
         expect(tokens(lines).some((token) => token.color === undefined)).toBe(true);
     });
 
-    it("says nothing for a grammar it does not carry", async () => {
-        expect(await tokenizeCode("SELECT 1", "cobol", theme, name)).toEqual([]);
+    it("says nothing for a grammar there is not", async () => {
+        expect(await tokenizeCode("+[-->-[>>+>-----<<]<--<---]", "brainfuck", theme, name)).toEqual([]);
+    });
+
+    it("downloads a grammar the app does not ship, along with the grammars it embeds", async () => {
+        invokeCommand.mockImplementation(nativeGrammar);
+        const lines = await tokenizeCode('---\nconst title = "Home";\n---\n<h1>{title}</h1>', "astro", theme, name);
+
+        expect(invokeCommand).toHaveBeenCalledWith("grammar_load", { id: "astro" });
+        expect(invokeCommand).not.toHaveBeenCalledWith("grammar_load", { id: "typescript" });
+        const word = (text: string) => tokens(lines).find((token) => token.text.includes(text));
+        expect(word("const")?.color?.toLowerCase()).toBe(theme.highlight.keyword.toLowerCase());
+    });
+
+    it("asks again after a download fails", async () => {
+        invokeCommand.mockReset().mockRejectedValueOnce(new Error("offline")).mockImplementation(nativeGrammar);
+
+        await expect(tokenizeCode("SELECT 1", "sql", theme, name)).rejects.toThrow("offline");
+        const lines = await tokenizeCode("SELECT 1", "sql", theme, name);
+        expect(tokens(lines).find((token) => token.text.includes("SELECT"))?.color).toBeDefined();
     });
 });

@@ -46,6 +46,9 @@ jobs:
       - name: Typecheck frontend
         run: pnpm typecheck
 
+      - name: Check the grammar manifest matches the installed grammars
+        run: pnpm grammars:check
+
       - name: Run frontend tests with all-source coverage
         run: pnpm test:coverage
 
