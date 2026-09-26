@@ -1,5 +1,5 @@
 import { AGENTS } from "./workspace";
-import { MOODBOARD, SIKEMUX } from "./projects";
+import { ADMIN, SIKEMUX } from "./projects";
 
 type Update = Record<string, unknown>;
 
@@ -183,30 +183,33 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
     usage: { used: 22_000, size: 200_000 },
     history: [
       user(
-        "Now that the benchmark picked k-means in OKLab, show each board's extracted palette under its cover on the boards page.",
+        "Support keeps asking which orders have a refund in flight. Add a Refund column to the orders table, between Payment and Total.",
       ),
-      tool("search", 'rg "extract_palette" -g "*.py" -g "*.tsx"', {
-        rawOutput: "moodboard/palette.py:41\nweb/src/Board.tsx:12",
+      tool("search", 'rg "PaymentPill" src', {
+        rawOutput: "src/orders/OrdersTable.tsx:8\nsrc/orders/PaymentPill.tsx:1",
       }),
-      tool("read", "web/src/Board.tsx", {
-        locations: [{ path: `${MOODBOARD}/web/src/Board.tsx` }],
+      tool("read", "src/orders/OrdersTable.tsx", {
+        locations: [{ path: `${ADMIN}/src/orders/OrdersTable.tsx` }],
       }),
       edit(
-        `${MOODBOARD}/web/src/Board.tsx`,
-        "<strong>{board.name}</strong>",
-        "<strong>{board.name}</strong>\n<Palette colours={board.palette} />",
+        `${ADMIN}/src/orders/OrdersTable.tsx`,
+        "<td><PaymentPill status={order.payment} /></td>",
+        "<td><PaymentPill status={order.payment} /></td>\n<td><RefundPill refund={order.refund} /></td>",
       ),
+      tool("execute", "pnpm test src/orders", {
+        rawOutput: " ✓ src/orders/OrdersTable.test.tsx (14 tests) 204ms",
+      }),
       say(
-        "Each board now renders its eight swatches in the order the clusters were found, lightest first, so neighbouring boards are easy to compare.",
+        "Added the column with a `RefundPill` that shows Requested or Refunded, and a dash when there is none. The tests cover all three states.",
       ),
       user("Check it in the browser before I look."),
     ],
     live: [
       think(
-        "Opening the dev server in my tab to check the swatches line up under every cover.",
+        "Opening the orders page in my tab to check the new column against real rows.",
       ),
       tool("fetch", "mcp__sikemux-tools__browser_navigate", {
-        rawInput: { url: "http://localhost:5173/boards" },
+        rawInput: { url: "http://localhost:5173/orders" },
         durationMs: 1_100,
       }),
       tool(

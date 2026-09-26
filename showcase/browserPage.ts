@@ -19,24 +19,24 @@ export const BROWSER_TABS: Record<
   [AGENTS.hero.id]: {
     tabs: [
       tab(
-        "tab-boards",
-        "http://localhost:5173/boards",
-        "Boards · Moodboard Studio",
+        "tab-orders",
+        "http://localhost:5173/orders",
+        "Orders · Acme Admin",
         true,
       ),
       tab(
-        "tab-oklab",
-        "https://bottosson.github.io/posts/oklab/",
-        "A perceptual color space",
+        "tab-api",
+        "http://localhost:5173/api/docs",
+        "API reference · Acme",
         false,
       ),
     ],
-    activeTabId: "tab-boards",
+    activeTabId: "tab-orders",
   },
 };
 
 const PAGES: Record<string, string> = {
-  [AGENTS.hero.id]: "/showcase/pages/moodboard.html",
+  [AGENTS.hero.id]: "/showcase/pages/admin.html",
 };
 const frames = new Map<string, HTMLIFrameElement>();
 

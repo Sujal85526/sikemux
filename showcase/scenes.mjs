@@ -28,7 +28,7 @@ export const SCENES = [
     name: "hero",
     settle: 1500,
     setup: async (page) => {
-      await openWindow(page, "s-mood", "w-agent-hero");
+      await openWindow(page, "s-admin", "w-agent-hero");
       await run(page, () =>
         showcase.cmd.openBrowserPane("agent-hero", { focus: false }),
       );
