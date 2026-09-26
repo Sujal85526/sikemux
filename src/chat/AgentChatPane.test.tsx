@@ -434,6 +434,44 @@ describe("AgentChatPane", () => {
         expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
     });
 
+    it("brings back sent messages with the arrow keys, then what was being typed", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "First" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.change(editor, { target: { value: "Then look at the tests" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.change(editor, { target: { value: "half typed" } });
+
+        fireEvent.keyDown(editor, { key: "ArrowUp" });
+        expect(editor.value).toBe("Then look at the tests");
+        fireEvent.keyDown(editor, { key: "ArrowUp" });
+        expect(editor.value).toBe("First");
+        fireEvent.keyDown(editor, { key: "ArrowUp" });
+        expect(editor.value).toBe("First");
+
+        editor.setSelectionRange(editor.value.length, editor.value.length);
+        fireEvent.keyDown(editor, { key: "ArrowDown" });
+        expect(editor.value).toBe("Then look at the tests");
+        editor.setSelectionRange(editor.value.length, editor.value.length);
+        fireEvent.keyDown(editor, { key: "ArrowDown" });
+        expect(editor.value).toBe("half typed");
+    });
+
+    it("keeps the arrows moving between lines inside a message", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "First" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.change(editor, { target: { value: "one\ntwo" } });
+        editor.setSelectionRange(6, 6);
+
+        fireEvent.keyDown(editor, { key: "ArrowUp" });
+        expect(editor.value).toBe("one\ntwo");
+    });
+
     it("offers no steering for an agent that cannot take a message mid-turn", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
