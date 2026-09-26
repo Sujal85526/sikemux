@@ -9,5 +9,6 @@
 **/build.rs @nodelike
 **/Cargo.toml @nodelike
 /src-tauri/Cargo.lock @nodelike
+/vite.config.ts @nodelike
 /package.json @nodelike
 /pnpm-lock.yaml @nodelike
