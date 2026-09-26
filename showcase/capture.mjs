@@ -1,0 +1,107 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { parseArgs } from "node:util";
+import { chromium } from "playwright-core";
+import { createServer } from "vite";
+import { SCENES } from "./scenes.mjs";
+
+const root = resolve(import.meta.dirname, "..");
+const { values: options, positionals: only } = parseArgs({
+  allowPositionals: true,
+  options: {
+    out: { type: "string", default: resolve(root, "showcase/out") },
+    width: { type: "string", default: "1440" },
+    height: { type: "string", default: "900" },
+  },
+});
+
+const MAC_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+const FIXED_TIME = new Date("2026-09-26T09:41:00");
+const viewport = {
+  width: Number(options.width),
+  height: Number(options.height),
+};
+
+const server = await createServer({
+  configFile: resolve(root, "showcase/vite.config.ts"),
+  logLevel: "warn",
+});
+await server.listen();
+const origin = `http://localhost:${server.config.server.port}`;
+
+const browser = await chromium.launch({ channel: "chrome" });
+const context = await browser.newContext({
+  viewport,
+  deviceScaleFactor: 2,
+  userAgent: MAC_USER_AGENT,
+  reducedMotion: "reduce",
+  colorScheme: "dark",
+});
+await mkdir(options.out, { recursive: true });
+
+const scenes = SCENES.filter(
+  (scene) => only.length === 0 || only.includes(scene.name),
+);
+const problems = [];
+
+for (const scene of scenes) {
+  const page = await context.newPage();
+  page.on("pageerror", (error) =>
+    problems.push(`${scene.name}: ${error.message.split("\n")[0]}`),
+  );
+  await page.clock.setFixedTime(FIXED_TIME);
+  await page.goto(`${origin}/showcase/`);
+  await page.waitForFunction(
+    () => window.showcase && document.querySelector(".shell"),
+  );
+  await page.waitForTimeout(600);
+  await scene.setup(page);
+  await page.waitForTimeout(scene.settle ?? 900);
+
+  const full = resolve(options.out, `${scene.name}.png`);
+  await page.screenshot({ path: full });
+  await frame(full, resolve(options.out, `${scene.name}-framed.png`));
+  for (const [name, selector] of Object.entries(scene.crops ?? {})) {
+    const target = page.locator(selector).first();
+    if ((await target.count()) === 0) {
+      problems.push(
+        `${scene.name}: crop "${name}" matched nothing (${selector})`,
+      );
+      continue;
+    }
+    await target.screenshot({
+      path: resolve(options.out, `${scene.name}-${name}.png`),
+    });
+  }
+  const unhandled = await page.evaluate(() => [
+    ...window.showcase.backend.unhandled.keys(),
+  ]);
+  console.log(
+    `✓ ${scene.name}${unhandled.length ? `  (unfaked: ${unhandled.join(", ")})` : ""}`,
+  );
+  await page.close();
+}
+
+async function frame(source, target) {
+  const page = await context.newPage();
+  const image = `data:image/png;base64,${(await readFile(source)).toString("base64")}`;
+  const pad = 72;
+  await page.setViewportSize({
+    width: viewport.width + pad * 2,
+    height: viewport.height + pad * 2,
+  });
+  await page.setContent(`<!doctype html><html><body style="margin:0;display:grid;place-items:center;height:100vh;background:radial-gradient(120% 90% at 20% 0%, #2a2140 0%, #120f1a 55%, #0b0a10 100%)">
+        <img src="${image}" style="width:${viewport.width}px;height:${viewport.height}px;border-radius:12px;box-shadow:0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.06) inset,0 30px 80px rgba(0,0,0,.55),0 8px 24px rgba(0,0,0,.35)">
+    </body></html>`);
+  await page.screenshot({ path: target });
+  await page.close();
+}
+
+await browser.close();
+await server.close();
+if (problems.length) {
+  await writeFile(resolve(options.out, "problems.txt"), problems.join("\n"));
+  console.log(`\n${problems.length} problem(s):\n${problems.join("\n")}`);
+  process.exitCode = 1;
+}

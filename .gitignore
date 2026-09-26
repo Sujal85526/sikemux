@@ -16,3 +16,6 @@ src-tauri/binaries/sikemux-tools-mcp-*
 # Design scratchpads, like .design/ above.
 scratch/
 .empryo
+
+# Showcase captures
+showcase/out/

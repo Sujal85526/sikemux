@@ -1,0 +1,18 @@
+.tb-left {
+  position: relative;
+}
+
+.tb-left::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow:
+    20px 0 0 #febc2e,
+    40px 0 0 #28c840;
+}
