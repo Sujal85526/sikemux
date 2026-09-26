@@ -1,15 +1,10 @@
 name: Release
-run-name: Release ${{ github.event_name == 'push' && github.ref_name || format('v{0} from {1}', inputs.version, github.ref_name) }}
+run-name: Release ${{ github.ref_name }}
 
+# A release only ever starts from a v* tag, and only the owner may push one.
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: The version in package.json, for example 0.4.2-nightly.1
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -65,16 +60,10 @@ jobs:
 
       - name: Resolve version, channel, and notes
         id: plan
-        env:
-          DISPATCHED_VERSION: ${{ inputs.version }}
         run: |
           version="$(node -p "require('./package.json').version")"
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match package version $version"
-            exit 1
-          fi
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DISPATCHED_VERSION" != "$version" ]]; then
-            echo "::error::Dispatched as $DISPATCHED_VERSION, but package.json is $version"
             exit 1
           fi
           heading="$(head -n 1 RELEASE_NOTES.md)"

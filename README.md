@@ -259,14 +259,19 @@ It runs Prettier, ESLint, TypeScript checks, deterministic frontend tests, Rust 
 
 ### Publishing a release
 
-Releases publish from the **Release** GitHub Actions workflow, never from a laptop. Commit the version bump and a `RELEASE_NOTES.md` headed `# Sikemux v<version>`, then either push the matching tag or run the workflow by hand on the branch:
+Releases publish from the **Release** GitHub Actions workflow, never from a laptop. Commit the version bump and a `RELEASE_NOTES.md` headed `# Sikemux v<version>`, then push the matching tag. Tag a commit already on `main` for a nightly, or on its `release/<major.minor>` branch for stable. Only the owner can push a `v*` tag, so only the owner can start a release:
 
 ```bash
 git tag v0.4.1 && git push origin v0.4.1
-gh workflow run release.yml --ref release/0.4 -f version=0.4.1
 ```
 
-A run is titled with the version it releases, so the approval names what it will publish. Run by hand, it takes that version as an input and stops if `package.json` disagrees. The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
+A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
+
+If a release fails before it publishes, fix it and move the tag onto the fix. Only the owner can move a release tag, and moving it starts a fresh run:
+
+```bash
+git tag -f v0.4.1 && git push -f origin v0.4.1
+```
 
 The workflow takes its signing material from the `release` environment:
 
