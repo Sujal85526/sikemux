@@ -1,0 +1,137 @@
+import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
+import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
+import { EmptyState, IconClose, IconInfo, SkeletonRows } from "../../../plugin-api/ui";
+import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
+import { githubIssueR, githubIssuesR } from "../resources";
+import { formatAgo } from "../runStatus";
+import { setListState, showItem } from "../state";
+import { Labels, StateChip } from "./Bits";
+import { CommentThread } from "./CommentThread";
+import { useNow } from "./hooks";
+
+const LIST_STATES = ["open", "closed", "all"];
+
+function IssueRow({ issue, now, onOpen }: { issue: Issue; now: number; onOpen: () => void }) {
+    return (
+        <button type="button" className="gha-item-row" onClick={onOpen}>
+            <StateChip kind="issue" state={issue.state} />
+            <span className="gha-item-main">
+                <span className="gha-item-title">{issue.title}</span>
+                <span className="gha-item-sub">
+                    <span className="gha-mono">#{issue.number}</span>
+                    {issue.author && <span>{issue.author}</span>}
+                    <span>{formatAgo(issue.updatedAt, now)}</span>
+                    {issue.assignees.length > 0 && <span className="gha-dim">→ {issue.assignees.join(", ")}</span>}
+                    <Labels labels={issue.labels} />
+                </span>
+            </span>
+            {issue.comments > 0 && <span className="gha-dim">{issue.comments} comments</span>}
+        </button>
+    );
+}
+
+function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: number; active: boolean; onBack: () => void }) {
+    const issue = useResourceEnabled(active, githubIssueR, repo, number);
+    const now = useNow(false);
+    if (issue.status === "loading" && !issue.data) return <SkeletonRows rows={6} label="Loading issue" />;
+    if (!issue.data) {
+        return (
+            <EmptyState title="Could not read it" message={failureMessage(issue.error)} tone="error" action={{ label: "Back", onClick: onBack }} />
+        );
+    }
+    const found = issue.data;
+    const closing = found.state === "open";
+
+    const setState = () =>
+        void actionsApi
+            .setIssueState(repo, found.number, closing ? "closed" : "open")
+            .then(() => {
+                notify("success", closing ? `Closed #${found.number}` : `Reopened #${found.number}`);
+                invalidate((kind) => kind === "gha.issue" || kind === "gha.issues");
+            })
+            .catch(reportError(closing ? "Could not close it" : "Could not reopen it"));
+
+    return (
+        <div className="gha-detail">
+            <button type="button" className="gha-back" onClick={onBack}>
+                <IconClose size={11} /> Back to issues
+            </button>
+            <div className="gha-detail-head">
+                <div className="gha-detail-title-row">
+                    <StateChip kind="issue" state={found.state} />
+                    <h2 className="gha-detail-title">{found.title}</h2>
+                    <span className="gha-mono gha-dim">#{found.number}</span>
+                </div>
+                <div className="gha-detail-sub">
+                    {found.author && <span>{found.author}</span>}
+                    <span className="gha-dim">opened {formatAgo(found.createdAt, now)}</span>
+                    <Labels labels={found.labels} />
+                </div>
+                <div className="gha-detail-actions">
+                    <button type="button" className="gha-btn" onClick={setState}>
+                        {closing ? "Close issue" : "Reopen issue"}
+                    </button>
+                    <button type="button" className="gha-link" onClick={() => void openUrl(found.url).catch(swallow("open GitHub"))}>
+                        On GitHub
+                    </button>
+                </div>
+            </div>
+            {found.body.trim() && <div className="gha-body-text">{found.body}</div>}
+            <CommentThread repo={repo} number={found.number} active={active} now={now} />
+        </div>
+    );
+}
+
+interface Props {
+    paneId: string;
+    repo: RepoRef;
+    listState: string;
+    item: number | null;
+    active: boolean;
+}
+
+export function IssuesView({ paneId, repo, listState, item, active }: Props) {
+    const issues = useResourceEnabled(active && item === null, githubIssuesR, repo, listState);
+    const now = useNow(false);
+
+    if (item !== null) return <IssueDetail repo={repo} number={item} active={active} onBack={() => showItem(paneId, null)} />;
+    if (issues.status === "loading" && !issues.data) return <SkeletonRows rows={8} label="Loading issues" />;
+    if (issues.error) {
+        return (
+            <EmptyState
+                title="Could not read issues"
+                message={failureMessage(issues.error)}
+                tone="error"
+                action={{ label: "Try again", onClick: () => void issues.refresh() }}
+            />
+        );
+    }
+    const rows = issues.data ?? [];
+
+    return (
+        <div className="gha-list">
+            <div className="gha-list-head">
+                <div className="gha-chips">
+                    {LIST_STATES.map((state) => (
+                        <button
+                            key={state}
+                            type="button"
+                            className="gha-chip"
+                            data-on={listState === state ? "1" : "0"}
+                            onClick={() => setListState(paneId, state)}>
+                            {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+                        </button>
+                    ))}
+                </div>
+                <span className="gha-dim">
+                    {rows.length} issue{rows.length === 1 ? "" : "s"}
+                </span>
+            </div>
+            {rows.length === 0 ? (
+                <EmptyState icon={<IconInfo size={20} />} message={`No ${listState === "all" ? "" : listState} issues.`} />
+            ) : (
+                rows.map((issue) => <IssueRow key={issue.number} issue={issue} now={now} onOpen={() => showItem(paneId, issue.number)} />)
+            )}
+        </div>
+    );
+}

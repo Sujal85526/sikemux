@@ -5,12 +5,16 @@ import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi } from "../api";
 import { useProjectRepo } from "../project";
 import { actionsStatusR, actionsWorkflowsR } from "../resources";
-import { actionsSettings, refOf, setProjectRepo, showRepo, slugOf, updateView, useRunsView } from "../state";
+import { actionsSettings, needsRepo, refOf, setProjectRepo, showRepo, slugOf, updateView, useRunsView } from "../state";
 import { GithubMark } from "./ActionsIcon";
 import { ActionsSidebar } from "./ActionsSidebar";
 import { ActionsSignIn } from "./ActionsSignIn";
 import { DispatchDialog } from "./DispatchDialog";
 import { RepoPicker } from "./RepoPicker";
+import { InboxView } from "./InboxView";
+import { IssuesView } from "./IssuesView";
+import { PullsView } from "./PullsView";
+import { ReleasesView } from "./ReleasesView";
 import { RunsList } from "./RunsList";
 import { RunView } from "./RunView";
 import "../actions.css";
@@ -89,50 +93,59 @@ export function ActionsPane({ paneId, active }: Props) {
                 </button>
             </div>
 
-            {!repo ? (
+            <div className="gha-cols">
+                <ActionsSidebar
+                    paneId={paneId}
+                    repo={repo ?? { owner: "", name: "" }}
+                    view={view}
+                    projectBranch={project.branch}
+                    onPickRepo={() => setPicking(true)}
+                />
                 <div className="gha-body">
-                    {project.loading ? (
-                        <SkeletonRows rows={4} label="Finding this project's repository" />
+                    {!needsRepo(view.section) ? (
+                        <InboxView active={active} />
+                    ) : !repo ? (
+                        project.loading ? (
+                            <SkeletonRows rows={4} label="Finding this project's repository" />
+                        ) : (
+                            <EmptyState
+                                title="No repository yet"
+                                message={
+                                    project.cwd
+                                        ? "This project's git remote is not a repository on this GitHub. Choose one to watch."
+                                        : "Open a project, or choose a repository to watch."
+                                }
+                                action={{ label: "Choose a repository", onClick: () => setPicking(true) }}
+                            />
+                        )
+                    ) : view.section === "pulls" ? (
+                        <PullsView paneId={paneId} repo={repo} listState={view.listState} item={view.item} active={active} />
+                    ) : view.section === "issues" ? (
+                        <IssuesView paneId={paneId} repo={repo} listState={view.listState} item={view.item} active={active} />
+                    ) : view.section === "releases" ? (
+                        <ReleasesView repo={repo} active={active} />
+                    ) : view.run === null ? (
+                        <RunsList
+                            paneId={paneId}
+                            repo={repo}
+                            view={view}
+                            branch={branch}
+                            active={active}
+                            canWrite={!!status.data?.canWriteWorkflows}
+                            onDispatch={(workflowId) => updateView(paneId, { dispatching: workflowId })}
+                        />
                     ) : (
-                        <EmptyState
-                            title="No repository yet"
-                            message={
-                                project.cwd
-                                    ? "This project's git remote is not a repository on this GitHub. Choose one to watch."
-                                    : "Open a project, or choose a repository to watch."
-                            }
-                            action={{ label: "Choose a repository", onClick: () => setPicking(true) }}
+                        <RunView
+                            paneId={paneId}
+                            repo={repo}
+                            runId={view.run}
+                            openJob={view.job}
+                            active={active}
+                            canWrite={!!status.data?.canWriteWorkflows}
                         />
                     )}
                 </div>
-            ) : (
-                <div className="gha-cols">
-                    <ActionsSidebar
-                        paneId={paneId}
-                        repo={repo}
-                        view={view}
-                        projectBranch={project.branch}
-                        active={active}
-                        canWrite={!!status.data?.canWriteWorkflows}
-                        onPickRepo={() => setPicking(true)}
-                        onDispatch={(workflowId) => updateView(paneId, { dispatching: workflowId })}
-                    />
-                    <div className="gha-body">
-                        {view.run === null ? (
-                            <RunsList paneId={paneId} repo={repo} view={view} branch={branch} active={active} />
-                        ) : (
-                            <RunView
-                                paneId={paneId}
-                                repo={repo}
-                                runId={view.run}
-                                openJob={view.job}
-                                active={active}
-                                canWrite={!!status.data?.canWriteWorkflows}
-                            />
-                        )}
-                    </div>
-                </div>
-            )}
+            </div>
 
             {picking && (
                 <RepoPicker

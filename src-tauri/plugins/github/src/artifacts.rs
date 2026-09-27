@@ -88,19 +88,43 @@ fn download_dir(data_dir: &Path) -> PathBuf {
         .unwrap_or_else(|| data_dir.to_path_buf())
 }
 
-/// Never overwrites: a second copy of the same artifact lands beside the first.
-fn free_path(dir: &Path, stem: &str) -> PathBuf {
-    let candidate = dir.join(format!("{stem}.zip"));
-    if !candidate.exists() {
-        return candidate;
+/// Never overwrites: a second copy of the same file lands beside the first.
+fn free_path(dir: &Path, stem: &str, extension: &str) -> PathBuf {
+    let named = |suffix: String| dir.join(format!("{stem}{suffix}{extension}"));
+    if !named(String::new()).exists() {
+        return named(String::new());
     }
     for suffix in 2..1000u32 {
-        let next = dir.join(format!("{stem}-{suffix}.zip"));
-        if !next.exists() {
-            return next;
+        if !named(format!("-{suffix}")).exists() {
+            return named(format!("-{suffix}"));
         }
     }
-    dir.join(format!("{stem}-{}.zip", std::process::id()))
+    named(format!("-{}", std::process::id()))
+}
+
+/// Puts downloaded bytes in the downloads folder under a name that cannot
+/// escape it. `extension` is added when the source name does not carry one,
+/// which is how an artifact becomes a zip.
+pub fn save_download(
+    data_dir: &Path,
+    name: &str,
+    extension: Option<&str>,
+    bytes: &[u8],
+) -> ActionsResult<Saved> {
+    let dir = download_dir(data_dir);
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| ActionsError::Transport(format!("saving the download: {error}")))?;
+    let target = free_path(
+        &dir,
+        &safe_file_name(name),
+        &extension.map_or(String::new(), |ext| format!(".{ext}")),
+    );
+    std::fs::write(&target, bytes)
+        .map_err(|error| ActionsError::Transport(format!("saving the download: {error}")))?;
+    Ok(Saved {
+        path: target.to_string_lossy().into_owned(),
+        bytes: bytes.len() as u64,
+    })
 }
 
 #[derive(Deserialize)]
@@ -124,16 +148,7 @@ pub async fn download(data_dir: &Path, input: Download) -> ActionsResult<Saved> 
         .repo
         .path(&format!("/actions/artifacts/{}/zip", input.artifact_id))?;
     let bytes = client::download(data_dir, &path).await?;
-    let dir = download_dir(data_dir);
-    std::fs::create_dir_all(&dir)
-        .map_err(|error| ActionsError::Transport(format!("saving the artifact: {error}")))?;
-    let target = free_path(&dir, &safe_file_name(&input.name));
-    std::fs::write(&target, &bytes)
-        .map_err(|error| ActionsError::Transport(format!("saving the artifact: {error}")))?;
-    Ok(Saved {
-        path: target.to_string_lossy().into_owned(),
-        bytes: bytes.len() as u64,
-    })
+    save_download(data_dir, &input.name, Some("zip"), &bytes)
 }
 
 #[cfg(test)]
@@ -164,10 +179,16 @@ mod tests {
     fn a_second_download_lands_beside_the_first() {
         let dir = std::env::temp_dir().join(format!("sikemux-gha-art-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
-        let first = free_path(&dir, "build");
+        let first = free_path(&dir, "build", ".zip");
         assert!(first.ends_with("build.zip"));
         std::fs::write(&first, b"x").expect("write");
-        assert!(free_path(&dir, "build").ends_with("build-2.zip"));
+        assert!(free_path(&dir, "build", ".zip").ends_with("build-2.zip"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_release_asset_keeps_the_name_it_was_uploaded_under() {
+        let dir = std::env::temp_dir().join(format!("sikemux-gha-rel-{}", std::process::id()));
+        assert!(free_path(&dir, "Sikemux_aarch64.dmg", "").ends_with("Sikemux_aarch64.dmg"));
     }
 }

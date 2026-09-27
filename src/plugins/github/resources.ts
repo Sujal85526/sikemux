@@ -2,6 +2,13 @@ import { resource } from "../../plugin-api/resources";
 import {
     actionsApi,
     type Annotation,
+    type ChangedFile,
+    type Comment,
+    type Issue,
+    type Notification,
+    type Pull,
+    type Release,
+    type Review,
     type Artifact,
     type PendingApproval,
     type ActionsStatus,
@@ -79,6 +86,60 @@ export const actionsRunAttemptR = resource({
     kind: "gha.runAttempt",
     fetch: (repo: RepoRef, runId: number, attempt: number): Promise<RunDetail> => actionsApi.runAttempt(repo, runId, attempt),
     staleAfterMs: 5 * 60_000,
+});
+
+export const githubPullsR = resource({
+    kind: "gha.pulls",
+    fetch: (repo: RepoRef, state: string): Promise<Pull[]> => actionsApi.pulls(repo, state),
+    staleAfterMs: 60_000,
+});
+
+export const githubPullR = resource({
+    kind: "gha.pull",
+    fetch: (repo: RepoRef, number: number): Promise<Pull> => actionsApi.pull(repo, number),
+    staleAfterMs: 30_000,
+});
+
+export const githubPullFilesR = resource({
+    kind: "gha.pullFiles",
+    fetch: (repo: RepoRef, number: number): Promise<ChangedFile[]> => actionsApi.pullFiles(repo, number),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const githubPullReviewsR = resource({
+    kind: "gha.pullReviews",
+    fetch: (repo: RepoRef, number: number): Promise<Review[]> => actionsApi.pullReviews(repo, number),
+    staleAfterMs: 60_000,
+});
+
+export const githubIssuesR = resource({
+    kind: "gha.issues",
+    fetch: (repo: RepoRef, state: string): Promise<Issue[]> => actionsApi.issues(repo, state),
+    staleAfterMs: 60_000,
+});
+
+export const githubIssueR = resource({
+    kind: "gha.issue",
+    fetch: (repo: RepoRef, number: number): Promise<Issue> => actionsApi.issue(repo, number),
+    staleAfterMs: 30_000,
+});
+
+export const githubCommentsR = resource({
+    kind: "gha.comments",
+    fetch: (repo: RepoRef, number: number): Promise<Comment[]> => actionsApi.comments(repo, number),
+    staleAfterMs: 30_000,
+});
+
+export const githubReleasesR = resource({
+    kind: "gha.releases",
+    fetch: (repo: RepoRef): Promise<Release[]> => actionsApi.releases(repo),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const githubInboxR = resource({
+    kind: "gha.inbox",
+    fetch: (all: boolean): Promise<Notification[]> => actionsApi.inbox(all),
+    staleAfterMs: 30_000,
 });
 
 export const actionsJobLogR = resource({

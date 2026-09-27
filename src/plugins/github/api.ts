@@ -188,6 +188,111 @@ export interface RunTick {
     finished: boolean;
 }
 
+export interface Label {
+    name: string;
+    color: string;
+}
+
+export interface Comment {
+    id: number;
+    author: string | null;
+    avatarUrl: string | null;
+    body: string;
+    createdAt: string;
+    url: string | null;
+}
+
+export type PullState = "open" | "closed" | "merged";
+
+export interface Pull {
+    number: number;
+    title: string;
+    body: string;
+    state: string;
+    draft: boolean;
+    author: string | null;
+    avatarUrl: string | null;
+    head: string | null;
+    base: string | null;
+    createdAt: string;
+    updatedAt: string;
+    comments: number;
+    additions: number | null;
+    deletions: number | null;
+    changedFiles: number | null;
+    mergeable: boolean | null;
+    mergeState: string | null;
+    labels: Label[];
+    reviewers: string[];
+    url: string;
+}
+
+export interface ChangedFile {
+    path: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    previousPath: string | null;
+    patch: string | null;
+}
+
+export interface Review {
+    author: string | null;
+    state: string;
+    body: string;
+    submittedAt: string | null;
+}
+
+export type MergeMethod = "merge" | "squash" | "rebase";
+
+export interface Issue {
+    number: number;
+    title: string;
+    body: string;
+    state: string;
+    author: string | null;
+    avatarUrl: string | null;
+    createdAt: string;
+    updatedAt: string;
+    closedAt: string | null;
+    comments: number;
+    labels: Label[];
+    assignees: string[];
+    url: string;
+}
+
+export interface ReleaseAsset {
+    id: number;
+    name: string;
+    sizeBytes: number;
+    downloads: number;
+}
+
+export interface Release {
+    id: number;
+    tag: string;
+    name: string;
+    body: string;
+    draft: boolean;
+    prerelease: boolean;
+    publishedAt: string | null;
+    author: string | null;
+    assets: ReleaseAsset[];
+    url: string;
+}
+
+export interface Notification {
+    id: string;
+    title: string;
+    kind: string;
+    reason: string;
+    repo: string;
+    number: number | null;
+    unread: boolean;
+    updatedAt: string;
+    url: string | null;
+}
+
 export function failureMessage(error: unknown): string {
     return isPluginFailure(error) ? error.message : String(error);
 }
@@ -224,6 +329,23 @@ export const actionsApi = {
     artifacts: (repo: RepoRef, runId: number) => read<Artifact[]>("artifacts", { ...repo, runId }),
     pendingApprovals: (repo: RepoRef, runId: number) => read<PendingApproval[]>("pendingApprovals", { ...repo, runId }),
     runAttempt: (repo: RepoRef, runId: number, attempt: number) => read<RunDetail>("runAttempt", { ...repo, runId, attempt }),
+
+    pulls: (repo: RepoRef, state: string) => read<Pull[]>("pulls", { ...repo, state }),
+    pull: (repo: RepoRef, number: number) => read<Pull>("pull", { ...repo, number }),
+    pullFiles: (repo: RepoRef, number: number) => read<ChangedFile[]>("pullFiles", { ...repo, number }),
+    pullReviews: (repo: RepoRef, number: number) => read<Review[]>("pullReviews", { ...repo, number }),
+    issues: (repo: RepoRef, state: string) => read<Issue[]>("issues", { ...repo, state }),
+    issue: (repo: RepoRef, number: number) => read<Issue>("issue", { ...repo, number }),
+    comments: (repo: RepoRef, number: number) => read<Comment[]>("comments", { ...repo, number }),
+    releases: (repo: RepoRef) => read<Release[]>("releases", repo),
+    inbox: (all: boolean) => read<Notification[]>("inbox", { all }),
+
+    mergePull: (repo: RepoRef, number: number, method: MergeMethod) => backend.call<void>("mergePull", { ...repo, number, method }),
+    setIssueState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setIssueState", { ...repo, number, state }),
+    addComment: (repo: RepoRef, number: number, body: string) => backend.call<void>("addComment", { ...repo, number, body }),
+    downloadAsset: (repo: RepoRef, assetId: number, name: string) => backend.call<SavedArtifact>("downloadAsset", { ...repo, assetId, name }),
+    markRead: (id: string) => backend.call<void>("markRead", { id }),
+    markAllRead: () => backend.call<void>("markAllRead"),
 
     dispatch: (repo: RepoRef, workflowId: number, gitRef: string, inputs: Record<string, string>) =>
         backend.call<void>("dispatch", { ...repo, workflowId, gitRef, inputs }),
