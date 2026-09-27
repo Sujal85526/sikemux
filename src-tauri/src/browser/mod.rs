@@ -1133,8 +1133,9 @@ fn tab_may_load(url: &Url) -> bool {
     match url.scheme() {
         "http" | "https" | "data" => true,
         "about" => matches!(url.path(), "blank" | "srcdoc"),
-        "blob" => Url::parse(url.path())
-            .is_ok_and(|inner| matches!(inner.scheme(), "http" | "https")),
+        "blob" => {
+            Url::parse(url.path()).is_ok_and(|inner| matches!(inner.scheme(), "http" | "https"))
+        }
         _ => false,
     }
 }

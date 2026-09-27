@@ -540,7 +540,11 @@ mod tests {
         let mut by_name = serve("image/png", png).await;
         by_name.set_host(Some("localhost")).unwrap();
         assert_eq!(fetch(&by_name, &page()).await, None);
-        for address in ["http://169.254.169.254/icon", "http://[::1]/icon", "http://10.0.0.1/icon"] {
+        for address in [
+            "http://169.254.169.254/icon",
+            "http://[::1]/icon",
+            "http://10.0.0.1/icon",
+        ] {
             assert_eq!(fetch(&Url::parse(address).unwrap(), &page()).await, None);
         }
     }

@@ -1156,10 +1156,14 @@ mod tests {
     fn only_the_records_script_reads_the_recorder() {
         for global in ["__sikemuxNet", "__sikemuxConsole"] {
             assert!(!PAGE_SCRIPT.contains(global), "page.js reads {global}");
-            assert!(RECORDS_SCRIPT.contains(global), "records.js misses {global}");
+            assert!(
+                RECORDS_SCRIPT.contains(global),
+                "records.js misses {global}"
+            );
         }
-        assert!(answer_of(RECORDS_SCRIPT.trim(), "network", &[json!(5)])
-            .contains("})).network(5) }"));
+        assert!(
+            answer_of(RECORDS_SCRIPT.trim(), "network", &[json!(5)]).contains("})).network(5) }")
+        );
     }
 
     #[test]

@@ -1958,7 +1958,10 @@ mod tests {
             .expect("tail arrives once stderr closes");
 
         assert_eq!(tail.len(), STDERR_TAIL_LINES);
-        assert_eq!(tail.last().unwrap(), "error: Unknown binary 'rust-analyzer'");
+        assert_eq!(
+            tail.last().unwrap(),
+            "error: Unknown binary 'rust-analyzer'"
+        );
 
         let error = with_stderr_tail(
             AppError::Lsp("initialize failed: the language server exited".into()),
