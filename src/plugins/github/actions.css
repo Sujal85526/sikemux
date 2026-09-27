@@ -1361,6 +1361,8 @@
     color: var(--text-primary);
 }
 .gha-patch {
+    max-height: 420px;
+    overflow: auto;
     margin: 0;
     padding: var(--space-1) 0;
     border-top: 1px solid var(--border);
@@ -1374,15 +1376,15 @@
     padding: 0 var(--space-2);
     white-space: pre;
 }
-.gha-patch-line[data-kind="add"] {
+.gha-patch-line.add {
     background: color-mix(in oklab, var(--live) 10%, transparent);
     color: var(--live);
 }
-.gha-patch-line[data-kind="del"] {
+.gha-patch-line.del {
     background: color-mix(in oklab, var(--danger) 10%, transparent);
     color: var(--danger);
 }
-.gha-patch-line[data-kind="ctx"] {
+.gha-patch-line.ctx {
     color: var(--text-tertiary);
 }
 

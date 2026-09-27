@@ -1,6 +1,7 @@
+import { memo, useMemo } from "react";
 import { confirmDialog, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconClose, IconPullRequest, Markdown, SkeletonRows } from "../../../plugin-api/ui";
+import { EmptyState, IconClose, IconPullRequest, Markdown, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
 import { githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -44,17 +45,28 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
     );
 }
 
-function Diff({ patch }: { patch: string }) {
-    return (
-        <pre className="gha-patch gha-mono">
-            {patch.split("\n").map((line, index) => (
-                <span key={index} className="gha-patch-line" data-kind={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx"}>
-                    {line || " "}
-                </span>
-            ))}
-        </pre>
-    );
+function kindOf(line: string): "add" | "del" | "ctx" {
+    return line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
 }
+
+/**
+ * A diff is rendered a screenful at a time. A large one runs to tens of
+ * thousands of lines, and putting every one of them in the document costs far
+ * more than the handful anybody looks at.
+ */
+const Diff = memo(function Diff({ patch }: { patch: string }) {
+    const lines = useMemo(() => patch.split("\n"), [patch]);
+    return (
+        <VirtualLogList
+            items={lines}
+            className="gha-patch gha-mono"
+            rowClassName={(line) => `gha-patch-line ${kindOf(line)}`}
+            estimateSize={18}
+            getItemKey={(_, index) => index}
+            renderRow={(line) => line || " "}
+        />
+    );
+});
 
 function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: number; active: boolean; onBack: () => void }) {
     const pull = useResourceEnabled(active, githubPullR, repo, number);
