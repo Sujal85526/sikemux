@@ -199,6 +199,9 @@ pub async fn send(
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = read_limited(response).await?;
+    if status == StatusCode::UNAUTHORIZED {
+        config::forget_token();
+    }
     Ok((status, headers, bytes))
 }
 

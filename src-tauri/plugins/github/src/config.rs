@@ -4,7 +4,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,11 @@ pub const DEFAULT_HOST: &str = "github.com";
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(10);
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 const OUTPUT_LIMIT: usize = 64 * 1024;
+/// Reading the Keychain means starting `security`, and asking the `gh` CLI
+/// means starting that. Doing either on every request costs more than the
+/// request. A token is held for long enough to serve a screenful of calls and
+/// briefly enough that a `gh auth login` in a terminal is still noticed.
+const TOKEN_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -238,16 +244,57 @@ pub fn gh_cli_token(host: &str) -> Option<String> {
     (!token.is_empty()).then_some(token)
 }
 
-/// The token to use, and where it came from. A token Sikemux saved wins, so
-/// signing in here overrides whatever the shell happens to export.
-pub fn resolve_token(config: &ActionsConfig) -> Option<(String, TokenSource)> {
-    if let Ok(Some(token)) = keychain_read(&config.host) {
+struct Cached {
+    host: String,
+    token: String,
+    source: TokenSource,
+    at: Instant,
+}
+
+static TOKEN: Mutex<Option<Cached>> = Mutex::new(None);
+
+fn cached_for(host: &str) -> Option<(String, TokenSource)> {
+    let held = TOKEN.lock().ok()?;
+    let cached = held.as_ref()?;
+    (cached.host == host && cached.at.elapsed() < TOKEN_TTL)
+        .then(|| (cached.token.clone(), cached.source))
+}
+
+/// Drops the held token, so the next call goes and looks again. Signing in or
+/// out changes which token is right, and a refused one is worth re-reading in
+/// case the shell or the Keychain has a newer one.
+pub fn forget_token() {
+    if let Ok(mut held) = TOKEN.lock() {
+        *held = None;
+    }
+}
+
+fn look_up_token(host: &str) -> Option<(String, TokenSource)> {
+    if let Ok(Some(token)) = keychain_read(host) {
         return Some((token, TokenSource::Keychain));
     }
     if let Some(token) = env_token() {
         return Some((token, TokenSource::Environment));
     }
-    gh_cli_token(&config.host).map(|token| (token, TokenSource::GhCli))
+    gh_cli_token(host).map(|token| (token, TokenSource::GhCli))
+}
+
+/// The token to use, and where it came from. A token Sikemux saved wins, so
+/// signing in here overrides whatever the shell happens to export.
+pub fn resolve_token(config: &ActionsConfig) -> Option<(String, TokenSource)> {
+    if let Some(found) = cached_for(&config.host) {
+        return Some(found);
+    }
+    let (token, source) = look_up_token(&config.host)?;
+    if let Ok(mut held) = TOKEN.lock() {
+        *held = Some(Cached {
+            host: config.host.clone(),
+            token: token.clone(),
+            source,
+            at: Instant::now(),
+        });
+    }
+    Some((token, source))
 }
 
 #[cfg(test)]
@@ -323,6 +370,46 @@ mod tests {
         assert_eq!(load(&dir).host, DEFAULT_HOST);
         std::fs::remove_dir_all(&dir).ok();
         Ok(())
+    }
+
+    /// One test, because the held token is one slot the whole process shares
+    /// and Rust runs tests beside each other.
+    #[test]
+    fn a_held_token_belongs_to_one_host_and_does_not_outlive_its_welcome() {
+        let hold = |host: &str, at: Instant| {
+            if let Ok(mut held) = TOKEN.lock() {
+                *held = Some(Cached {
+                    host: host.into(),
+                    token: "ghp_held".into(),
+                    source: TokenSource::Keychain,
+                    at,
+                });
+            }
+        };
+
+        forget_token();
+        assert_eq!(cached_for("github.com"), None);
+
+        hold("github.com", Instant::now());
+        assert_eq!(
+            cached_for("github.com"),
+            Some(("ghp_held".into(), TokenSource::Keychain))
+        );
+        assert_eq!(
+            cached_for("git.example.com"),
+            None,
+            "another host is not it"
+        );
+
+        hold(
+            "github.com",
+            Instant::now() - TOKEN_TTL - Duration::from_secs(1),
+        );
+        assert_eq!(cached_for("github.com"), None, "held too long");
+
+        hold("github.com", Instant::now());
+        forget_token();
+        assert_eq!(cached_for("github.com"), None);
     }
 
     #[test]
