@@ -251,6 +251,19 @@
     overflow-y: hidden;
     scrollbar-width: none;
 }
+/* An end with tabs scrolled past it fades out, so a cut-off tab reads as more to scroll to. */
+.tabbar:is([data-fade-start], [data-fade-end]) {
+    --fade-start: 0px;
+    --fade-end: 0px;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
+}
+.tabbar[data-fade-start] {
+    --fade-start: 32px;
+}
+.tabbar[data-fade-end] {
+    --fade-end: 32px;
+}
 .tabbar::-webkit-scrollbar {
     height: 0;
     display: none;

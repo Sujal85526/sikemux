@@ -195,6 +195,24 @@ export function TabBar({
     }, [activeIndex, tabVirtualizer, virtualized]);
 
     useLayoutEffect(() => {
+        const strip = scrollRef.current;
+        if (!strip) return;
+        const mark = () => {
+            const hidden = strip.scrollWidth - strip.clientWidth;
+            strip.toggleAttribute("data-fade-start", strip.scrollLeft > 1);
+            strip.toggleAttribute("data-fade-end", hidden - strip.scrollLeft > 1);
+        };
+        mark();
+        strip.addEventListener("scroll", mark, { passive: true });
+        const resize = new ResizeObserver(mark);
+        resize.observe(strip);
+        return () => {
+            strip.removeEventListener("scroll", mark);
+            resize.disconnect();
+        };
+    }, [tabs.length]);
+
+    useLayoutEffect(() => {
         if (activeId === undefined) return;
         // A virtualized strip may not have mounted the pill yet — the
         // virtualizer above has it roughly in view.
