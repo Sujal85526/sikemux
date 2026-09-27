@@ -16,7 +16,7 @@ import {
     InspectorEmpty,
     InspectorHead,
     ListState,
-    Mono,
+    Cell,
     Seg,
     State,
     Stats,
@@ -108,10 +108,10 @@ export function AwsEc2View({ profile, active }: ViewProps) {
                                 ),
                             },
                             { header: "State", width: "14%", cell: (i) => <State health={ec2State(i)[0]} label={ec2State(i)[1]} /> },
-                            { header: "Type", width: "13%", cell: (i) => <Mono>{i.instance_type ?? "—"}</Mono> },
-                            { header: "Private IP", width: "14%", cell: (i) => <Mono>{i.private_ip ?? "—"}</Mono> },
-                            { header: "Public IP", width: "15%", cell: (i) => <Mono dim={!i.public_ip}>{i.public_ip ?? "—"}</Mono> },
-                            { header: "Launched", width: "12%", cell: (i) => <Mono dim>{relative(i.launch_time)}</Mono> },
+                            { header: "Type", width: "13%", cell: (i) => <Cell>{i.instance_type ?? "—"}</Cell> },
+                            { header: "Private IP", width: "14%", cell: (i) => <Cell>{i.private_ip ?? "—"}</Cell> },
+                            { header: "Public IP", width: "15%", cell: (i) => <Cell dim={!i.public_ip}>{i.public_ip ?? "—"}</Cell> },
+                            { header: "Launched", width: "12%", cell: (i) => <Cell dim>{relative(i.launch_time)}</Cell> },
                         ]}
                     />
                 )}
@@ -252,14 +252,14 @@ function LambdaList({ profile, active }: ViewProps) {
                         onSelect={(f) => selectAws(profile, "lambda", f.name)}
                         onOpen={(f) => setLambdaLogs(profile, f.name)}
                         columns={[
-                            { header: "Function", width: "33%", cell: (f) => <span className="aws-name aws-mono">{f.name}</span> },
+                            { header: "Function", width: "33%", cell: (f) => <span className="aws-name">{f.name}</span> },
                             {
                                 header: "Runtime",
                                 width: "24%",
                                 cell: (f) => (
                                     <span className="aws-runtime">
                                         <i className={`rt-${runtimeFamily(f.runtime)}`} />
-                                        <Mono>{f.runtime ?? "—"}</Mono>
+                                        <Cell>{f.runtime ?? "—"}</Cell>
                                         {f.runtime && DEPRECATED_RUNTIMES.has(f.runtime) && <Tag tone="warn">deprecated</Tag>}
                                     </span>
                                 ),
@@ -269,15 +269,15 @@ function LambdaList({ profile, active }: ViewProps) {
                                 width: "17%",
                                 cell: (f) => (
                                     <span className="aws-bar-cell">
-                                        <Mono>{memory(f.memory_size)}</Mono>
+                                        <Cell>{memory(f.memory_size)}</Cell>
                                         <span className="aws-mini">
                                             <b style={{ width: `${((f.memory_size ?? 0) / maxMemory) * 100}%` }} />
                                         </span>
                                     </span>
                                 ),
                             },
-                            { header: "Timeout", width: "11%", align: "right", cell: (f) => <Mono>{duration(f.timeout)}</Mono> },
-                            { header: "Modified", width: "13%", align: "right", cell: (f) => <Mono dim>{relative(f.last_modified)}</Mono> },
+                            { header: "Timeout", width: "11%", align: "right", cell: (f) => <Cell>{duration(f.timeout)}</Cell> },
+                            { header: "Modified", width: "13%", align: "right", cell: (f) => <Cell dim>{relative(f.last_modified)}</Cell> },
                         ]}
                     />
                 )}
@@ -295,7 +295,7 @@ function LambdaInspector({ profile, fn, region }: { profile: string; fn: LambdaF
     return (
         <Inspector>
             <InspectorHead
-                title={<span className="aws-mono">{fn.name}</span>}
+                title={fn.name}
                 sub={`/aws/lambda/${fn.name}`}
                 actions={
                     <>
@@ -343,7 +343,7 @@ function LambdaLogs({ profile, active, fn }: ViewProps & { fn: string }) {
                         ]}
                     />
                 }
-                title={<span className="aws-mono">{fn}</span>}
+                title={fn}
                 tools={
                     <ConsoleButton
                         url={`https://${region}.console.aws.amazon.com/lambda/home?region=${region}#/functions/${encodeURIComponent(fn)}`}
@@ -416,7 +416,7 @@ export function AwsSqsView({ profile, active }: ViewProps) {
                                 width: "38%",
                                 cell: (q) => (
                                     <span className="aws-name-row">
-                                        <span className="aws-name aws-mono">{q.name}</span>
+                                        <span className="aws-name">{q.name}</span>
                                         {q.name.endsWith(".fifo") && <Tag>fifo</Tag>}
                                         {isDeadLetter(q) && <Tag tone={count(q.messages) ? "warn" : undefined}>dead-letter</Tag>}
                                     </span>
@@ -454,7 +454,7 @@ export function AwsSqsView({ profile, active }: ViewProps) {
             {selected ? (
                 <Inspector>
                     <InspectorHead
-                        title={<span className="aws-mono">{selected.name}</span>}
+                        title={selected.name}
                         badge={selected.name.endsWith(".fifo") ? <Tag>fifo</Tag> : undefined}
                         sub={selected.url}
                         actions={
@@ -537,9 +537,9 @@ export function AwsS3View({ profile, active }: ViewProps) {
                         selected={selected?.name}
                         onSelect={(b) => selectAws(profile, "s3", b.name)}
                         columns={[
-                            { header: "Bucket", width: "62%", cell: (b) => <span className="aws-name aws-mono">{b.name}</span> },
-                            { header: "Created", width: "20%", cell: (b) => <Mono>{b.created_at?.slice(0, 10) ?? "—"}</Mono> },
-                            { header: "Age", width: "16%", align: "right", cell: (b) => <Mono dim>{relative(b.created_at)}</Mono> },
+                            { header: "Bucket", width: "62%", cell: (b) => <span className="aws-name">{b.name}</span> },
+                            { header: "Created", width: "20%", cell: (b) => <Cell>{b.created_at?.slice(0, 10) ?? "—"}</Cell> },
+                            { header: "Age", width: "16%", align: "right", cell: (b) => <Cell dim>{relative(b.created_at)}</Cell> },
                         ]}
                     />
                 )}
@@ -547,7 +547,7 @@ export function AwsS3View({ profile, active }: ViewProps) {
             {selected ? (
                 <Inspector>
                     <InspectorHead
-                        title={<span className="aws-mono">{selected.name}</span>}
+                        title={selected.name}
                         sub={`arn:aws:s3:::${selected.name}`}
                         actions={
                             <>

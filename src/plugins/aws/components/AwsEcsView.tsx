@@ -17,7 +17,7 @@ import {
     InspectorEmpty,
     InspectorHead,
     ListState,
-    Mono,
+    Cell,
     Section,
     Seg,
     State,
@@ -68,7 +68,7 @@ const SERVICE_STATE: Record<Health, string> = { ok: "Steady", warn: "Deploying",
 function ClusterName({ name }: { name: string }) {
     const cut = name.endsWith("-cluster") ? name.length - "-cluster".length : name.length;
     return (
-        <span className="aws-name aws-mono">
+        <span className="aws-name">
             {name.slice(0, cut)}
             {cut < name.length && <span className="aws-name-dim">-cluster</span>}
         </span>
@@ -228,7 +228,7 @@ function ClusterInspector({
                 {list.slice(0, 10).map((s) => (
                     <button key={s.arn} className="aws-insp-row" onClick={() => openService(s.name)} title="Tail this service's logs">
                         <State health={serviceHealth(s)} label="" />
-                        <span className="aws-mono aws-grow">{s.name}</span>
+                        <span className="aws-name aws-grow">{s.name}</span>
                         <span className="aws-num dim">
                             {s.running ?? 0}/{s.desired ?? 0}
                         </span>
@@ -286,7 +286,7 @@ function Services({
                     }
                     title={
                         <>
-                            <span className="aws-mono">{cluster}</span>
+                            <span>{cluster}</span>
                             <EnvChip name={cluster} />
                         </>
                     }
@@ -304,7 +304,7 @@ function Services({
                         onSelect={(s) => selectAws(profile, "service", s.name)}
                         onOpen={(s) => onOpen(s.name, "logs")}
                         columns={[
-                            { header: "Service", width: "32%", cell: (s) => <span className="aws-name aws-mono">{s.name}</span> },
+                            { header: "Service", width: "32%", cell: (s) => <span className="aws-name">{s.name}</span> },
                             {
                                 header: "Running",
                                 width: "10%",
@@ -380,7 +380,7 @@ function ServiceInspector({
     return (
         <Inspector>
             <InspectorHead
-                title={<span className="aws-mono">{service.name}</span>}
+                title={service.name}
                 sub={service.arn}
                 actions={
                     <>
@@ -478,7 +478,7 @@ function ServicePage({
                         ]}
                     />
                 }
-                title={<span className="aws-mono">{service}</span>}
+                title={service}
                 aside={
                     info && (
                         <span className="aws-head-meta">
@@ -577,10 +577,10 @@ function TasksList({
                                 </span>
                             ),
                         },
-                        { header: "Private IP", width: "13%", cell: (t) => <Mono>{t.private_ip ?? "—"}</Mono> },
-                        { header: "Zone", width: "12%", cell: (t) => <Mono>{t.availability_zone ?? "—"}</Mono> },
-                        { header: "Size", width: "14%", cell: (t) => <Mono dim>{taskSize(t)}</Mono> },
-                        { header: "Started", width: "10%", cell: (t) => <Mono dim>{relative(t.started_at)}</Mono> },
+                        { header: "Private IP", width: "13%", cell: (t) => <Cell>{t.private_ip ?? "—"}</Cell> },
+                        { header: "Zone", width: "12%", cell: (t) => <Cell>{t.availability_zone ?? "—"}</Cell> },
+                        { header: "Size", width: "14%", cell: (t) => <Cell dim>{taskSize(t)}</Cell> },
+                        { header: "Started", width: "10%", cell: (t) => <Cell dim>{relative(t.started_at)}</Cell> },
                         {
                             header: "",
                             width: "4%",

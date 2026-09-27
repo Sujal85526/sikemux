@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { copyText, notify, openSignInUrl, reportError } from "../../../plugin-api/host";
 import { useResource, type ResourceHandle } from "../../../plugin-api/resources";
 import { IconChevron, IconCopy, IconRefresh, IconSearch } from "../../../plugin-api/ui";
@@ -187,8 +187,8 @@ export function Tag({ children, tone }: { children: ReactNode; tone?: "warn" }) 
     return <span className={`aws-tag${tone ? ` ${tone}` : ""}`}>{children}</span>;
 }
 
-export function Mono({ children, dim }: { children: ReactNode; dim?: boolean }) {
-    return <span className={`aws-mono${dim ? " dim" : ""}`}>{children}</span>;
+export function Cell({ children, dim }: { children: ReactNode; dim?: boolean }) {
+    return <span className={`aws-cell${dim ? " dim" : ""}`}>{children}</span>;
 }
 
 export interface Column<T> {
@@ -233,46 +233,55 @@ export function Table<T>({
             focusRow(next);
         }
     };
+    const cols = (
+        <colgroup>
+            {columns.map((c, i) => (
+                <col key={i} style={{ width: c.width }} />
+            ))}
+        </colgroup>
+    );
     return (
         <div className="aws-table-wrap">
-            <table className="aws-table" aria-label={label}>
-                <colgroup>
-                    {columns.map((c, i) => (
-                        <col key={i} style={{ width: c.width }} />
-                    ))}
-                </colgroup>
-                <thead>
-                    <tr>
-                        {columns.map((c, i) => (
-                            <th key={i} className={c.align === "right" ? "r" : undefined}>
-                                {c.header}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody ref={body}>
-                    {rows.map((row, index) => {
-                        const key = rowKey(row);
-                        const isSelected = key === selected;
-                        return (
-                            <tr
-                                key={key}
-                                tabIndex={0}
-                                aria-selected={isSelected}
-                                className={[isSelected ? "sel" : "", rowClass?.(row) ?? ""].join(" ").trim() || undefined}
-                                onClick={() => (isSelected && onOpen ? onOpen(row) : onSelect ? onSelect(row) : onOpen?.(row))}
-                                onDoubleClick={() => onOpen?.(row)}
-                                onKeyDown={(event) => onKey(event, row, index)}>
-                                {columns.map((c, i) => (
-                                    <td key={i} className={c.align === "right" ? "r" : undefined}>
-                                        {c.cell(row)}
-                                    </td>
-                                ))}
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
+            <div className="aws-table-head" aria-hidden="true">
+                <table className="aws-table">
+                    {cols}
+                    <thead>
+                        <tr>
+                            {columns.map((c, i) => (
+                                <th key={i} className={c.align === "right" ? "r" : undefined}>
+                                    {c.header}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                </table>
+            </div>
+            <div className="aws-table-body">
+                <table className="aws-table" aria-label={label}>
+                    {cols}
+                    <tbody ref={body}>
+                        {rows.map((row, index) => {
+                            const key = rowKey(row);
+                            const isSelected = key === selected;
+                            return (
+                                <tr
+                                    key={key}
+                                    tabIndex={0}
+                                    aria-selected={isSelected}
+                                    className={[isSelected ? "sel" : "", rowClass?.(row) ?? ""].join(" ").trim() || undefined}
+                                    onClick={() => (isSelected && onOpen ? onOpen(row) : onSelect ? onSelect(row) : onOpen?.(row))}
+                                    onKeyDown={(event) => onKey(event, row, index)}>
+                                    {columns.map((c, i) => (
+                                        <td key={i} className={c.align === "right" ? "r" : undefined}>
+                                            {c.cell(row)}
+                                        </td>
+                                    ))}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
@@ -308,7 +317,16 @@ export function InspectorHead({ title, badge, sub, actions }: { title: ReactNode
                 {title}
                 {badge}
             </div>
-            {sub && <div className="aws-insp-sub">{sub}</div>}
+            {sub && (
+                <div className="aws-insp-sub">
+                    {sub.split(/(?<=[:/])/).map((part, i) => (
+                        <Fragment key={i}>
+                            {part}
+                            <wbr />
+                        </Fragment>
+                    ))}
+                </div>
+            )}
             {actions && <div className="aws-insp-actions">{actions}</div>}
         </div>
     );

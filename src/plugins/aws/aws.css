@@ -88,8 +88,8 @@
     flex: 1 1 auto;
 }
 .aws-nav-count {
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--text-tertiary);
 }
 
@@ -153,16 +153,15 @@
     background: var(--surface-hover);
 }
 .aws-account-id {
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--text-tertiary);
 }
 .aws-account-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
     color: var(--text-secondary);
 }
 .aws-account-meta .aws-state {
@@ -205,17 +204,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.aws-title .aws-mono {
-    font-size: var(--text-md);
-    letter-spacing: 0;
-}
 .aws-count {
     padding: 1px var(--space-1h);
     border: 1px solid var(--border);
     border-radius: var(--radius-1);
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
     font-weight: var(--weight-normal);
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0;
     color: var(--text-secondary);
 }
@@ -240,8 +235,7 @@
     align-items: center;
     gap: var(--space-1);
     margin-bottom: var(--space-1h);
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
     color: var(--text-tertiary);
     white-space: nowrap;
 }
@@ -360,8 +354,8 @@
     color: var(--text-primary);
 }
 .aws-seg-count {
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--text-tertiary);
 }
 
@@ -376,7 +370,7 @@
     padding: 0 var(--space-1h) 0 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    background: var(--s-sunken);
+    background: transparent;
     color: var(--text-tertiary);
     cursor: text;
 }
@@ -406,8 +400,8 @@
     flex: 0 0 auto;
     padding: 0 5px;
     border: 1px solid var(--border);
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-family: var(--ui);
+    font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
 .aws-filter:focus-within kbd {
@@ -497,8 +491,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-1);
     background: var(--aws-tint);
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
     color: var(--text-secondary);
     white-space: nowrap;
 }
@@ -518,8 +511,8 @@
     flex-wrap: wrap;
 }
 .aws-meter i {
-    width: 5px;
-    height: 12px;
+    width: 4px;
+    height: 10px;
     flex: 0 0 auto;
     border-radius: 1.5px;
     background: color-mix(in oklab, var(--live) 78%, transparent);
@@ -536,10 +529,13 @@
     box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
-.aws-num {
-    font-family: var(--mono);
-    font-size: var(--text-xs);
+.aws-num,
+.aws-cell {
+    font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
+}
+.aws-cell.dim {
+    color: var(--text-tertiary);
 }
 .aws-num.dim {
     color: var(--text-tertiary);
@@ -612,8 +608,22 @@
 .aws-table-wrap {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
     padding: 0 var(--space-3) var(--space-3);
+}
+.aws-table-head,
+.aws-table-body {
+    scrollbar-gutter: stable;
+}
+.aws-table-head {
+    flex: 0 0 auto;
+    overflow-y: hidden;
+}
+.aws-table-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
 }
 .aws-table {
     width: 100%;
@@ -622,12 +632,8 @@
     border-spacing: 0;
 }
 .aws-table th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
     padding: var(--space-2) 10px;
     border-bottom: 1px solid var(--border);
-    background: var(--pane-ground, var(--s-panel));
     font-size: var(--text-2xs);
     font-weight: var(--weight-medium);
     color: var(--text-tertiary);
@@ -684,6 +690,7 @@
 
 .aws-name {
     color: var(--text-primary);
+    font-weight: var(--weight-medium);
 }
 .aws-name-dim {
     color: var(--text-tertiary);
@@ -699,6 +706,7 @@
     line-height: 1.3;
 }
 .aws-sub {
+    font-family: var(--mono);
     font-size: var(--text-3xs);
     color: var(--text-tertiary);
 }
@@ -755,10 +763,6 @@
     letter-spacing: var(--tracking-tight);
     overflow-wrap: anywhere;
 }
-.aws-insp-title .aws-mono {
-    font-size: var(--text-md);
-    letter-spacing: 0;
-}
 .aws-insp-sub {
     font-family: var(--mono);
     font-size: var(--text-3xs);
@@ -792,8 +796,9 @@
     color: var(--text-tertiary);
 }
 .aws-stat-value {
-    font-family: var(--mono);
-    font-size: var(--text-lg);
+    font-size: var(--text-xl);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-display);
     font-variant-numeric: tabular-nums;
 }
 .aws-stat-value.warn {
@@ -826,7 +831,7 @@
 }
 .aws-fact dd {
     margin: 0;
-    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -868,7 +873,7 @@
     color: var(--text-tertiary);
 }
 .aws-insp-sec h3 span {
-    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
     font-weight: var(--weight-normal);
     letter-spacing: 0;
     text-transform: none;
@@ -887,7 +892,7 @@
     text-align: left;
     cursor: pointer;
 }
-.aws-insp-row .aws-mono {
+.aws-insp-row :is(.aws-mono, .aws-name) {
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -931,7 +936,7 @@
     margin: 0 var(--space-3) var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: color-mix(in srgb, var(--surface-sunken) 55%, transparent);
+    background: var(--aws-tint);
     overflow: hidden;
 }
 .aws-logs-bar {
@@ -1032,9 +1037,8 @@
     min-height: 30px;
     padding: 0 var(--space-1) 0 14px;
     border-top: 1px solid var(--aws-rule);
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
-    color: var(--text-disabled);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
 }
 .aws-jump {
     height: 22px;
@@ -1129,8 +1133,8 @@
     font-size: 32px;
 }
 .aws-tile-note {
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--text-tertiary);
 }
 .aws-tile-note.up,
@@ -1212,8 +1216,8 @@
     border-color: var(--border-selected);
 }
 .aws-chart-amount {
-    font-family: var(--mono);
     font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--text-secondary);
 }
 .aws-chart-bar.on .aws-chart-amount {
@@ -1222,16 +1226,20 @@
 .aws-chart-col {
     display: block;
     border-radius: var(--radius-1) var(--radius-1) 2px 2px;
-    background: var(--border-strong);
+    background: color-mix(in oklab, var(--ink) 16%, transparent);
 }
 .aws-chart-col.partial {
-    background: repeating-linear-gradient(135deg, var(--border-strong) 0 4px, var(--gray-400) 4px 8px);
+    background: repeating-linear-gradient(
+        135deg,
+        color-mix(in oklab, var(--ink) 16%, transparent) 0 4px,
+        color-mix(in oklab, var(--ink) 6%, transparent) 4px 8px
+    );
 }
 .aws-chart-bar.on .aws-chart-col {
     background: var(--acc);
 }
 .aws-chart-bar.on .aws-chart-col.partial {
-    background: repeating-linear-gradient(135deg, var(--acc) 0 4px, color-mix(in oklab, var(--acc) 65%, var(--surface)) 4px 8px);
+    background: repeating-linear-gradient(135deg, var(--acc) 0 4px, color-mix(in oklab, var(--acc) 45%, transparent) 4px 8px);
 }
 .aws-chart-labels {
     display: grid;
@@ -1291,8 +1299,8 @@
     text-overflow: ellipsis;
 }
 .aws-bill-change {
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     text-align: right;
     color: var(--text-disabled);
 }
@@ -1300,7 +1308,6 @@
     color: var(--text-tertiary);
 }
 .aws-bill-amount {
-    font-family: var(--mono);
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
@@ -1362,7 +1369,7 @@
 .aws-signin-card code {
     padding: 1px 5px;
     border: 1px solid var(--border);
-    background: var(--s-sunken);
+    background: var(--aws-tint);
     font-family: var(--mono);
     font-size: var(--text-2xs);
     color: var(--text-primary);
@@ -1424,8 +1431,7 @@
     font-size: var(--text-sm);
 }
 .aws-profile-meta {
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
+    font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
 
