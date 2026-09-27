@@ -45,7 +45,7 @@ fn config_path(data_dir: &Path) -> PathBuf {
 }
 
 pub fn load(data_dir: &Path) -> SignozConfig {
-    let mut config: SignozConfig = std::fs::read(config_path(data_dir))
+    let config: SignozConfig = std::fs::read(config_path(data_dir))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
