@@ -30,7 +30,7 @@ export const SCENES = [
     setup: async (page) => {
       await openWindow(page, "s-sikemux", "w-agent-hero");
       await run(page, () =>
-        showcase.cmd.openBrowserPane("agent-hero", { focus: false }),
+        showcase.cmd.openDesk("agent-hero", { focus: false }),
       );
     },
     crops: { stage: ".stage" },
@@ -134,7 +134,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.142, top: 0.03, width: 0.7, height: 0.42 },
+        region: { left: 0.1549, top: 0.0448, width: 0.8438, height: 0.4620 },
       },
     },
   },
@@ -166,7 +166,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.184, top: 0.03, width: 0.81, height: 0.52 },
+        region: { left: 0.1486, top: 0.0448, width: 0.8500, height: 0.5205 },
       },
     },
   },
@@ -240,7 +240,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.219, top: 0.03, width: 0.78, height: 0.4 },
+        region: { left: 0.1736, top: 0.0819, width: 0.8250, height: 0.3567 },
       },
     },
   },
